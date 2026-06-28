@@ -6,9 +6,17 @@ const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export const API_BASE = CONFIGURED_API_BASE ?? "http://127.0.0.1:8199";
 export const API_CONNECTION_ERROR = "MULTIMIX_API_CONNECTION_ERROR";
+export const API_AUTH_EXPIRED_EVENT = "multimix:auth-expired";
 
 // Whether a real backend is configured. When false, callers fall back to mock data.
 export const isApiConfigured = Boolean(CONFIGURED_API_BASE);
+
+// Dispatch when a 401 is received so the auth shell can clear the session.
+function notifyAuthExpired(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(API_AUTH_EXPIRED_EVENT));
+  }
+}
 
 type ApiError = Error & { retryable?: boolean };
 
@@ -56,6 +64,10 @@ export async function api<T>(path: string, token: string | null, init: RequestIn
     if (response.ok) {
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
+    }
+
+    if (response.status === 401) {
+      notifyAuthExpired();
     }
 
     const body = await response.json().catch(() => ({ detail: response.statusText }));

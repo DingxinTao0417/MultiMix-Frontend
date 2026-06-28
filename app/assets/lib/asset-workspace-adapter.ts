@@ -28,7 +28,7 @@ export type AssetWorkspaceAdapter = {
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   listSources(): AssetSource[];
   getProductText(product: AssetProduct): string;
-  saveProduct(product: AssetProduct): Promise<{ version: string; savedAt: string }>;
+  saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
   // Backend-backed operations. When no API is configured these are no-ops that
   // keep the local mock workspace usable offline.
   isBackendEnabled(): boolean;
@@ -101,7 +101,18 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     getProductText(product) {
       return (product.body && product.body.length > 0 ? product.body : [product.summary]).join("\n\n");
     },
-    async saveProduct(product) {
+    async saveProduct(product, token) {
+      if (isApiConfigured && token && product.backendAssetId) {
+        await api<unknown>(`/assets/${product.backendAssetId}`, token, {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: product.title,
+            body: product.body?.join("\n\n") ?? product.summary,
+          })
+        });
+        const nextVersion = product.version ? `v${parseInt(product.version.replace("v", "")) + 1}` : "v2";
+        return { version: nextVersion, savedAt: new Date().toISOString() };
+      }
       return {
         version: product.version ?? "v1",
         savedAt: new Date().toISOString()

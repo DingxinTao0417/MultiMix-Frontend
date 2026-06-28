@@ -322,6 +322,21 @@ button:disabled {
   white-space: nowrap;
 }
 
+.shadcn-prototype-logout {
+  display: block;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #71717a;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-logout:hover {
+  color: #b91c1c;
+}
+
 .shadcn-prototype-search {
   display: flex;
   min-height: 36px;

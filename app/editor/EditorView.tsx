@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { initEditorWithProject } from "@/editor-engine/vendor/bootstrap";
 import type { BackendProject } from "@/editor-engine/vendor/buildProject";
+import { EditorCore } from "@editor/core";
 import { Timeline } from "@editor/components/editor/panels/timeline";
 import { PreviewPanel } from "@editor/components/editor/panels/preview";
 import { ExportButton } from "@/editor-engine/vendor/ExportButton";
@@ -31,7 +32,25 @@ export default function EditorView({ jobId, assetId, token }: { jobId: string | 
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
   const startedRef = useRef(false);
+
+  const handleSave = async () => {
+    if (!assetId || !token || saving) return;
+    setSaving(true);
+    try {
+      const project = EditorCore.getInstance().project.getActive();
+      await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(project),
+      });
+    } catch {
+      // silent for now; could add toast later
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     const endpoint = jobId
@@ -63,8 +82,14 @@ export default function EditorView({ jobId, assetId, token }: { jobId: string | 
   return (
     <div className="editor-root dark" style={{ height: "100vh", display: "flex", flexDirection: "column", color: "#eee", background: "#0e0e0e" }}>
       <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+        <a href="/app/assets" style={{ color: "#888", fontSize: 12, textDecoration: "none", marginRight: 4 }}>← 工作台</a>
         <strong style={{ fontSize: 14 }}>{title || "视频剪辑器"}</strong>
-        {state === "ready" ? <ExportButton /> : null}
+        {state === "ready" && assetId ? (
+          <button onClick={handleSave} disabled={saving} style={{ padding: "4px 12px", fontSize: 12, background: "#2d6cdf", color: "#fff", border: "none", borderRadius: 4, cursor: saving ? "default" : "pointer" }}>
+            {saving ? "保存中…" : "💾 保存项目"}
+          </button>
+        ) : null}
+        {state === "ready" ? <ExportButton assetId={assetId} token={token} /> : null}
         {state === "loading" ? <span style={{ color: "#888", fontSize: 13 }}>正在加载项目…</span> : null}
         {state === "error" ? <span style={{ color: "#f66", fontSize: 13 }}>{error}</span> : null}
       </div>

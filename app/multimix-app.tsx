@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
-import { authLogin, authRegister, isApiConfigured } from "../lib/api";
+import { authLogin, authRegister, isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
 
 const LOCAL_USER_KEY = "multimix_local_user";
 const DEFAULT_LOCAL_USER: LocalUser = {
@@ -27,6 +27,18 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   const searchParams = useSearchParams();
   const [user, setUser] = useState<LocalUser | null>(null);
   const [ready, setReady] = useState(false);
+
+  const handleLogout = () => {
+    window.localStorage.removeItem(LOCAL_USER_KEY);
+    setUser(null);
+  };
+
+  useEffect(() => {
+    // Listen for 401 from api.ts to force re-login.
+    const onExpired = () => handleLogout();
+    window.addEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
+  });
 
   useEffect(() => {
     const stored = window.localStorage.getItem(LOCAL_USER_KEY);
@@ -72,6 +84,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       accountEmail={user.email}
       token={user.token ?? null}
       basePath={basePath}
+      onLogout={handleLogout}
       initialConversationId={searchParams.get("conversation") ?? undefined}
       initialProductId={searchParams.get("product") ?? undefined}
     />

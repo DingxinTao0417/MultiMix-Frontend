@@ -63,10 +63,10 @@ export function ReplacePanel() {
     setMgUrl(null);
     try {
       const res = await generateMG(segText, selEl.duration, projW, projH, false);
-      // Preview the generated MG HTML animation in an iframe.
       setMgUrl(mediaUrl(res.html_path));
     } catch (e) {
-      console.warn("generate MG failed", e);
+      const msg = e instanceof Error ? e.message : "MG 动画生成失败";
+      alert(msg.includes("501") ? "MG 动画生成暂未实现，后续版本将支持。" : msg);
     } finally {
       setMgLoading(false);
     }

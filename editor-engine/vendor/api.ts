@@ -81,7 +81,7 @@ export interface MaterialOption {
 }
 
 export async function replaceOptions(segmentText: string, duration: number, layout = "portrait"): Promise<MaterialOption[]> {
-  const res = await fetch(`${API_BASE}/replace_options`, {
+  const res = await fetch(`${API_BASE}/v1/video/replace-options`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ segment_text: segmentText, duration, layout }),
@@ -98,7 +98,7 @@ export interface MGResult {
 }
 
 export async function generateMG(segmentText: string, duration: number, width = 1080, height = 1920, render = false): Promise<MGResult> {
-  const res = await fetch(`${API_BASE}/generate_mg`, {
+  const res = await fetch(`${API_BASE}/v1/video/generate-mg`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ segment_text: segmentText, duration, width, height, render }),

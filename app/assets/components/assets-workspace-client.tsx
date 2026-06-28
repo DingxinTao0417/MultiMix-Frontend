@@ -38,6 +38,7 @@ type AssetsWorkspaceClientProps = {
   basePath?: string;
   accountEmail?: string;
   token?: string | null;
+  onLogout?: () => void;
 };
 
 function getConversationMonogram(title: string): string {
@@ -61,7 +62,8 @@ export default function AssetsWorkspaceClient({
   initialProductId,
   basePath = "/app/assets",
   accountEmail = "demo@multimix.local",
-  token = null
+  token = null,
+  onLogout
 }: AssetsWorkspaceClientProps) {
   const [conversations, setConversations] = useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations());
   const [creatingConversation, setCreatingConversation] = useState(false);
@@ -279,7 +281,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleSaveProduct = async (product: ProductArtifact) => {
-    const result = await assetWorkspaceAdapter.saveProduct(product);
+    const result = await assetWorkspaceAdapter.saveProduct(product, token);
     setSavedProductIds((current) => ({
       ...current,
       [product.id]: result.version
@@ -558,7 +560,9 @@ export default function AssetsWorkspaceClient({
         <div className="shadcn-prototype-user">
           <div>
             <strong>{accountEmail}</strong>
-            <span>82 credits</span>
+            {onLogout ? (
+              <button type="button" className="shadcn-prototype-logout" onClick={onLogout}>退出登录</button>
+            ) : null}
           </div>
         </div>
       </aside>
@@ -616,7 +620,11 @@ export default function AssetsWorkspaceClient({
             : undefined}
         >
           {isNewConversation ? (
-            <ConversationStart suggestions={selectedConversation.suggestions ?? []} />
+            <ConversationStart
+              suggestions={selectedConversation.suggestions ?? []}
+              conversation={selectedConversation}
+              onSend={handleSendConversationMessage}
+            />
           ) : activeView === "conversation" ? (
             <>
               <ConversationStudio
