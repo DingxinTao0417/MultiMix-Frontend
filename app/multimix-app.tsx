@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
-import { authLogin, authRegister, isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
+import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
+import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
 const LOCAL_USER_KEY = "multimix_local_user";
 const DEFAULT_LOCAL_USER: LocalUser = {
@@ -28,19 +29,46 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   const [user, setUser] = useState<LocalUser | null>(null);
   const [ready, setReady] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     window.localStorage.removeItem(LOCAL_USER_KEY);
     setUser(null);
   };
 
   useEffect(() => {
-    // Listen for 401 from api.ts to force re-login.
-    const onExpired = () => handleLogout();
+    const onExpired = () => { void handleLogout(); };
     window.addEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
   });
 
   useEffect(() => {
+    if (isSupabaseConfigured && supabase) {
+      // Try to restore Supabase session.
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          const u: LocalUser = { email: data.session.user.email ?? "", token: data.session.access_token };
+          window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(u));
+          setUser(u);
+        }
+        setReady(true);
+      });
+      // Listen for auth state changes (token refresh, sign out).
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session) {
+          const u: LocalUser = { email: session.user.email ?? "", token: session.access_token };
+          window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(u));
+          setUser(u);
+        } else {
+          window.localStorage.removeItem(LOCAL_USER_KEY);
+          setUser(null);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
+
+    // Non-Supabase: read from localStorage.
     const stored = window.localStorage.getItem(LOCAL_USER_KEY);
     if (stored) {
       try {
@@ -57,7 +85,6 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
         setUser(DEFAULT_LOCAL_USER);
       }
     } else if (isApiConfigured) {
-      // With a real backend, require an explicit sign-in to obtain a token.
       setUser(null);
     } else {
       window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
@@ -70,7 +97,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
 
   if (!user) {
     return (
-      <MultiMixLocalAuth
+      <MultiMixAuth
         onAuthed={(nextUser) => {
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
           setUser(nextUser);
@@ -84,7 +111,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       accountEmail={user.email}
       token={user.token ?? null}
       basePath={basePath}
-      onLogout={handleLogout}
+      onLogout={() => { void handleLogout(); }}
       initialConversationId={searchParams.get("conversation") ?? undefined}
       initialProductId={searchParams.get("product") ?? undefined}
     />
@@ -108,9 +135,9 @@ function MultiMixLoading() {
   );
 }
 
-function MultiMixLocalAuth({ onAuthed }: { onAuthed: (user: LocalUser) => void }) {
+function MultiMixAuth({ onAuthed }: { onAuthed: (user: LocalUser) => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState(isApiConfigured ? "" : DEFAULT_LOCAL_USER.email);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -118,26 +145,53 @@ function MultiMixLocalAuth({ onAuthed }: { onAuthed: (user: LocalUser) => void }
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    const trimmedEmail = email.trim() || DEFAULT_LOCAL_USER.email;
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("请填写邮箱和密码。");
+      return;
+    }
 
-    // Offline mock mode: no backend, accept any email without a token.
-    if (!isApiConfigured) {
+    // Offline mock mode: no backend, accept any email.
+    if (!isApiConfigured && !isSupabaseConfigured) {
       onAuthed({ email: trimmedEmail });
       return;
     }
 
     setSubmitting(true);
     try {
-      const response = mode === "login"
-        ? await authLogin(trimmedEmail, password)
-        : await authRegister(trimmedEmail, password);
-      if (response.verification_required || !response.access_token) {
-        setError(response.message ?? "需要邮箱验证后才能登录。");
-        return;
+      if (isSupabaseConfigured && supabase) {
+        // Supabase Auth.
+        if (mode === "register") {
+          const { data, error: err } = await supabase.auth.signUp({ email: trimmedEmail, password });
+          if (err) { setError(err.message); return; }
+          if (data.session) {
+            onAuthed({ email: data.session.user.email ?? trimmedEmail, token: data.session.access_token });
+          } else {
+            setError("注册成功，请检查邮箱确认后登录。");
+          }
+        } else {
+          const { data, error: err } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
+          if (err) { setError(err.message); return; }
+          if (data.session) {
+            onAuthed({ email: data.session.user.email ?? trimmedEmail, token: data.session.access_token });
+          } else {
+            setError("登录失败，请重试。");
+          }
+        }
+      } else {
+        // Local backend auth (fallback).
+        const { authLogin, authRegister } = await import("../lib/api");
+        const response = mode === "login"
+          ? await authLogin(trimmedEmail, password)
+          : await authRegister(trimmedEmail, password);
+        if (response.verification_required || !response.access_token) {
+          setError(response.message ?? "需要邮箱验证后才能登录。");
+          return;
+        }
+        onAuthed({ email: response.email ?? trimmedEmail, token: response.access_token });
       }
-      onAuthed({ email: response.email ?? trimmedEmail, token: response.access_token });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "登录失败，请稍后重试。");
+      setError(err instanceof Error ? err.message : "操作失败，请稍后重试。");
     } finally {
       setSubmitting(false);
     }
@@ -174,8 +228,8 @@ function MultiMixLocalAuth({ onAuthed }: { onAuthed: (user: LocalUser) => void }
               <input
                 name="password"
                 type="password"
-                required={isApiConfigured}
-                minLength={mode === "register" ? 10 : undefined}
+                required
+                minLength={mode === "register" ? 6 : undefined}
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
