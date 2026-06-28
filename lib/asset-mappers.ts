@@ -137,6 +137,7 @@ function contentAssetTypeLabel(contentType: string): string {
 
 function productModeFromAsset(asset: ContentAsset, unsupported: boolean): AssetProductMode {
   if (unsupported) return "copy";
+  if (asset.content_type === "video_script") return "copy";
   if (asset.content_type === "digital_human_video") return "digital-human";
   if (asset.asset_kind === "image") return "image";
   if (asset.asset_kind === "video" || asset.asset_kind === "video_render") return "video";
@@ -148,6 +149,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const stageResults = isRecord(videoProject?.stage_results) ? videoProject.stage_results : undefined;
   const unsupported = (Boolean(metadata.unsupported_adapter) || metadata.generation_state === "preparation_only") && !videoProject;
@@ -158,20 +160,26 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const mp4State = stringValue(videoProject?.mp4_state) || "";
   const status = videoProject
     ? videoProjectStatusLabel(mp4State)
+    : mp4Artifact
+      ? "MP4 成片 · 已生成"
     : unsupported
     ? "准备产物 · adapter未配置"
     : noAssetHit
       ? "草稿 · 未命中素材"
       : "草稿 · 有来源";
-  const ratio = stringValue(videoProject?.ratio) || stringValue(intent.ratio) || (mode === "copy" ? "Markdown" : "按指令");
-  const duration = videoProject?.duration_seconds ? `${videoProject.duration_seconds}秒` : stringValue(intent.duration) || (capability.includes("video") ? "待确认" : `${body.length} 段`);
+  const ratio = stringValue(videoProject?.ratio) || stringValue(mp4Artifact?.ratio) || stringValue(intent.ratio) || (mode === "copy" ? "Markdown" : "按指令");
+  const duration = videoProject?.duration_seconds
+    ? `${videoProject.duration_seconds}秒`
+    : mp4Artifact?.duration_seconds
+      ? `${mp4Artifact.duration_seconds}秒`
+      : stringValue(intent.duration) || (capability.includes("video") ? "待确认" : `${body.length} 段`);
   const capabilityLabel = stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
   const sections = [
     {
       label: "能力",
       title: capabilityLabel,
-      detail: videoProject ? "已生成可编辑视频工程；成片需用户确认后导出。" : unsupported ? "当前仅生成准备产物，未创建真实渲染任务。" : "已通过后端 LLM 编排生成草稿。",
-      status: videoProject ? "工程已生成" : unsupported ? "未配置adapter" : "已生成"
+      detail: mp4Artifact ? "这是视频工程的一次 MP4 导出结果，原视频工程仍可继续调整。" : videoProject ? "已生成可编辑视频工程；成片需用户确认后导出。" : unsupported ? "当前仅生成准备产物，未创建真实渲染任务。" : "已通过后端 LLM 编排生成草稿。",
+      status: mp4Artifact ? "成片已生成" : videoProject ? "工程已生成" : unsupported ? "未配置adapter" : "已生成"
     },
     {
       label: "来源",
@@ -212,6 +220,20 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       });
     }
   }
+  if (mp4Artifact) {
+    sections.splice(1, 0, {
+      label: "来源工程",
+      title: stringValue(metadata.source_video_project_title) || "视频工程",
+      detail: "MP4 成片是视频工程的一次导出结果，不会覆盖工程本身。",
+      status: stringValue(metadata.latest_render_job_id) || "render job"
+    });
+    sections.splice(2, 0, {
+      label: "播放",
+      title: "MP4 已生成",
+      detail: "播放通过后端认证接口读取，不直接暴露私有存储地址。",
+      status: stringValue(mp4Artifact.mp4_state) || "ready"
+    });
+  }
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
@@ -231,7 +253,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     sourceIds: asset.linked_asset_ids.map((id) => String(id)),
     preview: {
       title: asset.title,
-      subtitle: mp4State === "ready" ? "MP4 已生成，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并按需导出 MP4" : unsupported ? "准备产物，未渲染图片或视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+      subtitle: mp4Artifact ? "MP4 成片已生成，可直接播放" : mp4State === "ready" ? "MP4 已生成，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并按需导出 MP4" : unsupported ? "准备产物，未渲染图片或视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

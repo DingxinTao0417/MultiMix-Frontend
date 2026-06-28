@@ -150,15 +150,16 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
           selected_product_id: selectedProductId
         })
       });
-      const product = contentAssetToProduct(response.product);
-      const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, product);
+      const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
+      const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
+      const product = generatedProduct ?? conversation.product;
       return { conversationId: response.conversation_id, conversation, product };
     },
     async renderVideo(token, backendAssetId) {
       const response = await api<VideoRenderJobCreateResponse>(`/assets/videos/${backendAssetId}/render`, token, {
         method: "POST"
       });
-      return { product: contentAssetToProduct(response.product) };
+      return { product: contentAssetToProduct(response.render_product ?? response.product) };
     },
     async generateVideo(token, topic, opts) {
       const body = {

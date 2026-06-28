@@ -651,7 +651,28 @@ export default function AssetsWorkspaceClient({
                 onSaveProduct={handleSaveProduct}
                 onRenderVideo={async (product) => {
                   if (!token || !product.backendAssetId) return;
-                  await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
+                  const result = await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
+                  setConversations((current) => current.map((conversation) => {
+                    if (conversation.id !== selectedConversation.id) return conversation;
+                    const products = conversation.products ?? [conversation.product];
+                    const nextProducts = products.some((item) => item.id === result.product.id)
+                      ? products.map((item) => item.id === result.product.id ? result.product : item)
+                      : [...products, result.product];
+                    return {
+                      ...conversation,
+                      product: result.product,
+                      products: nextProducts,
+                      status: result.product.status,
+                      canvasTitle: result.product.title,
+                      canvasMeta: `${result.product.status} · ${result.product.ratio}`,
+                      raw: result.product.body?.join("\n\n") ?? result.product.summary,
+                      updatedAt: "刚刚"
+                    };
+                  }));
+                  setSelectedProductIds((current) => ({
+                    ...current,
+                    [selectedConversation.id]: result.product.id
+                  }));
                 }}
                 product={selectedProduct}
                 savedVersion={savedProductIds[selectedProduct.id]}

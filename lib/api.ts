@@ -190,7 +190,7 @@ export type AssetConversationMessageResponse = {
   assistant_message: string;
   intent: Record<string, unknown>;
   suggestions: string[];
-  product: ContentAsset;
+  product: ContentAsset | null;
 };
 
 export type VideoRenderJobCreateResponse = {
@@ -202,6 +202,7 @@ export type VideoRenderJobCreateResponse = {
     mp4_ref: string | null;
   };
   product: ContentAsset;
+  render_product?: ContentAsset | null;
 };
 
 export type AuthResponse = {
