@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import ProductPreview from "./product-preview";
 
@@ -7,6 +8,7 @@ export default function ProductWorkspace({
   copied,
   onCopyProduct,
   onSaveProduct,
+  onRenderVideo,
   product,
   savedVersion,
   selectedConversation
@@ -14,10 +16,12 @@ export default function ProductWorkspace({
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
+  onRenderVideo?: (product: ProductArtifact) => Promise<void>;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
 }) {
+  const [rendering, setRendering] = useState(false);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   // Video products backed by a real orchestration project can open the editor.
@@ -102,6 +106,18 @@ export default function ProductWorkspace({
               >
                 打开剪辑器
               </a>
+            ) : null}
+            {hasVideoProject && onRenderVideo && product.backendAssetId && !((product.metadata as Record<string, unknown>)?.video_project as Record<string, unknown> | undefined)?.mp4_state ? (
+              <button
+                type="button"
+                disabled={rendering}
+                onClick={async () => {
+                  setRendering(true);
+                  try { await onRenderVideo(product); } finally { setRendering(false); }
+                }}
+              >
+                {rendering ? "生成中…" : "生成成片"}
+              </button>
             ) : null}
             <button className="primary" type="button" onClick={() => void onSaveProduct(product)}>
               {savedVersion ? `已保存 ${savedVersion}` : "保存"}

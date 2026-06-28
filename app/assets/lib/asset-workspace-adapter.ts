@@ -42,8 +42,19 @@ export type AssetWorkspaceAdapter = {
     signal?: AbortSignal;
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct }>;
   renderVideo(token: string, backendAssetId: number): Promise<{ product: AssetProduct }>;
+  generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
+  getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">): Promise<LibraryRow[]>;
   uploadAsset(token: string, file: File): Promise<ContentAsset>;
+};
+
+export type VideoJobResult = {
+  id: string;
+  assetId: number;
+  status: string;
+  renderStage: string;
+  errorMessage: string | null;
+  project: Record<string, unknown> | null;
 };
 
 // Map a library view to the backend asset_kind values it should display.
@@ -148,6 +159,23 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         method: "POST"
       });
       return { product: contentAssetToProduct(response.product) };
+    },
+    async generateVideo(token, topic, opts) {
+      const body = {
+        topic,
+        language: opts?.language ?? "zh-CN",
+        layout: opts?.layout ?? "portrait",
+        target_seconds: opts?.targetSeconds ?? 60,
+      };
+      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>("/video/generate", token, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
+    },
+    async getVideoJob(token, jobId) {
+      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
+      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
     },
     async listLibrary(token, view) {
       const kinds = libraryKindsForView(view);

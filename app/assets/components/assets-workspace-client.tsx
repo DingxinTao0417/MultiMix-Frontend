@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { toast } from "sonner";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   FileText,
@@ -139,7 +140,7 @@ export default function AssetsWorkspaceClient({
         if (!cancelled) setConversations(rows);
       })
       .catch(() => {
-        // Keep the static starter conversations if history cannot be loaded.
+        toast.error("无法加载对话历史，显示本地样例数据。");
       });
     return () => {
       cancelled = true;
@@ -281,11 +282,16 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleSaveProduct = async (product: ProductArtifact) => {
-    const result = await assetWorkspaceAdapter.saveProduct(product, token);
-    setSavedProductIds((current) => ({
-      ...current,
-      [product.id]: result.version
-    }));
+    try {
+      const result = await assetWorkspaceAdapter.saveProduct(product, token);
+      setSavedProductIds((current) => ({
+        ...current,
+        [product.id]: result.version
+      }));
+      toast.success("已保存");
+    } catch {
+      toast.error("保存失败，请稍后重试。");
+    }
   };
 
   const handleStartConversation = async () => {
@@ -308,6 +314,7 @@ export default function AssetsWorkspaceClient({
       });
     } catch {
       setSelectedConversationId("new");
+      toast.error("创建对话失败，请稍后重试。");
     } finally {
       setCreatingConversation(false);
     }
@@ -363,7 +370,9 @@ export default function AssetsWorkspaceClient({
       setLibraryRefreshKey((value) => value + 1);
       setActiveView("assets");
     } catch (error) {
-      setUploadError(error instanceof Error ? error.message : "上传失败，请稍后重试。");
+      const msg = error instanceof Error ? error.message : "上传失败，请稍后重试。";
+      setUploadError(msg);
+      toast.error(msg);
     } finally {
       setUploading(false);
       if (uploadInputRef.current) uploadInputRef.current.value = "";
@@ -654,6 +663,10 @@ export default function AssetsWorkspaceClient({
                 copied={copiedProductId === selectedProduct.id}
                 onCopyProduct={handleCopyProduct}
                 onSaveProduct={handleSaveProduct}
+                onRenderVideo={async (product) => {
+                  if (!token || !product.backendAssetId) return;
+                  await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
+                }}
                 product={selectedProduct}
                 savedVersion={savedProductIds[selectedProduct.id]}
                 selectedConversation={selectedConversation}
