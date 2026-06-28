@@ -67,7 +67,6 @@ export default function AssetsWorkspaceClient({
   onLogout
 }: AssetsWorkspaceClientProps) {
   const [conversations, setConversations] = useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations());
-  const [creatingConversation, setCreatingConversation] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("conversation");
   const [selectedConversationId, setSelectedConversationId] = useState(() => resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations()));
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
@@ -114,6 +113,14 @@ export default function AssetsWorkspaceClient({
 
     return () => mediaQuery.removeEventListener("change", syncViewport);
   }, []);
+
+  // Close conversation menu when clicking anywhere outside it.
+  useEffect(() => {
+    if (!conversationMenuId) return;
+    const handleClick = () => setConversationMenuId(null);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [conversationMenuId]);
 
   useEffect(() => {
     const conversationId = resolveInitialConversationId(initialConversationId, conversations);
@@ -294,30 +301,10 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleStartConversation = async () => {
+  const handleStartConversation = () => {
     setActiveView("conversation");
     setConversationMenuId(null);
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      setSelectedConversationId("new");
-      return;
-    }
-    if (creatingConversation) return;
-    setCreatingConversation(true);
-    try {
-      const conversation = await assetWorkspaceAdapter.createConversation(token);
-      setConversations((current) => [conversation, ...current.filter((item) => item.id !== conversation.id)]);
-      setSelectedConversationId(conversation.id);
-      setSelectedProductIds((current) => {
-        const next = { ...current };
-        delete next.new;
-        return next;
-      });
-    } catch {
-      setSelectedConversationId("new");
-      toast.error("创建对话失败，请稍后重试。");
-    } finally {
-      setCreatingConversation(false);
-    }
+    setSelectedConversationId("new");
   };
 
   const handleSendConversationMessage = async (conversation: Conversation, instruction: string, signal?: AbortSignal) => {
@@ -490,7 +477,6 @@ export default function AssetsWorkspaceClient({
         <button
           className={activeView === "conversation" && selectedConversation.id === "new" ? "shadcn-prototype-new-conversation active" : "shadcn-prototype-new-conversation"}
           type="button"
-          disabled={creatingConversation}
           onClick={() => {
             void handleStartConversation();
           }}

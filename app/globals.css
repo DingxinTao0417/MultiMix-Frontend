@@ -466,6 +466,10 @@ button:disabled {
     transform 160ms ease;
 }
 
+.shadcn-prototype-conversation-row:has(.shadcn-prototype-conversation-menu) {
+  z-index: 10;
+}
+
 .shadcn-prototype-conversation-row:hover,
 .shadcn-prototype-conversation-row:focus-within {
   transform: translateX(2px);
@@ -552,7 +556,7 @@ button:disabled {
   position: absolute;
   top: 31px;
   right: 4px;
-  z-index: 4;
+  z-index: 50;
   display: grid;
   min-width: 116px;
   gap: 2px;
