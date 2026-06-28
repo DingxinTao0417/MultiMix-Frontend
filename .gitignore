@@ -1,0 +1,19 @@
+.next/
+node_modules/
+out/
+tsconfig.tsbuildinfo
+.env.local
+
+# Runtime local databases are generated from db/schema.sql and scripts/db-init.ts.
+db/local/*
+!db/local/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# Local logs and OS files.
+*.log
+.DS_Store
+Thumbs.db
+
+.playwright-mcp
