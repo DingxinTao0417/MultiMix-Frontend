@@ -48,8 +48,7 @@ export interface GenerateRequest {
 
 // Backend base URL. In MultiMix this is the unified backend; the editor loads a
 // pre-built project (from /v1/video/generate) rather than generating here.
-export const API_BASE =
-  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_BASE_URL) || "http://127.0.0.1:8199";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8199";
 const WS_BASE = API_BASE.replace(/^http/, "ws");
 
 export async function generateProject(req: GenerateRequest): Promise<TimelineProject> {

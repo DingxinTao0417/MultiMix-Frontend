@@ -25,7 +25,12 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
   if (data.status !== "completed" || !data.project) {
     throw new Error(`项目尚未就绪（${data.status} / ${data.render_stage}）`);
   }
-  return data.project as BackendProject;
+  const raw = data.project;
+  // ChangeIn format: video_project.timeline has the BackendProject shape.
+  // video_orchestration format: the project itself IS the BackendProject.
+  if (raw.tracks) return raw as BackendProject;
+  if (raw.timeline && raw.timeline.tracks) return raw.timeline as BackendProject;
+  throw new Error("项目格式不兼容（缺少 tracks）");
 }
 
 export default function EditorView({ jobId, assetId, token }: { jobId: string | null; assetId: string | null; token: string | null }) {
@@ -58,6 +63,7 @@ export default function EditorView({ jobId, assetId, token }: { jobId: string | 
       : assetId
         ? `/v1/video/projects/${encodeURIComponent(assetId)}`
         : null;
+    console.log("[Editor] load:", { jobId, assetId, token: token ? "set" : "null", endpoint, API_BASE });
     if (!endpoint) {
       setState("error");
       setError("缺少项目 ID。请从对话中生成视频后再打开剪辑器。");
