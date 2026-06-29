@@ -176,6 +176,36 @@ export default function AssetsWorkspaceClient({
     };
   }, [token]);
 
+  // Poll the orchestration job while a selected video product is still building
+  // (path A runs TTS + material search async). When the job finishes, reload
+  // conversations so the product picks up its editable video_project.
+  useEffect(() => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    const metadata = selectedProduct?.metadata as Record<string, unknown> | undefined;
+    const jobId = metadata?.latest_job_public_id;
+    const pending = Boolean(metadata?.orchestration_pending && !metadata?.video_project && typeof jobId === "string");
+    if (!pending || typeof jobId !== "string") return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const job = await assetWorkspaceAdapter.getVideoJob(token, jobId);
+        if (cancelled) return;
+        if (job.status === "completed" || job.status === "ready" || job.status === "failed") {
+          clearInterval(timer);
+          const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
+          if (!cancelled) setConversations(rows);
+          if (job.status === "failed") toast.error("视频生成失败，请重试或调整指令。");
+        }
+      } catch {
+        // transient poll error; keep trying until cleared
+      }
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [token, selectedProduct]);
+
   const startDividerResize = (clientX: number) => {
     if (isDividerDraggingRef.current) return;
 
@@ -759,31 +789,6 @@ export default function AssetsWorkspaceClient({
                   copied={copiedProductId === selectedProduct.id}
                   onCopyProduct={handleCopyProduct}
                   onSaveProduct={handleSaveProduct}
-                  onRenderVideo={async (product) => {
-                    if (!token || !product.backendAssetId) return;
-                    const result = await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
-                    setConversations((current) => current.map((conversation) => {
-                      if (conversation.id !== selectedConversation.id) return conversation;
-                      const products = conversation.products ?? [conversation.product];
-                      const nextProducts = products.some((item) => item.id === result.product.id)
-                        ? products.map((item) => item.id === result.product.id ? result.product : item)
-                        : [...products, result.product];
-                      return {
-                        ...conversation,
-                        product: result.product,
-                        products: nextProducts,
-                        status: result.product.status,
-                        canvasTitle: result.product.title,
-                        canvasMeta: `${result.product.status} · ${result.product.ratio}`,
-                        raw: result.product.body?.join("\n\n") ?? result.product.summary,
-                        updatedAt: "刚刚"
-                      };
-                    }));
-                    setSelectedProductIds((current) => ({
-                      ...current,
-                      [selectedConversation.id]: result.product.id
-                    }));
-                  }}
                   onProductUpdated={(updatedProduct) => {
                     setConversations((current) => current.map((conversation) => {
                       if (conversation.id !== selectedConversation.id) return conversation;

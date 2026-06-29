@@ -6,8 +6,7 @@ import {
   isApiConfigured,
   type AssetConversationMessageResponse,
   type AssetConversationResponse,
-  type ContentAsset,
-  type VideoRenderJobCreateResponse
+  type ContentAsset
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
 
@@ -50,7 +49,6 @@ export type AssetWorkspaceAdapter = {
     selectedProductId?: number;
     signal?: AbortSignal;
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null }>;
-  renderVideo(token: string, backendAssetId: number): Promise<{ product: AssetProduct }>;
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">): Promise<LibraryRow[]>;
@@ -236,12 +234,6 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
       const product = generatedProduct ?? null;
       return { conversationId: response.conversation_id, conversation, product };
-    },
-    async renderVideo(token, backendAssetId) {
-      const response = await api<VideoRenderJobCreateResponse>(`/assets/videos/${backendAssetId}/render`, token, {
-        method: "POST"
-      });
-      return { product: contentAssetToProduct(response.render_product ?? response.product) };
     },
     async generateVideo(token, topic, opts) {
       const body = {

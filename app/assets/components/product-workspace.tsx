@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import ProductPreview from "./product-preview";
 import VideoProjectWorkspace from "./video-project-workspace";
@@ -32,7 +31,6 @@ export default function ProductWorkspace({
   copied,
   onCopyProduct,
   onSaveProduct,
-  onRenderVideo,
   onProductUpdated,
   product,
   savedVersion,
@@ -42,23 +40,30 @@ export default function ProductWorkspace({
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
-  onRenderVideo?: (product: ProductArtifact) => Promise<void>;
   onProductUpdated?: (product: ProductArtifact) => void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
   token?: string | null;
 }) {
-  const [rendering, setRendering] = useState(false);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   // Video products backed by a real orchestration project can open the editor.
-  const videoProject = product.metadata && typeof product.metadata === "object"
-    ? (product.metadata as Record<string, unknown>).video_project as Record<string, unknown> | undefined
-    : undefined;
-  const mp4State = typeof videoProject?.mp4_state === "string" ? videoProject.mp4_state : "";
-  const hasVideoProject = Boolean(product.backendAssetId && videoProject);
-  const canRequestRender = hasVideoProject && onRenderVideo && product.backendAssetId && !["ready", "running"].includes(mp4State);
+  const hasVideoProject = Boolean(
+    product.backendAssetId &&
+    product.metadata &&
+    typeof product.metadata === "object" &&
+    (product.metadata as Record<string, unknown>).video_project
+  );
+  // While the orchestration job runs (TTS + material search), there is no
+  // editable project yet; surface a pending hint instead of the editor link.
+  const orchestrationPending = Boolean(
+    product.backendAssetId &&
+    !hasVideoProject &&
+    product.metadata &&
+    typeof product.metadata === "object" &&
+    (product.metadata as Record<string, unknown>).orchestration_pending
+  );
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
@@ -135,17 +140,10 @@ export default function ProductWorkspace({
                 打开剪辑器
               </a>
             ) : null}
-            {canRequestRender ? (
-              <button
-                type="button"
-                disabled={rendering}
-                onClick={async () => {
-                  setRendering(true);
-                  try { await onRenderVideo(product); } finally { setRendering(false); }
-                }}
-              >
-                {rendering ? "生成中…" : "生成成片"}
-              </button>
+            {orchestrationPending ? (
+              <span className="shadcn-prototype-product-pending" aria-live="polite">
+                生成中…
+              </span>
             ) : null}
             <button className="primary" type="button" onClick={() => void onSaveProduct(product)}>
               {savedVersion ? `已保存 ${savedVersion}` : "保存"}

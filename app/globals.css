@@ -1540,6 +1540,18 @@ button:disabled {
   transform: translateY(-1px);
 }
 
+.shadcn-prototype-product-pending {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #71717a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .shadcn-prototype-product-actions button.primary {
   border-color: #18181b;
   background: #18181b;
