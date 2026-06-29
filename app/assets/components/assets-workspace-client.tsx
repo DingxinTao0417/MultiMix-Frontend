@@ -784,9 +784,28 @@ export default function AssetsWorkspaceClient({
                       [selectedConversation.id]: result.product.id
                     }));
                   }}
+                  onProductUpdated={(updatedProduct) => {
+                    setConversations((current) => current.map((conversation) => {
+                      if (conversation.id !== selectedConversation.id) return conversation;
+                      const products = conversation.products ?? [conversation.product];
+                      const nextProducts = products.some((item) => item.id === updatedProduct.id)
+                        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
+                        : [...products, updatedProduct];
+                      return {
+                        ...conversation,
+                        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
+                        products: nextProducts,
+                        canvasTitle: updatedProduct.title,
+                        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
+                        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
+                        updatedAt: "刚刚"
+                      };
+                    }));
+                  }}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
+                  token={token}
                 />
               ) : (
                 <EmptyProductWorkspace />

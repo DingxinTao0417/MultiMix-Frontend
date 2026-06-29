@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import ProductPreview from "./product-preview";
+import VideoProjectWorkspace from "./video-project-workspace";
 
 export function EmptyProductWorkspace() {
   return (
@@ -32,17 +33,21 @@ export default function ProductWorkspace({
   onCopyProduct,
   onSaveProduct,
   onRenderVideo,
+  onProductUpdated,
   product,
   savedVersion,
-  selectedConversation
+  selectedConversation,
+  token
 }: {
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
   onRenderVideo?: (product: ProductArtifact) => Promise<void>;
+  onProductUpdated?: (product: ProductArtifact) => void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
+  token?: string | null;
 }) {
   const [rendering, setRendering] = useState(false);
   const modeLabel = getProductModeLabel(product.mode);
@@ -62,7 +67,7 @@ export default function ProductWorkspace({
 
   return (
     <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Current product workspace">
-      <div className="shadcn-prototype-product">
+      <div className={hasVideoProject ? "shadcn-prototype-product video-project-mode" : "shadcn-prototype-product"}>
         <header className="shadcn-prototype-product-header">
           <div>
             <h3>{product.title}</h3>
@@ -148,13 +153,17 @@ export default function ProductWorkspace({
           </div>
         </header>
 
-        <div className="shadcn-prototype-product-main">
-          <div className={previewClassName}>
-            <ProductPreview product={product} />
+        {hasVideoProject ? (
+          <VideoProjectWorkspace product={product} token={token} onProjectUpdated={onProductUpdated} />
+        ) : (
+          <div className="shadcn-prototype-product-main">
+            <div className={previewClassName}>
+              <ProductPreview product={product} />
+            </div>
           </div>
-        </div>
+        )}
 
-        {product.timeline.length > 0 ? (
+        {!hasVideoProject && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}

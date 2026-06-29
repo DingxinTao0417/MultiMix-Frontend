@@ -17,6 +17,24 @@ type LocalUser = {
   token?: string | null;
 };
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error("auth_init_timeout"));
+    }, timeoutMs);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 export default function MultiMixApp({ basePath }: { basePath: string }) {
   return (
     <Suspense fallback={<MultiMixLoading />}>
@@ -122,7 +140,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
 
     if (isApiConfigured) {
       void import("../lib/api")
-        .then(({ authLocalDevAdmin }) => authLocalDevAdmin())
+        .then(({ authLocalDevAdmin }) => withTimeout(authLocalDevAdmin(), AUTH_INIT_TIMEOUT_MS))
         .then((response) => {
           if (cancelled) return;
           if (response.access_token) {
