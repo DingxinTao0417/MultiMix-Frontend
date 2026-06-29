@@ -205,6 +205,17 @@ export type VideoRenderJobCreateResponse = {
   render_product?: ContentAsset | null;
 };
 
+export type AssetLlmDiagnosticsRead = {
+  configured: boolean;
+  provider: string;
+  model: string | null;
+  timeout_seconds: number;
+  max_input_chars: number;
+  probe_requested: boolean;
+  probe_ok: boolean | null;
+  probe_error: string | null;
+};
+
 export type AuthResponse = {
   access_token: string | null;
   token_type: string;
@@ -232,6 +243,10 @@ export async function authLocalDevAdmin(): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/local-dev-admin", null);
 }
 
+export async function getAssetLlmDiagnostics(token: string, probe = true): Promise<AssetLlmDiagnosticsRead> {
+  return api<AssetLlmDiagnosticsRead>(`/assets/llm/diagnostics?probe=${probe ? "true" : "false"}`, token);
+}
+
 // Turn an arbitrary send/generation error into a user-facing Chinese message.
 export function formatComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";
@@ -240,6 +255,9 @@ export function formatComposerError(error: unknown): string {
   if (/[一-鿿]/.test(message)) return message;
 
   const lower = message.toLowerCase();
+  if (lower.includes("quota exceeded") || lower.includes("payment required")) {
+    return "本月生成额度已用完，请升级配额或下月再试。";
+  }
   if (lower.includes("database request failed") || lower.includes("internal server error")) {
     return "对话保存或生成失败，请稍后重试。";
   }

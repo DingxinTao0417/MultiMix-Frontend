@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   FileText,
+  Gauge,
   GripVertical,
   House,
   Image as ImageIcon,
@@ -20,6 +21,7 @@ import {
   Upload,
   Video
 } from "lucide-react";
+import { getAssetLlmDiagnostics, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import {
   resolveConversationProduct,
@@ -33,6 +35,12 @@ import ProductWorkspace, { EmptyProductWorkspace } from "./product-workspace";
 import LibraryWorkshop from "./library-workshop";
 
 type SidebarState = "auto" | "collapsed" | "expanded";
+type DiagnosticsState = {
+  open: boolean;
+  loading: boolean;
+  data: AssetLlmDiagnosticsRead | null;
+  error: string | null;
+};
 
 type AssetsWorkspaceClientProps = {
   initialConversationId?: string;
@@ -94,6 +102,12 @@ export default function AssetsWorkspaceClient({
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
+    open: false,
+    loading: false,
+    data: null,
+    error: null
+  });
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const visibleConversationRows = conversations
     .filter((conversation) => !hiddenConversationIds.includes(conversation.id))
@@ -381,6 +395,24 @@ export default function AssetsWorkspaceClient({
     }
   };
 
+  const handleToggleDiagnostics = async () => {
+    if (diagnostics.open) {
+      setDiagnostics((current) => ({ ...current, open: false }));
+      return;
+    }
+    setDiagnostics((current) => ({ ...current, open: true, loading: true, error: null }));
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      setDiagnostics({ open: true, loading: false, data: null, error: "后端未连接" });
+      return;
+    }
+    try {
+      const data = await getAssetLlmDiagnostics(token, true);
+      setDiagnostics({ open: true, loading: false, data, error: null });
+    } catch {
+      setDiagnostics({ open: true, loading: false, data: null, error: "诊断失败" });
+    }
+  };
+
   const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
 
   const shellClassName = [
@@ -608,6 +640,55 @@ export default function AssetsWorkspaceClient({
             {activeDescription ? <span>{activeDescription}</span> : null}
           </div>
           <div className="shadcn-prototype-actions">
+            <div className="shadcn-prototype-diagnostics">
+              <button
+                type="button"
+                aria-expanded={diagnostics.open}
+                aria-controls="llm-diagnostics-panel"
+                onClick={() => {
+                  void handleToggleDiagnostics();
+                }}
+              >
+                <Gauge size={15} aria-hidden="true" />
+                诊断
+              </button>
+              {diagnostics.open ? (
+                <aside id="llm-diagnostics-panel" className="shadcn-prototype-diagnostics-panel" aria-label="LLM 诊断">
+                  <header>
+                    <span>LLM 诊断</span>
+                    <strong>
+                      {diagnostics.loading
+                        ? "检测中"
+                        : diagnostics.data?.configured
+                          ? "已配置"
+                          : "未配置"}
+                    </strong>
+                  </header>
+                  {diagnostics.error ? <p role="alert">{diagnostics.error}</p> : null}
+                  {diagnostics.data ? (
+                    <dl>
+                      <div>
+                        <dt>Provider</dt>
+                        <dd>{diagnostics.data.provider}</dd>
+                      </div>
+                      <div>
+                        <dt>Model</dt>
+                        <dd>{diagnostics.data.model ?? "未设置"}</dd>
+                      </div>
+                      <div>
+                        <dt>Probe</dt>
+                        <dd>{diagnostics.data.probe_ok === true ? "正常" : diagnostics.data.probe_ok === false ? "失败" : "未执行"}</dd>
+                      </div>
+                      <div>
+                        <dt>Timeout</dt>
+                        <dd>{diagnostics.data.timeout_seconds}s</dd>
+                      </div>
+                    </dl>
+                  ) : null}
+                  {diagnostics.data?.probe_error ? <p role="status">{diagnostics.data.probe_error}</p> : null}
+                </aside>
+              ) : null}
+            </div>
             {activeView !== "conversation" ? (
               <>
                 <input

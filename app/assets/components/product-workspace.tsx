@@ -48,12 +48,12 @@ export default function ProductWorkspace({
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   // Video products backed by a real orchestration project can open the editor.
-  const hasVideoProject = Boolean(
-    product.backendAssetId &&
-    product.metadata &&
-    typeof product.metadata === "object" &&
-    (product.metadata as Record<string, unknown>).video_project
-  );
+  const videoProject = product.metadata && typeof product.metadata === "object"
+    ? (product.metadata as Record<string, unknown>).video_project as Record<string, unknown> | undefined
+    : undefined;
+  const mp4State = typeof videoProject?.mp4_state === "string" ? videoProject.mp4_state : "";
+  const hasVideoProject = Boolean(product.backendAssetId && videoProject);
+  const canRequestRender = hasVideoProject && onRenderVideo && product.backendAssetId && !["ready", "running"].includes(mp4State);
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
@@ -130,7 +130,7 @@ export default function ProductWorkspace({
                 打开剪辑器
               </a>
             ) : null}
-            {hasVideoProject && onRenderVideo && product.backendAssetId && !((product.metadata as Record<string, unknown>)?.video_project as Record<string, unknown> | undefined)?.mp4_state ? (
+            {canRequestRender ? (
               <button
                 type="button"
                 disabled={rendering}

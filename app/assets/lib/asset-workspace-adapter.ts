@@ -126,6 +126,19 @@ function statusLabel(status: string): string {
   return status;
 }
 
+function videoProjectStatusLabel(asset: ContentAsset): string | null {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const videoProject = metadata.video_project && typeof metadata.video_project === "object"
+    ? metadata.video_project as Record<string, unknown>
+    : null;
+  const mp4State = typeof videoProject?.mp4_state === "string" ? videoProject.mp4_state : "";
+  if (mp4State === "ready") return "MP4已生成";
+  if (mp4State === "running") return "成片生成中";
+  if (mp4State === "failed") return "成片失败";
+  if (videoProject) return "待生成成片";
+  return null;
+}
+
 function inferLibraryCategory(asset: ContentAsset): string {
   const text = `${asset.content_type} ${asset.title} ${asset.body ?? ""}`.toLowerCase();
   if (asset.asset_kind === "asset") return inferAssetSourceCategory(asset);
@@ -141,6 +154,7 @@ function inferLibraryCategory(asset: ContentAsset): string {
     return "素材图";
   }
   if (asset.asset_kind === "video" || asset.asset_kind === "video_render") {
+    if (asset.content_type === "video_render") return "视频工程";
     if (asset.content_type === "digital_human_video" || /数字人|avatar|talking head/i.test(text)) return "数字人视频";
     if (asset.content_type === "mg_animation_video" || /mg|动画|motion/.test(text)) return "MG动画视频";
     if (asset.content_type === "real_scene_video" || /实景|拍摄|真人|出镜/.test(text)) return "实景拍摄视频";
@@ -251,19 +265,23 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       const rows = await api<ContentAsset[]>("/assets", token);
       return rows
         .filter((asset) => kinds.includes(asset.asset_kind))
-        .map((asset) => ({
-          title: asset.title,
-          meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${statusLabel(asset.status)}` : `${inferLibraryCategory(asset)} · ${asset.status}`,
-          note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
-          kind: libraryRowKind(asset),
-          category: inferLibraryCategory(asset),
-          keywords: inferKeywords(asset),
-          body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
-          contentType: contentTypeLabel(asset),
-          statusLabel: statusLabel(asset.status),
-          sourceLabel: asset.source_filename ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
-          variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
-        }));
+        .map((asset) => {
+          const category = inferLibraryCategory(asset);
+          const status = videoProjectStatusLabel(asset) ?? statusLabel(asset.status);
+          return {
+            title: asset.title,
+            meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
+            note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
+            kind: libraryRowKind(asset),
+            category,
+            keywords: inferKeywords(asset),
+            body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
+            contentType: contentTypeLabel(asset),
+            statusLabel: status,
+            sourceLabel: asset.source_filename ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
+            variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
+          };
+        });
     },
     async uploadAsset(token, file, view) {
       const formData = new FormData();

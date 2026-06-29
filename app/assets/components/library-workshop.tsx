@@ -9,7 +9,7 @@ const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀"],
   copy: ["全部", "选题方案", "文案稿", "配音稿", "编导稿"],
   image: ["全部", "封面图", "素材图", "分镜图"],
-  video: ["全部", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
+  video: ["全部", "视频工程", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
 };
 
 const SEARCH_PLACEHOLDER: Record<Exclude<ActiveView, "conversation">, string> = {
@@ -57,7 +57,9 @@ function isDigitalHuman(row: LibraryRow) {
 }
 
 function displayMeta(row: LibraryRow, currentView: Exclude<ActiveView, "conversation">) {
-  if (currentView !== "assets" && row.category) return row.category;
+  if (currentView !== "assets" && row.category) {
+    return row.statusLabel ? `${row.category} · ${row.statusLabel}` : row.category;
+  }
   if (currentView === "assets" && row.category) {
     const detail = [row.contentType, row.statusLabel].filter(Boolean).join(" · ");
     return detail ? `${row.category} · ${detail}` : row.category;
