@@ -9,7 +9,7 @@ npm install
 npm run setup:demo
 npm run dev -- --hostname 127.0.0.1 --port 3200
 ```
-
+ 
 Open:
 
 - `http://127.0.0.1:3200/`
