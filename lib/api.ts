@@ -228,6 +228,10 @@ export async function authRegister(email: string, password: string): Promise<Aut
   });
 }
 
+export async function authLocalDevAdmin(): Promise<AuthResponse> {
+  return api<AuthResponse>("/auth/local-dev-admin", null);
+}
+
 // Turn an arbitrary send/generation error into a user-facing Chinese message.
 export function formatComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";

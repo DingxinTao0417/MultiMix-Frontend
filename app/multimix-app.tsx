@@ -73,24 +73,54 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
     if (stored) {
       try {
         const parsed = JSON.parse(stored) as LocalUser;
-        if (!parsed.email || parsed.email === "pilot@multimix.local") {
-          window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
-          setUser(DEFAULT_LOCAL_USER);
-        } else {
-          setUser(parsed);
+        if (parsed.token || !isApiConfigured) {
+          if (!parsed.email || parsed.email === "pilot@multimix.local") {
+            window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
+            setUser(DEFAULT_LOCAL_USER);
+          } else {
+            setUser(parsed);
+          }
+          setReady(true);
+          return;
         }
+        window.localStorage.removeItem(LOCAL_USER_KEY);
       } catch {
         window.localStorage.removeItem(LOCAL_USER_KEY);
-        window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
-        setUser(DEFAULT_LOCAL_USER);
+        if (!isApiConfigured) {
+          window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
+          setUser(DEFAULT_LOCAL_USER);
+          setReady(true);
+          return;
+        }
       }
-    } else if (isApiConfigured) {
-      setUser(null);
-    } else {
+    }
+
+    if (isApiConfigured) {
+      void import("../lib/api")
+        .then(({ authLocalDevAdmin }) => authLocalDevAdmin())
+        .then((response) => {
+          if (response.access_token) {
+            const nextUser = { email: response.email ?? "local@admin", token: response.access_token };
+            window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
+            setUser(nextUser);
+          } else {
+            setUser(null);
+          }
+        })
+        .catch(() => {
+          setUser(null);
+        })
+        .finally(() => {
+          setReady(true);
+        });
+      return;
+    }
+
+    {
       window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
       setUser(DEFAULT_LOCAL_USER);
+      setReady(true);
     }
-    setReady(true);
   }, []);
 
   if (!ready) return <MultiMixLoading />;

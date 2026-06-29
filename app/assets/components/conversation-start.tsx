@@ -59,15 +59,14 @@ export default function ConversationStart({
   const canSend = Boolean(onSend) && !sending;
 
   return (
-    <section className="shadcn-prototype-start" aria-label="新建创作">
+    <section className="shadcn-prototype-start" aria-label="新建对话">
       <div className="shadcn-prototype-start-inner">
-        <h1>开始创作</h1>
-        <p>告诉我你要生成什么，我会先确认产物类型和关键参数，再在右侧展示结果。</p>
+        <h1>新建对话</h1>
         <div className="shadcn-prototype-start-composer">
           <textarea
             ref={composerRef}
-            aria-label="输入创作指令"
-            placeholder="输入内容目标、渠道、视频规格或成片指令"
+            aria-label="输入对话内容"
+            placeholder="输入创作需求，或整理资料内容"
             rows={1}
             value={composerValue}
             disabled={!onSend}

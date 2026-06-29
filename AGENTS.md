@@ -6,7 +6,7 @@
 
 MultiMix 是一个内容生成工作台（content generation workspace）原型，用对话驱动生成文案、图片、视频、音频、数字人口播等产物。当前为**前端优先 + 本地 mock 数据**阶段，真实后端通过 adapter 层在未来接入，不应为后端实现重写 UI。
 
-完整产品定位、交互规则和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`，改动前应先对照该文档。
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉或检索相关能力前，必须先对照该文档，不要重新发明分类体系。
 
 ## 技术栈
 
@@ -48,7 +48,7 @@ app/
       conversation-studio.tsx       # 对话区：消息流、产物卡列表、输入框
       product-workspace.tsx         # 展示区容器：标题、详情抽屉、操作按钮、时间轴
       product-preview.tsx           # 按 product.mode 分发的预览（copy/image/audio/digital-human/video）
-      library-workshop.tsx          # 资产库/文案库/视频库视图
+      library-workshop.tsx          # 资产库/文案库/图片库/视频库视图
     lib/                            # 数据 + 逻辑层（新增数据/adapter/helper 放这里）
       asset-workspace-types.ts      # 所有数据类型定义（AssetProduct/AssetConversation/...）
       asset-workspace-mock-data.ts  # mock 源数据（对话、产物、来源、workshop）
@@ -79,6 +79,14 @@ scripts/
 ### UI 关键约定（来自设计文档）
 
 对话决定产物类型；展示区只显示当前选中的单个产物，**不加一级产物类型 Tab**；产物切换靠对话流里的产物卡；详情走右侧抽屉；下一步建议放在助手回复里。数字人是视频的一种表现形式，不是一级产物类型。
+
+资源库分类以设计文档为准：
+
+- 资产库按来源分类：`上传资料`、`采集资料`、`对话沉淀`。不显示用途标签；内容类型、检索关键词、解析和索引状态放在详情层或检索层。
+- 文案库分类固定为：`选题方案`、`文案稿`、`配音稿`、`编导稿`。
+- 图片库分类固定为：`封面图`、`素材图`、`分镜图`。
+- 视频库分类固定为：`混剪视频`、`数字人视频`、`MG动画视频`、`实景拍摄视频`、`生成视频素材`。
+- 文案库、图片库和视频库列表只显示一个正式分类，不显示额外版本、状态或关键词标签。点击条目从右侧抽屉打开详情；数字人视频详情只展示口播文稿，不展示分镜部分。
 
 ## 数据边界（严格遵守）
 

@@ -4,16 +4,52 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
   assets: {
     kicker: "Asset workshop",
     title: "资产库",
-    description: "沉淀来源素材、上传文件和 Reader Markdown，作为后续内容生成的证据基础。",
+    description: "沉淀上传资料、采集资料和对话沉淀，作为后续内容生成与检索的证据基础。",
     metrics: [
-      { value: "8", label: "素材", detail: "Markdown / PDF / Office" },
-      { value: "3", label: "已关联", detail: "本周创作引用" },
-      { value: "1", label: "处理中", detail: "等待转换完成" }
+      { value: "8", label: "上传资料", detail: "PDF / Office / 媒体" },
+      { value: "5", label: "采集资料", detail: "网页 / 链接 / Markdown" },
+      { value: "3", label: "对话沉淀", detail: "品牌 / 卖点 / 偏好" }
     ],
     rows: [
-      { title: "市场规则变化素材包", meta: "知识素材 · 成功", note: "来自平台公告与公开政策页面，可生成 LinkedIn 文案和销售话术。", kind: "file" },
-      { title: "6月平台政策摘录", meta: "知识素材 · 成功", note: "按规则、支付、物流和售后体验整理为月度素材。", kind: "file" },
-      { title: "LinkedIn买家洞察", meta: "内容方案 · 草稿", note: "可继续沉淀为客户沟通角度。", kind: "copy" }
+      {
+        title: "市场规则变化素材包",
+        meta: "网页 · 已入库",
+        note: "来自平台公告与公开政策页面，可生成 LinkedIn 文案和销售话术。",
+        kind: "file",
+        category: "采集资料",
+        contentType: "网页",
+        statusLabel: "已入库",
+        sourceLabel: "平台公告 / 公开政策页面",
+        keywords: ["平台规则", "税费透明", "跨境电商", "买家体验"],
+        body: ["平台公告和公开政策页面已解析为可检索资料。", "主要内容包括税费透明、支付体验、物流和售后规则变化。"],
+        detailLabel: "内容摘要"
+      },
+      {
+        title: "6月平台政策摘录",
+        meta: "PDF · 已入库",
+        note: "按规则、支付、物流和售后体验整理为月度素材。",
+        kind: "file",
+        category: "上传资料",
+        contentType: "PDF",
+        statusLabel: "已入库",
+        sourceLabel: "6月平台政策摘录.pdf",
+        keywords: ["月度政策", "支付", "物流", "售后体验"],
+        body: ["用户上传的政策摘录已完成解析和切片。", "后续创作可以按规则、支付、物流和售后体验检索引用。"],
+        detailLabel: "内容摘要"
+      },
+      {
+        title: "LinkedIn买家洞察",
+        meta: "对话记录 · 已沉淀",
+        note: "从历史对话中沉淀出的客户沟通角度和买家关注点。",
+        kind: "file",
+        category: "对话沉淀",
+        contentType: "对话记录",
+        statusLabel: "已沉淀",
+        sourceLabel: "历史创作对话",
+        keywords: ["LinkedIn", "买家洞察", "沟通角度", "销售邮件"],
+        body: ["对话中沉淀了买家对税费、交付确定性和售后摩擦的关注点。", "这些信息可用于后续生成销售邮件、LinkedIn 帖文和短视频选题。"],
+        detailLabel: "沉淀内容"
+      }
     ]
   },
   copy: {
@@ -26,28 +62,170 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
       { value: "12", label: "有来源", detail: "关联资产证据" }
     ],
     rows: [
-      { title: "独立站税费透明 LinkedIn 帖文", meta: "发帖文案 · v2", note: "强调 checkout 体验和 landed cost 透明。", kind: "copy" },
-      { title: "外贸运营月度选题包", meta: "内容方案 · 草稿", note: "用于拆分周更内容和销售邮件开场。", kind: "copy" },
-      { title: "60 秒规则变化口播稿", meta: "短视频口播稿 · v1", note: "开场、证据、判断、收束结构已完成。", kind: "video" },
-      { title: "客户品牌约束文案", meta: "品牌上下文 · v1", note: "客户行业、语气和禁用词已应用。", kind: "copy" },
-      { title: "素材冲突确认卡", meta: "待确认 · 冲突", note: "两个来源适用范围不一致，等待用户选择。", kind: "copy" }
+      {
+        title: "独立站税费透明 LinkedIn 帖文",
+        meta: "发帖文案 · v2",
+        note: "强调 checkout 体验和 landed cost 透明。",
+        kind: "copy",
+        category: "文案稿",
+        keywords: ["LinkedIn", "税费透明", "独立站", "获客"],
+        body: [
+          "Many cross-border DTC teams still treat duties and import taxes as a back-office compliance detail.",
+          "But the buyer experience is changing. When landed cost is unclear at checkout, buyers hesitate and support teams get more questions.",
+          "A useful next step: check whether your store shows duties and import taxes clearly for key destination markets."
+        ],
+        format: "LinkedIn 帖文"
+      },
+      {
+        title: "外贸运营月度选题包",
+        meta: "内容方案 · 草稿",
+        note: "用于拆分周更内容和销售邮件开场。",
+        kind: "copy",
+        category: "选题方案",
+        keywords: ["选题", "外贸运营", "月度内容", "销售邮件"],
+        body: ["本月内容主线围绕平台规则变化、买家信任、结账体验和售后摩擦展开。", "每个主题可以拆成一篇长文、一条短视频口播和一个销售邮件开场。"],
+        format: "内容方案"
+      },
+      {
+        title: "60 秒规则变化口播稿",
+        meta: "短视频口播稿 · v1",
+        note: "开场、证据、判断、收束结构已完成。",
+        kind: "copy",
+        category: "配音稿",
+        keywords: ["口播", "60秒", "规则变化", "短视频"],
+        body: ["如果你做跨境独立站，最近要重点看一个变化：税费信息正在从后台合规问题，变成用户结账体验的一部分。", "用户在付款前看不清 landed cost，就会犹豫、咨询，甚至在签收后产生退货摩擦。", "所以这周可以先检查三个位置：商品页、购物车和 checkout 页面。"],
+        format: "口播稿"
+      },
+      {
+        title: "客户品牌约束文案",
+        meta: "品牌上下文 · v1",
+        note: "客户行业、语气和禁用词已应用。",
+        kind: "copy",
+        category: "文案稿",
+        keywords: ["品牌约束", "语气", "禁用词", "客户资料"],
+        body: ["语气保持专业、直接、可信，不使用夸张承诺。", "避免使用 lowest price、guaranteed growth 等绝对化表达。"],
+        format: "品牌上下文"
+      },
+      {
+        title: "产品种草视频编导稿",
+        meta: "编导稿 · v1",
+        note: "包含镜头、画面、字幕、节奏和素材要求。",
+        kind: "copy",
+        category: "编导稿",
+        keywords: ["编导", "镜头", "字幕", "素材要求"],
+        body: ["镜头 1：产品特写，字幕突出核心卖点。", "镜头 2：使用场景展示，配合旁白说明用户痛点。", "镜头 3：对比前后效果，结尾给出行动引导。"],
+        format: "编导稿"
+      }
+    ]
+  },
+  image: {
+    kicker: "Image workshop",
+    title: "图片库",
+    description: "管理封面图、商品图、配图和图片生成提示词，保留来源和比例参数。",
+    metrics: [
+      { value: "6", label: "图片资产", detail: "封面 / 商品图 / 配图" },
+      { value: "4", label: "可复用", detail: "已关联内容链路" },
+      { value: "2", label: "待确认", detail: "比例 / 主体 / 风格" }
+    ],
+    rows: [
+      {
+        title: "4:5 LinkedIn 封面图",
+        meta: "封面图 · 草稿",
+        note: "税费透明主题，白色商务风格，可继续调整比例和标题。",
+        kind: "image",
+        category: "封面图",
+        keywords: ["封面图", "LinkedIn", "4:5", "商务风"],
+        body: ["主体：结账页面和税费说明卡片。", "风格：白底、清晰标题、轻量商务质感。"],
+        format: "4:5"
+      },
+      {
+        title: "产品主图参考",
+        meta: "商品图 · 已上传",
+        note: "用于后续生成产品种草文案和视频分镜。",
+        kind: "image",
+        category: "素材图",
+        keywords: ["产品图", "主图", "种草", "参考素材"],
+        body: ["主体清晰，适合作为产品介绍、封面和短视频首帧参考。"],
+        format: "1:1"
+      },
+      {
+        title: "短视频封面提示词",
+        meta: "图片提示词 · v1",
+        note: "保留画面主体、标题层级和负向约束。",
+        kind: "image",
+        category: "分镜图",
+        keywords: ["封面", "提示词", "短视频", "标题层级"],
+        body: ["画面主体：跨境卖家查看 checkout 页面。", "标题层级：主标题 8 字以内，副标题保留一行解释。", "负向约束：不要夸张表情、不要复杂背景。"],
+        format: "9:16"
+      }
     ]
   },
   video: {
     kicker: "Video workshop",
     title: "视频库",
-    description: "整理脚本、分镜、封面图提示词和成片适配器状态；图片归属在视频库内。",
+    description: "整理混剪、数字人、MG动画、实景拍摄和生成视频素材。",
     metrics: [
       { value: "10", label: "视频资产", detail: "脚本 / 实景 / 数字人" },
       { value: "5", label: "分镜", detail: "等待确认" },
       { value: "5", label: "待渲染", detail: "处理中 / adapter 未配置" }
     ],
     rows: [
-      { title: "短视频分镜脚本", meta: "视频脚本 · 成功", note: "四段式结构：开场、证据、判断、CTA。", kind: "video" },
-      { title: "封面图提示词", meta: "封面图 · 草稿", note: "需确认比例和画面主体后再生成图片。", kind: "image" },
-      { title: "实景讲解视频", meta: "拍摄清单 · v1", note: "顾问出镜、屏幕录制和桌面 B-roll 已分配。", kind: "video" },
-      { title: "文生视频概念预览", meta: "提示词 · 待渲染", note: "保留正向提示词、负向约束和三段缩略帧。", kind: "video" },
-      { title: "数字人口播视频", meta: "数字人 · 待渲染", note: "口播、字幕和人设已匹配，等待适配器。", kind: "video" }
+      {
+        title: "短视频分镜脚本",
+        meta: "视频脚本 · 成功",
+        note: "四段式结构：开场、证据、判断、CTA。",
+        kind: "video",
+        category: "混剪视频",
+        keywords: ["分镜", "短视频", "CTA", "脚本"],
+        body: ["00:00 开场：用一句问题抓住跨境卖家。", "00:08 证据：展示平台规则变化。", "00:25 判断：解释为什么影响转化。", "00:45 CTA：建议检查 checkout 页面。"],
+        format: "9:16 · 60秒",
+        variant: "standard"
+      },
+      {
+        title: "实景讲解视频",
+        meta: "拍摄清单 · v1",
+        note: "顾问出镜、屏幕录制和桌面 B-roll 已分配。",
+        kind: "video",
+        category: "实景拍摄视频",
+        keywords: ["实景", "讲解", "B-roll", "屏幕录制"],
+        body: ["镜头 1：顾问正面说明核心变化。", "镜头 2：录屏展示 checkout 页面。", "镜头 3：桌面 B-roll 作为转场。"],
+        format: "16:9 · 90秒",
+        variant: "standard"
+      },
+      {
+        title: "文生视频概念预览",
+        meta: "提示词 · 待渲染",
+        note: "保留正向提示词、负向约束和三段缩略帧。",
+        kind: "video",
+        category: "生成视频素材",
+        keywords: ["文生视频", "概念预览", "提示词", "待渲染"],
+        body: ["第一段：跨境卖家查看订单和税费说明。", "第二段：用户在 checkout 页面犹豫。", "第三段：清晰展示 landed cost 后完成付款。"],
+        format: "9:16 · 30秒",
+        variant: "standard"
+      },
+      {
+        title: "税费透明 MG 动画视频",
+        meta: "MG动画 · 待渲染",
+        note: "用图形动效解释 checkout 税费展示变化。",
+        kind: "video",
+        category: "MG动画视频",
+        keywords: ["MG动画", "图形动效", "解释视频", "税费透明"],
+        body: ["00:00 图形化展示订单金额拆分。", "00:08 动效放大 duties 和 import taxes 字段。", "00:20 用箭头说明透明展示如何减少咨询和弃单。"],
+        format: "9:16 · 30秒",
+        variant: "standard"
+      },
+      {
+        title: "数字人口播视频",
+        meta: "数字人 · 待渲染",
+        note: "口播、字幕和人设已匹配，等待适配器。",
+        kind: "video",
+        category: "数字人视频",
+        keywords: ["数字人", "口播", "字幕", "小红书"],
+        body: ["大家好，今天用一分钟讲一个跨境独立站很容易忽略的问题：税费透明。", "很多卖家以为 duties 和 import taxes 只是后台配置，但用户真正感受到它，是在准备付款的那一刻。", "如果用户看不清最终成本，就会停下来问客服，或者直接放弃下单。", "所以建议你优先检查三个页面：商品页、购物车和 checkout。让用户在付款前知道自己到底要付多少。"],
+        format: "9:16 · 45秒",
+        detailLabel: "口播文稿",
+        variant: "digital-human"
+      }
     ]
   }
 };
@@ -691,7 +869,7 @@ const emptyProduct: AssetProduct = {
   phase: "等待指令",
   sections: [
     { label: "类型", title: "由对话确认", detail: "可以说生成图片、短视频、数字人口播、音频或文案。", status: "待确认" },
-    { label: "素材", title: "未选择素材", detail: "可从资产库、文案库或视频库关联。", status: "待关联" },
+    { label: "素材", title: "未选择素材", detail: "可从资产库、文案库、图片库或视频库关联。", status: "待关联" },
     { label: "参数", title: "比例 / 时长 / 风格", detail: "建议用自然语言描述，不需要先配置。", status: "待确认" }
   ],
   timeline: [],
@@ -1181,26 +1359,24 @@ const conversationRows: AssetConversation[] = [
 
 const newAssetConversation: AssetConversation = {
   id: "new",
-  title: "新建创作",
+  title: "新建对话",
   type: "对话",
   updatedAt: "刚刚",
   assetLabel: "未选择素材",
-  status: "可关联资产库、文案库或视频库",
-  prompt: "输入内容目标、渠道、视频规格或成片指令。",
-  response: "选择一个历史会话或素材后，我会在这里生成方案、文案、口播稿或视频脚本。",
-  canvasTitle: "新建创作画布",
+  status: "可关联资产库、文案库、图片库或视频库",
+  prompt: "输入创作需求，或整理资料内容。",
+  response: "",
+  canvasTitle: "新建对话",
   canvasMeta: "草稿 · 未关联素材",
-  raw: `# 新建创作画布
+  raw: `# 新建对话
 
-选择左侧历史会话，或输入新的创作指令后，产物会在这里展示并可继续编辑。`,
+输入创作需求或资料整理内容后，系统会判断是生成产物、沉淀资料，还是需要先确认方向。`,
   judgment: "当前还没有选定素材。生成结果可以继续编辑，但不会被标记为来源证据支持。",
-  action: "先选择素材或输入明确的内容目标。",
-  delivery: "告诉我你要生成什么，我会先确认产物类型和关键参数，再在右侧展示结果。你可以直接说：生成 9:16 短视频、做一张封面图、写 LinkedIn 文案，或把当前素材改成数字人口播。",
-  suggestions: ["生成9:16短视频", "做一张封面图", "写LinkedIn文案"],
+  action: "输入创作需求或资料整理内容。",
+  delivery: "",
+  suggestions: ["生成9:16短视频", "做一张封面图", "整理产品资料"],
   messages: [
-    { role: "user", text: "输入内容目标、渠道、视频规格或成片指令。" },
-    { role: "assistant", text: "选择一个历史会话或素材后，我会先确认产物类型和关键参数，再在右侧直接展示当前产物。" },
-    { role: "assistant", text: "你可以直接说：生成 9:16 短视频、做一张封面图、写 LinkedIn 文案，或把当前素材改成数字人口播。", suggestions: ["生成9:16短视频", "做一张封面图", "写LinkedIn文案"] }
+    { role: "assistant", text: "", suggestions: ["生成9:16短视频", "做一张封面图", "整理产品资料"] }
   ],
   product: emptyProduct
 };

@@ -1,4 +1,4 @@
-export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "video";
+export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
 export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human";
 
@@ -105,7 +105,21 @@ export type AssetWorkshop = {
   title: string;
   description: string;
   metrics: Array<{ value: string; label: string; detail: string }>;
-  rows: Array<{ title: string; meta: string; note: string; kind: "file" | "copy" | "video" | "image" }>;
+  rows: Array<{
+    title: string;
+    meta: string;
+    note: string;
+    kind: "file" | "copy" | "video" | "image";
+    category?: string;
+    keywords?: string[];
+    body?: string[];
+    format?: string;
+    contentType?: string;
+    statusLabel?: string;
+    sourceLabel?: string;
+    detailLabel?: string;
+    variant?: "digital-human" | "standard";
+  }>;
 };
 
 export type AssetWorkspaceData = {

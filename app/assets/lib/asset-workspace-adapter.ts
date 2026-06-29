@@ -16,6 +16,15 @@ export type LibraryRow = {
   meta: string;
   note: string;
   kind: "file" | "copy" | "video" | "image";
+  category?: string;
+  keywords?: string[];
+  body?: string[];
+  format?: string;
+  contentType?: string;
+  statusLabel?: string;
+  sourceLabel?: string;
+  detailLabel?: string;
+  variant?: "digital-human" | "standard";
 };
 
 export type AssetWorkspaceAdapter = {
@@ -24,7 +33,7 @@ export type AssetWorkspaceAdapter = {
   getConversation(conversationId: string): AssetConversation | undefined;
   getNewConversation(): AssetConversation;
   listConversationProducts(conversation: AssetConversation): AssetProduct[];
-  getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct;
+  getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct | null;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   listSources(): AssetSource[];
   getProductText(product: AssetProduct): string;
@@ -40,12 +49,12 @@ export type AssetWorkspaceAdapter = {
     instruction: string;
     selectedProductId?: number;
     signal?: AbortSignal;
-  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct }>;
+  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null }>;
   renderVideo(token: string, backendAssetId: number): Promise<{ product: AssetProduct }>;
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">): Promise<LibraryRow[]>;
-  uploadAsset(token: string, file: File): Promise<ContentAsset>;
+  uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">): Promise<ContentAsset>;
 };
 
 export type VideoJobResult = {
@@ -60,7 +69,8 @@ export type VideoJobResult = {
 // Map a library view to the backend asset_kind values it should display.
 function libraryKindsForView(view: Exclude<AssetWorkspaceView, "conversation">): string[] {
   if (view === "copy") return ["copy"];
-  if (view === "video") return ["video", "video_render", "image"];
+  if (view === "image") return ["image"];
+  if (view === "video") return ["video", "video_render"];
   return ["asset"]; // 资产库: uploaded/captured knowledge sources
 }
 
@@ -71,15 +81,73 @@ function libraryRowKind(asset: ContentAsset): LibraryRow["kind"] {
   return "file";
 }
 
-function relativeMeta(asset: ContentAsset): string {
-  const kindLabel: Record<string, string> = {
-    asset: "知识来源",
-    copy: "文案产物",
-    video: "视频产物",
-    video_render: "成片任务",
-    image: "图片产物"
+function inferKeywords(asset: ContentAsset): string[] {
+  const text = `${asset.title} ${asset.body ?? ""}`.toLowerCase();
+  const seeds = ["产品种草", "小红书", "抖音", "LinkedIn", "封面", "数字人", "口播", "产品图", "视频脚本", "规则变化", "品牌约束"];
+  const matched = seeds.filter((keyword) => text.includes(keyword.toLowerCase()));
+  const fallback: Record<LibraryRow["kind"], string[]> = {
+    copy: ["文案", "可复用", "已归档"],
+    image: ["图片", "视觉素材", "可检索"],
+    video: ["视频", "口播", "可复用"],
+    file: ["资料", "来源", "可检索"]
   };
-  return `${kindLabel[asset.asset_kind] ?? "产物"} · ${asset.status}`;
+  return [...matched, ...fallback[libraryRowKind(asset)]].filter((keyword, index, array) => array.indexOf(keyword) === index).slice(0, 5);
+}
+
+function inferAssetSourceCategory(asset: ContentAsset): string {
+  const text = `${asset.content_type} ${asset.title} ${asset.source_filename ?? ""} ${asset.original_ref ?? ""} ${asset.markdown_ref ?? ""} ${asset.body ?? ""}`.toLowerCase();
+  if (/conversation|dialog|chat|对话|沉淀|偏好|画像|卖点|品牌信息/.test(text)) return "对话沉淀";
+  if (/reader|crawl|capture|web|url|http|公众号|网页|采集|链接|markdown/.test(text)) return "采集资料";
+  return "上传资料";
+}
+
+function contentTypeLabel(asset: ContentAsset): string {
+  const sourceType = asset.source_content_type?.toLowerCase() ?? "";
+  const filename = asset.source_filename?.toLowerCase() ?? "";
+  const text = `${asset.content_type} ${sourceType} ${filename}`.toLowerCase();
+  if (/pdf/.test(text)) return "PDF";
+  if (/spreadsheet|excel|xlsx|xls|csv/.test(text)) return "表格";
+  if (/presentation|powerpoint|ppt/.test(text)) return "PPT";
+  if (/word|docx|doc/.test(text)) return "文档";
+  if (/image|png|jpe?g|webp|gif/.test(text)) return "图片";
+  if (/video|mp4|mov|webm/.test(text)) return "视频";
+  if (/audio|mp3|wav|m4a/.test(text)) return "音频";
+  if (/url|web|html|markdown|reader/.test(text)) return "网页";
+  return "资料";
+}
+
+function statusLabel(status: string): string {
+  const normalized = status.toLowerCase();
+  if (normalized === "ready") return "已入库";
+  if (normalized === "processing") return "解析中";
+  if (normalized === "failed") return "解析失败";
+  if (normalized === "draft") return "待解析";
+  if (normalized === "archived") return "已归档";
+  return status;
+}
+
+function inferLibraryCategory(asset: ContentAsset): string {
+  const text = `${asset.content_type} ${asset.title} ${asset.body ?? ""}`.toLowerCase();
+  if (asset.asset_kind === "asset") return inferAssetSourceCategory(asset);
+  if (asset.asset_kind === "copy") {
+    if (asset.content_type === "content_plan" || /选题|方案|内容方案|选题方案/.test(text)) return "选题方案";
+    if (asset.content_type === "short_video_narration" || /配音|口播|旁白|voiceover/.test(text)) return "配音稿";
+    if (asset.content_type === "video_script" || /编导|脚本|分镜|镜头|导演/.test(text)) return "编导稿";
+    return "文案稿";
+  }
+  if (asset.asset_kind === "image") {
+    if (asset.content_type === "storyboard_image" || /分镜/.test(text)) return "分镜图";
+    if (asset.content_type === "cover_image" || /封面/.test(text)) return "封面图";
+    return "素材图";
+  }
+  if (asset.asset_kind === "video" || asset.asset_kind === "video_render") {
+    if (asset.content_type === "digital_human_video" || /数字人|avatar|talking head/i.test(text)) return "数字人视频";
+    if (asset.content_type === "mg_animation_video" || /mg|动画|motion/.test(text)) return "MG动画视频";
+    if (asset.content_type === "real_scene_video" || /实景|拍摄|真人|出镜/.test(text)) return "实景拍摄视频";
+    if (asset.content_type === "generated_video" || /生成视频|文生视频|text-to-video/.test(text)) return "生成视频素材";
+    return "混剪视频";
+  }
+  return "资料";
 }
 
 function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
@@ -152,7 +220,7 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
       const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
-      const product = generatedProduct ?? conversation.product;
+      const product = generatedProduct ?? null;
       return { conversationId: response.conversation_id, conversation, product };
     },
     async renderVideo(token, backendAssetId) {
@@ -185,14 +253,22 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         .filter((asset) => kinds.includes(asset.asset_kind))
         .map((asset) => ({
           title: asset.title,
-          meta: relativeMeta(asset),
+          meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${statusLabel(asset.status)}` : `${inferLibraryCategory(asset)} · ${asset.status}`,
           note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
-          kind: libraryRowKind(asset)
+          kind: libraryRowKind(asset),
+          category: inferLibraryCategory(asset),
+          keywords: inferKeywords(asset),
+          body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
+          contentType: contentTypeLabel(asset),
+          statusLabel: statusLabel(asset.status),
+          sourceLabel: asset.source_filename ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
+          variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
         }));
     },
-    async uploadAsset(token, file) {
+    async uploadAsset(token, file, view) {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("target_kind", view === "assets" ? "asset" : view);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
     }
   };

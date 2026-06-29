@@ -4,6 +4,29 @@ import { useState } from "react";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import ProductPreview from "./product-preview";
 
+export function EmptyProductWorkspace() {
+  return (
+    <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Empty product workspace">
+      <div className="shadcn-prototype-product">
+        <header className="shadcn-prototype-product-header">
+          <div>
+            <h3>等待确认创作方向</h3>
+            <p>还没有生成产物</p>
+          </div>
+        </header>
+        <div className="shadcn-prototype-product-main">
+          <div className="shadcn-prototype-product-preview">
+            <div>
+              <strong>先从对话开始</strong>
+              <span>明确要文案、图片提示词或视频后，这里会展示生成结果。</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function ProductWorkspace({
   copied,
   onCopyProduct,

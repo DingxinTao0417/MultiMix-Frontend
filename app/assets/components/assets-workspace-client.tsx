@@ -7,6 +7,7 @@ import {
   FileText,
   GripVertical,
   House,
+  Image as ImageIcon,
   MessageSquareText,
   MoreHorizontal,
   PanelLeftClose,
@@ -28,7 +29,7 @@ import {
 } from "../lib/asset-workspace-shared";
 import ConversationStart from "./conversation-start";
 import ConversationStudio from "./conversation-studio";
-import ProductWorkspace from "./product-workspace";
+import ProductWorkspace, { EmptyProductWorkspace } from "./product-workspace";
 import LibraryWorkshop from "./library-workshop";
 
 type SidebarState = "auto" | "collapsed" | "expanded";
@@ -56,6 +57,13 @@ function resolveInitialConversationId(initialConversationId: string | undefined,
   return initialConversationId && conversations.some((conversation) => conversation.id === initialConversationId)
     ? initialConversationId
     : conversations[0].id;
+}
+
+function uploadAcceptForView(view: ActiveView): string {
+  if (view === "copy") return ".txt,.md,.markdown,.pdf,.docx,.html,.htm";
+  if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
+  if (view === "video") return ".mp4,.mov,.webm,.mkv";
+  return ".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm,.txt";
 }
 
 export default function AssetsWorkspaceClient({
@@ -98,7 +106,7 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const activeTitle = activeView === "conversation"
-    ? "对话创作"
+    ? "对话"
     : assetWorkspaceAdapter.getWorkshop(activeView).title;
   const activeDescription = activeView === "conversation"
     ? ""
@@ -314,7 +322,7 @@ export default function AssetsWorkspaceClient({
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
-    const selectedBackendAssetId = selectedProduct.backendAssetId;
+    const selectedBackendAssetId = selectedProduct?.backendAssetId;
     const result = await assetWorkspaceAdapter.sendMessage({
       token,
       conversationId: conversation.id,
@@ -332,10 +340,17 @@ export default function AssetsWorkspaceClient({
       return [persistedConversation, ...current];
     });
     setSelectedConversationId(targetConversationId);
-    setSelectedProductIds((current) => ({
-      ...current,
-      [targetConversationId]: product.id
-    }));
+    setSelectedProductIds((current) => {
+      if (product) {
+        return {
+          ...current,
+          [targetConversationId]: product.id
+        };
+      }
+      const next = { ...current };
+      delete next[targetConversationId];
+      return next;
+    });
     setActiveView("conversation");
   };
 
@@ -349,13 +364,13 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleUploadFile = async (file: File | undefined) => {
-    if (!file || !token) return;
+    if (!file || !token || activeView === "conversation") return;
     setUploading(true);
     setUploadError(null);
     try {
-      await assetWorkspaceAdapter.uploadAsset(token, file);
+      await assetWorkspaceAdapter.uploadAsset(token, file, activeView);
       setLibraryRefreshKey((value) => value + 1);
-      setActiveView("assets");
+      setActiveView(activeView);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "上传失败，请稍后重试。";
       setUploadError(msg);
@@ -416,8 +431,8 @@ export default function AssetsWorkspaceClient({
             <button
               className={activeView === "conversation" && selectedConversation.id === "new" ? "shadcn-prototype-collapsed-rail-button active accent" : "shadcn-prototype-collapsed-rail-button accent"}
               type="button"
-              aria-label="新建创作"
-              title="新建创作"
+              aria-label="新建对话"
+              title="新建对话"
               onClick={() => {
                 void handleStartConversation();
               }}
@@ -454,6 +469,15 @@ export default function AssetsWorkspaceClient({
               <MessageSquareText size={17} aria-hidden="true" />
             </button>
             <button
+              className={activeView === "image" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
+              type="button"
+              aria-label="图片库"
+              title="图片库"
+              onClick={() => setActiveView("image")}
+            >
+              <ImageIcon size={17} aria-hidden="true" />
+            </button>
+            <button
               className={activeView === "video" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
               type="button"
               aria-label="视频库"
@@ -482,7 +506,7 @@ export default function AssetsWorkspaceClient({
           }}
         >
           <Sparkles size={15} aria-hidden="true" />
-          新建创作
+          新建对话
         </button>
 
         <nav className="shadcn-prototype-nav" aria-label="Primary">
@@ -493,6 +517,10 @@ export default function AssetsWorkspaceClient({
           <button className={activeView === "copy" ? "active" : ""} type="button" onClick={() => setActiveView("copy")}>
             <MessageSquareText size={16} aria-hidden="true" />
             文案库
+          </button>
+          <button className={activeView === "image" ? "active" : ""} type="button" onClick={() => setActiveView("image")}>
+            <ImageIcon size={16} aria-hidden="true" />
+            图片库
           </button>
           <button className={activeView === "video" ? "active" : ""} type="button" onClick={() => setActiveView("video")}>
             <Video size={16} aria-hidden="true" />
@@ -585,7 +613,7 @@ export default function AssetsWorkspaceClient({
                 <input
                   ref={uploadInputRef}
                   type="file"
-                  accept=".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm"
+                  accept={uploadAcceptForView(activeView)}
                   style={{ display: "none" }}
                   onChange={(event) => {
                     void handleUploadFile(event.currentTarget.files?.[0]);
@@ -593,7 +621,7 @@ export default function AssetsWorkspaceClient({
                 />
                 <button type="button" onClick={handleUploadClick} disabled={uploading}>
                   <Upload size={15} aria-hidden="true" />
-                  {uploading ? "上传中..." : "上传资产"}
+                  {uploading ? "上传中..." : "上传"}
                 </button>
                 {uploadError ? <span className="shadcn-prototype-upload-error" role="alert">{uploadError}</span> : null}
               </>
@@ -645,39 +673,43 @@ export default function AssetsWorkspaceClient({
               >
                 <GripVertical size={14} aria-hidden="true" />
               </div>
-              <ProductWorkspace
-                copied={copiedProductId === selectedProduct.id}
-                onCopyProduct={handleCopyProduct}
-                onSaveProduct={handleSaveProduct}
-                onRenderVideo={async (product) => {
-                  if (!token || !product.backendAssetId) return;
-                  const result = await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
-                  setConversations((current) => current.map((conversation) => {
-                    if (conversation.id !== selectedConversation.id) return conversation;
-                    const products = conversation.products ?? [conversation.product];
-                    const nextProducts = products.some((item) => item.id === result.product.id)
-                      ? products.map((item) => item.id === result.product.id ? result.product : item)
-                      : [...products, result.product];
-                    return {
-                      ...conversation,
-                      product: result.product,
-                      products: nextProducts,
-                      status: result.product.status,
-                      canvasTitle: result.product.title,
-                      canvasMeta: `${result.product.status} · ${result.product.ratio}`,
-                      raw: result.product.body?.join("\n\n") ?? result.product.summary,
-                      updatedAt: "刚刚"
-                    };
-                  }));
-                  setSelectedProductIds((current) => ({
-                    ...current,
-                    [selectedConversation.id]: result.product.id
-                  }));
-                }}
-                product={selectedProduct}
-                savedVersion={savedProductIds[selectedProduct.id]}
-                selectedConversation={selectedConversation}
-              />
+              {selectedProduct ? (
+                <ProductWorkspace
+                  copied={copiedProductId === selectedProduct.id}
+                  onCopyProduct={handleCopyProduct}
+                  onSaveProduct={handleSaveProduct}
+                  onRenderVideo={async (product) => {
+                    if (!token || !product.backendAssetId) return;
+                    const result = await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
+                    setConversations((current) => current.map((conversation) => {
+                      if (conversation.id !== selectedConversation.id) return conversation;
+                      const products = conversation.products ?? [conversation.product];
+                      const nextProducts = products.some((item) => item.id === result.product.id)
+                        ? products.map((item) => item.id === result.product.id ? result.product : item)
+                        : [...products, result.product];
+                      return {
+                        ...conversation,
+                        product: result.product,
+                        products: nextProducts,
+                        status: result.product.status,
+                        canvasTitle: result.product.title,
+                        canvasMeta: `${result.product.status} · ${result.product.ratio}`,
+                        raw: result.product.body?.join("\n\n") ?? result.product.summary,
+                        updatedAt: "刚刚"
+                      };
+                    }));
+                    setSelectedProductIds((current) => ({
+                      ...current,
+                      [selectedConversation.id]: result.product.id
+                    }));
+                  }}
+                  product={selectedProduct}
+                  savedVersion={savedProductIds[selectedProduct.id]}
+                  selectedConversation={selectedConversation}
+                />
+              ) : (
+                <EmptyProductWorkspace />
+              )}
             </>
           ) : (
             <LibraryWorkshop view={activeView} token={token} key={`${activeView}-${libraryRefreshKey}`} />

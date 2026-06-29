@@ -60,7 +60,7 @@ export default function ConversationStudio({
 }: {
   basePath: string;
   selectedConversation: Conversation;
-  selectedProduct: ProductArtifact;
+  selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
   onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
   readonly?: boolean;
@@ -73,15 +73,16 @@ export default function ConversationStudio({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const activeRequestRef = useRef<AbortController | null>(null);
 
-  const conversationMessages = useMemo<VisibleConversationMessage[]>(() => (
-    selectedConversation.messages && selectedConversation.messages.length > 0
-      ? selectedConversation.messages
-      : [
-        { role: "user" as const, text: selectedConversation.prompt },
-        { role: "assistant" as const, text: selectedConversation.response },
-        { role: "assistant" as const, text: selectedConversation.delivery, suggestions: selectedConversation.suggestions }
-      ]
-  ), [selectedConversation.delivery, selectedConversation.messages, selectedConversation.prompt, selectedConversation.response, selectedConversation.suggestions]);
+  const conversationMessages = useMemo<VisibleConversationMessage[]>(() => {
+    if (selectedConversation.messages && selectedConversation.messages.length > 0) {
+      return selectedConversation.messages;
+    }
+    return [
+      { role: "user" as const, text: selectedConversation.prompt },
+      { role: "assistant" as const, text: selectedConversation.response },
+      { role: "assistant" as const, text: selectedConversation.delivery, suggestions: selectedConversation.suggestions }
+    ].filter((message) => message.text.trim() || message.suggestions?.length);
+  }, [selectedConversation.delivery, selectedConversation.messages, selectedConversation.prompt, selectedConversation.response, selectedConversation.suggestions]);
 
   const visibleConversationMessages = useMemo<VisibleConversationMessage[]>(() => (
     optimisticExchange
@@ -176,7 +177,7 @@ export default function ConversationStudio({
       <div className="shadcn-prototype-product-card-list" aria-label="对话产物">
         {messageProducts.map((product) => (
           <Link
-            className={product.id === selectedProduct.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
+            className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
             href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
             key={product.id}
             onClick={(event) => {
@@ -254,8 +255,8 @@ export default function ConversationStudio({
         <div className="shadcn-prototype-composer-control">
           <textarea
             ref={composerRef}
-            aria-label="输入创作指令"
-            placeholder={canSend ? "输入内容目标、渠道、视频规格或成片指令" : "参考样例只读"}
+            aria-label="输入对话内容"
+            placeholder={canSend ? "输入创作需求，或整理资料内容" : "参考样例只读"}
             rows={1}
             value={composerValue}
             disabled={!canSend}
