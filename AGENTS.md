@@ -95,6 +95,64 @@ scripts/
 - `LLM_API` 等服务端密钥**禁止**加 `NEXT_PUBLIC_` 前缀（会暴露到客户端）
 - mock 数据是「源数据」，提交在 `app/assets/`；SQLite 运行库通过 seed 复现，不入库
 
+## 提交与同步流程
+
+当用户要求“提交代码”、“拉最新代码”、“合并代码”、“处理冲突”、“推送远程”或类似发布动作时，默认按下面流程自动执行，不需要再停下来只给计划。当前工作区通常包含两个独立仓库：
+
+- 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`
+- 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`
+
+### 提交前
+
+1. 分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和是否领先/落后远程。
+2. 不要提交 `.env*`、密钥、本地数据库、构建产物、日志或用户未要求纳入的临时文件。
+3. 如果发现不属于当前任务的大量陌生改动，先说明风险；不要擅自回滚。
+
+### 自动检查
+
+提交前必须按仓库实际改动运行检查：
+
+- 前端有代码或文档改动时，至少运行：
+  - `npm run typecheck`
+  - `npm run lint`
+  - 影响构建、路由、依赖、Next 配置、数据 adapter 或关键 UI 时，再运行 `npm run build`
+- 后端有代码改动时，运行对应测试。当前优先运行：
+  - `python -m pytest app/tests/test_asset_conversation.py`
+  - 如果测试环境命令不同，先用仓库现有说明或可用测试命令判断，不要跳过不说明。
+
+检查失败时停止提交或推送，先修复问题；如果无法修复，向用户报告失败命令和原因。
+
+### 提交
+
+1. 每个仓库独立提交，不把前端和后端混成一个 git 操作。
+2. 使用 `git add -A` 暂存当前仓库需要提交的改动。
+3. 提交信息要概括实际变更，例如：
+   - `Update MultiMix workspace libraries and conversation flow`
+   - `Update asset upload validation and conversation assets`
+4. 提交后再次运行 `git status --short --branch`，确认工作区干净。
+
+### 拉取与合并
+
+1. 先运行 `git fetch origin`。
+2. 优先使用 `git pull --rebase` 或 `git rebase origin/main` 把本地提交放到远程最新提交之后，保持历史线性。
+3. 如果只是确认是否有更新，可以先用 `git pull --ff-only`；出现分叉时再改用 rebase。
+4. 遇到冲突时不要强行覆盖：
+   - 停止自动流程。
+   - 用 `git status --short` 和冲突文件列表说明具体冲突。
+   - 只在理解双方改动后编辑冲突文件。
+   - 冲突解决后运行必要检查，再 `git rebase --continue`。
+5. 禁止使用 `git reset --hard`、`git checkout -- .` 等破坏性命令，除非用户明确要求。
+
+### 推送
+
+1. 只有在工作区干净、检查通过、rebase/合并完成后，才运行 `git push origin main`。
+2. 推送后再次运行 `git status --short --branch`，确认本地 `main` 和 `origin/main` 同步。
+3. 最终回复需要说明：
+   - 哪些仓库已提交和推送。
+   - 最新提交哈希和提交信息。
+   - 是否发生冲突以及如何处理。
+   - 哪些检查已经通过，哪些检查未能运行及原因。
+
 ## 已知问题 / 注意事项
 
 - `app/globals.css` 约 25000 行，**约 92% 是从 ChangeIn 原项目继承的死样式**（`admin-*`、`ai-judgment-*`、`app-gate-*` 等）。当前 UI 只用 `shadcn-prototype-*` 和 `multimix-auth-*` 前缀。新增样式请用这些前缀；勿盲目复用陌生类名。

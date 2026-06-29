@@ -10,6 +10,7 @@ const LOCAL_USER_KEY = "multimix_local_user";
 const DEFAULT_LOCAL_USER: LocalUser = {
   email: "demo@multimix.local"
 };
+const AUTH_INIT_TIMEOUT_MS = 4000;
 
 type LocalUser = {
   email: string;
@@ -44,18 +45,38 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   });
 
   useEffect(() => {
+    let cancelled = false;
+    const finishReady = () => {
+      if (!cancelled) setReady(true);
+    };
+    const setDefaultLocalUser = () => {
+      if (cancelled) return;
+      window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
+      setUser(DEFAULT_LOCAL_USER);
+      setReady(true);
+    };
+
     if (isSupabaseConfigured && supabase) {
       // Try to restore Supabase session.
+      const timeout = window.setTimeout(() => {
+        setDefaultLocalUser();
+      }, AUTH_INIT_TIMEOUT_MS);
       supabase.auth.getSession().then(({ data }) => {
+        if (cancelled) return;
+        window.clearTimeout(timeout);
         if (data.session) {
           const u: LocalUser = { email: data.session.user.email ?? "", token: data.session.access_token };
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(u));
           setUser(u);
         }
         setReady(true);
+      }).catch(() => {
+        window.clearTimeout(timeout);
+        setDefaultLocalUser();
       });
       // Listen for auth state changes (token refresh, sign out).
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (cancelled) return;
         if (session) {
           const u: LocalUser = { email: session.user.email ?? "", token: session.access_token };
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(u));
@@ -65,7 +86,11 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
           setUser(null);
         }
       });
-      return () => subscription.unsubscribe();
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timeout);
+        subscription.unsubscribe();
+      };
     }
 
     // Non-Supabase: read from localStorage.
@@ -80,7 +105,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
           } else {
             setUser(parsed);
           }
-          setReady(true);
+          finishReady();
           return;
         }
         window.localStorage.removeItem(LOCAL_USER_KEY);
@@ -89,7 +114,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
         if (!isApiConfigured) {
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
           setUser(DEFAULT_LOCAL_USER);
-          setReady(true);
+          finishReady();
           return;
         }
       }
@@ -99,6 +124,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       void import("../lib/api")
         .then(({ authLocalDevAdmin }) => authLocalDevAdmin())
         .then((response) => {
+          if (cancelled) return;
           if (response.access_token) {
             const nextUser = { email: response.email ?? "local@admin", token: response.access_token };
             window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
@@ -108,19 +134,24 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
           }
         })
         .catch(() => {
-          setUser(null);
+          if (!cancelled) setUser(null);
         })
         .finally(() => {
-          setReady(true);
+          finishReady();
         });
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
     {
       window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
       setUser(DEFAULT_LOCAL_USER);
-      setReady(true);
+      finishReady();
     }
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!ready) return <MultiMixLoading />;
