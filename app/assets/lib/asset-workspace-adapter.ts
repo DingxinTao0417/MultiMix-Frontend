@@ -1,5 +1,5 @@
 import { mockAssetWorkspaceData } from "./asset-workspace-mock-data";
-import type { AssetConversation, AssetProduct, AssetSource, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetSource, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 import {
   api,
   apiBlob,
@@ -36,6 +36,36 @@ export type LibraryRow = {
   variant?: "digital-human" | "standard";
 };
 
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const actions = value.flatMap((item): AssetSuggestionAction[] => {
+    if (!isRecord(item)) return [];
+    const label = stringValue(item.label);
+    const utterance = stringValue(item.utterance) || label;
+    if (!label || !utterance) return [];
+    return [{
+      id: stringValue(item.id) || label,
+      label,
+      utterance,
+      actionType: stringValue(item.action_type) || "fill_composer",
+      capability: stringValue(item.capability) || undefined,
+      mode: stringValue(item.mode) || undefined,
+      enabled: item.enabled !== false,
+      disabledReason: stringValue(item.disabled_reason) || undefined,
+      requiresConfirmation: item.requires_confirmation !== false
+    }];
+  });
+  return actions.length ? actions : undefined;
+}
+
 export type AssetWorkspaceAdapter = {
   getSnapshot(): AssetWorkspaceData;
   listConversations(): AssetConversation[];
@@ -66,7 +96,7 @@ export type AssetWorkspaceAdapter = {
     instruction: string;
     conversationId?: string;
     signal?: AbortSignal;
-  }): Promise<{ product: AssetProduct; assistantMessage: string; suggestions: string[]; diffSummary: string }>;
+  }): Promise<{ product: AssetProduct; assistantMessage: string; suggestions: string[]; suggestionActions?: AssetSuggestionAction[]; diffSummary: string }>;
   restoreProductVersion(args: {
     token: string;
     product: AssetProduct;
@@ -336,7 +366,7 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         signal,
         body: JSON.stringify({
           instruction,
-          conversation_id: conversationId === "new" ? undefined : conversationId,
+          conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
           selected_product_id: selectedProductId,
           linked_asset_ids: linkedAssetIds ?? []
         })
@@ -360,6 +390,7 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
           product: contentAssetToProduct(response.asset),
           assistantMessage: response.assistant_message,
           suggestions: response.suggestions,
+          suggestionActions: normalizeSuggestionActions(response.suggestion_actions),
           diffSummary: response.diff_summary
         };
       }
@@ -373,6 +404,7 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         },
         assistantMessage: "已在本地 mock 中记录修订。",
         suggestions: product.actions,
+        suggestionActions: undefined,
         diffSummary: "Local mock revision"
       };
     },

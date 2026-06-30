@@ -56,6 +56,27 @@ type ConversationContextAsset = {
   title: string;
 };
 
+type PendingConversationExchange = {
+  id: string;
+  userText: string;
+  assistantText: string;
+  status: "pending" | "stopped" | "failed";
+};
+
+function pendingVideoJobIds(conversations: Conversation[]): string[] {
+  const ids = new Set<string>();
+  for (const conversation of conversations) {
+    const products = conversation.products && conversation.products.length > 0 ? conversation.products : [conversation.product];
+    for (const product of products) {
+      const metadata = product.metadata as Record<string, unknown> | undefined;
+      const jobId = metadata?.latest_job_public_id;
+      const pending = Boolean(metadata?.orchestration_pending && !metadata?.video_project && typeof jobId === "string");
+      if (pending && typeof jobId === "string") ids.add(jobId);
+    }
+  }
+  return [...ids];
+}
+
 function getConversationMonogram(title: string): string {
   const trimmedTitle = title.trim();
   if (!trimmedTitle) return "聊";
@@ -111,6 +132,7 @@ export default function AssetsWorkspaceClient({
     const conversationId = resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations());
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
+  const selectedConversationIdRef = useRef(selectedConversationId);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
@@ -118,6 +140,7 @@ export default function AssetsWorkspaceClient({
   const [chatPanelWidth, setChatPanelWidth] = useState(426);
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
   const [renamedConversations, setRenamedConversations] = useState<Record<string, string>>({});
+  const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
   const [hiddenConversationIds, setHiddenConversationIds] = useState<string[]>([]);
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
@@ -149,6 +172,10 @@ export default function AssetsWorkspaceClient({
   const activeDescription = activeView === "conversation"
     ? ""
     : assetWorkspaceAdapter.getWorkshop(activeView).description;
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1180px)");
@@ -200,25 +227,27 @@ export default function AssetsWorkspaceClient({
     };
   }, [token]);
 
-  // Poll the orchestration job while a selected video product is still building
-  // (path A runs TTS + material search async). When the job finishes, reload
-  // conversations so the product picks up its editable video_project.
+  // Poll all orchestration jobs that are still building. These jobs run in the
+  // background, so their visible pending state must survive conversation switches.
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    const metadata = selectedProduct?.metadata as Record<string, unknown> | undefined;
-    const jobId = metadata?.latest_job_public_id;
-    const pending = Boolean(metadata?.orchestration_pending && !metadata?.video_project && typeof jobId === "string");
-    if (!pending || typeof jobId !== "string") return;
+    const jobIds = pendingVideoJobIds(conversations);
+    if (!jobIds.length) return;
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
-        const job = await assetWorkspaceAdapter.getVideoJob(token, jobId);
+        const results = await Promise.allSettled(jobIds.map((jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId)));
         if (cancelled) return;
-        if (job.status === "completed" || job.status === "ready" || job.status === "failed") {
+        const finished = results.some((result) => (
+          result.status === "fulfilled"
+          && (result.value.status === "completed" || result.value.status === "ready" || result.value.status === "failed")
+        ));
+        if (finished) {
           clearInterval(timer);
           const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
           if (!cancelled) setConversations(rows);
-          if (job.status === "failed") toast.error("视频生成失败，请重试或调整指令。");
+          const failed = results.some((result) => result.status === "fulfilled" && result.value.status === "failed");
+          if (failed) toast.error("视频生成失败，请重试或调整指令。");
         }
       } catch {
         // transient poll error; keep trying until cleared
@@ -228,7 +257,7 @@ export default function AssetsWorkspaceClient({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [token, selectedProduct]);
+  }, [token, conversations]);
 
   const startDividerResize = (clientX: number) => {
     if (isDividerDraggingRef.current) return;
@@ -472,6 +501,43 @@ export default function AssetsWorkspaceClient({
     const contextAssets = linkedAssets.length > 0 ? [] : conversationContextAssets[conversation.id] ?? [];
     const combinedContextAssets = mergeContextAssets(contextAssets, linkedAssets);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
+    const optimisticConversationId = conversation.id === "new"
+      ? `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      : null;
+    if (optimisticConversationId) {
+      const baseConversation = assetWorkspaceAdapter.getNewConversation();
+      const optimisticConversation: Conversation = {
+        ...baseConversation,
+        id: optimisticConversationId,
+        readonly: false,
+        title: instruction.slice(0, 36) || "新建对话",
+        updatedAt: "刚刚",
+        assetLabel: "生成中",
+        status: "生成中",
+        prompt: instruction,
+        response: "正在生成",
+        delivery: "正在生成",
+        suggestions: [],
+        messages: [
+          { role: "user", text: instruction },
+          { role: "assistant", text: "正在生成", pending: true }
+        ],
+      };
+      setConversations((current) => [
+        optimisticConversation,
+        ...current.filter((item) => item.id !== "new" && item.id !== optimisticConversationId)
+      ]);
+      selectedConversationIdRef.current = optimisticConversationId;
+      setSelectedConversationId(optimisticConversationId);
+      setActiveView("conversation");
+      setConversationMenuId(null);
+      if (combinedContextAssets.length > 0) {
+        setConversationContextAssets((current) => ({
+          ...current,
+          [optimisticConversationId]: combinedContextAssets
+        }));
+      }
+    }
     if (selectedProduct && shouldReviseSelectedProduct(instruction, selectedProduct)) {
       const revision = await assetWorkspaceAdapter.reviseProduct({
         token,
@@ -491,7 +557,12 @@ export default function AssetsWorkspaceClient({
         const nextMessages = [
           ...(item.messages ?? []),
           { role: "user" as const, text: instruction },
-          { role: "assistant" as const, text: revision.assistantMessage, suggestions: revision.suggestions }
+          {
+            role: "assistant" as const,
+            text: revision.assistantMessage,
+            suggestions: revision.suggestions,
+            suggestionActions: revision.suggestionActions
+          }
         ];
         return {
           ...item,
@@ -519,29 +590,56 @@ export default function AssetsWorkspaceClient({
       setActiveView("conversation");
       return;
     }
-    const result = await assetWorkspaceAdapter.sendMessage({
-      token,
-      conversationId: conversation.id,
-      instruction,
-      selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId,
-      linkedAssetIds: combinedLinkedAssetIds,
-      signal
-    });
+    let result;
+    try {
+      result = await assetWorkspaceAdapter.sendMessage({
+        token,
+        conversationId: optimisticConversationId ?? conversation.id,
+        instruction,
+        selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId,
+        linkedAssetIds: combinedLinkedAssetIds,
+        signal
+      });
+    } catch (error) {
+      if (optimisticConversationId && !signal?.aborted) {
+        const message = error instanceof Error ? error.message : "生成失败，请稍后重试。";
+        setConversations((current) => current.map((item) => {
+          if (item.id !== optimisticConversationId) return item;
+          return {
+            ...item,
+            status: "生成失败",
+            response: message,
+            delivery: message,
+            messages: [
+              { role: "user", text: instruction },
+              { role: "assistant", text: message }
+            ],
+            updatedAt: "刚刚"
+          };
+        }));
+      }
+      throw error;
+    }
     if (signal?.aborted) return;
     const { conversationId: targetConversationId, conversation: persistedConversation, product } = result;
     setConversations((current) => {
-      const existingIndex = current.findIndex((item) => item.id === conversation.id || item.id === targetConversationId);
+      const existingIndex = current.findIndex((item) => item.id === (optimisticConversationId ?? conversation.id) || item.id === conversation.id || item.id === targetConversationId);
       if (existingIndex >= 0) {
         return current.map((item, index) => index === existingIndex ? persistedConversation : item);
       }
       return [persistedConversation, ...current];
     });
-    setSelectedConversationId(targetConversationId);
+    const shouldKeepFocusOnResult = selectedConversationIdRef.current === (optimisticConversationId ?? conversation.id);
+    if (shouldKeepFocusOnResult) {
+      selectedConversationIdRef.current = targetConversationId;
+      setSelectedConversationId(targetConversationId);
+    }
     if (targetConversationId !== conversation.id && combinedLinkedAssetIds.length > 0) {
       setConversationContextAssets((current) => {
         const next = { ...current };
         next[targetConversationId] = mergeContextAssets(next[targetConversationId] ?? [], combinedContextAssets);
         if (conversation.id === "new") delete next[conversation.id];
+        if (optimisticConversationId) delete next[optimisticConversationId];
         return next;
       });
     }
@@ -556,7 +654,9 @@ export default function AssetsWorkspaceClient({
       delete next[targetConversationId];
       return next;
     });
-    setActiveView("conversation");
+    if (shouldKeepFocusOnResult) {
+      setActiveView("conversation");
+    }
   };
 
   const handleUploadClick = () => {
@@ -928,6 +1028,18 @@ export default function AssetsWorkspaceClient({
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
+                pendingExchange={pendingConversationExchanges[selectedConversation.id] ?? null}
+                onPendingExchangeChange={(conversationId, exchange) => {
+                  setPendingConversationExchanges((current) => {
+                    const next = { ...current };
+                    if (exchange) {
+                      next[conversationId] = exchange;
+                    } else {
+                      delete next[conversationId];
+                    }
+                    return next;
+                  });
+                }}
                 onSendMessage={handleSendConversationMessage}
                 readonly={selectedConversation.readonly ?? false}
               />

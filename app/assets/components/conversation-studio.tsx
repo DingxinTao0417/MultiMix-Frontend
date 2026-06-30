@@ -19,13 +19,32 @@ type OptimisticExchange = {
 function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === "assistant" && !message.pending && !message.suggestions?.length) return index;
+    if (message.role === "assistant" && !message.pending && !message.suggestions?.length && !message.suggestionActions?.length) return index;
   }
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message.role === "assistant" && !message.pending) return index;
   }
   return -1;
+}
+
+function visibleSuggestions(message: VisibleConversationMessage) {
+  if (message.suggestionActions?.length) {
+    return message.suggestionActions.map((action) => ({
+      key: action.id,
+      label: action.label,
+      utterance: action.utterance,
+      enabled: action.enabled,
+      disabledReason: action.disabledReason
+    }));
+  }
+  return (message.suggestions ?? []).map((suggestion) => ({
+    key: suggestion,
+    label: suggestion,
+    utterance: suggestion,
+    enabled: true,
+    disabledReason: undefined
+  }));
 }
 
 function mapProductsToConversationMessages(messages: VisibleConversationMessage[], products: ProductArtifact[]): Map<number, ProductArtifact[]> {
@@ -56,6 +75,8 @@ export default function ConversationStudio({
   selectedConversation,
   selectedProduct,
   onSelectProduct,
+  pendingExchange = null,
+  onPendingExchangeChange,
   onSendMessage,
   readonly = false
 }: {
@@ -64,6 +85,8 @@ export default function ConversationStudio({
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
+  pendingExchange?: OptimisticExchange | null;
+  onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
   onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>) => Promise<void>;
   readonly?: boolean;
 }) {
@@ -71,7 +94,7 @@ export default function ConversationStudio({
   const [composerValue, setComposerValue] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [optimisticExchange, setOptimisticExchange] = useState<OptimisticExchange | null>(null);
+  const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const activeRequestRef = useRef<AbortController | null>(null);
 
@@ -107,8 +130,6 @@ export default function ConversationStudio({
   };
 
   useEffect(() => {
-    setOptimisticExchange(null);
-    activeRequestRef.current?.abort();
     activeRequestRef.current = null;
     setSending(false);
     setSendError(null);
@@ -129,23 +150,24 @@ export default function ConversationStudio({
     setSending(true);
     setSendError(null);
     setComposerValue("");
-    setOptimisticExchange({
+    const exchange = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       userText: instruction,
       assistantText: "正在生成",
       status: "pending"
-    });
+    } satisfies OptimisticExchange;
+    onPendingExchangeChange?.(selectedConversation.id, exchange);
     try {
       await onSendMessage(selectedConversation, instruction, controller.signal);
       if (controller.signal.aborted) return;
-      setOptimisticExchange(null);
+      onPendingExchangeChange?.(selectedConversation.id, null);
     } catch (error) {
       if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-        setOptimisticExchange((current) => current ? { ...current, assistantText: "已停止生成。", status: "stopped" } : current);
+        onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: "已停止生成。", status: "stopped" } : null);
         return;
       }
       const message = formatComposerError(error);
-      setOptimisticExchange((current) => current ? { ...current, assistantText: message, status: "failed" } : current);
+      onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: message, status: "failed" } : null);
       setSendError(message);
     } finally {
       if (activeRequestRef.current === controller) {
@@ -160,7 +182,9 @@ export default function ConversationStudio({
     activeRequestRef.current?.abort();
     activeRequestRef.current = null;
     setSending(false);
-    setOptimisticExchange((current) => current ? { ...current, assistantText: "已停止生成。", status: "stopped" } : current);
+    if (pendingExchange) {
+      onPendingExchangeChange?.(selectedConversation.id, { ...pendingExchange, assistantText: "已停止生成。", status: "stopped" });
+    }
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -226,23 +250,24 @@ export default function ConversationStudio({
         {visibleConversationMessages.map((message, index) => (
           <div className="shadcn-prototype-message-group" key={`${message.role}-${index}-${message.text}`}>
             <article className={[
-              message.suggestions?.length ? `${message.role} delivery` : message.role,
+              message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
               message.pending ? "pending" : ""
             ].filter(Boolean).join(" ")}>
               <p>
                 {message.text}
                 {message.pending ? <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span> : null}
               </p>
-              {message.suggestions?.length ? (
+              {visibleSuggestions(message).length ? (
                 <div className="shadcn-prototype-suggestion-row" aria-label="推荐调整指令">
-                  {message.suggestions.map((suggestion) => (
+                  {visibleSuggestions(message).map((suggestion) => (
                     <button
                       type="button"
-                      key={suggestion}
-                      disabled={!canSend}
+                      key={suggestion.key}
+                      disabled={!canSend || !suggestion.enabled}
+                      title={suggestion.disabledReason}
                       onClick={() => {
-                        if (!canSend) return;
-                        setComposerValue(suggestion);
+                        if (!canSend || !suggestion.enabled) return;
+                        setComposerValue(suggestion.utterance);
                         requestAnimationFrame(() => {
                           composerRef.current?.focus();
                           if (composerRef.current) {
@@ -251,7 +276,7 @@ export default function ConversationStudio({
                         });
                       }}
                     >
-                      {suggestion}
+                      {suggestion.label}
                     </button>
                   ))}
                 </div>

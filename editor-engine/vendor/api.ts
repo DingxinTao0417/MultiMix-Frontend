@@ -81,11 +81,11 @@ export interface MaterialOption {
   duration: number;
 }
 
-export async function replaceOptions(segmentText: string, duration: number, layout = "portrait"): Promise<MaterialOption[]> {
+export async function replaceOptions(segmentText: string, duration: number, layout = "portrait", page = 1): Promise<MaterialOption[]> {
   const res = await fetch(`${API_BASE}/v1/video/replace-options`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segment_text: segmentText, duration, layout }),
+    body: JSON.stringify({ segment_text: segmentText, duration, layout, page }),
   });
   if (!res.ok) throw new Error("replace_options failed");
   const data = await res.json();

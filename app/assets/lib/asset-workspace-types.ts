@@ -74,9 +74,22 @@ export type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
   suggestions?: string[];
+  suggestionActions?: AssetSuggestionAction[];
   // Backend-backed message fields (optional for mock data).
   assetId?: number | null;
   pending?: boolean;
+};
+
+export type AssetSuggestionAction = {
+  id: string;
+  label: string;
+  utterance: string;
+  actionType: "fill_composer" | "submit_message" | "open_panel" | "safe_execute" | string;
+  capability?: string;
+  mode?: string;
+  enabled: boolean;
+  disabledReason?: string;
+  requiresConfirmation: boolean;
 };
 
 export type AssetConversation = {

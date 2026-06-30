@@ -111,7 +111,34 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       };
     }
 
-    // Non-Supabase: read from localStorage.
+    // Non-Supabase with a backend: always refresh the local dev token so stale
+    // Supabase sessions from earlier runs cannot force a password login.
+    if (isApiConfigured) {
+      window.localStorage.removeItem(LOCAL_USER_KEY);
+      void import("../lib/api")
+        .then(({ authLocalDevAdmin }) => withTimeout(authLocalDevAdmin(), AUTH_INIT_TIMEOUT_MS))
+        .then((response) => {
+          if (cancelled) return;
+          if (response.access_token) {
+            const nextUser = { email: response.email ?? "local@admin", token: response.access_token };
+            window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
+            setUser(nextUser);
+          } else {
+            setUser(null);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setUser(null);
+        })
+        .finally(() => {
+          finishReady();
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // No backend: read from localStorage for the mock-only workspace.
     const stored = window.localStorage.getItem(LOCAL_USER_KEY);
     if (stored) {
       try {
@@ -136,30 +163,6 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
           return;
         }
       }
-    }
-
-    if (isApiConfigured) {
-      void import("../lib/api")
-        .then(({ authLocalDevAdmin }) => withTimeout(authLocalDevAdmin(), AUTH_INIT_TIMEOUT_MS))
-        .then((response) => {
-          if (cancelled) return;
-          if (response.access_token) {
-            const nextUser = { email: response.email ?? "local@admin", token: response.access_token };
-            window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
-            setUser(nextUser);
-          } else {
-            setUser(null);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setUser(null);
-        })
-        .finally(() => {
-          finishReady();
-        });
-      return () => {
-        cancelled = true;
-      };
     }
 
     {

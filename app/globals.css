@@ -1744,7 +1744,7 @@ button:disabled {
 
 .shadcn-prototype-shot-detail > header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, 0.45fr) auto auto auto auto;
   align-items: center;
   gap: 6px;
   border-bottom: 1px solid #f0f0f1;
@@ -1859,9 +1859,9 @@ button:disabled {
   right: 16px;
   bottom: 0;
   left: 0;
-  grid-template-rows: auto auto minmax(84px, auto);
+  grid-template-rows: auto auto auto;
   align-content: start;
-  max-height: min(64%, 520px);
+  max-height: 100%;
   overflow: auto;
   box-shadow: none;
 }
@@ -1888,16 +1888,23 @@ button:disabled {
 
 .shadcn-prototype-shot-result-grid {
   display: grid;
-  grid-template-columns: minmax(200px, 0.72fr) minmax(260px, 1fr);
-  gap: 10px;
-  padding: 10px 10px 8px;
+  grid-template-columns: minmax(240px, 0.58fr) minmax(300px, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px 12px 10px;
 }
 
 .shadcn-prototype-shot-preview {
   position: relative;
   display: grid;
-  min-height: 132px;
-  overflow: hidden;
+  place-items: center;
+  min-height: 0;
+  max-height: 390px;
+  justify-self: center;
+  width: fit-content;
+  max-width: 100%;
+  height: fit-content;
+  overflow: visible;
   border: 1px solid #eceef0;
   border-radius: 12px;
   background: #0f172a;
@@ -1927,14 +1934,29 @@ button:disabled {
   line-height: 1;
 }
 
-.shadcn-prototype-shot-preview video,
-.shadcn-prototype-shot-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.shadcn-prototype-shot-preview-media {
+  display: grid;
+  width: fit-content;
+  height: fit-content;
+  max-width: 100%;
+  max-height: 390px;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  border-radius: inherit;
 }
 
-.shadcn-prototype-shot-preview > div {
+.shadcn-prototype-shot-preview-media video,
+.shadcn-prototype-shot-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 390px;
+  object-fit: contain;
+  background: #0f172a;
+}
+
+.shadcn-prototype-shot-preview-empty {
   display: grid;
   place-items: center;
   align-content: center;
@@ -1944,11 +1966,11 @@ button:disabled {
   text-align: center;
 }
 
-.shadcn-prototype-shot-preview > div strong {
+.shadcn-prototype-shot-preview-empty strong {
   font-size: 13px;
 }
 
-.shadcn-prototype-shot-preview > div span {
+.shadcn-prototype-shot-preview-empty span {
   max-width: 240px;
   color: #cbd5e1;
   font-size: 11px;
@@ -1969,9 +1991,75 @@ button:disabled {
   font-weight: 700;
 }
 
+.shadcn-prototype-shot-copy-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.shadcn-prototype-shot-audio-control {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.shadcn-prototype-shot-audio-control button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d4d4d8;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #18181b;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.shadcn-prototype-shot-audio-control svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.35;
+}
+
+.shadcn-prototype-shot-audio-control .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  margin: -1px;
+}
+
+.shadcn-prototype-shot-audio-control button:not(:disabled):active,
+.shadcn-prototype-shot-audio-control button:not(:disabled):focus-visible {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+.shadcn-prototype-shot-audio-control button.playing {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.shadcn-prototype-shot-audio-control button:disabled {
+  color: #a1a1aa;
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .shadcn-prototype-shot-copy-panel textarea {
   width: 100%;
-  min-height: 96px;
+  min-height: 118px;
+  max-height: 180px;
   resize: vertical;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
@@ -2058,15 +2146,16 @@ button:disabled {
 
 .shadcn-prototype-shot-materials {
   display: grid;
-  gap: 2px;
+  grid-template-rows: auto auto;
+  gap: 8px;
   border-top: 1px solid #f4f4f5;
-  padding: 0 10px 5px;
+  padding: 0 12px 12px;
 }
 
 .shadcn-prototype-shot-materials header {
   justify-content: start;
   gap: 6px;
-  min-height: 18px;
+  min-height: 28px;
   line-height: 1;
 }
 
@@ -2085,9 +2174,10 @@ button:disabled {
 
 .shadcn-prototype-shot-materials > div {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  min-height: 96px;
+  min-height: 150px;
+  height: 150px;
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: 2px;
@@ -2095,16 +2185,35 @@ button:disabled {
 }
 
 .shadcn-prototype-shot-materials article {
-  flex: 0 0 calc((100% - 16px) / 3);
-  display: grid;
-  gap: 4px;
+  flex: 0 0 calc((100% - 20px) / 3);
+  position: relative;
+  display: block;
   min-width: 150px;
-  min-height: 94px;
+  min-height: 150px;
+  height: 150px;
+  overflow: hidden;
   border: 1px solid #eceef0;
   border-radius: 12px;
-  background: #ffffff;
-  padding: 6px 8px;
+  background: #0f172a;
+  padding: 0;
   scroll-snap-align: start;
+}
+
+.shadcn-prototype-shot-material-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #0f172a;
+}
+
+.shadcn-prototype-shot-material-preview video,
+.shadcn-prototype-shot-material-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .shadcn-prototype-shot-materials article.selected {
@@ -2131,8 +2240,13 @@ button:disabled {
 }
 
 .shadcn-prototype-shot-materials article button {
-  align-self: end;
-  justify-self: start;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-height: 28px;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
 }
 
 .shadcn-prototype-shot-material-empty {
@@ -2165,6 +2279,80 @@ button:disabled {
 .shadcn-prototype-shot-detail-save:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.shadcn-prototype-shot-detail-nav {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #e4e4e7;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #27272a;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.shadcn-prototype-shot-detail-nav:disabled {
+  color: #a1a1aa;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.shadcn-prototype-material-preview-modal {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.64);
+  padding: 24px;
+}
+
+.shadcn-prototype-material-preview-modal > div {
+  position: relative;
+  display: grid;
+  width: fit-content;
+  height: fit-content;
+  max-width: 88vw;
+  max-height: 86vh;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #020617;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.42);
+}
+
+.shadcn-prototype-material-preview-modal video,
+.shadcn-prototype-material-preview-modal img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 88vw;
+  max-height: 86vh;
+  object-fit: contain;
+}
+
+.shadcn-prototype-material-preview-modal button {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.76);
+  color: #ffffff;
 }
 
 .shadcn-prototype-product-timeline-strip {

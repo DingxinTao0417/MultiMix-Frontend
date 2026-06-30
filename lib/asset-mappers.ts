@@ -2,7 +2,7 @@
 // frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
 // frontend assets-workspace-client.tsx helpers.
 
-import type { AssetConversation, AssetProduct, AssetProductMode } from "../app/assets/lib/asset-workspace-types";
+import type { AssetConversation, AssetConversationMessage, AssetProduct, AssetProductMode, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
 import type { AssetConversationResponse, ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -17,6 +17,28 @@ function stringListValue(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value.map((item) => String(item).trim()).filter(Boolean);
   return items.length ? items : undefined;
+}
+
+function suggestionActionsValue(value: unknown): AssetSuggestionAction[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const actions = value.flatMap((item): AssetSuggestionAction[] => {
+    if (!isRecord(item)) return [];
+    const label = stringValue(item.label);
+    const utterance = stringValue(item.utterance) || label;
+    if (!label || !utterance) return [];
+    return [{
+      id: stringValue(item.id) || label,
+      label,
+      utterance,
+      actionType: stringValue(item.action_type) || "fill_composer",
+      capability: stringValue(item.capability) || undefined,
+      mode: stringValue(item.mode) || undefined,
+      enabled: item.enabled !== false,
+      disabledReason: stringValue(item.disabled_reason) || undefined,
+      requiresConfirmation: item.requires_confirmation !== false
+    }];
+  });
+  return actions.length ? actions : undefined;
 }
 
 function relativeTimeLabel(value: string): string {
@@ -281,12 +303,39 @@ export function conversationFromPersisted(
   const product = fallbackProduct
     ? products.find((item) => item.id === fallbackProduct.id) ?? fallbackProduct
     : products[products.length - 1] ?? newConversationProduct;
-  const messages = row.messages.map((message) => ({
+  const messages: AssetConversationMessage[] = row.messages.map((message) => ({
     role: message.role,
     text: message.text,
     assetId: message.asset_id,
-    suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined
+    suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
+    suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined
   }));
+  for (const asset of row.products) {
+    const metadata = asset.metadata ?? {};
+    const isPendingVideoProject = Boolean(
+      metadata.orchestration_pending
+      && !metadata.video_project
+      && typeof metadata.latest_job_public_id === "string"
+    );
+    if (!isPendingVideoProject) continue;
+    const existingIndex = messages.findIndex((message) => message.assetId === asset.id);
+    if (existingIndex >= 0) {
+      const text = messages[existingIndex].text;
+      messages[existingIndex] = {
+        ...messages[existingIndex],
+        text: text.includes("后台生成中") ? text : `${text}\n\n视频工程正在后台生成中，切换对话后会继续运行。`,
+        pending: true,
+      };
+      continue;
+    }
+    messages.push({
+      role: "assistant",
+      text: "视频工程正在后台生成中，切换对话后会继续运行。",
+      assetId: asset.id,
+      suggestions: undefined,
+      pending: true
+    });
+  }
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.text ?? "";
   const lastAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant")?.text ?? "";
   const lastAsset = row.products[row.products.length - 1];

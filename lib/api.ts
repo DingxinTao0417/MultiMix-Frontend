@@ -196,6 +196,7 @@ export type AssetConversationMessageResponse = {
   assistant_message: string;
   intent: Record<string, unknown>;
   suggestions: string[];
+  suggestion_actions?: Array<Record<string, unknown>>;
   product: ContentAsset | null;
 };
 
@@ -227,6 +228,7 @@ export type ContentAssetRevisionResponse = {
   diff_summary: string;
   assistant_message: string;
   suggestions: string[];
+  suggestion_actions?: Array<Record<string, unknown>>;
 };
 
 export type ContentAssetVersionCompareResponse = {
