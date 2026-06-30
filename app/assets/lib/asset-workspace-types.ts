@@ -56,6 +56,9 @@ export type AssetProduct = {
   phase: string;
   version?: string;
   body?: string[];
+  // Raw markdown source (backend assets only) for rich rendering; `body` is the
+  // paragraph-split plain-text fallback used by mock data.
+  markdownBody?: string;
   sections: AssetProductSection[];
   timeline: AssetProductTimelineItem[];
   actions: string[];

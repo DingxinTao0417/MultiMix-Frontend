@@ -247,6 +247,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     phase: capabilityLabel,
     version: asset.versions?.length ? `v${asset.versions.length}` : "v1",
     body,
+    markdownBody: asset.body,
     sections,
     timeline: timelineFromVideoProject(videoProject) ?? timelineFromBody(asset.body, unsupported),
     actions: suggestionsForCapability(capability),
