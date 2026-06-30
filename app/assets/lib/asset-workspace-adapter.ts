@@ -2,16 +2,21 @@ import { mockAssetWorkspaceData } from "./asset-workspace-mock-data";
 import type { AssetConversation, AssetProduct, AssetSource, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 import {
   api,
+  apiBlob,
   apiForm,
   isApiConfigured,
+  type AssetIngestJobRead,
   type AssetConversationMessageResponse,
   type AssetConversationResponse,
   type ContentAsset,
+  type ContentAssetSearchResult,
+  type ContentAssetRevisionResponse,
   type VideoRenderJobCreateResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
 
 export type LibraryRow = {
+  assetId?: number;
   title: string;
   meta: string;
   note: string;
@@ -23,7 +28,12 @@ export type LibraryRow = {
   contentType?: string;
   statusLabel?: string;
   sourceLabel?: string;
+  sourceUrl?: string;
   detailLabel?: string;
+  sourceRefs?: string[];
+  versions?: string[];
+  searchReasons?: string[];
+  captionStatus?: string;
   variant?: "digital-human" | "standard";
 };
 
@@ -48,13 +58,32 @@ export type AssetWorkspaceAdapter = {
     conversationId: string;
     instruction: string;
     selectedProductId?: number;
+    linkedAssetIds?: number[];
     signal?: AbortSignal;
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null }>;
+  reviseProduct(args: {
+    token: string;
+    product: AssetProduct;
+    instruction: string;
+    conversationId?: string;
+    signal?: AbortSignal;
+  }): Promise<{ product: AssetProduct; assistantMessage: string; suggestions: string[]; diffSummary: string }>;
+  restoreProductVersion(args: {
+    token: string;
+    product: AssetProduct;
+    versionId: string;
+  }): Promise<{ product: AssetProduct; assistantMessage: string; diffSummary: string }>;
   renderVideo(token: string, backendAssetId: number): Promise<{ product: AssetProduct }>;
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
-  listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">): Promise<LibraryRow[]>;
+  listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
   uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">): Promise<ContentAsset>;
+  createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
+  createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
+  getLatestIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
+  retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobRead>;
+  exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
+  regenerateImageCaption(token: string, assetId: number): Promise<ContentAsset>;
 };
 
 export type VideoJobResult = {
@@ -164,6 +193,87 @@ function inferLibraryCategory(asset: ContentAsset): string {
   return "资料";
 }
 
+function searchReasonLabels(fields: string[]): string[] {
+  const labels: Record<string, string> = {
+    title: "标题命中",
+    body: "正文命中",
+    source_filename: "来源命中",
+    metadata: "元数据命中",
+    chunks: "正文命中",
+    semantic_chunks: "语义相关"
+  };
+  return fields.map((field) => labels[field] ?? field).filter((label, index, array) => array.indexOf(label) === index);
+}
+
+function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] = []): LibraryRow {
+  const category = inferLibraryCategory(asset);
+  const status = videoProjectStatusLabel(asset) ?? statusLabel(asset.status);
+  const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;
+  return {
+    assetId: asset.id,
+    title: asset.title,
+    meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
+    note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
+    kind: libraryRowKind(asset),
+    category,
+    keywords: inferKeywords(asset),
+    body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
+    contentType: contentTypeLabel(asset),
+    statusLabel: status,
+    sourceLabel: asset.source_filename ?? sourceUrl ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
+    sourceUrl,
+    sourceRefs: (asset.source_mapping ?? [])
+      .filter((item) => item && typeof item === "object")
+      .map((item) => {
+        const record = item as Record<string, unknown>;
+        return [record.title, record.source_type, record.asset_id ?? record.state ?? record.url].filter(Boolean).join(" · ");
+      })
+      .filter(Boolean)
+      .slice(0, 5),
+    versions: (asset.versions ?? []).map((version) => `v${version.version}${version.instruction ? ` · ${version.instruction}` : ""}`).slice(-5),
+    searchReasons,
+    captionStatus: typeof asset.metadata?.caption_status === "string" ? asset.metadata.caption_status : undefined,
+    variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
+  };
+}
+
+function libraryKindParam(view: Exclude<AssetWorkspaceView, "conversation">): string {
+  return view === "assets" ? "assets" : view;
+}
+
+function mergeSearchResults(keywordRows: ContentAssetSearchResult[], semanticRows: ContentAssetSearchResult[]): LibraryRow[] {
+  const merged = new Map<number, { asset: ContentAsset; reasons: string[]; score: number; order: number }>();
+  let order = 0;
+  for (const row of keywordRows) {
+    merged.set(row.asset.id, {
+      asset: row.asset,
+      reasons: searchReasonLabels(row.matched_fields ?? []),
+      score: row.score + 10,
+      order
+    });
+    order += 1;
+  }
+  for (const row of semanticRows) {
+    const existing = merged.get(row.asset.id);
+    const reasons = searchReasonLabels(row.matched_fields?.length ? row.matched_fields : ["semantic_chunks"]);
+    if (existing) {
+      existing.reasons = [...existing.reasons, ...reasons].filter((label, index, array) => array.indexOf(label) === index);
+      existing.score = Math.max(existing.score, row.score);
+      continue;
+    }
+    merged.set(row.asset.id, {
+      asset: row.asset,
+      reasons,
+      score: row.score,
+      order
+    });
+    order += 1;
+  }
+  return [...merged.values()]
+    .sort((left, right) => (right.score - left.score) || (left.order - right.order))
+    .map((item) => contentAssetToLibraryRow(item.asset, item.reasons));
+}
+
 function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
   return {
     getSnapshot() {
@@ -222,20 +332,71 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       const row = await api<AssetConversationResponse>("/assets/conversations", token, { method: "POST" });
       return conversationFromPersisted(row, data.newConversation.product);
     },
-    async sendMessage({ token, conversationId, instruction, selectedProductId, signal }) {
+    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, signal }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
         body: JSON.stringify({
           instruction,
           conversation_id: conversationId === "new" ? undefined : conversationId,
-          selected_product_id: selectedProductId
+          selected_product_id: selectedProductId,
+          linked_asset_ids: linkedAssetIds ?? []
         })
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
       const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
       const product = generatedProduct ?? null;
       return { conversationId: response.conversation_id, conversation, product };
+    },
+    async reviseProduct({ token, product, instruction, conversationId, signal }) {
+      if (isApiConfigured && token && product.backendAssetId) {
+        const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/revisions`, token, {
+          method: "POST",
+          signal,
+          body: JSON.stringify({
+            instruction,
+            conversation_id: conversationId === "new" ? undefined : conversationId
+          })
+        });
+        return {
+          product: contentAssetToProduct(response.asset),
+          assistantMessage: response.assistant_message,
+          suggestions: response.suggestions,
+          diffSummary: response.diff_summary
+        };
+      }
+      const nextVersion = product.version ? `v${parseInt(product.version.replace("v", ""), 10) + 1}` : "v2";
+      return {
+        product: {
+          ...product,
+          version: nextVersion,
+          body: [...(product.body ?? [product.summary]), "", `修订指令：${instruction}`],
+          status: "本地修订"
+        },
+        assistantMessage: "已在本地 mock 中记录修订。",
+        suggestions: product.actions,
+        diffSummary: "Local mock revision"
+      };
+    },
+    async restoreProductVersion({ token, product, versionId }) {
+      if (isApiConfigured && token && product.backendAssetId) {
+        const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/versions/${encodeURIComponent(versionId)}/restore`, token, {
+          method: "POST"
+        });
+        return {
+          product: contentAssetToProduct(response.asset),
+          assistantMessage: response.assistant_message,
+          diffSummary: response.diff_summary
+        };
+      }
+      return {
+        product: {
+          ...product,
+          version: product.versions?.find((version) => version.id === versionId)?.label ?? product.version
+        },
+        assistantMessage: "已在本地 mock 中恢复版本。",
+        diffSummary: "Local mock restore"
+      };
     },
     async renderVideo(token, backendAssetId) {
       const response = await api<VideoRenderJobCreateResponse>(`/assets/videos/${backendAssetId}/render`, token, {
@@ -260,34 +421,67 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
       return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
     },
-    async listLibrary(token, view) {
+    async listLibrary(token, view, query) {
       const kinds = libraryKindsForView(view);
+      const trimmedQuery = query?.trim() ?? "";
+      if (trimmedQuery) {
+        const params = new URLSearchParams({ q: trimmedQuery, library_kind: libraryKindParam(view), limit: "50" });
+        const [keywordResult, semanticResult] = await Promise.allSettled([
+          api<ContentAssetSearchResult[]>(`/assets/search?${params.toString()}`, token),
+          api<ContentAssetSearchResult[]>(`/assets/semantic-search?${params.toString()}`, token)
+        ]);
+        const keywordRows = keywordResult.status === "fulfilled" ? keywordResult.value : [];
+        const semanticRows = semanticResult.status === "fulfilled" ? semanticResult.value : [];
+        const mergedRows = mergeSearchResults(keywordRows, semanticRows)
+          .filter((row) => row.assetId == null || kinds.includes(row.kind === "file" ? "asset" : row.kind));
+        if (mergedRows.length || keywordResult.status === "fulfilled" || semanticResult.status === "fulfilled") return mergedRows;
+      }
       const rows = await api<ContentAsset[]>("/assets", token);
       return rows
         .filter((asset) => kinds.includes(asset.asset_kind))
-        .map((asset) => {
-          const category = inferLibraryCategory(asset);
-          const status = videoProjectStatusLabel(asset) ?? statusLabel(asset.status);
-          return {
-            title: asset.title,
-            meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
-            note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
-            kind: libraryRowKind(asset),
-            category,
-            keywords: inferKeywords(asset),
-            body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
-            contentType: contentTypeLabel(asset),
-            statusLabel: status,
-            sourceLabel: asset.source_filename ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
-            variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
-          };
-        });
+        .map((asset) => contentAssetToLibraryRow(asset));
     },
     async uploadAsset(token, file, view) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("target_kind", view === "assets" ? "asset" : view);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
+    },
+    async createTextAsset(token, payload) {
+      return api<ContentAsset>("/assets/text", token, {
+        method: "POST",
+        body: JSON.stringify({
+          title: payload.title,
+          body_markdown: payload.bodyMarkdown,
+          library_kind: "assets",
+          content_type: payload.contentType ?? "manual_text"
+        })
+      });
+    },
+    async createWebCapture(token, payload) {
+      return api<ContentAsset>("/assets/web-captures", token, {
+        method: "POST",
+        body: JSON.stringify({
+          url: payload.url,
+          title: payload.title,
+          body: payload.body,
+          content_type: payload.contentType ?? "text/html"
+        })
+      });
+    },
+    async getLatestIngestJob(token, assetId) {
+      return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
+    },
+    async retryAssetIngest(token, assetId) {
+      const latest = await this.getLatestIngestJob(token, assetId);
+      await api<AssetIngestJobRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/retry`, token, { method: "POST" });
+      return api<AssetIngestJobRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/process`, token, { method: "POST" });
+    },
+    async exportAssetMarkdown(token, assetId) {
+      return apiBlob(`/assets/${assetId}/export.md`, token);
+    },
+    async regenerateImageCaption(token, assetId) {
+      return api<ContentAsset>(`/assets/${assetId}/caption`, token, { method: "POST" });
     }
   };
 }

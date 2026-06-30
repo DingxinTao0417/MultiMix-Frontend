@@ -129,12 +129,17 @@ export async function apiForm<T>(path: string, token: string | null, formData: F
 export type ContentAssetVersion = {
   id: number;
   asset_id: number;
+  parent_version_id?: number | null;
   version: number;
   title: string;
   body: string;
   markdown_ref: string | null;
   artifact_ref: string | null;
   content_hash: string | null;
+  instruction?: string | null;
+  edit_intent?: string | null;
+  diff_summary?: string | null;
+  structured_payload?: Record<string, unknown>;
   metadata: Record<string, unknown>;
   created_at: string;
 };
@@ -154,6 +159,7 @@ export type ContentAsset = {
   content_hash: string | null;
   body: string;
   metadata: Record<string, unknown>;
+  source_mapping?: Array<Record<string, unknown>>;
   linked_asset_ids: number[];
   linked_event_ids: number[];
   archived: boolean;
@@ -191,6 +197,46 @@ export type AssetConversationMessageResponse = {
   intent: Record<string, unknown>;
   suggestions: string[];
   product: ContentAsset | null;
+};
+
+export type ContentAssetSearchResult = {
+  asset: ContentAsset;
+  snippet: string;
+  score: number;
+  matched_fields: string[];
+};
+
+export type AssetIngestJobRead = {
+  id: string;
+  asset_id: number;
+  status: string;
+  stage: string;
+  attempts: number;
+  error_class: string | null;
+  error_message: string | null;
+  queued_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
+};
+
+export type ContentAssetRevisionResponse = {
+  asset: ContentAsset;
+  parent_version_id: number | null;
+  version_id: number;
+  diff_summary: string;
+  assistant_message: string;
+  suggestions: string[];
+};
+
+export type ContentAssetVersionCompareResponse = {
+  asset_id: number;
+  from_version_id: number;
+  to_version_id: number;
+  summary: string;
+  from_version: number;
+  to_version: number;
+  length_delta: number;
 };
 
 export type VideoRenderJobCreateResponse = {

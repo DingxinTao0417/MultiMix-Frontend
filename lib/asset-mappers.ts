@@ -251,6 +251,16 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     timeline: timelineFromVideoProject(videoProject) ?? timelineFromBody(asset.body, unsupported),
     actions: suggestionsForCapability(capability),
     sourceIds: asset.linked_asset_ids.map((id) => String(id)),
+    versions: (asset.versions ?? []).map((version) => ({
+      id: String(version.id),
+      label: `v${version.version}`,
+      savedAt: relativeTimeLabel(version.created_at),
+      status: version.edit_intent === "restore"
+        ? "恢复版本"
+        : version.instruction
+          ? `修订：${version.instruction}`
+          : "初始版本"
+    })),
     preview: {
       title: asset.title,
       subtitle: mp4Artifact ? "MP4 成片已生成，可直接播放" : mp4State === "ready" ? "MP4 已生成，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并按需导出 MP4" : unsupported ? "准备产物，未渲染图片或视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),

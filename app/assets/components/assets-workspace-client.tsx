@@ -22,7 +22,7 @@ import {
   Video
 } from "lucide-react";
 import { getAssetLlmDiagnostics, type AssetLlmDiagnosticsRead } from "../../../lib/api";
-import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import {
   resolveConversationProduct,
   type ActiveView,
@@ -32,7 +32,7 @@ import {
 import ConversationStart from "./conversation-start";
 import ConversationStudio from "./conversation-studio";
 import ProductWorkspace, { EmptyProductWorkspace } from "./product-workspace";
-import LibraryWorkshop from "./library-workshop";
+import LibraryWorkshop, { type LibraryActionIntent } from "./library-workshop";
 
 type SidebarState = "auto" | "collapsed" | "expanded";
 type DiagnosticsState = {
@@ -49,6 +49,11 @@ type AssetsWorkspaceClientProps = {
   accountEmail?: string;
   token?: string | null;
   onLogout?: () => void;
+};
+
+type ConversationContextAsset = {
+  id: number;
+  title: string;
 };
 
 function getConversationMonogram(title: string): string {
@@ -72,6 +77,23 @@ function uploadAcceptForView(view: ActiveView): string {
   if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
   if (view === "video") return ".mp4,.mov,.webm,.mkv";
   return ".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm,.txt";
+}
+
+function shouldReviseSelectedProduct(instruction: string, product: ProductArtifact | null): boolean {
+  if (!product?.backendAssetId) return false;
+  const text = instruction.trim().toLowerCase();
+  if (!text) return false;
+  if (/(mp4|成片|渲染|导出视频|render|export)/i.test(text)) return false;
+  if (/(再做|另外|新增|新建|再生成|另做|add another|new one|create another)/i.test(text)) return false;
+  return /(短一点|更短|缩短|压到|改|改成|改写|重写|优化|删掉|保留|第二|镜头|字幕|口语|专业|做成|变成|转成|数字人|mg|实景|文生视频|封面|构图|色调|shorten|revise|rewrite|edit|turn into|make it)/i.test(text);
+}
+
+function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
+  const byId = new Map<number, ConversationContextAsset>();
+  for (const item of [...current, ...additions]) {
+    byId.set(item.id, item);
+  }
+  return [...byId.values()].slice(-8);
 }
 
 export default function AssetsWorkspaceClient({
@@ -100,6 +122,7 @@ export default function AssetsWorkspaceClient({
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
+  const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
@@ -118,6 +141,7 @@ export default function AssetsWorkspaceClient({
   const selectedConversation =
     visibleConversationRows.find((conversation) => conversation.id === selectedConversationId) ?? assetWorkspaceAdapter.getNewConversation();
   const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const activeTitle = activeView === "conversation"
     ? "对话"
@@ -323,13 +347,91 @@ export default function AssetsWorkspaceClient({
     }
   };
 
+  const updateConversationProduct = (conversationId: string, updatedProduct: ProductArtifact) => {
+    setConversations((current) => current.map((conversation) => {
+      if (conversation.id !== conversationId) return conversation;
+      const products = conversation.products ?? [conversation.product];
+      const nextProducts = products.some((item) => item.id === updatedProduct.id)
+        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
+        : [...products, updatedProduct];
+      return {
+        ...conversation,
+        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
+        products: nextProducts,
+        canvasTitle: updatedProduct.title,
+        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
+        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
+        updatedAt: "刚刚"
+      };
+    }));
+  };
+
+  const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      toast.error("请先登录并配置后端后再恢复版本。");
+      return;
+    }
+    try {
+      const result = await assetWorkspaceAdapter.restoreProductVersion({ token, product, versionId });
+      updateConversationProduct(selectedConversation.id, result.product);
+      setSavedProductIds((current) => ({
+        ...current,
+        [result.product.id]: result.product.version ?? result.diffSummary
+      }));
+      toast.success(result.assistantMessage || "已恢复版本");
+    } catch {
+      toast.error("恢复失败，请稍后重试。");
+    }
+  };
+
   const handleStartConversation = () => {
     setActiveView("conversation");
     setConversationMenuId(null);
     setSelectedConversationId("new");
   };
 
-  const handleSendConversationMessage = async (conversation: Conversation, instruction: string, signal?: AbortSignal) => {
+  const handleAddAssetToConversation = (row: LibraryRow) => {
+    if (!row.assetId) {
+      toast.error("这个条目还没有后端资产 ID。");
+      return;
+    }
+    const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
+    setConversationContextAssets((current) => ({
+      ...current,
+      [targetConversationId]: mergeContextAssets(current[targetConversationId] ?? [], [{ id: row.assetId!, title: row.title }])
+    }));
+    setSelectedConversationId(targetConversationId);
+    setActiveView("conversation");
+    toast.success("已加入当前对话引用。");
+  };
+
+  const handleUseLibraryAsset = async (row: LibraryRow, intent: LibraryActionIntent) => {
+    if (!row.assetId) {
+      toast.error("这个条目还没有后端资产 ID。");
+      return;
+    }
+    const linkedAsset = { id: row.assetId, title: row.title };
+    const targetConversation = assetWorkspaceAdapter.getNewConversation();
+    const instruction = intent === "video"
+      ? `基于《${row.title}》生成一条短视频脚本，保留关键信息并补充分镜、口播和画面建议。`
+      : intent === "regenerate-image"
+        ? `基于《${row.title}》重新生成一版图片提示词，突出主体、场景、构图、色调和可复用关键词。`
+        : `基于《${row.title}》生成一条可发布内容，先提炼资料要点，再输出可直接编辑的成稿。`;
+    setConversationContextAssets((current) => ({
+      ...current,
+      [targetConversation.id]: [linkedAsset]
+    }));
+    setSelectedConversationId(targetConversation.id);
+    setActiveView("conversation");
+    try {
+      await handleSendConversationMessage(targetConversation, instruction, undefined, [linkedAsset]);
+      toast.success("已基于资产发起创作。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "发起创作失败。");
+    }
+  };
+
+  const handleSendConversationMessage = async (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets: ConversationContextAsset[] = []) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
     }
@@ -337,11 +439,62 @@ export default function AssetsWorkspaceClient({
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
     const selectedBackendAssetId = selectedProduct?.backendAssetId;
+    const contextAssets = linkedAssets.length > 0 ? [] : conversationContextAssets[conversation.id] ?? [];
+    const combinedContextAssets = mergeContextAssets(contextAssets, linkedAssets);
+    const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
+    if (selectedProduct && shouldReviseSelectedProduct(instruction, selectedProduct)) {
+      const revision = await assetWorkspaceAdapter.reviseProduct({
+        token,
+        product: selectedProduct,
+        conversationId: conversation.id,
+        instruction,
+        signal
+      });
+      if (signal?.aborted) return;
+      const updatedProduct = revision.product;
+      setConversations((current) => current.map((item) => {
+        if (item.id !== conversation.id) return item;
+        const products = item.products ?? [item.product];
+        const nextProducts = products.some((product) => product.id === updatedProduct.id)
+          ? products.map((product) => product.id === updatedProduct.id ? updatedProduct : product)
+          : [...products, updatedProduct];
+        const nextMessages = [
+          ...(item.messages ?? []),
+          { role: "user" as const, text: instruction },
+          { role: "assistant" as const, text: revision.assistantMessage, suggestions: revision.suggestions }
+        ];
+        return {
+          ...item,
+          product: updatedProduct,
+          products: nextProducts,
+          messages: nextMessages,
+          prompt: instruction,
+          response: revision.assistantMessage,
+          suggestions: revision.suggestions,
+          status: updatedProduct.status,
+          canvasTitle: updatedProduct.title,
+          canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
+          raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
+          updatedAt: "刚刚"
+        };
+      }));
+      setSelectedProductIds((current) => ({
+        ...current,
+        [conversation.id]: updatedProduct.id
+      }));
+      setSavedProductIds((current) => ({
+        ...current,
+        [updatedProduct.id]: updatedProduct.version ?? revision.diffSummary
+      }));
+      setActiveView("conversation");
+      return;
+    }
     const result = await assetWorkspaceAdapter.sendMessage({
       token,
       conversationId: conversation.id,
       instruction,
-      selectedProductId: selectedBackendAssetId,
+      selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId,
+      linkedAssetIds: combinedLinkedAssetIds,
       signal
     });
     if (signal?.aborted) return;
@@ -354,6 +507,14 @@ export default function AssetsWorkspaceClient({
       return [persistedConversation, ...current];
     });
     setSelectedConversationId(targetConversationId);
+    if (targetConversationId !== conversation.id && combinedLinkedAssetIds.length > 0) {
+      setConversationContextAssets((current) => {
+        const next = { ...current };
+        next[targetConversationId] = mergeContextAssets(next[targetConversationId] ?? [], combinedContextAssets);
+        if (conversation.id === "new") delete next[conversation.id];
+        return next;
+      });
+    }
     setSelectedProductIds((current) => {
       if (product) {
         return {
@@ -733,6 +894,7 @@ export default function AssetsWorkspaceClient({
             <>
               <ConversationStudio
                 basePath={basePath}
+                contextAssets={currentContextAssets}
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
@@ -759,6 +921,7 @@ export default function AssetsWorkspaceClient({
                   copied={copiedProductId === selectedProduct.id}
                   onCopyProduct={handleCopyProduct}
                   onSaveProduct={handleSaveProduct}
+                  onRestoreVersion={handleRestoreProductVersion}
                   onRenderVideo={async (product) => {
                     if (!token || !product.backendAssetId) return;
                     const result = await assetWorkspaceAdapter.renderVideo(token, product.backendAssetId);
@@ -812,7 +975,15 @@ export default function AssetsWorkspaceClient({
               )}
             </>
           ) : (
-            <LibraryWorkshop view={activeView} token={token} key={`${activeView}-${libraryRefreshKey}`} />
+            <LibraryWorkshop
+              view={activeView}
+              token={token}
+              key={`${activeView}-${libraryRefreshKey}`}
+              onUploadClick={handleUploadClick}
+              uploading={uploading}
+              onUseAsset={handleUseLibraryAsset}
+              onAddAssetToConversation={handleAddAssetToConversation}
+            />
           )}
         </div>
       </section>

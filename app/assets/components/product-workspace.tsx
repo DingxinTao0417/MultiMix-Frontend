@@ -34,6 +34,7 @@ export default function ProductWorkspace({
   onSaveProduct,
   onRenderVideo,
   onProductUpdated,
+  onRestoreVersion,
   product,
   savedVersion,
   selectedConversation,
@@ -44,12 +45,14 @@ export default function ProductWorkspace({
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
   onRenderVideo?: (product: ProductArtifact) => Promise<void>;
   onProductUpdated?: (product: ProductArtifact) => void;
+  onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
   token?: string | null;
 }) {
   const [rendering, setRendering] = useState(false);
+  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   // Video products backed by a real orchestration project can open the editor.
@@ -117,6 +120,41 @@ export default function ProductWorkspace({
                     ))}
                   </div>
                 </section>
+
+                {product.versions && product.versions.length > 0 ? (
+                  <section className="shadcn-prototype-detail-section">
+                    <h4>版本历史</h4>
+                    <div className="shadcn-prototype-version-list">
+                      {product.versions.map((version) => {
+                        const isCurrent = version.label === product.version;
+                        return (
+                          <article key={version.id}>
+                            <div>
+                              <strong>{version.label}</strong>
+                              <span>{version.status}</span>
+                              <em>{version.savedAt}</em>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={isCurrent || !onRestoreVersion || restoringVersionId === version.id}
+                              onClick={async () => {
+                                if (!onRestoreVersion) return;
+                                setRestoringVersionId(version.id);
+                                try {
+                                  await onRestoreVersion(product, version.id);
+                                } finally {
+                                  setRestoringVersionId(null);
+                                }
+                              }}
+                            >
+                              {isCurrent ? "当前" : restoringVersionId === version.id ? "恢复中..." : "恢复"}
+                            </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ) : null}
 
               </aside>
             </details>

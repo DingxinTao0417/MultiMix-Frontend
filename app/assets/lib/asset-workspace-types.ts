@@ -106,6 +106,7 @@ export type AssetWorkshop = {
   description: string;
   metrics: Array<{ value: string; label: string; detail: string }>;
   rows: Array<{
+    assetId?: number;
     title: string;
     meta: string;
     note: string;
@@ -117,7 +118,12 @@ export type AssetWorkshop = {
     contentType?: string;
     statusLabel?: string;
     sourceLabel?: string;
+    sourceUrl?: string;
     detailLabel?: string;
+    sourceRefs?: string[];
+    versions?: string[];
+    searchReasons?: string[];
+    captionStatus?: string;
     variant?: "digital-human" | "standard";
   }>;
 };

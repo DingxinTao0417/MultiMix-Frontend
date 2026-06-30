@@ -52,6 +52,7 @@ function mapProductsToConversationMessages(messages: VisibleConversationMessage[
 
 export default function ConversationStudio({
   basePath,
+  contextAssets = [],
   selectedConversation,
   selectedProduct,
   onSelectProduct,
@@ -59,10 +60,11 @@ export default function ConversationStudio({
   readonly = false
 }: {
   basePath: string;
+  contextAssets?: Array<{ id: number; title: string }>;
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
-  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
+  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>) => Promise<void>;
   readonly?: boolean;
 }) {
   const products = getConversationProducts(selectedConversation);
@@ -211,6 +213,15 @@ export default function ConversationStudio({
 
   return (
     <section className="shadcn-prototype-card shadcn-prototype-chat" aria-label="Content generation conversation">
+      {contextAssets.length > 0 ? (
+        <div className="shadcn-prototype-context-strip" aria-label="当前引用资产">
+          <FileText size={14} aria-hidden="true" />
+          <span>引用</span>
+          {contextAssets.map((asset) => (
+            <em key={asset.id}>{asset.title}</em>
+          ))}
+        </div>
+      ) : null}
       <div className="shadcn-prototype-thread">
         {visibleConversationMessages.map((message, index) => (
           <div className="shadcn-prototype-message-group" key={`${message.role}-${index}-${message.text}`}>
