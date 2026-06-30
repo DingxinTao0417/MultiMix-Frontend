@@ -20,7 +20,7 @@ export function GridPopover({ children }: { children: React.ReactNode }) {
 
 	return (
 		<Popover>
-			<PopoverTrigger>{children}</PopoverTrigger>
+			<PopoverTrigger asChild>{children}</PopoverTrigger>
 			<PopoverContent sideOffset={8} className="w-60 px-0">
 				<div className="flex flex-col gap-2 px-4">
 					<Label>Guides</Label>

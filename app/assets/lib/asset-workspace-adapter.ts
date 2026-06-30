@@ -10,8 +10,7 @@ import {
   type AssetConversationResponse,
   type ContentAsset,
   type ContentAssetSearchResult,
-  type ContentAssetRevisionResponse,
-  type VideoRenderJobCreateResponse
+  type ContentAssetRevisionResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
 
@@ -73,7 +72,6 @@ export type AssetWorkspaceAdapter = {
     product: AssetProduct;
     versionId: string;
   }): Promise<{ product: AssetProduct; assistantMessage: string; diffSummary: string }>;
-  renderVideo(token: string, backendAssetId: number): Promise<{ product: AssetProduct }>;
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
@@ -397,12 +395,6 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         assistantMessage: "已在本地 mock 中恢复版本。",
         diffSummary: "Local mock restore"
       };
-    },
-    async renderVideo(token, backendAssetId) {
-      const response = await api<VideoRenderJobCreateResponse>(`/assets/videos/${backendAssetId}/render`, token, {
-        method: "POST"
-      });
-      return { product: contentAssetToProduct(response.render_product ?? response.product) };
     },
     async generateVideo(token, topic, opts) {
       const body = {

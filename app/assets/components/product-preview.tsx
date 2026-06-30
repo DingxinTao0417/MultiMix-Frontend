@@ -2,16 +2,19 @@
 
 import { type CSSProperties } from "react";
 import { Play } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeSanitize from "rehype-sanitize";
 import type { ProductArtifact } from "../lib/asset-workspace-shared";
 
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
   if (product.mode === "copy") {
+    const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
-      <article className="shadcn-prototype-copy-document" contentEditable suppressContentEditableWarning>
-        <h3>{product.title}</h3>
-        {(product.body ?? [product.summary]).map((paragraph) => (
-          <p key={paragraph}>{paragraph}</p>
-        ))}
+      <article className="shadcn-prototype-copy-document shadcn-prototype-markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+          {markdown}
+        </ReactMarkdown>
       </article>
     );
   }

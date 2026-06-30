@@ -65,10 +65,12 @@ export async function generateProject(req: GenerateRequest): Promise<TimelinePro
 }
 
 // URL to load a media file. Remote stock URLs (http...) pass through directly;
-// backend artifact refs go through the media proxy.
+// All media goes through the backend proxy: store refs (local://supabase://) are
+// read server-side, and external stock CDN URLs (Pixabay/Pexels) are relayed by
+// the backend because those CDNs send no CORS headers — fetching them directly
+// from the browser yields an opaque blob the decoder rejects (black video).
 export function mediaUrl(filePath: string): string {
   if (!filePath) return "";
-  if (/^https?:\/\//i.test(filePath)) return filePath;
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(filePath)}`;
 }
 
