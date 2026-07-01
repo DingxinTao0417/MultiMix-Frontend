@@ -93,18 +93,41 @@ export async function replaceOptions(segmentText: string, duration: number, layo
 }
 
 export interface MGResult {
-  html_path: string;
-  mp4_path: string | null;
-  rendered: boolean;
+  status: string;
+  result?: { mg_overlay_ref?: string; duration?: number };
+  error_message?: string | null;
 }
 
-export async function generateMG(segmentText: string, duration: number, width = 1080, height = 1920, render = false): Promise<MGResult> {
+export async function generateMG(
+  assetId: number,
+  segmentText: string,
+  duration: number,
+  layout: string,
+  token: string | null | undefined,
+): Promise<MGResult> {
+  const title = segmentText.slice(0, 40) || "标题";
+  const spec = {
+    template: "lower_third" as const,
+    durationInSeconds: Math.min(duration, 5),
+    layout: layout || "portrait",
+    params: {
+      title,
+      accentColor: "#7a3fb5",
+      entrance: "spring_up" as const,
+    },
+  };
   const res = await fetch(`${API_BASE}/v1/video/generate-mg`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segment_text: segmentText, duration, width, height, render }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ asset_id: assetId, spec }),
   });
-  if (!res.ok) throw new Error("generate_mg failed");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "generate_mg failed" }));
+    throw new Error(err.detail || "generate_mg failed");
+  }
   return res.json();
 }
 

@@ -104,7 +104,7 @@ export default function EditorView({ jobId, assetId, token }: { jobId: string | 
         <>
           <div style={{ flex: "1 1 55%", minHeight: 0, position: "relative", background: "#000" }}>
             <PreviewPanel />
-            <ReplacePanel />
+            <ReplacePanel assetId={assetId} token={token} />
           </div>
           <div style={{ padding: "8px 16px", borderTop: "1px solid #2a2a2a", flexShrink: 0 }}>
             <PlayButton />

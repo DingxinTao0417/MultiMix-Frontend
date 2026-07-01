@@ -6,7 +6,7 @@ import { segmentTextByElementId } from "./buildProject";
 
 // Floating panel: when a video/image clip is selected, lets the user swap it
 // for a freshly-searched alternative material for the same script segment.
-export function ReplacePanel() {
+export function ReplacePanel({ assetId, token }: { assetId?: string | null; token?: string | null }) {
   const editor = useEditor();
   const selected = useEditor((e) => e.selection.getSelectedElements());
   const tracks = useEditor((e) => e.timeline.getTracks());
@@ -58,15 +58,19 @@ export function ReplacePanel() {
   }
 
   async function makeMG() {
-    if (!selEl || !segText) return;
+    if (!selEl || !segText || !assetId) return;
     setMgLoading(true);
     setMgUrl(null);
     try {
-      const res = await generateMG(segText, selEl.duration, projW, projH, false);
-      setMgUrl(mediaUrl(res.html_path));
+      const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token);
+      if (res.status === "completed") {
+        alert("MG 动效已生成，刷新页面后在时间线上查看。");
+      } else {
+        alert(`MG 渲染中（${res.status}），稍后刷新查看。`);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "MG 动画生成失败";
-      alert(msg.includes("501") ? "MG 动画生成暂未实现，后续版本将支持。" : msg);
+      alert(msg);
     } finally {
       setMgLoading(false);
     }
