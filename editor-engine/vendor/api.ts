@@ -104,9 +104,10 @@ export async function generateMG(
   duration: number,
   layout: string,
   token: string | null | undefined,
+  startTime?: number,
 ): Promise<MGResult> {
   const title = segmentText.slice(0, 40) || "标题";
-  const spec = {
+  const spec: Record<string, unknown> = {
     template: "lower_third" as const,
     durationInSeconds: Math.min(duration, 5),
     layout: layout || "portrait",
@@ -116,6 +117,10 @@ export async function generateMG(
       entrance: "spring_up" as const,
     },
   };
+  // Anchor the overlay at the selected clip's timeline position.
+  if (typeof startTime === "number" && startTime >= 0) {
+    spec.anchor = { offset: startTime };
+  }
   const res = await fetch(`${API_BASE}/v1/video/generate-mg`, {
     method: "POST",
     headers: {

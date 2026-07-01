@@ -24,13 +24,13 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
 
   // Resolve the single selected video/image element (if any).
   const sel = selected.length === 1 ? selected[0] : null;
-  let selEl: { id: string; type: string; duration: number; trackId: string } | null = null;
+  let selEl: { id: string; type: string; duration: number; startTime: number; trackId: string } | null = null;
   if (sel) {
     for (const t of tracks) {
       if (t.id !== sel.trackId) continue;
       const el = t.elements.find((x) => x.id === sel.elementId);
       if (el && (el.type === "video" || el.type === "image")) {
-        selEl = { id: el.id, type: el.type, duration: el.duration, trackId: t.id };
+        selEl = { id: el.id, type: el.type, duration: el.duration, startTime: el.startTime, trackId: t.id };
       }
     }
   }
@@ -62,7 +62,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     setMgLoading(true);
     setMgUrl(null);
     try {
-      const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token);
+      const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token, selEl.startTime);
       if (res.status === "completed") {
         alert("MG 动效已生成，刷新页面后在时间线上查看。");
       } else if (res.status === "failed" && res.error_message) {
