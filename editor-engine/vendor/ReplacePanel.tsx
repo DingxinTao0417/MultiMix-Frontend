@@ -65,6 +65,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
       const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token);
       if (res.status === "completed") {
         alert("MG 动效已生成，刷新页面后在时间线上查看。");
+      } else if (res.status === "failed" && res.error_message) {
+        alert(`MG 渲染失败：${res.error_message}`);
       } else {
         alert(`MG 渲染中（${res.status}），稍后刷新查看。`);
       }
