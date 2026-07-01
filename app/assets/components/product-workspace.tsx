@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import ProductPreview from "./product-preview";
-import VideoProjectWorkspace from "./video-project-workspace";
 
 export function EmptyProductWorkspace() {
   return (
@@ -32,12 +31,10 @@ export default function ProductWorkspace({
   copied,
   onCopyProduct,
   onSaveProduct,
-  onProductUpdated,
   onRestoreVersion,
   product,
   savedVersion,
   selectedConversation,
-  token
 }: {
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
@@ -176,7 +173,7 @@ export default function ProductWorkspace({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                打开剪辑器
+                新窗口打开剪辑器
               </a>
             ) : null}
             {orchestrationPending ? (
@@ -191,7 +188,15 @@ export default function ProductWorkspace({
         </header>
 
         {hasVideoProject ? (
-          <VideoProjectWorkspace product={product} token={token} onProjectUpdated={onProductUpdated} />
+          <div className="shadcn-prototype-product-main" style={{ padding: 0, overflow: "hidden" }}>
+            <iframe
+              key={`editor-${product.backendAssetId}`}
+              src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1`}
+              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+              title="视频剪辑器"
+              allow="autoplay; clipboard-write"
+            />
+          </div>
         ) : (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>

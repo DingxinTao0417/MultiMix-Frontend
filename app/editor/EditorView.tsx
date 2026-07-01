@@ -33,7 +33,7 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
   throw new Error("项目格式不兼容（缺少 tracks）");
 }
 
-export default function EditorView({ jobId, assetId, token }: { jobId: string | null; assetId: string | null; token: string | null }) {
+export default function EditorView({ jobId, assetId, token, embed }: { jobId: string | null; assetId: string | null; token: string | null; embed?: boolean }) {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
@@ -87,9 +87,11 @@ export default function EditorView({ jobId, assetId, token }: { jobId: string | 
 
   return (
     <div className="editor-root dark" style={{ height: "100vh", display: "flex", flexDirection: "column", color: "#eee", background: "#0e0e0e" }}>
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
-        <a href="/app/assets" style={{ color: "#888", fontSize: 12, textDecoration: "none", marginRight: 4 }}>← 工作台</a>
-        <strong style={{ fontSize: 14 }}>{title || "视频剪辑器"}</strong>
+      <div style={{ padding: embed ? "6px 12px" : "10px 16px", borderBottom: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+        {!embed ? (
+          <a href="/app/assets" style={{ color: "#888", fontSize: 12, textDecoration: "none", marginRight: 4 }}>← 工作台</a>
+        ) : null}
+        <strong style={{ fontSize: embed ? 12 : 14 }}>{title || "视频剪辑器"}</strong>
         {state === "ready" && assetId ? (
           <button onClick={handleSave} disabled={saving} style={{ padding: "4px 12px", fontSize: 12, background: "#2d6cdf", color: "#fff", border: "none", borderRadius: 4, cursor: saving ? "default" : "pointer" }}>
             {saving ? "保存中…" : "💾 保存项目"}

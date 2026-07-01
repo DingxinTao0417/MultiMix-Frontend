@@ -28,6 +28,7 @@ function EditorPageContent() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("job");
   const assetId = searchParams.get("asset");
+  const embed = searchParams.get("embed") === "1";
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -37,7 +38,7 @@ function EditorPageContent() {
   }, []);
 
   if (!ready) return <div style={{ padding: 24, color: "#888" }}>正在加载…</div>;
-  return <EditorView jobId={jobId} assetId={assetId} token={token} />;
+  return <EditorView jobId={jobId} assetId={assetId} token={token} embed={embed} />;
 }
 
 export default function EditorPage() {
