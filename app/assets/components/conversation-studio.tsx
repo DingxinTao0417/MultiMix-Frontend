@@ -216,7 +216,7 @@ export default function ConversationStudio({
                 <ImageIcon size={15} aria-hidden="true" />
               ) : product.mode === "audio" ? (
                 <Play size={14} aria-hidden="true" />
-              ) : product.mode === "video" || product.mode === "digital-human" ? (
+              ) : product.mode === "video" || product.mode === "digital-human" || product.mode === "mg_animation_video" ? (
                 <Video size={15} aria-hidden="true" />
               ) : (
                 <FileText size={15} aria-hidden="true" />

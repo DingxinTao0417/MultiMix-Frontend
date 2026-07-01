@@ -67,6 +67,7 @@ function buildTrackNodes({
 							mediaId: mediaAsset.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
+							hasAlpha: mediaAsset.hasAlpha,
 							duration: element.duration,
 							timeOffset: element.startTime,
 							trimStart: element.trimStart,

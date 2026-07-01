@@ -80,6 +80,53 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
     );
   }
 
+  if (product.mode === "mg_animation_video") {
+    interface MGSceneParams {
+      title: string;
+      accentColor: string;
+      entrance: string;
+      [key: string]: unknown;
+    }
+    interface MGScene {
+      template: string;
+      durationInSeconds: number;
+      layout: string;
+      params: MGSceneParams;
+    }
+    const scene = product.metadata?.mg_scene as MGScene | undefined;
+    const scenes = product.metadata?.mg_scenes as MGScene[] | undefined;
+    const sceneList: MGScene[] = scenes ?? (scene ? [scene] : []);
+    const isBatch = scenes != null && scenes.length > 1;
+
+    return (
+      <div className="shadcn-prototype-mg-preview" aria-label="MG 动效产物预览">
+        {isBatch ? (
+          <div className="shadcn-prototype-mg-batch-header">
+            <span>{scenes!.length} 个 MG 动效方案</span>
+          </div>
+        ) : null}
+        <div className="shadcn-prototype-mg-scenes">
+          {sceneList.map((s, i) => (
+            <div key={i} className="shadcn-prototype-mg-scene-card">
+              <div className="shadcn-prototype-mg-scene-template">
+                <strong>{s.template}</strong>
+                <span>{s.layout} · {s.durationInSeconds}s</span>
+              </div>
+              <div className="shadcn-prototype-mg-scene-params">
+                <span className="shadcn-prototype-mg-color-swatch" style={{ backgroundColor: s.params.accentColor }} />
+                <span className="shadcn-prototype-mg-scene-title">{s.params.title}</span>
+                <em>{s.params.entrance}</em>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="shadcn-prototype-mg-placeholder">
+          <em>预览模式，部署 Modal 后可渲染</em>
+        </div>
+      </div>
+    );
+  }
+
   const firstTimelineItems = product.timeline.slice(0, 3);
   const visualPreviewFrames = product.preview?.frames ?? [];
   return (

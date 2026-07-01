@@ -1,6 +1,6 @@
 export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
-export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human";
+export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
 
 export type AssetProductSection = {
   label: string;

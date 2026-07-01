@@ -25,6 +25,7 @@ export function getProductModeLabel(mode: ProductMode) {
   if (mode === "image") return "图片";
   if (mode === "audio") return "音频";
   if (mode === "digital-human") return "数字人视频";
+  if (mode === "mg_animation_video") return "MG 动效";
   return "视频";
 }
 

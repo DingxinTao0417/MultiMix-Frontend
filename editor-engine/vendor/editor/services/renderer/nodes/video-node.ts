@@ -6,6 +6,8 @@ export interface VideoNodeParams extends VisualNodeParams {
 	url: string;
 	file: File;
 	mediaId: string;
+	// MG overlay media carries a VP8/VP9 alpha channel; opt into alpha decoding.
+	hasAlpha?: boolean;
 }
 
 export class VideoNode extends VisualNode<VideoNodeParams> {
@@ -22,6 +24,7 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			mediaId: this.params.mediaId,
 			file: this.params.file,
 			time: videoTime,
+			alpha: this.params.hasAlpha,
 		});
 
 		if (frame) {

@@ -17,6 +17,7 @@ interface BackendMedia {
   type: "video" | "image" | "audio";
   file_path: string;
   name: string;
+  hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
 interface BackendElement {
   id: string;
@@ -35,6 +36,7 @@ interface BackendTrack {
   type: "video" | "audio" | "text";
   name: string;
   elements: BackendElement[];
+  overlay?: boolean;    // MG overlay track: composited above the main video, isMain=false
 }
 export interface BackendProject {
   metadata: { title: string; duration: number };
@@ -108,6 +110,7 @@ export function buildMediaAssets(bp: BackendProject): MediaAsset[] {
     type: m.type,
     width: bp.settings.width,
     height: bp.settings.height,
+    hasAlpha: m.hasAlpha,
     file: placeholderFile(m.name),
     url: mediaUrl(m.file_path),
     thumbnailUrl: m.type !== "audio" ? mediaUrl(m.file_path) : undefined,
@@ -138,7 +141,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       });
       tracks.push({
         id: t.id, name: t.name, type: "video",
-        elements, isMain: true, muted: false, hidden: false,
+        // Overlay tracks (MG effects) are non-main so they composite ABOVE the
+        // main video via scene-builder's track ordering.
+        elements, isMain: !t.overlay, muted: false, hidden: false,
       });
     } else if (t.type === "audio") {
       const elements = t.elements.map((e): AudioElement => ({

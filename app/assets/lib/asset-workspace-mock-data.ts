@@ -876,6 +876,91 @@ const emptyProduct: AssetProduct = {
   actions: ["生成短视频", "生成配图", "写一版文案", "精细调整"]
 };
 
+const mgAnimationSingleProduct: AssetProduct = {
+  id: "mg-animation-single",
+  mode: "mg_animation_video",
+  title: "MG 动效视频",
+  status: "待渲染 · MG动画",
+  summary: "用 MG 动效解释税费透明流程，包含标题、动效入场和品牌色。",
+  ratio: "16:9",
+  duration: "30s",
+  phase: "待渲染",
+  version: "v1",
+  sections: [
+    { label: "模板", title: "现代商务", detail: "简约白底 + 品牌色强调", status: "已选择" },
+    { label: "标题", title: "税费透明流程", detail: "MG 动画主标题", status: "已确认" },
+    { label: "动效", title: "fadeSlideUp", detail: "标题从下往上淡入", status: "已配置" },
+    { label: "渲染", title: "Modal 适配器", detail: "部署后可渲染为视频文件", status: "待适配" }
+  ],
+  timeline: [],
+  actions: ["配置渲染", "改入场动效", "换成红色", "精细调整"],
+  metadata: {
+    mg_scene: {
+      template: "现代商务",
+      durationInSeconds: 30,
+      layout: "16:9",
+      params: {
+        title: "税费透明帮你减少弃单和售后摩擦",
+        accentColor: "#2563eb",
+        entrance: "fadeSlideUp"
+      }
+    }
+  }
+};
+
+const mgAnimationBatchProduct: AssetProduct = {
+  id: "mg-animation-batch",
+  mode: "mg_animation_video",
+  title: "MG 动效方案集",
+  status: "已生成 · 3 个方案",
+  summary: "一次性生成 3 套 MG 动效方案，分别针对不同客户场景。",
+  ratio: "16:9",
+  duration: "30s × 3",
+  phase: "可选择方案",
+  version: "v1",
+  sections: [
+    { label: "方案一", title: "现代商务", detail: "蓝色商务风格", status: "已生成" },
+    { label: "方案二", title: "创意活力", detail: "橙色动感风格", status: "已生成" },
+    { label: "方案三", title: "极简白", detail: "黑白极简风格", status: "已生成" }
+  ],
+  timeline: [],
+  actions: ["选择方案一", "选择方案二", "选择方案三", "全部渲染"],
+  metadata: {
+    mg_scenes: [
+      {
+        template: "现代商务",
+        durationInSeconds: 30,
+        layout: "16:9",
+        params: {
+          title: "税费透明帮你减少弃单和售后摩擦",
+          accentColor: "#2563eb",
+          entrance: "fadeSlideUp"
+        }
+      },
+      {
+        template: "创意活力",
+        durationInSeconds: 25,
+        layout: "16:9",
+        params: {
+          title: "让买家在付款前看清每一笔费用",
+          accentColor: "#f97316",
+          entrance: "scaleIn"
+        }
+      },
+      {
+        template: "极简白",
+        durationInSeconds: 35,
+        layout: "9:16",
+        params: {
+          title: "Duties & Import Taxes — 你需要知道的变化",
+          accentColor: "#1f2937",
+          entrance: "slideRight"
+        }
+      }
+    ]
+  }
+};
+
 const conversationRows: AssetConversation[] = [
   {
     id: "market-rule",
@@ -1354,6 +1439,56 @@ const conversationRows: AssetConversation[] = [
     ],
     product: longCopyProduct,
     products: [longCopyProduct]
+  },
+  {
+    id: "mg-animation-single",
+    title: "MG动效视频生成",
+    type: "MG 动效 · 单方案",
+    updatedAt: "刚刚",
+    assetLabel: "市场规则变化素材包",
+    status: "知识素材 · 成功",
+    prompt: "把税费透明流程做成一个 30 秒的 MG 动效视频。",
+    response: "我会生成 MG 动效 spec，包含模板、标题、品牌色和入场动效，保留预览模式。",
+    canvasTitle: "MG 动效视频",
+    canvasMeta: "MG动画 · 待渲染",
+    raw: "",
+    judgment: "MG 动效适合用标准化模板快速生成品牌动态视频。",
+    action: "确认模板、标题和品牌色后可触发渲染。",
+    delivery: "已生成 MG 动效 spec。你可以继续说：配置渲染、改入场动效、换成红色。",
+    suggestions: ["配置渲染", "改入场动效", "换成红色"],
+    messages: [
+      { role: "user", text: "把税费透明流程做成一个 30 秒的 MG 动效视频。" },
+      { role: "assistant", text: "我会生成 MG 动效 spec，用现代商务模板，默认蓝色品牌色和淡入动效。" },
+      { role: "assistant", text: "已生成 MG 动效视频 spec，右侧可预览模板、标题、品牌色块、时长和入场动效。" },
+      { role: "assistant", text: "你可以继续说：配置渲染、改入场动效、换成红色。", suggestions: ["配置渲染", "改入场动效", "换成红色"] }
+    ],
+    product: mgAnimationSingleProduct,
+    products: [marketRulePackProduct, mgAnimationSingleProduct]
+  },
+  {
+    id: "mg-animation-batch",
+    title: "MG动效批量生成",
+    type: "MG 动效 · 多方案",
+    updatedAt: "刚刚",
+    assetLabel: "市场规则变化素材包",
+    status: "知识素材 · 成功",
+    prompt: "基于税费透明主题，给我生成 3 套不同风格的 MG 动效方案。",
+    response: "我会生成 3 套 MG 动效 spec，分别用现代商务、创意活力和极简白模板。",
+    canvasTitle: "MG 动效方案集",
+    canvasMeta: "MG动画 · 3 个方案",
+    raw: "",
+    judgment: "多方案批量生成可以帮助用户比较不同风格后再决定渲染。",
+    action: "选择其中一套方案或全部渲染。",
+    delivery: "已生成 3 套 MG 动效方案。你可以继续说：选择方案一、选择方案二、全部渲染。",
+    suggestions: ["选择方案一", "选择方案二", "全部渲染"],
+    messages: [
+      { role: "user", text: "基于税费透明主题，给我生成 3 套不同风格的 MG 动效方案。" },
+      { role: "assistant", text: "我会一次性生成 3 套：现代商务（蓝）、创意活力（橙）、极简白（黑）。" },
+      { role: "assistant", text: "已生成 3 套 MG 动效方案，右侧展示每个方案的模板、标题、品牌色、时长和入场动效。" },
+      { role: "assistant", text: "你可以继续说：选择方案一、选择方案二、全部渲染。", suggestions: ["选择方案一", "选择方案二", "全部渲染"] }
+    ],
+    product: mgAnimationBatchProduct,
+    products: [marketRulePackProduct, mgAnimationBatchProduct]
   }
 ];
 

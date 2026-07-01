@@ -25,6 +25,8 @@ export interface MediaAssetData {
 	duration?: number;
 	fps?: number;
 	hasAudio?: boolean;
+	// Video carries a transparency channel (MG overlay); drives alpha decoding.
+	hasAlpha?: boolean;
 	ephemeral?: boolean;
 	thumbnailUrl?: string;
 }

@@ -24,12 +24,14 @@ export class VideoCache {
 		mediaId,
 		file,
 		time,
+		alpha,
 	}: {
 		mediaId: string;
 		file: File;
 		time: number;
+		alpha?: boolean;
 	}): Promise<WrappedCanvas | null> {
-		await this.ensureSink({ mediaId, file });
+		await this.ensureSink({ mediaId, file, alpha });
 
 		const sinkData = this.sinks.get(mediaId);
 		if (!sinkData) return null;
@@ -219,9 +221,11 @@ export class VideoCache {
 	private async ensureSink({
 		mediaId,
 		file,
+		alpha,
 	}: {
 		mediaId: string;
 		file: File;
+		alpha?: boolean;
 	}): Promise<void> {
 		if (this.sinks.has(mediaId)) return;
 
@@ -230,7 +234,7 @@ export class VideoCache {
 			return;
 		}
 
-		const initPromise = this.initializeSink({ mediaId, file });
+		const initPromise = this.initializeSink({ mediaId, file, alpha });
 		this.initPromises.set(mediaId, initPromise);
 
 		try {
@@ -242,9 +246,11 @@ export class VideoCache {
 	private async initializeSink({
 		mediaId,
 		file,
+		alpha,
 	}: {
 		mediaId: string;
 		file: File;
+		alpha?: boolean;
 	}): Promise<void> {
 		try {
 			const input = new Input({
@@ -262,9 +268,13 @@ export class VideoCache {
 				throw new Error("Video codec not supported for decoding");
 			}
 
+			// Alpha decoding (double-decoder + WebGL merge) is opt-in per media:
+			// MG overlays need transparency, plain B-roll/main video stay on the
+			// cheaper single-decode path. CanvasSink.alpha defaults to false.
 			const sink = new CanvasSink(videoTrack, {
 				poolSize: 3,
 				fit: "contain",
+				alpha: alpha ?? false,
 			});
 
 			this.sinks.set(mediaId, {
