@@ -5,26 +5,36 @@ import { buildProject } from "./buildProject";
 import { mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 
-// Fetch a backend media URL into a real File so mediabunny (BlobSource) can
-// decode it for preview/export. Clips are short, so download cost is low.
+// Download media files into real Blob/File objects for WebCodecs export.
+// Runs in background after the editor is already interactive — preview plays
+// from URLs immediately; only export needs the local blobs.
 async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Promise<MediaAsset[]> {
   const pathById: Record<string, string> = {};
   for (const m of bp.media) pathById[m.id] = m.file_path;
 
-  return Promise.all(
-    assets.map(async (asset) => {
-      try {
-        const url = mediaUrl(pathById[asset.id]);
-        const res = await fetch(url);
-        const blob = await res.blob();
-        const file = new File([blob], asset.name, { type: blob.type });
-        return { ...asset, file, url: URL.createObjectURL(blob) };
-      } catch (e) {
-        console.warn("hydrate media failed", asset.id, e);
-        return asset; // keep URL-only asset; thumbnail may still work
-      }
-    })
-  );
+  // Download in small batches so network isn't flooded by 30+ parallel fetches.
+  const BATCH = 6;
+  const results: MediaAsset[] = [];
+  for (let i = 0; i < assets.length; i += BATCH) {
+    const batch = assets.slice(i, i + BATCH);
+    const batchResults = await Promise.all(
+      batch.map(async (asset) => {
+        try {
+          const url = mediaUrl(pathById[asset.id]);
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          const file = new File([blob], asset.name, { type: blob.type });
+          return { ...asset, file, url: URL.createObjectURL(blob) };
+        } catch (e) {
+          console.warn("hydrate media failed", asset.id, e);
+          return asset;
+        }
+      })
+    );
+    results.push(...batchResults);
+  }
+  return results;
 }
 
 export async function initEditorWithProject(bp: BackendProject): Promise<EditorCore> {
@@ -45,13 +55,21 @@ export async function updateEditorProject(bp: BackendProject): Promise<EditorCor
 
 async function applyProject(editor: EditorCore, bp: BackendProject): Promise<void> {
   const { project, assets } = buildProject(bp);
-  const hydrated = await hydrateAssetFiles(assets, bp);
+
+  // Show the editor immediately with URL-based assets (preview plays from
+  // the media proxy). File blobs download in background for export.
   editor.project.setActiveProject({ project });
   editor.scenes.initializeScenes({
     scenes: project.scenes,
     currentSceneId: project.currentSceneId,
   });
-  editor.media.setAssets({ assets: hydrated });
+  editor.media.setAssets({ assets });
+
+  // Background: download real blobs for WebCodecs export without blocking UI.
+  hydrateAssetFiles(assets, bp)
+    .then((hydrated) => editor.media.setAssets({ assets: hydrated }))
+    .catch((err) => console.warn("background media hydration failed", err));
+
   // Debug handle for manual inspection in the browser console.
   (window as unknown as { __editor: EditorCore }).__editor = editor;
 }
