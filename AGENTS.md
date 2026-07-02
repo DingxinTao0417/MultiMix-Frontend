@@ -1,43 +1,63 @@
 # AGENTS.md
 
-本文件指导各类代码代理在此仓库中工作。响应使用简体中文，代码注释保持英文且精简。
+本文件指导各类代码代理（含 Claude Code、Codex 等）在此仓库中工作。响应使用简体中文，代码注释保持英文且精简。
+
+> 本文件与 `AGENTS.md` 内容一致（仅标题不同），改动其一请同步另一份。
 
 ## 项目概述
 
-MultiMix 是一个内容生成工作台（content generation workspace）原型，用对话驱动生成文案、图片、视频、音频、数字人口播等产物。当前为**前端优先 + 本地 mock 数据**阶段，真实后端通过 adapter 层在未来接入，不应为后端实现重写 UI。
+MultiMix 是一个内容生成工作台（content generation workspace），用对话驱动生成文案、图片、视频、音频、数字人口播等产物，并内嵌浏览器端视频剪辑器。
 
-完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉或检索相关能力前，必须先对照该文档，不要重新发明分类体系。
+本仓库是 **前端仓库**（`multimix_frontend`）。后端是独立仓库 `multimix_backend`（FastAPI，部署 Railway）。
+
+- 前端：Next.js 15（本仓库根），部署 Vercel。
+- 剪辑器：video-studio 的 OpenCut 引擎（`editor-engine/vendor/`），作为 `/editor` 路由嵌入。
+- 后端（独立仓库）：FastAPI（ChangeIn 基座 + 视频编排模块），部署 Railway。
+
+前端保留 adapter 层 + mock：未配 `NEXT_PUBLIC_API_BASE_URL` 时离线跑 mock，配了则走后端。不应为后端实现重写工作台 UI。
+
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；部署见 `docs/DEPLOYMENT.md`。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉或检索相关能力前，必须先对照设计文档，不要重新发明分类体系。
 
 ## 技术栈
 
-- Next.js 15 (App Router) + React 19 + TypeScript (strict)
-- lucide-react 图标
-- 本地数据：`node:sqlite`（实验性 API，**要求 Node ≥ 22**）
-- ESLint flat config（`next/core-web-vitals` + `next/typescript`）
+- 前端：Next.js 15 (App Router) + React 19 + TypeScript strict、lucide-react、本地 `node:sqlite`（实验性 API，**要求 Node ≥ 22**）、ESLint flat config（`next/core-web-vitals` + `next/typescript`）
+- 剪辑器：Tailwind v4 + Radix/shadcn + mediabunny(WebCodecs) + zustand（`editor-engine/vendor/`，从 video-studio 复制；tsc/eslint 已排除）
 
 ## 常用命令
 
 ```bash
-npm run dev -- --hostname 127.0.0.1 --port 3200   # 本地开发
+npm run dev -- --hostname 127.0.0.1 --port 3200   # 前端开发
 npm run setup:demo    # 从 schema + mock 数据重建 db/local/multimix.sqlite（可重复运行重置）
-npm run typecheck     # tsc --noEmit
+npm run typecheck     # tsc --noEmit（排除 editor-engine/vendor）
 npm run lint          # eslint .
-npm run build         # next build
+npm run build         # next build（含 /editor，glsl/worker/Tailwind v4 已配）
 ```
 
-改完代码后至少跑 `typecheck` + `lint` + `build` 验证。
+改完前端至少跑 `typecheck` + `lint` + `build`；改完后端跑相关 pytest + ruff。
 
-入口 URL：`/` 和 `/app/assets?conversation=<id>&product=<id>`。本地自动以 `demo@multimix.local` 登录，用户仅存在浏览器 `localStorage`。
+> 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
+
+入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`）。未配后端时本地自动以 `demo@multimix.local` 登录，用户仅存在浏览器 `localStorage`；配了后端走真实登录拿 token。
 
 ## 架构
 
-数据流：`app/assets/lib/asset-workspace-mock-data.ts` → `app/assets/lib/asset-workspace-adapter.ts`（adapter 层）→ `app/assets/components/` 下的 React 组件。组件树都挂在 `app/assets/` 下，UI 与数据/逻辑分两层目录。
+前端数据流：mock 数据 / 真实后端 → `app/assets/lib/asset-workspace-adapter.ts`（adapter 层，唯一后端边界）→ `components/` 组件。`lib/api.ts` 是 API 客户端，`lib/asset-mappers.ts` 把后端 ContentAsset 映射成前端 AssetProduct。
+
+后端模块（feature flag 控制）：
+- 知识库/资产 + 对话编排（`backend/app/api/assets.py` + `services/asset_conversation.py`，已有）
+- 知识检索（`services/knowledge_retrieval.py`，把 Web 采集知识块喂给生成）
+- 视频编排（`backend/app/api/video_orchestration.py` + `services/video_studio/`，topic→脚本→素材→timeline JSON，无 cmm 依赖）
+- 监控/采集（ChangeIn 原功能，`CHANGEIN_MODULES_MONITORING_ENABLED=false` 可关）
 
 ### 文件结构与职责
 
-```text
+```
 app/
   page.tsx                          # 路由 "/"，渲染 <MultiMixApp basePath="/">
+  editor/                           # /editor 剪辑器路由（dynamic ssr:false + Tailwind v4 CSS scope）
+backend/                            # FastAPI 统一后端（ChangeIn 基座 + 视频编排）
+editor-engine/vendor/               # OpenCut 剪辑器引擎（从 video-studio 复制，@editor/* 别名）
+lib/                                # 前端 API 客户端 + mappers
   app/assets/page.tsx               # 路由 "/app/assets"，同上但 basePath 不同
   layout.tsx                        # 根布局（html lang=zh-CN）
   multimix-app.tsx                  # 本地认证壳：localStorage 自动登录，注入 searchParams
@@ -80,7 +100,7 @@ scripts/
 
 对话决定产物类型；展示区只显示当前选中的单个产物，**不加一级产物类型 Tab**；产物切换靠对话流里的产物卡；详情走右侧抽屉；下一步建议放在助手回复里。数字人是视频的一种表现形式，不是一级产物类型。
 
-资源库分类以设计文档为准：
+### 资源库分类（以设计文档为准）
 
 - 资产库按来源分类：`上传资料`、`采集资料`、`对话沉淀`。不显示用途标签；内容类型、检索关键词、解析和索引状态放在详情层或检索层。
 - 文案库分类固定为：`选题方案`、`文案稿`、`配音稿`、`编导稿`。
@@ -115,6 +135,7 @@ scripts/
 - 前端有代码或文档改动时，至少运行：
   - `npm run typecheck`
   - `npm run lint`
+  - `npm run check:agents`（校验 `CLAUDE.md` 与 `AGENTS.md` 一致；只改了其一时会失败，跑 `npm run sync:agents` 修复）
   - 影响构建、路由、依赖、Next 配置、数据 adapter 或关键 UI 时，再运行 `npm run build`
 - 后端有代码改动时，运行对应测试。当前优先运行：
   - `python -m pytest app/tests/test_asset_conversation.py`

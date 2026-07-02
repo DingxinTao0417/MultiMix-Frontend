@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "setup:demo": "npm run db:init",
     "db:init": "node --import tsx scripts/db-init.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:agents": "node scripts/sync-agents-md.mjs",
+    "check:agents": "node scripts/sync-agents-md.mjs --check"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.2",
