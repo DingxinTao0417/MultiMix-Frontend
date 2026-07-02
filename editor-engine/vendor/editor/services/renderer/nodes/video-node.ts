@@ -1,4 +1,5 @@
 import type { CanvasRenderer } from "../canvas-renderer";
+import { createOffscreenCanvas } from "../canvas-utils";
 import { VisualNode, type VisualNodeParams } from "./visual-node";
 import { videoCache } from "@editor/services/video-cache/service";
 
@@ -28,13 +29,44 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 		});
 
 		if (frame) {
+			const source = this.params.hasAlpha
+				? this.keyOutDecodedBlackAlpha({ source: frame.canvas })
+				: frame.canvas;
 			this.renderVisual({
 				renderer,
-				source: frame.canvas,
+				source,
 				sourceWidth: frame.canvas.width,
 				sourceHeight: frame.canvas.height,
 				timelineTime: time,
 			});
+		}
+	}
+
+	private keyOutDecodedBlackAlpha({
+		source,
+	}: {
+		source: CanvasImageSource & { width: number; height: number };
+	}): CanvasImageSource {
+		const canvas = createOffscreenCanvas({
+			width: source.width,
+			height: source.height,
+		});
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return source;
+
+		try {
+			ctx.drawImage(source, 0, 0);
+			const image = ctx.getImageData(0, 0, source.width, source.height);
+			const data = image.data;
+			for (let i = 0; i < data.length; i += 4) {
+				if (data[i] < 12 && data[i + 1] < 12 && data[i + 2] < 12) {
+					data[i + 3] = 0;
+				}
+			}
+			ctx.putImageData(image, 0, 0);
+			return canvas;
+		} catch {
+			return source;
 		}
 	}
 }

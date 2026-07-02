@@ -19,6 +19,7 @@ interface VideoSinkData {
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+	private failedSignatures = new Map<string, string>();
 
 	async getFrameAt({
 		mediaId,
@@ -31,7 +32,24 @@ export class VideoCache {
 		time: number;
 		alpha?: boolean;
 	}): Promise<WrappedCanvas | null> {
-		await this.ensureSink({ mediaId, file, alpha });
+		if (file.size === 0) return null;
+
+		const signature = this.fileSignature({ file });
+		if (this.failedSignatures.get(mediaId) === signature) return null;
+
+		try {
+			await this.ensureSink({ mediaId, file, alpha });
+		} catch (error) {
+			this.failedSignatures.set(mediaId, signature);
+			console.warn("Skipping undecodable video media", {
+				mediaId,
+				name: file.name,
+				type: file.type,
+				size: file.size,
+				error,
+			});
+			return null;
+		}
 
 		const sinkData = this.sinks.get(mediaId);
 		if (!sinkData) return null;
@@ -132,6 +150,11 @@ export class VideoCache {
 
 		return null;
 	}
+
+	private fileSignature({ file }: { file: File }): string {
+		return `${file.name}:${file.type}:${file.size}:${file.lastModified}`;
+	}
+
 	private async seekToTime({
 		sinkData,
 		time,
@@ -303,6 +326,7 @@ export class VideoCache {
 		}
 
 		this.initPromises.delete(mediaId);
+		this.failedSignatures.delete(mediaId);
 	}
 
 	clearAll(): void {

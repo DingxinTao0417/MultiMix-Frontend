@@ -5,9 +5,8 @@ import { buildProject } from "./buildProject";
 import { mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 
-// Download media files into real Blob/File objects for WebCodecs export.
-// Runs in background after the editor is already interactive — preview plays
-// from URLs immediately; only export needs the local blobs.
+// Download media files into real Blob/File objects. The canvas renderer uses
+// WebCodecs over File objects for video frames, so preview needs these blobs.
 async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Promise<MediaAsset[]> {
   const pathById: Record<string, string> = {};
   for (const m of bp.media) pathById[m.id] = m.file_path;
@@ -24,6 +23,9 @@ async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Prom
           const res = await fetch(url);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const blob = await res.blob();
+          if (!blob.type.startsWith(`${asset.type}/`)) {
+            throw new Error(`Unexpected media type ${blob.type || "unknown"}`);
+          }
           const file = new File([blob], asset.name, { type: blob.type });
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
@@ -56,19 +58,14 @@ export async function updateEditorProject(bp: BackendProject): Promise<EditorCor
 async function applyProject(editor: EditorCore, bp: BackendProject): Promise<void> {
   const { project, assets } = buildProject(bp);
 
-  // Show the editor immediately with URL-based assets (preview plays from
-  // the media proxy). File blobs download in background for export.
+  const hydratedAssets = await hydrateAssetFiles(assets, bp);
+
   editor.project.setActiveProject({ project });
   editor.scenes.initializeScenes({
     scenes: project.scenes,
     currentSceneId: project.currentSceneId,
   });
-  editor.media.setAssets({ assets });
-
-  // Background: download real blobs for WebCodecs export without blocking UI.
-  hydrateAssetFiles(assets, bp)
-    .then((hydrated) => editor.media.setAssets({ assets: hydrated }))
-    .catch((err) => console.warn("background media hydration failed", err));
+  editor.media.setAssets({ assets: hydratedAssets });
 
   // Debug handle for manual inspection in the browser console.
   (window as unknown as { __editor: EditorCore }).__editor = editor;

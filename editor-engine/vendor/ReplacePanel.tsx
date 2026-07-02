@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useEditor } from "@editor/hooks/use-editor";
 import type { MediaAsset } from "@editor/lib/media/types";
-import { replaceOptions, generateMG, mediaUrl, type MaterialOption } from "./api";
-import { segmentTextByElementId } from "./buildProject";
+import { API_BASE, replaceOptions, generateMG, mediaUrl, type MaterialOption } from "./api";
+import { updateEditorProject } from "./bootstrap";
+import { segmentTextByElementId, type BackendProject } from "./buildProject";
 
 // Floating panel: when a video/image clip is selected, lets the user swap it
 // for a freshly-searched alternative material for the same script segment.
@@ -44,6 +45,25 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   if (!selEl) return null;
   const segText = segmentTextByElementId[selEl.id] || "";
 
+  async function reloadProject() {
+    if (!assetId) return;
+    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`刷新项目失败：HTTP ${res.status}`);
+    const data = await res.json();
+    const raw = data.project;
+    if (raw?.tracks) {
+      await updateEditorProject(raw as BackendProject);
+      return;
+    }
+    if (raw?.timeline?.tracks) {
+      await updateEditorProject(raw.timeline as BackendProject);
+      return;
+    }
+    throw new Error("刷新项目失败：缺少时间轴数据");
+  }
+
   async function fetchOptions() {
     if (!selEl || !segText) return;
     setLoading(true);
@@ -64,7 +84,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     try {
       const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token, selEl.startTime);
       if (res.status === "completed") {
-        alert("MG 动效已生成，刷新页面后在时间线上查看。");
+        await reloadProject();
+        alert("MG 动效已添加到时间轴底部的“动效”轨道。");
       } else if (res.status === "failed" && res.error_message) {
         alert(`MG 渲染失败：${res.error_message}`);
       } else {
@@ -82,7 +103,16 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     if (!selEl) return;
     // Download the new material into a File so mediabunny can decode it.
     const url = mediaUrl(opt.file_path);
-    const blob = await fetch(url).then((r) => r.blob());
+    const response = await fetch(url);
+    if (!response.ok) {
+      alert(`素材下载失败：HTTP ${response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    if (!blob.type.startsWith(`${opt.media_type}/`)) {
+      alert("素材格式不正确，请换一个候选。");
+      return;
+    }
     const name = opt.file_path.split("/").pop() || "material";
     const file = new File([blob], name, { type: blob.type });
     const newId = `repl-${Date.now()}`;
