@@ -1,4 +1,4 @@
-import type { AssetConversation, AssetProduct, AssetSource, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 
 const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetWorkshop> = {
   assets: {
@@ -1517,21 +1517,8 @@ const newAssetConversation: AssetConversation = {
 };
 
 
-const assetSources: AssetSource[] = [
-  { id: "source-market-rule", title: "市场规则变化素材包", kind: "copy-product", status: "已生成" },
-  { id: "source-platform-policy", title: "6月平台政策摘录", kind: "reader-markdown", status: "已沉淀" },
-  { id: "source-video-script", title: "60 秒短视频分镜 v1", kind: "video-product", status: "已保存" },
-  { id: "source-cover-image", title: "4:5 封面图 v1", kind: "image-product", status: "已生成" },
-  { id: "source-audio-sync", title: "口播音频时间轴 v1", kind: "audio-product", status: "已匹配" },
-  { id: "source-digital-human", title: "数字人口播视频方案", kind: "video-product", status: "待渲染" },
-  { id: "source-brand-context", title: "客户 A 品牌约束", kind: "upload", status: "已应用" },
-  { id: "source-conflict-policy", title: "冲突政策帮助页", kind: "reader-markdown", status: "待确认" },
-  { id: "source-render-adapter", title: "数字人渲染适配器", kind: "video-product", status: "待配置" }
-];
-
 export const mockAssetWorkspaceData: AssetWorkspaceData = {
   conversations: conversationRows,
   newConversation: newAssetConversation,
-  workshops: assetWorkshops,
-  sources: assetSources
+  workshops: assetWorkshops
 };

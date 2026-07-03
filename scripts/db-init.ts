@@ -19,10 +19,10 @@ db.exec("BEGIN");
 
 try {
   db.exec(`
+    DROP TABLE IF EXISTS sources;
     DELETE FROM messages;
     DELETE FROM products;
     DELETE FROM conversations;
-    DELETE FROM sources;
     DELETE FROM workshops;
     DELETE FROM local_users;
   `);
@@ -38,10 +38,6 @@ try {
   const insertProduct = db.prepare(`
     INSERT INTO products (id, conversation_id, mode, title, status, ratio, duration, phase, version, payload_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertSource = db.prepare(`
-    INSERT INTO sources (id, title, kind, status, payload_json)
-    VALUES (?, ?, ?, ?, ?)
   `);
   const insertWorkshop = db.prepare(`
     INSERT INTO workshops (id, title, description, payload_json)
@@ -94,10 +90,6 @@ try {
         JSON.stringify(product)
       );
     }
-  }
-
-  for (const source of mockAssetWorkspaceData.sources) {
-    insertSource.run(source.id, source.title, source.kind, source.status, JSON.stringify(source));
   }
 
   for (const [id, workshop] of Object.entries(mockAssetWorkspaceData.workshops)) {

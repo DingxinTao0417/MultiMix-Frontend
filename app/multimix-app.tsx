@@ -60,7 +60,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
     const onExpired = () => { void handleLogout(); };
     window.addEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(API_AUTH_EXPIRED_EVENT, onExpired);
-  });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

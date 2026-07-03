@@ -1,10 +1,11 @@
 import { mockAssetWorkspaceData } from "./asset-workspace-mock-data";
-import type { AssetConversation, AssetProduct, AssetSource, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 import {
   api,
   apiBlob,
   apiForm,
   isApiConfigured,
+  type AssetIngestJobActionRead,
   type AssetIngestJobRead,
   type AssetConversationMessageResponse,
   type AssetConversationResponse,
@@ -15,6 +16,7 @@ import {
   type PublicSourceRead
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
+import { isRecord } from "./asset-workspace-shared";
 
 export type LibraryRow = {
   assetId?: number;
@@ -42,12 +44,9 @@ export type LibraryRow = {
   variant?: "digital-human" | "standard";
 };
 
+// Trimming variant on purpose: adapter-level strings feed UI labels directly.
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | undefined {
@@ -80,7 +79,6 @@ export type AssetWorkspaceAdapter = {
   listConversationProducts(conversation: AssetConversation): AssetProduct[];
   getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct | null;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
-  listSources(): AssetSource[];
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
   // Backend-backed operations. When no API is configured these are no-ops that
@@ -115,7 +113,7 @@ export type AssetWorkspaceAdapter = {
   createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   getLatestIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
-  retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobRead>;
+  retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
   regenerateImageCaption(token: string, assetId: number): Promise<ContentAsset>;
   listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
@@ -375,9 +373,6 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     getWorkshop(view) {
       return data.workshops[view];
     },
-    listSources() {
-      return data.sources;
-    },
     getProductText(product) {
       return (product.body && product.body.length > 0 ? product.body : [product.summary]).join("\n\n");
     },
@@ -547,8 +542,8 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     },
     async retryAssetIngest(token, assetId) {
       const latest = await this.getLatestIngestJob(token, assetId);
-      await api<AssetIngestJobRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/retry`, token, { method: "POST" });
-      return api<AssetIngestJobRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/process`, token, { method: "POST" });
+      await api<AssetIngestJobActionRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/retry`, token, { method: "POST" });
+      return api<AssetIngestJobActionRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/process`, token, { method: "POST" });
     },
     async exportAssetMarkdown(token, assetId) {
       return apiBlob(`/assets/${assetId}/export.md`, token);

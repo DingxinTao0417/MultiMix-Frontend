@@ -71,7 +71,6 @@ export type AssetWorkspaceAdapter = {
   listConversationProducts(conversation: AssetConversation): AssetProduct[];
   getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
-  listSources(): AssetSource[];
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct): Promise<{ version: string; savedAt: string }>;
 };
@@ -82,7 +81,7 @@ export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
 ### 2.1 方法详解
 
 #### `getSnapshot(): AssetWorkspaceData`
-返回整份工作台数据快照（conversations / newConversation / workshops / sources）。Mock 实现直接返回内存对象引用，**不做深拷贝**——调用方不应原地修改返回值。
+返回整份工作台数据快照（conversations / newConversation / workshops）。Mock 实现直接返回内存对象引用，**不做深拷贝**——调用方不应原地修改返回值。
 
 #### `listConversations(): AssetConversation[]`
 返回全部历史对话（不含 `newConversation`）。当前返回 17 条 mock 对话，顺序即 mock 数组顺序。UI 用它渲染侧边栏对话列表，并用 `[0].id` 作为默认选中对话。
@@ -106,9 +105,6 @@ export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
 
 #### `getWorkshop(view): AssetWorkshop`
 按视图键（`"assets" | "copy" | "video"`）取对应库视图数据。`view` 不能是 `"conversation"`（类型层已 `Exclude`）。
-
-#### `listSources(): AssetSource[]`
-返回全部来源素材（当前 9 条）。**目前没有任何组件调用此方法**，属已备数据 / UI 待接入。
 
 #### `getProductText(product): string`
 把产物转为可复制 / 可保存的纯文本。**规则**：`body` 非空则用 `body`，否则用 `[summary]`，再 `join("\n\n")`。供「复制」按钮使用。
@@ -220,19 +216,7 @@ type AssetProductPreview = {
 
 `frame.tone` 直接作为 className 输出（缺省为空串）。预览各 mode 的使用差异见 §7.2。
 
-### 3.7 `AssetSource`（来源素材，★ UI 未渲染）
-
-```ts
-type AssetSource = {
-  id: string;
-  title: string;
-  kind: "reader-markdown" | "upload" | "copy-product"
-      | "video-product" | "image-product" | "audio-product";
-  status: string;
-};
-```
-
-### 3.8 `AssetConversationMessage`（对话消息）
+### 3.7 `AssetConversationMessage`（对话消息）
 
 ```ts
 type AssetConversationMessage = {
@@ -242,7 +226,7 @@ type AssetConversationMessage = {
 };
 ```
 
-### 3.9 `AssetConversation`（对话，聚合根）
+### 3.8 `AssetConversation`（对话，聚合根）
 
 ```ts
 type AssetConversation = {
@@ -270,7 +254,7 @@ type AssetConversation = {
 
 > `messages` 与 `prompt/response/delivery/suggestions` 是两套表达同一对话的方式。`ConversationStudio` 优先用 `messages`，缺省时由后三者合成（见 §6.1）。
 
-### 3.10 `AssetWorkshop`（库视图）
+### 3.9 `AssetWorkshop`（库视图）
 
 ```ts
 type AssetWorkshop = {
@@ -283,14 +267,13 @@ type AssetWorkshop = {
 };
 ```
 
-### 3.11 `AssetWorkspaceData`（顶层快照）
+### 3.10 `AssetWorkspaceData`（顶层快照）
 
 ```ts
 type AssetWorkspaceData = {
   conversations: AssetConversation[];
   newConversation: AssetConversation;
   workshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetWorkshop>;
-  sources: AssetSource[];
 };
 ```
 
@@ -386,15 +369,6 @@ mode → 中文标签映射：
 | `version` | TEXT | 可空 | 版本号（`product.version ?? null`） |
 | `payload_json` | TEXT | NOT NULL | 完整 `AssetProduct` 的 JSON 序列化 |
 
-#### `sources`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | TEXT | PRIMARY KEY | 来源 id |
-| `title` | TEXT | NOT NULL | 标题 |
-| `kind` | TEXT | NOT NULL | 来源类型 |
-| `status` | TEXT | NOT NULL | 状态 |
-| `payload_json` | TEXT | NOT NULL | 完整 `AssetSource` JSON |
-
 #### `workshops`
 | 列 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
@@ -420,12 +394,12 @@ mode → 中文标签映射：
 行为：
 1. 确保 `db/local/` 存在，打开 / 创建 `db/local/multimix.sqlite`（`node:sqlite` 的 `DatabaseSync`，**要求 Node ≥ 22**）。
 2. 执行 `schema.sql` 建表（`IF NOT EXISTS`）。
-3. 单事务内 `DELETE FROM` 清空 6 张表（messages → products → conversations → sources → workshops → local_users 顺序），失败 `ROLLBACK`。
+3. 单事务内先 `DROP TABLE IF EXISTS sources`（清理历史遗留表），再 `DELETE FROM` 清空 5 张表（messages → products → conversations → workshops → local_users 顺序），失败 `ROLLBACK`。
 4. 遍历 `mockAssetWorkspaceData`：
    - 插入每条 conversation；
    - messages 取 `conversation.messages`，缺省时合成 `[{user, prompt}, {assistant, response, suggestions}]`；
    - products 取 `products`（非空）或 `[product]`，主键写为 `${conversation.id}:${product.id}`；
-   - 插入 sources、workshops（`Object.entries`）。
+   - 插入 workshops（`Object.entries`）。
 5. 插入默认用户 `demo@multimix.local` / `MultiMix Demo` / 当前 ISO 时间。
 6. `COMMIT`，关闭，打印 `Seeded local MultiMix database: <path>`。
 

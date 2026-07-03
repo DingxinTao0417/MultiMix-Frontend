@@ -51,8 +51,8 @@ describe("asset product mapper", () => {
     expect(product.mode).toBe("copy");
     expect(product.status).toBe("文案 · 编导草稿 · 有来源");
     expect(product.phase).toBe("视频文案草稿");
-    expect(product.preview.eyebrow).toBe("视频文案草稿");
-    expect(product.preview.subtitle).toContain("确认后生成视频工程");
+    expect(product.preview?.eyebrow).toBe("视频文案草稿");
+    expect(product.preview?.subtitle).toContain("确认后生成视频工程");
   });
 
   it("treats video projects as the final conversation output without mp4 render prompts", () => {
@@ -74,7 +74,8 @@ describe("asset product mapper", () => {
 
     const visibleText = [
       product.status,
-      product.subtitle,
+      product.summary,
+      product.preview?.subtitle ?? "",
       ...product.sections.flatMap((section) => [section.label, section.title, section.detail, section.status])
     ].join("\n");
 

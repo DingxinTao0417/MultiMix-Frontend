@@ -2,6 +2,9 @@
   "name": "multimix-web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,7 +15,8 @@
     "db:init": "node --import tsx scripts/db-init.ts",
     "test": "vitest run",
     "sync:agents": "node scripts/sync-agents-md.mjs",
-    "check:agents": "node scripts/sync-agents-md.mjs --check"
+    "check:agents": "node scripts/sync-agents-md.mjs --check",
+    "check:backend": "cd ../multimix_backend && .venv/bin/python -m ruff check --line-length 100 app/ && .venv/bin/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py app/tests/test_mcp_auth.py -q"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.2",
@@ -24,13 +28,11 @@
     "@tailwindcss/typography": "^0.5.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
     "culori": "^4.0.2",
     "eventemitter3": "^5.0.4",
     "lucide-react": "0.487.0",
     "mediabunny": "^1.49.0",
     "motion": "^12.42.0",
-    "nanoid": "^5.1.16",
     "next": "^15.5.18",
     "next-themes": "^0.4.6",
     "radix-ui": "^1.6.0",
@@ -40,7 +42,6 @@
     "react-hook-form": "^7.80.0",
     "react-icons": "^5.6.0",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.11.2",
     "react-window": "^2.2.7",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-parse": "^9.0.1",

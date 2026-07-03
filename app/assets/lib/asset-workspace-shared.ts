@@ -6,6 +6,25 @@ export type ProductMode = AssetProductMode;
 export type ProductArtifact = AssetProduct;
 export type Conversation = AssetConversation;
 
+// Type guards for untyped JSON payloads (backend metadata, video_project blobs).
+// Note: this stringValue does NOT trim; the adapter keeps its own trimming variant.
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+export function numberValue(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
 export function getConversationProducts(conversation: Conversation) {
   const products = conversation.products && conversation.products.length > 0 ? conversation.products : [conversation.product];
   return products.filter((product) => !isPlaceholderProduct(product));

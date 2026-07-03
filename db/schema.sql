@@ -34,14 +34,6 @@ CREATE TABLE IF NOT EXISTS products (
   payload_json TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS sources (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  status TEXT NOT NULL,
-  payload_json TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS workshops (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,

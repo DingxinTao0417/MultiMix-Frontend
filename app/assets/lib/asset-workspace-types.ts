@@ -38,13 +38,6 @@ export type AssetProductPreview = {
   frames?: AssetProductPreviewFrame[];
 };
 
-export type AssetSource = {
-  id: string;
-  title: string;
-  kind: "reader-markdown" | "upload" | "copy-product" | "video-product" | "image-product" | "audio-product";
-  status: string;
-};
-
 export type AssetProduct = {
   id: string;
   mode: AssetProductMode;
@@ -148,5 +141,4 @@ export type AssetWorkspaceData = {
   conversations: AssetConversation[];
   newConversation: AssetConversation;
   workshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetWorkshop>;
-  sources: AssetSource[];
 };

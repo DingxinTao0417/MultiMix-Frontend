@@ -5,15 +5,7 @@ import { Play } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
-import type { ProductArtifact } from "../lib/asset-workspace-shared";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function stringValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
+import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 
 function videoPlanSummary(product: ProductArtifact) {
   const plan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : null;

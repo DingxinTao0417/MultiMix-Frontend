@@ -87,6 +87,8 @@ function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conve
   const mediaKind = libraryRowMediaKind(row);
   return row.kind === "copy" ? null : mediaKind === "image" ? (
     <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb image${viewClass}` : "shadcn-prototype-library-media-thumb empty image"} aria-hidden="true">
+      {/* Thumbnails stream from the runtime-configured backend media proxy; host is not statically known. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : <span>无</span>}
     </span>
   ) : mediaKind === "video" ? (
@@ -128,6 +130,7 @@ export default function LibraryWorkshop({
   const [backendRows, setBackendRows] = useState<LibraryRow[] | null>(null);
   const [activeFilter, setActiveFilter] = useState("全部");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [loadingRows, setLoadingRows] = useState(false);
@@ -148,6 +151,12 @@ export default function LibraryWorkshop({
   const [publicLoading, setPublicLoading] = useState(false);
   const [publicMessage, setPublicMessage] = useState<string | null>(null);
 
+  // Debounce the raw input so backend search fires once per pause, not per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
       setBackendRows(null);
@@ -156,7 +165,7 @@ export default function LibraryWorkshop({
     let cancelled = false;
     setLoadingRows(true);
     void assetWorkspaceAdapter
-      .listLibrary(token, view, searchQuery)
+      .listLibrary(token, view, debouncedQuery)
       .then((rows) => {
         if (!cancelled) setBackendRows(rows);
       })
@@ -169,14 +178,14 @@ export default function LibraryWorkshop({
     return () => {
       cancelled = true;
     };
-  }, [token, view, searchQuery, refreshKey]);
+  }, [token, view, debouncedQuery, refreshKey]);
 
   // Prefer real backend rows when available; keep prototype sample rows visible
   // when the connected library is still empty.
   const rows = backendRows && backendRows.length > 0 ? backendRows : workshop.rows;
   const filteredRows = useMemo(() => {
     const scopedRows = activeFilter === "全部" ? rows : rows.filter((row) => row.category === activeFilter);
-    const query = searchQuery.trim().toLowerCase();
+    const query = debouncedQuery.trim().toLowerCase();
     if (backendRows && query) return scopedRows;
     if (!query) return scopedRows;
     return scopedRows.filter((row) => {
@@ -194,7 +203,7 @@ export default function LibraryWorkshop({
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(query);
     });
-  }, [activeFilter, backendRows, rows, searchQuery]);
+  }, [activeFilter, backendRows, rows, debouncedQuery]);
   const selectedRow = selectedIndex === null ? null : filteredRows[selectedIndex];
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
@@ -666,7 +675,9 @@ export default function LibraryWorkshop({
                   <article key={candidate.id}>
                     <button type="button" className="shadcn-prototype-public-card" onClick={() => setPublicSelected(candidate)}>
                       <span className="shadcn-prototype-public-thumb">
-                        {candidate.media_type === "image" && src ? <img src={src} alt={candidate.title} /> : candidate.media_type === "video" && src ? <img src={src} alt={candidate.title} /> : <Globe2 size={22} />}
+                        {/* External material sources span arbitrary hosts, so next/image remotePatterns cannot cover them. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {candidate.media_type === "image" && src ? <img src={src} alt={candidate.title} loading="lazy" /> : candidate.media_type === "video" && src ? <img src={src} alt={candidate.title} loading="lazy" /> : <Globe2 size={22} />}
                       </span>
                       <strong>{candidate.title}</strong>
                       <small>{candidate.provider} · {candidate.license_label}</small>

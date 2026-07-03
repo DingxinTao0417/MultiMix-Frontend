@@ -130,10 +130,15 @@ export default function ConversationStudio({
   };
 
   useEffect(() => {
-    activeRequestRef.current = null;
     setSending(false);
     setSendError(null);
     setComposerValue("");
+    return () => {
+      // Abort the in-flight send when switching conversations or unmounting so
+      // stale responses cannot land after the view has moved on.
+      activeRequestRef.current?.abort();
+      activeRequestRef.current = null;
+    };
   }, [selectedConversation.id]);
 
   useEffect(() => {
@@ -248,7 +253,7 @@ export default function ConversationStudio({
       ) : null}
       <div className="shadcn-prototype-thread">
         {visibleConversationMessages.map((message, index) => (
-          <div className="shadcn-prototype-message-group" key={`${message.role}-${index}-${message.text}`}>
+          <div className="shadcn-prototype-message-group" key={`${message.role}-${index}`}>
             <article className={[
               message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
               message.pending ? "pending" : ""

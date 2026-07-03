@@ -255,6 +255,16 @@ export type AssetIngestJobRead = {
   updated_at: string | null;
 };
 
+// Partial payload returned by the retry/process ingest-job actions; the backend
+// does not echo the full job row for these endpoints.
+export type AssetIngestJobActionRead = {
+  id: string;
+  status: string;
+  stage: string;
+  attempts: number;
+  error_message?: string | null;
+};
+
 export type ContentAssetRevisionResponse = {
   asset: ContentAsset;
   parent_version_id: number | null;

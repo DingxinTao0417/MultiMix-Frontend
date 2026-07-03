@@ -6,7 +6,7 @@ Committed:
 
 - `db/schema.sql`: local SQLite table structure.
 - `scripts/db-init.ts`: deterministic local seed command.
-- `app/assets/asset-workspace-mock-data.ts`: demo conversations, products, sources, and workshop data.
+- `app/assets/asset-workspace-mock-data.ts`: demo conversations, products, and workshop data.
 
 Ignored:
 

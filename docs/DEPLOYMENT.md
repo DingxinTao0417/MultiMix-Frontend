@@ -1,14 +1,14 @@
 # MultiMix 部署指南
 
-MultiMix 现在是前后端一体的 monorepo：
+MultiMix 是两个并排的独立仓库：
 
-- **前端**：Next.js 15（仓库根），部署到 **Vercel**。
-- **后端**：FastAPI（`backend/`，以 ChangeIn 为基座并入视频编排），部署到 **Railway**。
+- **前端**：`multimix_frontend`（Next.js 15，本仓库），部署到 **Vercel**。
+- **后端**：`multimix_backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
 - **剪辑器**：video-studio 的 OpenCut 引擎，作为 `/editor` 路由嵌在前端里（浏览器端 WebCodecs 导出，无需服务端渲染）。
 
 ## 模块开关
 
-后端用 feature flag 控制启用哪些模块（`backend/app/config.py`）：
+后端用 feature flag 控制启用哪些模块（后端仓库 `app/config.py`）：
 
 | 环境变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -18,14 +18,14 @@ MultiMix 现在是前后端一体的 monorepo：
 
 ## 后端部署到 Railway
 
-后端有两个 Dockerfile：
+后端仓库有两个 Dockerfile：
 
-- `backend/Dockerfile` —— 全功能（含 Playwright/cloakbrowser/ffmpeg），监控模块需要。
-- `backend/Dockerfile.lean` —— 精简（只知识库 + 视频编排），构建更快。`backend/railway.json` 默认用它。
+- `Dockerfile` —— 全功能（含 Playwright/cloakbrowser/ffmpeg），监控模块需要。
+- `Dockerfile.lean` —— 精简（只知识库 + 视频编排），构建更快。`railway.json` 默认用它。
 
 步骤：
 
-1. Railway 新建服务，root directory 指向 `backend/`，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
+1. Railway 新建服务，指向 `multimix_backend` 仓库根目录，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
 2. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
 3. 配环境变量：
    ```
@@ -62,7 +62,7 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 
 ## 前端部署到 Vercel
 
-1. Vercel 导入仓库，root directory 留空（指向仓库根的 Next.js）。
+1. Vercel 导入 `multimix_frontend` 仓库，root directory 留空（指向仓库根的 Next.js）。
 2. Build 命令 `npm run build`，框架自动识别 Next.js。
 3. 环境变量：
    ```
@@ -76,9 +76,8 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 
 ## 端到端冒烟（本地）
 
-1. 后端：
+1. 后端（在 `multimix_backend` 仓库内）：
    ```
-   cd backend
    python -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
    CHANGEIN_ENV=local CHANGEIN_MODULES_MONITORING_ENABLED=false \
      CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true CHANGEIN_DEEPSEEK_API_KEY=<key> \

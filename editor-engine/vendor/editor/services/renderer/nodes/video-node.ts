@@ -51,7 +51,10 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			width: source.width,
 			height: source.height,
 		});
-		const ctx = canvas.getContext("2d");
+		const ctx = canvas.getContext("2d") as
+			| CanvasRenderingContext2D
+			| OffscreenCanvasRenderingContext2D
+			| null;
 		if (!ctx) return source;
 
 		try {

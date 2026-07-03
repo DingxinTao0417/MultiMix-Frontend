@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, Film, Search, Volume2, X } from "lucide-react";
 import { API_BASE } from "../../../lib/api";
-import type { ProductArtifact } from "../lib/asset-workspace-shared";
+import { isRecord, numberValue, stringValue as textValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -33,25 +33,8 @@ type SceneView = {
   alternates: SceneMaterialOption[];
 };
 
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
 function records(value: unknown): JsonRecord[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function textValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function numberValue(value: unknown, fallback = 0): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
 }
 
 function formatSeconds(value: number): string {

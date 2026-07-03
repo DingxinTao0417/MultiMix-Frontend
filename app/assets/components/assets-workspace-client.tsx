@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { toast } from "sonner";
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   FileText,
   Gauge,
@@ -28,10 +28,20 @@ import {
   type Conversation,
   type ProductArtifact
 } from "../lib/asset-workspace-shared";
+import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
 import ConversationStudio from "./conversation-studio";
-import ProductWorkspace, { EmptyProductWorkspace } from "./product-workspace";
-import LibraryWorkshop, { type LibraryActionIntent } from "./library-workshop";
+import type { LibraryActionIntent } from "./library-workshop";
+
+// Split the heavy panels (react-markdown pipeline, library views) out of the
+// initial bundle; only the active view's chunk is fetched. Auth gating already
+// makes this subtree client-only, so ssr: false loses nothing.
+const ProductWorkspace = dynamic(() => import("./product-workspace"), { ssr: false, loading: () => null });
+const EmptyProductWorkspace = dynamic(
+  () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
+  { ssr: false, loading: () => null }
+);
+const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => null });
 
 type SidebarState = "auto" | "collapsed" | "expanded";
 type DiagnosticsState = {
@@ -155,12 +165,12 @@ export default function AssetsWorkspaceClient({
     error: null
   });
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const visibleConversationRows = conversations
+  const visibleConversationRows = useMemo(() => conversations
     .filter((conversation) => !hiddenConversationIds.includes(conversation.id))
     .map((conversation) => ({
       ...conversation,
       title: renamedConversations[conversation.id] ?? conversation.title
-    }));
+    })), [conversations, hiddenConversationIds, renamedConversations]);
   const selectedConversation =
     visibleConversationRows.find((conversation) => conversation.id === selectedConversationId) ?? assetWorkspaceAdapter.getNewConversation();
   const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
@@ -230,18 +240,22 @@ export default function AssetsWorkspaceClient({
 
   // Poll all orchestration jobs that are still building. These jobs run in the
   // background, so their visible pending state must survive conversation switches.
+  // Keyed on the joined job-id string (not the conversations array) so unrelated
+  // conversation updates don't tear down and restart the interval.
+  const pendingVideoJobKey = useMemo(() => pendingVideoJobIds(conversations).join(","), [conversations]);
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    const jobIds = pendingVideoJobIds(conversations);
+    const jobIds = pendingVideoJobKey ? pendingVideoJobKey.split(",") : [];
     if (!jobIds.length) return;
     let cancelled = false;
     const timer = setInterval(async () => {
+      if (document.hidden) return;
       try {
         const results = await Promise.allSettled(jobIds.map((jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId)));
         if (cancelled) return;
         const finished = results.some((result) => (
           result.status === "fulfilled"
-          && (result.value.status === "completed" || result.value.status === "ready" || result.value.status === "failed")
+          && (result.value.status === "completed" || result.value.status === "failed")
         ));
         if (finished) {
           clearInterval(timer);
@@ -258,7 +272,7 @@ export default function AssetsWorkspaceClient({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [token, conversations]);
+  }, [token, pendingVideoJobKey]);
 
   const startDividerResize = (clientX: number) => {
     if (isDividerDraggingRef.current) return;
@@ -269,6 +283,7 @@ export default function AssetsWorkspaceClient({
     isDividerDraggingRef.current = true;
     const startX = clientX;
     const startWidth = chatPanelWidth;
+    let latestWidth = startWidth;
     const minChatWidth = 320;
     const minArtifactWidth = 360;
     const handleWidth = 10;
@@ -277,7 +292,10 @@ export default function AssetsWorkspaceClient({
 
     const handleResizeMove = (moveEvent: PointerEvent | MouseEvent) => {
       const nextWidth = Math.min(maxChatWidth, Math.max(minChatWidth, startWidth + moveEvent.clientX - startX));
-      setChatPanelWidth(Math.round(nextWidth));
+      latestWidth = Math.round(nextWidth);
+      // Write the CSS var imperatively during the drag; committing React state
+      // per pointermove re-renders the whole workspace tree dozens of times/sec.
+      workspaceRef.current?.style.setProperty("--chat-panel-width", `${latestWidth}px`);
     };
 
     const stopDividerResize = () => {
@@ -288,6 +306,7 @@ export default function AssetsWorkspaceClient({
       window.removeEventListener("pointercancel", stopDividerResize);
       window.removeEventListener("mousemove", handleResizeMove);
       window.removeEventListener("mouseup", stopDividerResize);
+      setChatPanelWidth(latestWidth);
     };
 
     window.addEventListener("pointermove", handleResizeMove);
