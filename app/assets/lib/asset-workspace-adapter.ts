@@ -10,7 +10,9 @@ import {
   type AssetConversationResponse,
   type ContentAsset,
   type ContentAssetSearchResult,
-  type ContentAssetRevisionResponse
+  type ContentAssetRevisionResponse,
+  type PublicMaterialCandidate,
+  type PublicSourceRead
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
 
@@ -28,11 +30,15 @@ export type LibraryRow = {
   statusLabel?: string;
   sourceLabel?: string;
   sourceUrl?: string;
+  previewUrl?: string;
   detailLabel?: string;
   sourceRefs?: string[];
   versions?: string[];
   searchReasons?: string[];
   captionStatus?: string;
+  visualTags?: string[];
+  visualCaption?: string;
+  licenseLabel?: string;
   variant?: "digital-human" | "standard";
 };
 
@@ -112,6 +118,12 @@ export type AssetWorkspaceAdapter = {
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
   regenerateImageCaption(token: string, assetId: number): Promise<ContentAsset>;
+  listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
+  searchPublicMaterials(token: string, payload: { query: string; mediaTypes: Array<"text" | "image" | "video">; providers?: string[]; limit?: number }): Promise<PublicMaterialCandidate[]>;
+  importPublicMaterial(token: string, candidate: PublicMaterialCandidate): Promise<ContentAsset>;
+  listAdminPublicSources(token: string): Promise<PublicSourceRead[]>;
+  updateAdminPublicSource(token: string, provider: string, payload: Partial<Pick<PublicSourceRead, "enabled" | "media_types">>): Promise<PublicSourceRead>;
+  checkAdminPublicSourceHealth(token: string, provider: string): Promise<PublicSourceRead>;
 };
 
 export type VideoJobResult = {
@@ -142,13 +154,24 @@ function inferKeywords(asset: ContentAsset): string[] {
   const text = `${asset.title} ${asset.body ?? ""}`.toLowerCase();
   const seeds = ["产品种草", "小红书", "抖音", "LinkedIn", "封面", "数字人", "口播", "产品图", "视频脚本", "规则变化", "品牌约束"];
   const matched = seeds.filter((keyword) => text.includes(keyword.toLowerCase()));
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const visual = metadata.visual && typeof metadata.visual === "object" ? metadata.visual as Record<string, unknown> : {};
+  const visualTags = Array.isArray(metadata.visual_tags)
+    ? metadata.visual_tags
+    : Array.isArray(visual.tags)
+      ? visual.tags
+      : [];
+  const captionKeywords = Array.isArray(metadata.caption_keywords) ? metadata.caption_keywords : [];
   const fallback: Record<LibraryRow["kind"], string[]> = {
     copy: ["文案", "可复用", "已归档"],
     image: ["图片", "视觉素材", "可检索"],
     video: ["视频", "口播", "可复用"],
     file: ["资料", "来源", "可检索"]
   };
-  return [...matched, ...fallback[libraryRowKind(asset)]].filter((keyword, index, array) => array.indexOf(keyword) === index).slice(0, 5);
+  return [...visualTags, ...captionKeywords, ...matched, ...fallback[libraryRowKind(asset)]]
+    .map((keyword) => String(keyword).trim())
+    .filter((keyword, index, array) => Boolean(keyword) && array.indexOf(keyword) === index)
+    .slice(0, 8);
 }
 
 function inferAssetSourceCategory(asset: ContentAsset): string {
@@ -173,6 +196,20 @@ function contentTypeLabel(asset: ContentAsset): string {
   return "资料";
 }
 
+function previewUrlForAsset(asset: ContentAsset): string | undefined {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const candidates = [
+    metadata.preview_url,
+    metadata.thumbnail_url,
+    metadata.download_url,
+    metadata.source_url,
+    asset.original_ref
+  ];
+  return candidates
+    .map((item) => typeof item === "string" ? item.trim() : "")
+    .find((item) => /^https?:\/\//i.test(item));
+}
+
 function statusLabel(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized === "ready") return "已入库";
@@ -192,7 +229,7 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
   if (mp4State === "ready") return "MP4已生成";
   if (mp4State === "running") return "成片生成中";
   if (mp4State === "failed") return "成片失败";
-  if (videoProject) return "待生成成片";
+  if (videoProject) return "可编辑";
   return null;
 }
 
@@ -237,11 +274,19 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const category = inferLibraryCategory(asset);
   const status = videoProjectStatusLabel(asset) ?? statusLabel(asset.status);
   const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;
+  const visual = asset.metadata?.visual && typeof asset.metadata.visual === "object" ? asset.metadata.visual as Record<string, unknown> : {};
+  const visualTags = Array.isArray(asset.metadata?.visual_tags)
+    ? asset.metadata.visual_tags.map((item) => String(item))
+    : Array.isArray(visual.tags)
+      ? visual.tags.map((item) => String(item))
+      : [];
+  const visualCaption = typeof visual.caption === "string" ? visual.caption : undefined;
+  const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
     title: asset.title,
     meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
-    note: (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
+    note: visualCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
     kind: libraryRowKind(asset),
     category,
     keywords: inferKeywords(asset),
@@ -250,6 +295,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     statusLabel: status,
     sourceLabel: asset.source_filename ?? sourceUrl ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
     sourceUrl,
+    previewUrl: previewUrlForAsset(asset),
     sourceRefs: (asset.source_mapping ?? [])
       .filter((item) => item && typeof item === "object")
       .map((item) => {
@@ -261,6 +307,9 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     versions: (asset.versions ?? []).map((version) => `v${version.version}${version.instruction ? ` · ${version.instruction}` : ""}`).slice(-5),
     searchReasons,
     captionStatus: typeof asset.metadata?.caption_status === "string" ? asset.metadata.caption_status : undefined,
+    visualTags,
+    visualCaption,
+    licenseLabel,
     variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
   };
 }
@@ -506,6 +555,40 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     },
     async regenerateImageCaption(token, assetId) {
       return api<ContentAsset>(`/assets/${assetId}/caption`, token, { method: "POST" });
+    },
+    async listPublicSources(token, mediaType) {
+      const query = mediaType ? `?media_type=${encodeURIComponent(mediaType)}` : "";
+      return api<PublicSourceRead[]>(`/assets/public-sources${query}`, token);
+    },
+    async searchPublicMaterials(token, payload) {
+      const response = await api<{ query: string; candidates: PublicMaterialCandidate[] }>("/assets/public-search", token, {
+        method: "POST",
+        body: JSON.stringify({
+          query: payload.query,
+          media_types: payload.mediaTypes,
+          providers: payload.providers,
+          limit: payload.limit ?? 12
+        })
+      });
+      return response.candidates;
+    },
+    async importPublicMaterial(token, candidate) {
+      return api<ContentAsset>("/assets/public-import", token, {
+        method: "POST",
+        body: JSON.stringify({ candidate })
+      });
+    },
+    async listAdminPublicSources(token) {
+      return api<PublicSourceRead[]>("/admin/public-sources", token);
+    },
+    async updateAdminPublicSource(token, provider, payload) {
+      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}`, token, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkAdminPublicSourceHealth(token, provider) {
+      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}/health`, token, { method: "POST" });
     }
   };
 }

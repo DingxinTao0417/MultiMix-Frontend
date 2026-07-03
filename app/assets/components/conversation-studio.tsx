@@ -153,7 +153,7 @@ export default function ConversationStudio({
     const exchange = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       userText: instruction,
-      assistantText: "正在生成",
+      assistantText: "",
       status: "pending"
     } satisfies OptimisticExchange;
     onPendingExchangeChange?.(selectedConversation.id, exchange);

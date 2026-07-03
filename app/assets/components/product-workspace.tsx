@@ -18,7 +18,7 @@ export function EmptyProductWorkspace() {
           <div className="shadcn-prototype-product-preview">
             <div>
               <strong>先从对话开始</strong>
-              <span>明确要文案、图片提示词或视频后，这里会展示生成结果。</span>
+              <span>明确要文案、图片或视频后，这里会展示生成结果。</span>
             </div>
           </div>
         </div>

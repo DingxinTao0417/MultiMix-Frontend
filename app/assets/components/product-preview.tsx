@@ -7,6 +7,43 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import type { ProductArtifact } from "../lib/asset-workspace-shared";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function videoPlanSummary(product: ProductArtifact) {
+  const plan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : null;
+  if (!plan) return null;
+  const summary = isRecord(plan.summary) ? plan.summary : {};
+  const scenes = Array.isArray(plan.scenes) ? plan.scenes.filter(isRecord) : [];
+  return {
+    topic: stringValue(summary.topic) || product.title,
+    audience: stringValue(plan.audience) || "潜在用户",
+    style: stringValue(plan.style) || "清晰可信",
+    duration: typeof plan.duration_seconds === "number" ? `${plan.duration_seconds}秒` : product.duration,
+    sceneCount: typeof summary.scene_count === "number" ? summary.scene_count : scenes.length,
+    materialHitCount: typeof summary.material_hit_count === "number" ? summary.material_hit_count : 0,
+    publicMaterialFillCount: typeof summary.public_material_fill_count === "number" ? summary.public_material_fill_count : 0,
+    materialGapCount: typeof summary.material_gap_count === "number" ? summary.material_gap_count : 0,
+    materialUnfilledCount: typeof summary.material_unfilled_count === "number" ? summary.material_unfilled_count : 0,
+    scenes,
+  };
+}
+
+function materialGapNotice(product: ProductArtifact, fallbackCount = 0) {
+  const metadataNotice = product.metadata?.material_gap_notice;
+  if (typeof metadataNotice === "string" && metadataNotice.trim()) return metadataNotice;
+  const project = isRecord(product.metadata?.video_project) ? product.metadata.video_project : null;
+  const orchestration = project && isRecord(project.orchestration) ? project.orchestration : null;
+  const projectNotice = orchestration?.material_gap_notice;
+  if (typeof projectNotice === "string" && projectNotice.trim()) return projectNotice;
+  return fallbackCount > 0 ? `${fallbackCount} 个分镜未匹配到合适素材，已用字幕/标题卡占位，可在编辑器中替换。` : "";
+}
+
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
   if (product.mode === "copy") {
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
@@ -121,7 +158,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           ))}
         </div>
         <div className="shadcn-prototype-mg-placeholder">
-          <em>预览模式，部署 Modal 后可渲染</em>
+          <em>预览模式，接入渲染服务后可生成</em>
         </div>
       </div>
     );
@@ -129,8 +166,42 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
 
   const firstTimelineItems = product.timeline.slice(0, 3);
   const visualPreviewFrames = product.preview?.frames ?? [];
+  const planSummary = videoPlanSummary(product);
+  const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "视频文案草稿";
+  const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
   return (
     <>
+      {planSummary ? (
+        <section className="shadcn-prototype-video-plan-summary" aria-label={`${planSummaryLabel}摘要`}>
+          <header>
+            <span>{planSummaryLabel}</span>
+            <strong>{planSummary.topic}</strong>
+          </header>
+          <div className="shadcn-prototype-video-plan-metrics">
+            <span>{planSummary.audience}</span>
+            <span>{planSummary.style}</span>
+            <span>{planSummary.duration}</span>
+            <span>{planSummary.sceneCount} 个分镜</span>
+            <span>已匹配 {planSummary.materialHitCount} 个素材</span>
+            {planSummary.publicMaterialFillCount ? <span>自动补 {planSummary.publicMaterialFillCount} 个公共素材</span> : null}
+            {planSummary.materialGapCount ? <span>{planSummary.materialGapCount} 个分镜自动补素材</span> : null}
+          </div>
+          {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
+          {planSummary.scenes.length ? (
+            <details>
+              <summary>查看分镜详情</summary>
+              <ol>
+                {planSummary.scenes.slice(0, 8).map((scene, index) => (
+                  <li key={stringValue(scene.id) || index}>
+                    <strong>{stringValue(scene.title) || `分镜 ${index + 1}`}</strong>
+                    <span>{stringValue(scene.subtitle_focus) || stringValue(scene.narration)}</span>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
+        </section>
+      ) : null}
       <div className="shadcn-prototype-video-frame project">
         <article className="shadcn-prototype-video-project-card" aria-label="视频工程预览">
           <header>
@@ -139,7 +210,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           </header>
           <div>
             <strong>{product.preview?.title ?? product.title}</strong>
-            <p>当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；确认后再生成成片。</p>
+            <p>当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。</p>
           </div>
           {firstTimelineItems.length ? (
             <ul>

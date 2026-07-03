@@ -18,7 +18,6 @@ import {
   Search,
   Sparkles,
   Trash2,
-  Upload,
   Video
 } from "lucide-react";
 import { getAssetLlmDiagnostics, type AssetLlmDiagnosticsRead } from "../../../lib/api";
@@ -106,7 +105,8 @@ function shouldReviseSelectedProduct(instruction: string, product: ProductArtifa
   if (!text) return false;
   if (/(mp4|成片|渲染|导出视频|render|export)/i.test(text)) return false;
   if (/(再做|另外|新增|新建|再生成|另做|add another|new one|create another)/i.test(text)) return false;
-  return /(短一点|更短|缩短|压到|改|改成|改写|重写|优化|删掉|保留|第二|镜头|字幕|口语|专业|做成|变成|转成|数字人|mg|实景|文生视频|封面|构图|色调|shorten|revise|rewrite|edit|turn into|make it)/i.test(text);
+  if (/(基于|做成|变成|转成|turn into|make it).*(文案|图片|图|视频|copy|image|video)/i.test(text)) return false;
+  return /(短一点|更短|缩短|压到|改写|重写|优化|删掉|保留|第二|镜头|字幕|口语|专业|构图|色调|shorten|revise|rewrite|edit)/i.test(text);
 }
 
 function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
@@ -166,6 +166,7 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
+  const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const activeTitle = activeView === "conversation"
     ? "对话"
     : assetWorkspaceAdapter.getWorkshop(activeView).title;
@@ -472,10 +473,10 @@ export default function AssetsWorkspaceClient({
     const linkedAsset = { id: row.assetId, title: row.title };
     const targetConversation = assetWorkspaceAdapter.getNewConversation();
     const instruction = intent === "video"
-      ? `基于《${row.title}》生成一条短视频脚本，保留关键信息并补充分镜、口播和画面建议。`
+      ? `基于《${row.title}》做成视频。`
       : intent === "regenerate-image"
-        ? `基于《${row.title}》重新生成一版图片提示词，突出主体、场景、构图、色调和可复用关键词。`
-        : `基于《${row.title}》生成一条可发布内容，先提炼资料要点，再输出可直接编辑的成稿。`;
+        ? `基于《${row.title}》做成图片。`
+        : `基于《${row.title}》做成文案。`;
     setConversationContextAssets((current) => ({
       ...current,
       [targetConversation.id]: [linkedAsset]
@@ -515,12 +516,12 @@ export default function AssetsWorkspaceClient({
         assetLabel: "生成中",
         status: "生成中",
         prompt: instruction,
-        response: "正在生成",
-        delivery: "正在生成",
+        response: "",
+        delivery: "",
         suggestions: [],
         messages: [
           { role: "user", text: instruction },
-          { role: "assistant", text: "正在生成", pending: true }
+          { role: "assistant", text: "", pending: true }
         ],
       };
       setConversations((current) => [
@@ -931,7 +932,7 @@ export default function AssetsWorkspaceClient({
             {activeDescription ? <span>{activeDescription}</span> : null}
           </div>
           <div className="shadcn-prototype-actions">
-            <div className="shadcn-prototype-diagnostics">
+            {canShowDiagnostics ? <div className="shadcn-prototype-diagnostics">
               <button
                 type="button"
                 aria-expanded={diagnostics.open}
@@ -979,25 +980,17 @@ export default function AssetsWorkspaceClient({
                   {diagnostics.data?.probe_error ? <p role="status">{diagnostics.data.probe_error}</p> : null}
                 </aside>
               ) : null}
-            </div>
-            {activeView !== "conversation" ? (
-              <>
-                <input
-                  ref={uploadInputRef}
-                  type="file"
-                  accept={uploadAcceptForView(activeView)}
-                  style={{ display: "none" }}
-                  onChange={(event) => {
-                    void handleUploadFile(event.currentTarget.files?.[0]);
-                  }}
-                />
-                <button type="button" onClick={handleUploadClick} disabled={uploading}>
-                  <Upload size={15} aria-hidden="true" />
-                  {uploading ? "上传中..." : "上传"}
-                </button>
-                {uploadError ? <span className="shadcn-prototype-upload-error" role="alert">{uploadError}</span> : null}
-              </>
-            ) : null}
+            </div> : null}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept={uploadAcceptForView(activeView)}
+              style={{ display: "none" }}
+              onChange={(event) => {
+                void handleUploadFile(event.currentTarget.files?.[0]);
+              }}
+            />
+            {uploadError ? <span className="shadcn-prototype-upload-error" role="alert">{uploadError}</span> : null}
           </div>
         </header>
 

@@ -148,10 +148,13 @@ export type ContentAsset = {
   id: number;
   project_id: number | null;
   parent_asset_id: number | null;
+  library_kind?: "assets" | "copy" | "image" | "video" | string;
   asset_kind: "asset" | "copy" | "video" | "image" | "video_render" | string;
   content_type: string;
   title: string;
   status: "processing" | "ready" | "failed" | "draft" | "archived" | string;
+  source_type?: string;
+  generation_state?: string;
   source_filename: string | null;
   source_content_type: string | null;
   original_ref: string | null;
@@ -205,6 +208,37 @@ export type ContentAssetSearchResult = {
   snippet: string;
   score: number;
   matched_fields: string[];
+};
+
+export type PublicSourceRead = {
+  provider: string;
+  name: string;
+  enabled: boolean;
+  media_types: string[];
+  license_policy: string;
+  health_status: string;
+  last_checked_at: string | null;
+};
+
+export type PublicMaterialCandidate = {
+  id: string;
+  title: string;
+  media_type: "text" | "image" | "video";
+  provider: string;
+  source_url: string;
+  preview_url: string;
+  download_url: string;
+  license: string;
+  license_label: string;
+  creator: string;
+  body_text?: string;
+  visual: {
+    tags?: string[];
+    caption?: string;
+    analysis_status?: string;
+    tag_details?: Array<Record<string, unknown>>;
+    objects?: string[];
+  };
 };
 
 export type AssetIngestJobRead = {
