@@ -1,11 +1,26 @@
 "use client";
 
 import { type CSSProperties } from "react";
-import { Play } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
+import { API_BASE } from "../../../lib/api";
 import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+
+// Resolve a directly playable URL for a video-like product: exported MP4s live
+// behind the backend media proxy (store refs), external sources pass through.
+function playableVideoUrl(product: ProductArtifact): string {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  const videoProject = isRecord(metadata.video_project) ? metadata.video_project : null;
+  const mp4Ref = stringValue(videoProject?.mp4_ref);
+  if (mp4Ref) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(mp4Ref)}`;
+  const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : null;
+  const artifactRef = stringValue(mp4Artifact?.mp4_ref) || stringValue(mp4Artifact?.ref);
+  if (artifactRef) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(artifactRef)}`;
+  const direct = stringValue(metadata.video_url) || stringValue(metadata.preview_url);
+  if (/^https?:\/\//i.test(direct)) return direct;
+  return "";
+}
 
 function videoPlanSummary(product: ProductArtifact) {
   const plan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : null;
@@ -91,19 +106,28 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   }
 
   if (product.mode === "digital-human") {
+    const videoUrl = playableVideoUrl(product);
     return (
       <div className="shadcn-prototype-digital-human-workspace" aria-label="数字人口播视频预览">
         <div className="shadcn-prototype-digital-human-preview">
-          <div className="shadcn-prototype-digital-stage">
-            <div className="shadcn-prototype-digital-avatar" aria-hidden="true" />
-            <div className="shadcn-prototype-digital-caption">
-              <strong>{product.preview?.title ?? product.title}</strong>
-              <span>{product.ratio} · {product.duration}</span>
+          {videoUrl ? (
+            <video
+              className="shadcn-prototype-product-video-player"
+              src={videoUrl}
+              controls
+              preload="metadata"
+              playsInline
+              aria-label="数字人口播视频"
+            />
+          ) : (
+            <div className="shadcn-prototype-digital-stage">
+              <div className="shadcn-prototype-digital-avatar" aria-hidden="true" />
+              <div className="shadcn-prototype-digital-caption">
+                <strong>{product.preview?.title ?? product.title}</strong>
+                <span>{product.ratio} · {product.duration} · 渲染完成后可播放</span>
+              </div>
             </div>
-            <button type="button" aria-label="播放数字人口播预览">
-              <Play size={18} fill="currentColor" aria-hidden="true" />
-            </button>
-          </div>
+          )}
         </div>
       </div>
     );
@@ -161,8 +185,20 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   const planSummary = videoPlanSummary(product);
   const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "视频文案草稿";
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
+  const exportedVideoUrl = playableVideoUrl(product);
   return (
     <>
+      {exportedVideoUrl ? (
+        <div className="shadcn-prototype-product-video" aria-label="成片播放">
+          <video
+            className="shadcn-prototype-product-video-player"
+            src={exportedVideoUrl}
+            controls
+            preload="metadata"
+            playsInline
+          />
+        </div>
+      ) : null}
       {planSummary ? (
         <section className="shadcn-prototype-video-plan-summary" aria-label={`${planSummaryLabel}摘要`}>
           <header>

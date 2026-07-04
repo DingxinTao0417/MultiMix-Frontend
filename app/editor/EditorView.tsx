@@ -10,8 +10,10 @@ import { ExportButton } from "@/editor-engine/vendor/ExportButton";
 import { PlayButton } from "@/editor-engine/vendor/PlayButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
+import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 async function fetchProject(endpoint: string, token: string | null): Promise<BackendProject> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -26,6 +28,7 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
     throw new Error(`项目尚未就绪（${data.status} / ${data.render_stage}）`);
   }
   const raw = data.project;
+  rememberRawProject(raw);
   // ChangeIn format: video_project.timeline has the BackendProject shape.
   // video_orchestration format: the project itself IS the BackendProject.
   if (raw.tracks) return raw as BackendProject;
@@ -37,23 +40,26 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [title, setTitle] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [loadingDetail, setLoadingDetail] = useState("");
   const startedRef = useRef(false);
 
   const handleSave = async () => {
-    if (!assetId || !token || saving) return;
-    setSaving(true);
+    if (!assetId || !token || saveState === "saving") return;
+    setSaveState("saving");
     try {
-      const project = EditorCore.getInstance().project.getActive();
-      await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+      const body = serializeBackendProject(EditorCore.getInstance());
+      const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(project),
+        body: JSON.stringify(body),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaveState("saved");
+      setTimeout(() => setSaveState("idle"), 2000);
     } catch {
-      // silent for now; could add toast later
-    } finally {
-      setSaving(false);
+      setSaveState("error");
+      setTimeout(() => setSaveState("idle"), 4000);
     }
   };
 
@@ -75,7 +81,9 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
     void (async () => {
       try {
         const bp = await fetchProject(endpoint, token);
-        await initEditorWithProject(bp);
+        await initEditorWithProject(bp, (loaded, total) => {
+          setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
+        });
         setTitle(bp.metadata?.title ?? "");
         setState("ready");
       } catch (e) {
@@ -93,12 +101,20 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
         ) : null}
         <strong style={{ fontSize: embed ? 12 : 14 }}>{title || "视频剪辑器"}</strong>
         {state === "ready" && assetId ? (
-          <button onClick={handleSave} disabled={saving} style={{ padding: "4px 12px", fontSize: 12, background: "#2d6cdf", color: "#fff", border: "none", borderRadius: 4, cursor: saving ? "default" : "pointer" }}>
-            {saving ? "保存中…" : "💾 保存项目"}
+          <button
+            onClick={handleSave}
+            disabled={saveState === "saving"}
+            style={{
+              padding: "4px 12px", fontSize: 12, border: "none", borderRadius: 4,
+              background: saveState === "error" ? "#c0392b" : saveState === "saved" ? "#2e8b57" : "#2d6cdf",
+              color: "#fff", cursor: saveState === "saving" ? "default" : "pointer",
+            }}
+          >
+            {saveState === "saving" ? "保存中…" : saveState === "saved" ? "✓ 已保存" : saveState === "error" ? "保存失败，点击重试" : "💾 保存项目"}
           </button>
         ) : null}
         {state === "ready" ? <ExportButton assetId={assetId} token={token} /> : null}
-        {state === "loading" ? <span style={{ color: "#888", fontSize: 13 }}>正在加载项目…</span> : null}
+        {state === "loading" ? <span style={{ color: "#888", fontSize: 13 }}>{loadingDetail || "正在加载项目…"}</span> : null}
         {state === "error" ? <span style={{ color: "#f66", fontSize: 13 }}>{error}</span> : null}
       </div>
 
@@ -117,7 +133,7 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
         </>
       ) : (
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>
-          {state === "error" ? error : "正在准备剪辑器…"}
+          {state === "error" ? error : loadingDetail || "正在准备剪辑器…"}
         </div>
       )}
     </div>

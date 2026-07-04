@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { VIDEO_JOB_STEPS, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import ProductPreview from "./product-preview";
 
 export function EmptyProductWorkspace() {
@@ -32,39 +34,50 @@ export default function ProductWorkspace({
   onCopyProduct,
   onSaveProduct,
   onRestoreVersion,
+  onRetryVideoJob,
   product,
   savedVersion,
   selectedConversation,
+  videoJobLive,
 }: {
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
   onProductUpdated?: (product: ProductArtifact) => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
+  onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
   token?: string | null;
+  videoJobLive?: VideoJobLiveStatus | null;
 }) {
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
+  const productMetadata = (product.metadata && typeof product.metadata === "object"
+    ? product.metadata
+    : {}) as Record<string, unknown>;
   // Video products backed by a real orchestration project can open the editor.
-  const hasVideoProject = Boolean(
-    product.backendAssetId &&
-    product.metadata &&
-    typeof product.metadata === "object" &&
-    (product.metadata as Record<string, unknown>).video_project
-  );
+  const hasVideoProject = Boolean(product.backendAssetId && productMetadata.video_project);
   // While the orchestration job runs (TTS + material search), there is no
-  // editable project yet; surface a pending hint instead of the editor link.
+  // editable project yet; surface stage-level progress instead of the editor.
   const orchestrationPending = Boolean(
-    product.backendAssetId &&
-    !hasVideoProject &&
-    product.metadata &&
-    typeof product.metadata === "object" &&
-    (product.metadata as Record<string, unknown>).orchestration_pending
+    product.backendAssetId && !hasVideoProject && productMetadata.orchestration_pending
+  ) || (!hasVideoProject && videoJobLive?.status === "running") || (!hasVideoProject && videoJobLive?.status === "queued");
+  // Failed jobs keep latest_job_public_id in metadata; the poller/mapper marks
+  // the asset failed. Show a persistent error card with a retry action.
+  const orchestrationFailed = !hasVideoProject && !orchestrationPending && Boolean(
+    (videoJobLive?.status === "failed")
+    || (typeof productMetadata.latest_job_public_id === "string" && product.status.includes("失败"))
   );
+  const liveStage = videoJobLive?.renderStage ?? "queued";
+  const liveStageLabel = videoJobStageLabel(liveStage);
+  const liveStepIndex = videoJobStepIndex(liveStage);
+  const failureDetail = videoJobLive?.errorMessage
+    || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
+    || "";
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
@@ -178,7 +191,7 @@ export default function ProductWorkspace({
             ) : null}
             {orchestrationPending ? (
               <span className="shadcn-prototype-product-pending" aria-live="polite">
-                生成中…
+                {liveStageLabel}
               </span>
             ) : null}
             <button className="primary" type="button" onClick={() => void onSaveProduct(product)}>
@@ -196,6 +209,51 @@ export default function ProductWorkspace({
               title="视频剪辑器"
               allow="autoplay; clipboard-write"
             />
+          </div>
+        ) : orchestrationPending ? (
+          <div className="shadcn-prototype-product-main">
+            <div className="shadcn-prototype-video-progress" role="status" aria-live="polite">
+              <strong>视频工程生成中</strong>
+              <ol className="shadcn-prototype-video-progress-steps">
+                {VIDEO_JOB_STEPS.map((step, index) => (
+                  <li
+                    key={step}
+                    className={index < liveStepIndex ? "done" : index === liveStepIndex ? "active" : ""}
+                  >
+                    <i aria-hidden="true" />
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+              <p>{liveStageLabel}。可以切换到其他对话，完成后这里会自动展示剪辑器。</p>
+            </div>
+          </div>
+        ) : orchestrationFailed ? (
+          <div className="shadcn-prototype-product-main">
+            <div className="shadcn-prototype-video-failed" role="alert">
+              <strong>视频生成失败</strong>
+              <p>{failureDetail || "任务在后台执行时出错，工程未能生成。"}</p>
+              <div className="shadcn-prototype-video-failed-actions">
+                {onRetryVideoJob ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={retrying}
+                    onClick={async () => {
+                      setRetrying(true);
+                      try {
+                        await onRetryVideoJob(product);
+                      } finally {
+                        setRetrying(false);
+                      }
+                    }}
+                  >
+                    {retrying ? "重试中…" : "重试生成"}
+                  </button>
+                ) : null}
+                <span>也可以在对话中调整指令后重新生成。</span>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="shadcn-prototype-product-main">

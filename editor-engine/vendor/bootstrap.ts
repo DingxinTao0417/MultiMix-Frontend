@@ -5,15 +5,24 @@ import { buildProject } from "./buildProject";
 import { mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 
+// Progress callback while media blobs download (loaded, total).
+export type HydrateProgress = (loaded: number, total: number) => void;
+
 // Download media files into real Blob/File objects. The canvas renderer uses
 // WebCodecs over File objects for video frames, so preview needs these blobs.
-async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Promise<MediaAsset[]> {
+async function hydrateAssetFiles(
+  assets: MediaAsset[],
+  bp: BackendProject,
+  onProgress?: HydrateProgress,
+): Promise<MediaAsset[]> {
   const pathById: Record<string, string> = {};
   for (const m of bp.media) pathById[m.id] = m.file_path;
 
   // Download in small batches so network isn't flooded by 30+ parallel fetches.
   const BATCH = 6;
   const results: MediaAsset[] = [];
+  let loaded = 0;
+  onProgress?.(0, assets.length);
   for (let i = 0; i < assets.length; i += BATCH) {
     const batch = assets.slice(i, i + BATCH);
     const batchResults = await Promise.all(
@@ -31,6 +40,9 @@ async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Prom
         } catch (e) {
           console.warn("hydrate media failed", asset.id, e);
           return asset;
+        } finally {
+          loaded += 1;
+          onProgress?.(loaded, assets.length);
         }
       })
     );
@@ -39,10 +51,10 @@ async function hydrateAssetFiles(assets: MediaAsset[], bp: BackendProject): Prom
   return results;
 }
 
-export async function initEditorWithProject(bp: BackendProject): Promise<EditorCore> {
+export async function initEditorWithProject(bp: BackendProject, onProgress?: HydrateProgress): Promise<EditorCore> {
   EditorCore.reset();
   const editor = EditorCore.getInstance();
-  await applyProject(editor, bp);
+  await applyProject(editor, bp, onProgress);
   return editor;
 }
 
@@ -55,10 +67,10 @@ export async function updateEditorProject(bp: BackendProject): Promise<EditorCor
   return editor;
 }
 
-async function applyProject(editor: EditorCore, bp: BackendProject): Promise<void> {
+async function applyProject(editor: EditorCore, bp: BackendProject, onProgress?: HydrateProgress): Promise<void> {
   const { project, assets } = buildProject(bp);
 
-  const hydratedAssets = await hydrateAssetFiles(assets, bp);
+  const hydratedAssets = await hydrateAssetFiles(assets, bp, onProgress);
 
   editor.project.setActiveProject({ project });
   editor.scenes.initializeScenes({

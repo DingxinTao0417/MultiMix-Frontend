@@ -34,6 +34,7 @@ function visibleSuggestions(message: VisibleConversationMessage) {
       key: action.id,
       label: action.label,
       utterance: action.utterance,
+      actionType: action.actionType,
       enabled: action.enabled,
       disabledReason: action.disabledReason
     }));
@@ -42,6 +43,7 @@ function visibleSuggestions(message: VisibleConversationMessage) {
     key: suggestion,
     label: suggestion,
     utterance: suggestion,
+    actionType: "fill_composer",
     enabled: true,
     disabledReason: undefined
   }));
@@ -147,8 +149,7 @@ export default function ConversationStudio({
     }
   }, [composerValue]);
 
-  const submitInstruction = async () => {
-    const instruction = composerValue.trim();
+  const sendInstruction = async (instruction: string) => {
     if (readonly || !onSendMessage || !instruction || sending) return;
     const controller = new AbortController();
     activeRequestRef.current = controller;
@@ -180,6 +181,10 @@ export default function ConversationStudio({
       }
       setSending(false);
     }
+  };
+
+  const submitInstruction = async () => {
+    await sendInstruction(composerValue.trim());
   };
 
   const stopGeneration = () => {
@@ -268,10 +273,17 @@ export default function ConversationStudio({
                     <button
                       type="button"
                       key={suggestion.key}
-                      disabled={!canSend || !suggestion.enabled}
+                      className={suggestion.actionType === "submit_message" ? "shadcn-prototype-suggestion-primary" : undefined}
+                      disabled={!canSend || !suggestion.enabled || (sending && suggestion.actionType === "submit_message")}
                       title={suggestion.disabledReason}
                       onClick={() => {
                         if (!canSend || !suggestion.enabled) return;
+                        // Confirmation chips send immediately; everything else
+                        // pre-fills the composer so the user can adjust first.
+                        if (suggestion.actionType === "submit_message") {
+                          void sendInstruction(suggestion.utterance);
+                          return;
+                        }
                         setComposerValue(suggestion.utterance);
                         requestAnimationFrame(() => {
                           composerRef.current?.focus();

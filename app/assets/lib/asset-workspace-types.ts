@@ -133,6 +133,7 @@ export type AssetWorkshop = {
     versions?: string[];
     searchReasons?: string[];
     captionStatus?: string;
+    previewUrl?: string;
     variant?: "digital-human" | "standard";
   }>;
 };

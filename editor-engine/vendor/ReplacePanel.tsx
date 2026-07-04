@@ -3,7 +3,7 @@ import { useEditor } from "@editor/hooks/use-editor";
 import type { MediaAsset } from "@editor/lib/media/types";
 import { API_BASE, replaceOptions, generateMG, mediaUrl, type MaterialOption } from "./api";
 import { updateEditorProject } from "./bootstrap";
-import { segmentTextByElementId, type BackendProject } from "./buildProject";
+import { filePathByMediaId, segmentTextByElementId, type BackendProject } from "./buildProject";
 
 // Floating panel: when a video/image clip is selected, lets the user swap it
 // for a freshly-searched alternative material for the same script segment.
@@ -116,6 +116,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     const name = opt.file_path.split("/").pop() || "material";
     const file = new File([blob], name, { type: blob.type });
     const newId = `repl-${Date.now()}`;
+    // Register the backend ref so "保存项目" can serialize this replacement.
+    filePathByMediaId[newId] = opt.file_path;
     const asset: MediaAsset = {
       id: newId,
       name,

@@ -116,6 +116,32 @@ function videoProjectStatusLabel(mp4State: string): string {
   return "视频工程 · 可编辑";
 }
 
+// Human-readable label for a video job's render_stage (backend enum).
+export function videoJobStageLabel(stage: string): string {
+  const labels: Record<string, string> = {
+    queued: "排队等待中",
+    script: "正在生成脚本",
+    segment: "正在匹配素材与合成配音",
+    render: "正在渲染动效",
+    done: "已完成",
+    failed: "生成失败",
+    stale: "任务超时",
+    missing_asset: "生成失败",
+    invalid_spec: "动效参数无效"
+  };
+  return labels[stage] ?? "正在生成";
+}
+
+// Ordered pipeline steps shown by the progress UI; maps render_stage → index.
+export const VIDEO_JOB_STEPS = ["生成脚本", "匹配素材与配音", "组装时间线"] as const;
+
+export function videoJobStepIndex(stage: string): number {
+  if (stage === "queued" || stage === "script") return 0;
+  if (stage === "segment" || stage === "render") return 1;
+  if (stage === "done") return 3;
+  return 2;
+}
+
 function suggestionsForCapability(capability: string): string[] {
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
   if (capability.includes("video")) return ["调整分镜", "补充产品素材", "缩短到30秒", "换成9:16"];
@@ -187,10 +213,23 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const noAssetHit = Boolean(metadata.no_asset_hit);
   const mp4State = stringValue(videoProject?.mp4_state) || "";
   const directorDraft = isVideoDirectorDraft(asset);
+  // Orchestration lifecycle: pending while the async job runs, failed when the
+  // job died without producing a project (retryable from the workspace).
+  const orchestrationPending = Boolean(metadata.orchestration_pending && !videoProject);
+  const orchestrationFailed = Boolean(
+    !videoProject
+    && !orchestrationPending
+    && asset.status === "failed"
+    && typeof metadata.latest_job_public_id === "string"
+  );
   const status = videoProject
     ? videoProjectStatusLabel(mp4State)
     : mp4Artifact
       ? "MP4 成片 · 已生成"
+    : orchestrationPending
+      ? "视频生成中 · 后台任务"
+    : orchestrationFailed
+      ? "生成失败 · 可重试"
     : unsupported
     ? "可执行方案 · 待生成"
     : directorDraft
@@ -297,7 +336,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: asset.title,
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "视频文案草稿，确认后生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "视频文案草稿，确认后生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

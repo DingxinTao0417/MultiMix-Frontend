@@ -29,6 +29,7 @@ interface BackendElement {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  segmentId?: string;
   segmentText?: string;
 }
 interface BackendTrack {
@@ -98,12 +99,19 @@ function wrapCaption(text: string, maxChars: number): string {
 // Used by the replace-material panel to re-search by the segment's script text.
 export const segmentTextByElementId: Record<string, string> = {};
 
+// Side maps for saving: OpenCut's types carry neither the backend file_path nor
+// the segment id, but both must survive the save round-trip (media refs feed
+// the media proxy; segment ids anchor MG overlays).
+export const filePathByMediaId: Record<string, string> = {};
+export const segmentIdByElementId: Record<string, string> = {};
+
 // A placeholder File to satisfy the MediaAsset type; rendering reads `url`, not bytes.
 function placeholderFile(name: string): File {
   return new File([], name);
 }
 
 export function buildMediaAssets(bp: BackendProject): MediaAsset[] {
+  for (const m of bp.media) filePathByMediaId[m.id] = m.file_path;
   return bp.media.map((m) => ({
     id: m.id,
     name: m.name,
@@ -121,6 +129,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
   const tracks: TimelineTrack[] = [];
 
   for (const t of bp.tracks) {
+    for (const e of t.elements) {
+      if (e.segmentId) segmentIdByElementId[e.id] = e.segmentId;
+    }
     if (t.type === "video") {
       const elements = t.elements.map((e): VideoElement | ImageElement => {
         if (e.segmentText) segmentTextByElementId[e.id] = e.segmentText;

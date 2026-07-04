@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentAssetToProduct } from "../../../lib/asset-mappers";
+import { contentAssetToProduct, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
 import type { ContentAsset } from "../../../lib/api";
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
@@ -84,5 +84,55 @@ describe("asset product mapper", () => {
     expect(visibleText).not.toContain("MP4");
     expect(visibleText).not.toContain("导出");
     expect(product.actions).toContain("调整分镜");
+  });
+
+  it("marks orchestration-pending video assets as generating", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_render",
+      status: "processing",
+      metadata: {
+        capability: "video_render",
+        capability_label: "视频编排",
+        orchestration_pending: true,
+        latest_job_public_id: "video-job-abc"
+      }
+    }));
+
+    expect(product.status).toBe("视频生成中 · 后台任务");
+    expect(product.preview?.subtitle).toContain("后台生成");
+  });
+
+  it("marks failed orchestration assets as retryable with the error detail", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_render",
+      status: "failed",
+      error_message: "TTS provider timeout",
+      metadata: {
+        capability: "video_render",
+        capability_label: "视频编排",
+        latest_job_public_id: "video-job-abc"
+      }
+    }));
+
+    expect(product.status).toBe("生成失败 · 可重试");
+    expect(product.preview?.subtitle).toContain("TTS provider timeout");
+  });
+});
+
+describe("video job stage helpers", () => {
+  it("maps backend render stages to Chinese labels", () => {
+    expect(videoJobStageLabel("queued")).toBe("排队等待中");
+    expect(videoJobStageLabel("script")).toBe("正在生成脚本");
+    expect(videoJobStageLabel("segment")).toBe("正在匹配素材与合成配音");
+    expect(videoJobStageLabel("unknown_stage")).toBe("正在生成");
+  });
+
+  it("maps stages onto ordered progress steps", () => {
+    expect(videoJobStepIndex("queued")).toBe(0);
+    expect(videoJobStepIndex("script")).toBe(0);
+    expect(videoJobStepIndex("segment")).toBe(1);
+    expect(videoJobStepIndex("done")).toBe(3);
   });
 });

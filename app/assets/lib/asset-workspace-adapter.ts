@@ -1,6 +1,7 @@
 import { mockAssetWorkspaceData } from "./asset-workspace-mock-data";
 import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 import {
+  API_BASE,
   api,
   apiBlob,
   apiForm,
@@ -108,6 +109,7 @@ export type AssetWorkspaceAdapter = {
   }): Promise<{ product: AssetProduct; assistantMessage: string; diffSummary: string }>;
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
+  retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
   uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">): Promise<ContentAsset>;
   createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
@@ -194,8 +196,19 @@ function contentTypeLabel(asset: ContentAsset): string {
   return "资料";
 }
 
+// Store refs (local://, supabase://, s3://) are only readable through the
+// backend's unauthenticated media proxy; browsers can't open them directly.
+export function mediaProxyUrl(ref: string): string {
+  return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
+}
+
 function previewUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const videoProject = metadata.video_project && typeof metadata.video_project === "object" && !Array.isArray(metadata.video_project)
+    ? metadata.video_project as Record<string, unknown>
+    : null;
+  const mp4Ref = typeof videoProject?.mp4_ref === "string" ? videoProject.mp4_ref.trim() : "";
+  if (mp4Ref) return mediaProxyUrl(mp4Ref);
   const candidates = [
     metadata.preview_url,
     metadata.thumbnail_url,
@@ -487,6 +500,12 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     },
     async getVideoJob(token, jobId) {
       const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
+      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
+    },
+    async retryVideoJob(token, jobId) {
+      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}/retry`, token, {
+        method: "POST",
+      });
       return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
     },
     async listLibrary(token, view, query) {

@@ -72,6 +72,13 @@ type PendingConversationExchange = {
   status: "pending" | "stopped" | "failed";
 };
 
+export type VideoJobLiveStatus = {
+  jobId: string;
+  status: string;
+  renderStage: string;
+  errorMessage: string | null;
+};
+
 function pendingVideoJobIds(conversations: Conversation[]): string[] {
   const ids = new Set<string>();
   for (const conversation of conversations) {
@@ -156,6 +163,9 @@ export default function AssetsWorkspaceClient({
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
+  // Live per-asset video job status (stage + error) fed by the poller so the
+  // workspace can show stage-level progress instead of a bare "生成中".
+  const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
@@ -248,31 +258,76 @@ export default function AssetsWorkspaceClient({
     const jobIds = pendingVideoJobKey ? pendingVideoJobKey.split(",") : [];
     if (!jobIds.length) return;
     let cancelled = false;
-    const timer = setInterval(async () => {
-      if (document.hidden) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped || document.hidden) return;
       try {
         const results = await Promise.allSettled(jobIds.map((jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId)));
         if (cancelled) return;
+        // Publish live stage/error per asset so the workspace can render
+        // stage-level progress and persistent failure details.
+        setVideoJobLive((current) => {
+          const next = { ...current };
+          for (const result of results) {
+            if (result.status !== "fulfilled") continue;
+            const job = result.value;
+            next[job.assetId] = {
+              jobId: job.id,
+              status: job.status,
+              renderStage: job.renderStage,
+              errorMessage: job.errorMessage
+            };
+          }
+          return next;
+        });
         const finished = results.some((result) => (
           result.status === "fulfilled"
           && (result.value.status === "completed" || result.value.status === "failed")
         ));
         if (finished) {
+          stopped = true;
           clearInterval(timer);
           const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
           if (!cancelled) setConversations(rows);
-          const failed = results.some((result) => result.status === "fulfilled" && result.value.status === "failed");
-          if (failed) toast.error("视频生成失败，请重试或调整指令。");
+          const failed = results.find((result) => result.status === "fulfilled" && result.value.status === "failed");
+          if (failed && failed.status === "fulfilled") {
+            const detail = failed.value.errorMessage ? `：${failed.value.errorMessage}` : "，请重试或调整指令。";
+            toast.error(`视频生成失败${detail}`);
+          }
         }
       } catch {
         // transient poll error; keep trying until cleared
       }
-    }, 4000);
+    };
+    const timer = setInterval(() => void tick(), 4000);
+    void tick();
     return () => {
       cancelled = true;
+      stopped = true;
       clearInterval(timer);
     };
   }, [token, pendingVideoJobKey]);
+
+  const handleRetryVideoJob = async (product: ProductArtifact) => {
+    const metadata = product.metadata as Record<string, unknown> | undefined;
+    const jobId = typeof metadata?.latest_job_public_id === "string" ? metadata.latest_job_public_id : null;
+    if (!token || !jobId) {
+      toast.error("找不到可重试的任务。");
+      return;
+    }
+    try {
+      const job = await assetWorkspaceAdapter.retryVideoJob(token, jobId);
+      setVideoJobLive((current) => ({
+        ...current,
+        [job.assetId]: { jobId: job.id, status: job.status, renderStage: job.renderStage, errorMessage: job.errorMessage }
+      }));
+      const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
+      setConversations(rows);
+      toast.success("已重新开始生成视频。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重试失败，请稍后再试。");
+    }
+  };
 
   const startDividerResize = (clientX: number) => {
     if (isDividerDraggingRef.current) return;
@@ -1094,10 +1149,12 @@ export default function AssetsWorkspaceClient({
                       };
                     }));
                   }}
+                  onRetryVideoJob={handleRetryVideoJob}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
                   token={token}
+                  videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
                 />
               ) : (
                 <EmptyProductWorkspace />

@@ -474,12 +474,25 @@ export default function LibraryWorkshop({
                 <span>{selectedRow.format ?? "图片素材"}</span>
               </div>
             ) : view === "video" ? (
-              <div className="shadcn-prototype-library-video-preview">
-                <button type="button" aria-label="播放视频预览" disabled title="暂无可播放预览">
-                  <Play size={22} fill="currentColor" aria-hidden="true" />
-                </button>
-                <span>{selectedRow.format ?? "视频预览"}</span>
-              </div>
+              selectedRow.previewUrl ? (
+                <div className="shadcn-prototype-library-video-preview playable">
+                  <video
+                    key={selectedRow.previewUrl}
+                    src={selectedRow.previewUrl}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    aria-label={`${selectedRow.title}视频预览`}
+                  />
+                </div>
+              ) : (
+                <div className="shadcn-prototype-library-video-preview">
+                  <button type="button" aria-label="播放视频预览" disabled title="暂无可播放预览">
+                    <Play size={22} fill="currentColor" aria-hidden="true" />
+                  </button>
+                  <span>{selectedRow.format ?? "视频预览"}</span>
+                </div>
+              )
             ) : view === "assets" ? (
               <dl className="shadcn-prototype-library-meta">
                 <div><dt>来源分类</dt><dd>{selectedRow.category ?? "待识别"}</dd></div>

@@ -78,6 +78,8 @@ export type AssetWorkspaceAdapter = {
 export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
 ```
 
+> 上面是原型阶段的核心读接口。真实后端版 adapter 还包含对话（`sendMessage`/`reviseProduct`/`loadConversations`）、库（`listLibrary`/`uploadAsset` 等）与视频任务方法：`generateVideo`（POST /video/generate）、`getVideoJob`（GET /video/jobs/{id}，工作台用它轮询 `render_stage` 显示分阶段进度）、`retryVideoJob`（POST /video/jobs/{id}/retry，失败任务原地重试）。完整签名以 `asset-workspace-adapter.ts` 的 `AssetWorkspaceAdapter` 类型为准。
+
 ### 2.1 方法详解
 
 #### `getSnapshot(): AssetWorkspaceData`
