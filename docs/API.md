@@ -634,6 +634,75 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ---
 
+## 12. 阶段 4 后端接口契约（V3 智能体工作台）
+
+真实后端（MultiMix-Backend）为 V3 重设计新增/扩展的接口。前端一律经 `lib/api.ts` + `lib/asset-mappers.ts` 消费，且按规范 §12「数据不在就不渲染」降级——字段缺位时组件自身不渲染，禁止假数据。
+
+### 12.1 生成步骤事件 `steps[]`（Agent 执行时间线）
+
+视频任务状态接口（`VideoJobRead`，轮询与 retry 均透传）新增：
+
+```jsonc
+"steps": [
+  { "key": "understand", "label": "理解素材与要求", "status": "done",    "elapsed_seconds": 8 },
+  { "key": "plan",       "label": "规划分镜结构",   "status": "running", "elapsed_seconds": 3 },
+  { "key": "generate",   "label": "生成与合成",     "status": "pending", "elapsed_seconds": null }
+]
+```
+
+- ≥ 3 个语义步（理解/规划/生成），由 `render_stage` + 真实阶段时间戳（`result_payload.step_marks`）派生，禁止假进度。
+- 旧后端缺字段 → adapter 解析为空数组 → 时间线回退 `render_stage` 映射（`videoJobTimelineSteps`）。
+
+### 12.2 结构化确认卡 `metadata.plan`
+
+编导稿草稿（`video_workflow_stage == "director_script_draft"`）的 assistant 消息 `metadata` 挂载 `plan` 对象：
+
+```jsonc
+{
+  "title": "...", "status": "pending" | "confirmed", "subtitle": "...",
+  "fields": [{ "key": "format", "label": "视频形式", "value": "竖屏 9:16 · ...", "refs": [{ "assetId": 1, "title": "...", "thumbnailUrl": "..." }] }],
+  "summary_fields": ["..."],
+  "confirm_label": "确认，生成视频工程", "adjust_label": "调整方向",
+  "confirm_utterance": "确认，生成视频工程"
+}
+```
+
+- `refs` 只列 `asset_reference.status == "matched"` 的已保存素材（stock 兜底不当「你的素材」）。
+- 无 scenes → 后端不挂 `plan` → 前端退回建议芯片（现状行为）。
+- 确认按钮把 `confirm_utterance` 作为普通消息提交，命中后端确认门。
+
+### 12.3 素材推荐端点（素材选择器 AI 推荐区）
+
+`GET /v1/video/projects/{asset_id}/segments/{segment_id}/asset-suggestions`
+
+- 返回 `{ segment_id, role, suggestions: [{ asset_id, title, media_type, preview_url, match_reason, matched_terms, match_confidence }] }`（按匹配度排序，只读）。
+- `suggestions: []` → 选择器推荐区隐藏，仅显示图片库网格。
+- 前端字段映射：`asset_id→id`、`preview_url→thumbnailUrl`、`match_reason→reason`。
+
+### 12.4 局部重合成端点（分镜属性卡）
+
+`POST /v1/video/projects/{asset_id}/segments/{segment_id}/recompose`
+
+```jsonc
+{ "operation": "replace_material" | "revoice" | "toggle_mg",
+  "asset_id": 123,            // replace_material 必填
+  "voiceover": "...",         // revoice 必填
+  "mg_enabled": true,          // toggle_mg 必填
+  "confirm_overwrite": false } // 见 12.5
+```
+
+- 只 patch 目标分镜的权威字段（`asset_reference`+`materials` / `narration` / `mg_decision`），随后复用整条编排重建工程（规范 §12 允许的降级，loading 文案按分钟级书写）。
+- 返回 `VideoJobRead`（202）；错误：404 工程/分镜不存在、422 参数或素材不可用。
+
+### 12.5 timeline 脏标记（两层数据边界，规范 §5.5）
+
+- 全屏编辑器保存（`PUT /v1/video/projects/{asset_id}`）会置 `metadata.timeline_dirty = true`——手工裁剪/分割属于渲染层。
+- `timeline_dirty` 为真时调 recompose 且未带 `confirm_overwrite: true` → `409 { "detail": { "code": "timeline_dirty", "message": "…会覆盖…手工剪辑…" } }`。前端捕获 `code == "timeline_dirty"` 弹「会覆盖你的手工剪辑」确认框，确认后带 `confirm_overwrite: true` 重发。
+- 编排成功重建 `video_project` 后，后端清除该标记；失败不清（手工时间轴仍在）。
+- 分镜属性卡的语义层修改（素材/配音/字卡）本身不受覆盖提示影响——提示语必须区分两层。
+
+---
+
 ## 附：验证命令
 
 ```bash
