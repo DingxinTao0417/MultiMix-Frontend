@@ -87,7 +87,6 @@ app/
       conversation-studio.tsx       # 对话区：消息流、产物卡列表、输入框
       product-workspace.tsx         # 展示区容器：标题、详情抽屉、操作按钮、时间轴
       product-preview.tsx           # 按 product.mode 分发的预览（copy/image/audio/digital-human/video）
-      video-project-workspace.tsx   # 视频项目场景编辑视图（当前无任何调用方，待产品决策接入或删除）
       library-workshop.tsx          # 资产库/文案库/图片库/视频库视图
     lib/                            # 数据 + 逻辑层（新增数据/adapter/helper 放这里）
       asset-workspace-types.ts      # 所有数据类型定义（AssetProduct/AssetConversation/...）
@@ -210,7 +209,6 @@ scripts/
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
 - 后端根目录的 `changein.sqlite3` 是本地开发数据库，不入库、不删除。
 - 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`CHANGEIN_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
-- `video-project-workspace.tsx`（约 650 行）当前是零引用的孤立组件：功能被 `product-workspace.tsx` 的 iframe 内嵌方案替代，保留待产品决策，不要在未接线的情况下当作现役代码维护。
 
 ## 文件写入
 
