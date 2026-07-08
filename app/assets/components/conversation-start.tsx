@@ -5,6 +5,7 @@ import { ArrowUp, FileText, Image as ImageIcon, Square } from "lucide-react";
 import type { Conversation } from "../lib/asset-workspace-shared";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
+import MaterialsReadyStrip from "./materials-ready-strip";
 
 const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp";
 const SOURCE_UPLOAD_ACCEPT = ".pptx,.pdf,.docx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
@@ -19,7 +20,9 @@ export default function ConversationStart({
   imageAttachments = [],
   onUploadImages,
   onRemoveImageAttachment,
-  onRetryImageAttachment
+  onRetryImageAttachment,
+  token,
+  onOpenImageLibrary
 }: {
   suggestions: string[];
   onSend?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
@@ -28,6 +31,8 @@ export default function ConversationStart({
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
   onRetryImageAttachment?: (attachmentId: string) => void;
+  token?: string | null;
+  onOpenImageLibrary?: () => void;
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -229,6 +234,7 @@ export default function ConversationStart({
             ))}
           </div>
         ) : null}
+        <MaterialsReadyStrip token={token} onOpenImageLibrary={onOpenImageLibrary} />
       </div>
     </section>
   );

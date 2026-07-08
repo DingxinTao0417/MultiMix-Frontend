@@ -1269,6 +1269,8 @@ export default function AssetsWorkspaceClient({
               onRemoveImageAttachment={handleRemoveChatImage}
               onRetryImageAttachment={handleRetryChatImage}
               onSend={handleSendConversationMessage}
+              token={token}
+              onOpenImageLibrary={() => setActiveView("image")}
             />
           ) : activeView === "conversation" ? (
             <>
