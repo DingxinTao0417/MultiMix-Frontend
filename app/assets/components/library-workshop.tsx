@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Upload, Video, X } from "lucide-react";
+import { Copy, Download, FileText, Globe2, Image as ImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀"],
-  copy: ["全部", "选题方案", "文案稿", "配音稿", "编导稿"],
+  copy: ["全部", "选题方案", "文案稿", "编导稿"],
   image: ["全部", "封面图", "素材图", "分镜图"],
   video: ["全部", "视频工程", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
 };
@@ -30,8 +30,8 @@ const DETAIL_TITLES: Record<LibraryRow["kind"], string> = {
 function bodyForRow(row: LibraryRow, view: Exclude<ActiveView, "conversation">): string[] {
   if (row.body && row.body.length > 0) return row.body;
   if (row.note && row.note !== "（无摘要）") return [row.note];
-  if (view === "image") return ["这张图片还没有补充画面说明，后续可由 LLM 自动提取主体、风格、场景和可复用关键词。"];
-  if (view === "video") return ["这个视频还没有补充口播或分镜信息，后续可由 LLM 自动提取内容摘要和检索关键词。"];
+  if (view === "image") return ["这张图片还没有完成素材理解，可以重新解析素材，补充标签、描述和适合的分镜角色。"];
+  if (view === "video") return ["这个视频还没有完成素材理解，可以重新解析素材，补充标签、描述和适合的分镜角色。"];
   return ["暂无正文内容。"];
 }
 
@@ -50,8 +50,8 @@ function isDigitalHuman(row: LibraryRow) {
   return row.variant === "digital-human" || /数字人/.test(`${row.title} ${row.meta} ${row.note}`);
 }
 
-function isCaptionableImage(row: LibraryRow) {
-  return row.kind === "image" && (row.contentType === "图片" || typeof row.captionStatus === "string");
+function isReparsableMedia(row: LibraryRow) {
+  return row.kind === "image" || row.kind === "video";
 }
 
 function publicCandidateTags(candidate: PublicMaterialCandidate): string[] {
@@ -107,6 +107,16 @@ function downloadBlob(blob: Blob, filename: string) {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+function downloadFilename(row: LibraryRow, label = "asset") {
+  const sourceName = (row.sourceLabel ?? "").split(/[\\/]/).pop()?.trim() ?? "";
+  if (/\.[A-Za-z0-9]{2,8}$/.test(sourceName)) return sourceName;
+  const title = (row.title || label).replace(/[\\/:*?"<>|]+/g, "-").trim() || label;
+  if (row.kind === "copy" || row.kind === "file") return `${title}.md`;
+  if (row.kind === "image") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.png`;
+  if (row.kind === "video") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.mp4`;
+  return title;
 }
 
 export type LibraryActionIntent = "create" | "video" | "regenerate-image";
@@ -180,9 +190,7 @@ export default function LibraryWorkshop({
     };
   }, [token, view, debouncedQuery, refreshKey]);
 
-  // Prefer real backend rows when available; keep prototype sample rows visible
-  // when the connected library is still empty.
-  const rows = backendRows && backendRows.length > 0 ? backendRows : workshop.rows;
+  const rows = backendRows !== null ? backendRows : workshop.rows;
   const filteredRows = useMemo(() => {
     const scopedRows = activeFilter === "全部" ? rows : rows.filter((row) => row.category === activeFilter);
     const query = debouncedQuery.trim().toLowerCase();
@@ -272,6 +280,33 @@ export default function LibraryWorkshop({
     }
   };
 
+  const handleDownload = async (row: LibraryRow, label = "asset") => {
+    if (!token || !row.assetId) return;
+    setActionMessage(null);
+    try {
+      const blob = await assetWorkspaceAdapter.downloadAsset(token, row.assetId);
+      downloadBlob(blob, downloadFilename(row, label));
+      setActionMessage("已开始下载。");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "下载失败。");
+    }
+  };
+
+  const handleDelete = async (row: LibraryRow) => {
+    if (!token || !row.assetId) return;
+    const confirmed = window.confirm(`确认删除「${row.title}」吗？删除后将从当前库隐藏。`);
+    if (!confirmed) return;
+    setActionMessage(null);
+    try {
+      await assetWorkspaceAdapter.deleteAsset(token, row.assetId);
+      setSelectedIndex(null);
+      setRefreshKey((value) => value + 1);
+      setActionMessage("已删除。");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "删除失败。");
+    }
+  };
+
   const handleRetry = async (row: LibraryRow) => {
     if (!token || !row.assetId) return;
     setActionMessage(null);
@@ -284,15 +319,15 @@ export default function LibraryWorkshop({
     }
   };
 
-  const handleCaption = async (row: LibraryRow) => {
+  const handleReparse = async (row: LibraryRow) => {
     if (!token || !row.assetId) return;
     setActionMessage(null);
     try {
-      await assetWorkspaceAdapter.regenerateImageCaption(token, row.assetId);
+      await assetWorkspaceAdapter.reparseAsset(token, row.assetId);
       setRefreshKey((value) => value + 1);
-      setActionMessage("图片说明已更新。");
+      setActionMessage("素材已重新解析。");
     } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : "图片说明生成失败。");
+      setActionMessage(error instanceof Error ? error.message : "素材重新解析失败。");
     }
   };
 
@@ -429,7 +464,25 @@ export default function LibraryWorkshop({
                   >
                     {rowMedia}
                     <span className="shadcn-prototype-library-row-copy">
-                      <strong>{row.title}</strong>
+                      <strong>
+                        {row.title}
+                        {row.statusLabel ? (
+                          <i
+                            className={`shadcn-prototype-library-status ${
+                              row.statusLabel.includes("失败")
+                                ? "is-failed"
+                                : row.statusLabel.startsWith("已") || row.statusLabel === "可检索"
+                                  ? "is-done"
+                                  : "is-pending"
+                            }`}
+                          >
+                            {row.statusLabel}
+                          </i>
+                        ) : null}
+                        {row.referenceCount != null ? (
+                          <i className="shadcn-prototype-library-refcount">被引用 {row.referenceCount} 次</i>
+                        ) : null}
+                      </strong>
                       <span>{displayMeta(row, view)}</span>
                       <p>{row.note}</p>
                       {row.searchReasons && row.searchReasons.length > 0 ? (
@@ -509,32 +562,40 @@ export default function LibraryWorkshop({
                   <button type="button" onClick={() => { if (selectedRow) void handleCopyRow(selectedRow); }}><Copy size={14} aria-hidden="true" />复制</button>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "video"); }}><Video size={14} aria-hidden="true" />生成视频</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />导出</button>
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />下载</button>
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               ) : view === "image" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  {isCaptionableImage(selectedRow) ? (
-                    <button type="button" disabled={!selectedRow.assetId || selectedRow.captionStatus === "unavailable"} title={selectedRow.captionStatus === "unavailable" ? "未配置图片说明服务" : "更新图片说明"} onClick={() => { if (selectedRow) void handleCaption(selectedRow); }}><FileText size={14} aria-hidden="true" />更新图片说明</button>
+                  {isReparsableMedia(selectedRow) ? (
+                    <button type="button" disabled={!selectedRow.assetId} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "regenerate-image"); }}><ImageIcon size={14} aria-hidden="true" />重新生成</button>
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               ) : view === "video" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  {isReparsableMedia(selectedRow) ? (
+                    <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
+                  ) : null}
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) handleOpenEditor(selectedRow); }}><Video size={14} aria-hidden="true" />打开剪辑器</button>
                   {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               ) : (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation} onClick={() => { if (selectedRow) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
                   <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />导出</button>
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
                   {selectedRow.statusLabel === "解析失败" ? (
                     <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleRetry(selectedRow); }}><RefreshCw size={14} aria-hidden="true" />重试处理</button>
                   ) : null}
+                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               )}
             </div>
@@ -573,16 +634,25 @@ export default function LibraryWorkshop({
 
             {view === "image" ? (
               <dl className="shadcn-prototype-library-meta">
-                <div><dt>比例</dt><dd>{selectedRow.format ?? "待识别"}</dd></div>
-                <div><dt>风格</dt><dd>自动标注</dd></div>
-                <div><dt>来源</dt><dd>{selectedRow.meta}</dd></div>
+                <div><dt>理解状态</dt><dd>{selectedRow.statusLabel ?? "待理解"}</dd></div>
+                <div><dt>标签</dt><dd>{selectedRow.understandingTags?.slice(0, 6).join("、") || "暂无标签"}</dd></div>
+                <div><dt>适合角色</dt><dd>{selectedRow.understandingRoles?.slice(0, 3).join("、") || "待识别"}</dd></div>
               </dl>
             ) : view === "video" ? (
               <dl className="shadcn-prototype-library-meta">
-                <div><dt>时长</dt><dd>{selectedRow.format?.split("·")[1]?.trim() ?? "待识别"}</dd></div>
-                <div><dt>类型</dt><dd>{isDigitalHuman(selectedRow) ? "数字人" : "普通视频"}</dd></div>
-                <div><dt>平台</dt><dd>{selectedKeywords.includes("小红书") ? "小红书" : "待确认"}</dd></div>
+                <div><dt>理解状态</dt><dd>{selectedRow.statusLabel ?? "待理解"}</dd></div>
+                <div><dt>标签</dt><dd>{selectedRow.understandingTags?.slice(0, 6).join("、") || "暂无标签"}</dd></div>
+                <div><dt>适合角色</dt><dd>{selectedRow.understandingRoles?.slice(0, 3).join("、") || "待识别"}</dd></div>
               </dl>
+            ) : null}
+
+            {(view === "image" || view === "video") ? (
+              <section className="shadcn-prototype-library-keywords">
+                <h3>素材理解</h3>
+                <div>
+                  <span>{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</span>
+                </div>
+              </section>
             ) : null}
 
             <section className="shadcn-prototype-library-keywords">
