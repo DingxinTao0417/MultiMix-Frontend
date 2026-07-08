@@ -12,63 +12,63 @@
 @plugin "tailwindcss-animate";
 
 :root {
-  --background: hsl(0, 0%, 100%);
-  --foreground: hsl(0 0% 11%);
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(0 0% 11%);
-  --popover: hsl(0, 0%, 100%);
-  --popover-hover: hsl(0, 0%, 96%);
-  --popover-foreground: hsl(0 0% 2%);
-  --primary: hsl(200, 90%, 52%);
+  --background: #faf9f7;
+  --foreground: #201f1e;
+  --card: #ffffff;
+  --card-foreground: #201f1e;
+  --popover: #ffffff;
+  --popover-hover: #f5f3ef;
+  --popover-foreground: #201f1e;
+  --primary: #5b45e0;
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(204, 100%, 97%);
-  --secondary-border: hsl(204, 100%, 94%);
-  --secondary-foreground: hsl(200, 98%, 39%);
-  --muted: hsl(0 0% 85.1%);
-  --muted-foreground: hsl(0 0% 50%);
-  --accent: hsl(0, 0%, 96%);
-  --accent-foreground: hsl(0 0% 2%);
+  --secondary: #eeeaff;
+  --secondary-border: #ddd5ff;
+  --secondary-foreground: #5b45e0;
+  --muted: #eae7e1;
+  --muted-foreground: #6e6a64;
+  --accent: #f5f3ef;
+  --accent-foreground: #201f1e;
   --destructive: hsl(0, 83%, 50%);
   --destructive-foreground: hsl(0, 0%, 100%);
   --constructive: hsl(141, 71%, 48%);
   --constructive-foreground: hsl(0, 0%, 100%);
-  --border: hsl(0 0% 91%);
-  --input: hsl(0, 0%, 100%);
-  --ring: hsl(0, 0%, 55%);
+  --border: #eae7e1;
+  --input: #ffffff;
+  --ring: #7c5cff;
   --chart-1: hsl(220 70% 50%);
   --chart-2: hsl(160 60% 45%);
   --chart-3: hsl(30 80% 55%);
   --chart-4: hsl(280 65% 60%);
   --chart-5: hsl(340 75% 55%);
-  --sidebar-background: hsl(0 0% 96.1%);
-  --sidebar-foreground: hsl(0 0% 2%);
-  --sidebar-primary: hsl(0 0% 2%);
-  --sidebar-primary-foreground: hsl(0 0% 91%);
-  --sidebar-accent: hsl(0 0% 85.1%);
-  --sidebar-accent-foreground: hsl(0 0% 2%);
-  --sidebar-border: hsl(0 0% 85.1%);
-  --sidebar-ring: hsl(0 0% 16.9%);
-  --sidebar: hsl(0 0% 98%);
+  --sidebar-background: #f5f3ef;
+  --sidebar-foreground: #201f1e;
+  --sidebar-primary: #201f1e;
+  --sidebar-primary-foreground: #faf9f7;
+  --sidebar-accent: #eae7e1;
+  --sidebar-accent-foreground: #201f1e;
+  --sidebar-border: #eae7e1;
+  --sidebar-ring: #7c5cff;
+  --sidebar: #faf9f7;
 }
 
 .panel {
-  --background: hsl(210, 20%, 98%);
-  --foreground: hsl(0 0% 13%);
-  --card: hsl(0, 0%, 98%);
-  --card-foreground: hsl(0 0% 13%);
-  --primary-foreground: hsl(0, 0%, 98%);
-  --secondary: hsl(204, 100%, 95%);
-  --secondary-border: hsl(204, 100%, 92%);
-  --secondary-foreground: hsl(200, 98%, 37%);
-  --muted: hsl(0 0% 83.1%);
-  --muted-foreground: hsl(0 0% 48%);
-  --accent: hsl(0, 0%, 93%);
-  --accent-foreground: hsl(0 0% 5%);
+  --background: #f5f3ef;
+  --foreground: #201f1e;
+  --card: #faf9f7;
+  --card-foreground: #201f1e;
+  --primary-foreground: #ffffff;
+  --secondary: #eeeaff;
+  --secondary-border: #ddd5ff;
+  --secondary-foreground: #5b45e0;
+  --muted: #eae7e1;
+  --muted-foreground: #6e6a64;
+  --accent: #eeeaff;
+  --accent-foreground: #201f1e;
   --destructive-foreground: hsl(0, 0%, 98%);
   --constructive-foreground: hsl(0, 0%, 98%);
-  --border: hsl(0 0% 87%);
-  --input: hsl(0 0% 93%);
-  --ring: hsl(0, 0%, 53%);
+  --border: #ddd9d1;
+  --input: #ffffff;
+  --ring: #7c5cff;
 }
 
 .dark {
@@ -284,7 +284,7 @@
     height: 100vh;
     flex-direction: column;
     background: transparent;
-    color: #17211d;
+    color: #201f1e;
   }
 
   .editor-actionbar {
@@ -292,7 +292,7 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 12px;
-    border-bottom: 1px solid #eceef0;
+    border-bottom: 1px solid #eae7e1;
     background: rgba(255, 255, 255, 0.92);
     padding: 12px 18px;
     backdrop-filter: blur(14px);
@@ -304,20 +304,20 @@
   }
 
   .editor-backlink {
-    color: #627069;
+    color: #6e6a64;
     font-size: 12px;
     font-weight: 650;
     transition: color 140ms ease;
   }
 
   .editor-backlink:hover {
-    color: #17211d;
+    color: #201f1e;
   }
 
   .editor-actionbar-status {
     min-width: 0;
     text-align: center;
-    color: #627069;
+    color: #6e6a64;
     font-size: 12px;
     line-height: 1.4;
   }
@@ -339,7 +339,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 999px;
-    border: 1px solid #cbd6ce;
+    border: 1px solid #ddd9d1;
     background: #ffffff;
     padding: 0 12px;
     font-size: 12px;
@@ -362,15 +362,15 @@
   }
 
   .editor-action-pill.primary {
-    border-color: #18181b;
-    background: #18181b;
+    border-color: #201f1e;
+    background: #201f1e;
     color: #ffffff;
   }
 
   .editor-action-pill.success {
-    border-color: #acd6c4;
-    background: #e5f1eb;
-    color: #0b765f;
+    border-color: #b5ddd2;
+    background: #e9f5f1;
+    color: #0e8a6b;
   }
 
   .editor-action-pill.danger {
@@ -414,7 +414,7 @@
     flex: 1;
     align-items: center;
     justify-content: center;
-    color: #627069;
+    color: #6e6a64;
     font-size: 14px;
   }
 }
