@@ -6,6 +6,8 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { API_BASE } from "../../../lib/api";
 import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import SegmentCards from "./segment-cards";
+import SourceRefBlock from "./source-ref-block";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -27,16 +29,21 @@ function videoPlanSummary(product: ProductArtifact) {
   if (!plan) return null;
   const summary = isRecord(plan.summary) ? plan.summary : {};
   const scenes = Array.isArray(plan.scenes) ? plan.scenes.filter(isRecord) : [];
+  const mgStyleProfile = isRecord(plan.mg_style_profile) ? plan.mg_style_profile : null;
   return {
     topic: stringValue(summary.topic) || product.title,
     audience: stringValue(plan.audience) || "潜在用户",
     style: stringValue(plan.style) || "清晰可信",
+    mgStyle: stringValue(summary.mg_style_label) || stringValue(mgStyleProfile?.preset) || "科技",
     duration: typeof plan.duration_seconds === "number" ? `${plan.duration_seconds}秒` : product.duration,
     sceneCount: typeof summary.scene_count === "number" ? summary.scene_count : scenes.length,
     materialHitCount: typeof summary.material_hit_count === "number" ? summary.material_hit_count : 0,
     publicMaterialFillCount: typeof summary.public_material_fill_count === "number" ? summary.public_material_fill_count : 0,
     materialGapCount: typeof summary.material_gap_count === "number" ? summary.material_gap_count : 0,
     materialUnfilledCount: typeof summary.material_unfilled_count === "number" ? summary.material_unfilled_count : 0,
+    mgNeededCount: typeof summary.mg_needed_count === "number" ? summary.mg_needed_count : 0,
+    mgRenderedCount: typeof summary.mg_rendered_count === "number" ? summary.mg_rendered_count : 0,
+    mgFailedCount: typeof summary.mg_failed_count === "number" ? summary.mg_failed_count : 0,
     scenes,
   };
 }
@@ -51,15 +58,37 @@ function materialGapNotice(product: ProductArtifact, fallbackCount = 0) {
   return fallbackCount > 0 ? `${fallbackCount} 个分镜未匹配到合适素材，已用字幕/标题卡占位，可在编辑器中替换。` : "";
 }
 
+function sceneAssetReferenceSummary(scene: Record<string, unknown>): string {
+  const reference = isRecord(scene.asset_reference) ? scene.asset_reference : null;
+  if (!reference) return "未写入素材引用";
+  if (stringValue(reference.status) !== "matched") return "未命中素材";
+  const snapshot = isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
+  const title = stringValue(snapshot?.title);
+  const reason = stringValue(reference.match_reason);
+  return title ? `已引用 ${title}` : (reason || "已命中素材");
+}
+
+function sceneMgDecisionSummary(scene: Record<string, unknown>): string {
+  const decision = isRecord(scene.mg_decision) ? scene.mg_decision : null;
+  if (!decision || decision.needed !== true) return "MG：不需要";
+  const visible = isRecord(decision.visible_summary) ? decision.visible_summary : null;
+  const label = stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG";
+  const statusLabel = stringValue(visible?.status_label) || "待渲染";
+  return `MG：${label} · ${statusLabel}`;
+}
+
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
   if (product.mode === "copy") {
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
-      <article className="shadcn-prototype-copy-document shadcn-prototype-markdown">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-          {markdown}
-        </ReactMarkdown>
-      </article>
+      <>
+        <article className="shadcn-prototype-copy-document shadcn-prototype-markdown">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
+            {markdown}
+          </ReactMarkdown>
+        </article>
+        {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
+      </>
     );
   }
 
@@ -183,7 +212,12 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   const firstTimelineItems = product.timeline.slice(0, 3);
   const visualPreviewFrames = product.preview?.frames ?? [];
   const planSummary = videoPlanSummary(product);
-  const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "视频文案草稿";
+  const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "编导稿摘要";
+  const hasVideoProject = Boolean(product.metadata?.video_project);
+  const previewStageLabel = hasVideoProject ? "视频工程" : "编导稿草稿";
+  const previewStageDescription = hasVideoProject
+    ? "当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
+    : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
   const exportedVideoUrl = playableVideoUrl(product);
   return (
@@ -208,14 +242,18 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           <div className="shadcn-prototype-video-plan-metrics">
             <span>{planSummary.audience}</span>
             <span>{planSummary.style}</span>
+            <span>MG 风格：{planSummary.mgStyle}</span>
             <span>{planSummary.duration}</span>
             <span>{planSummary.sceneCount} 个分镜</span>
             <span>已匹配 {planSummary.materialHitCount} 个素材</span>
             {planSummary.publicMaterialFillCount ? <span>自动补 {planSummary.publicMaterialFillCount} 个公共素材</span> : null}
             {planSummary.materialGapCount ? <span>{planSummary.materialGapCount} 个分镜自动补素材</span> : null}
+            {planSummary.mgNeededCount ? <span>{planSummary.mgNeededCount} 个分镜自动加 MG</span> : null}
+            {planSummary.mgRenderedCount ? <span>{planSummary.mgRenderedCount} 个 MG 已渲染</span> : null}
+            {planSummary.mgFailedCount ? <span>{planSummary.mgFailedCount} 个 MG 渲染失败</span> : null}
           </div>
           {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
-          {planSummary.scenes.length ? (
+          {planSummary.scenes.length && !product.segments?.length ? (
             <details>
               <summary>查看分镜详情</summary>
               <ol>
@@ -223,6 +261,8 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
                   <li key={stringValue(scene.id) || index}>
                     <strong>{stringValue(scene.title) || `分镜 ${index + 1}`}</strong>
                     <span>{stringValue(scene.subtitle_focus) || stringValue(scene.narration)}</span>
+                    <em>{sceneAssetReferenceSummary(scene)}</em>
+                    <em>{sceneMgDecisionSummary(scene)}</em>
                   </li>
                 ))}
               </ol>
@@ -230,15 +270,16 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           ) : null}
         </section>
       ) : null}
+      {product.segments?.length ? <SegmentCards segments={product.segments} /> : null}
       <div className="shadcn-prototype-video-frame project">
-        <article className="shadcn-prototype-video-project-card" aria-label="视频工程预览">
+        <article className="shadcn-prototype-video-project-card" aria-label={`${previewStageLabel}预览`}>
           <header>
-            <span>视频工程</span>
+            <span>{previewStageLabel}</span>
             <em>{product.ratio} / {product.duration}</em>
           </header>
           <div>
             <strong>{product.preview?.title ?? product.title}</strong>
-            <p>当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。</p>
+            <p>{previewStageDescription}</p>
           </div>
           {firstTimelineItems.length ? (
             <ul>
@@ -263,6 +304,8 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           ))}
         </div>
       ) : null}
+
+      {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
     </>
   );
 }

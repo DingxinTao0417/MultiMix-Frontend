@@ -55,9 +55,9 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
   copy: {
     kicker: "Copy workshop",
     title: "文案库",
-    description: "管理发帖文案、内容方案和短视频口播稿，保留版本和素材关联。",
+    description: "管理发帖文案、内容方案和编导稿，保留版本和素材关联。",
     metrics: [
-      { value: "18", label: "文案", detail: "方案 / 发帖 / 口播" },
+      { value: "18", label: "文案", detail: "方案 / 发帖 / 编导" },
       { value: "7", label: "待编辑", detail: "草稿 / 冲突 / 长文" },
       { value: "12", label: "有来源", detail: "关联资产证据" }
     ],
@@ -88,13 +88,13 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
       },
       {
         title: "60 秒规则变化口播稿",
-        meta: "短视频口播稿 · v1",
+        meta: "编导稿 · v1",
         note: "开场、证据、判断、收束结构已完成。",
         kind: "copy",
-        category: "配音稿",
+        category: "编导稿",
         keywords: ["口播", "60秒", "规则变化", "短视频"],
         body: ["如果你做跨境独立站，最近要重点看一个变化：税费信息正在从后台合规问题，变成用户结账体验的一部分。", "用户在付款前看不清 landed cost，就会犹豫、咨询，甚至在签收后产生退货摩擦。", "所以这周可以先检查三个位置：商品页、购物车和 checkout 页面。"],
-        format: "口播稿"
+        format: "编导稿"
       },
       {
         title: "客户品牌约束文案",
@@ -134,6 +134,8 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
         note: "税费透明主题，白色商务风格，可继续调整比例和标题。",
         kind: "image",
         category: "封面图",
+        statusLabel: "已解析",
+        referenceCount: 2,
         keywords: ["封面图", "LinkedIn", "4:5", "商务风"],
         body: ["主体：结账页面和税费说明卡片。", "风格：白底、清晰标题、轻量商务质感。"],
         format: "4:5"
@@ -144,6 +146,8 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
         note: "用于后续生成产品种草文案和视频分镜。",
         kind: "image",
         category: "素材图",
+        statusLabel: "已解析",
+        referenceCount: 3,
         keywords: ["产品图", "主图", "种草", "参考素材"],
         body: ["主体清晰，适合作为产品介绍、封面和短视频首帧参考。"],
         format: "1:1"
@@ -154,6 +158,8 @@ const assetWorkshops: Record<Exclude<AssetWorkspaceView, "conversation">, AssetW
         note: "保留画面主体、标题层级和负向约束。",
         kind: "image",
         category: "分镜图",
+        statusLabel: "待处理",
+        referenceCount: 0,
         keywords: ["封面", "提示词", "短视频", "标题层级"],
         body: ["画面主体：跨境卖家查看 checkout 页面。", "标题层级：主标题 8 字以内，副标题保留一行解释。", "负向约束：不要夸张表情、不要复杂背景。"],
         format: "9:16"
@@ -287,6 +293,13 @@ const marketRuleProduct: AssetProduct = {
   ],
   timeline: [],
   actions: ["改得更专业", "生成配图", "拆成60秒视频", "精细调整"],
+  sourceSummary: {
+    headline: "基于 2 个素材生成",
+    refs: [
+      { id: "mock-source-rule-pack", title: "市场规则变化素材包", statusLabel: "已解析", referenceCount: 3 },
+      { id: "mock-source-buyer-insight", title: "LinkedIn买家洞察", statusLabel: "已解析", referenceCount: 1 }
+    ]
+  },
   preview: {
     title: "LinkedIn 发帖文案",
     subtitle: "Evidence to judgment to buyer action",
@@ -349,6 +362,63 @@ const videoScriptProduct: AssetProduct = {
     { time: "00:25", title: "业务判断", status: "旁白已匹配" },
     { time: "00:45", title: "行动建议", status: "CTA 已生成" }
   ],
+  segments: [
+    {
+      id: "storyboard-seg-1",
+      index: 1,
+      title: "开场误区",
+      startSeconds: 0,
+      endSeconds: 8,
+      line: "很多独立站把税费当成后台问题。",
+      subLine: "口播 + 标题字幕",
+      assetTitle: "产品主图参考",
+      isFallback: false
+    },
+    {
+      id: "storyboard-seg-2",
+      index: 2,
+      title: "来源证据",
+      startSeconds: 8,
+      endSeconds: 25,
+      line: "平台正在强化 checkout 阶段的费用透明。",
+      subLine: "来源页面截图 · 待确认",
+      assetTitle: "市场规则变化素材包",
+      isFallback: false,
+      mgLabel: "MG 字卡"
+    },
+    {
+      id: "storyboard-seg-3",
+      index: 3,
+      title: "业务判断",
+      startSeconds: 25,
+      endSeconds: 45,
+      line: "税费透明会影响转化率和退货摩擦。",
+      subLine: "旁白已匹配 · 放慢语速",
+      assetTitle: "4:5 LinkedIn 封面图",
+      isFallback: false
+    },
+    {
+      id: "storyboard-seg-4",
+      index: 4,
+      title: "行动建议",
+      startSeconds: 45,
+      endSeconds: 60,
+      line: "检查你的 landed cost 展示链路。",
+      subLine: "建议换成你的产品实拍",
+      assetTitle: "通用结账界面画面",
+      isFallback: true
+    }
+  ],
+  sourceSummary: {
+    headline: "基于 3 个已保存素材 + 1 段兜底素材生成",
+    note: "素材命中率 3/4 · 兜底素材只在没有你的素材可用时使用",
+    refs: [
+      { id: "mock-source-product-hero", title: "产品主图参考", statusLabel: "已解析", referenceCount: 1 },
+      { id: "mock-source-rule-pack-shot", title: "市场规则变化素材包", statusLabel: "已解析", referenceCount: 1 },
+      { id: "mock-source-cover-image", title: "4:5 LinkedIn 封面图", statusLabel: "已解析", referenceCount: 1 },
+      { id: "mock-source-stock-checkout", title: "通用结账界面画面", isFallback: true }
+    ]
+  },
   actions: ["缩短到30秒", "换成数字人", "生成封面图", "精细调整"],
   preview: {
     title: "60 秒短视频分镜",

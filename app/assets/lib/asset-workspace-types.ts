@@ -38,6 +38,40 @@ export type AssetProductPreview = {
   frames?: AssetProductPreviewFrame[];
 };
 
+// Per-source reference shown by the source-ref block. Only fields that are
+// actually known should be set; the UI hides anything missing (no fake data).
+export type AssetProductSourceRef = {
+  id: string;
+  title: string;
+  statusLabel?: string;
+  referenceCount?: number;
+  thumbnailUrl?: string;
+  isFallback?: boolean;
+};
+
+export type AssetProductSourceSummary = {
+  headline: string;
+  note?: string;
+  refs: AssetProductSourceRef[];
+};
+
+// Storyboard segment summary consumed by the segment cards. Mirrors the
+// backend video_project.segments / video_plan.scenes semantic layer
+// (asset_reference + mg_decision are authoritative, stock is fallback only).
+export type AssetProductSegment = {
+  id: string;
+  index: number;
+  title?: string;
+  startSeconds?: number;
+  endSeconds?: number;
+  line?: string;
+  subLine?: string;
+  assetTitle?: string;
+  assetThumbnailUrl?: string;
+  isFallback: boolean;
+  mgLabel?: string;
+};
+
 export type AssetProduct = {
   id: string;
   mode: AssetProductMode;
@@ -56,6 +90,8 @@ export type AssetProduct = {
   timeline: AssetProductTimelineItem[];
   actions: string[];
   sourceIds?: string[];
+  sourceSummary?: AssetProductSourceSummary;
+  segments?: AssetProductSegment[];
   versions?: AssetProductVersion[];
   preview?: AssetProductPreview;
   // Set when this product is backed by a real backend ContentAsset.
@@ -126,6 +162,7 @@ export type AssetWorkshop = {
     format?: string;
     contentType?: string;
     statusLabel?: string;
+    referenceCount?: number;
     sourceLabel?: string;
     sourceUrl?: string;
     detailLabel?: string;
@@ -133,7 +170,14 @@ export type AssetWorkshop = {
     versions?: string[];
     searchReasons?: string[];
     captionStatus?: string;
+    visualTags?: string[];
+    visualCaption?: string;
+    understandingStatus?: string;
+    understandingTags?: string[];
+    understandingCaption?: string;
+    understandingRoles?: string[];
     previewUrl?: string;
+    licenseLabel?: string;
     variant?: "digital-human" | "standard";
   }>;
 };

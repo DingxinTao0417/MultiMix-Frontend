@@ -31,6 +31,7 @@ export type LibraryRow = {
   format?: string;
   contentType?: string;
   statusLabel?: string;
+  referenceCount?: number;
   sourceLabel?: string;
   sourceUrl?: string;
   previewUrl?: string;
@@ -41,6 +42,10 @@ export type LibraryRow = {
   captionStatus?: string;
   visualTags?: string[];
   visualCaption?: string;
+  understandingStatus?: string;
+  understandingTags?: string[];
+  understandingCaption?: string;
+  understandingRoles?: string[];
   licenseLabel?: string;
   variant?: "digital-human" | "standard";
 };
@@ -72,6 +77,66 @@ function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | u
   return actions.length ? actions : undefined;
 }
 
+function numberValue(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+type AssetUnderstanding = {
+  status?: string;
+  caption?: string;
+  tags: string[];
+  roles: Array<{ code: string; label: string; score: number }>;
+  sceneTypes: Array<{ code: string; label: string; score: number }>;
+};
+
+function understandingStatusLabel(status?: string): string | null {
+  if (!status) return null;
+  if (status === "pending") return "待理解";
+  if (status === "processing") return "理解中";
+  if (status === "ready") return "已理解";
+  if (status === "failed") return "理解失败";
+  return status;
+}
+
+function scoredItems(value: unknown): Array<{ code: string; label: string; score: number }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item) => {
+      if (!isRecord(item)) return [];
+      const code = stringValue(item.code);
+      const label = stringValue(item.label) || code;
+      if (!code || !label) return [];
+      return [{ code, label, score: numberValue(item.score) }];
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 4);
+}
+
+function understandingForAsset(asset: ContentAsset): AssetUnderstanding | null {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const understanding = metadata.understanding && typeof metadata.understanding === "object"
+    ? metadata.understanding as Record<string, unknown>
+    : null;
+  if (understanding) {
+    return {
+      status: stringValue(understanding.status) || undefined,
+      caption: stringValue(understanding.caption) || undefined,
+      tags: Array.isArray(understanding.tags) ? understanding.tags.map((item) => String(item).trim()).filter(Boolean) : [],
+      roles: scoredItems(understanding.storyboard_roles),
+      sceneTypes: scoredItems(understanding.scene_types)
+    };
+  }
+  const visual = metadata.visual && typeof metadata.visual === "object" ? metadata.visual as Record<string, unknown> : {};
+  const tags = Array.isArray(metadata.visual_tags)
+    ? metadata.visual_tags.map((item) => String(item).trim()).filter(Boolean)
+    : Array.isArray(visual.tags)
+      ? visual.tags.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+  const caption = stringValue(visual.caption) || stringValue(metadata.caption) || stringValue(metadata.caption_text) || undefined;
+  if (!tags.length && !caption) return null;
+  return { status: undefined, caption, tags, roles: [], sceneTypes: [] };
+}
+
 export type AssetWorkspaceAdapter = {
   getSnapshot(): AssetWorkspaceData;
   listConversations(): AssetConversation[];
@@ -87,6 +152,9 @@ export type AssetWorkspaceAdapter = {
   isBackendEnabled(): boolean;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   createConversation(token: string): Promise<AssetConversation>;
+  deleteConversation(token: string, conversationId: string): Promise<void>;
+  renameConversation(token: string, conversationId: string, title: string): Promise<void>;
+  createMaterialPackage(token: string, payload: { title: string; assetIds: number[]; metadata?: Record<string, unknown> }): Promise<ContentAsset>;
   sendMessage(args: {
     token: string;
     conversationId: string;
@@ -117,7 +185,9 @@ export type AssetWorkspaceAdapter = {
   getLatestIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
-  regenerateImageCaption(token: string, assetId: number): Promise<ContentAsset>;
+  downloadAsset(token: string, assetId: number): Promise<Blob>;
+  deleteAsset(token: string, assetId: number): Promise<void>;
+  reparseAsset(token: string, assetId: number): Promise<ContentAsset>;
   listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
   searchPublicMaterials(token: string, payload: { query: string; mediaTypes: Array<"text" | "image" | "video">; providers?: string[]; limit?: number }): Promise<PublicMaterialCandidate[]>;
   importPublicMaterial(token: string, candidate: PublicMaterialCandidate): Promise<ContentAsset>;
@@ -155,26 +225,37 @@ function inferKeywords(asset: ContentAsset): string[] {
   const seeds = ["产品种草", "小红书", "抖音", "LinkedIn", "封面", "数字人", "口播", "产品图", "视频脚本", "规则变化", "品牌约束"];
   const matched = seeds.filter((keyword) => text.includes(keyword.toLowerCase()));
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const understanding = understandingForAsset(asset);
   const visual = metadata.visual && typeof metadata.visual === "object" ? metadata.visual as Record<string, unknown> : {};
-  const visualTags = Array.isArray(metadata.visual_tags)
-    ? metadata.visual_tags
-    : Array.isArray(visual.tags)
-      ? visual.tags
-      : [];
+  const visualTags = understanding?.tags.length
+    ? understanding.tags
+    : Array.isArray(metadata.visual_tags)
+      ? metadata.visual_tags
+      : Array.isArray(visual.tags)
+        ? visual.tags
+        : [];
   const captionKeywords = Array.isArray(metadata.caption_keywords) ? metadata.caption_keywords : [];
+  const roleLabels = understanding?.roles.map((item) => item.label) ?? [];
+  const roleCodes = understanding?.roles.map((item) => item.code) ?? [];
+  const sceneLabels = understanding?.sceneTypes.map((item) => item.label) ?? [];
+  const sceneCodes = understanding?.sceneTypes.map((item) => item.code) ?? [];
   const fallback: Record<LibraryRow["kind"], string[]> = {
     copy: ["文案", "可复用", "已归档"],
     image: ["图片", "视觉素材", "可检索"],
     video: ["视频", "口播", "可复用"],
     file: ["资料", "来源", "可检索"]
   };
-  return [...visualTags, ...captionKeywords, ...matched, ...fallback[libraryRowKind(asset)]]
+  return [...visualTags, ...captionKeywords, ...roleLabels, ...roleCodes, ...sceneLabels, ...sceneCodes, ...matched, ...fallback[libraryRowKind(asset)]]
     .map((keyword) => String(keyword).trim())
     .filter((keyword, index, array) => Boolean(keyword) && array.indexOf(keyword) === index)
     .slice(0, 8);
 }
 
 function inferAssetSourceCategory(asset: ContentAsset): string {
+  const sourceType = String(asset.source_type ?? "").trim().toLowerCase();
+  if (sourceType === "upload" || sourceType === "manual_text") return "上传资料";
+  if (sourceType === "web_capture" || sourceType === "public_source") return "采集资料";
+  if (sourceType === "conversation" || sourceType === "chat_upload") return "对话沉淀";
   const text = `${asset.content_type} ${asset.title} ${asset.source_filename ?? ""} ${asset.original_ref ?? ""} ${asset.markdown_ref ?? ""} ${asset.body ?? ""}`.toLowerCase();
   if (/conversation|dialog|chat|对话|沉淀|偏好|画像|卖点|品牌信息/.test(text)) return "对话沉淀";
   if (/reader|crawl|capture|web|url|http|公众号|网页|采集|链接|markdown/.test(text)) return "采集资料";
@@ -244,12 +325,35 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
   return null;
 }
 
+function artifactCategory(asset: ContentAsset): string {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
+  if (typeof metadata.artifact_category === "string" && metadata.artifact_category.trim()) return metadata.artifact_category.trim();
+  if (asset.content_type === "content_plan") return "选题方案";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
+  if (asset.content_type === "social_post") return "文案稿";
+  if (asset.content_type === "video_render") return "视频工程";
+  return "";
+}
+
+function normalizeAssetTitle(title: string): string {
+  let clean = title.replace(/\s+/g, " ").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+  if (!clean) return "MultiMix";
+  const suffixPattern = /\s*(?:-|—|–|·|｜|\|)\s*(?:MP4\s*成片(?:\s*v\d+)?|视频工程|编导文稿|编导稿|视频脚本|视频文案草稿|文案草稿|内容草稿|准备稿|草稿)\s*$/i;
+  for (let index = 0; index < 4; index += 1) {
+    const next = clean.replace(suffixPattern, "").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+    if (next === clean) break;
+    clean = next;
+  }
+  return clean || title;
+}
+
 function inferLibraryCategory(asset: ContentAsset): string {
+  const explicit = artifactCategory(asset);
+  if (explicit) return explicit;
   const text = `${asset.content_type} ${asset.title} ${asset.body ?? ""}`.toLowerCase();
   if (asset.asset_kind === "asset") return inferAssetSourceCategory(asset);
   if (asset.asset_kind === "copy") {
     if (asset.content_type === "content_plan" || /选题|方案|内容方案|选题方案/.test(text)) return "选题方案";
-    if (asset.content_type === "short_video_narration" || /配音|口播|旁白|voiceover/.test(text)) return "配音稿";
     if (asset.content_type === "video_script" || /编导|脚本|分镜|镜头|导演/.test(text)) return "编导稿";
     return "文案稿";
   }
@@ -269,6 +373,10 @@ function inferLibraryCategory(asset: ContentAsset): string {
   return "资料";
 }
 
+export function libraryCategoryForAsset(asset: ContentAsset): string {
+  return inferLibraryCategory(asset);
+}
+
 function searchReasonLabels(fields: string[]): string[] {
   const labels: Record<string, string> = {
     title: "标题命中",
@@ -283,19 +391,29 @@ function searchReasonLabels(fields: string[]): string[] {
 
 function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] = []): LibraryRow {
   const category = inferLibraryCategory(asset);
-  const status = videoProjectStatusLabel(asset) ?? statusLabel(asset.status);
+  const understanding = understandingForAsset(asset);
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
+  const noAssetHit = Boolean(metadata.no_asset_hit);
+  const status = category === "编导稿"
+    ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
+    : (videoProjectStatusLabel(asset)
+      ?? ((asset.asset_kind === "image" || asset.asset_kind === "video" || asset.asset_kind === "video_render")
+        ? understandingStatusLabel(understanding?.status) ?? statusLabel(asset.status)
+        : statusLabel(asset.status)));
   const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;
   const visual = asset.metadata?.visual && typeof asset.metadata.visual === "object" ? asset.metadata.visual as Record<string, unknown> : {};
-  const visualTags = Array.isArray(asset.metadata?.visual_tags)
-    ? asset.metadata.visual_tags.map((item) => String(item))
-    : Array.isArray(visual.tags)
-      ? visual.tags.map((item) => String(item))
-      : [];
-  const visualCaption = typeof visual.caption === "string" ? visual.caption : undefined;
+  const visualTags = understanding?.tags.length
+    ? understanding.tags
+    : Array.isArray(asset.metadata?.visual_tags)
+      ? asset.metadata.visual_tags.map((item) => String(item))
+      : Array.isArray(visual.tags)
+        ? visual.tags.map((item) => String(item))
+        : [];
+  const visualCaption = understanding?.caption || (typeof visual.caption === "string" ? visual.caption : undefined);
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
-    title: asset.title,
+    title: normalizeAssetTitle(asset.title),
     meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
     note: visualCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
     kind: libraryRowKind(asset),
@@ -304,6 +422,9 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
     contentType: contentTypeLabel(asset),
     statusLabel: status,
+    referenceCount: typeof metadata.reference_count === "number" && Number.isFinite(metadata.reference_count) && metadata.reference_count >= 0
+      ? metadata.reference_count
+      : undefined,
     sourceLabel: asset.source_filename ?? sourceUrl ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
     sourceUrl,
     previewUrl: previewUrlForAsset(asset),
@@ -320,6 +441,10 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     captionStatus: typeof asset.metadata?.caption_status === "string" ? asset.metadata.caption_status : undefined,
     visualTags,
     visualCaption,
+    understandingStatus: understanding?.status,
+    understandingTags: understanding?.tags ?? [],
+    understandingCaption: understanding?.caption,
+    understandingRoles: understanding?.roles.map((item) => item.label) ?? [],
     licenseLabel,
     variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
   };
@@ -411,11 +536,38 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     },
     async loadConversations(token, current) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
-      return mergePersistedConversations(rows, current, data.newConversation.product);
+      // Backend is the source of truth once configured. Drop bundled sample
+      // conversations from the carried-over set so deleted samples can't
+      // reappear and real rows aren't shadowed; genuine in-session drafts
+      // (draft-*/optimistic ids) still survive the merge.
+      const mockConversationIds = new Set(data.conversations.map((conversation) => conversation.id));
+      const sessionConversations = current.filter((conversation) => !mockConversationIds.has(conversation.id));
+      return mergePersistedConversations(rows, sessionConversations, data.newConversation.product);
     },
     async createConversation(token) {
       const row = await api<AssetConversationResponse>("/assets/conversations", token, { method: "POST" });
       return conversationFromPersisted(row, data.newConversation.product);
+    },
+    async deleteConversation(token, conversationId) {
+      await api<void>(`/assets/conversations/${encodeURIComponent(conversationId)}`, token, {
+        method: "DELETE"
+      });
+    },
+    async renameConversation(token, conversationId, title) {
+      await api<AssetConversationResponse>(`/assets/conversations/${encodeURIComponent(conversationId)}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ title })
+      });
+    },
+    async createMaterialPackage(token, payload) {
+      return api<ContentAsset>("/assets/material-packages", token, {
+        method: "POST",
+        body: JSON.stringify({
+          title: payload.title,
+          asset_ids: payload.assetIds,
+          metadata: payload.metadata ?? {}
+        })
+      });
     },
     async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, signal }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -567,8 +719,14 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
     async exportAssetMarkdown(token, assetId) {
       return apiBlob(`/assets/${assetId}/export.md`, token);
     },
-    async regenerateImageCaption(token, assetId) {
-      return api<ContentAsset>(`/assets/${assetId}/caption`, token, { method: "POST" });
+    async downloadAsset(token, assetId) {
+      return apiBlob(`/assets/${assetId}/download`, token);
+    },
+    async deleteAsset(token, assetId) {
+      await api<void>(`/assets/${assetId}`, token, { method: "DELETE" });
+    },
+    async reparseAsset(token, assetId) {
+      return api<ContentAsset>(`/assets/${assetId}/reparse`, token, { method: "POST" });
     },
     async listPublicSources(token, mediaType) {
       const query = mediaType ? `?media_type=${encodeURIComponent(mediaType)}` : "";

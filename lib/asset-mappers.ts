@@ -2,8 +2,8 @@
 // frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
 // frontend assets-workspace-client.tsx helpers.
 
-import type { AssetConversation, AssetConversationMessage, AssetProduct, AssetProductMode, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
-import type { AssetConversationResponse, ContentAsset } from "./api";
+import type { AssetConversation, AssetConversationMessage, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
+import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -109,6 +109,119 @@ function timelineFromVideoProject(videoProject: Record<string, unknown> | undefi
   });
 }
 
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+// Store refs (local://, supabase://, s3://) are only readable through the
+// backend media proxy; plain http(s) URLs pass through untouched.
+function thumbnailUrlFromRef(ref: string): string | undefined {
+  if (!ref) return undefined;
+  if (/^https?:\/\//i.test(ref)) return ref;
+  if (/^[a-z0-9+.-]+:\/\//i.test(ref)) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
+  return undefined;
+}
+
+// Storyboard summary for the segment cards. Reads the semantic layer in
+// priority order: video_project.segments → video_segments → video_plan.scenes.
+// asset_reference / mg_decision are authoritative; stock is fallback only.
+function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProductSegment[] | undefined {
+  const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const videoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
+  const rawSegments = Array.isArray(videoProject?.segments) && videoProject.segments.length
+    ? videoProject.segments
+    : Array.isArray(metadata.video_segments) && metadata.video_segments.length
+      ? metadata.video_segments
+      : Array.isArray(videoPlan?.scenes)
+        ? videoPlan.scenes
+        : [];
+  const records = rawSegments.filter(isRecord);
+  if (!records.length) return undefined;
+  return records.map((segment, index) => {
+    const reference = isRecord(segment.asset_reference) ? segment.asset_reference : null;
+    const snapshot = reference && isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
+    const decision = isRecord(segment.mg_decision) ? segment.mg_decision : null;
+    const visible = decision && isRecord(decision.visible_summary) ? decision.visible_summary : null;
+    const start = numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
+    const duration = numberOrUndefined(segment.duration) ?? numberOrUndefined(segment.duration_seconds);
+    const end = numberOrUndefined(segment.endTime) ?? (start != null && duration != null ? start + duration : undefined);
+    return {
+      id: stringValue(segment.id) || `segment-${index + 1}`,
+      index: index + 1,
+      title: stringValue(segment.title) || undefined,
+      startSeconds: start,
+      endSeconds: end,
+      line: stringValue(segment.narration) || stringValue(segment.line) || undefined,
+      subLine: stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
+      assetTitle: stringValue(snapshot?.title) || undefined,
+      assetThumbnailUrl: thumbnailUrlFromRef(
+        stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
+      ),
+      isFallback: Boolean(reference) && stringValue(reference?.status) !== "matched",
+      mgLabel: decision?.needed === true
+        ? stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG"
+        : undefined
+    };
+  });
+}
+
+function sourceRefStateLabel(state: string): string | undefined {
+  const normalized = state.toLowerCase();
+  if (normalized === "ready" || normalized === "parsed" || normalized === "matched") return "已解析";
+  if (normalized === "processing" || normalized === "pending") return "处理中";
+  if (normalized === "failed") return "解析失败";
+  return undefined;
+}
+
+// Product-level source summary for the source-ref block. Built only from data
+// that is actually present (source_mapping and/or segment references); returns
+// undefined when there is nothing real to show.
+function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegment[] | undefined): AssetProductSourceSummary | undefined {
+  const mapping = Array.isArray(asset.source_mapping) ? asset.source_mapping.filter(isRecord) : [];
+  const refs: AssetProductSourceRef[] = mapping.flatMap((item, index): AssetProductSourceRef[] => {
+    const title = stringValue(item.title);
+    if (!title) return [];
+    return [{
+      id: item.asset_id != null ? String(item.asset_id) : stringValue(item.url) || `source-${index + 1}`,
+      title,
+      statusLabel: sourceRefStateLabel(stringValue(item.state)),
+      referenceCount: numberOrUndefined(item.reference_count),
+      thumbnailUrl: thumbnailUrlFromRef(stringValue(item.preview_url) || stringValue(item.thumbnail_url)),
+      isFallback: stringValue(item.source_type) === "public_source" || undefined
+    }];
+  });
+  if (segments?.length) {
+    const matched = segments.filter((segment) => segment.assetTitle && !segment.isFallback).length;
+    const fallback = segments.filter((segment) => segment.isFallback).length;
+    if (matched || fallback) {
+      if (!refs.length) {
+        const seen = new Set<string>();
+        for (const segment of segments) {
+          if (!segment.assetTitle || seen.has(segment.assetTitle)) continue;
+          seen.add(segment.assetTitle);
+          refs.push({
+            id: `segment-asset-${segment.index}`,
+            title: segment.assetTitle,
+            thumbnailUrl: segment.assetThumbnailUrl,
+            isFallback: segment.isFallback || undefined
+          });
+        }
+      }
+      const parts = [
+        matched ? `${matched} 个已保存素材` : "",
+        fallback ? `${fallback} 段兜底素材` : ""
+      ].filter(Boolean);
+      return {
+        headline: `基于 ${parts.join(" + ")}生成`,
+        note: `素材命中率 ${matched}/${segments.length} · 兜底素材只在没有你的素材可用时使用`,
+        refs
+      };
+    }
+  }
+  if (!refs.length) return undefined;
+  return { headline: `基于 ${refs.length} 个素材生成`, refs };
+}
+
 function videoProjectStatusLabel(mp4State: string): string {
   if (mp4State === "ready") return "视频工程 · 已有导出文件";
   if (mp4State === "running") return "视频工程 · 处理中";
@@ -162,6 +275,29 @@ function assetLabelFromProduct(asset: ContentAsset): string {
   return count > 0 ? `已关联 ${count} 个素材` : "模型通用知识";
 }
 
+function artifactCategory(asset: ContentAsset): string {
+  const metadata = asset.metadata ?? {};
+  const explicit = stringValue(metadata.artifact_category);
+  if (explicit) return explicit;
+  if (asset.content_type === "content_plan") return "选题方案";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
+  if (asset.content_type === "social_post") return "文案稿";
+  if (asset.content_type === "video_render") return "视频工程";
+  return stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
+}
+
+function normalizeProductTitle(title: string): string {
+  let clean = title.replace(/\s+/g, " ").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+  if (!clean) return "MultiMix";
+  const suffixPattern = /\s*(?:-|—|–|·|｜|\|)\s*(?:MP4\s*成片(?:\s*v\d+)?|视频工程|编导文稿|编导稿|视频脚本|视频文案草稿|文案草稿|内容草稿|准备稿|草稿)\s*$/i;
+  for (let index = 0; index < 4; index += 1) {
+    const next = clean.replace(suffixPattern, "").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+    if (next === clean) break;
+    clean = next;
+  }
+  return clean || title;
+}
+
 export function statusLabelFromProduct(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
   if (metadata.video_project) return "视频工程";
@@ -174,8 +310,8 @@ function contentAssetTypeLabel(contentType: string): string {
   const labels: Record<string, string> = {
     content_plan: "内容方案",
     social_post: "发帖文案",
-    short_video_narration: "短视频口播稿",
-    video_script: "视频文案草稿",
+    short_video_narration: "编导稿",
+    video_script: "编导稿",
     cover_image: "封面图方案",
     storyboard_image: "分镜图方案",
     video_render: "成片准备",
@@ -234,24 +370,24 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     ? "可执行方案 · 待生成"
     : directorDraft
       ? noAssetHit
-        ? "文案 · 编导草稿 · 未命中素材"
-        : "文案 · 编导草稿 · 有来源"
+        ? "未命中素材"
+        : "有来源"
     : noAssetHit
-      ? "草稿 · 未命中素材"
-      : "草稿 · 有来源";
+      ? "未命中素材"
+      : "有来源";
   const ratio = stringValue(videoProject?.ratio) || stringValue(mp4Artifact?.ratio) || stringValue(intent.ratio) || (mode === "copy" ? "Markdown" : "按指令");
   const duration = videoProject?.duration_seconds
     ? `${videoProject.duration_seconds}秒`
     : mp4Artifact?.duration_seconds
       ? `${mp4Artifact.duration_seconds}秒`
       : stringValue(intent.duration) || (capability.includes("video") ? "待确认" : `${body.length} 段`);
-  const capabilityLabel = directorDraft ? "视频文案草稿" : stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
+  const capabilityLabel = artifactCategory(asset);
   const sections = [
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频工程的一次导出结果，原视频工程仍可继续调整。" : videoProject ? "已生成可编辑视频工程，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "先生成可修改的视频文案草稿，包含口播、分镜、画面建议和字幕重点；确认后再生成视频工程。" : "已根据对话生成草稿。",
-      status: mp4Artifact ? "成片已生成" : videoProject ? "工程已生成" : unsupported ? "待生成" : directorDraft ? "编导草稿" : "已生成"
+      detail: mp4Artifact ? "这是视频工程的一次导出结果，原视频工程仍可继续调整。" : videoProject ? "已生成可编辑视频工程，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "先生成可修改的编导稿，包含口播、分镜、画面建议和字幕重点；确认后再生成视频工程。" : "已根据对话生成草稿。",
+      status: mp4Artifact ? "成片已生成" : videoProject ? "工程已生成" : unsupported ? "待生成" : directorDraft ? "待确认" : "已生成"
     },
     {
       label: "来源",
@@ -306,12 +442,13 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       status: stringValue(mp4Artifact.mp4_state) || "ready"
     });
   }
+  const segments = segmentsFromVideoMetadata(metadata);
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
     metadata,
     mode,
-    title: asset.title,
+    title: normalizeProductTitle(asset.title),
     status,
     summary: firstMeaningfulLine(asset.body) || asset.title,
     ratio,
@@ -324,6 +461,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     timeline: timelineFromVideoProject(videoProject) ?? (mode === "copy" ? [] : timelineFromBody(asset.body, unsupported)),
     actions: suggestionsForCapability(capability),
     sourceIds: asset.linked_asset_ids.map((id) => String(id)),
+    segments,
+    sourceSummary: sourceSummaryForAsset(asset, segments),
     versions: (asset.versions ?? []).map((version) => ({
       id: String(version.id),
       label: `v${version.version}`,
@@ -335,8 +474,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
           : "初始版本"
     })),
     preview: {
-      title: asset.title,
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "视频文案草稿，确认后生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+      title: normalizeProductTitle(asset.title),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

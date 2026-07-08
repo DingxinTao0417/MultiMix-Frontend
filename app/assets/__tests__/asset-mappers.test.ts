@@ -49,10 +49,10 @@ describe("asset product mapper", () => {
     const product = contentAssetToProduct(asset({}));
 
     expect(product.mode).toBe("copy");
-    expect(product.status).toBe("文案 · 编导草稿 · 有来源");
-    expect(product.phase).toBe("视频文案草稿");
-    expect(product.preview?.eyebrow).toBe("视频文案草稿");
-    expect(product.preview?.subtitle).toContain("确认后生成视频工程");
+    expect(product.status).toBe("有来源");
+    expect(product.phase).toBe("编导稿");
+    expect(product.preview?.eyebrow).toBe("编导稿");
+    expect(product.preview?.subtitle).toContain("确认后");
   });
 
   it("treats video projects as the final conversation output without mp4 render prompts", () => {
@@ -101,6 +101,98 @@ describe("asset product mapper", () => {
 
     expect(product.status).toBe("视频生成中 · 后台任务");
     expect(product.preview?.subtitle).toContain("后台生成");
+  });
+
+  it("maps video project segments with asset references, fallback and MG decisions", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      metadata: {
+        capability: "video_render",
+        video_project: {
+          version: "multimix_video_project_v1",
+          ratio: "9:16",
+          duration_seconds: 30,
+          segments: [
+            {
+              id: "seg-1",
+              title: "痛点开场",
+              startTime: 0,
+              duration: 5,
+              narration: "装修最烧钱的坑，十个有九个在定制柜上",
+              asset_reference: {
+                status: "matched",
+                chosen_asset_id: 12,
+                source_snapshot: { title: "客厅落地窗效果" }
+              },
+              mg_decision: { needed: false }
+            },
+            {
+              id: "seg-2",
+              title: "案例展示",
+              startTime: 5,
+              duration: 9,
+              narration: "这是上周刚交付的全屋定制",
+              asset_reference: {
+                status: "matched",
+                chosen_asset_id: 13,
+                source_snapshot: { title: "门窗安装完工全景" }
+              },
+              mg_decision: { needed: true, visible_summary: { label: "面积利用率 +35%" } }
+            },
+            {
+              id: "seg-3",
+              title: "报价引导",
+              startTime: 14,
+              duration: 6,
+              narration: "评论区扣 1，送你一份避坑报价单",
+              asset_reference: { status: "no_asset_hit" }
+            }
+          ]
+        }
+      }
+    }));
+
+    expect(product.segments).toHaveLength(3);
+    expect(product.segments?.[0]).toMatchObject({
+      index: 1,
+      title: "痛点开场",
+      startSeconds: 0,
+      endSeconds: 5,
+      assetTitle: "客厅落地窗效果",
+      isFallback: false
+    });
+    expect(product.segments?.[1]?.mgLabel).toBe("面积利用率 +35%");
+    expect(product.segments?.[2]?.isFallback).toBe(true);
+    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 段兜底素材生成");
+    expect(product.sourceSummary?.note).toContain("素材命中率 2/3");
+    expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
+  });
+
+  it("builds a source summary from source_mapping for copy products", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "copy",
+      content_type: "social_post",
+      metadata: { capability: "social_post" },
+      source_mapping: [
+        { title: "市场规则变化素材包", asset_id: 7, state: "ready", reference_count: 3 },
+        { title: "LinkedIn买家洞察", asset_id: 9, state: "processing" }
+      ]
+    }));
+
+    expect(product.segments).toBeUndefined();
+    expect(product.sourceSummary?.headline).toBe("基于 2 个素材生成");
+    expect(product.sourceSummary?.refs).toMatchObject([
+      { title: "市场规则变化素材包", statusLabel: "已解析", referenceCount: 3 },
+      { title: "LinkedIn买家洞察", statusLabel: "处理中" }
+    ]);
+  });
+
+  it("omits segments and source summary when the metadata carries none", () => {
+    const product = contentAssetToProduct(asset({}));
+
+    expect(product.segments).toBeUndefined();
+    expect(product.sourceSummary).toBeUndefined();
   });
 
   it("marks failed orchestration assets as retryable with the error detail", () => {
