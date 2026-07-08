@@ -107,6 +107,12 @@ export default function ProductWorkspace({
   const canBrowseVideo = Boolean(hasVideoProject && exportedVideoUrl);
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("edit");
   const showEditorEmbed = hasVideoProject && (!canBrowseVideo || videoSurface === "edit");
+  // ProductPreview renders its own browse state (player + segment cards) when a
+  // video_project + playable file exist, even without a backendAssetId (mock /
+  // externally-hosted). Mirror that here to drop the legacy timeline strip.
+  const previewShowsBrowse = Boolean(
+    productMetadata.video_project && playableVideoUrl(product)
+  );
   // Image products download their real hero file; without a URL the button hides.
   const imageDownloadUrl = product.mode === "image"
     ? (() => {
@@ -468,7 +474,7 @@ export default function ProductWorkspace({
           </div>
         )}
 
-        {!hasVideoProject && product.timeline.length > 0 ? (
+        {!hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}

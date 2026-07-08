@@ -432,6 +432,25 @@ const videoScriptProduct: AssetProduct = {
   }
 };
 
+// A finished video project (has both a video_project and a playable file) so
+// the demo browse state (player + jumpable segment cards) is reachable offline.
+// The editor embed still takes over when the「编辑」toggle is pressed.
+const finishedVideoProduct: AssetProduct = {
+  ...videoScriptProduct,
+  id: "finished-short-video",
+  title: "60 秒短视频成片",
+  status: "已生成 · 成片",
+  phase: "成片",
+  version: "v2",
+  metadata: {
+    // video_project marks it a finished project; the top-level video_url is
+    // what playableVideoUrl() reads (mp4_ref would route through the API proxy,
+    // unreachable in offline mock — a direct https URL plays as-is).
+    video_project: { status: "completed" },
+    video_url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
+  }
+};
+
 const imageCoverProduct: AssetProduct = {
   id: "linkedin-cover-image",
   mode: "image",
@@ -1218,11 +1237,53 @@ const conversationRows: AssetConversation[] = [
       { role: "user", text: "把当前内容包拆成 60 秒口播和四段分镜。" },
       { role: "assistant", text: "我会沿用内容包里的证据和判断，把它拆成开场、来源证据、业务判断和行动建议四段。" },
       { role: "user", text: "要能直接给剪辑或数字人后续使用。" },
-      { role: "assistant", text: "已生成 60 秒短视频分镜，包含脚本、素材位置、字幕检查项和时间轴。" },
+      {
+        role: "assistant",
+        text: "已生成 60 秒短视频分镜，包含脚本、素材位置、字幕检查项和时间轴。",
+        runSteps: [
+          { key: "understand", label: "理解 3 张素材的画面与可用场景", status: "done", elapsedLabel: "0.8s" },
+          { key: "plan", label: "锁定开场 / 证据 / 判断 / CTA 四段结构", status: "done", elapsedLabel: "1.2s" },
+          { key: "match", label: "为每段匹配素材，第 4 段用兜底画面", status: "done", elapsedLabel: "3.6s" },
+          { key: "voice", label: "按分镜生成 60 秒口播节奏与字幕", status: "done", elapsedLabel: "5.4s" },
+          { key: "assemble", label: "组装时间轴并检查移动端字幕", status: "done", elapsedLabel: "3.4s" }
+        ]
+      },
       { role: "assistant", text: "你可以继续说：缩短到 30 秒、把第 2 段素材换成产品图、改成数字人口播，或字幕更大一点。", suggestions: ["缩短到30秒", "换成数字人", "字幕更大一点"] }
     ],
     product: videoScriptProduct,
     products: [marketRuleProduct, videoScriptProduct]
+  },
+  {
+    id: "finished-video",
+    title: "短视频成片浏览",
+    type: "视频成片",
+    updatedAt: "07/06",
+    assetLabel: "短视频分镜脚本",
+    status: "成片 · 成功",
+    prompt: "把分镜脚本渲染成可预览的成片。",
+    response: "成片已生成，右侧可以直接播放、点分镜跳转，或进入编辑微调。",
+    canvasTitle: "60 秒短视频成片",
+    canvasMeta: "成片 · 成功 · v2",
+    raw: "# 60 秒短视频成片\n\n成片已渲染完成，可在右侧播放器预览，点分镜卡跳转到对应片段，或点「编辑」进入剪辑器微调。",
+    judgment: "成片浏览态用于快速确认节奏与素材，细调仍回到剪辑器。",
+    action: "确认成片后可导出，或继续在对话里调整某一段。",
+    delivery: "成片已生成。可以直接播放预览、点任意分镜跳转，或说：把第 4 段兜底画面换成产品实拍、导出成片。",
+    suggestions: ["换掉第4段兜底画面", "导出成片", "改成数字人口播"],
+    messages: [
+      { role: "user", text: "把分镜脚本渲染成可预览的成片。" },
+      {
+        role: "assistant",
+        text: "成片已渲染完成，右侧可以直接播放、点分镜卡跳转，或点「编辑」进剪辑器微调。",
+        runSteps: [
+          { key: "assemble", label: "按分镜组装素材与口播轨", status: "done", elapsedLabel: "4.1s" },
+          { key: "render", label: "渲染 9:16 成片并压制字幕", status: "done", elapsedLabel: "12.7s" },
+          { key: "check", label: "校验时长与移动端字幕安全区", status: "done", elapsedLabel: "1.5s" }
+        ]
+      },
+      { role: "assistant", text: "可以直接播放预览、点任意分镜跳转，或说：把第 4 段兜底画面换成产品实拍、导出成片。", suggestions: ["换掉第4段兜底画面", "导出成片", "改成数字人口播"] }
+    ],
+    product: finishedVideoProduct,
+    products: [finishedVideoProduct]
   },
   {
     id: "real-scene",

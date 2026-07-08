@@ -1,16 +1,9 @@
 "use client";
 
 import { Check, Sparkles } from "lucide-react";
+import type { AgentRunStep } from "../lib/asset-workspace-types";
 
-// A single agent execution step, mapped from real backend task events. Status
-// drives the three visual states in spec §5.2: done (green check + elapsed),
-// run (gradient breathing icon + shimmer bar), wait (hollow circle + —).
-export type AgentRunStep = {
-  key: string;
-  label: string;
-  status: "done" | "run" | "wait" | "fail";
-  elapsedLabel?: string;
-};
+export type { AgentRunStep };
 
 // Agent execution timeline (spec §5.2 ★). Renders only when real step events
 // exist — callers pass an empty list to fall back to the shimmer wait state

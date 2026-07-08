@@ -131,6 +131,15 @@ export type AssetMessagePlan = {
   confirmUtterance?: string;
 };
 
+// A single agent execution step (demo workspace「MultiMix 已完成执行」clist).
+// Mapped from real backend task events; three visual states + optional elapsed.
+export type AgentRunStep = {
+  key: string;
+  label: string;
+  status: "done" | "run" | "wait" | "fail";
+  elapsedLabel?: string;
+};
+
 export type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
@@ -138,6 +147,9 @@ export type AssetConversationMessage = {
   suggestionActions?: AssetSuggestionAction[];
   // Structured confirmation card payload (spec §5.2); undefined → suggestion chips.
   plan?: AssetMessagePlan;
+  // Agent execution timeline attached to an assistant message (demo
+  // workspace-video「MultiMix 已完成执行」). Absent → not rendered (spec §12).
+  runSteps?: AgentRunStep[];
   // Backend-backed message fields (optional for mock data).
   assetId?: number | null;
   pending?: boolean;

@@ -9,6 +9,7 @@ import { formatComposerError } from "../../../lib/api";
 import type { AssetConversationMessage, AssetMessagePlan } from "../lib/asset-workspace-types";
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
+import AgentRunTimeline from "./agent-run-timeline";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -411,6 +412,7 @@ export default function ConversationStudio({
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />
               ) : null}
+              {message.runSteps?.length ? <AgentRunTimeline steps={message.runSteps} /> : null}
               {(() => {
                 const suggestions = visibleSuggestions(message)
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
