@@ -146,6 +146,14 @@ export default function ProductWorkspace({
           setExportState("error");
           setExportProgress(null);
           break;
+        case "multimix-editor-recompose-started":
+          // The film strip kicked off a segment recompose: the embed reloads
+          // itself when the rebuilt project lands, so just gate export until
+          // the fresh editor says ready again.
+          setEditorReady(false);
+          setExportState("idle");
+          setExportProgress(null);
+          break;
         default:
           break;
       }

@@ -21,6 +21,10 @@ export const UI_V3_BG_STATUS = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V
 // Asset picker modal (AssetPicker). Off → no picker entry.
 export const UI_V3_ASSET_PICKER = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_ASSET_PICKER);
 
+// Embed film-strip edit surface (FilmStrip, spec §5.5). Off → the embedded
+// editor keeps the OpenCut multi-track timeline (spec §12 fallback).
+export const UI_V3_FILMSTRIP = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_FILMSTRIP);
+
 // Product generating visuals (aurora / typing caret / live source highlight).
 // Off → shimmer-only wait, one-shot full text (spec §12).
 export const UI_V3_GENERATING_VISUALS = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_GENERATING_VISUALS);

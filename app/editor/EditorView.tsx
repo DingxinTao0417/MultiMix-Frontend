@@ -11,6 +11,8 @@ import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { getExportMimeType } from "@editor/lib/export";
+import { UI_V3_FILMSTRIP } from "@/app/assets/lib/ui-flags";
+import FilmStrip from "./FilmStrip";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -191,7 +193,13 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
             <ReplacePanel assetId={assetId} token={token} />
           </div>
           <div className="editor-timeline-region">
-            <Timeline />
+            {embed && UI_V3_FILMSTRIP ? (
+              // Spec §5.5: the embed edit form is the film strip; the
+              // multi-track timeline stays a full-screen /editor capability.
+              <FilmStrip assetId={assetId} token={token} />
+            ) : (
+              <Timeline />
+            )}
           </div>
         </div>
       ) : (

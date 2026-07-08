@@ -6102,6 +6102,353 @@ label {
   white-space: nowrap;
 }
 
+/* ---- Embed film-strip edit surface (spec §5.5 / final/workspace-video.html) ---- */
+
+.shadcn-prototype-filmstrip {
+  display: grid;
+  overflow: auto;
+  height: 100%;
+  align-content: start;
+  background: var(--surface, #ffffff);
+  border-top: 1px solid var(--line, #eae7e1);
+}
+
+.shadcn-prototype-filmstrip-busy,
+.shadcn-prototype-filmstrip-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 7px 12px;
+  border-radius: 9px;
+  font-size: 11.5px;
+}
+
+.shadcn-prototype-filmstrip-busy {
+  color: var(--ink-2, #6e6a64);
+  background: var(--ai-soft, linear-gradient(120deg, rgba(124, 92, 255, 0.09), rgba(0, 168, 142, 0.09)));
+}
+
+.shadcn-prototype-filmstrip-busy .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ai-grad, linear-gradient(120deg, #7c5cff, #00a88e));
+  animation: shadcn-prototype-confirm-breathe 2.2s ease infinite;
+}
+
+.shadcn-prototype-filmstrip-error {
+  color: #9a1c1c;
+  background: #fdf0ef;
+  border: 1px solid #f3d8d5;
+}
+
+.shadcn-prototype-filmstrip-error button {
+  margin-left: auto;
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid #f3d8d5;
+  border-radius: 999px;
+  background: #ffffff;
+  color: inherit;
+  font-size: 11px;
+}
+
+.shadcn-prototype-filmstrip-strip {
+  display: flex;
+  gap: 3px;
+  padding: 12px 12px 8px;
+}
+
+.shadcn-prototype-filmstrip-clip {
+  position: relative;
+  height: 56px;
+  min-width: 30px;
+  flex-shrink: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.shadcn-prototype-filmstrip-clip .inner {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(124, 92, 255, 0.16), rgba(0, 168, 142, 0.14)),
+    var(--surface-2, #f5f3ef);
+  box-shadow: 0 0 0 1px var(--line, #eae7e1);
+  transition: box-shadow 0.15s ease;
+}
+
+.shadcn-prototype-filmstrip-clip:hover .inner {
+  box-shadow: 0 0 0 1px var(--line-2, #ddd9d1), var(--shadow-card, 0 2px 6px rgba(32, 31, 30, 0.05));
+}
+
+.shadcn-prototype-filmstrip-clip.selected .inner {
+  box-shadow: 0 0 0 2px var(--ai-a, #7c5cff), 0 4px 12px rgba(124, 92, 255, 0.18);
+}
+
+.shadcn-prototype-filmstrip-clip .lb,
+.shadcn-prototype-filmstrip-clip .du {
+  position: absolute;
+  z-index: 2;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.shadcn-prototype-filmstrip-clip .lb {
+  left: 6px;
+  bottom: 4px;
+  font-size: 9.5px;
+  font-weight: 650;
+}
+
+.shadcn-prototype-filmstrip-clip .du {
+  right: 6px;
+  top: 4px;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.shadcn-prototype-filmstrip-clip .handle {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.shadcn-prototype-filmstrip-clip .handle::before {
+  content: "";
+  width: 5px;
+  height: 26px;
+  border-radius: 3px;
+  background: var(--surface, #ffffff);
+  box-shadow: 0 0 0 1.5px var(--ai-a, #7c5cff), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.shadcn-prototype-filmstrip-clip .handle.l { left: -6px; }
+.shadcn-prototype-filmstrip-clip .handle.r { right: -6px; }
+
+.shadcn-prototype-filmstrip-acts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+
+.shadcn-prototype-filmstrip-acts .who {
+  font-size: 11px;
+  color: var(--ink-3, #9b968e);
+}
+
+.shadcn-prototype-filmstrip .act {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--line-2, #ddd9d1);
+  color: var(--ink-2, #6e6a64);
+  background: var(--surface, #ffffff);
+}
+
+.shadcn-prototype-filmstrip .act:hover:not(:disabled) {
+  color: var(--ink, #201f1e);
+  box-shadow: var(--shadow-card, 0 2px 6px rgba(32, 31, 30, 0.05));
+  transform: translateY(-1px);
+}
+
+.shadcn-prototype-filmstrip .act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.shadcn-prototype-filmstrip-acts .tip {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--ink-3, #9b968e);
+}
+
+.shadcn-prototype-filmstrip-props {
+  display: grid;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 11px 12px;
+  background: var(--surface-2, #f5f3ef);
+  border-radius: 10px;
+}
+
+.shadcn-prototype-filmstrip-props .row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+}
+
+.shadcn-prototype-filmstrip-props .k {
+  font-size: 11px;
+  color: var(--ink-3, #9b968e);
+  font-weight: 600;
+  width: 48px;
+  text-align: right;
+  flex: none;
+}
+
+.shadcn-prototype-filmstrip-props .v {
+  font-size: 11.5px;
+  color: var(--ink, #201f1e);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadcn-prototype-filmstrip-props .row .v:first-of-type {
+  flex: 1;
+}
+
+.shadcn-prototype-filmstrip-props .input {
+  flex: 1;
+  border: 1px solid var(--line-2, #ddd9d1);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink, #201f1e);
+  outline: none;
+  background: var(--surface, #ffffff);
+  min-width: 0;
+}
+
+.shadcn-prototype-filmstrip-props .input:focus {
+  border-color: var(--ai-a, #7c5cff);
+}
+
+.shadcn-prototype-filmstrip-props .toggle {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  flex: none;
+  cursor: pointer;
+}
+
+.shadcn-prototype-filmstrip-props .toggle input {
+  display: none;
+}
+
+.shadcn-prototype-filmstrip-props .toggle i {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--line-2, #ddd9d1);
+  transition: background 0.2s ease;
+}
+
+.shadcn-prototype-filmstrip-props .toggle i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: left 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.shadcn-prototype-filmstrip-props .toggle input:checked + i {
+  background: var(--ai-grad, linear-gradient(120deg, #7c5cff, #00a88e));
+}
+
+.shadcn-prototype-filmstrip-props .toggle input:checked + i::after {
+  left: 15px;
+}
+
+.shadcn-prototype-filmstrip-props .hint {
+  flex: none;
+  max-width: 46%;
+  color: var(--ink-3, #9b968e);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadcn-prototype-filmstrip-note {
+  margin: 0 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--line, #eae7e1);
+  font-size: 11px;
+  color: var(--ink-3, #9b968e);
+}
+
+.shadcn-prototype-filmstrip-note a {
+  color: var(--accent, #5b45e0);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.shadcn-prototype-filmstrip-note a:hover {
+  text-decoration: underline;
+}
+
+.shadcn-prototype-filmstrip-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.shadcn-prototype-filmstrip-foot .undo {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--line-2, #ddd9d1);
+  color: var(--ink-2, #6e6a64);
+  background: var(--surface, #ffffff);
+}
+
+.shadcn-prototype-filmstrip-foot .undo:hover:not(:disabled) {
+  color: var(--ink, #201f1e);
+  box-shadow: var(--shadow-card, 0 2px 6px rgba(32, 31, 30, 0.05));
+}
+
+.shadcn-prototype-filmstrip-foot .undo:disabled {
+  opacity: 0.45;
+}
+
+.shadcn-prototype-filmstrip-foot .warn {
+  font-size: 10.5px;
+  color: var(--ink-3, #9b968e);
+}
+
+.shadcn-prototype-filmstrip-foot .save {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--ink-3, #9b968e);
+}
+
+.shadcn-prototype-filmstrip-foot .total {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--ink-2, #6e6a64);
+  background: var(--surface-2, #f5f3ef);
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
 /* V3 motion fallback (spec §6): collapse all animation for reduced-motion users */
 @media (prefers-reduced-motion: reduce) {
   *,
