@@ -184,5 +184,56 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       expect(overlayAsset).toBeDefined();
       expect(overlayAsset!.hasAlpha).toBe(true);
     });
+
+    it('aligns overlay elements to the matching segment window', () => {
+      const bp = makeProject({
+        media: [
+          makeMedia({ id: 'media-main', file_path: '/test/main.mp4', name: 'main.mp4' }),
+          makeMedia({ id: 'media-ol', file_path: '/test/overlay.webm', name: 'overlay.webm', hasAlpha: true }),
+        ],
+        tracks: [
+          {
+            id: 'track-main',
+            type: 'video',
+            name: 'Main',
+            elements: [
+              {
+                id: 'elem-main-1',
+                type: 'video',
+                startTime: 4,
+                duration: 6,
+                mediaId: 'media-main',
+                segmentId: 'seg-1',
+              },
+            ],
+          },
+          {
+            id: 'track-overlay',
+            type: 'video',
+            name: 'Motion Graphics',
+            overlay: true,
+            elements: [
+              {
+                id: 'elem-ol-1',
+                type: 'video',
+                startTime: 5,
+                duration: 2,
+                mediaId: 'media-ol',
+                segmentId: 'seg-1',
+              },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const overlayTrack = project.scenes[0].tracks.find(
+        (track) => (track as Record<string, unknown>).id === 'track-overlay',
+      );
+      const overlayElement = overlayTrack?.elements[0];
+
+      expect(overlayElement?.startTime).toBe(4);
+      expect(overlayElement?.duration).toBe(6);
+    });
   });
 });

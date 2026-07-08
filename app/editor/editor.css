@@ -277,3 +277,144 @@
     margin: 0;
   }
 }
+
+@layer components {
+  .editor-root {
+    display: flex;
+    height: 100vh;
+    flex-direction: column;
+    background: transparent;
+    color: #17211d;
+  }
+
+  .editor-actionbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid #eceef0;
+    background: rgba(255, 255, 255, 0.92);
+    padding: 12px 18px;
+    backdrop-filter: blur(14px);
+  }
+
+  .editor-actionbar.embed {
+    padding-inline: 14px;
+    padding-block: 10px;
+  }
+
+  .editor-backlink {
+    color: #627069;
+    font-size: 12px;
+    font-weight: 650;
+    transition: color 140ms ease;
+  }
+
+  .editor-backlink:hover {
+    color: #17211d;
+  }
+
+  .editor-actionbar-status {
+    min-width: 0;
+    text-align: center;
+    color: #627069;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .editor-actionbar-status .error {
+    color: #b42318;
+  }
+
+  .editor-actionbar-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .editor-action-pill {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid #cbd6ce;
+    background: #ffffff;
+    padding: 0 12px;
+    font-size: 12px;
+    font-weight: 650;
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      transform 160ms ease,
+      background-color 160ms ease;
+  }
+
+  .editor-action-pill:hover:not(:disabled) {
+    box-shadow: 0 8px 18px rgba(24, 24, 27, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .editor-action-pill:disabled {
+    cursor: default;
+    opacity: 0.72;
+  }
+
+  .editor-action-pill.primary {
+    border-color: #18181b;
+    background: #18181b;
+    color: #ffffff;
+  }
+
+  .editor-action-pill.success {
+    border-color: #acd6c4;
+    background: #e5f1eb;
+    color: #0b765f;
+  }
+
+  .editor-action-pill.danger {
+    border-color: #fecaca;
+    background: #fef7f7;
+    color: #b42318;
+  }
+
+  .editor-layout {
+    display: grid;
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) clamp(210px, 28vh, 320px);
+    gap: 6px;
+    background: transparent;
+    padding: 0;
+  }
+
+  .preview-video-surface:hover ~ .preview-canvas-controls .preview-play-button,
+  .preview-canvas-controls:focus-within .preview-play-button,
+  .preview-canvas-controls .preview-play-button:hover {
+    opacity: 1;
+  }
+
+  .editor-preview-region,
+  .editor-timeline-region {
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .editor-preview-region {
+    position: relative;
+  }
+
+  .editor-timeline-region {
+    overflow: hidden;
+  }
+
+  .editor-loading-shell {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    color: #627069;
+    font-size: 14px;
+  }
+}

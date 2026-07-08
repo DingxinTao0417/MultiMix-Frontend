@@ -50,7 +50,9 @@ import {
 	canTracktHaveAudio,
 	canTrackBeHidden,
 	isMainTrack,
+	isMgOverlayTrack,
 	getTimelineZoomMin,
+	getTimelineFitZoom,
 	getTimelinePaddingPx,
 } from "@editor/lib/timeline";
 import { TimelineToolbar } from "./timeline-toolbar";
@@ -138,9 +140,15 @@ export function Timeline() {
 	);
 
 	const timelineDuration = timeline.getTotalDuration() || 0;
+	const timelineViewportWidth =
+		tracksContainerRef.current?.clientWidth || FALLBACK_CONTAINER_WIDTH;
 	const minZoomLevel = getTimelineZoomMin({
 		duration: timelineDuration,
-		containerWidth: tracksContainerRef.current?.clientWidth,
+		containerWidth: timelineViewportWidth,
+	});
+	const autoFitZoom = getTimelineFitZoom({
+		duration: timelineDuration,
+		containerWidth: timelineViewportWidth,
 	});
 
 	const savedViewState = editor.project.getTimelineViewState();
@@ -149,8 +157,13 @@ export function Timeline() {
 		useTimelineZoom({
 			containerRef: timelineRef,
 			minZoom: minZoomLevel,
-			initialZoom: savedViewState?.zoomLevel,
-			initialScrollLeft: savedViewState?.scrollLeft,
+			initialZoom: savedViewState?.userAdjustedZoom
+				? savedViewState.zoomLevel
+				: undefined,
+			autoFitZoom: savedViewState?.userAdjustedZoom ? undefined : autoFitZoom,
+			initialScrollLeft: savedViewState?.userAdjustedZoom
+				? savedViewState.scrollLeft
+				: undefined,
 			initialPlayheadTime: savedViewState?.playheadTime,
 			tracksScrollRef,
 			rulerScrollRef,
@@ -388,7 +401,7 @@ export function Timeline() {
 	return (
 		<section
 			className={
-				"panel bg-background relative flex h-full flex-col overflow-hidden rounded-sm border"
+				"panel bg-background relative flex h-full flex-col overflow-hidden rounded-[24px] border border-[#e7ebe8] bg-[linear-gradient(180deg,#ffffff_0%,#f7f8f5_100%)] shadow-[0_12px_32px_rgba(21,32,27,0.06)]"
 			}
 			{...dragProps}
 			aria-label="Timeline"
@@ -468,7 +481,7 @@ export function Timeline() {
 						}}
 					>
 						<div
-							className="flex min-h-full flex-col"
+							className="flex flex-col"
 							style={{ width: `${dynamicTimelineWidth}px` }}
 						>
 							{/* biome-ignore lint/a11y/noStaticElementInteractions: canvas seek surface; keyboard seeking is handled by the global keybindings system */}
@@ -577,7 +590,7 @@ function TrackLabelsPanel({
 	);
 
 	return (
-		<div className="flex w-28 shrink-0 flex-col border-r">
+		<div className="flex w-[72px] shrink-0 flex-col border-r border-[#eceef0] bg-[#fbfbf9]">
 			<div
 				className="shrink-0"
 				style={{ height: timelineHeaderHeight || 48 }}
@@ -590,16 +603,23 @@ function TrackLabelsPanel({
 								<div
 									key={track.id}
 									className={cn(
-										"group flex items-center px-3",
+										"group flex items-center justify-center px-1.5",
 										tracksWithSelection.has(track.id) &&
 											TIMELINE_CONSTANTS.TRACK_SELECTED_BG,
 									)}
 									style={{
-										height: `${getTrackHeight({ type: track.type })}px`,
+										height: `${getTrackHeight({ type: track.type, track })}px`,
 									}}
 								>
-									<div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-										{canTracktHaveAudio(track) && (
+									<div className="flex min-w-0 flex-1 items-center justify-center gap-1">
+										{isMgOverlayTrack(track) && (
+											<div className="flex min-w-0 flex-col items-center gap-0.5">
+												<span className="rounded-full bg-[#eef3ef] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[#1d6f57]">
+													MG
+												</span>
+											</div>
+										)}
+										{canTracktHaveAudio(track) && !isMgOverlayTrack(track) && (
 											<TrackToggleIcon
 												isOff={track.muted}
 												icons={{ on: VolumeHighIcon, off: VolumeOffIcon }}
@@ -619,7 +639,9 @@ function TrackLabelsPanel({
 												}
 											/>
 										)}
-										<TrackIcon track={track} />
+										{!isMgOverlayTrack(track) ? (
+											<TrackIcon track={track} />
+										) : null}
 									</div>
 								</div>
 							))}
@@ -711,7 +733,7 @@ function TimelineTrackRows({
 							)}
 							style={{
 								top: `${TIMELINE_CONSTANTS.PADDING_TOP_PX + getCumulativeHeightBefore({ tracks, trackIndex: index })}px`,
-								height: `${getTrackHeight({ type: track.type })}px`,
+								height: `${getTrackHeight({ type: track.type, track })}px`,
 							}}
 						>
 							<TimelineTrackContent
@@ -796,7 +818,7 @@ function TimelineGutter({
 }) {
 	// biome-ignore lint/a11y/noStaticElementInteractions: canvas seek surface; keyboard seeking is handled by the global keybindings system
 	// biome-ignore lint/a11y/useKeyWithClickEvents: canvas seek surface; keyboard seeking is handled by the global keybindings system
-	return <div className="flex-1" onMouseDown={onMouseDown} onClick={onClick} />;
+	return <div className="h-0 shrink-0" onMouseDown={onMouseDown} onClick={onClick} />;
 }
 
 function TrackIcon({ track }: { track: TimelineTrack }) {

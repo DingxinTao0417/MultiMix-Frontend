@@ -67,19 +67,17 @@ export function ExportButton({ assetId, token }: { assetId?: string | null; toke
   }
 
   return (
-    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <button onClick={handleExport} disabled={exporting}
-        style={{ padding: "4px 14px", fontSize: 12, background: exporting ? "#555" : "#1f9d6b", color: "#fff", border: "none", borderRadius: 4, cursor: exporting ? "default" : "pointer" }}>
-        {exporting ? `导出中 ${Math.round(progress * 100)}%` : "⬇ 导出视频"}
+    <span className="inline-flex items-center gap-2">
+      <button onClick={handleExport} disabled={exporting} className="editor-action-pill primary">
+        {exporting ? `导出中 ${Math.round(progress * 100)}%` : "导出视频"}
       </button>
       {lastBlob && assetId && token && !uploaded ? (
-        <button onClick={handleUpload} disabled={uploading}
-          style={{ padding: "4px 12px", fontSize: 12, background: "#2d6cdf", color: "#fff", border: "none", borderRadius: 4, cursor: uploading ? "default" : "pointer" }}>
-          {uploading ? "上传中…" : "☁ 保存到产物"}
+        <button onClick={handleUpload} disabled={uploading} className="editor-action-pill">
+          {uploading ? "上传中…" : "保存到产物"}
         </button>
       ) : null}
-      {uploaded ? <span style={{ fontSize: 11, color: "#4ade80" }}>✓ 已保存</span> : null}
-      {errorText ? <span style={{ fontSize: 11, color: "#f87171" }}>{errorText}</span> : null}
+      {uploaded ? <span className="text-[11px] font-medium text-[#0b765f]">已保存</span> : null}
+      {errorText ? <span className="text-[11px] font-medium text-[#b42318]">{errorText}</span> : null}
     </span>
   );
 }

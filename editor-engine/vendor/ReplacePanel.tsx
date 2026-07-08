@@ -4,9 +4,15 @@ import type { MediaAsset } from "@editor/lib/media/types";
 import { API_BASE, replaceOptions, generateMG, mediaUrl, type MaterialOption } from "./api";
 import { updateEditorProject } from "./bootstrap";
 import { filePathByMediaId, segmentTextByElementId, type BackendProject } from "./buildProject";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@editor/components/ui/sheet";
 
-// Floating panel: when a video/image clip is selected, lets the user swap it
-// for a freshly-searched alternative material for the same script segment.
 export function ReplacePanel({ assetId, token }: { assetId?: string | null; token?: string | null }) {
   const editor = useEditor();
   const selected = useEditor((e) => e.selection.getSelectedElements());
@@ -22,8 +28,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   const [loading, setLoading] = useState(false);
   const [mgUrl, setMgUrl] = useState<string | null>(null);
   const [mgLoading, setMgLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
-  // Resolve the single selected video/image element (if any).
   const sel = selected.length === 1 ? selected[0] : null;
   let selEl: { id: string; type: string; duration: number; startTime: number; trackId: string } | null = null;
   if (sel) {
@@ -41,9 +47,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     setOptions([]);
     setMgUrl(null);
   }, [selEl?.id]);
-
-  if (!selEl) return null;
-  const segText = segmentTextByElementId[selEl.id] || "";
+  const segText = selEl ? segmentTextByElementId[selEl.id] || "" : "";
+  const canReplace = Boolean(selEl && segText);
 
   async function reloadProject() {
     if (!assetId) return;
@@ -132,52 +137,103 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
       updates: [{ trackId: selEl.trackId, elementId: selEl.id, updates: { mediaId: newId } as never }],
     });
     setOptions([]);
+    setOpen(false);
   }
 
   return (
-    <div style={{
-      position: "absolute", right: 12, top: 12, width: 240, zIndex: 50,
-      background: "#1b1b1b", border: "1px solid #333", borderRadius: 8, padding: 12,
-      color: "#eee", fontSize: 13,
-    }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>换素材</div>
-      <div style={{ color: "#999", fontSize: 12, marginBottom: 8, maxHeight: 48, overflow: "hidden" }}>
-        {segText || "(该片段无文案)"}
-      </div>
-      <button onClick={fetchOptions} disabled={loading || !segText}
-        style={{ width: "100%", padding: "6px 0", background: loading ? "#444" : "#2d6cdf", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", marginBottom: 8 }}>
-        {loading ? "搜索中…" : "找几个候选"}
-      </button>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-        {options.map((opt, i) => {
-          const ourl = mediaUrl(opt.file_path);
-          return (
-            <div key={i} onClick={() => applyReplace(opt)}
-              style={{ cursor: "pointer", borderRadius: 4, overflow: "hidden", border: "1px solid #444" }}>
-              {opt.media_type === "image" ? (
-                <img src={ourl} style={{ width: "100%", height: 64, objectFit: "cover" }} />
-              ) : (
-                <video src={ourl} muted style={{ width: "100%", height: 64, objectFit: "cover" }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* MG 动画生成 */}
-      <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 10 }}>
-        <button onClick={makeMG} disabled={mgLoading || !segText}
-          style={{ width: "100%", padding: "6px 0", background: mgLoading ? "#444" : "#7a3fb5", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}>
-          {mgLoading ? "生成 MG 中…" : "✨ 生成 MG 动画"}
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <button
+          className="absolute top-4 right-4 z-40 inline-flex min-h-[32px] items-center justify-center rounded-full border border-[#cbd6ce] bg-white/94 px-3 text-xs font-[650] text-[#17211d] shadow-[0_10px_24px_rgba(21,32,27,0.08)] backdrop-blur transition hover:-translate-y-px hover:shadow-[0_12px_26px_rgba(21,32,27,0.12)]"
+        >
+          替换素材
         </button>
-        {mgUrl && (
-          <div style={{ marginTop: 8 }}>
-            <iframe src={mgUrl} title="MG preview"
-              style={{ width: "100%", height: 220, border: "1px solid #444", borderRadius: 4, background: "#000" }} />
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>MG 动画预览（HTML）。渲染成视频需后端 hyperframes 环境。</div>
+      </SheetTrigger>
+
+      <SheetContent side="right" className="w-[360px] max-w-[92vw] border-l border-[#eceef0] bg-[#fffffd] p-0">
+        <div className="flex h-full flex-col">
+          <SheetHeader className="gap-2 border-b border-[#eceef0] px-5 py-5">
+            <SheetTitle className="text-[16px] font-semibold text-[#17211d]">替换素材</SheetTitle>
+            <SheetDescription className="text-[12px] leading-5 text-[#627069]">
+              先选中一个视频或图片片段，再搜索候选素材或生成 MG 动效。
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            {selEl ? (
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-[#eceef0] bg-[#f7f8f5] p-4">
+                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#627069]">当前片段文案</div>
+                  <div className="text-[13px] leading-6 text-[#17211d]">
+                    {segText || "该片段暂无可用文案"}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={fetchOptions}
+                    disabled={loading || !canReplace}
+                    className="inline-flex min-h-[38px] items-center justify-center rounded-full border border-[#18181b] bg-[#18181b] px-4 text-[12px] font-[650] text-white disabled:cursor-default disabled:opacity-60"
+                  >
+                    {loading ? "搜索中…" : "找候选"}
+                  </button>
+                  <button
+                    onClick={makeMG}
+                    disabled={mgLoading || !canReplace}
+                    className="inline-flex min-h-[38px] items-center justify-center rounded-full border border-[#cbd6ce] bg-white px-4 text-[12px] font-[650] text-[#17211d] disabled:cursor-default disabled:opacity-60"
+                  >
+                    {mgLoading ? "生成中…" : "生成 MG"}
+                  </button>
+                </div>
+
+                {options.length ? (
+                  <div className="space-y-3">
+                    <div className="text-[12px] font-semibold text-[#17211d]">候选素材</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {options.map((opt, i) => {
+                        const ourl = mediaUrl(opt.file_path);
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => applyReplace(opt)}
+                            className="overflow-hidden rounded-2xl border border-[#d7ded7] bg-white text-left shadow-[0_8px_18px_rgba(21,32,27,0.04)] transition hover:-translate-y-px hover:shadow-[0_12px_24px_rgba(21,32,27,0.08)]"
+                          >
+                            {opt.media_type === "image" ? (
+                              <img src={ourl} className="block h-28 w-full object-cover" />
+                            ) : (
+                              <video src={ourl} muted className="block h-28 w-full object-cover" />
+                            )}
+                            <div className="px-3 py-2 text-[11px] font-medium text-[#627069]">点击替换当前片段</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+
+                {mgUrl ? (
+                  <div className="space-y-2">
+                    <div className="text-[12px] font-semibold text-[#17211d]">MG 预览</div>
+                    <iframe
+                      src={mgUrl}
+                      title="MG preview"
+                      className="h-[220px] w-full rounded-2xl border border-[#d7ded7] bg-black"
+                    />
+                    <div className="text-[11px] leading-5 text-[#627069]">
+                      这是 HTML 预览；最终渲染为视频依赖后端 hyperframes 环境。
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-[#cbd6ce] bg-[#f7f8f5] px-4 py-6 text-[13px] leading-6 text-[#627069]">
+                请先在时间轴中选中一个图片或视频片段，再打开这里替换素材。
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

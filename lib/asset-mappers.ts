@@ -2,7 +2,7 @@
 // frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
 // frontend assets-workspace-client.tsx helpers.
 
-import type { AssetConversation, AssetConversationMessage, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
+import type { AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,6 +39,68 @@ function suggestionActionsValue(value: unknown): AssetSuggestionAction[] | undef
     }];
   });
   return actions.length ? actions : undefined;
+}
+
+// Store refs (local://, supabase://, s3://) are only readable through the
+// backend media proxy; plain http(s) URLs pass through untouched.
+function planThumbnailUrl(ref: string): string | undefined {
+  if (!ref) return undefined;
+  if (/^https?:\/\//i.test(ref)) return ref;
+  if (/^[a-z0-9+.-]+:\/\//i.test(ref)) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
+  return undefined;
+}
+
+function planRefsValue(value: unknown): AssetPlanRef[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const refs = value.flatMap((item): AssetPlanRef[] => {
+    if (!isRecord(item)) return [];
+    const title = stringValue(item.title) || stringValue(item.label);
+    if (!title) return [];
+    return [{
+      id: item.id != null ? String(item.id) : item.asset_id != null ? String(item.asset_id) : undefined,
+      title,
+      thumbnailUrl: planThumbnailUrl(stringValue(item.thumbnail_url) || stringValue(item.preview_url) || stringValue(item.ref))
+    }];
+  });
+  return refs.length ? refs : undefined;
+}
+
+function planFieldsValue(value: unknown): AssetPlanField[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index): AssetPlanField[] => {
+    if (!isRecord(item)) return [];
+    const label = stringValue(item.label);
+    const fieldValue = stringValue(item.value);
+    if (!label || !fieldValue) return [];
+    return [{
+      key: stringValue(item.key) || `plan-field-${index}`,
+      label,
+      value: fieldValue,
+      refs: planRefsValue(item.refs)
+    }];
+  });
+}
+
+// Structured confirmation plan from an assistant message's metadata (spec §5.2).
+// Returns undefined when the payload is missing or has no usable fields so the
+// UI falls back to plain message + suggestion chips (spec §12 降级规则).
+function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
+  if (!isRecord(value)) return undefined;
+  const title = stringValue(value.title);
+  const fields = planFieldsValue(value.fields);
+  if (!title || !fields.length) return undefined;
+  const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
+  const summaryFields = planFieldsValue(value.summary_fields);
+  return {
+    title,
+    status,
+    subtitle: stringValue(value.subtitle) || undefined,
+    fields,
+    summaryFields: summaryFields.length ? summaryFields : undefined,
+    confirmLabel: stringValue(value.confirm_label) || undefined,
+    adjustLabel: stringValue(value.adjust_label) || undefined,
+    confirmUtterance: stringValue(value.confirm_utterance) || undefined
+  };
 }
 
 function relativeTimeLabel(value: string): string {
@@ -253,6 +315,41 @@ export function videoJobStepIndex(stage: string): number {
   if (stage === "segment" || stage === "render") return 1;
   if (stage === "done") return 3;
   return 2;
+}
+
+// Merchant-facing timeline labels for the video pipeline (spec §5.2 ★). The
+// backend only exposes a coarse render_stage today, so this maps that single
+// signal onto the ≥3 semantic steps the timeline requires (§12 硬约定①).
+export const VIDEO_JOB_TIMELINE_STEPS = [
+  { key: "script", label: "理解素材并写脚本" },
+  { key: "segment", label: "匹配素材并合成配音" },
+  { key: "render", label: "组装分镜与时间线" }
+] as const;
+
+export type AgentTimelineStep = {
+  key: string;
+  label: string;
+  status: "done" | "run" | "wait" | "fail";
+  elapsedLabel?: string;
+};
+
+// Build agent-timeline steps from a live video job's render_stage + status.
+// Returns [] when there is no running/queued job so the caller keeps the plain
+// shimmer fallback (spec §12: 无事件不渲染, 视频链路事件已有先上视频).
+export function videoJobTimelineSteps(stage: string, status: string): AgentTimelineStep[] {
+  const failed = status === "failed" || stage === "failed" || stage === "missing_asset" || stage === "invalid_spec" || stage === "stale";
+  const activeIndex = videoJobStepIndex(stage);
+  return VIDEO_JOB_TIMELINE_STEPS.map((step, index): AgentTimelineStep => {
+    if (failed) {
+      if (index < activeIndex) return { ...step, status: "done" };
+      if (index === activeIndex) return { ...step, status: "fail" };
+      return { ...step, status: "wait" };
+    }
+    if (activeIndex >= VIDEO_JOB_TIMELINE_STEPS.length) return { ...step, status: "done" };
+    if (index < activeIndex) return { ...step, status: "done" };
+    if (index === activeIndex) return { ...step, status: "run" };
+    return { ...step, status: "wait" };
+  });
 }
 
 function suggestionsForCapability(capability: string): string[] {
@@ -497,7 +594,8 @@ export function conversationFromPersisted(
     text: message.text,
     assetId: message.asset_id,
     suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
-    suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined
+    suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined,
+    plan: message.role === "assistant" ? planFromMetadata(message.metadata.plan) : undefined
   }));
   for (const asset of row.products) {
     const metadata = asset.metadata ?? {};

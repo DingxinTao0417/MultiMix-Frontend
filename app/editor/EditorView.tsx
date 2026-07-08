@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { initEditorWithProject } from "@/editor-engine/vendor/bootstrap";
 import type { BackendProject } from "@/editor-engine/vendor/buildProject";
 import { EditorCore } from "@editor/core";
 import { Timeline } from "@editor/components/editor/panels/timeline";
 import { PreviewPanel } from "@editor/components/editor/panels/preview";
 import { ExportButton } from "@/editor-engine/vendor/ExportButton";
-import { PlayButton } from "@/editor-engine/vendor/PlayButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
+import { getExportMimeType } from "@editor/lib/export";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -39,10 +39,53 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
 export default function EditorView({ jobId, assetId, token, embed }: { jobId: string | null; assetId: string | null; token: string | null; embed?: boolean }) {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
-  const [title, setTitle] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [loadingDetail, setLoadingDetail] = useState("");
   const startedRef = useRef(false);
+  const exportBusyRef = useRef(false);
+
+  const postToParent = useCallback((payload: Record<string, unknown>) => {
+    if (!embed || typeof window === "undefined" || window.parent === window) return;
+    window.parent.postMessage(
+      {
+        source: "multimix-editor",
+        assetId,
+        ...payload,
+      },
+      window.location.origin
+    );
+  }, [assetId, embed]);
+
+  const handleEmbeddedExport = useCallback(async () => {
+    if (exportBusyRef.current) return;
+    exportBusyRef.current = true;
+    postToParent({ type: "multimix-editor-export-start" });
+    try {
+      const result = await EditorCore.getInstance().renderer.exportProject({
+        options: { format: "mp4", quality: "high", includeAudio: true },
+        onProgress: ({ progress }) => postToParent({ type: "multimix-editor-export-progress", progress }),
+      });
+      if (!result.success || !result.buffer) {
+        throw new Error(result.error || "未知错误");
+      }
+      const mime = getExportMimeType({ format: "mp4" });
+      const blob = new Blob([result.buffer], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `video-${Date.now()}.mp4`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      postToParent({ type: "multimix-editor-export-success" });
+    } catch (cause) {
+      postToParent({
+        type: "multimix-editor-export-error",
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      exportBusyRef.current = false;
+    }
+  }, [postToParent]);
 
   const handleSave = async () => {
     if (!assetId || !token || saveState === "saving") return;
@@ -84,55 +127,75 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
         await initEditorWithProject(bp, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
         });
-        setTitle(bp.metadata?.title ?? "");
         setState("ready");
+        postToParent({ type: "multimix-editor-ready" });
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setState("error");
+        postToParent({
+          type: "multimix-editor-error",
+          message: e instanceof Error ? e.message : String(e),
+        });
       }
     })();
-  }, [jobId, assetId, token]);
+  }, [jobId, assetId, token, postToParent]);
+
+  useEffect(() => {
+    if (!embed || typeof window === "undefined") return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if ((data as { source?: string }).source !== "multimix-workspace") return;
+      if ((data as { type?: string }).type !== "multimix-editor-export") return;
+      if (state !== "ready") {
+        postToParent({ type: "multimix-editor-export-error", message: "剪辑器尚未准备完成" });
+        return;
+      }
+      void handleEmbeddedExport();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [embed, state, handleEmbeddedExport, postToParent]);
 
   return (
-    <div className="editor-root dark" style={{ height: "100vh", display: "flex", flexDirection: "column", color: "#eee", background: "#0e0e0e" }}>
-      <div style={{ padding: embed ? "6px 12px" : "10px 16px", borderBottom: "1px solid #2a2a2a", flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
-        {!embed ? (
-          <a href="/app/assets" style={{ color: "#888", fontSize: 12, textDecoration: "none", marginRight: 4 }}>← 工作台</a>
-        ) : null}
-        <strong style={{ fontSize: embed ? 12 : 14 }}>{title || "视频剪辑器"}</strong>
-        {state === "ready" && assetId ? (
-          <button
-            onClick={handleSave}
-            disabled={saveState === "saving"}
-            style={{
-              padding: "4px 12px", fontSize: 12, border: "none", borderRadius: 4,
-              background: saveState === "error" ? "#c0392b" : saveState === "saved" ? "#2e8b57" : "#2d6cdf",
-              color: "#fff", cursor: saveState === "saving" ? "default" : "pointer",
-            }}
-          >
-            {saveState === "saving" ? "保存中…" : saveState === "saved" ? "✓ 已保存" : saveState === "error" ? "保存失败，点击重试" : "💾 保存项目"}
-          </button>
-        ) : null}
-        {state === "ready" ? <ExportButton assetId={assetId} token={token} /> : null}
-        {state === "loading" ? <span style={{ color: "#888", fontSize: 13 }}>{loadingDetail || "正在加载项目…"}</span> : null}
-        {state === "error" ? <span style={{ color: "#f66", fontSize: 13 }}>{error}</span> : null}
-      </div>
+    <div className="editor-root">
+      {!embed ? (
+        <div className="editor-actionbar">
+          <a href="/app/assets" className="editor-backlink">← 工作台</a>
+
+          <div className="editor-actionbar-status" aria-live="polite">
+            {state === "loading" ? <span>{loadingDetail || "正在加载项目…"}</span> : null}
+            {state === "error" ? <span className="error">{error}</span> : null}
+          </div>
+
+          <div className="editor-actionbar-actions">
+            {state === "ready" && assetId ? (
+              <button
+                onClick={handleSave}
+                disabled={saveState === "saving"}
+                className={`editor-action-pill${saveState === "error" ? " danger" : saveState === "saved" ? " success" : " primary"}`}
+              >
+                {saveState === "saving" ? "保存中…" : saveState === "saved" ? "已保存" : saveState === "error" ? "保存失败，点击重试" : "保存项目"}
+              </button>
+            ) : null}
+            {state === "ready" ? <ExportButton assetId={assetId} token={token} /> : null}
+          </div>
+        </div>
+      ) : null}
 
       {state === "ready" ? (
-        <>
-          <div style={{ flex: "1 1 55%", minHeight: 0, position: "relative", background: "#000" }}>
+        <div className="editor-layout">
+          <div className="editor-preview-region">
             <PreviewPanel />
             <ReplacePanel assetId={assetId} token={token} />
           </div>
-          <div style={{ padding: "8px 16px", borderTop: "1px solid #2a2a2a", flexShrink: 0 }}>
-            <PlayButton />
-          </div>
-          <div style={{ flex: "1 1 45%", minHeight: 0, position: "relative", borderTop: "1px solid #2a2a2a" }}>
+          <div className="editor-timeline-region">
             <Timeline />
           </div>
-        </>
+        </div>
       ) : (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>
+        <div className="editor-loading-shell">
           {state === "error" ? error : loadingDetail || "正在准备剪辑器…"}
         </div>
       )}

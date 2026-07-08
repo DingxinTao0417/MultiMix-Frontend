@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { contentAssetToProduct, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
+import { conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import type { ContentAsset } from "../../../lib/api";
+import type { AssetProduct } from "../lib/asset-workspace-types";
+
+// Minimal fallback product for conversationFromPersisted (kept off the wire).
+const newConversationProduct = {
+  id: "empty-product",
+  mode: "video",
+  title: "等待生成的产物",
+  status: "未生成",
+  summary: "",
+  ratio: "待确认",
+  duration: "待确认",
+  phase: "等待指令",
+  sections: [],
+  timeline: [],
+  actions: []
+} as AssetProduct;
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
@@ -226,5 +242,93 @@ describe("video job stage helpers", () => {
     expect(videoJobStepIndex("script")).toBe(0);
     expect(videoJobStepIndex("segment")).toBe(1);
     expect(videoJobStepIndex("done")).toBe(3);
+  });
+});
+
+describe("agent timeline steps", () => {
+  it("marks the active stage as running and earlier stages as done", () => {
+    const steps = videoJobTimelineSteps("segment", "running");
+    expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
+    expect(steps).toHaveLength(3);
+  });
+
+  it("marks all steps done once the job completes", () => {
+    const steps = videoJobTimelineSteps("done", "completed");
+    expect(steps.every((step) => step.status === "done")).toBe(true);
+  });
+
+  it("marks the current stage failed when the job fails", () => {
+    const steps = videoJobTimelineSteps("segment", "failed");
+    expect(steps.map((step) => step.status)).toEqual(["done", "fail", "wait"]);
+  });
+});
+
+describe("message plan mapping", () => {
+  it("parses a structured plan from assistant message metadata", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-1",
+        title: "案例",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-07-08T00:00:00Z",
+        updated_at: "2026-07-08T00:00:00Z",
+        products: [],
+        messages: [
+          {
+            id: 1,
+            role: "assistant",
+            text: "给你拆了一个方案",
+            asset_id: null,
+            created_at: "2026-07-08T00:00:00Z",
+            metadata: {
+              plan: {
+                title: "文案生成方案",
+                status: "pending",
+                subtitle: "都可以改",
+                fields: [
+                  { key: "platform", label: "平台", value: "小红书" },
+                  { key: "hero", label: "主图", value: "案例图 #2", refs: [{ title: "完工全景" }] }
+                ],
+                confirm_utterance: "确认，开始生成"
+              }
+            }
+          }
+        ]
+      },
+      newConversationProduct
+    );
+    const plan = conversation.messages?.[0]?.plan;
+    expect(plan?.title).toBe("文案生成方案");
+    expect(plan?.status).toBe("pending");
+    expect(plan?.fields).toHaveLength(2);
+    expect(plan?.fields[1]?.refs?.[0]?.title).toBe("完工全景");
+    expect(plan?.confirmUtterance).toBe("确认，开始生成");
+  });
+
+  it("ignores a plan payload with no usable fields", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-2",
+        title: "空",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-07-08T00:00:00Z",
+        updated_at: "2026-07-08T00:00:00Z",
+        products: [],
+        messages: [
+          {
+            id: 1,
+            role: "assistant",
+            text: "没有方案",
+            asset_id: null,
+            created_at: "2026-07-08T00:00:00Z",
+            metadata: { plan: { title: "空方案", fields: [] } }
+          }
+        ]
+      },
+      newConversationProduct
+    );
+    expect(conversation.messages?.[0]?.plan).toBeUndefined();
   });
 });

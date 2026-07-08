@@ -706,6 +706,30 @@ const failedImageProduct: AssetProduct = {
   }
 };
 
+const failedCopyProduct: AssetProduct = {
+  id: "failed-copy",
+  mode: "copy",
+  title: "LinkedIn 文案生成失败",
+  status: "生成失败 · 可重试",
+  summary: "模型服务超时，未能写完正文。你的素材、方案和已确认的设定都已保留。",
+  ratio: "LinkedIn",
+  duration: "0 段",
+  phase: "失败",
+  version: "v0",
+  sections: [
+    { label: "失败原因", title: "模型服务超时", detail: "写正文这一步在后台执行时超时，未产出完整内容。", status: "需重试" },
+    { label: "保留项", title: "平台 / 风格 / 结构", detail: "已确认的方案参数不丢失。", status: "已保留" },
+    { label: "建议", title: "回对话重试", detail: "重试只会重新执行写正文这一步，不会从头再来。", status: "可重试" }
+  ],
+  timeline: [],
+  actions: ["重试生成", "回对话调整", "缩短篇幅", "精细调整"],
+  preview: {
+    title: "LinkedIn 文案生成失败",
+    subtitle: "模型服务超时，等待重试",
+    eyebrow: "Failed copy generation"
+  }
+};
+
 const processingVideoProduct: AssetProduct = {
   id: "processing-video-render",
   mode: "video",
@@ -1059,6 +1083,26 @@ const conversationRows: AssetConversation[] = [
       { role: "user", text: "把这份政策素材转成面向独立站客户的 LinkedIn 内容。" },
       { role: "assistant", text: "我会先把来源素材沉淀成内容包，再生成一版可以直接编辑的 LinkedIn 帖文，并保留证据、判断和 CTA。" },
       { role: "user", text: "语气专业一点，面向跨境服务商客户，不要像泛泛的新闻总结。" },
+      {
+        role: "assistant",
+        text: "好的。我看了这份素材，给你拆了一个方案，确认后开始生成：",
+        plan: {
+          title: "文案生成方案",
+          status: "confirmed",
+          subtitle: "都可以改——点「调整方向」或直接在下面输入框里说",
+          fields: [
+            { key: "platform", label: "平台", value: "LinkedIn" },
+            { key: "style", label: "风格", value: "专业克制 · 面向跨境服务商" },
+            { key: "structure", label: "结构", value: "证据 → 判断 → 可执行建议" },
+            { key: "source", label: "来源", value: "市场规则变化素材包" }
+          ],
+          summaryFields: [
+            { key: "platform", label: "平台", value: "LinkedIn · 专业克制" },
+            { key: "structure", label: "结构", value: "证据 → 判断 → 可执行建议" }
+          ],
+          confirmUtterance: "确认，按这个方案生成 LinkedIn 文案。"
+        }
+      },
       { role: "assistant", text: "已生成两个产物：一个是市场规则变化内容包，另一个是 LinkedIn 发帖文案。内容包负责承接证据和判断，帖文负责面向客户表达。" },
       { role: "assistant", text: "你可以继续说：改得更专业一点、拆成 60 秒短视频、生成一张 4:5 配图，或把 CTA 改成销售咨询口吻。", suggestions: ["改得更专业一点", "拆成60秒视频", "生成4:5配图"] }
     ],
@@ -1333,7 +1377,7 @@ const conversationRows: AssetConversation[] = [
       { role: "assistant", text: "建议减少抽象隐喻，改成费用标签、结账路径或信息图。", suggestions: ["重试生成", "减少抽象感", "换成信息图"] }
     ],
     product: failedImageProduct,
-    products: [marketRulePackProduct, failedImageProduct]
+    products: [marketRulePackProduct, failedCopyProduct, failedImageProduct]
   },
   {
     id: "processing-render",

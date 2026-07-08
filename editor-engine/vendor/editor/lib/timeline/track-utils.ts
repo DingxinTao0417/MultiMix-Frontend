@@ -33,7 +33,31 @@ export function getElementClasses({ type }: { type: TrackType }) {
 	return ELEMENT_TYPE_CONFIG[type].background.trim();
 }
 
-export function getTrackHeight({ type }: { type: TrackType }): number {
+type TrackHeightTarget = {
+	type: TrackType;
+	id?: string;
+	name?: string;
+	isMain?: boolean;
+};
+
+export function isMgOverlayTrack(track: TrackHeightTarget): boolean {
+	return (
+		track.type === "video" &&
+		track.isMain !== true &&
+		(track.id === "track-overlay" || /mg|动效|overlay/i.test(track.name ?? ""))
+	);
+}
+
+export function getTrackHeight({
+	type,
+	track,
+}: {
+	type: TrackType;
+	track?: TrackHeightTarget;
+}): number {
+	if (track && isMgOverlayTrack(track)) {
+		return Math.round(TRACK_CONFIG.video.height / 2);
+	}
 	return TRACK_CONFIG[type].height;
 }
 
@@ -41,13 +65,14 @@ export function getCumulativeHeightBefore({
 	tracks,
 	trackIndex,
 }: {
-	tracks: Array<{ type: TrackType }>;
+	tracks: TrackHeightTarget[];
 	trackIndex: number;
 }): number {
 	return tracks
 		.slice(0, trackIndex)
 		.reduce(
-			(sum, track) => sum + getTrackHeight({ type: track.type }) + TRACK_GAP,
+			(sum, track) =>
+				sum + getTrackHeight({ type: track.type, track }) + TRACK_GAP,
 			0,
 		);
 }
@@ -55,10 +80,10 @@ export function getCumulativeHeightBefore({
 export function getTotalTracksHeight({
 	tracks,
 }: {
-	tracks: Array<{ type: TrackType }>;
+	tracks: TrackHeightTarget[];
 }): number {
 	const tracksHeight = tracks.reduce(
-		(sum, track) => sum + getTrackHeight({ type: track.type }),
+		(sum, track) => sum + getTrackHeight({ type: track.type, track }),
 		0,
 	);
 	const gapsHeight = Math.max(0, tracks.length - 1) * TRACK_GAP;

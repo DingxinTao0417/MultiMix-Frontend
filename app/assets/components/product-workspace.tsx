@@ -1,10 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { VIDEO_JOB_STEPS, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
+import { useEffect, useRef, useState } from "react";
+import { VIDEO_JOB_STEPS, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { UI_V3_AGENT_TIMELINE, UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
+import AgentRunTimeline from "./agent-run-timeline";
 import ProductPreview from "./product-preview";
+
+type EditorBridgeMessage = {
+  source?: string;
+  assetId?: string | number | null;
+  type?: string;
+  progress?: number;
+  message?: string;
+};
 
 export function EmptyProductWorkspace() {
   return (
@@ -54,6 +64,10 @@ export default function ProductWorkspace({
 }) {
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
+  const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
@@ -78,19 +92,111 @@ export default function ProductWorkspace({
   const failureDetail = videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
+  const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
     getProductRatioClass(product.ratio)
   ].filter(Boolean).join(" ");
 
+  useEffect(() => {
+    setEditorReady(false);
+    setExportState("idle");
+    setExportProgress(null);
+  }, [currentAssetId, hasVideoProject]);
+
+  useEffect(() => {
+    if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as EditorBridgeMessage;
+      if (!data || typeof data !== "object" || data.source !== "multimix-editor") return;
+      if (String(data.assetId ?? "") !== currentAssetId) return;
+      switch (data.type) {
+        case "multimix-editor-ready":
+          setEditorReady(true);
+          setExportState((previous) => previous === "exporting" ? previous : "idle");
+          setExportProgress(null);
+          break;
+        case "multimix-editor-error":
+          setEditorReady(false);
+          setExportState("error");
+          setExportProgress(null);
+          break;
+        case "multimix-editor-export-start":
+          setEditorReady(true);
+          setExportState("exporting");
+          setExportProgress(null);
+          break;
+        case "multimix-editor-export-progress":
+          setExportState("exporting");
+          setExportProgress(typeof data.progress === "number" ? data.progress : null);
+          break;
+        case "multimix-editor-export-success":
+          setExportState("done");
+          setExportProgress(100);
+          break;
+        case "multimix-editor-export-error":
+          setExportState("error");
+          setExportProgress(null);
+          break;
+        default:
+          break;
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [currentAssetId, hasVideoProject]);
+
+  const handleExportVideo = () => {
+    if (!currentAssetId || !editorReady || exportState === "exporting") return;
+    const frameWindow = editorFrameRef.current?.contentWindow;
+    if (!frameWindow) return;
+    setExportState("exporting");
+    setExportProgress(null);
+    frameWindow.postMessage(
+      {
+        source: "multimix-workspace",
+        type: "multimix-editor-export",
+      },
+      window.location.origin
+    );
+  };
+
+  const exportButtonLabel = !editorReady
+    ? "剪辑器加载中…"
+    : exportState === "exporting"
+      ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
+      : exportState === "done"
+        ? "再次导出"
+        : exportState === "error"
+          ? "导出失败，重试"
+          : "导出视频";
+
+  // Aurora + "生成中" badge only during the real generating state (spec §5.3 /
+  // §12): while orchestration runs. Gated by flag; no fake progress.
+  const showGeneratingVisuals = UI_V3_GENERATING_VISUALS && orchestrationPending;
+  const artifactClassName = [
+    "shadcn-prototype-card",
+    "shadcn-prototype-artifact",
+    showGeneratingVisuals ? "generating" : ""
+  ].filter(Boolean).join(" ");
+
   return (
-    <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Current product workspace">
+    <section className={artifactClassName} aria-label="Current product workspace">
       <div className={hasVideoProject ? "shadcn-prototype-product video-project-mode" : "shadcn-prototype-product"}>
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3>{product.title}</h3>
-            <p>{modeLabel} · {product.status} · {product.ratio} / {product.duration}</p>
+            <h3>
+              {product.title}
+              {showGeneratingVisuals ? (
+                <span className="shadcn-prototype-artifact-generating-badge">
+                  <span aria-hidden="true" />
+                  生成中
+                </span>
+              ) : null}
+            </h3>
+            <p>{product.phase} · {product.status} · {product.ratio} / {product.duration}</p>
           </div>
           <div className="shadcn-prototype-product-actions">
             <details className="shadcn-prototype-product-detail-popover">
@@ -180,14 +286,14 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {hasVideoProject ? (
-              <a
+              <button
+                type="button"
                 className="shadcn-prototype-open-editor"
-                href={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}`}
-                target="_blank"
-                rel="noopener noreferrer"
+                disabled={!editorReady || exportState === "exporting"}
+                onClick={handleExportVideo}
               >
-                新窗口打开剪辑器
-              </a>
+                {exportButtonLabel}
+              </button>
             ) : null}
             {orchestrationPending ? (
               <span className="shadcn-prototype-product-pending" aria-live="polite">
@@ -203,6 +309,7 @@ export default function ProductWorkspace({
         {hasVideoProject ? (
           <div className="shadcn-prototype-product-main" style={{ padding: 0, overflow: "hidden" }}>
             <iframe
+              ref={editorFrameRef}
               key={`editor-${product.backendAssetId}`}
               src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1`}
               style={{ width: "100%", height: "100%", border: "none", display: "block" }}
@@ -214,17 +321,21 @@ export default function ProductWorkspace({
           <div className="shadcn-prototype-product-main">
             <div className="shadcn-prototype-video-progress" role="status" aria-live="polite">
               <strong>视频工程生成中</strong>
-              <ol className="shadcn-prototype-video-progress-steps">
-                {VIDEO_JOB_STEPS.map((step, index) => (
-                  <li
-                    key={step}
-                    className={index < liveStepIndex ? "done" : index === liveStepIndex ? "active" : ""}
-                  >
-                    <i aria-hidden="true" />
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
+              {UI_V3_AGENT_TIMELINE ? (
+                <AgentRunTimeline steps={videoJobTimelineSteps(liveStage, videoJobLive?.status ?? "running")} />
+              ) : (
+                <ol className="shadcn-prototype-video-progress-steps">
+                  {VIDEO_JOB_STEPS.map((step, index) => (
+                    <li
+                      key={step}
+                      className={index < liveStepIndex ? "done" : index === liveStepIndex ? "active" : ""}
+                    >
+                      <i aria-hidden="true" />
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
               <p>{liveStageLabel}。可以切换到其他对话，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>

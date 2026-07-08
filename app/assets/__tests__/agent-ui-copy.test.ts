@@ -30,7 +30,9 @@ describe("agent conversation UI copy", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-summary");
-    expect(productPreview).toContain("视频文案草稿");
+    expect(productPreview).toContain("编导稿摘要");
+    expect(productPreview).toContain("编导稿草稿");
+    expect(productPreview).toContain("当前是可编辑编导稿");
     expect(productPreview).not.toContain("<span>视频方案</span>");
     expect(productPreview).toContain("查看分镜详情");
     expect(productPreview).toContain("自动补素材");
@@ -41,6 +43,9 @@ describe("agent conversation UI copy", () => {
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-gap");
     expect(productPreview).toContain("字幕/标题卡占位");
+    expect(productPreview).toContain("个分镜自动加 MG");
+    expect(productPreview).toContain("MG 风格：");
+    expect(productPreview).toContain("MG：");
     expect(productPreview).not.toContain("素材覆盖度面板");
     expect(productPreview).not.toContain("MG 参数");
   });
@@ -75,5 +80,68 @@ describe("agent conversation UI copy", () => {
     expect(libraryWorkshop).toContain("with-video-media");
     expect(globals).toContain("grid-template-columns: 96px minmax(0, 1fr)");
     expect(globals).toContain(".shadcn-prototype-library-media-thumb.video");
+  });
+
+  it("supports chat source attachments inside the composer", () => {
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+    const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(conversationStudio).toContain("shadcn-prototype-chat-image-attachment-button");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
+    expect(conversationStudio).toContain("IMAGE_UPLOAD_ACCEPT");
+    expect(conversationStudio).toContain("SOURCE_UPLOAD_ACCEPT");
+    expect(conversationStart).toContain("shadcn-prototype-chat-image-attachment-button");
+    expect(conversationStart).toContain("shadcn-prototype-chat-file-attachment-button");
+    expect(conversationStart).toContain("IMAGE_UPLOAD_ACCEPT");
+    expect(conversationStart).toContain("SOURCE_UPLOAD_ACCEPT");
+    expect(conversationStudio).toContain(".pptx");
+    expect(conversationStudio).toContain("DOC_ONLY_INSTRUCTION");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
+    expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
+    expect(conversationStudio).toContain("只上传资料时，我会先询问要基于它做什么");
+    expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
+    expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
+    expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
+    expect(globals).toContain(".shadcn-prototype-chat-drop-hint");
+    expect(globals).toContain(".shadcn-prototype-chat-file-attachment-button");
+  });
+
+  it("keeps the start composer compact until attachments are present", () => {
+    const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(conversationStart).toContain("shadcn-prototype-start-composer-control");
+    expect(globals).toContain(".shadcn-prototype-start-composer-control");
+    expect(globals).toContain(".shadcn-prototype-start-composer-control:not(.has-attachments)");
+    expect(globals).toContain("min-height: 52px");
+  });
+
+  it("uses uploaded documents as direct conversation source assets", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
+
+    expect(workspaceClient).toContain("createMaterialPackage");
+    expect(workspaceClient).toContain("materialPackageAsset");
+    expect(workspaceClient).toContain("sourceAttachmentAssets");
+    expect(workspaceClient).toContain("upload.fileKind === \"source\"");
+    expect(workspaceClient).toContain("上传图片不能超过 20 张");
+    expect(adapter).toContain("/assets/material-packages");
+  });
+
+  it("offers download and delete actions for every library detail view", () => {
+    const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+    const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
+
+    expect(adapter).toContain("downloadAsset(token: string, assetId: number): Promise<Blob>");
+    expect(adapter).toContain("deleteAsset(token: string, assetId: number): Promise<void>");
+    expect(adapter).toContain("/download");
+    expect(adapter).toContain('method: "DELETE"');
+    expect(libraryWorkshop).toContain("handleDownload");
+    expect(libraryWorkshop).toContain("handleDelete");
+    expect(libraryWorkshop).toContain("确认删除");
+    expect((libraryWorkshop.match(/<Download size=\{14\} aria-hidden=\"true\" \/>下载/g) ?? []).length).toBeGreaterThanOrEqual(4);
+    expect((libraryWorkshop.match(/删除/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });
 });

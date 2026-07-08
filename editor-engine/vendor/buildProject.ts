@@ -48,6 +48,7 @@ export interface BackendProject {
 }
 
 const IDENTITY_TRANSFORM = { scaleX: 1, scaleY: 1, position: { x: 0, y: 0 }, rotate: 0 };
+type SegmentWindow = { startTime: number; duration: number };
 
 // Subtitle style — adjustable from the style panel; buildProject reads the
 // current value each time it rebuilds the project.
@@ -125,15 +126,60 @@ export function buildMediaAssets(bp: BackendProject): MediaAsset[] {
   }));
 }
 
+function buildSegmentWindows(tracks: BackendTrack[]): Record<string, SegmentWindow> {
+  const windows: Record<string, SegmentWindow> = {};
+
+  for (const track of tracks) {
+    if (track.overlay) continue;
+
+    for (const element of track.elements) {
+      if (!element.segmentId) continue;
+      const existing = windows[element.segmentId];
+      const startTime = existing
+        ? Math.min(existing.startTime, element.startTime)
+        : element.startTime;
+      const endTime = existing
+        ? Math.max(existing.startTime + existing.duration, element.startTime + element.duration)
+        : element.startTime + element.duration;
+      windows[element.segmentId] = {
+        startTime,
+        duration: Math.max(0, endTime - startTime),
+      };
+    }
+  }
+
+  return windows;
+}
+
+function alignOverlayElementToSegment(
+  element: BackendElement,
+  segmentWindows: Record<string, SegmentWindow>,
+): BackendElement {
+  if (!element.segmentId) return element;
+  const segmentWindow = segmentWindows[element.segmentId];
+  if (!segmentWindow) return element;
+
+  return {
+    ...element,
+    startTime: segmentWindow.startTime,
+    duration: segmentWindow.duration,
+  };
+}
+
 function buildTracks(bp: BackendProject): TimelineTrack[] {
   const tracks: TimelineTrack[] = [];
+  const segmentWindows = buildSegmentWindows(bp.tracks);
 
   for (const t of bp.tracks) {
-    for (const e of t.elements) {
+    const sourceElements = t.overlay
+      ? t.elements.map((element) => alignOverlayElementToSegment(element, segmentWindows))
+      : t.elements;
+
+    for (const e of sourceElements) {
       if (e.segmentId) segmentIdByElementId[e.id] = e.segmentId;
     }
     if (t.type === "video") {
-      const elements = t.elements.map((e): VideoElement | ImageElement => {
+      const elements = sourceElements.map((e): VideoElement | ImageElement => {
         if (e.segmentText) segmentTextByElementId[e.id] = e.segmentText;
         const base = {
           id: e.id,
@@ -157,7 +203,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         elements, isMain: !t.overlay, muted: false, hidden: false,
       });
     } else if (t.type === "audio") {
-      const elements = t.elements.map((e): AudioElement => ({
+      const elements = sourceElements.map((e): AudioElement => ({
         id: e.id,
         name: e.name || "audio",
         type: "audio",
@@ -178,7 +224,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       const maxLineChars = style.maxLineChars;
       const targetPx = (bp.settings.width * 0.9) / maxLineChars;
       const fontSize = Math.max(2, (targetPx * 90) / bp.settings.height) * style.sizeScale;
-      const elements = t.elements.map((e): TextElement => ({
+      const elements = sourceElements.map((e): TextElement => ({
         id: e.id,
         name: e.name || "text",
         type: "text",

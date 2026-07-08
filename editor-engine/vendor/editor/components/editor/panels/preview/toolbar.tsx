@@ -1,10 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useEditor } from "@editor/hooks/use-editor";
-import { formatTimeCode } from "@editor/lib/time";
-import { invokeAction } from "@editor/lib/actions";
-import { EditableTimecode } from "@editor/components/editable-timecode";
 import { Button } from "@editor/components/ui/button";
 import {
 	FullScreenIcon,
@@ -14,7 +10,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getGuideById } from "@editor/lib/guides";
-import { Separator } from "@editor/components/ui/separator";
 import {
 	Select,
 	SelectTrigger,
@@ -29,6 +24,29 @@ import { usePreviewStore } from "@editor/stores/preview-store";
 
 export function PreviewToolbar({
 	onToggleFullscreen,
+	showPlaybackButton,
+}: {
+	onToggleFullscreen: () => void;
+	showPlaybackButton: boolean;
+}) {
+	return (
+		<>
+			<div
+				className={`preview-play-button pointer-events-auto absolute top-1/2 left-1/2 z-30 -translate-x-1/2 -translate-y-1/2 transition-opacity duration-150 ${
+					showPlaybackButton ? "opacity-100" : "opacity-0"
+				}`}
+			>
+				<PlayPauseButton />
+			</div>
+			<div className="pointer-events-auto absolute bottom-4 right-4 z-30">
+				<PreviewUtilityControls onToggleFullscreen={onToggleFullscreen} />
+			</div>
+		</>
+	);
+}
+
+function PreviewUtilityControls({
+	onToggleFullscreen,
 }: {
 	onToggleFullscreen: () => void;
 }) {
@@ -36,69 +54,29 @@ export function PreviewToolbar({
 	const activeGuideDefinition = getGuideById(activeGuide);
 
 	return (
-		<div className="grid grid-cols-[1fr_auto_1fr] items-center pb-3 pt-5 px-5">
-			<TimecodeDisplay />
-			<PlayPauseButton />
-			<div className="justify-self-end flex items-center gap-2.5">
-				<ZoomSelect />
-				<Separator orientation="vertical" className="h-4" />
-				<GridPopover>
-					<Button
-						variant={activeGuideDefinition ? "secondary" : "text"}
-						size="icon"
-					>
-						{activeGuideDefinition ? (
-							activeGuideDefinition.renderTriggerIcon()
-						) : (
-							<HugeiconsIcon icon={GridTableIcon} />
-						)}
-					</Button>
-				</GridPopover>
-				<Button variant="text" onClick={onToggleFullscreen}>
-					<HugeiconsIcon icon={FullScreenIcon} />
+		<div className="pointer-events-auto flex min-w-0 items-center gap-1.5">
+			<ZoomSelect />
+			<GridPopover>
+				<Button
+					variant={activeGuideDefinition ? "secondary" : "text"}
+					size="icon"
+					className="size-7 rounded-full bg-transparent text-[#1f2b24] hover:bg-white/80"
+				>
+					{activeGuideDefinition ? (
+						activeGuideDefinition.renderTriggerIcon()
+					) : (
+						<HugeiconsIcon icon={GridTableIcon} />
+					)}
 				</Button>
-			</div>
-		</div>
-	);
-}
-
-function TimecodeDisplay() {
-	const editor = useEditor();
-	const totalDuration = useEditor((e) => e.timeline.getTotalDuration());
-	const fps = useEditor((e) => e.project.getActive().settings.fps);
-	const [currentTime, setCurrentTime] = useState(() =>
-		editor.playback.getCurrentTime(),
-	);
-
-	useEffect(() => {
-		const handler = (e: Event) =>
-			setCurrentTime((e as CustomEvent<{ time: number }>).detail.time);
-		window.addEventListener("playback-update", handler);
-		window.addEventListener("playback-seek", handler);
-		return () => {
-			window.removeEventListener("playback-update", handler);
-			window.removeEventListener("playback-seek", handler);
-		};
-	}, []);
-
-	return (
-		<div className="flex items-center">
-			<EditableTimecode
-				time={currentTime}
-				duration={totalDuration}
-				format="HH:MM:SS:FF"
-				fps={fps}
-				onTimeChange={({ time }) => editor.playback.seek({ time })}
-				className="text-center"
-			/>
-			<span className="text-muted-foreground px-2 font-mono text-xs">/</span>
-			<span className="text-muted-foreground font-mono text-xs">
-				{formatTimeCode({
-					timeInSeconds: totalDuration,
-					format: "HH:MM:SS:FF",
-					fps,
-				})}
-			</span>
+			</GridPopover>
+			<Button
+				variant="text"
+				size="icon"
+				onClick={onToggleFullscreen}
+				className="size-7 rounded-full bg-transparent text-[#1f2b24] hover:bg-white/80"
+			>
+				<HugeiconsIcon icon={FullScreenIcon} />
+			</Button>
 		</div>
 	);
 }
@@ -122,7 +100,12 @@ function ZoomSelect() {
 			value={isAtFit ? "fit" : String(zoomPercent)}
 			onValueChange={onValueChange}
 		>
-			<SelectTrigger className="tabular-nums">{displayLabel}</SelectTrigger>
+			<SelectTrigger
+				variant="outline"
+				className="h-7 rounded-full border-transparent bg-transparent px-2.5 text-[11px] font-medium text-[#1f2b24] tabular-nums shadow-none hover:bg-white/80"
+			>
+				{displayLabel}
+			</SelectTrigger>
 			<SelectContent>
 				<SelectItem value="fit">Fit</SelectItem>
 				<SelectSeparator />
@@ -137,13 +120,16 @@ function ZoomSelect() {
 }
 
 function PlayPauseButton() {
+	const editor = useEditor();
 	const isPlaying = useEditor((e) => e.playback.getIsPlaying());
 
 	return (
 		<Button
-			variant="text"
+			variant="outline"
 			size="icon"
-			onClick={() => invokeAction("toggle-play")}
+			aria-label={isPlaying ? "暂停预览" : "播放预览"}
+			onClick={() => editor.playback.toggle()}
+			className="pointer-events-auto size-8 rounded-full border-[#d7ded7] bg-white/92 text-[#1f2b24] shadow-[0_10px_24px_rgba(21,32,27,0.12)] backdrop-blur-md hover:bg-[#f5f7f4]"
 		>
 			<HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} />
 		</Button>

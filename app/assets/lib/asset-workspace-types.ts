@@ -99,11 +99,45 @@ export type AssetProduct = {
   metadata?: Record<string, unknown>;
 };
 
+// Structured confirmation plan attached to an assistant message. Rendered as
+// the ConfirmCard two-state card (spec §5.2). Absent → fall back to plain
+// message + suggestion chips (spec §12 降级规则). Only fields actually present
+// are rendered; the UI never fabricates rows.
+export type AssetPlanRef = {
+  id?: string;
+  title: string;
+  thumbnailUrl?: string;
+};
+
+export type AssetPlanField = {
+  key: string;
+  label: string;
+  value: string;
+  refs?: AssetPlanRef[];
+};
+
+export type AssetMessagePlan = {
+  title: string;
+  // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
+  // shows the compact summary rows with a green check badge.
+  status: "pending" | "confirmed";
+  subtitle?: string;
+  fields: AssetPlanField[];
+  // Compact summary rows shown once confirmed; falls back to fields when absent.
+  summaryFields?: AssetPlanField[];
+  confirmLabel?: string;
+  adjustLabel?: string;
+  // Instruction submitted when the confirm button is pressed.
+  confirmUtterance?: string;
+};
+
 export type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
   suggestions?: string[];
   suggestionActions?: AssetSuggestionAction[];
+  // Structured confirmation card payload (spec §5.2); undefined → suggestion chips.
+  plan?: AssetMessagePlan;
   // Backend-backed message fields (optional for mock data).
   assetId?: number | null;
   pending?: boolean;

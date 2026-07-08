@@ -21,6 +21,24 @@ export function getTimelineZoomMin({
 	return Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, zoomToFit);
 }
 
+export function getTimelineFitZoom({
+	duration,
+	containerWidth,
+}: {
+	duration: number;
+	containerWidth: number | null | undefined;
+}): number {
+	const safeDuration = Math.max(duration, 1);
+	const safeContainerWidth = containerWidth ?? 1000;
+	const zoomToFit =
+		safeContainerWidth / (safeDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
+
+	return Math.max(
+		TIMELINE_CONSTANTS.ZOOM_MIN,
+		Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, zoomToFit),
+	);
+}
+
 export function getTimelinePaddingPx({
 	containerWidth,
 	zoomLevel,

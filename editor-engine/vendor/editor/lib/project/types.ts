@@ -37,6 +37,7 @@ export interface TTimelineViewState {
 	zoomLevel: number;
 	scrollLeft: number;
 	playheadTime: number;
+	userAdjustedZoom?: boolean;
 }
 
 export interface TProject {

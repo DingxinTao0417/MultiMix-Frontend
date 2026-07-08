@@ -17,7 +17,7 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 前端保留 adapter 层 + mock：未配 `NEXT_PUBLIC_API_BASE_URL` 时离线跑 mock，配了则走后端。不应为后端实现重写工作台 UI。
 
-完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉或检索相关能力前，必须先对照设计文档，不要重新发明分类体系。
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/MULTIMIX_ASSET_UNDERSTANDING_AND_SEGMENT_REFERENCING.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
 ## 技术栈
 
@@ -62,7 +62,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 
 后端模块（feature flag 控制，开关表见后端 `README.md`，路径均为后端仓库内路径）：
 
-- 资产/知识库 + 对话编排：`app/api/assets.py` + `services/asset_conversation.py`、`services/conversation_orchestrator.py`；Agent 确认框架（`agent_intent_interpreter.py`、`agent_policy_engine.py`、`confirmation_composer.py` 等），关闭 `CHANGEIN_MULTIMIX_AGENT_CONVERSATION_ENABLED` 可回退旧的直接生成链路
+- 资产/知识库 + Agent 对话编排：`app/api/assets.py` + `services/asset_conversation.py`、`services/conversation_orchestrator.py`；Agent 运行时必须以后端 `docs/MULTIMIX_AGENT_ARCHITECTURE.md` 为准：LLM 只做结构化理解和规划，后端负责能力校验、工具执行、持久化、来源约束和确认门；启用 Agent 时，新 Agent 是产品对话唯一编排层，旧 `_should_*`/直接生成逻辑只能作为已验证动作的执行器或显式关闭 Agent 后的回滚路径，不能在 Agent 未处理时继续作为第二套意图判断入口
 - 知识检索：`services/knowledge_retrieval.py`、`saved_context_retriever.py`（把已保存资产和网页知识块喂给生成，不自动全网搜索）
 - 视频编排：`app/api/video_orchestration.py` + `services/video_studio/`（topic→脚本→素材→TTS→timeline JSON；RQ worker 异步，或 `CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true` 同步）
 - MG 动效：后端 `remotion/`（Remotion 工程，渲染带 alpha 的 WebM overlay）+ `services/remotion_modal/`（Modal 远程渲染），spec 由 `services/mg_scene_spec.py` 校验，详见后端 `remotion/README.md`
@@ -209,6 +209,7 @@ scripts/
 - 本地 SQLite 走 Node 实验性 `node:sqlite` API（`scripts/db-init.ts`），Node < 22 会直接失败。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
 - 后端根目录的 `changein.sqlite3` 是本地开发数据库，不入库、不删除。
+- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`CHANGEIN_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
 - `video-project-workspace.tsx`（约 650 行）当前是零引用的孤立组件：功能被 `product-workspace.tsx` 的 iframe 内嵌方案替代，保留待产品决策，不要在未接线的情况下当作现役代码维护。
 
 ## 文件写入

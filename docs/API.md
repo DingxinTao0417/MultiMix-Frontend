@@ -130,11 +130,11 @@ export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
 ### 3.1 枚举 / 联合类型
 
 ```ts
-type AssetWorkspaceView = "conversation" | "assets" | "copy" | "video";
+type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 type AssetProductMode  = "copy" | "image" | "video" | "audio" | "digital-human";
 ```
 
-- `AssetWorkspaceView`：主区域视图。`conversation` = 对话创作模式；其余三个 = 库模式（资产库 / 文案库 / 视频库）。
+- `AssetWorkspaceView`：主区域视图。`conversation` = 对话创作模式；其余四个 = 库模式（资产库 / 文案库 / 图片库 / 视频库）。
 - `AssetProductMode`：产物类型。决定 `ProductPreview` 的渲染分支。`digital-human` 是视频的一种表现形式，不是一级产物类型。
 
 ### 3.2 `AssetProduct`（产物，核心实体）
@@ -454,6 +454,22 @@ type AssetsWorkspaceClientProps = {
 - `onSelectProduct(conversationId, productId)`：记忆该对话选中产物。
 - `onCopyProduct(product)`：经 `getProductText` 取文本，写剪贴板（`navigator.clipboard`，失败回退 `execCommand`）。
 - `onSaveProduct(product)`：调 `adapter.saveProduct`，用返回 version 更新状态。
+
+### 6.2.1 资源库条目管理接口
+
+`LibraryWorkshop` 中的资产库、文案库、图片库和视频库共用同一套 adapter 动作：
+
+```ts
+downloadAsset(token: string, assetId: number): Promise<Blob>
+deleteAsset(token: string, assetId: number): Promise<void>
+```
+
+后端接口契约：
+
+- `GET /v1/assets/{asset_id}/download`：优先返回 `AssetFile.original` 原文件；不存在原文件时返回 Markdown 导出。响应使用 `Content-Disposition: attachment`。
+- `DELETE /v1/assets/{asset_id}`：软删除/归档资产，返回 `204`。归档后资产不应出现在 `/v1/assets`、`/v1/assets/search` 和 `/v1/assets/semantic-search` 的默认结果里。
+- 删除不是物理删除文件；这是为了保留历史对话、来源引用和已有产物链路的可追溯性。
+- 前端删除成功后关闭详情抽屉并刷新当前库；真实后端返回空列表时保持空态，不回退到 mock 行。
 
 ### 6.3 `ConversationStudio`（`conversation-studio.tsx`，默认导出）
 

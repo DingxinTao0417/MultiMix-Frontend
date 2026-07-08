@@ -77,8 +77,38 @@ function sceneMgDecisionSummary(scene: Record<string, unknown>): string {
   return `MG：${label} · ${statusLabel}`;
 }
 
+// A product is in a failed generation state when its status carries the failure
+// marker (mapper sets "生成失败 · 可重试" / mock uses "失败"). Real signal only.
+function isFailedProduct(product: ProductArtifact): boolean {
+  return /失败/.test(product.status) || product.phase === "失败";
+}
+
+function failureDetail(product: ProductArtifact): string {
+  const metaError = isRecord(product.metadata) ? stringValue(product.metadata.error_message) : "";
+  if (metaError) return metaError;
+  const reasonSection = product.sections.find((section) => /失败|原因/.test(section.label));
+  if (reasonSection) return `${reasonSection.title}。${reasonSection.detail}`.trim();
+  return product.summary;
+}
+
+// Failure card reused across copy/image products (spec §12 文案失败态卡, style
+// shared with the video failed card). Adjusting in the conversation is the
+// recovery path; no fabricated retry when the product has no job to retry.
+function ProductFailureCard({ product }: { product: ProductArtifact }) {
+  return (
+    <div className="shadcn-prototype-video-failed" role="alert">
+      <strong>生成失败</strong>
+      <p>{failureDetail(product)}</p>
+      <div className="shadcn-prototype-video-failed-actions">
+        <span>你的素材、已确认的设定都已保留，可在对话中调整方向后重新生成。</span>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
   if (product.mode === "copy") {
+    if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
       <>
@@ -93,26 +123,32 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   }
 
   if (product.mode === "image") {
-    const frames = product.preview?.frames ?? [
-      { title: "主封面", subtitle: "白色商务" },
-      { title: "信息图", subtitle: "数据标签" },
-      { title: "客户场景", subtitle: "咨询画面" }
-    ];
+    if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
+    // Hero image card + caption + source block (spec §5.6 / demo workspace-copy
+    // 图片产物形态). Variant thumbnails come from preview.frames when present.
+    const heroUrl = isRecord(product.metadata) ? stringValue(product.metadata.preview_url) || stringValue(product.metadata.thumbnail_url) : "";
+    const caption = product.preview?.subtitle ?? product.summary;
+    const variants = (product.preview?.frames ?? []).slice(1);
     return (
-      <div className="shadcn-prototype-image-preview" aria-label="图片产物预览">
-        <div className="shadcn-prototype-image-main">
-          <span>4:5</span>
+      <div className="shadcn-prototype-image-card" aria-label="图片产物预览">
+        <div className="shadcn-prototype-image-card-hero">
+          {/^https?:\/\//i.test(heroUrl) ? <img src={heroUrl} alt={product.preview?.title ?? product.title} loading="lazy" /> : <span>{product.ratio}</span>}
+        </div>
+        <div className="shadcn-prototype-image-card-caption">
           <strong>{product.preview?.title ?? product.title}</strong>
-          <em>{product.preview?.subtitle ?? product.summary}</em>
+          <em>{caption}</em>
         </div>
-        <div className="shadcn-prototype-image-variants">
-          {frames.map((frame) => (
-            <article key={`${frame.title}-${frame.subtitle}`} className={frame.tone ?? ""}>
-              <span />
-              <strong>{frame.title}</strong>
-            </article>
-          ))}
-        </div>
+        {variants.length ? (
+          <div className="shadcn-prototype-image-card-variants" aria-label="其他方向">
+            {variants.map((frame) => (
+              <article key={`${frame.title}-${frame.subtitle}`} className={frame.tone ?? ""}>
+                <span />
+                <strong>{frame.title}</strong>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </div>
     );
   }

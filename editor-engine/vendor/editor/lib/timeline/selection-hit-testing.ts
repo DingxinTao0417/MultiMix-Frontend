@@ -101,7 +101,7 @@ export function resolveTimelineElementIntersections({
 			tracks,
 			trackIndex,
 		});
-		const trackHeight = getTrackHeight({ type: track.type });
+		const trackHeight = getTrackHeight({ type: track.type, track });
 		const elementTop = TIMELINE_CONSTANTS.PADDING_TOP_PX + trackTop;
 		const elementBottom = elementTop + trackHeight;
 

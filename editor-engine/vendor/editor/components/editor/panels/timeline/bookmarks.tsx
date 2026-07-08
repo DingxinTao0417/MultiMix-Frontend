@@ -80,6 +80,8 @@ export function TimelineBookmarksRow({
 }: TimelineBookmarksRowProps) {
 	const bookmarks = useEditor((e) => e.scenes.getActiveScene().bookmarks);
 
+	if (bookmarks.length === 0) return null;
+
 	return (
 		<div
 			className="relative flex-1 overflow-hidden"

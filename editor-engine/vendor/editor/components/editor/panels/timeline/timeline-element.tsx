@@ -740,7 +740,7 @@ function TiledMediaContent({
 		);
 	}
 
-	const trackHeight = getTrackHeight({ type: track.type });
+	const trackHeight = getTrackHeight({ type: track.type, track });
 	const tileWidth = trackHeight * THUMBNAIL_ASPECT_RATIO;
 
 	return (

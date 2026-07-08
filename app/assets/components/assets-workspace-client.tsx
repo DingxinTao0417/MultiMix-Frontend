@@ -30,7 +30,9 @@ import {
 } from "../lib/asset-workspace-shared";
 import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
-import ConversationStudio from "./conversation-studio";
+import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
+import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
+import { UI_V3_BG_STATUS } from "../lib/ui-flags";
 import type { LibraryActionIntent } from "./library-workshop";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
@@ -72,6 +74,10 @@ type PendingConversationExchange = {
   status: "pending" | "stopped" | "failed";
 };
 
+type ChatImageUpload = ChatImageAttachment & {
+  file: File;
+};
+
 export type VideoJobLiveStatus = {
   jobId: string;
   status: string;
@@ -91,6 +97,26 @@ function pendingVideoJobIds(conversations: Conversation[]): string[] {
     }
   }
   return [...ids];
+}
+
+// Background understanding tasks for the sidebar capsule (spec §5.1): assets
+// uploaded via chat that are still being parsed/understood. Real state only —
+// an empty list hides the capsule entirely.
+function backgroundUnderstandingTasks(uploadsByConversation: Record<string, ChatImageUpload[]>): AiBackgroundTask[] {
+  const tasks = new Map<string, AiBackgroundTask>();
+  for (const uploads of Object.values(uploadsByConversation)) {
+    for (const upload of uploads) {
+      if (upload.status !== "processing") continue;
+      const id = upload.assetId != null ? `asset-${upload.assetId}` : upload.id;
+      if (tasks.has(id)) continue;
+      tasks.set(id, {
+        id,
+        title: upload.title || upload.fileName,
+        note: upload.fileKind === "image" ? "完成后可直接在对话中作为素材引用" : "完成后可直接在对话中引用"
+      });
+    }
+  }
+  return [...tasks.values()];
 }
 
 function getConversationMonogram(title: string): string {
@@ -114,6 +140,10 @@ function uploadAcceptForView(view: ActiveView): string {
   if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
   if (view === "video") return ".mp4,.mov,.webm,.mkv";
   return ".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm,.txt";
+}
+
+function chatUploadFileKind(file: File): ChatImageUpload["fileKind"] {
+  return file.type.startsWith("image/") ? "image" : "source";
 }
 
 function shouldReviseSelectedProduct(instruction: string, product: ProductArtifact | null): boolean {
@@ -156,13 +186,12 @@ export default function AssetsWorkspaceClient({
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [chatPanelWidth, setChatPanelWidth] = useState(426);
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
-  const [renamedConversations, setRenamedConversations] = useState<Record<string, string>>({});
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
-  const [hiddenConversationIds, setHiddenConversationIds] = useState<string[]>([]);
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
+  const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   // Live per-asset video job status (stage + error) fed by the poller so the
   // workspace can show stage-level progress instead of a bare "生成中".
   const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
@@ -175,16 +204,16 @@ export default function AssetsWorkspaceClient({
     error: null
   });
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const visibleConversationRows = useMemo(() => conversations
-    .filter((conversation) => !hiddenConversationIds.includes(conversation.id))
-    .map((conversation) => ({
-      ...conversation,
-      title: renamedConversations[conversation.id] ?? conversation.title
-    })), [conversations, hiddenConversationIds, renamedConversations]);
+  // Conversations render straight from state: delete removes the row and rename
+  // updates its title in place, both persisted to the backend, so there is no
+  // client-only overlay to reconcile on reload.
+  const visibleConversationRows = conversations;
   const selectedConversation =
     visibleConversationRows.find((conversation) => conversation.id === selectedConversationId) ?? assetWorkspaceAdapter.getNewConversation();
   const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
+  const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
+  const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const activeTitle = activeView === "conversation"
@@ -409,21 +438,48 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleRenameConversation = (conversation: Conversation) => {
-    setRenamedConversations((current) => ({
-      ...current,
-      [conversation.id]: `${conversation.title.replace("（已重命名）", "")}（已重命名）`
-    }));
     setConversationMenuId(null);
+    if (conversation.id === "new") return;
+    const nextTitle = window.prompt("重命名对话", conversation.title)?.trim();
+    if (!nextTitle || nextTitle === conversation.title) return;
+    const previousTitle = conversation.title;
+    // Optimistically rename in place; reconcile against the backend below.
+    setConversations((current) => current.map((item) =>
+      item.id === conversation.id ? { ...item, title: nextTitle } : item
+    ));
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    void assetWorkspaceAdapter.renameConversation(token, conversation.id, nextTitle).catch(() => {
+      setConversations((current) => current.map((item) =>
+        item.id === conversation.id ? { ...item, title: previousTitle } : item
+      ));
+      toast.error("重命名失败，请稍后重试。");
+    });
   };
 
   const handleDeleteConversation = (conversationId: string) => {
-    const nextConversation = visibleConversationRows.find((conversation) => conversation.id !== conversationId);
-    setHiddenConversationIds((current) => [...current, conversationId]);
+    setConversationMenuId(null);
+    if (conversationId === "new") return;
+    const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+    if (index === -1) return;
+    const removed = conversations[index];
+    const nextConversation = conversations.find((conversation) => conversation.id !== conversationId);
+    // Optimistically drop the row so the sidebar reacts instantly.
+    setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
     if (selectedConversationId === conversationId) {
       setSelectedConversationId(nextConversation?.id ?? "new");
       setActiveView("conversation");
     }
-    setConversationMenuId(null);
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    void assetWorkspaceAdapter.deleteConversation(token, conversationId).catch(() => {
+      // Restore on failure so we never hide a conversation that still exists.
+      setConversations((current) => {
+        if (current.some((conversation) => conversation.id === removed.id)) return current;
+        const restored = [...current];
+        restored.splice(Math.min(index, restored.length), 0, removed);
+        return restored;
+      });
+      toast.error("删除失败，请稍后重试。");
+    });
   };
 
   const handleCollapseSidebar = () => {
@@ -565,6 +621,111 @@ export default function AssetsWorkspaceClient({
     }
   };
 
+  const handleChatImageUpload = (files: File[]) => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      toast.error("请先登录并配置后端后再上传资料。");
+      return;
+    }
+    const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
+    const currentUploads = chatImageUploads[targetConversationId] ?? [];
+    const imageCount = files.filter((file) => chatUploadFileKind(file) === "image").length;
+    const currentImageCount = currentUploads.filter((upload) => upload.fileKind === "image").length;
+    if (currentImageCount + imageCount > 20) {
+      toast.error("上传图片不能超过 20 张。");
+      return;
+    }
+    if (currentUploads.length + files.length > 24) {
+      toast.error("本次上传资料不能超过 24 个。");
+      return;
+    }
+    const uploads = files.map((file): ChatImageUpload => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      fileName: file.name,
+      fileKind: chatUploadFileKind(file),
+      title: file.name,
+      status: "uploading",
+      previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
+    }));
+    setChatImageUploads((current) => ({
+      ...current,
+      [targetConversationId]: [...(current[targetConversationId] ?? []), ...uploads]
+    }));
+    setSelectedConversationId(targetConversationId);
+    setActiveView("conversation");
+    for (const upload of uploads) {
+      void uploadChatImage(targetConversationId, upload);
+    }
+  };
+
+  const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    try {
+      const asset = await assetWorkspaceAdapter.uploadAsset(token, upload.file, upload.fileKind === "source" ? "assets" : "image");
+      setChatImageUploads((current) => ({
+        ...current,
+        [conversationId]: (current[conversationId] ?? []).map((item) =>
+          item.id === upload.id
+            ? {
+              ...item,
+              assetId: asset.id,
+              title: asset.title || item.fileName,
+              status: asset.status === "ready" ? "ready" : "processing",
+              error: undefined
+            }
+            : item
+        )
+      }));
+      setLibraryRefreshKey((value) => value + 1);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "资料上传失败。";
+      setChatImageUploads((current) => ({
+        ...current,
+        [conversationId]: (current[conversationId] ?? []).map((item) =>
+          item.id === upload.id ? { ...item, status: "failed", error: msg } : item
+        )
+      }));
+    }
+  };
+
+  const handleRemoveChatImage = (attachmentId: string) => {
+    setChatImageUploads((current) => ({
+      ...current,
+      [selectedConversation.id]: (current[selectedConversation.id] ?? []).filter((item) => item.id !== attachmentId)
+    }));
+  };
+
+  const handleRetryChatImage = (attachmentId: string) => {
+    const upload = (chatImageUploads[selectedConversation.id] ?? []).find((item) => item.id === attachmentId);
+    if (!upload) return;
+    setChatImageUploads((current) => ({
+      ...current,
+      [selectedConversation.id]: (current[selectedConversation.id] ?? []).map((item) =>
+        item.id === attachmentId ? { ...item, status: "uploading", error: undefined } : item
+      )
+    }));
+    void uploadChatImage(selectedConversation.id, upload);
+  };
+
+  const materialPackageAsset = async (conversationId: string): Promise<ConversationContextAsset | null> => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return null;
+    const readyUploads = (chatImageUploads[conversationId] ?? []).filter((item) => item.fileKind === "image" && item.status === "ready" && item.assetId);
+    if (!readyUploads.length) return null;
+    const titleSeed = readyUploads[0]?.title.replace(/\.[^.]+$/, "") || "本次上传图片";
+    const asset = await assetWorkspaceAdapter.createMaterialPackage(token, {
+      title: `${titleSeed}素材包`,
+      assetIds: readyUploads.map((item) => item.assetId!),
+      metadata: { source: "chat_composer_upload" }
+    });
+    return { id: asset.id, title: asset.title };
+  };
+
+  const sourceAttachmentAssets = (conversationId: string): ConversationContextAsset[] => (
+    (chatImageUploads[conversationId] ?? [])
+      .filter((upload) => upload.fileKind === "source" && upload.status === "ready" && upload.assetId)
+      .map((upload) => ({ id: upload.assetId!, title: upload.title || upload.fileName }))
+  );
+
   const handleSendConversationMessage = async (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets: ConversationContextAsset[] = []) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -573,8 +734,14 @@ export default function AssetsWorkspaceClient({
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
     const selectedBackendAssetId = selectedProduct?.backendAssetId;
-    const contextAssets = linkedAssets.length > 0 ? [] : conversationContextAssets[conversation.id] ?? [];
-    const combinedContextAssets = mergeContextAssets(contextAssets, linkedAssets);
+    let assetsForSend = linkedAssets;
+    if (assetsForSend.length === 0) {
+      const sourceAssets = sourceAttachmentAssets(conversation.id);
+      const packageAsset = await materialPackageAsset(conversation.id);
+      assetsForSend = packageAsset ? [...sourceAssets, packageAsset] : sourceAssets;
+    }
+    const contextAssets = assetsForSend.length > 0 ? [] : conversationContextAssets[conversation.id] ?? [];
+    const combinedContextAssets = mergeContextAssets(contextAssets, assetsForSend);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
     const optimisticConversationId = conversation.id === "new"
       ? `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -714,6 +881,14 @@ export default function AssetsWorkspaceClient({
         const next = { ...current };
         next[targetConversationId] = mergeContextAssets(next[targetConversationId] ?? [], combinedContextAssets);
         if (conversation.id === "new") delete next[conversation.id];
+        if (optimisticConversationId) delete next[optimisticConversationId];
+        return next;
+      });
+    }
+    if (combinedLinkedAssetIds.length > 0) {
+      setChatImageUploads((current) => {
+        const next = { ...current };
+        delete next[conversation.id];
         if (optimisticConversationId) delete next[optimisticConversationId];
         return next;
       });
@@ -978,6 +1153,8 @@ export default function AssetsWorkspaceClient({
           </div>
         </div>
 
+        {UI_V3_BG_STATUS ? <AiBackgroundStatus tasks={backgroundTasks} /> : null}
+
         <div className="shadcn-prototype-user">
           <div>
             <strong>{accountEmail}</strong>
@@ -1085,6 +1262,10 @@ export default function AssetsWorkspaceClient({
             <ConversationStart
               suggestions={selectedConversation.suggestions ?? []}
               conversation={selectedConversation}
+              imageAttachments={currentChatImageUploads}
+              onUploadImages={handleChatImageUpload}
+              onRemoveImageAttachment={handleRemoveChatImage}
+              onRetryImageAttachment={handleRetryChatImage}
               onSend={handleSendConversationMessage}
             />
           ) : activeView === "conversation" ? (
@@ -1095,6 +1276,10 @@ export default function AssetsWorkspaceClient({
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
+                imageAttachments={currentChatImageUploads}
+                onUploadImages={handleChatImageUpload}
+                onRemoveImageAttachment={handleRemoveChatImage}
+                onRetryImageAttachment={handleRetryChatImage}
                 pendingExchange={pendingConversationExchanges[selectedConversation.id] ?? null}
                 onPendingExchangeChange={(conversationId, exchange) => {
                   setPendingConversationExchanges((current) => {

@@ -8,23 +8,23 @@ export const TRACK_CONFIG: Record<
 	}
 > = {
 	video: {
-		height: 65,
+		height: 52,
 		defaultName: "Video track",
 	},
 	text: {
-		height: 25,
+		height: 22,
 		defaultName: "Text track",
 	},
 	audio: {
-		height: 50,
+		height: 40,
 		defaultName: "Audio track",
 	},
 	graphic: {
-		height: 25,
+		height: 22,
 		defaultName: "Graphic track",
 	},
 	effect: {
-		height: 25,
+		height: 22,
 		defaultName: "Effect track",
 	},
 } as const;
@@ -56,10 +56,10 @@ export const ELEMENT_TRACK_MAP: Record<ElementType, TrackType> = {
 	image: "video",
 };
 
-export const TRACK_GAP = 6;
-export const TRACK_LABELS_WIDTH_PX = 112;
+export const TRACK_GAP = 4;
+export const TRACK_LABELS_WIDTH_PX = 72;
 
-export const TIMELINE_RULER_HEIGHT = 22;
+export const TIMELINE_RULER_HEIGHT = 18;
 export const TIMELINE_BOOKMARK_ROW_HEIGHT = 16;
 
 export const DEFAULT_BOOKMARK_COLOR = "#009dff";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useDeepCompareEffect from "use-deep-compare-effect";
 import { useEditor } from "@editor/hooks/use-editor";
 import { useRafLoop } from "@editor/hooks/use-raf-loop";
@@ -59,7 +59,7 @@ export function PreviewPanel() {
 	return (
 		<div
 			ref={containerRef}
-			className="panel bg-background relative flex size-full min-h-0 min-w-0 flex-col rounded-sm border"
+			className="relative flex size-full min-h-0 min-w-0 flex-col overflow-hidden bg-transparent"
 		>
 			<PreviewCanvas
 				containerRef={containerRef}
@@ -109,6 +109,7 @@ function PreviewCanvas({
 	const lastFrameRef = useRef(-1);
 	const lastSceneRef = useRef<RootNode | null>(null);
 	const renderingRef = useRef(false);
+	const [isPointerOverCanvas, setIsPointerOverCanvas] = useState(false);
 	const { width: nativeWidth, height: nativeHeight } = usePreviewSize();
 	const viewportSize = useContainerSize({ containerRef: viewportRef });
 	const editor = useEditor();
@@ -157,6 +158,24 @@ function PreviewCanvas({
 	}, [renderer, renderTree, editor.playback]);
 
 	useRafLoop(render);
+
+	const updatePointerCanvasHover = useCallback(
+		(event: React.PointerEvent<HTMLDivElement>) => {
+			const container = viewportRef.current;
+			if (!container) return;
+
+			const rect = container.getBoundingClientRect();
+			const x = event.clientX - rect.left;
+			const y = event.clientY - rect.top;
+			const insideCanvas =
+				x >= viewport.sceneLeft &&
+				x <= viewport.sceneLeft + viewport.sceneWidth &&
+				y >= viewport.sceneTop &&
+				y <= viewport.sceneTop + viewport.sceneHeight;
+			setIsPointerOverCanvas(insideCanvas);
+		},
+		[viewport.sceneHeight, viewport.sceneLeft, viewport.sceneTop, viewport.sceneWidth],
+	);
 
 	useEffect(() => {
 		const container = viewportRef.current;
@@ -245,19 +264,21 @@ function PreviewCanvas({
 
 	return (
 		<PreviewViewportProvider value={viewport}>
-			<div className="flex size-full min-h-0 min-w-0 flex-col">
-				<div className="flex min-h-0 min-w-0 flex-1 p-2 pb-0">
+			<div className="flex size-full min-h-0 min-w-0 flex-col p-3">
+				<div className="flex min-h-0 min-w-0 flex-1">
 					<ContextMenu>
 						<ContextMenuTrigger asChild>
 							<div
 								ref={viewportRef}
-								className="relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden"
+								className="relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_top,_#f9faf7,_#eef2ee)]"
+								onPointerMoveCapture={updatePointerCanvasHover}
+								onPointerLeave={() => setIsPointerOverCanvas(false)}
 							>
 								<canvas
 									ref={canvasRef}
 									width={nativeWidth}
 									height={nativeHeight}
-									className="absolute block border"
+									className="preview-video-surface absolute block border"
 									style={{
 										left: viewport.sceneLeft,
 										top: viewport.sceneTop,
@@ -272,6 +293,20 @@ function PreviewCanvas({
 								<GuideOverlay />
 								<PreviewInteractionOverlay />
 								{overlays.bookmarks && <BookmarkNoteOverlay />}
+								<div
+									className="preview-canvas-controls pointer-events-none absolute"
+									style={{
+										left: viewport.sceneLeft,
+										top: viewport.sceneTop,
+										width: viewport.sceneWidth,
+										height: viewport.sceneHeight,
+									}}
+								>
+									<PreviewToolbar
+										onToggleFullscreen={onToggleFullscreen}
+										showPlaybackButton={isPointerOverCanvas}
+									/>
+								</div>
 							</div>
 						</ContextMenuTrigger>
 						<PreviewContextMenu
@@ -280,7 +315,6 @@ function PreviewCanvas({
 						/>
 					</ContextMenu>
 				</div>
-				<PreviewToolbar onToggleFullscreen={onToggleFullscreen} />
 			</div>
 		</PreviewViewportProvider>
 	);

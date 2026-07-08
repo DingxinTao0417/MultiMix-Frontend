@@ -15,6 +15,7 @@ interface UseTimelineZoomProps {
 	containerRef: RefObject<HTMLDivElement | null>;
 	minZoom?: number;
 	initialZoom?: number;
+	autoFitZoom?: number;
 	initialScrollLeft?: number;
 	initialPlayheadTime?: number;
 	tracksScrollRef: RefObject<HTMLDivElement | null>;
@@ -32,6 +33,7 @@ export function useTimelineZoom({
 	containerRef,
 	minZoom = TIMELINE_CONSTANTS.ZOOM_MIN,
 	initialZoom,
+	autoFitZoom,
 	initialScrollLeft,
 	initialPlayheadTime,
 	tracksScrollRef,
@@ -40,6 +42,7 @@ export function useTimelineZoom({
 	const editor = useEditor();
 	const hasInitializedRef = useRef(false);
 	const hasRestoredPlayheadRef = useRef(false);
+	const hasUserAdjustedZoomRef = useRef(false);
 	const scrollSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
 		null,
 	);
@@ -60,7 +63,7 @@ export function useTimelineZoom({
 	const prePlayheadAnchorScrollLeftRef = useRef(0);
 	const isInPlayheadAnchorModeRef = useRef(false);
 
-	const setZoomLevel = useCallback(
+	const setZoomLevelInternal = useCallback(
 		(updater: number | ((prev: number) => number)) => {
 			const scrollElement = tracksScrollRef.current;
 			if (scrollElement) {
@@ -70,6 +73,10 @@ export function useTimelineZoom({
 		},
 		[tracksScrollRef],
 	);
+
+	const markUserAdjusted = useCallback(() => {
+		hasUserAdjustedZoomRef.current = true;
+	}, []);
 
 	const handleWheel = useCallback(
 		(event: ReactWheelEvent) => {
@@ -83,12 +90,13 @@ export function useTimelineZoom({
 
 		// pinch-zoom (ctrl/meta + wheel)
 		if (isZoomGesture) {
+			markUserAdjusted();
 			const normalizedDelta =
 				event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
 			const cappedDelta =
 				Math.sign(normalizedDelta) * Math.min(Math.abs(normalizedDelta), 30);
 			const zoomFactor = Math.exp(-cappedDelta / 300);
-			setZoomLevel((prev) => {
+			setZoomLevelInternal((prev) => {
 				const nextZoom = Math.max(
 					minZoom,
 					Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, prev * zoomFactor),
@@ -98,28 +106,39 @@ export function useTimelineZoom({
 			return;
 		}
 		},
-		[minZoom, setZoomLevel],
+		[minZoom, setZoomLevelInternal, markUserAdjusted],
 	);
 
 	useEffect(() => {
 		if (initialZoom !== undefined && !hasInitializedRef.current) {
 			hasInitializedRef.current = true;
-			setZoomLevel(
+			setZoomLevelInternal(
 				Math.max(minZoom, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, initialZoom)),
 			);
 			return;
 		}
-		setZoomLevel((prev) => {
+		setZoomLevelInternal((prev) => {
 			if (prev < minZoom) {
 				return minZoom;
 			}
 			return prev;
 		});
-	}, [minZoom, initialZoom, setZoomLevel]);
+	}, [minZoom, initialZoom, setZoomLevelInternal]);
+
+	useEffect(() => {
+		if (initialZoom !== undefined) return;
+		if (autoFitZoom === undefined) return;
+		if (hasUserAdjustedZoomRef.current) return;
+
+		setZoomLevelInternal(
+			Math.max(minZoom, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, autoFitZoom)),
+		);
+	}, [autoFitZoom, initialZoom, minZoom, setZoomLevelInternal]);
 
 	const wrappedSetZoomLevel = useCallback(
 		(zoomLevelOrUpdater: number | ((prev: number) => number)) => {
-			setZoomLevel((prev) => {
+			markUserAdjusted();
+			setZoomLevelInternal((prev) => {
 				const nextZoom =
 					typeof zoomLevelOrUpdater === "function"
 						? zoomLevelOrUpdater(prev)
@@ -131,7 +150,7 @@ export function useTimelineZoom({
 				return clampedZoom;
 			});
 		},
-		[minZoom, setZoomLevel],
+		[minZoom, setZoomLevelInternal, markUserAdjusted],
 	);
 
 	useLayoutEffect(() => {
@@ -200,6 +219,7 @@ export function useTimelineZoom({
 				zoomLevel,
 				scrollLeft: scrollElement.scrollLeft,
 				playheadTime,
+				userAdjustedZoom: hasUserAdjustedZoomRef.current,
 			},
 		});
 	}, [zoomLevel, editor, tracksScrollRef, rulerScrollRef, minZoom]);
@@ -217,6 +237,7 @@ export function useTimelineZoom({
 						zoomLevel,
 						scrollLeft: scrollElement.scrollLeft,
 						playheadTime: editor.playback.getCurrentTime(),
+						userAdjustedZoom: hasUserAdjustedZoomRef.current,
 					},
 				});
 			}
