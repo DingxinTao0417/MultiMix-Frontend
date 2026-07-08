@@ -78,7 +78,7 @@ describe("agent conversation UI copy", () => {
     expect(libraryWorkshop).toContain("row.contentType === \"视频\"");
     expect(libraryWorkshop).toContain("shadcn-prototype-library-media-thumb empty");
     expect(libraryWorkshop).toContain("with-video-media");
-    expect(globals).toContain("grid-template-columns: 96px minmax(0, 1fr)");
+    expect(globals).toContain(".shadcn-prototype-library-grid.view-video");
     expect(globals).toContain(".shadcn-prototype-library-media-thumb.video");
   });
 
@@ -91,8 +91,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
     expect(conversationStudio).toContain("IMAGE_UPLOAD_ACCEPT");
     expect(conversationStudio).toContain("SOURCE_UPLOAD_ACCEPT");
-    expect(conversationStart).toContain("shadcn-prototype-chat-image-attachment-button");
-    expect(conversationStart).toContain("shadcn-prototype-chat-file-attachment-button");
+    expect(conversationStart).toContain("shadcn-prototype-start-dock-attach");
     expect(conversationStart).toContain("IMAGE_UPLOAD_ACCEPT");
     expect(conversationStart).toContain("SOURCE_UPLOAD_ACCEPT");
     expect(conversationStudio).toContain(".pptx");
@@ -108,13 +107,17 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-chat-file-attachment-button");
   });
 
-  it("keeps the start composer compact until attachments are present", () => {
+  it("renders the demo-final start hero and input dock", () => {
     const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
     const globals = readAssetFile("app/globals.css");
 
-    expect(conversationStart).toContain("shadcn-prototype-start-composer-control");
-    expect(globals).toContain(".shadcn-prototype-start-composer-control");
-    expect(globals).toContain(".shadcn-prototype-start-composer-control:not(.has-attachments)");
+    expect(conversationStart).toContain("今天想做什么内容？");
+    expect(conversationStart).toContain("从一句话开始，MultiMix 会带着你的素材一起创作");
+    expect(conversationStart).toContain("shadcn-prototype-start-dock");
+    expect(conversationStart).toContain("支持拖入 PPT / 图片素材 · 只上传资料时，AI 会先问你要做什么");
+    expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
+    expect(globals).toContain(".shadcn-prototype-start-dock");
+    expect(globals).toContain(".shadcn-prototype-start-sugg-grid");
     expect(globals).toContain("min-height: 52px");
   });
 

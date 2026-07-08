@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -11,7 +11,7 @@ import SourceRefBlock from "./source-ref-block";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
-function playableVideoUrl(product: ProductArtifact): string {
+export function playableVideoUrl(product: ProductArtifact): string {
   const metadata = isRecord(product.metadata) ? product.metadata : {};
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : null;
   const mp4Ref = stringValue(videoProject?.mp4_ref);
@@ -91,22 +91,39 @@ function failureDetail(product: ProductArtifact): string {
   return product.summary;
 }
 
-// Failure card reused across copy/image products (spec §12 文案失败态卡, style
-// shared with the video failed card). Adjusting in the conversation is the
-// recovery path; no fabricated retry when the product has no job to retry.
+// Failure card reused across copy/image products (demo fail-card). Recovery
+// runs through the conversation: retry re-submits a real instruction, adjust
+// focuses the composer. No fabricated retry when nothing can be re-run.
 function ProductFailureCard({ product }: { product: ProductArtifact }) {
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
       <strong>生成失败</strong>
       <p>{failureDetail(product)}</p>
+      <p className="shadcn-prototype-video-failed-note">你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。</p>
       <div className="shadcn-prototype-video-failed-actions">
-        <span>你的素材、已确认的设定都已保留，可在对话中调整方向后重新生成。</span>
+        <button
+          type="button"
+          className="primary"
+          onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", { detail: { utterance: "重试生成" } }))}
+        >
+          ↻ 重试生成
+        </button>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
+        >
+          回对话调整
+        </button>
       </div>
     </div>
   );
 }
 
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
+  // Hooks stay unconditional across the mode branches below.
+  const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
@@ -256,6 +273,45 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
     : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
   const exportedVideoUrl = playableVideoUrl(product);
+
+  // Demo-final browse state for a finished video (workspace-video.html 默认态):
+  // 9:16 player + jumpable segment cards + source block. Requires a real
+  // playable file — without one the workspace keeps the edit surface instead.
+  if (hasVideoProject && exportedVideoUrl) {
+    return (
+      <div className="shadcn-prototype-video-browse" aria-label="成片预览">
+        <div className="shadcn-prototype-product-video">
+          <video
+            ref={browsePlayerRef}
+            className="shadcn-prototype-product-video-player"
+            src={exportedVideoUrl}
+            controls
+            preload="metadata"
+            playsInline
+          />
+        </div>
+        {product.segments?.length ? (
+          <SegmentCards
+            segments={product.segments}
+            hint="点击任意分镜可跳转预览"
+            activeId={activeSegmentId}
+            onSelect={(segment) => {
+              if (segment.startSeconds == null) return;
+              setActiveSegmentId(segment.id);
+              const player = browsePlayerRef.current;
+              if (player) {
+                player.currentTime = segment.startSeconds;
+                void player.play().catch(() => {});
+              }
+            }}
+          />
+        ) : null}
+        {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
+        {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
+      </div>
+    );
+  }
+
   return (
     <>
       {exportedVideoUrl ? (

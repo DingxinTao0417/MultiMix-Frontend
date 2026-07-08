@@ -9,14 +9,14 @@ import {
   GripVertical,
   House,
   Image as ImageIcon,
-  MessageSquareText,
+  LogOut,
   MoreHorizontal,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
   Search,
-  Sparkles,
   Trash2,
   Video
 } from "lucide-react";
@@ -185,7 +185,14 @@ export default function AssetsWorkspaceClient({
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
-  const [chatPanelWidth, setChatPanelWidth] = useState(426);
+  const [chatPanelWidth, setChatPanelWidth] = useState(640);
+  // Demo-final default split (workspace-copy.html .app): product pane ≈448px,
+  // chat takes the rest. Measured once on mount; dragging still re-clamps live.
+  useEffect(() => {
+    const rect = workspaceRef.current?.getBoundingClientRect();
+    if (!rect || rect.width < 700) return;
+    setChatPanelWidth(Math.max(320, Math.round(rect.width - 448 - 10)));
+  }, []);
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
@@ -217,12 +224,7 @@ export default function AssetsWorkspaceClient({
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
-  const activeTitle = activeView === "conversation"
-    ? "对话"
-    : assetWorkspaceAdapter.getWorkshop(activeView).title;
-  const activeDescription = activeView === "conversation"
-    ? ""
-    : assetWorkspaceAdapter.getWorkshop(activeView).description;
+  const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -969,12 +971,15 @@ export default function AssetsWorkspaceClient({
     <main className={shellClassName}>
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
-          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页">
-            <House size={16} aria-hidden="true" />
-          </Link>
+          <span className="shadcn-prototype-brand-mark" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </span>
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
           </div>
+          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页">
+            <House size={15} aria-hidden="true" />
+          </Link>
           <button
             className="shadcn-prototype-sidebar-toggle"
             type="button"
@@ -1032,7 +1037,7 @@ export default function AssetsWorkspaceClient({
               title="资产库"
               onClick={() => setActiveView("assets")}
             >
-              <FileText size={17} aria-hidden="true" />
+              <Package size={17} aria-hidden="true" />
             </button>
             <button
               className={activeView === "copy" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
@@ -1041,7 +1046,7 @@ export default function AssetsWorkspaceClient({
               title="文案库"
               onClick={() => setActiveView("copy")}
             >
-              <MessageSquareText size={17} aria-hidden="true" />
+              <FileText size={17} aria-hidden="true" />
             </button>
             <button
               className={activeView === "image" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
@@ -1068,11 +1073,6 @@ export default function AssetsWorkspaceClient({
           </div>
         </div>
 
-        <button className="shadcn-prototype-search" type="button">
-          <Search size={15} aria-hidden="true" />
-          <span>搜索素材、产物或来源</span>
-        </button>
-
         <button
           className={activeView === "conversation" && selectedConversation.id === "new" ? "shadcn-prototype-new-conversation active" : "shadcn-prototype-new-conversation"}
           type="button"
@@ -1080,17 +1080,22 @@ export default function AssetsWorkspaceClient({
             void handleStartConversation();
           }}
         >
-          <Sparkles size={15} aria-hidden="true" />
+          <Plus size={15} aria-hidden="true" />
           新建对话
+        </button>
+
+        <button className="shadcn-prototype-search" type="button">
+          <Search size={15} aria-hidden="true" />
+          <span>搜索素材、产物或来源</span>
         </button>
 
         <nav className="shadcn-prototype-nav" aria-label="Primary">
           <button className={activeView === "assets" ? "active" : ""} type="button" onClick={() => setActiveView("assets")}>
-            <FileText size={16} aria-hidden="true" />
+            <Package size={16} aria-hidden="true" />
             资产库
           </button>
           <button className={activeView === "copy" ? "active" : ""} type="button" onClick={() => setActiveView("copy")}>
-            <MessageSquareText size={16} aria-hidden="true" />
+            <FileText size={16} aria-hidden="true" />
             文案库
           </button>
           <button className={activeView === "image" ? "active" : ""} type="button" onClick={() => setActiveView("image")}>
@@ -1158,12 +1163,16 @@ export default function AssetsWorkspaceClient({
         {UI_V3_BG_STATUS ? <AiBackgroundStatus tasks={backgroundTasks} /> : null}
 
         <div className="shadcn-prototype-user">
+          <span className="shadcn-prototype-user-avatar" aria-hidden="true">{getConversationMonogram(accountEmail)}</span>
           <div>
-            <strong>{accountEmail}</strong>
-            {onLogout ? (
-              <button type="button" className="shadcn-prototype-logout" onClick={onLogout}>退出登录</button>
-            ) : null}
+            <strong>{accountName}</strong>
+            <em title={accountEmail}>{accountEmail}</em>
           </div>
+          {onLogout ? (
+            <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={onLogout}>
+              <LogOut size={14} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </aside>
 
@@ -1181,8 +1190,21 @@ export default function AssetsWorkspaceClient({
             </button>
           ) : null}
           <div className="shadcn-prototype-breadcrumb">
-            <strong>{activeTitle}</strong>
-            {activeDescription ? <span>{activeDescription}</span> : null}
+            {activeView === "conversation" ? (
+              isNewConversation ? (
+                <strong>新建对话</strong>
+              ) : (
+                <>
+                  <span>对话 /</span>
+                  <strong>{selectedConversation.title}</strong>
+                </>
+              )
+            ) : (
+              <>
+                <span>库 /</span>
+                <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
+              </>
+            )}
           </div>
           <div className="shadcn-prototype-actions">
             {canShowDiagnostics ? <div className="shadcn-prototype-diagnostics">
@@ -1264,6 +1286,7 @@ export default function AssetsWorkspaceClient({
             <ConversationStart
               suggestions={selectedConversation.suggestions ?? []}
               conversation={selectedConversation}
+              accountName={accountName}
               imageAttachments={currentChatImageUploads}
               onUploadImages={handleChatImageUpload}
               onRemoveImageAttachment={handleRemoveChatImage}

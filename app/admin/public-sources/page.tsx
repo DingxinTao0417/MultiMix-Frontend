@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, RefreshCw, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft } from "lucide-react";
 import { authLocalDevAdmin, isApiConfigured, type PublicSourceRead } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "../../assets/lib/asset-workspace-adapter";
 
@@ -11,6 +12,19 @@ type AdminState = {
   loading: boolean;
   message: string | null;
 };
+
+function mediaTypesLabel(source: PublicSourceRead): string {
+  const labels = source.media_types.map((item) => item === "image" ? "图片" : "视频");
+  if (labels.length === 0) return "—";
+  if (labels.includes("图片") && labels.includes("视频")) return "图片 + 视频";
+  return labels[0] === "图片" ? "仅图片" : "视频";
+}
+
+function sourceInitials(source: PublicSourceRead): string {
+  const name = source.name || source.provider;
+  if (/^[\x00-\x7F]+$/.test(name)) return name.slice(0, 2);
+  return name.slice(0, 1);
+}
 
 export default function PublicSourcesAdminPage() {
   const [state, setState] = useState<AdminState>({ token: null, sources: [], loading: true, message: null });
@@ -45,7 +59,7 @@ export default function PublicSourcesAdminPage() {
       setState((current) => ({
         ...current,
         sources: current.sources.map((item) => item.provider === updated.provider ? updated : item),
-        message: `${updated.name} 已${updated.enabled ? "启用" : "停用"}。`
+        message: `${updated.name} 已${updated.enabled ? "启用：将按顺序参与兜底" : "停用：不再提供兜底素材"}。`
       }));
     } catch (error) {
       setState((current) => ({ ...current, message: error instanceof Error ? error.message : "更新失败。" }));
@@ -69,42 +83,75 @@ export default function PublicSourcesAdminPage() {
 
   return (
     <main className="shadcn-prototype-admin-page">
-      <header>
-        <span><ShieldCheck size={18} aria-hidden="true" /> 管理员</span>
-        <h1>公开素材源</h1>
-        <p>第一版只维护内置公开源启停、媒体类型、许可证策略和健康状态。API key 和视觉模型配置不在这里展示。</p>
+      <header className="shadcn-prototype-admin-topbar">
+        <span className="shadcn-prototype-admin-brand-mark" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </span>
+        <span className="shadcn-prototype-admin-crumb">管理 / <b>公开素材源</b></span>
+        <span className="shadcn-prototype-admin-tag">管理员</span>
+        <Link className="shadcn-prototype-admin-back" href="/">
+          <ChevronLeft size={13} aria-hidden="true" />
+          返回工作台
+        </Link>
       </header>
-      {state.message ? <p className="shadcn-prototype-library-action-message" role="status">{state.message}</p> : null}
-      {state.loading ? <p>加载中...</p> : null}
-      <section className="shadcn-prototype-admin-source-list">
-        {state.sources.map((source) => (
-          <article key={source.provider}>
+
+      <div className="shadcn-prototype-admin-main">
+        <div className="shadcn-prototype-admin-wrap">
+          <div className="shadcn-prototype-admin-head">
             <div>
-              <strong>{source.name}</strong>
-              <span>{source.provider}</span>
+              <h1>公开素材源管理</h1>
+              <p>配置分镜未命中商家素材时可用的兜底素材提供方</p>
             </div>
-            <dl>
-              <div><dt>状态</dt><dd>{source.enabled ? "已启用" : "已停用"}</dd></div>
-              <div><dt>媒体</dt><dd>{source.media_types.map((item) => item === "image" ? "图片" : "视频").join("、")}</dd></div>
-              <div><dt>许可证策略</dt><dd>{source.license_policy}</dd></div>
-              <div><dt>健康状态</dt><dd>{source.health_status}</dd></div>
-            </dl>
-            <div className="shadcn-prototype-admin-source-actions">
-              <button type="button" onClick={() => void updateSource(source, !source.enabled)}>
-                {source.enabled ? "停用" : "启用"}
-              </button>
-              <button type="button" onClick={() => void checkHealth(source)}>
-                <Activity size={14} aria-hidden="true" />
-                健康检查
-              </button>
-              <button type="button" onClick={() => window.location.reload()}>
-                <RefreshCw size={14} aria-hidden="true" />
-                刷新
-              </button>
+          </div>
+
+          <div className="shadcn-prototype-admin-rule">
+            <b>兜底规则</b>：公开素材只在分镜没有匹配到商家自有素材（no_asset_hit）后使用，永远不会抢在已保存素材前面；使用了兜底素材的分镜会在工作台明确标注。
+          </div>
+
+          {state.message ? <p className="shadcn-prototype-library-action-message" role="status">{state.message}</p> : null}
+          {state.loading ? <p className="shadcn-prototype-admin-loading">加载中...</p> : null}
+
+          {state.sources.length ? (
+            <div className="shadcn-prototype-admin-table">
+              <div className="shadcn-prototype-admin-tr th">
+                <span>素材源</span>
+                <span>类型</span>
+                <span>许可证策略</span>
+                <span>状态</span>
+                <span>健康状态</span>
+                <span className="ops">操作</span>
+              </div>
+              {state.sources.map((source) => (
+                <div className="shadcn-prototype-admin-tr" key={source.provider}>
+                  <span className="shadcn-prototype-admin-src">
+                    <span className="ic" aria-hidden="true">{sourceInitials(source)}</span>
+                    {source.name}
+                  </span>
+                  <span className="cell">{mediaTypesLabel(source)}</span>
+                  <span className="cell">{source.license_policy || "—"}</span>
+                  <label className="shadcn-prototype-admin-toggle">
+                    <input
+                      type="checkbox"
+                      checked={source.enabled}
+                      onChange={(event) => void updateSource(source, event.currentTarget.checked)}
+                      aria-label={`${source.name} ${source.enabled ? "停用" : "启用"}`}
+                    />
+                    <i />
+                  </label>
+                  <span className="cell">
+                    {source.enabled ? source.health_status || "未知" : "已停用"}
+                  </span>
+                  <span className="ops">
+                    <button type="button" className="op" onClick={() => void checkHealth(source)}>
+                      测试连接
+                    </button>
+                  </span>
+                </div>
+              ))}
             </div>
-          </article>
-        ))}
-      </section>
+          ) : null}
+        </div>
+      </div>
     </main>
   );
 }

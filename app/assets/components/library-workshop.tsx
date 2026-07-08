@@ -1,24 +1,40 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, Video, X } from "lucide-react";
+import { Copy, Download, FileText, Globe2, Image as ImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀"],
-  copy: ["全部", "选题方案", "文案稿", "编导稿"],
+  copy: ["全部", "选题方案", "文案稿", "配音稿", "编导稿"],
   image: ["全部", "封面图", "素材图", "分镜图"],
-  video: ["全部", "视频工程", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
+  video: ["全部", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
 };
 
 const SEARCH_PLACEHOLDER: Record<Exclude<ActiveView, "conversation">, string> = {
-  assets: "搜索资料 / 来源 / 关键词",
-  copy: "搜索文案 / 关键词",
-  image: "搜索图片 / 画面 / 关键词",
-  video: "搜索视频 / 口播 / 关键词"
+  assets: "搜索资料 / 知识块…",
+  copy: "搜索文案 / 选题…",
+  image: "搜索素材…",
+  video: "搜索视频…"
 };
+
+const UPLOAD_LABEL: Record<Exclude<ActiveView, "conversation">, string> = {
+  assets: "上传资料",
+  copy: "上传",
+  image: "上传素材",
+  video: "上传"
+};
+
+// Demo-final status classification (library.html st: ok/wait) shared by the
+// on-card pill and the image-library status filter chips.
+function rowStatusKind(row: LibraryRow): "ok" | "wait" | "fail" | null {
+  if (!row.statusLabel) return null;
+  if (row.statusLabel.includes("失败")) return "fail";
+  if (row.statusLabel.startsWith("已") || row.statusLabel === "可检索") return "ok";
+  return "wait";
+}
 
 const DETAIL_TITLES: Record<LibraryRow["kind"], string> = {
   copy: "文案正文",
@@ -83,7 +99,7 @@ function libraryRowMediaKind(row: LibraryRow): "image" | "video" | null {
 }
 
 function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conversation">) {
-  const viewClass = view === "image" ? " grid" : "";
+  const viewClass = view === "image" || view === "video" ? " grid" : "";
   const mediaKind = libraryRowMediaKind(row);
   return row.kind === "copy" ? null : mediaKind === "image" ? (
     <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb image${viewClass}` : "shadcn-prototype-library-media-thumb empty image"} aria-hidden="true">
@@ -139,6 +155,7 @@ export default function LibraryWorkshop({
   const workshop = assetWorkspaceAdapter.getWorkshop(view);
   const [backendRows, setBackendRows] = useState<LibraryRow[] | null>(null);
   const [activeFilter, setActiveFilter] = useState("全部");
+  const [statusFilter, setStatusFilter] = useState<"ok" | "wait" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -192,7 +209,10 @@ export default function LibraryWorkshop({
 
   const rows = backendRows !== null ? backendRows : workshop.rows;
   const filteredRows = useMemo(() => {
-    const scopedRows = activeFilter === "全部" ? rows : rows.filter((row) => row.category === activeFilter);
+    let scopedRows = activeFilter === "全部" ? rows : rows.filter((row) => row.category === activeFilter);
+    if (view === "image" && statusFilter) {
+      scopedRows = scopedRows.filter((row) => rowStatusKind(row) === statusFilter);
+    }
     const query = debouncedQuery.trim().toLowerCase();
     if (backendRows && query) return scopedRows;
     if (!query) return scopedRows;
@@ -211,20 +231,21 @@ export default function LibraryWorkshop({
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(query);
     });
-  }, [activeFilter, backendRows, rows, debouncedQuery]);
+  }, [activeFilter, statusFilter, view, backendRows, rows, debouncedQuery]);
   const selectedRow = selectedIndex === null ? null : filteredRows[selectedIndex];
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
 
   useEffect(() => {
     setActiveFilter("全部");
+    setStatusFilter(null);
     setSelectedIndex(null);
   }, [view, backendRows]);
 
   useEffect(() => {
     setSelectedIndex(null);
     setSourceOpen(false);
-  }, [activeFilter, searchQuery]);
+  }, [activeFilter, statusFilter, searchQuery]);
 
   const canUseBackend = Boolean(token && assetWorkspaceAdapter.isBackendEnabled());
 
@@ -393,6 +414,7 @@ export default function LibraryWorkshop({
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
       <div className="shadcn-prototype-workshop-body">
         <div className="shadcn-prototype-library-toolbar">
+          <h2 className="shadcn-prototype-library-title">{workshop.title}</h2>
           <label className="shadcn-prototype-library-search compact">
             <Search size={15} aria-hidden="true" />
             <input
@@ -403,9 +425,9 @@ export default function LibraryWorkshop({
             />
           </label>
           {loadingRows ? <span className="shadcn-prototype-library-loading" aria-label="正在搜索" /> : null}
-          <button type="button" onClick={onUploadClick} disabled={!onUploadClick || uploading}>
-            <Upload size={15} aria-hidden="true" />
-            {uploading ? "上传中" : "上传"}
+          <button type="button" className="primary" onClick={onUploadClick} disabled={!onUploadClick || uploading}>
+            <Plus size={15} aria-hidden="true" />
+            {uploading ? "上传中" : UPLOAD_LABEL[view]}
           </button>
           {view === "assets" ? (
             <>
@@ -422,79 +444,129 @@ export default function LibraryWorkshop({
         </div>
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
-        {view === "assets" ? (
-          <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
-            {FILTERS[view].map((filter) => (
+        <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
+          {FILTERS[view].map((filter) => (
+            <button
+              key={filter}
+              type="button"
+              className={filter === activeFilter ? "active" : undefined}
+              onClick={() => setActiveFilter(filter)}
+            >
+              {filter}
+            </button>
+          ))}
+          {view === "image" ? (
+            <>
+              <span className="shadcn-prototype-library-filter-sep" aria-hidden="true" />
               <button
-                key={filter}
                 type="button"
-                className={filter === activeFilter ? "active" : undefined}
-                onClick={() => setActiveFilter(filter)}
+                className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
+                onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
               >
-                {filter}
+                <i className="dot-ok" aria-hidden="true" />
+                已解析
               </button>
-            ))}
-          </div>
-        ) : null}
+              <button
+                type="button"
+                className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
+                onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
+              >
+                <i className="dot-wait" aria-hidden="true" />
+                待处理
+              </button>
+            </>
+          ) : null}
+        </div>
 
         {filteredRows.length === 0 ? (
           <article className="shadcn-prototype-workshop-empty">
             <div>
-              <strong>暂无内容</strong>
-              <p>{activeFilter === "全部" ? "上传资料或在对话中生成产物后，会在这里出现。" : `还没有${activeFilter}，上传或生成后会在这里出现。`}</p>
+              <strong>这个分类还没有内容</strong>
+              <p>{activeFilter === "全部" && !statusFilter ? "上传资料或在对话中生成产物后，会在这里出现。" : "在对话里生成后会自动归档到这里。"}</p>
             </div>
           </article>
         ) : (
-          <div className={`shadcn-prototype-library-layout ${view === "image" ? "image-mode" : ""}`}>
-            <div className="shadcn-prototype-workshop-list" aria-label={`${workshop.title}列表`}>
-              {filteredRows.map((row, index) => {
+          <div className={`shadcn-prototype-library-grid view-${view}`} aria-label={`${workshop.title}列表`}>
+            {filteredRows.map((row, index) => {
+              const statusKind = rowStatusKind(row);
+              const statusPill = row.statusLabel && statusKind ? (
+                <i className={`shadcn-prototype-library-status ${statusKind === "fail" ? "is-failed" : statusKind === "ok" ? "is-done" : "is-pending"}`}>
+                  {row.statusLabel}
+                </i>
+              ) : null;
+              if (view === "image" || view === "video") {
+                // Demo-final media card: type label + status pill overlay the
+                // thumbnail; the body keeps only title + usage stat.
                 const rowMedia = renderLibraryRowMedia(row, view);
                 const rowMediaKind = libraryRowMediaKind(row);
+                const stat = row.referenceCount != null
+                  ? (row.referenceCount > 0 ? `被引用 ${row.referenceCount} 次` : "未使用")
+                  : statusKind === "wait" ? "刚上传" : "";
                 return (
                   <button
                     key={`${row.kind}-${row.title}-${index}`}
                     type="button"
                     className={[
+                      "shadcn-prototype-library-media-card",
                       index === selectedIndex ? "selected" : "",
-                      rowMedia ? "" : "no-media",
                       rowMediaKind === "image" ? "with-image-media" : "",
                       rowMediaKind === "video" ? "with-video-media" : ""
-                    ].filter(Boolean).join(" ") || undefined}
+                    ].filter(Boolean).join(" ")}
                     onClick={() => setSelectedIndex(index)}
                   >
-                    {rowMedia}
-                    <span className="shadcn-prototype-library-row-copy">
-                      <strong>
-                        {row.title}
-                        {row.statusLabel ? (
-                          <i
-                            className={`shadcn-prototype-library-status ${
-                              row.statusLabel.includes("失败")
-                                ? "is-failed"
-                                : row.statusLabel.startsWith("已") || row.statusLabel === "可检索"
-                                  ? "is-done"
-                                  : "is-pending"
-                            }`}
-                          >
-                            {row.statusLabel}
-                          </i>
-                        ) : null}
-                        {row.referenceCount != null ? (
-                          <i className="shadcn-prototype-library-refcount">被引用 {row.referenceCount} 次</i>
-                        ) : null}
-                      </strong>
-                      <span>{displayMeta(row, view)}</span>
-                      <p>{row.note}</p>
-                      {row.searchReasons && row.searchReasons.length > 0 ? (
-                        <em className="shadcn-prototype-library-reasons">
-                          {row.searchReasons.slice(0, 3).map((reason) => <small key={reason}>{reason}</small>)}
-                        </em>
-                      ) : null}
+                    <span className="shadcn-prototype-library-media-frame">
+                      {row.category ? <span className="shadcn-prototype-library-media-cat">{row.category}</span> : null}
+                      {statusPill}
+                      {rowMedia}
+                    </span>
+                    <span className="shadcn-prototype-library-media-body">
+                      <strong>{row.title}</strong>
+                      {stat ? <em>{stat}</em> : null}
                     </span>
                   </button>
                 );
-              })}
-            </div>
+              }
+              return (
+                <button
+                  key={`${row.kind}-${row.title}-${index}`}
+                  type="button"
+                  className={index === selectedIndex ? "shadcn-prototype-library-text-card selected" : "shadcn-prototype-library-text-card"}
+                  onClick={() => setSelectedIndex(index)}
+                >
+                  <span className="shadcn-prototype-library-text-row1">
+                    {view === "copy" && row.category ? <i className="cat">{row.category}</i> : null}
+                    {view === "assets" ? (
+                      <>
+                        <i className="fic" aria-hidden="true"><FileText size={13} /></i>
+                        <strong>{row.title}</strong>
+                      </>
+                    ) : null}
+                  </span>
+                  {view !== "assets" ? <strong className="shadcn-prototype-library-text-title">{row.title}</strong> : null}
+                  {row.note ? <p>{row.note}</p> : null}
+                  <span className="shadcn-prototype-library-text-meta">
+                    {displayMeta(row, view)}
+                    {row.referenceCount != null ? ` · 被引用 ${row.referenceCount} 次` : ""}
+                  </span>
+                  {row.searchReasons && row.searchReasons.length > 0 ? (
+                    <em className="shadcn-prototype-library-reasons">
+                      {row.searchReasons.slice(0, 3).map((reason) => <small key={reason}>{reason}</small>)}
+                    </em>
+                  ) : null}
+                </button>
+              );
+            })}
+            {(view === "image" || view === "assets") && onUploadClick ? (
+              <button
+                type="button"
+                className="shadcn-prototype-library-upload-card"
+                onClick={onUploadClick}
+                disabled={uploading}
+              >
+                <Plus size={20} aria-hidden="true" />
+                {view === "image" ? "上传更多素材" : "上传更多资料"}
+              </button>
+            ) : null}
           </div>
         )}
       </div>

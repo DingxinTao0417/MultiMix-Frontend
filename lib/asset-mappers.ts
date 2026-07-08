@@ -109,7 +109,10 @@ function relativeTimeLabel(value: string): string {
   const diffMs = Date.now() - date.getTime();
   if (diffMs < 60_000) return "刚刚";
   if (diffMs < 3_600_000) return `${Math.max(1, Math.floor(diffMs / 60_000))}分钟前`;
-  if (diffMs < 86_400_000) return "今天";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (date.getTime() >= startOfToday) return "今天";
+  if (date.getTime() >= startOfToday - 86_400_000) return "昨天";
   return date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
 }
 

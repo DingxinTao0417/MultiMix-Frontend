@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { ArrowUp, FileText, Image as ImageIcon, Play, Sparkles, Square, Video } from "lucide-react";
 import { getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError } from "../../../lib/api";
@@ -235,6 +235,27 @@ export default function ConversationStudio({
     });
   };
 
+  // Failure cards (and other surfaces) in the product pane recover through the
+  // conversation: they dispatch these events instead of prop-drilling send/focus.
+  useEffect(() => {
+    const onFocusComposer = () => {
+      composerRef.current?.focus();
+    };
+    const onComposerSend = (event: Event) => {
+      const utterance = (event as CustomEvent<{ utterance?: string }>).detail?.utterance;
+      if (typeof utterance === "string" && utterance.trim()) {
+        void sendInstruction(utterance.trim());
+      }
+    };
+    window.addEventListener("multimix:composer-focus", onFocusComposer);
+    window.addEventListener("multimix:composer-send", onComposerSend);
+    return () => {
+      window.removeEventListener("multimix:composer-focus", onFocusComposer);
+      window.removeEventListener("multimix:composer-send", onComposerSend);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversation.id, sending, readonly]);
+
   const handleAttachmentFiles = (files: FileList | File[]) => {
     const acceptedFiles = Array.from(files).filter((file) => {
       if (file.type.startsWith("image/")) return true;
@@ -310,6 +331,9 @@ export default function ConversationStudio({
               <em>{product.phase} · {product.status}</em>
             </span>
             {product.version ? <small>{product.version}</small> : null}
+            <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </span>
           </Link>
         ))}
       </div>
@@ -335,18 +359,42 @@ export default function ConversationStudio({
       onDragLeave={() => setIsDraggingUpload(false)}
       onDrop={handleDrop}
     >
-      {contextAssets.length > 0 ? (
-        <div className="shadcn-prototype-context-strip" aria-label="当前引用资产">
-          <FileText size={14} aria-hidden="true" />
-          <span>引用</span>
-          {contextAssets.map((asset) => (
-            <em key={asset.id}>{asset.title}</em>
-          ))}
-        </div>
-      ) : null}
+      {(() => {
+        // Demo-final chat header: conversation title + referenced-materials badge
+        // (+ fallback-segment count for video runs). Badge hides without real refs.
+        const fallbackSegmentCount = products.reduce(
+          (count, item) => count + (item.segments?.filter((segment) => segment.isFallback).length ?? 0),
+          0
+        );
+        const badgeText = contextAssets.length
+          ? `已引用 ${contextAssets.length} 张素材${fallbackSegmentCount ? ` · ${fallbackSegmentCount} 段兜底` : ""}`
+          : "";
+        return (
+          <header className="shadcn-prototype-chat-head">
+            <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
+            {badgeText ? (
+              <span
+                className="shadcn-prototype-chat-head-badge"
+                title={contextAssets.map((asset) => asset.title).join("、")}
+              >
+                <i aria-hidden="true" />
+                {badgeText}
+              </span>
+            ) : null}
+          </header>
+        );
+      })()}
       <div className="shadcn-prototype-thread">
         {visibleConversationMessages.map((message, index) => (
-          <div className="shadcn-prototype-message-group" key={`${message.role}-${index}`}>
+          <div
+            className={message.role === "assistant" ? "shadcn-prototype-message-group with-avatar" : "shadcn-prototype-message-group"}
+            key={`${message.role}-${index}`}
+          >
+            {message.role === "assistant" ? (
+              <span className="shadcn-prototype-msg-avatar" aria-hidden="true">
+                <Sparkles size={12} />
+              </span>
+            ) : null}
             <article className={[
               message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
               message.pending ? "pending" : ""
@@ -478,7 +526,13 @@ export default function ConversationStudio({
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
-            placeholder={canSend ? "输入创作需求，或拖入 PPT/图片素材" : "参考样例只读"}
+            placeholder={
+              !canSend
+                ? "参考样例只读"
+                : selectedProduct && ["video", "digital-human", "mg_animation_video"].includes(selectedProduct.mode)
+                  ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
+                  : "随时打断或补充，AI 会接着改…"
+            }
             rows={1}
             value={composerValue}
             disabled={!canSend}
@@ -498,7 +552,7 @@ export default function ConversationStudio({
             type={sending ? "button" : "submit"}
             aria-label={sending ? "停止生成" : "发送"}
             title={sending ? "停止生成" : "发送"}
-            disabled={!canSend || (!sending && !composerValue.trim() && !hasReadyImageAttachment && !hasReadySourceAttachment)}
+            disabled={!canSend && !sending}
             onClick={sending ? stopGeneration : undefined}
           >
             {sending ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <ArrowUp size={17} aria-hidden="true" />}

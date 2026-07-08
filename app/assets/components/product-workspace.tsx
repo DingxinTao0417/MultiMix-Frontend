@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Check, Pencil } from "lucide-react";
 import { VIDEO_JOB_STEPS, agentTimelineStepsFromBackend, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
-import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { UI_V3_AGENT_TIMELINE, UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AgentRunTimeline from "./agent-run-timeline";
-import ProductPreview from "./product-preview";
+import ProductPreview, { playableVideoUrl } from "./product-preview";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -99,6 +100,22 @@ export default function ProductWorkspace({
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
+  // Demo-final video surfaces: "browse" (player + segment cards) needs a real
+  // playable file; without one the edit surface (embedded editor) is the only
+  // honest preview, so browse is unavailable (§12 数据不在就不渲染).
+  const exportedVideoUrl = hasVideoProject ? playableVideoUrl(product) : "";
+  const canBrowseVideo = Boolean(hasVideoProject && exportedVideoUrl);
+  const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("edit");
+  const showEditorEmbed = hasVideoProject && (!canBrowseVideo || videoSurface === "edit");
+  // Image products download their real hero file; without a URL the button hides.
+  const imageDownloadUrl = product.mode === "image"
+    ? (() => {
+      const candidate = stringValue(productMetadata.preview_url) || stringValue(productMetadata.thumbnail_url);
+      return /^https?:\/\//i.test(candidate) || candidate.startsWith("/") ? candidate : "";
+    })()
+    : "";
+  const isFailedStatus = /失败/.test(product.status);
+  const isDoneStatus = /^已(完成|生成|渲染)/.test(product.status);
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
@@ -110,6 +127,10 @@ export default function ProductWorkspace({
     setExportState("idle");
     setExportProgress(null);
   }, [currentAssetId, hasVideoProject]);
+
+  useEffect(() => {
+    setVideoSurface(canBrowseVideo ? "browse" : "edit");
+  }, [currentAssetId, canBrowseVideo]);
 
   useEffect(() => {
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
@@ -187,6 +208,25 @@ export default function ProductWorkspace({
           ? "导出失败，重试"
           : "导出视频";
 
+  const handleDownloadImage = async () => {
+    if (!imageDownloadUrl) return;
+    try {
+      const response = await fetch(imageDownloadUrl);
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = /\.[A-Za-z0-9]{2,6}$/.test(product.title) ? product.title : `${product.title || "image"}.png`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(imageDownloadUrl, "_blank", "noopener");
+    }
+  };
+
   // Aurora + "生成中" badge only during the real generating state (spec §5.3 /
   // §12): while orchestration runs. Gated by flag; no fake progress.
   const showGeneratingVisuals = UI_V3_GENERATING_VISUALS && orchestrationPending;
@@ -202,15 +242,28 @@ export default function ProductWorkspace({
         <header className="shadcn-prototype-product-header">
           <div>
             <h3>
-              {product.title}
+              <span className="shadcn-prototype-product-title-text">{product.title}</span>
               {showGeneratingVisuals ? (
                 <span className="shadcn-prototype-artifact-generating-badge">
                   <span aria-hidden="true" />
                   生成中
                 </span>
+              ) : isFailedStatus ? (
+                <span className="shadcn-prototype-product-status-pill fail">✕ {product.status}</span>
+              ) : isDoneStatus ? (
+                <span className="shadcn-prototype-product-status-pill ok">
+                  <Check size={9} strokeWidth={3.2} aria-hidden="true" />
+                  {product.status}
+                </span>
               ) : null}
             </h3>
-            <p>{product.phase} · {product.status} · {product.ratio} / {product.duration}</p>
+            <p>
+              {[
+                product.phase,
+                isDoneStatus || isFailedStatus || showGeneratingVisuals ? null : product.status,
+                `${product.ratio} / ${product.duration}`
+              ].filter(Boolean).join(" · ")}
+            </p>
           </div>
           <div className="shadcn-prototype-product-actions">
             <details className="shadcn-prototype-product-detail-popover">
@@ -295,32 +348,50 @@ export default function ProductWorkspace({
               </aside>
             </details>
             {product.mode === "copy" ? (
-              <button type="button" onClick={() => void onCopyProduct(product)}>
-                {copied ? "已复制" : "复制"}
+              <button type="button" className="primary" onClick={() => void onCopyProduct(product)}>
+                {copied ? "已复制" : "复制全文"}
               </button>
             ) : null}
-            {hasVideoProject ? (
-              <button
-                type="button"
-                className="shadcn-prototype-open-editor"
-                disabled={!editorReady || exportState === "exporting"}
-                onClick={handleExportVideo}
-              >
-                {exportButtonLabel}
+            {product.mode === "image" && imageDownloadUrl ? (
+              <button type="button" className="primary" onClick={() => void handleDownloadImage()}>
+                下载
               </button>
+            ) : null}
+            {canBrowseVideo && videoSurface === "browse" ? (
+              <button type="button" className="primary" onClick={() => setVideoSurface("edit")}>
+                <Pencil size={12} aria-hidden="true" />
+                编辑
+              </button>
+            ) : null}
+            {showEditorEmbed ? (
+              <>
+                {canBrowseVideo ? (
+                  <button type="button" className="primary" onClick={() => setVideoSurface("browse")}>
+                    完成编辑
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="shadcn-prototype-open-editor"
+                  disabled={!editorReady || exportState === "exporting"}
+                  onClick={handleExportVideo}
+                >
+                  {exportButtonLabel}
+                </button>
+              </>
             ) : null}
             {orchestrationPending ? (
               <span className="shadcn-prototype-product-pending" aria-live="polite">
                 {liveStageLabel}
               </span>
             ) : null}
-            <button className="primary" type="button" onClick={() => void onSaveProduct(product)}>
+            <button type="button" onClick={() => void onSaveProduct(product)}>
               {savedVersion ? `已保存 ${savedVersion}` : "保存"}
             </button>
           </div>
         </header>
 
-        {hasVideoProject ? (
+        {showEditorEmbed ? (
           <div className="shadcn-prototype-product-main" style={{ padding: 0, overflow: "hidden" }}>
             <iframe
               ref={editorFrameRef}
@@ -330,6 +401,10 @@ export default function ProductWorkspace({
               title="视频剪辑器"
               allow="autoplay; clipboard-write"
             />
+          </div>
+        ) : hasVideoProject ? (
+          <div className="shadcn-prototype-product-main">
+            <ProductPreview product={product} />
           </div>
         ) : orchestrationPending ? (
           <div className="shadcn-prototype-product-main">
@@ -373,10 +448,15 @@ export default function ProductWorkspace({
                       }
                     }}
                   >
-                    {retrying ? "重试中…" : "重试生成"}
+                    {retrying ? "重试中…" : "↻ 重试生成"}
                   </button>
                 ) : null}
-                <span>也可以在对话中调整指令后重新生成。</span>
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
+                >
+                  回对话调整
+                </button>
               </div>
             </div>
           </div>
