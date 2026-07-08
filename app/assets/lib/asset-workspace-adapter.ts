@@ -196,14 +196,60 @@ export type AssetWorkspaceAdapter = {
   checkAdminPublicSourceHealth(token: string, provider: string): Promise<PublicSourceRead>;
 };
 
+export type VideoJobStepResult = {
+  key: string;
+  label: string;
+  status: string;
+  elapsedSeconds: number | null;
+};
+
 export type VideoJobResult = {
   id: string;
   assetId: number;
   status: string;
   renderStage: string;
+  steps: VideoJobStepResult[];
   errorMessage: string | null;
   project: Record<string, unknown> | null;
 };
+
+type RawVideoJob = {
+  id: string;
+  asset_id: number;
+  status: string;
+  render_stage: string;
+  steps?: Array<{ key?: string; label?: string; status?: string; elapsed_seconds?: number | null }> | null;
+  error_message: string | null;
+  project: Record<string, unknown> | null;
+};
+
+// Normalise a backend video-job payload into VideoJobResult. steps[] is a
+// newer field; older backends omit it and the timeline falls back to the
+// render_stage-derived steps (spec §12 降级规则).
+function mapVideoJob(raw: RawVideoJob): VideoJobResult {
+  const steps = Array.isArray(raw.steps)
+    ? raw.steps.flatMap((step): VideoJobStepResult[] => {
+        const key = typeof step.key === "string" ? step.key : "";
+        const label = typeof step.label === "string" ? step.label : "";
+        if (!key || !label) return [];
+        return [{
+          key,
+          label,
+          status: typeof step.status === "string" ? step.status : "wait",
+          elapsedSeconds: typeof step.elapsed_seconds === "number" ? step.elapsed_seconds : null
+        }];
+      })
+    : [];
+  return {
+    id: raw.id,
+    assetId: raw.asset_id,
+    status: raw.status,
+    renderStage: raw.render_stage,
+    steps,
+    errorMessage: raw.error_message,
+    project: raw.project
+  };
+}
 
 // Map a library view to the backend asset_kind values it should display.
 function libraryKindsForView(view: Exclude<AssetWorkspaceView, "conversation">): string[] {
@@ -644,21 +690,21 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         layout: opts?.layout ?? "portrait",
         target_seconds: opts?.targetSeconds ?? 60,
       };
-      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>("/video/generate", token, {
+      const raw = await api<RawVideoJob>("/video/generate", token, {
         method: "POST",
         body: JSON.stringify(body),
       });
-      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
+      return mapVideoJob(raw);
     },
     async getVideoJob(token, jobId) {
-      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
-      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
+      const raw = await api<RawVideoJob>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
+      return mapVideoJob(raw);
     },
     async retryVideoJob(token, jobId) {
-      const raw = await api<{ id: string; asset_id: number; status: string; render_stage: string; error_message: string | null; project: Record<string, unknown> | null }>(`/video/jobs/${encodeURIComponent(jobId)}/retry`, token, {
+      const raw = await api<RawVideoJob>(`/video/jobs/${encodeURIComponent(jobId)}/retry`, token, {
         method: "POST",
       });
-      return { id: raw.id, assetId: raw.asset_id, status: raw.status, renderStage: raw.render_stage, errorMessage: raw.error_message, project: raw.project };
+      return mapVideoJob(raw);
     },
     async listLibrary(token, view, query) {
       const kinds = libraryKindsForView(view);

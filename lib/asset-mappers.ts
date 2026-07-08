@@ -333,6 +333,42 @@ export type AgentTimelineStep = {
   elapsedLabel?: string;
 };
 
+// Backend semantic step (spec §5.2 ★): key/label/status + real elapsed seconds.
+export type VideoJobBackendStep = {
+  key: string;
+  label: string;
+  status: string;
+  elapsedSeconds?: number | null;
+};
+
+// Format real elapsed seconds into a merchant-facing label ("8秒" / "1分12秒").
+function elapsedLabel(seconds: number): string | undefined {
+  const total = Math.round(seconds);
+  if (total <= 0) return undefined;
+  if (total < 60) return `${total}秒`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return rest ? `${minutes}分${rest}秒` : `${minutes}分`;
+}
+
+// Prefer the backend's real steps[] when present. The status enum and elapsed
+// times come straight from the job (no fake progress); an empty/missing array
+// makes the caller fall back to videoJobTimelineSteps (spec §12 降级规则).
+export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | undefined | null): AgentTimelineStep[] {
+  if (!Array.isArray(steps)) return [];
+  return steps.flatMap((step): AgentTimelineStep[] => {
+    const label = typeof step.label === "string" ? step.label.trim() : "";
+    const key = typeof step.key === "string" ? step.key.trim() : "";
+    if (!label || !key) return [];
+    const status: AgentTimelineStep["status"] =
+      step.status === "done" || step.status === "run" || step.status === "fail" ? step.status : "wait";
+    const elapsed = typeof step.elapsedSeconds === "number" && Number.isFinite(step.elapsedSeconds)
+      ? elapsedLabel(step.elapsedSeconds)
+      : undefined;
+    return [{ key, label, status, elapsedLabel: elapsed }];
+  });
+}
+
 // Build agent-timeline steps from a live video job's render_stage + status.
 // Returns [] when there is no running/queued job so the caller keeps the plain
 // shimmer fallback (spec §12: 无事件不渲染, 视频链路事件已有先上视频).

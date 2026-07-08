@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import type { ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
@@ -260,6 +260,32 @@ describe("agent timeline steps", () => {
   it("marks the current stage failed when the job fails", () => {
     const steps = videoJobTimelineSteps("segment", "failed");
     expect(steps.map((step) => step.status)).toEqual(["done", "fail", "wait"]);
+  });
+
+  it("maps backend steps[] with real elapsed labels", () => {
+    const steps = agentTimelineStepsFromBackend([
+      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedSeconds: 8 },
+      { key: "plan", label: "匹配素材并合成配音", status: "run", elapsedSeconds: null },
+      { key: "generate", label: "组装分镜与时间线", status: "wait", elapsedSeconds: null }
+    ]);
+    expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
+    expect(steps[0].elapsedLabel).toBe("8秒");
+    expect(steps[1].elapsedLabel).toBeUndefined();
+  });
+
+  it("formats minute-scale elapsed and skips malformed backend steps", () => {
+    const steps = agentTimelineStepsFromBackend([
+      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedSeconds: 72 },
+      { key: "", label: "no key", status: "done", elapsedSeconds: 3 }
+    ]);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].elapsedLabel).toBe("1分12秒");
+  });
+
+  it("returns empty for missing backend steps so the caller falls back", () => {
+    expect(agentTimelineStepsFromBackend(undefined)).toEqual([]);
+    expect(agentTimelineStepsFromBackend(null)).toEqual([]);
+    expect(agentTimelineStepsFromBackend([])).toEqual([]);
   });
 });
 

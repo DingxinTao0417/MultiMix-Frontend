@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { VIDEO_JOB_STEPS, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { VIDEO_JOB_STEPS, agentTimelineStepsFromBackend, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { UI_V3_AGENT_TIMELINE, UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
@@ -89,6 +89,12 @@ export default function ProductWorkspace({
   const liveStage = videoJobLive?.renderStage ?? "queued";
   const liveStageLabel = videoJobStageLabel(liveStage);
   const liveStepIndex = videoJobStepIndex(liveStage);
+  // Prefer the backend's real steps[] (with genuine elapsed times); fall back to
+  // the render_stage-derived steps when the backend omits them (spec §12 降级).
+  const backendTimelineSteps = agentTimelineStepsFromBackend(videoJobLive?.steps);
+  const agentTimelineSteps = backendTimelineSteps.length
+    ? backendTimelineSteps
+    : videoJobTimelineSteps(liveStage, videoJobLive?.status ?? "running");
   const failureDetail = videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
@@ -322,7 +328,7 @@ export default function ProductWorkspace({
             <div className="shadcn-prototype-video-progress" role="status" aria-live="polite">
               <strong>视频工程生成中</strong>
               {UI_V3_AGENT_TIMELINE ? (
-                <AgentRunTimeline steps={videoJobTimelineSteps(liveStage, videoJobLive?.status ?? "running")} />
+                <AgentRunTimeline steps={agentTimelineSteps} />
               ) : (
                 <ol className="shadcn-prototype-video-progress-steps">
                   {VIDEO_JOB_STEPS.map((step, index) => (

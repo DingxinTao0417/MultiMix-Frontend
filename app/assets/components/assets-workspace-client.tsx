@@ -21,7 +21,7 @@ import {
   Video
 } from "lucide-react";
 import { getAssetLlmDiagnostics, type AssetLlmDiagnosticsRead } from "../../../lib/api";
-import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
+import { assetWorkspaceAdapter, type LibraryRow, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
 import {
   resolveConversationProduct,
   type ActiveView,
@@ -82,6 +82,7 @@ export type VideoJobLiveStatus = {
   jobId: string;
   status: string;
   renderStage: string;
+  steps: VideoJobStepResult[];
   errorMessage: string | null;
 };
 
@@ -304,6 +305,7 @@ export default function AssetsWorkspaceClient({
               jobId: job.id,
               status: job.status,
               renderStage: job.renderStage,
+              steps: job.steps,
               errorMessage: job.errorMessage
             };
           }
@@ -348,7 +350,7 @@ export default function AssetsWorkspaceClient({
       const job = await assetWorkspaceAdapter.retryVideoJob(token, jobId);
       setVideoJobLive((current) => ({
         ...current,
-        [job.assetId]: { jobId: job.id, status: job.status, renderStage: job.renderStage, errorMessage: job.errorMessage }
+        [job.assetId]: { jobId: job.id, status: job.status, renderStage: job.renderStage, steps: job.steps, errorMessage: job.errorMessage }
       }));
       const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
       setConversations(rows);
