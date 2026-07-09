@@ -56,6 +56,7 @@ type DiagnosticsState = {
 type AssetsWorkspaceClientProps = {
   initialConversationId?: string;
   initialProductId?: string;
+  initialView?: ActiveView;
   basePath?: string;
   accountEmail?: string;
   token?: string | null;
@@ -131,9 +132,14 @@ function getConversationMonogram(title: string): string {
 }
 
 function resolveInitialConversationId(initialConversationId: string | undefined, conversations: Conversation[]): string {
+  if (initialConversationId === "new") return "new";
   return initialConversationId && conversations.some((conversation) => conversation.id === initialConversationId)
     ? initialConversationId
-    : conversations[0].id;
+    : conversations[0]?.id ?? "new";
+}
+
+function resolveInitialView(initialView: ActiveView | undefined): ActiveView {
+  return initialView && initialView !== "conversation" ? initialView : "conversation";
 }
 
 function uploadAcceptForView(view: ActiveView): string {
@@ -168,13 +174,14 @@ function mergeContextAssets(current: ConversationContextAsset[], additions: Conv
 export default function AssetsWorkspaceClient({
   initialConversationId,
   initialProductId,
+  initialView,
   basePath = "/app/assets",
   accountEmail = "demo@multimix.local",
   token = null,
   onLogout
 }: AssetsWorkspaceClientProps) {
   const [conversations, setConversations] = useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations());
-  const [activeView, setActiveView] = useState<ActiveView>("conversation");
+  const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
   const [selectedConversationId, setSelectedConversationId] = useState(() => resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations()));
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
     const conversationId = resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations());
@@ -249,6 +256,12 @@ export default function AssetsWorkspaceClient({
   }, [conversationMenuId]);
 
   useEffect(() => {
+    const nextView = resolveInitialView(initialView);
+    if (nextView !== "conversation") {
+      setActiveView(nextView);
+      setConversationMenuId(null);
+      return;
+    }
     const conversationId = resolveInitialConversationId(initialConversationId, conversations);
     setSelectedConversationId(conversationId);
     if (initialProductId) {
@@ -261,7 +274,7 @@ export default function AssetsWorkspaceClient({
     setConversationMenuId(null);
     // conversations intentionally omitted: only re-run when the URL params change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialConversationId, initialProductId]);
+  }, [initialConversationId, initialProductId, initialView]);
 
   // Load persisted conversation history from the backend when a token is present.
   useEffect(() => {
@@ -972,7 +985,7 @@ export default function AssetsWorkspaceClient({
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
           <span className="shadcn-prototype-brand-mark" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <span className="shadcn-prototype-brand-letter">M</span>
           </span>
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
@@ -1193,17 +1206,9 @@ export default function AssetsWorkspaceClient({
             {activeView === "conversation" ? (
               isNewConversation ? (
                 <strong>新建对话</strong>
-              ) : (
-                <>
-                  <span>对话 /</span>
-                  <strong>{selectedConversation.title}</strong>
-                </>
-              )
+              ) : null
             ) : (
-              <>
-                <span>库 /</span>
-                <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
-              </>
+              <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
             )}
           </div>
           <div className="shadcn-prototype-actions">

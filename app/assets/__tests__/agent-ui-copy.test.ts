@@ -56,9 +56,11 @@ describe("agent conversation UI copy", () => {
     const globals = readAssetFile("app/globals.css");
 
     expect(workspaceClient).not.toContain('{uploading ? "上传中..." : "上传"}');
+    expect(workspaceClient).not.toContain("<span>库 /</span>");
     expect(libraryWorkshop).toContain("shadcn-prototype-library-search compact");
     expect(globals).toContain("flex: 0 1 560px");
     expect(globals).toContain("max-width: 560px");
+    expect(globals).not.toContain("animation: shadcn-prototype-spin");
   });
 
   it("does not show left icons for copy rows and uses media thumbnails for image or video rows", () => {
@@ -109,8 +111,10 @@ describe("agent conversation UI copy", () => {
 
   it("renders the demo-final start hero and input dock", () => {
     const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const globals = readAssetFile("app/globals.css");
 
+    expect(workspaceClient).toContain('initialConversationId === "new"');
     expect(conversationStart).toContain("今天想做什么内容？");
     expect(conversationStart).toContain("从一句话开始，MultiMix 会带着你的素材一起创作");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
@@ -119,6 +123,51 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-start-dock");
     expect(globals).toContain(".shadcn-prototype-start-sugg-grid");
     expect(globals).toContain("min-height: 52px");
+  });
+
+  it("keeps the conversation surface demo-aligned without a duplicate title bar", () => {
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(conversationStudio).not.toContain("shadcn-prototype-chat-head");
+    expect(workspaceClient).not.toContain("<span>对话 /</span>");
+    expect(conversationStudio).toContain("shadcn-prototype-composer-textarea");
+    expect(globals).toContain(".shadcn-prototype-composer-textarea");
+    expect(globals).toContain("line-height: 20px");
+  });
+
+  it("renders visual placeholders instead of raw empty media labels in the library", () => {
+    const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(libraryWorkshop).not.toContain("<span>无</span>");
+    expect(libraryWorkshop).toContain("shadcn-prototype-library-media-placeholder");
+    expect(libraryWorkshop).toContain("LibraryBigImageIcon");
+    expect(globals).toContain(".shadcn-prototype-library-media-placeholder");
+  });
+
+  it("prioritizes a placeholder preview for video drafts before plan details", () => {
+    const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(productPreview).toContain("shadcn-prototype-video-placeholder-preview");
+    expect(productPreview.indexOf("shadcn-prototype-video-placeholder-preview")).toBeLessThan(productPreview.indexOf("shadcn-prototype-video-plan-summary"));
+    expect(productPreview).toContain("product.preview?.posterText");
+    expect(globals).toContain(".shadcn-prototype-video-placeholder-preview");
+  });
+
+  it("keeps public source management UI-rich without requiring provider data changes", () => {
+    const adminSources = readAssetFile("app/admin/public-sources/page.tsx");
+    const globals = readAssetFile("app/globals.css");
+
+    expect(adminSources).toContain("添加素材源");
+    expect(adminSources).toContain("优先级");
+    expect(adminSources).toContain("今日额度");
+    expect(adminSources).toContain("仅保存为本页草稿");
+    expect(adminSources).toContain("frontOnlyDraftSources");
+    expect(globals).toContain(".shadcn-prototype-admin-add");
+    expect(globals).toContain(".shadcn-prototype-admin-quota");
   });
 
   it("uses uploaded documents as direct conversation source assets", () => {

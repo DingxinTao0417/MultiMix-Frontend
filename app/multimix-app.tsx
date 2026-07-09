@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
+import type { ActiveView } from "./assets/lib/asset-workspace-shared";
 import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
@@ -16,6 +17,11 @@ type LocalUser = {
   email: string;
   token?: string | null;
 };
+
+function activeViewFromParam(value: string | null): ActiveView | undefined {
+  if (value === "assets" || value === "copy" || value === "image" || value === "video") return value;
+  return undefined;
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -196,6 +202,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       onLogout={() => { void handleLogout(); }}
       initialConversationId={searchParams.get("conversation") ?? undefined}
       initialProductId={searchParams.get("product") ?? undefined}
+      initialView={activeViewFromParam(searchParams.get("view"))}
     />
   );
 }

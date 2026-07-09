@@ -36,6 +36,8 @@ const SOURCE_UPLOAD_ACCEPT = ".pptx,.pdf,.docx,.txt,.md,.markdown,.html,.htm,.xl
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PPT/文档会作为来源资产。";
+const COMPOSER_MIN_HEIGHT = 36;
+const COMPOSER_MAX_HEIGHT = 128;
 
 function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -161,8 +163,10 @@ export default function ConversationStudio({
   );
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
-    textarea.style.height = "48px";
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    textarea.style.height = `${COMPOSER_MIN_HEIGHT}px`;
+    const nextHeight = Math.max(COMPOSER_MIN_HEIGHT, Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT));
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > COMPOSER_MAX_HEIGHT ? "auto" : "hidden";
   };
 
   useEffect(() => {
@@ -360,31 +364,6 @@ export default function ConversationStudio({
       onDragLeave={() => setIsDraggingUpload(false)}
       onDrop={handleDrop}
     >
-      {(() => {
-        // Demo-final chat header: conversation title + referenced-materials badge
-        // (+ fallback-segment count for video runs). Badge hides without real refs.
-        const fallbackSegmentCount = products.reduce(
-          (count, item) => count + (item.segments?.filter((segment) => segment.isFallback).length ?? 0),
-          0
-        );
-        const badgeText = contextAssets.length
-          ? `已引用 ${contextAssets.length} 张素材${fallbackSegmentCount ? ` · ${fallbackSegmentCount} 段兜底` : ""}`
-          : "";
-        return (
-          <header className="shadcn-prototype-chat-head">
-            <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-            {badgeText ? (
-              <span
-                className="shadcn-prototype-chat-head-badge"
-                title={contextAssets.map((asset) => asset.title).join("、")}
-              >
-                <i aria-hidden="true" />
-                {badgeText}
-              </span>
-            ) : null}
-          </header>
-        );
-      })()}
       <div className="shadcn-prototype-thread">
         {visibleConversationMessages.map((message, index) => (
           <div
@@ -526,6 +505,7 @@ export default function ConversationStudio({
             <FileText size={15} aria-hidden="true" />
           </button>
           <textarea
+            className="shadcn-prototype-composer-textarea"
             ref={composerRef}
             aria-label="输入对话内容"
             placeholder={

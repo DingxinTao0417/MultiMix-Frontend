@@ -6,6 +6,7 @@ const editorRoot = path.resolve(dirname, "editor-engine/vendor/editor");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  devIndicators: false,
   webpack: (config) => {
     // Embedded video-studio editor (OpenCut) module aliases.
     config.resolve.alias = {

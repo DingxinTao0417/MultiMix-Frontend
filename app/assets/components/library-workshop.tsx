@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
@@ -98,6 +98,17 @@ function libraryRowMediaKind(row: LibraryRow): "image" | "video" | null {
   return null;
 }
 
+function renderLibraryMediaPlaceholder(row: LibraryRow, mediaKind: "image" | "video") {
+  const Icon = mediaKind === "image" ? LibraryBigImageIcon : Video;
+  const label = row.format || (mediaKind === "image" ? "图片预览" : "视频预览");
+  return (
+    <span className={`shadcn-prototype-library-media-placeholder ${mediaKind}`} aria-hidden="true">
+      <Icon size={28} strokeWidth={1.7} />
+      <em>{label}</em>
+    </span>
+  );
+}
+
 function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conversation">) {
   const viewClass = view === "image" || view === "video" ? " grid" : "";
   const mediaKind = libraryRowMediaKind(row);
@@ -105,11 +116,11 @@ function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conve
     <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb image${viewClass}` : "shadcn-prototype-library-media-thumb empty image"} aria-hidden="true">
       {/* Thumbnails stream from the runtime-configured backend media proxy; host is not statically known. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : <span>无</span>}
+      {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : renderLibraryMediaPlaceholder(row, "image")}
     </span>
   ) : mediaKind === "video" ? (
     <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb video${viewClass}` : "shadcn-prototype-library-media-thumb empty video"} aria-hidden="true">
-      {row.previewUrl ? <video src={row.previewUrl} muted playsInline preload="metadata" /> : <span>无</span>}
+      {row.previewUrl ? <video src={row.previewUrl} muted playsInline preload="metadata" /> : renderLibraryMediaPlaceholder(row, "video")}
     </span>
   ) : null;
 }

@@ -423,6 +423,7 @@ const videoScriptProduct: AssetProduct = {
   preview: {
     title: "60 秒短视频分镜",
     subtitle: "开场 / 证据 / 判断 / CTA",
+    posterText: "税费透明正在影响独立站转化",
     eyebrow: "9:16 视频预览",
     frames: [
       { title: "封面图", subtitle: "税费透明", tone: "dark" },

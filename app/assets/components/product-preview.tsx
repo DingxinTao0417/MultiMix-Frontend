@@ -278,6 +278,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   const previewStageDescription = hasVideoProject
     ? "当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
     : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
+  const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? product.title;
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
   const exportedVideoUrl = playableVideoUrl(product);
 
@@ -342,6 +343,41 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
           />
         </div>
       ) : null}
+      {!exportedVideoUrl ? (
+        <section className="shadcn-prototype-video-placeholder-preview" aria-label={`${previewStageLabel}预览`}>
+          <div className="shadcn-prototype-video-placeholder-phone" aria-hidden="true">
+            <div className="shadcn-prototype-video-placeholder-screen">
+              <span className="shadcn-prototype-video-placeholder-stage">{previewStageLabel}</span>
+              <strong>{previewPosterText}</strong>
+              <p>{product.preview?.subtitle ?? previewStageDescription}</p>
+              <span className="shadcn-prototype-video-placeholder-play"><i /></span>
+            </div>
+            <div className="shadcn-prototype-video-placeholder-bar">
+              <span>00:00</span>
+              <i><b /></i>
+              <span>{product.duration}</span>
+            </div>
+          </div>
+          <div className="shadcn-prototype-video-placeholder-meta">
+            <header>
+              <span>{previewStageLabel}</span>
+              <strong>{product.preview?.title ?? product.title}</strong>
+              <em>{product.ratio} / {product.duration}</em>
+            </header>
+            <p>{previewStageDescription}</p>
+            {firstTimelineItems.length ? (
+              <ul>
+                {firstTimelineItems.map((item) => (
+                  <li key={`${item.time}-${item.title}`}>
+                    <time>{item.time}</time>
+                    <span>{item.title}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       {planSummary ? (
         <section className="shadcn-prototype-video-plan-summary" aria-label={`${planSummaryLabel}摘要`}>
           <header>
@@ -380,28 +416,6 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
         </section>
       ) : null}
       {product.segments?.length ? <SegmentCards segments={product.segments} /> : null}
-      <div className="shadcn-prototype-video-frame project">
-        <article className="shadcn-prototype-video-project-card" aria-label={`${previewStageLabel}预览`}>
-          <header>
-            <span>{previewStageLabel}</span>
-            <em>{product.ratio} / {product.duration}</em>
-          </header>
-          <div>
-            <strong>{product.preview?.title ?? product.title}</strong>
-            <p>{previewStageDescription}</p>
-          </div>
-          {firstTimelineItems.length ? (
-            <ul>
-              {firstTimelineItems.map((item) => (
-                <li key={`${item.time}-${item.title}`}>
-                  <time>{item.time}</time>
-                  <span>{item.title}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </article>
-      </div>
 
       {visualPreviewFrames.length ? (
         <div className="shadcn-prototype-image-strip" aria-label="视觉预览">
