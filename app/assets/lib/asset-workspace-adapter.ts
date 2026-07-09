@@ -69,6 +69,7 @@ function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | u
       actionType: stringValue(item.action_type) || "fill_composer",
       capability: stringValue(item.capability) || undefined,
       mode: stringValue(item.mode) || undefined,
+      isAiPrimary: item.is_ai_primary === true,
       enabled: item.enabled !== false,
       disabledReason: stringValue(item.disabled_reason) || undefined,
       requiresConfirmation: item.requires_confirmation !== false

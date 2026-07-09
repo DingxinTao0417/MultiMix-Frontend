@@ -162,6 +162,9 @@ export type AssetSuggestionAction = {
   actionType: "fill_composer" | "submit_message" | "open_panel" | "safe_execute" | string;
   capability?: string;
   mode?: string;
+  // True when clicking spends compute on an AI run (generate/rewrite/convert/render).
+  // Drives the primary (colored) chip styling, decoupled from actionType (submit vs fill).
+  isAiPrimary?: boolean;
   enabled: boolean;
   disabledReason?: string;
   requiresConfirmation: boolean;

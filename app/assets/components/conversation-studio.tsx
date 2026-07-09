@@ -58,6 +58,7 @@ function visibleSuggestions(message: VisibleConversationMessage) {
       label: action.label,
       utterance: action.utterance,
       actionType: action.actionType,
+      isAiPrimary: action.isAiPrimary === true,
       enabled: action.enabled,
       disabledReason: action.disabledReason
     }));
@@ -67,6 +68,7 @@ function visibleSuggestions(message: VisibleConversationMessage) {
     label: suggestion,
     utterance: suggestion,
     actionType: "fill_composer",
+    isAiPrimary: false,
     enabled: true,
     disabledReason: undefined
   }));
@@ -410,7 +412,7 @@ export default function ConversationStudio({
                       <button
                         type="button"
                         key={suggestion.key}
-                        className={suggestion.actionType === "submit_message" ? "shadcn-prototype-suggestion-primary" : undefined}
+                        className={suggestion.isAiPrimary ? "shadcn-prototype-suggestion-primary" : undefined}
                         disabled={disabled}
                         title={suggestion.disabledReason}
                         onClick={() => {
