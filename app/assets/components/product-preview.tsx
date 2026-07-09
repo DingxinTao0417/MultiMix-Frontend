@@ -119,6 +119,13 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
   );
 }
 
+// Remembers where each finished-video URL was last watched so reopening a
+// product resumes instead of restarting from 0. Paired with backend media
+// Cache-Control (backlog B), reopening the same clip is instant. Module scope
+// = survives ProductPreview unmount/remount across product switches; bounded
+// (one number per URL) so it cannot grow unbounded in a session.
+const videoPlaybackPositions = new Map<string, number>();
+
 export default function ProductPreview({ product }: { product: ProductArtifact }) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -282,12 +289,22 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
       <div className="shadcn-prototype-video-browse" aria-label="成片预览">
         <div className="shadcn-prototype-product-video">
           <video
+            key={exportedVideoUrl}
             ref={browsePlayerRef}
             className="shadcn-prototype-product-video-player"
             src={exportedVideoUrl}
             controls
             preload="metadata"
             playsInline
+            onLoadedMetadata={(event) => {
+              const saved = videoPlaybackPositions.get(exportedVideoUrl);
+              if (saved && saved < event.currentTarget.duration) {
+                event.currentTarget.currentTime = saved;
+              }
+            }}
+            onTimeUpdate={(event) => {
+              videoPlaybackPositions.set(exportedVideoUrl, event.currentTarget.currentTime);
+            }}
           />
         </div>
         {product.segments?.length ? (

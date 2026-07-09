@@ -701,6 +701,15 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - 编排成功重建 `video_project` 后，后端清除该标记；失败不清（手工时间轴仍在）。
 - 分镜属性卡的语义层修改（素材/配音/字卡）本身不受覆盖提示影响——提示语必须区分两层。
 
+### 12.6 成片媒体缓存（成片浏览态播放器）
+
+成片浏览态（`product-preview.tsx` 的 9:16 播放器）与素材代理都经 `GET /v1/video/media?ref=…`。后端 `_build_media_response` 已返回：
+
+- `Cache-Control: private, max-age=3600` —— 同一成片 1 小时内切回来走浏览器缓存，不重新下载。
+- `Accept-Ranges: bytes` + `206 Partial Content` —— 支持范围请求，分镜卡跳转 seek 只拉目标片段。
+
+前端配合：播放器 `key={url}`（同 URL 不重建，换 URL 才重挂）+ 模块级 `videoPlaybackPositions` 记录每个 URL 的播放位置，重开产物时 `onLoadedMetadata` 恢复进度而非从 0 重播。**结论：无需为播放器缓存新增后端工作，现有响应头已覆盖。**
+
 ---
 
 ## 附：验证命令
