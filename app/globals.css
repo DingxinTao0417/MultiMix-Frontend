@@ -176,12 +176,20 @@ button:disabled {
 }
 
 .shadcn-prototype-brand-mark {
-  display: grid;
+  display: inline-grid;
   width: 26px;
   height: 26px;
   place-items: center;
   border-radius: 999px;
   background: var(--sp-ai-grad);
+}
+
+.shadcn-prototype-brand-letter {
+  display: block;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-team {
@@ -4176,18 +4184,10 @@ button:disabled {
 }
 
 .shadcn-prototype-library-loading {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #eae7e1;
-  border-top-color: #5b45e0;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
-  animation: shadcn-prototype-spin 0.8s linear infinite;
-}
-
-@keyframes shadcn-prototype-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  background: #8d7ef2;
 }
 
 .shadcn-prototype-library-action-message {
