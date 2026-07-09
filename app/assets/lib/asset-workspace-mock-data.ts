@@ -452,6 +452,21 @@ const finishedVideoProduct: AssetProduct = {
   }
 };
 
+// A generated project that has NOT been exported to MP4 yet: browse state shows
+// the poster skeleton + segment cards (demo 默认态), never the legacy phone +
+// meta-text split. Editor still takes over on「编辑」.
+const projectNoExportProduct: AssetProduct = {
+  ...videoScriptProduct,
+  id: "project-no-export",
+  title: "60 秒短视频工程",
+  status: "工程已生成",
+  phase: "视频工程",
+  version: "v1",
+  metadata: {
+    video_project: { status: "assembled" }
+  }
+};
+
 const imageCoverProduct: AssetProduct = {
   id: "linkedin-cover-image",
   mode: "image",
@@ -1285,6 +1300,29 @@ const conversationRows: AssetConversation[] = [
     ],
     product: finishedVideoProduct,
     products: [finishedVideoProduct]
+  },
+  {
+    id: "project-no-export",
+    title: "短视频工程预览",
+    type: "视频工程",
+    updatedAt: "07/06",
+    assetLabel: "短视频分镜脚本",
+    status: "工程 · 成功",
+    prompt: "确认这版方案，生成视频工程。",
+    response: "视频工程已生成，右侧可以看分镜，点「编辑」进剪辑器调整。",
+    canvasTitle: "60 秒短视频工程",
+    canvasMeta: "视频工程 · v1",
+    raw: "# 60 秒短视频工程\n\n工程已生成，可在右侧浏览分镜，点「编辑」进入剪辑器调整。导出后这里会显示可播放成片。",
+    judgment: "工程浏览态用于确认分镜与素材，细调进剪辑器，导出后再看成片。",
+    action: "浏览分镜确认后，进编辑器微调或导出成片。",
+    delivery: "视频工程已生成。可以浏览每个分镜、点「编辑」进剪辑器调整，或说：把第 2 段素材换成产品图、导出成片。",
+    suggestions: ["调整第2段素材", "导出成片", "改成数字人口播"],
+    messages: [
+      { role: "user", text: "确认这版方案，生成视频工程。" },
+      { role: "assistant", text: "视频工程已生成，右侧可以浏览分镜，点「编辑」进剪辑器调整。导出后会显示可播放成片。", suggestions: ["调整第2段素材", "导出成片", "改成数字人口播"] }
+    ],
+    product: projectNoExportProduct,
+    products: [projectNoExportProduct]
   },
   {
     id: "real-scene",

@@ -282,38 +282,57 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
   const exportedVideoUrl = playableVideoUrl(product);
 
-  // Demo-final browse state for a finished video (workspace-video.html 默认态):
-  // 9:16 player + jumpable segment cards + source block. Requires a real
-  // playable file — without one the workspace keeps the edit surface instead.
-  if (hasVideoProject && exportedVideoUrl) {
+  // Demo-final browse state for any generated project (workspace-video.html
+  // 默认态): centered 9:16 player + jumpable segment cards + source block.
+  // With a real MP4 the player is playable; before export it shows the poster
+  // skeleton (demo .screen) — never the legacy phone + meta-text layout.
+  if (hasVideoProject) {
+    const posterSubtitle = product.preview?.subtitle ?? planSummary?.topic ?? product.title;
     return (
       <div className="shadcn-prototype-video-browse" aria-label="成片预览">
         <div className="shadcn-prototype-product-video">
-          <video
-            key={exportedVideoUrl}
-            ref={browsePlayerRef}
-            className="shadcn-prototype-product-video-player"
-            src={exportedVideoUrl}
-            controls
-            preload="metadata"
-            playsInline
-            onLoadedMetadata={(event) => {
-              const saved = videoPlaybackPositions.get(exportedVideoUrl);
-              if (saved && saved < event.currentTarget.duration) {
-                event.currentTarget.currentTime = saved;
-              }
-            }}
-            onTimeUpdate={(event) => {
-              videoPlaybackPositions.set(exportedVideoUrl, event.currentTarget.currentTime);
-            }}
-          />
+          {exportedVideoUrl ? (
+            <video
+              key={exportedVideoUrl}
+              ref={browsePlayerRef}
+              className="shadcn-prototype-product-video-player"
+              src={exportedVideoUrl}
+              controls
+              preload="metadata"
+              playsInline
+              onLoadedMetadata={(event) => {
+                const saved = videoPlaybackPositions.get(exportedVideoUrl);
+                if (saved && saved < event.currentTarget.duration) {
+                  event.currentTarget.currentTime = saved;
+                }
+              }}
+              onTimeUpdate={(event) => {
+                videoPlaybackPositions.set(exportedVideoUrl, event.currentTarget.currentTime);
+              }}
+            />
+          ) : (
+            <div className="shadcn-prototype-video-poster" aria-label="视频工程预览">
+              <div className="shadcn-prototype-video-poster-screen">
+                {product.preview?.posterText ? (
+                  <span className="shadcn-prototype-video-poster-title">{product.preview.posterText}</span>
+                ) : null}
+                <span className="shadcn-prototype-video-poster-sub">{posterSubtitle}</span>
+                <span className="shadcn-prototype-video-poster-play" aria-hidden="true"><i /></span>
+              </div>
+              <div className="shadcn-prototype-video-poster-bar">
+                <span>00:00</span>
+                <i />
+                <span>{product.duration}</span>
+              </div>
+            </div>
+          )}
         </div>
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}
-            hint="点击任意分镜可跳转预览"
+            hint={exportedVideoUrl ? "点击任意分镜可跳转预览" : "点「编辑」可调整每个分镜"}
             activeId={activeSegmentId}
-            onSelect={(segment) => {
+            onSelect={exportedVideoUrl ? (segment) => {
               if (segment.startSeconds == null) return;
               setActiveSegmentId(segment.id);
               const player = browsePlayerRef.current;
@@ -321,7 +340,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
               }
-            }}
+            } : undefined}
           />
         ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}

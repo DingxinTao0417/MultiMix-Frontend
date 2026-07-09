@@ -2502,6 +2502,98 @@ button:disabled {
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
 }
 
+/* Poster skeleton shown in the browse state before an MP4 is exported
+   (demo workspace-video.html .player/.screen/.pbar). Centered 9:16 phone,
+   never the legacy phone + meta-text split layout. */
+.shadcn-prototype-video-poster {
+  display: grid;
+  gap: 0;
+  width: 200px;
+  max-width: 100%;
+  border-radius: 20px;
+  border: 1px solid #eae7e1;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(32, 31, 30, 0.05), 0 16px 40px rgba(32, 31, 30, 0.07);
+  padding: 7px;
+}
+
+.shadcn-prototype-video-poster-screen {
+  position: relative;
+  display: grid;
+  aspect-ratio: 9 / 16;
+  align-content: end;
+  gap: 8px;
+  overflow: hidden;
+  border-radius: 14px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(20, 24, 28, 0.02), rgba(20, 24, 28, 0.5)),
+    linear-gradient(165deg, #c9dcec 0%, #edf3f6 45%, #d8c5a6 68%, #827363 100%);
+  color: #ffffff;
+}
+
+.shadcn-prototype-video-poster-title {
+  position: relative;
+  z-index: 1;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.shadcn-prototype-video-poster-sub {
+  position: relative;
+  z-index: 1;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.shadcn-prototype-video-poster-play {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+}
+
+.shadcn-prototype-video-poster-play i {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.shadcn-prototype-video-poster-play i::after {
+  content: "";
+  position: absolute;
+  margin: 14px 0 0 17px;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid #201f1e;
+}
+
+.shadcn-prototype-video-poster-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 4px;
+  color: #9b968e;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shadcn-prototype-video-poster-bar i {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: #f5f3ef;
+}
+
 .shadcn-prototype-product-detail-popover summary {
   list-style: none;
 }

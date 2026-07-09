@@ -7,7 +7,7 @@ import { getProductModeLabel, getProductRatioClass, stringValue, type Conversati
 import { UI_V3_AGENT_TIMELINE, UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AgentRunTimeline from "./agent-run-timeline";
-import ProductPreview, { playableVideoUrl } from "./product-preview";
+import ProductPreview from "./product-preview";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -100,19 +100,18 @@ export default function ProductWorkspace({
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
-  // Demo-final video surfaces: "browse" (player + segment cards) needs a real
-  // playable file; without one the edit surface (embedded editor) is the only
-  // honest preview, so browse is unavailable (§12 数据不在就不渲染).
-  const exportedVideoUrl = hasVideoProject ? playableVideoUrl(product) : "";
-  const canBrowseVideo = Boolean(hasVideoProject && exportedVideoUrl);
-  const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("edit");
-  const showEditorEmbed = hasVideoProject && (!canBrowseVideo || videoSurface === "edit");
-  // ProductPreview renders its own browse state (player + segment cards) when a
-  // video_project + playable file exist, even without a backendAssetId (mock /
-  // externally-hosted). Mirror that here to drop the legacy timeline strip.
-  const previewShowsBrowse = Boolean(
-    productMetadata.video_project && playableVideoUrl(product)
-  );
+  // Demo-final video surfaces (workspace-video.html): "browse" (player when an
+  // MP4 exists, otherwise segment cards from video_project) is the default;
+  // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
+  // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
+  const canBrowseVideo = hasVideoProject;
+  const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
+  const showEditorEmbed = hasVideoProject && videoSurface === "edit";
+  // ProductPreview renders its own browse state (poster/player + segment cards)
+  // for any generated project — with or without an exported MP4, and even
+  // without a backendAssetId (mock / externally-hosted). Mirror that here so the
+  // legacy timeline strip never doubles up under it.
+  const previewShowsBrowse = Boolean(productMetadata.video_project);
   // Image products download their real hero file; without a URL the button hides.
   const imageDownloadUrl = product.mode === "image"
     ? (() => {
@@ -135,8 +134,10 @@ export default function ProductWorkspace({
   }, [currentAssetId, hasVideoProject]);
 
   useEffect(() => {
-    setVideoSurface(canBrowseVideo ? "browse" : "edit");
-  }, [currentAssetId, canBrowseVideo]);
+    // Switching products always lands on the browse surface; the editor is
+    // re-entered explicitly per product (demo 默认态).
+    setVideoSurface("browse");
+  }, [currentAssetId]);
 
   useEffect(() => {
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
