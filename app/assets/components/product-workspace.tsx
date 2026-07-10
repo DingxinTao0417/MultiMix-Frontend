@@ -124,6 +124,7 @@ export default function ProductWorkspace({
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
+    product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : "",
     getProductRatioClass(product.ratio)
   ].filter(Boolean).join(" ");
 
@@ -409,7 +410,7 @@ export default function ProductWorkspace({
               allow="autoplay; clipboard-write"
             />
           </div>
-        ) : hasVideoProject ? (
+        ) : previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
             <ProductPreview product={product} />
           </div>

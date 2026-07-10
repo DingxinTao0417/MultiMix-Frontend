@@ -136,7 +136,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
       <>
-        <article className="shadcn-prototype-copy-document shadcn-prototype-markdown">
+        <article className="shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface">
           <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
             {markdown}
           </ReactMarkdown>
@@ -289,7 +289,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   if (hasVideoProject) {
     const posterSubtitle = product.preview?.subtitle ?? planSummary?.topic ?? product.title;
     return (
-      <div className="shadcn-prototype-video-browse" aria-label="成片预览">
+      <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label="成片预览">
         <div className="shadcn-prototype-product-video">
           {exportedVideoUrl ? (
             <video

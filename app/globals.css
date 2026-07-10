@@ -2163,14 +2163,18 @@ button:disabled {
   flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 7px;
   min-width: 0;
 }
 
-/* Ghost button matches demo .hbtn.ghost: white bg, --line-strong border,
-   --muted (次级灰) text. Height 30, pill, 0 13 padding, weight 600. */
-.shadcn-prototype-product-actions button {
+/* Demo .hbtn.ghost base: 30px pill with 13px horizontal padding. */
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button {
+  display: inline-flex;
+  height: 30px;
   min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: #ffffff;
@@ -2416,25 +2420,31 @@ button:disabled {
   color: var(--sp-text);
 }
 
-/* Demo header buttons are uniformly .hbtn.ghost — no ink-filled variant.
-   详情/编辑/导出/保存 share the same white ghost pill. */
-.shadcn-prototype-product-actions button.primary {
-  border-color: var(--line-strong);
-  background: #ffffff;
-  color: var(--muted);
+/* Demo header hierarchy: one dark primary action, with ghost utilities. */
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button.primary {
+  border-color: var(--sp-text);
+  background: var(--sp-text);
+  color: #ffffff;
 }
 
 /* Ghost hover (demo .hbtn.ghost:hover): text darkens to --ink, lifts + shadow. */
-.shadcn-prototype-product-actions button:hover {
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button:hover {
   border-color: var(--line-strong);
   color: var(--text);
   box-shadow: var(--sp-shadow);
   transform: translateY(-1px);
 }
 
-.shadcn-prototype-product-actions button.primary:hover {
-  background: #ffffff;
-  color: var(--text);
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button.primary:hover {
+  border-color: var(--sp-text);
+  background: var(--sp-text);
+  color: #ffffff;
+}
+
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button:disabled,
+.shadcn-prototype-artifact .shadcn-prototype-product-header .shadcn-prototype-product-actions > button:disabled:hover {
+  box-shadow: none;
+  transform: none;
 }
 
 /* Product-header status pill（demo .okb「✓ 已完成」/ 失败红胶囊） */
@@ -2695,6 +2705,7 @@ button:disabled {
   border: 0;
   border-radius: 0;
   background: transparent;
+  overflow: visible;
   padding: 0;
 }
 
@@ -2724,6 +2735,10 @@ button:disabled {
   place-items: center;
 }
 
+.shadcn-prototype-workspace.conversation-mode .shadcn-prototype-product-preview.copy {
+  overflow: visible;
+}
+
 .shadcn-prototype-product-preview.image,
 .shadcn-prototype-product-preview.video {
   grid-template-rows: auto auto;
@@ -2737,6 +2752,20 @@ button:disabled {
   display: block;
   overflow: auto;
   padding-right: 2px;
+}
+
+/* One stage-level rule keeps every product scrollbar on the right edge. */
+.shadcn-prototype-workspace.conversation-mode .shadcn-prototype-stage-scroll-surface {
+  box-sizing: border-box;
+  width: calc(100% + 24px);
+  margin-right: -24px;
+  padding-left: var(--shadcn-prototype-stage-scroll-left-padding, 0);
+  padding-right: var(--shadcn-prototype-stage-scroll-right-padding, 24px);
+}
+
+.shadcn-prototype-workspace.conversation-mode .shadcn-prototype-copy-document.shadcn-prototype-stage-scroll-surface {
+  --shadcn-prototype-stage-scroll-left-padding: max(0px, calc(50% - 310px));
+  --shadcn-prototype-stage-scroll-right-padding: max(24px, calc(50% - 286px));
 }
 
 .shadcn-prototype-product-preview.video > * + * {
@@ -2765,14 +2794,6 @@ button:disabled {
   font-size: 10px;
 }
 
-.shadcn-prototype-product.video-project-mode .shadcn-prototype-product-actions button,
-.shadcn-prototype-product.video-project-mode .shadcn-prototype-open-editor,
-.shadcn-prototype-product.video-project-mode .shadcn-prototype-product-detail-trigger {
-  min-height: 26px;
-  height: 26px;
-  padding-inline: 10px;
-  font-size: 11px;
-}
 
 .shadcn-prototype-product-timeline-strip {
   display: grid;
@@ -3073,6 +3094,7 @@ button:disabled {
   box-shadow: none;
   outline: none;
 }
+
 
 .shadcn-prototype-copy-document:focus {
   box-shadow: none;
