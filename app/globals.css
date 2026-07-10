@@ -254,7 +254,6 @@ button:disabled {
 
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-brand,
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-sidebar-toggle,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-search,
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-new-conversation,
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-nav,
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-conversation-section,
@@ -421,27 +420,6 @@ button:disabled {
 .shadcn-prototype-logout:hover {
   background: #f5f3ef;
   color: #b42318;
-}
-
-.shadcn-prototype-search {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  border: 1px solid #eae7e1;
-  border-radius: 10px;
-  background: #ffffff;
-  color: var(--sp-subtle);
-  padding: 0 10px;
-  text-align: left;
-}
-
-.shadcn-prototype-search span {
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .shadcn-prototype-new-conversation {
@@ -5862,7 +5840,6 @@ button:disabled {
 
   .shadcn-prototype-home,
   .shadcn-prototype-brand,
-  .shadcn-prototype-search,
   .shadcn-prototype-new-conversation,
   .shadcn-prototype-nav,
   .shadcn-prototype-conversation-section,
@@ -5903,7 +5880,6 @@ button:disabled {
     display: block;
   }
 
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-search,
   .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-new-conversation {
     display: flex;
   }

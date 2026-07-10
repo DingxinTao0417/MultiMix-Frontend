@@ -16,7 +16,6 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
-  Search,
   Trash2,
   Video
 } from "lucide-react";
@@ -1149,14 +1148,6 @@ export default function AssetsWorkspaceClient({
             >
               <Plus size={18} aria-hidden="true" />
             </button>
-            <button
-              className="shadcn-prototype-collapsed-rail-button"
-              type="button"
-              aria-label="搜索聊天"
-              title="搜索聊天"
-            >
-              <Search size={17} aria-hidden="true" />
-            </button>
           </div>
 
           <div className="shadcn-prototype-collapsed-rail-group">
@@ -1212,11 +1203,6 @@ export default function AssetsWorkspaceClient({
         >
           <Plus size={15} aria-hidden="true" />
           新建对话
-        </button>
-
-        <button className="shadcn-prototype-search" type="button">
-          <Search size={15} aria-hidden="true" />
-          <span>搜索素材、产物或来源</span>
         </button>
 
         <nav className="shadcn-prototype-nav" aria-label="Primary">
