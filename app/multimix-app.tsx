@@ -53,6 +53,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   const searchParams = useSearchParams();
   const [user, setUser] = useState<LocalUser | null>(null);
   const [ready, setReady] = useState(false);
+  const [authInitError, setAuthInitError] = useState<string | null>(null);
 
   const handleLogout = async () => {
     if (supabase) {
@@ -73,17 +74,17 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
     const finishReady = () => {
       if (!cancelled) setReady(true);
     };
-    const setDefaultLocalUser = () => {
+    const setAuthUnavailable = () => {
       if (cancelled) return;
-      window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(DEFAULT_LOCAL_USER));
-      setUser(DEFAULT_LOCAL_USER);
+      setAuthInitError("登录状态不可用，请重试或重新登录。");
+      setUser(null);
       setReady(true);
     };
 
     if (isSupabaseConfigured && supabase) {
       // Try to restore Supabase session.
       const timeout = window.setTimeout(() => {
-        setDefaultLocalUser();
+        setAuthUnavailable();
       }, AUTH_INIT_TIMEOUT_MS);
       supabase.auth.getSession().then(({ data }) => {
         if (cancelled) return;
@@ -96,7 +97,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
         setReady(true);
       }).catch(() => {
         window.clearTimeout(timeout);
-        setDefaultLocalUser();
+        setAuthUnavailable();
       });
       // Listen for auth state changes (token refresh, sign out).
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -186,6 +187,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   if (!user) {
     return (
       <MultiMixAuth
+        initialError={authInitError}
         onAuthed={(nextUser) => {
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
           setUser(nextUser);
@@ -229,11 +231,11 @@ function MultiMixLoading() {
   );
 }
 
-function MultiMixAuth({ onAuthed }: { onAuthed: (user: LocalUser) => void }) {
+function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) => void; initialError?: string | null }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

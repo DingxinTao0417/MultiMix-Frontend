@@ -5,7 +5,7 @@ import { join } from "node:path";
 const root = process.cwd();
 
 function readAssetFile(path: string) {
-  return readFileSync(join(root, path), "utf8");
+  return readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("agent conversation UI copy", () => {
