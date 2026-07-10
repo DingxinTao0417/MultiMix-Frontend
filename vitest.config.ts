@@ -6,6 +6,7 @@ export default defineConfig({
     // Exclude pre-existing editor-engine tests (they use bun:test, not vitest).
     exclude: [
       '**/node_modules/**',
+      'scripts/__tests__/**',
       '**/editor-engine/vendor/editor/**/__tests__/**',
     ],
   },
