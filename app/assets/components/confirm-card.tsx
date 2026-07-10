@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check } from "lucide-react";
 import type { AssetMessagePlan, AssetPlanField } from "../lib/asset-workspace-types";
 
@@ -35,15 +36,24 @@ function PlanFieldRows({ fields, compact }: { fields: AssetPlanField[]; compact?
 export default function ConfirmCard({
   plan,
   disabled = false,
+  optimisticallyConfirmed = false,
   onConfirm,
   onAdjust,
 }: {
   plan: AssetMessagePlan;
   disabled?: boolean;
-  onConfirm?: (plan: AssetMessagePlan) => void;
+  optimisticallyConfirmed?: boolean;
+  // Carries the user-selected ratio (when the ratio toggle is shown) so the
+  // caller can weave it into the confirm instruction; undefined = plan default.
+  onConfirm?: (plan: AssetMessagePlan, ratio?: string) => void;
   onAdjust?: (plan: AssetMessagePlan) => void;
 }) {
-  if (plan.status === "confirmed") {
+  const ratioOptions = plan.ratioOptions ?? [];
+  const [selectedRatio, setSelectedRatio] = useState(
+    () => plan.ratioDefault ?? ratioOptions[0]?.value ?? ""
+  );
+
+  if (plan.status === "confirmed" || optimisticallyConfirmed) {
     const summary = plan.summaryFields?.length ? plan.summaryFields : plan.fields;
     return (
       <div className="shadcn-prototype-confirm-card confirmed" aria-label={`${plan.title} · 已确认`}>
@@ -74,15 +84,35 @@ export default function ConfirmCard({
       <div className="shadcn-prototype-confirm-fields">
         <PlanFieldRows fields={plan.fields} />
       </div>
+      {ratioOptions.length ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="视频尺寸">
+          <span className="shadcn-prototype-confirm-ratio-label">视频尺寸</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {ratioOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={option.value === selectedRatio}
+                className={option.value === selectedRatio ? "active" : undefined}
+                disabled={disabled}
+                onClick={() => setSelectedRatio(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="shadcn-prototype-confirm-foot">
         <button
           type="button"
           className="shadcn-prototype-confirm-primary"
           disabled={disabled || !onConfirm}
-          onClick={() => onConfirm?.(plan)}
+          onClick={() => onConfirm?.(plan, ratioOptions.length ? selectedRatio : undefined)}
         >
           <Check size={14} aria-hidden="true" />
-          {plan.confirmLabel ?? "确认，开始生成"}
+          {plan.confirmLabel ?? "确认"}
         </button>
         <button
           type="button"

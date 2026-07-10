@@ -54,6 +54,22 @@
   box-sizing: border-box;
 }
 
+/* Global slim scrollbar, aligned with UI redesign demo (final/*.html) */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 5px;
+  border: 2px solid var(--background);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 html,
 body {
   min-height: 100%;
@@ -175,21 +191,23 @@ button:disabled {
   box-shadow: none;
 }
 
-.shadcn-prototype-brand-mark {
+/* Higher specificity (0,2,1) to win over the generic
+   `.shadcn-prototype-team span` rule below, while using the same brand glyph
+   as the login shell at the sidebar's compact size. */
+.shadcn-prototype-team span.shadcn-prototype-brand-mark {
   display: inline-grid;
   width: 26px;
   height: 26px;
+  overflow: visible;
   place-items: center;
   border-radius: 999px;
   background: var(--sp-ai-grad);
 }
 
-.shadcn-prototype-brand-letter {
+.shadcn-prototype-brand-mark svg {
   display: block;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 1;
+  width: 17px;
+  height: 17px;
 }
 
 .shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-team {
@@ -368,10 +386,14 @@ button:disabled {
   white-space: nowrap;
 }
 
-.shadcn-prototype-user-avatar {
+/* Higher specificity (0,2,1) to win over `.shadcn-prototype-user span`,
+   which otherwise forces display:block + subtle color and breaks the
+   avatar centering/color. */
+.shadcn-prototype-user span.shadcn-prototype-user-avatar {
   display: inline-grid;
   width: 30px;
   height: 30px;
+  overflow: visible;
   place-items: center;
   border: 1px solid var(--sp-border);
   border-radius: 999px;
@@ -534,7 +556,10 @@ button:disabled {
   gap: 2px;
   min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  /* Cancel the sidebar's 12px right padding so the scrollbar hugs the
+     right border; keep an inner right pad so rows stay clear of it. */
+  margin-right: -12px;
+  padding-right: 8px;
 }
 
 .shadcn-prototype-conversation-row {
@@ -570,9 +595,27 @@ button:disabled {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  padding: 0 34px 0 10px;
+  padding: 0 10px;
   text-align: left;
   text-decoration: none;
+}
+
+.shadcn-prototype-conversation-rename {
+  cursor: default;
+}
+
+.shadcn-prototype-conversation-rename-input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--sp-accent-line);
+  border-radius: 8px;
+  background: var(--sp-card);
+  color: var(--sp-ink);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  padding: 3px 8px;
+  outline: none;
 }
 
 .shadcn-prototype-conversation-list strong {
@@ -597,11 +640,19 @@ button:disabled {
 
 .shadcn-prototype-conversation-list span {
   overflow: hidden;
-  color: var(--sp-subtle);
+  color: var(--sp-faint);
   font-size: 11px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: opacity 160ms ease;
+}
+
+/* Demo .conv:hover .d{display:none}: time fades out, more button takes its place */
+.shadcn-prototype-conversation-row:hover .shadcn-prototype-conversation-main span,
+.shadcn-prototype-conversation-row:focus-within .shadcn-prototype-conversation-main span,
+.shadcn-prototype-conversation-row:has(.shadcn-prototype-conversation-menu) .shadcn-prototype-conversation-main span {
+  opacity: 0;
 }
 
 .shadcn-prototype-conversation-more {
@@ -631,8 +682,8 @@ button:disabled {
 }
 
 .shadcn-prototype-conversation-more:hover {
-  background: transparent;
-  color: #6e6a64;
+  background: rgba(32, 31, 30, 0.08);
+  color: var(--sp-text);
 }
 
 .shadcn-prototype-conversation-menu {
@@ -685,6 +736,14 @@ button:disabled {
   height: 100svh;
   min-height: 0;
   overflow: hidden;
+}
+
+.shadcn-prototype-inset.conversation-inset {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.shadcn-prototype-inset.conversation-inset .shadcn-prototype-workspace {
+  height: 100svh;
 }
 
 .shadcn-prototype-topbar {
@@ -755,11 +814,17 @@ button:disabled {
 }
 
 .shadcn-prototype-diagnostics > button {
+  display: inline-flex;
   min-height: 28px;
+  align-items: center;
+  justify-content: center;
   gap: 5px;
+  border: 1px solid #eae7e1;
   border-radius: 999px;
+  background: #ffffff;
   padding: 0 11px;
   color: var(--sp-faint);
+  cursor: pointer;
   font-size: 12px;
 }
 
@@ -887,12 +952,14 @@ button:disabled {
 }
 
 .shadcn-prototype-workspace.conversation-mode {
-  grid-template-columns: minmax(320px, var(--chat-panel-width, 640px)) 10px minmax(0, 1fr);
+  grid-template-columns: minmax(320px, var(--chat-panel-width, 640px)) 6px minmax(0, 1fr);
   gap: 0;
-  border: 1px solid #eae7e1;
+  border: 0;
   border-radius: 0;
-  background: var(--sp-card);
-  box-shadow: var(--sp-shadow);
+  /* Warm stage base so the transparent 6px resize track blends with the
+     stage (--background) instead of revealing a white sliver on its left. */
+  background: var(--background);
+  box-shadow: none;
   padding: 0;
 }
 
@@ -987,7 +1054,8 @@ button:disabled {
 }
 
 .shadcn-prototype-start-dock:focus-within {
-  box-shadow: 0 6px 20px rgba(124, 92, 255, 0.16), 0 28px 64px rgba(0, 168, 142, 0.14);
+  /* No extra focus glow: keep the base shadow when the composer is focused. */
+  box-shadow: 0 4px 14px rgba(124, 92, 255, 0.08), 0 22px 52px rgba(0, 168, 142, 0.08);
 }
 
 .shadcn-prototype-start-dock textarea {
@@ -1268,14 +1336,14 @@ button:disabled {
 }
 
 .shadcn-prototype-workspace.conversation-mode .shadcn-prototype-chat {
-  border-right: 0;
+  border-right: 1px solid var(--sp-border);
 }
 
 .shadcn-prototype-resize-handle {
   position: relative;
   display: grid;
-  width: 10px;
-  min-width: 10px;
+  width: 6px;
+  min-width: 6px;
   height: 100%;
   place-items: center;
   border: 0;
@@ -1287,42 +1355,31 @@ button:disabled {
   user-select: none;
 }
 
-.shadcn-prototype-resize-handle::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 4px;
-  width: 1px;
-  background: #eae7e1;
-}
-
+/* Handle bar: slim 2x36 pill, neutral --line-strong at rest, --accent on
+   hover/drag. Sits 2px right of the chat divider line (demo .split::after). */
 .shadcn-prototype-resize-handle::after {
   content: "";
   position: absolute;
   top: 50%;
-  left: 50%;
-  width: 4px;
-  height: 44px;
-  border-radius: 999px;
-  background: transparent;
-  transform: translate(-50%, -50%);
-  transition:
-    background-color 160ms ease,
-    width 160ms ease;
+  left: 2px;
+  right: auto;
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transform: translateY(-50%);
+  transition: background-color 160ms ease;
 }
 
 .shadcn-prototype-resize-handle:hover,
 .shadcn-prototype-resize-handle:focus-visible {
-  color: #6e6a64;
   outline: none;
 }
 
 .shadcn-prototype-resize-handle:hover::after,
 .shadcn-prototype-resize-handle:focus-visible::after,
 .shadcn-prototype-resizing .shadcn-prototype-resize-handle::after {
-  width: 6px;
-  background: #201f1e;
+  background: var(--accent);
 }
 
 .shadcn-prototype-resizing {
@@ -1360,7 +1417,7 @@ button:disabled {
 
 .shadcn-prototype-chat {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -1696,10 +1753,11 @@ button:disabled {
 }
 
 .shadcn-prototype-composer-control:focus-within {
+  /* No extra focus glow: keep the base shadow when the composer is focused. */
   box-shadow:
-    0 6px 20px rgba(124, 92, 255, 0.14),
-    0 20px 46px rgba(0, 168, 142, 0.1),
-    0 3px 10px rgba(32, 31, 30, 0.07);
+    0 4px 14px rgba(124, 92, 255, 0.07),
+    0 16px 38px rgba(0, 168, 142, 0.06),
+    0 2px 8px rgba(32, 31, 30, 0.05);
 }
 
 .shadcn-prototype-composer-control.has-attachments {
@@ -1955,6 +2013,18 @@ button:disabled {
   color: #6e6a64;
 }
 
+.shadcn-prototype-thread article.local-unsubmitted {
+  max-width: min(560px, 92%);
+  border: 1px dashed #c9a44d;
+  border-radius: 6px;
+  background: #fffaf0;
+  padding: 10px 12px;
+}
+
+.shadcn-prototype-thread article.local-unsubmitted p {
+  color: #6f551a;
+}
+
 .shadcn-prototype-typing-dots {
   display: inline-flex;
   gap: 3px;
@@ -1989,7 +2059,7 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  background: #ffffff;
+  background: var(--background);
 }
 
 /* Generating aurora: two breathing radial glows, only while a product is
@@ -2055,7 +2125,7 @@ button:disabled {
 }
 
 .shadcn-prototype-workspace.conversation-mode .shadcn-prototype-artifact .shadcn-prototype-product {
-  padding-right: 0;
+  padding: 16px 24px;
 }
 
 .shadcn-prototype-artifact .shadcn-prototype-product-header {
@@ -2069,7 +2139,7 @@ button:disabled {
 }
 
 .shadcn-prototype-workspace.conversation-mode .shadcn-prototype-artifact .shadcn-prototype-product-header {
-  padding-right: 16px;
+  padding: 0 0 10px;
 }
 
 .shadcn-prototype-artifact .shadcn-prototype-product-header > div:first-child {
@@ -2119,43 +2189,49 @@ button:disabled {
   min-width: 0;
 }
 
+/* Ghost button matches demo .hbtn.ghost: white bg, --line-strong border,
+   --muted (次级灰) text. Height 30, pill, 0 13 padding, weight 600. */
 .shadcn-prototype-product-actions button {
   min-height: 30px;
-  border: 1px solid #eae7e1;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: #ffffff;
-  color: #201f1e;
-  padding: 0 11px;
+  color: var(--muted);
+  padding: 0 13px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   transition:
+    color 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
 }
 
+/* 导出 shares the demo .hbtn.ghost look with the other header buttons. */
 .shadcn-prototype-open-editor {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 30px;
-  border: 1px solid #5b45e0;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: #5b45e0;
-  color: #ffffff;
-  padding: 0 12px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 0 13px;
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: none;
   cursor: pointer;
   transition:
+    color 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
 }
 
 .shadcn-prototype-open-editor:hover {
-  box-shadow: 0 8px 18px rgba(45, 108, 223, 0.18);
+  color: var(--text);
+  box-shadow: var(--sp-shadow);
   transform: translateY(-1px);
 }
 
@@ -2362,21 +2438,25 @@ button:disabled {
   color: var(--sp-text);
 }
 
+/* Demo header buttons are uniformly .hbtn.ghost — no ink-filled variant.
+   详情/编辑/导出/保存 share the same white ghost pill. */
 .shadcn-prototype-product-actions button.primary {
-  border-color: #201f1e;
-  background: #201f1e;
-  color: #ffffff;
+  border-color: var(--line-strong);
+  background: #ffffff;
+  color: var(--muted);
 }
 
+/* Ghost hover (demo .hbtn.ghost:hover): text darkens to --ink, lifts + shadow. */
 .shadcn-prototype-product-actions button:hover {
-  border-color: #ddd9d1;
-  box-shadow: 0 8px 18px rgba(24, 24, 27, 0.06);
+  border-color: var(--line-strong);
+  color: var(--text);
+  box-shadow: var(--sp-shadow);
   transform: translateY(-1px);
 }
 
 .shadcn-prototype-product-actions button.primary:hover {
-  border-color: #201f1e;
-  background: #201f1e;
+  background: #ffffff;
+  color: var(--text);
 }
 
 /* Product-header status pill（demo .okb「✓ 已完成」/ 失败红胶囊） */
@@ -2405,23 +2485,36 @@ button:disabled {
 }
 
 /* 对话列头部（demo chat-head）：会话标题 + 已引用素材徽章 */
-.shadcn-prototype-chat-head {
+.shadcn-prototype-card .shadcn-prototype-chat-head {
   display: flex;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 0;
   border-bottom: 1px solid var(--sp-border);
-  padding: 12px clamp(18px, 4vw, 30px);
+  padding: 7px clamp(18px, 4vw, 30px);
 }
 
 .shadcn-prototype-chat-head strong {
+  min-width: 0;
   overflow: hidden;
   color: var(--sp-text);
   font-size: 14px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shadcn-prototype-chat-head-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.shadcn-prototype-card .shadcn-prototype-chat-head .shadcn-prototype-diagnostics > button {
+  min-height: 28px;
+  padding: 0 11px;
 }
 
 .shadcn-prototype-chat-head-badge {
@@ -2447,29 +2540,6 @@ button:disabled {
 }
 
 /* 助手消息渐变星标头像（demo .msg .avatar） */
-.shadcn-prototype-message-group.with-avatar {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-}
-
-.shadcn-prototype-msg-avatar {
-  display: inline-grid;
-  width: 26px;
-  height: 26px;
-  margin-top: 2px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--sp-ai-grad);
-  color: #ffffff;
-}
-
-.shadcn-prototype-message-group.with-avatar > article,
-.shadcn-prototype-message-group.with-avatar > .shadcn-prototype-product-card-list {
-  grid-column: 2;
-}
-
 /* 成片浏览态（demo workspace-video 默认态）：播放器 + 分镜卡 + 来源块 */
 .shadcn-prototype-video-browse {
   display: grid;
@@ -2608,14 +2678,16 @@ button:disabled {
   height: 30px;
   align-items: center;
   justify-content: center;
-  border: 1px solid #eae7e1;
+  padding: 0 13px;
+  border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: #ffffff;
-  color: #201f1e;
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
   cursor: pointer;
   transition:
+    color 160ms ease,
     border-color 160ms ease,
     box-shadow 160ms ease,
     transform 160ms ease;
@@ -2623,7 +2695,8 @@ button:disabled {
 
 .shadcn-prototype-product-detail-trigger:hover,
 .shadcn-prototype-product-detail-popover[open] .shadcn-prototype-product-detail-trigger {
-  border-color: #ddd9d1;
+  border-color: var(--line-strong);
+  color: var(--text);
   box-shadow: 0 10px 24px rgba(24, 24, 27, 0.08);
   transform: translateY(-1px);
 }
@@ -2644,7 +2717,7 @@ button:disabled {
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding-right: 0;
+  padding: 0;
 }
 
 .shadcn-prototype-product-preview {
@@ -4195,49 +4268,56 @@ button:disabled {
 .shadcn-prototype-library-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 
-.shadcn-prototype-library-title {
-  margin: 0 12px 0 2px;
-  color: var(--sp-text);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-}
-
+/* Demo main-head search: narrow pill, pushed to the far right (margin-left:auto) */
 .shadcn-prototype-library-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   min-width: 0;
-  width: min(100%, 560px);
-  height: 38px;
-  border: 1px solid #eae7e1;
-  border-radius: 10px;
-  background: #ffffff;
-  padding: 0 12px;
-  color: #6e6a64;
-  flex: 0 1 560px;
-  max-width: 560px;
+  height: 36px;
+  border: 1px solid var(--sp-border);
+  border-radius: 12px;
+  background: var(--sp-card);
+  padding: 0 11px;
+  color: var(--sp-faint);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
 .shadcn-prototype-library-search.compact {
-  flex: 0 1 560px;
-  max-width: 560px;
-  margin-left: auto;
+  flex: 0 1 210px;
+  width: 210px;
+  max-width: 210px;
+}
+
+.shadcn-prototype-library-search:focus-within {
+  /* Keep the border-color cue on focus, but no glow ring shadow. */
+  border-color: var(--sp-accent-line);
+}
+
+.shadcn-prototype-library-search svg {
+  display: block;
 }
 
 .shadcn-prototype-library-search input {
   min-width: 0;
   border: 0;
   outline: 0;
+  padding: 0;
+  margin: 0;
+  /* UA gives inputs a ~44px min-height that overflows the 36px pill and drops
+     the text low; clear it so height:100% + grid centering actually apply. */
+  min-height: 0;
+  height: 100%;
   background: transparent;
   color: var(--sp-text);
   font: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1;
 }
 
 .shadcn-prototype-library-toolbar > button,
@@ -4247,26 +4327,35 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid #eae7e1;
+  border: 1px solid var(--sp-border);
   border-radius: 999px;
-  background: #ffffff;
-  color: #201f1e;
-  font-size: 12px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
+  transition: transform 150ms ease, box-shadow 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
 .shadcn-prototype-library-toolbar > button {
-  height: 38px;
-  padding: 0 15px;
+  height: 36px;
+  padding: 0 16px;
 }
 
+.shadcn-prototype-library-toolbar > button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--sp-shadow);
+}
+
+/* Demo .btn-ink: dark pill upload button, gap 7, font 13 */
 .shadcn-prototype-library-toolbar > button.primary {
-  border-color: #201f1e;
-  background: #201f1e;
+  gap: 7px;
+  border-color: var(--sp-text);
+  background: var(--sp-text);
   color: #ffffff;
-  font-weight: 650;
-  box-shadow: 0 2px 6px rgba(32, 31, 30, 0.08), 0 10px 26px rgba(32, 31, 30, 0.07);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--sp-shadow);
 }
 
 .shadcn-prototype-library-toolbar > button:disabled,
@@ -4291,12 +4380,12 @@ button:disabled {
 
 .shadcn-prototype-library-filters {
   display: flex;
-  flex: none;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   min-width: 0;
-  overflow: auto;
-  padding-bottom: 2px;
+  margin-right: auto;
 }
 
 .shadcn-prototype-library-filters button {
@@ -4341,14 +4430,14 @@ button:disabled {
   display: grid;
   flex: 1;
   align-content: start;
-  gap: 12px;
+  gap: 16px;
   min-height: 0;
   overflow: auto;
   padding: 2px;
 }
 
 .shadcn-prototype-library-grid.view-image {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
 }
 
 .shadcn-prototype-library-grid.view-video {
@@ -4401,14 +4490,14 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--sp-border);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--sp-card);
   padding: 0;
   text-align: left;
   cursor: pointer;
   transition:
     transform 150ms ease,
-    box-shadow 150ms ease,
+    box-shadow 200ms ease,
     border-color 150ms ease;
 }
 
@@ -4429,50 +4518,53 @@ button:disabled {
   position: relative;
   display: block;
   min-width: 0;
+  padding: 6px 6px 0;
+  overflow: hidden;
 }
 
 .shadcn-prototype-library-media-cat {
   position: absolute;
-  z-index: 1;
-  top: 8px;
-  left: 8px;
+  z-index: 2;
+  top: 13px;
+  left: 13px;
   padding: 2px 8px;
-  border: 1px solid var(--sp-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  color: var(--sp-subtle);
-  font-size: 10.5px;
-  font-weight: 650;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--sp-text);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .shadcn-prototype-library-media-frame .shadcn-prototype-library-status {
   position: absolute;
-  z-index: 1;
-  top: 8px;
-  right: 8px;
+  z-index: 2;
+  top: 13px;
+  right: 13px;
   margin-left: 0;
-  background: rgba(255, 255, 255, 0.94);
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .shadcn-prototype-library-media-body {
   display: grid;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
-  padding: 10px 12px 12px;
+  padding: 9px 13px 12px;
 }
 
 .shadcn-prototype-library-media-body strong {
   overflow: hidden;
   color: var(--sp-text);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .shadcn-prototype-library-media-body em {
   color: var(--sp-faint);
-  font-size: 11px;
+  font-size: 11.5px;
   font-style: normal;
 }
 
@@ -4552,9 +4644,9 @@ button:disabled {
 .shadcn-prototype-library-text-title {
   display: block;
   color: var(--sp-text);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 650;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .shadcn-prototype-library-text-card p {
@@ -4564,13 +4656,13 @@ button:disabled {
   margin: 0;
   overflow: hidden;
   color: var(--sp-subtle);
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.65;
 }
 
 .shadcn-prototype-library-text-meta {
   color: var(--sp-faint);
-  font-size: 11.5px;
+  font-size: 11px;
 }
 
 /* 上传更多素材/资料 虚线瓦片（demo .upload-card） */
@@ -4695,10 +4787,14 @@ button:disabled {
   margin-top: 0;
   overflow: hidden;
   border: 0;
-  border-bottom: 1px solid var(--sp-border);
-  border-radius: 0;
+  border-radius: 10px;
   background: #f5f3ef;
   color: #6e6a64;
+  transition: transform 1.2s ease;
+}
+
+.shadcn-prototype-library-media-card:hover .shadcn-prototype-library-media-thumb {
+  transform: scale(1.03);
 }
 
 .shadcn-prototype-library-grid.view-video .shadcn-prototype-library-media-thumb,
@@ -4790,23 +4886,23 @@ button:disabled {
 .shadcn-prototype-library-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 90;
   display: flex;
-  justify-content: flex-end;
-  align-items: stretch;
-  background: rgba(15, 23, 42, 0.32);
-  padding: 0;
+  justify-content: center;
+  align-items: center;
+  background: rgba(32, 31, 30, 0.38);
+  backdrop-filter: blur(3px);
+  padding: 30px;
 }
 
 .shadcn-prototype-library-modal {
-  width: min(720px, calc(100vw - 32px));
-  max-height: none;
-  height: 100vh;
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-  border-radius: 0;
-  box-shadow: -24px 0 80px rgba(15, 23, 42, 0.24);
+  width: 560px;
+  max-width: 100%;
+  max-height: 84vh;
+  height: auto;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(32, 31, 30, 0.3);
 }
 
 .shadcn-prototype-library-modal-title-actions {
@@ -4830,7 +4926,7 @@ button:disabled {
 .shadcn-prototype-library-modal .shadcn-prototype-library-prose,
 .shadcn-prototype-library-modal .shadcn-prototype-library-timeline {
   height: auto;
-  max-height: 250px;
+  max-height: 320px;
 }
 
 .shadcn-prototype-library-detail > * {
@@ -5108,6 +5204,174 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* Demo-final detail blocks (final/library.html): AI understanding badge,
+   pending sweep, usable-scene chips, usage record, voiceover audio bar. */
+.shadcn-prototype-library-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shadcn-prototype-library-gdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ai-grad);
+  flex: none;
+  animation: shadcn-prototype-library-breathe 2.2s ease infinite;
+}
+
+@keyframes shadcn-prototype-library-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+}
+
+.shadcn-prototype-library-understand {
+  background: var(--ai-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px 15px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+.shadcn-prototype-library-pending {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px 15px;
+  display: grid;
+  gap: 9px;
+}
+
+.shadcn-prototype-library-pending .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.shadcn-prototype-library-pending .hint {
+  font-size: 11.5px;
+  color: var(--quiet);
+}
+
+.shadcn-prototype-library-pending .bar {
+  height: 3px;
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-soft);
+}
+
+.shadcn-prototype-library-pending .bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ai-grad);
+  opacity: 0.7;
+  animation: shadcn-prototype-library-sweep 1.8s ease infinite;
+}
+
+@keyframes shadcn-prototype-library-sweep {
+  0% {
+    transform: translateX(-55%);
+  }
+  100% {
+    transform: translateX(55%);
+  }
+}
+
+.shadcn-prototype-library-chips {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.shadcn-prototype-library-chips span {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+.shadcn-prototype-library-usage {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 14px;
+  line-height: 1.6;
+}
+
+.shadcn-prototype-library-usage b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.shadcn-prototype-library-audio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.shadcn-prototype-library-audio .ab-play {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ai-grad);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.shadcn-prototype-library-audio .ab-wave {
+  flex: 1;
+  height: 22px;
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+  background: repeating-linear-gradient(90deg, var(--line-strong) 0 2px, transparent 2px 5px);
+}
+
+.shadcn-prototype-library-audio .ab-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: linear-gradient(90deg, rgba(124, 92, 255, 0.5), rgba(0, 168, 142, 0.5));
+}
+
+.shadcn-prototype-library-audio .ab-t {
+  font-size: 11px;
+  color: var(--quiet);
+  font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
 .shadcn-prototype-public-search {
@@ -5655,7 +5919,7 @@ button:disabled {
   }
 
   .shadcn-prototype-workspace.conversation-mode {
-    grid-template-columns: minmax(320px, var(--chat-panel-width, 340px)) 10px minmax(0, 1fr);
+    grid-template-columns: minmax(320px, var(--chat-panel-width, 340px)) 6px minmax(0, 1fr);
   }
 
   .shadcn-prototype-workspace.workshop-mode {
@@ -7258,6 +7522,53 @@ label {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Video-size toggle inside the confirm card (spec §5.2). Mirrors the library
+   filter chips: neutral pill, accent-soft when active. */
+.shadcn-prototype-confirm-ratio {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 0 18px 15px;
+}
+
+.shadcn-prototype-confirm-ratio-label {
+  color: var(--sp-faint);
+  text-align: right;
+  font-size: 12.5px;
+}
+
+.shadcn-prototype-confirm-ratio-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shadcn-prototype-confirm-ratio-options button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: #6e6a64;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.shadcn-prototype-confirm-ratio-options button.active {
+  border-color: transparent;
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent);
+  font-weight: 650;
+}
+
+.shadcn-prototype-confirm-ratio-options button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .shadcn-prototype-confirm-foot {

@@ -15,8 +15,10 @@
     "db:init": "node --import tsx scripts/db-init.ts",
     "test": "vitest run",
     "sync:agents": "node scripts/sync-agents-md.mjs",
-    "check:agents": "node scripts/sync-agents-md.mjs --check",
-    "check:backend": "cd ../multimix_backend && .venv/bin/python -m ruff check --line-length 100 app/ && .venv/bin/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_video_reliability.py app/tests/test_mg_render_flow.py app/tests/test_mg_scene_spec.py app/tests/test_mg_quality_reviewer.py app/tests/test_config.py app/tests/test_mcp_auth.py -q"
+    "docs:check": "node scripts/check-docs.mjs",
+    "test:docs-check": "node --test scripts/__tests__/check-docs.test.mjs",
+    "check:agents": "node scripts/sync-agents-md.mjs --check && npm run docs:check",
+    "check:backend": "cd ../MultiMix-Backend && .venv/Scripts/python -m ruff check --line-length 100 app/ && .venv/Scripts/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_video_reliability.py app/tests/test_mg_render_flow.py app/tests/test_mg_scene_spec.py app/tests/test_mg_quality_reviewer.py app/tests/test_config.py app/tests/test_mcp_auth.py -q"
   },
   "dependencies": {
     "@hugeicons/core-free-icons": "^4.2.2",

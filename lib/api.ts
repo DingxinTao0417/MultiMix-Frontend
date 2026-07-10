@@ -6,6 +6,7 @@ const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 export const API_BASE = CONFIGURED_API_BASE ?? "http://127.0.0.1:8199";
 export const API_CONNECTION_ERROR = "MULTIMIX_API_CONNECTION_ERROR";
+export const MESSAGE_NOT_SUBMITTED_ERROR = "MULTIMIX_MESSAGE_NOT_SUBMITTED";
 export const API_AUTH_EXPIRED_EVENT = "multimix:auth-expired";
 
 // Whether a real backend is configured. When false, callers fall back to mock data.
@@ -344,6 +345,7 @@ export function formatComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message) return "发送失败，请稍后重试。";
   if (message === API_CONNECTION_ERROR) return "无法连接后端服务，请稍后重试。";
+  if (message === MESSAGE_NOT_SUBMITTED_ERROR) return "未提交：后端没有记录这次操作，可以重试。";
   if (/[一-鿿]/.test(message)) return message;
 
   const lower = message.toLowerCase();

@@ -2,8 +2,8 @@
 
 MultiMix 是两个并排的独立仓库：
 
-- **前端**：`multimix_frontend`（Next.js 15，本仓库），部署到 **Vercel**。
-- **后端**：`multimix_backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
+- **前端**：`MultiMix-Frontend`（Next.js 15，本仓库），部署到 **Vercel**。
+- **后端**：`MultiMix-Backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
 - **剪辑器**：video-studio 的 OpenCut 引擎，作为 `/editor` 路由嵌在前端里（浏览器端 WebCodecs 导出，无需服务端渲染）。
 
 ## 模块开关
@@ -25,7 +25,7 @@ MultiMix 是两个并排的独立仓库：
 
 步骤：
 
-1. Railway 新建服务，指向 `multimix_backend` 仓库根目录，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
+1. Railway 新建服务，指向 `MultiMix-Backend` 仓库根目录，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
 2. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
 3. 配环境变量：
    ```
@@ -62,7 +62,7 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 
 ## 前端部署到 Vercel
 
-1. Vercel 导入 `multimix_frontend` 仓库，root directory 留空（指向仓库根的 Next.js）。
+1. Vercel 导入 `MultiMix-Frontend` 仓库，root directory 留空（指向仓库根的 Next.js）。
 2. Build 命令 `npm run build`，框架自动识别 Next.js。
 3. 环境变量：
    ```
@@ -76,7 +76,7 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 
 ## 端到端冒烟（本地）
 
-1. 后端（在 `multimix_backend` 仓库内）：
+1. 后端（在 `MultiMix-Backend` 仓库内）：
    ```
    python -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
    CHANGEIN_ENV=local CHANGEIN_MODULES_MONITORING_ENABLED=false \

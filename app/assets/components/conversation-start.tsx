@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { ArrowUp, ExternalLink, FileText, Image as ImageIcon, Sparkles, Square, Video } from "lucide-react";
-import type { Conversation } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, type Conversation } from "../lib/asset-workspace-shared";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
@@ -85,6 +85,11 @@ export default function ConversationStart({
   }, [composerValue]);
 
   const submit = async () => {
+    const blockReason = attachmentSendBlockReason(imageAttachments);
+    if (blockReason) {
+      setError(blockReason);
+      return;
+    }
     const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !onSend || sending) return;
     const controller = new AbortController();

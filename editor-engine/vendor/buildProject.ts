@@ -31,6 +31,7 @@ interface BackendElement {
   content?: string;
   segmentId?: string;
   segmentText?: string;
+  muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
 }
 interface BackendTrack {
   id: string;
@@ -194,7 +195,10 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         if (e.type === "image") {
           return { ...base, type: "image", mediaId: e.mediaId || "" } as ImageElement;
         }
-        return { ...base, type: "video", mediaId: e.mediaId || "" } as VideoElement;
+        // Stock video clips carry their own voices/music. Narration lives on the
+        // audio track, so mute the clip's source audio unless the backend
+        // explicitly kept it (e.g. a user-provided clip meant to be heard).
+        return { ...base, type: "video", mediaId: e.mediaId || "", muted: e.muted !== false } as VideoElement;
       });
       tracks.push({
         id: t.id, name: t.name, type: "video",

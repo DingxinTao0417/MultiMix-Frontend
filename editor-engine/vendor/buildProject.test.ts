@@ -185,6 +185,47 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       expect(overlayAsset!.hasAlpha).toBe(true);
     });
 
+    it('mutes stock video elements so their source audio does not overlap narration', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-clip', file_path: '/test/clip.mp4', name: 'clip.mp4' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              { id: 'vel-0', type: 'video', startTime: 0, duration: 5, mediaId: 'media-clip', muted: true },
+              { id: 'vel-1', type: 'video', startTime: 5, duration: 5, mediaId: 'media-clip' },
+            ],
+          },
+        ],
+      });
+      const { project } = buildProject(bp);
+      const elements = project.scenes[0].tracks[0].elements as Array<Record<string, unknown>>;
+      // Explicit muted:true is honored, and an unset flag defaults to muted.
+      expect(elements[0].muted).toBe(true);
+      expect(elements[1].muted).toBe(true);
+    });
+
+    it('keeps video audio when the backend explicitly sets muted:false', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-clip', file_path: '/test/clip.mp4', name: 'clip.mp4' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              { id: 'vel-0', type: 'video', startTime: 0, duration: 5, mediaId: 'media-clip', muted: false },
+            ],
+          },
+        ],
+      });
+      const { project } = buildProject(bp);
+      const elements = project.scenes[0].tracks[0].elements as Array<Record<string, unknown>>;
+      expect(elements[0].muted).toBe(false);
+    });
+
     it('aligns overlay elements to the matching segment window', () => {
       const bp = makeProject({
         media: [

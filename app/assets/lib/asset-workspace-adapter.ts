@@ -16,7 +16,7 @@ import {
   type PublicMaterialCandidate,
   type PublicSourceRead
 } from "../../../lib/api";
-import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations } from "../../../lib/asset-mappers";
+import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord } from "./asset-workspace-shared";
 
 export type LibraryRow = {
@@ -31,6 +31,8 @@ export type LibraryRow = {
   format?: string;
   contentType?: string;
   statusLabel?: string;
+  updatedLabel?: string;
+  updatedAtIso?: string;
   referenceCount?: number;
   sourceLabel?: string;
   sourceUrl?: string;
@@ -53,6 +55,37 @@ export type LibraryRow = {
 // Trimming variant on purpose: adapter-level strings feed UI labels directly.
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function buildConversationMessagePayload({
+  conversationId,
+  instruction,
+  selectedProductId,
+  linkedAssetIds,
+  clientRequestId,
+}: {
+  conversationId: string;
+  instruction: string;
+  selectedProductId?: number;
+  linkedAssetIds?: number[];
+  clientRequestId?: string;
+}) {
+  return {
+    instruction,
+    conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
+    selected_product_id: selectedProductId,
+    linked_asset_ids: linkedAssetIds ?? [],
+    client_request_id: clientRequestId,
+  };
+}
+
+export function findConversationByClientRequestId(
+  rows: AssetConversationResponse[],
+  clientRequestId: string,
+): AssetConversationResponse | null {
+  return rows.find((row) => row.messages.some(
+    (message) => stringValue(message.metadata?.client_request_id) === clientRequestId,
+  )) ?? null;
 }
 
 function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | undefined {
@@ -162,8 +195,13 @@ export type AssetWorkspaceAdapter = {
     instruction: string;
     selectedProductId?: number;
     linkedAssetIds?: number[];
+    clientRequestId?: string;
     signal?: AbortSignal;
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null }>;
+  reconcileMessage(args: {
+    token: string;
+    clientRequestId: string;
+  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null } | null>;
   reviseProduct(args: {
     token: string;
     product: AssetProduct;
@@ -361,9 +399,11 @@ function statusLabel(status: string): string {
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
-  const videoProject = metadata.video_project && typeof metadata.video_project === "object"
+  const rawVideoProject = metadata.video_project && typeof metadata.video_project === "object"
     ? metadata.video_project as Record<string, unknown>
     : null;
+  const videoProject = rawVideoProject && isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : null;
+  if (rawVideoProject && !videoProject) return "工程异常";
   const mp4State = typeof videoProject?.mp4_state === "string" ? videoProject.mp4_state : "";
   if (mp4State === "ready") return "MP4已生成";
   if (mp4State === "running") return "成片生成中";
@@ -469,6 +509,8 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
     contentType: contentTypeLabel(asset),
     statusLabel: status,
+    updatedLabel: asset.updated_at ? relativeTimeLabel(asset.updated_at) : undefined,
+    updatedAtIso: asset.updated_at || undefined,
     referenceCount: typeof metadata.reference_count === "number" && Number.isFinite(metadata.reference_count) && metadata.reference_count >= 0
       ? metadata.reference_count
       : undefined,
@@ -616,21 +658,40 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         })
       });
     },
-    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, signal }) {
+    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, clientRequestId, signal }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
-        body: JSON.stringify({
+        body: JSON.stringify(buildConversationMessagePayload({
+          conversationId,
           instruction,
-          conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
-          selected_product_id: selectedProductId,
-          linked_asset_ids: linkedAssetIds ?? []
-        })
+          selectedProductId,
+          linkedAssetIds,
+          clientRequestId,
+        }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
       const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
       const product = generatedProduct ?? null;
       return { conversationId: response.conversation_id, conversation, product };
+    },
+    async reconcileMessage({ token, clientRequestId }) {
+      const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
+      const row = findConversationByClientRequestId(rows, clientRequestId);
+      if (!row) return null;
+      const matchedMessage = row.messages.find(
+        (message) => stringValue(message.metadata?.client_request_id) === clientRequestId && message.asset_id,
+      );
+      const matchedAsset = matchedMessage?.asset_id
+        ? row.products.find((asset) => asset.id === matchedMessage.asset_id)
+        : row.products[row.products.length - 1];
+      const generatedProduct = matchedAsset ? contentAssetToProduct(matchedAsset) : undefined;
+      const conversation = conversationFromPersisted(row, data.newConversation.product, generatedProduct);
+      return {
+        conversationId: row.id,
+        conversation,
+        product: generatedProduct ?? null,
+      };
     },
     async reviseProduct({ token, product, instruction, conversationId, signal }) {
       if (isApiConfigured && token && product.backendAssetId) {
@@ -722,10 +783,23 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
           .filter((row) => row.assetId == null || kinds.includes(row.kind === "file" ? "asset" : row.kind));
         if (mergedRows.length || keywordResult.status === "fulfilled" || semanticResult.status === "fulfilled") return mergedRows;
       }
-      const rows = await api<ContentAsset[]>("/assets", token);
-      return rows
-        .filter((asset) => kinds.includes(asset.asset_kind))
-        .map((asset) => contentAssetToLibraryRow(asset));
+      // Fetch per kind instead of the full /assets list. The full list pulls
+      // every asset kind (hundreds of rows + selectinload versions) over the
+      // remote Supabase link and can take 45s+ or time out, which made the UI
+      // fall back to mock rows (no updatedLabel/status). Scoping to the view's
+      // kind(s) keeps each request small and fast.
+      const kindResults = await Promise.allSettled(
+        kinds.map((kind) =>
+          api<ContentAsset[]>(`/assets?kind=${encodeURIComponent(kind)}&limit=200`, token)
+        )
+      );
+      // Settle each kind independently: the video library pulls both "video" and
+      // "video_render"; if one kind is slow or fails it must not blank out the
+      // other. Rows sort by updated_at so mixed kinds interleave correctly.
+      return kindResults
+        .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+        .map((asset) => contentAssetToLibraryRow(asset))
+        .sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
     },
     async uploadAsset(token, file, view) {
       const formData = new FormData();

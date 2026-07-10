@@ -17,3 +17,4 @@ db/local/*
 Thumbs.db
 
 .playwright-mcp
+.gstack/

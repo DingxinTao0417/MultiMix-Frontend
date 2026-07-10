@@ -54,3 +54,26 @@ export function getProductRatioClass(ratio: string) {
   if (ratio.includes("4:5")) return "ratio-cover";
   return "";
 }
+
+// Minimal shape of a chat composer attachment, mirrored from ChatImageAttachment
+// in conversation-studio.tsx. Kept local so both composers can share the send
+// guard without a component <-> lib import cycle.
+type AttachmentState = {
+  status: "uploading" | "processing" | "ready" | "failed";
+};
+
+// Whether the composer should refuse to send because attachments are not yet
+// usable. An upload that failed (e.g. storage timeout) or is still in flight has
+// no backend asset id, so sending would drop the material silently and the agent
+// would answer as if no source was ever provided. Returns a user-facing reason to
+// show, or null when sending is safe.
+export function attachmentSendBlockReason(attachments: readonly AttachmentState[]): string | null {
+  if (!attachments.length) return null;
+  if (attachments.some((attachment) => attachment.status === "failed")) {
+    return "有素材上传失败，请点“重试”或移除后再发送。";
+  }
+  if (attachments.some((attachment) => attachment.status === "uploading" || attachment.status === "processing")) {
+    return "素材还在上传/解析中，等它就绪后再发送，AI 才能基于它创作。";
+  }
+  return null;
+}

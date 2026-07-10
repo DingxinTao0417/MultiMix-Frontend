@@ -2,7 +2,7 @@
 
 本文档描述 MultiMix 内容生成工作台原型阶段的全部「接口」：数据访问层（adapter）、数据类型契约、共享 helper、Mock 数据契约、数据库 schema、seed 脚本、组件 props 契约、路由 / URL 接口、本地认证、环境变量、CSS 类名约定，以及未来接入真实后端的指引。
 
-> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md` 与根目录 `CLAUDE.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
+> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
 适用版本：`multimix-web@0.1.0`（Next.js 15 App Router + React 19 + TypeScript strict）。
 
@@ -80,7 +80,19 @@ export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
 
 > 上面是原型阶段的核心读接口。真实后端版 adapter 还包含对话（`sendMessage`/`reviseProduct`/`loadConversations`）、库（`listLibrary`/`uploadAsset` 等）与视频任务方法：`generateVideo`（POST /video/generate）、`getVideoJob`（GET /video/jobs/{id}，工作台用它轮询 `render_stage` 显示分阶段进度）、`retryVideoJob`（POST /video/jobs/{id}/retry，失败任务原地重试）。完整签名以 `asset-workspace-adapter.ts` 的 `AssetWorkspaceAdapter` 类型为准。
 
-### 2.1 方法详解
+### 2.1 对话确认一致性
+
+真实 adapter 的 `sendMessage` 可接收可选 `clientRequestId`，并在
+`POST /v1/assets/conversations/messages` 请求体中映射为 UUID
+`client_request_id`。确认视频工程时，`ConversationStudio` 为本次点击生成一次
+request ID；同一乐观轮次和重试必须复用它。
+
+网络层返回连接错误后，`reconcileMessage({ token, clientRequestId })` 拉取已持久化
+会话并按消息 metadata 的同名字段对账：找到则用服务端消息和工程替换乐观消息；找不到
+才显示“未提交”，不得额外写入一条正式助手错误消息。这个 request ID 只用于传输对账；
+服务端仍以确认语义幂等键保证不会重复创建视频工程。
+
+### 2.2 方法详解
 
 #### `getSnapshot(): AssetWorkspaceData`
 返回整份工作台数据快照（conversations / newConversation / workshops）。Mock 实现直接返回内存对象引用，**不做深拷贝**——调用方不应原地修改返回值。
@@ -617,7 +629,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 ### 11.1 类名前缀
 
 - 当前 UI 仅用 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（认证壳）两组前缀。
-- `app/globals.css`（约 2900 行）约 92% 是从 ChangeIn 原项目继承的死样式（`admin-*`、`ai-judgment-*`、`app-gate-*` 等）。**新增样式请用上述两组前缀，勿盲目复用陌生类名。**
+- `app/globals.css` 是单一全局样式表。历史 ChangeIn 样式已清理过，新增样式请沿用上述两组现役前缀，勿盲目复用陌生类名或引入新的顶层前缀。
 
 ### 11.2 已知占位 / 未接入项（非 bug）
 
@@ -669,7 +681,8 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 - `refs` 只列 `asset_reference.status == "matched"` 的已保存素材（stock 兜底不当「你的素材」）。
 - 无 scenes → 后端不挂 `plan` → 前端退回建议芯片（现状行为）。
-- 确认按钮把 `confirm_utterance` 作为普通消息提交，命中后端确认门。
+- 确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中后端确认门。
+- 已持久化的确认结果可能是 `processing / video_project_queued`，此时展示排队状态，不能因有占位 metadata 就显示编辑器。
 
 ### 12.3 素材推荐端点（素材选择器 AI 推荐区）
 

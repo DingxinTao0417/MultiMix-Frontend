@@ -75,15 +75,18 @@ describe("asset product mapper", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video_render",
       content_type: "video_render",
+      status: "ready",
       metadata: {
         capability: "video_render",
         capability_label: "视频工程",
         video_workflow_stage: "video_project_ready",
+        orchestration_pending: false,
         video_project: {
           version: "multimix_video_project_v1",
           ratio: "9:16",
           duration_seconds: 30,
-          tracks: []
+          tracks: [],
+          media: []
         }
       }
     }));
@@ -102,6 +105,23 @@ describe("asset product mapper", () => {
     expect(product.actions).toContain("调整分镜");
   });
 
+  it("does not expose a false-ready project without the editor timeline shape", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_workflow_stage: "video_project_ready",
+        orchestration_pending: false,
+        video_project: { title: "placeholder only" },
+      },
+    }));
+
+    expect(product.status).toBe("工程异常 · 待恢复");
+    expect(product.preview?.subtitle).not.toContain("视频工程已生成");
+  });
+
   it("marks orchestration-pending video assets as generating", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
@@ -117,6 +137,26 @@ describe("asset product mapper", () => {
 
     expect(product.status).toBe("视频生成中 · 后台任务");
     expect(product.preview?.subtitle).toContain("后台生成");
+  });
+
+  it("normalizes product ratios without horizontal or vertical wording", () => {
+    const portrait = contentAssetToProduct(asset({
+      metadata: {
+        capability: "video_script",
+        capability_label: "编导文稿",
+        intent: { ratio: "9:16竖屏" }
+      }
+    }));
+    const landscape = contentAssetToProduct(asset({
+      metadata: {
+        capability: "video_script",
+        capability_label: "编导文稿",
+        intent: { ratio: "16：9横屏" }
+      }
+    }));
+
+    expect(portrait.ratio).toBe("9:16");
+    expect(landscape.ratio).toBe("16:9");
   });
 
   it("maps video project segments with asset references, fallback and MG decisions", () => {

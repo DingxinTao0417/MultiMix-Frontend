@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
-import { ArrowUp, FileText, Image as ImageIcon, Play, Sparkles, Square, Video } from "lucide-react";
-import { getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { attachmentSendBlockReason, getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
-import { formatComposerError } from "../../../lib/api";
-import type { AssetConversationMessage, AssetMessagePlan } from "../lib/asset-workspace-types";
+import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR } from "../../../lib/api";
+import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan } from "../lib/asset-workspace-types";
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
@@ -17,8 +17,12 @@ type OptimisticExchange = {
   id: string;
   userText: string;
   assistantText: string;
-  status: "pending" | "stopped" | "failed";
+  status: "pending" | "stopped" | "failed" | "unsubmitted";
+  clientRequestId?: string;
+  runSteps?: AgentRunStep[];
 };
+
+type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "runSteps">;
 
 export type ChatImageAttachment = {
   id: string;
@@ -38,6 +42,15 @@ const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于�
 const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PPT/文档会作为来源资产。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
+const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
+
+function confirmationPlanKey(plan: AssetMessagePlan): string {
+  return [
+    plan.title,
+    plan.confirmUtterance ?? plan.confirmLabel ?? "",
+    plan.fields.map((field) => field.key + ":" + field.value).join("|"),
+  ].join("::");
+}
 
 function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -109,6 +122,8 @@ export default function ConversationStudio({
   pendingExchange = null,
   onPendingExchangeChange,
   onSendMessage,
+  liveRunStepsByAssetId,
+  diagnosticsSlot = null,
   readonly = false
 }: {
   basePath: string;
@@ -122,7 +137,12 @@ export default function ConversationStudio({
   onRetryImageAttachment?: (attachmentId: string) => void;
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
-  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>) => Promise<void>;
+  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string) => Promise<void>;
+  // Real per-step timeline for in-flight/finished video jobs, keyed by backend
+  // asset id. Sourced from the live job poller (spec §5.2 ★, real elapsed times,
+  // no fake progress). Preferred over a message's static runSteps when present.
+  liveRunStepsByAssetId?: Record<number, AgentRunStep[]>;
+  diagnosticsSlot?: ReactNode;
   readonly?: boolean;
 }) {
   const products = getConversationProducts(selectedConversation);
@@ -130,6 +150,10 @@ export default function ConversationStudio({
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  // Set when the user clicks a plan's "调整方向": the composer swaps to a guiding
+  // placeholder so the click has a visible effect instead of silently focusing.
+  const [adjustHint, setAdjustHint] = useState(false);
+  const [confirmingPlanKey, setConfirmingPlanKey] = useState<string | null>(null);
   const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -154,7 +178,13 @@ export default function ConversationStudio({
       ? [
         ...conversationMessages,
         { role: "user" as const, text: optimisticExchange.userText },
-        { role: "assistant" as const, text: optimisticExchange.assistantText, pending: optimisticExchange.status === "pending" }
+        {
+          role: "assistant" as const,
+          text: optimisticExchange.assistantText,
+          pending: optimisticExchange.status === "pending",
+          localState: optimisticExchange.status === "pending" ? undefined : optimisticExchange.status,
+          runSteps: optimisticExchange.runSteps
+        }
       ]
       : conversationMessages
   ), [conversationMessages, optimisticExchange]);
@@ -175,6 +205,8 @@ export default function ConversationStudio({
     setSending(false);
     setSendError(null);
     setComposerValue("");
+    setAdjustHint(false);
+    setConfirmingPlanKey(null);
     return () => {
       // Abort the in-flight send when switching conversations or unmounting so
       // stale responses cannot land after the view has moved on.
@@ -189,31 +221,49 @@ export default function ConversationStudio({
     }
   }, [composerValue]);
 
-  const sendInstruction = async (instruction: string) => {
+  const sendInstruction = async (
+    instruction: string,
+    optimisticFeedback?: OptimisticFeedback,
+    clientRequestId?: string,
+  ) => {
+    const blockReason = attachmentSendBlockReason(imageAttachments);
+    if (blockReason) {
+      setSendError(blockReason);
+      return;
+    }
     if (readonly || !onSendMessage || (!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || sending) return;
     const controller = new AbortController();
     activeRequestRef.current = controller;
     setSending(true);
     setSendError(null);
     setComposerValue("");
+    setAdjustHint(false);
     const exchange = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       userText: instruction,
-      assistantText: "",
-      status: "pending"
+      assistantText: optimisticFeedback?.assistantText ?? "",
+      status: "pending",
+      clientRequestId,
+      runSteps: optimisticFeedback?.runSteps
     } satisfies OptimisticExchange;
     onPendingExchangeChange?.(selectedConversation.id, exchange);
     try {
-      await onSendMessage(selectedConversation, instruction, controller.signal, contextAssets);
+      await onSendMessage(selectedConversation, instruction, controller.signal, contextAssets, clientRequestId);
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
     } catch (error) {
       if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
-        onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: "已停止生成。", status: "stopped" } : null);
+        onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: "已停止生成。", status: "stopped", runSteps: undefined } : null);
         return;
       }
       const message = formatComposerError(error);
-      onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: message, status: "failed" } : null);
+      const unsubmitted = error instanceof Error && error.message === MESSAGE_NOT_SUBMITTED_ERROR;
+      onPendingExchangeChange?.(selectedConversation.id, exchange ? {
+        ...exchange,
+        assistantText: message,
+        status: unsubmitted ? "unsubmitted" : "failed",
+        runSteps: exchange.runSteps?.map((step) => step.status === "run" ? { ...step, status: "fail" } : step)
+      } : null);
       setSendError(message);
     } finally {
       if (activeRequestRef.current === controller) {
@@ -228,14 +278,38 @@ export default function ConversationStudio({
     await sendInstruction(instruction);
   };
 
-  const handleConfirmPlan = async (plan: AssetMessagePlan) => {
-    const instruction = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
-    await sendInstruction(instruction);
+  const handleConfirmPlan = async (plan: AssetMessagePlan, ratio?: string) => {
+    const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
+    // Weave the chosen size into the confirm instruction so the backend honors
+    // it (parsed from the instruction text). The label ("横屏 16:9") is more
+    // natural in the sentence than the raw ratio.
+    const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
+    const instruction = ratioLabel ? `${base}（${ratioLabel}）` : base;
+    const planKey = confirmationPlanKey(plan);
+    setConfirmingPlanKey(planKey);
+    try {
+      await sendInstruction(instruction, {
+        assistantText: "已确认，正在创建视频工程任务。",
+        runSteps: [
+          {
+            key: "confirm-video-plan",
+            label: "确认方案并创建视频任务",
+            status: "run"
+          }
+        ]
+      }, globalThis.crypto.randomUUID());
+    } finally {
+      setConfirmingPlanKey((current) => current === planKey ? null : current);
+    }
   };
 
   const handleAdjustPlan = (plan: AssetMessagePlan) => {
+    // A custom adjust label seeds the composer; the default "调整方向" carries no
+    // instruction, so we show a guiding placeholder instead of an empty box —
+    // otherwise the click just silently focuses and reads as a dead button.
     const seed = plan.adjustLabel && plan.adjustLabel !== "调整方向" ? plan.adjustLabel : "";
     setComposerValue(seed);
+    setAdjustHint(!seed);
     requestAnimationFrame(() => {
       composerRef.current?.focus();
       if (composerRef.current) resizeComposer(composerRef.current);
@@ -366,20 +440,20 @@ export default function ConversationStudio({
       onDragLeave={() => setIsDraggingUpload(false)}
       onDrop={handleDrop}
     >
+      <header className="shadcn-prototype-chat-head">
+        <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
+        {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
+      </header>
       <div className="shadcn-prototype-thread">
         {visibleConversationMessages.map((message, index) => (
           <div
-            className={message.role === "assistant" ? "shadcn-prototype-message-group with-avatar" : "shadcn-prototype-message-group"}
+            className="shadcn-prototype-message-group"
             key={`${message.role}-${index}`}
           >
-            {message.role === "assistant" ? (
-              <span className="shadcn-prototype-msg-avatar" aria-hidden="true">
-                <Sparkles size={12} />
-              </span>
-            ) : null}
             <article className={[
               message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
-              message.pending ? "pending" : ""
+              message.pending ? "pending" : "",
+              message.localState ? `local-${message.localState}` : ""
             ].filter(Boolean).join(" ")}>
               <p>
                 {message.text}
@@ -388,12 +462,20 @@ export default function ConversationStudio({
               {UI_V3_CONFIRM_CARD && message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
+                  optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}
                   disabled={sending || !canSend}
-                  onConfirm={(plan) => void handleConfirmPlan(plan)}
+                  onConfirm={(plan, ratio) => void handleConfirmPlan(plan, ratio)}
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />
               ) : null}
-              {message.runSteps?.length ? <AgentRunTimeline steps={message.runSteps} /> : null}
+              {(() => {
+                // Prefer the live job's real steps for this message's asset; fall
+                // back to any static runSteps (mock / persisted). Absent → no
+                // timeline (spec §12 降级规则: 无事件不渲染).
+                const liveSteps = message.assetId ? liveRunStepsByAssetId?.[message.assetId] : undefined;
+                const timelineSteps = liveSteps?.length ? liveSteps : message.runSteps;
+                return timelineSteps?.length ? <AgentRunTimeline steps={timelineSteps} /> : null;
+              })()}
               {(() => {
                 const suggestions = visibleSuggestions(message)
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
@@ -513,14 +595,19 @@ export default function ConversationStudio({
             placeholder={
               !canSend
                 ? "参考样例只读"
-                : selectedProduct && ["video", "digital-human", "mg_animation_video"].includes(selectedProduct.mode)
-                  ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
-                  : "随时打断或补充，AI 会接着改…"
+                : adjustHint
+                  ? ADJUST_HINT_PLACEHOLDER
+                  : selectedProduct && ["video", "digital-human", "mg_animation_video"].includes(selectedProduct.mode)
+                    ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
+                    : "随时打断或补充，AI 会接着改…"
             }
             rows={1}
             value={composerValue}
             disabled={!canSend}
-            onChange={(event) => setComposerValue(event.currentTarget.value)}
+            onChange={(event) => {
+              setComposerValue(event.currentTarget.value);
+              if (adjustHint) setAdjustHint(false);
+            }}
             onInput={(event) => {
               resizeComposer(event.currentTarget);
             }}

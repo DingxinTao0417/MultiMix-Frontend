@@ -57,10 +57,24 @@ describe("agent conversation UI copy", () => {
 
     expect(workspaceClient).not.toContain('{uploading ? "上传中..." : "上传"}');
     expect(workspaceClient).not.toContain("<span>库 /</span>");
+    expect(libraryWorkshop).not.toContain("shadcn-prototype-library-title");
     expect(libraryWorkshop).toContain("shadcn-prototype-library-search compact");
-    expect(globals).toContain("flex: 0 1 560px");
-    expect(globals).toContain("max-width: 560px");
+    expect(globals).toContain("flex: 0 1 210px");
+    expect(globals).toContain("max-width: 210px");
+    expect(globals).not.toContain(".shadcn-prototype-library-title");
     expect(globals).not.toContain("animation: shadcn-prototype-spin");
+  });
+
+  it("uses the same MultiMix brand glyph in the sidebar and login shell", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const appShell = readAssetFile("app/multimix-app.tsx");
+    const globals = readAssetFile("app/globals.css");
+    const brandPath = 'd="M2 12V2.5L7 8l5-5.5V12"';
+
+    expect(appShell).toContain(brandPath);
+    expect(workspaceClient).toContain(brandPath);
+    expect(workspaceClient).not.toContain("shadcn-prototype-brand-letter");
+    expect(globals).toContain(".shadcn-prototype-brand-mark svg");
   });
 
   it("does not show left icons for copy rows and uses media thumbnails for image or video rows", () => {
@@ -125,16 +139,59 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain("min-height: 52px");
   });
 
-  it("keeps the conversation surface demo-aligned without a duplicate title bar", () => {
+  it("keeps the conversation title scoped to the chat column", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const globals = readAssetFile("app/globals.css");
 
-    expect(conversationStudio).not.toContain("shadcn-prototype-chat-head");
     expect(workspaceClient).not.toContain("<span>对话 /</span>");
+    expect(workspaceClient).not.toContain('selectedConversation.title}</strong>');
+    expect(workspaceClient).toContain('accountEmail === "local@admin"');
+    expect(workspaceClient).toContain('activeView === "conversation" ? "shadcn-prototype-inset conversation-inset"');
+    expect(workspaceClient).toContain("diagnosticsSlot={renderDiagnostics()}");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-head");
+    expect(conversationStudio).toContain("{selectedConversation.title}");
+    expect(conversationStudio).toContain("diagnosticsSlot");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-head-actions");
     expect(conversationStudio).toContain("shadcn-prototype-composer-textarea");
+    expect(globals).toContain("grid-template-rows: auto minmax(0, 1fr) auto");
+    expect(globals).toContain(".shadcn-prototype-inset.conversation-inset");
+    expect(globals).toContain(".shadcn-prototype-card .shadcn-prototype-chat-head");
+    expect(globals).toContain("padding: 7px clamp(18px, 4vw, 30px)");
     expect(globals).toContain(".shadcn-prototype-composer-textarea");
     expect(globals).toContain("line-height: 20px");
+  });
+
+  it("shows the concrete LLM diagnostics error instead of a generic failure", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+    expect(workspaceClient).toContain("formatComposerError");
+    expect(workspaceClient).toContain("catch (error)");
+    expect(workspaceClient).toContain("error: formatComposerError(error)");
+    expect(workspaceClient).toContain('diagnostics.error\n                  ? "检测失败"');
+    expect(workspaceClient).not.toContain('error: "诊断失败"');
+  });
+
+  it("feeds live video-job steps into the conversation execution timeline", () => {
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+    // Shell derives real per-step timeline from the live job poller, keyed by asset id.
+    expect(workspaceClient).toContain("agentTimelineStepsFromBackend");
+    expect(workspaceClient).toContain("liveRunStepsByAssetId");
+    expect(workspaceClient).toContain("liveRunStepsByAssetId={liveRunStepsByAssetId}");
+    // Studio prefers the live steps, falling back to a message's static runSteps.
+    expect(conversationStudio).toContain("liveRunStepsByAssetId?.[message.assetId]");
+    expect(conversationStudio).toContain("liveSteps?.length ? liveSteps : message.runSteps");
+    expect(conversationStudio).toContain("<AgentRunTimeline steps={timelineSteps} />");
+  });
+
+  it("shows an immediate real confirmation step before the video job poller takes over", () => {
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+
+    expect(conversationStudio).toContain("optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}");
+    expect(conversationStudio).toContain('label: "确认方案并创建视频任务"');
+    expect(conversationStudio).toContain("runSteps: optimisticExchange.runSteps");
   });
 
   it("renders visual placeholders instead of raw empty media labels in the library", () => {

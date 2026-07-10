@@ -1,0 +1,51 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildConversationMessagePayload,
+  findConversationByClientRequestId,
+} from "../lib/asset-workspace-adapter";
+import type { AssetConversationResponse } from "../../../lib/api";
+
+
+describe("video confirmation transport reconciliation", () => {
+  it("sends the stable client request id in the conversation payload", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-450",
+      instruction: "确认，生成视频工程（横屏 16:9）",
+      selectedProductId: 450,
+      linkedAssetIds: [],
+      clientRequestId: "13c3b93f-d5fa-4a9c-8f9d-38e62829498d",
+    });
+
+    expect(payload).toEqual({
+      instruction: "确认，生成视频工程（横屏 16:9）",
+      conversation_id: "asset-conversation-450",
+      selected_product_id: 450,
+      linked_asset_ids: [],
+      client_request_id: "13c3b93f-d5fa-4a9c-8f9d-38e62829498d",
+    });
+  });
+
+  it("finds a server-committed conversation by client request id", () => {
+    const rows = [{
+      id: "asset-conversation-450",
+      title: "30秒短视频",
+      status: "active",
+      metadata: { video_workflow_stage: "video_project_queued" },
+      messages: [{
+        id: 1,
+        role: "user",
+        text: "确认，生成视频工程（横屏 16:9）",
+        asset_id: null,
+        metadata: { client_request_id: "request-1" },
+        created_at: "2026-07-10T00:00:00Z",
+      }],
+      products: [],
+      created_at: "2026-07-10T00:00:00Z",
+      updated_at: "2026-07-10T00:00:00Z",
+    }] as AssetConversationResponse[];
+
+    expect(findConversationByClientRequestId(rows, "request-1")?.id).toBe("asset-conversation-450");
+    expect(findConversationByClientRequestId(rows, "missing")).toBeNull();
+  });
+});

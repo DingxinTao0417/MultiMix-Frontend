@@ -2,7 +2,7 @@
 // frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
 // frontend assets-workspace-client.tsx helpers.
 
-import type { AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
+import type { AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRatioOption, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -11,6 +11,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeRatioLabel(value: string): string {
+  const normalized = value.replace(/：/g, ":").trim();
+  const ratio = normalized.match(/\d+(?:\.\d+)?:\d+(?:\.\d+)?/);
+  if (ratio) return ratio[0];
+  return normalized.replace(/(?:横屏|竖屏|横版|竖版|横向|竖向|landscape|portrait)/gi, "").trim();
 }
 
 function stringListValue(value: unknown): string[] | undefined {
@@ -91,6 +98,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   if (!title || !fields.length) return undefined;
   const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
   const summaryFields = planFieldsValue(value.summary_fields);
+  const ratioOptions = planRatioOptionsValue(value.ratio_options);
   return {
     title,
     status,
@@ -99,11 +107,27 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     summaryFields: summaryFields.length ? summaryFields : undefined,
     confirmLabel: stringValue(value.confirm_label) || undefined,
     adjustLabel: stringValue(value.adjust_label) || undefined,
-    confirmUtterance: stringValue(value.confirm_utterance) || undefined
+    confirmUtterance: stringValue(value.confirm_utterance) || undefined,
+    ratioOptions: ratioOptions.length ? ratioOptions : undefined,
+    ratioDefault: stringValue(value.ratio_default) || undefined
   };
 }
 
-function relativeTimeLabel(value: string): string {
+// Video-size options for the confirm card's ratio toggle (spec §5.2). Each entry
+// needs a canonical value + label; malformed entries are dropped so the toggle
+// only offers real choices (empty → card hides the toggle, spec §12 降级规则).
+function planRatioOptionsValue(value: unknown): AssetPlanRatioOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AssetPlanRatioOption[] => {
+    if (!isRecord(item)) return [];
+    const ratioValue = stringValue(item.value);
+    const label = stringValue(item.label);
+    if (!ratioValue || !label) return [];
+    return [{ value: ratioValue, label }];
+  });
+}
+
+export function relativeTimeLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "刚刚";
   const diffMs = Date.now() - date.getTime();
@@ -470,11 +494,33 @@ function productModeFromAsset(asset: ContentAsset, unsupported: boolean): AssetP
   return "copy";
 }
 
+export function hasEditorTimelineShape(project: Record<string, unknown> | undefined): boolean {
+  if (!project) return false;
+  const container = isRecord(project.timeline) ? project.timeline : project;
+  return Array.isArray(container.tracks) && Array.isArray(container.media);
+}
+
+export function isEditorReadyVideoProject(
+  asset: ContentAsset,
+  project: Record<string, unknown> | undefined = isRecord(asset.metadata?.video_project)
+    ? asset.metadata.video_project
+    : undefined,
+): boolean {
+  const metadata = asset.metadata ?? {};
+  return asset.content_type === "video_render"
+    && asset.status === "ready"
+    && metadata.orchestration_pending === false
+    && metadata.video_workflow_stage === "video_project_ready"
+    && hasEditorTimelineShape(project);
+}
+
 export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const metadata = asset.metadata ?? {};
   const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
-  const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
+  const invalidVideoProject = Boolean(rawVideoProject && !videoProject);
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const stageResults = isRecord(videoProject?.stage_results) ? videoProject.stage_results : undefined;
@@ -502,6 +548,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       ? "视频生成中 · 后台任务"
     : orchestrationFailed
       ? "生成失败 · 可重试"
+    : invalidVideoProject
+      ? "工程异常 · 待恢复"
     : unsupported
     ? "可执行方案 · 待生成"
     : directorDraft
@@ -511,7 +559,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     : noAssetHit
       ? "未命中素材"
       : "有来源";
-  const ratio = stringValue(videoProject?.ratio) || stringValue(mp4Artifact?.ratio) || stringValue(intent.ratio) || (mode === "copy" ? "Markdown" : "按指令");
+  const rawRatio = stringValue(videoProject?.ratio) || stringValue(mp4Artifact?.ratio) || stringValue(intent.ratio);
+  const ratio = normalizeRatioLabel(rawRatio) || (mode === "copy" ? "Markdown" : "按指令");
   const duration = videoProject?.duration_seconds
     ? `${videoProject.duration_seconds}秒`
     : mp4Artifact?.duration_seconds
@@ -611,7 +660,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeProductTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };
@@ -632,6 +681,7 @@ export function conversationFromPersisted(
     role: message.role,
     text: message.text,
     assetId: message.asset_id,
+    metadata: message.metadata,
     suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
     suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined,
     plan: message.role === "assistant" ? planFromMetadata(message.metadata.plan) : undefined

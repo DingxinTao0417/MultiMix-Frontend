@@ -20,8 +20,10 @@ import {
   Trash2,
   Video
 } from "lucide-react";
-import { getAssetLlmDiagnostics, type AssetLlmDiagnosticsRead } from "../../../lib/api";
+import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
+import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
+import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
   type ActiveView,
@@ -72,7 +74,8 @@ type PendingConversationExchange = {
   id: string;
   userText: string;
   assistantText: string;
-  status: "pending" | "stopped" | "failed";
+  status: "pending" | "stopped" | "failed" | "unsubmitted";
+  clientRequestId?: string;
 };
 
 type ChatImageUpload = ChatImageAttachment & {
@@ -201,6 +204,10 @@ export default function AssetsWorkspaceClient({
     setChatPanelWidth(Math.max(320, Math.round(rect.width - 448 - 10)));
   }, []);
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
+  // Inline rename: the conversation row swaps its title for a text input instead
+  // of opening a browser prompt. Null when no row is being renamed.
+  const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
@@ -230,7 +237,7 @@ export default function AssetsWorkspaceClient({
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
-  const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
+  const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
 
   useEffect(() => {
@@ -354,6 +361,18 @@ export default function AssetsWorkspaceClient({
     };
   }, [token, pendingVideoJobKey]);
 
+  // Convert the live video jobs' real steps into agent-timeline steps keyed by
+  // backend asset id, so the conversation thread can show the same execution
+  // timeline the product pane does (real elapsed times, no fake progress).
+  const liveRunStepsByAssetId = useMemo<Record<number, AgentRunStep[]>>(() => {
+    const map: Record<number, AgentRunStep[]> = {};
+    for (const [assetId, live] of Object.entries(videoJobLive)) {
+      const steps = agentTimelineStepsFromBackend(live.steps);
+      if (steps.length) map[Number(assetId)] = steps;
+    }
+    return map;
+  }, [videoJobLive]);
+
   const handleRetryVideoJob = async (product: ProductArtifact) => {
     const metadata = product.metadata as Record<string, unknown> | undefined;
     const jobId = typeof metadata?.latest_job_public_id === "string" ? metadata.latest_job_public_id : null;
@@ -387,7 +406,7 @@ export default function AssetsWorkspaceClient({
     let latestWidth = startWidth;
     const minChatWidth = 320;
     const minArtifactWidth = 360;
-    const handleWidth = 10;
+    const handleWidth = 6;
     const maxChatWidth = Math.max(minChatWidth, workspaceRect.width - minArtifactWidth - handleWidth);
     document.body.classList.add("shadcn-prototype-resizing");
 
@@ -421,7 +440,7 @@ export default function AssetsWorkspaceClient({
     const workspaceRect = workspaceRef.current?.getBoundingClientRect();
     const minChatWidth = 320;
     const minArtifactWidth = 360;
-    const handleWidth = 10;
+    const handleWidth = 6;
     const maxChatWidth = workspaceRect
       ? Math.max(minChatWidth, workspaceRect.width - minArtifactWidth - handleWidth)
       : 640;
@@ -454,10 +473,23 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleRenameConversation = (conversation: Conversation) => {
+  const handleStartRenameConversation = (conversation: Conversation) => {
     setConversationMenuId(null);
     if (conversation.id === "new") return;
-    const nextTitle = window.prompt("重命名对话", conversation.title)?.trim();
+    setRenameDraft(conversation.title);
+    setRenamingConversationId(conversation.id);
+  };
+
+  const handleCancelRenameConversation = () => {
+    setRenamingConversationId(null);
+    setRenameDraft("");
+  };
+
+  const handleCommitRenameConversation = (conversation: Conversation) => {
+    if (renamingConversationId !== conversation.id) return;
+    const nextTitle = renameDraft.trim();
+    setRenamingConversationId(null);
+    setRenameDraft("");
     if (!nextTitle || nextTitle === conversation.title) return;
     const previousTitle = conversation.title;
     // Optimistically rename in place; reconcile against the backend below.
@@ -743,7 +775,13 @@ export default function AssetsWorkspaceClient({
       .map((upload) => ({ id: upload.assetId!, title: upload.title || upload.fileName }))
   );
 
-  const handleSendConversationMessage = async (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets: ConversationContextAsset[] = []) => {
+  const handleSendConversationMessage = async (
+    conversation: Conversation,
+    instruction: string,
+    signal?: AbortSignal,
+    linkedAssets: ConversationContextAsset[] = [],
+    clientRequestId?: string,
+  ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
     }
@@ -857,9 +895,31 @@ export default function AssetsWorkspaceClient({
         instruction,
         selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId,
         linkedAssetIds: combinedLinkedAssetIds,
+        clientRequestId,
         signal
       });
     } catch (error) {
+      if (
+        clientRequestId
+        && !signal?.aborted
+        && error instanceof Error
+        && error.message === API_CONNECTION_ERROR
+      ) {
+        try {
+          result = await assetWorkspaceAdapter.reconcileMessage({ token, clientRequestId });
+        } catch {
+          // The reconciliation request is also unreachable, so submission state
+          // remains unknown and the original connection error stays visible.
+        }
+        if (result) {
+          // Continue through the normal persisted-result replacement path.
+        } else if (!signal?.aborted) {
+          error = new Error(MESSAGE_NOT_SUBMITTED_ERROR);
+        }
+      }
+      if (result) {
+        // Reconciliation found the durable request; do not render a local error.
+      } else {
       if (optimisticConversationId && !signal?.aborted) {
         const message = error instanceof Error ? error.message : "生成失败，请稍后重试。";
         setConversations((current) => current.map((item) => {
@@ -878,6 +938,7 @@ export default function AssetsWorkspaceClient({
         }));
       }
       throw error;
+      }
     }
     if (signal?.aborted) return;
     const { conversationId: targetConversationId, conversation: persistedConversation, product } = result;
@@ -966,8 +1027,8 @@ export default function AssetsWorkspaceClient({
     try {
       const data = await getAssetLlmDiagnostics(token, true);
       setDiagnostics({ open: true, loading: false, data, error: null });
-    } catch {
-      setDiagnostics({ open: true, loading: false, data: null, error: "诊断失败" });
+    } catch (error) {
+      setDiagnostics({ open: true, loading: false, data: null, error: formatComposerError(error) });
     }
   };
 
@@ -979,13 +1040,69 @@ export default function AssetsWorkspaceClient({
     sidebarState === "expanded" ? "sidebar-expanded" : "",
     isSidebarVisuallyCollapsed ? "sidebar-visual-collapsed" : ""
   ].filter(Boolean).join(" ");
+  const insetClassName = activeView === "conversation" ? "shadcn-prototype-inset conversation-inset" : "shadcn-prototype-inset";
+  const renderDiagnostics = () => canShowDiagnostics ? (
+    <div className="shadcn-prototype-diagnostics">
+      <button
+        type="button"
+        aria-expanded={diagnostics.open}
+        aria-controls="llm-diagnostics-panel"
+        onClick={() => {
+          void handleToggleDiagnostics();
+        }}
+      >
+        <Gauge size={15} aria-hidden="true" />
+        诊断
+      </button>
+      {diagnostics.open ? (
+        <aside id="llm-diagnostics-panel" className="shadcn-prototype-diagnostics-panel" aria-label="LLM 诊断">
+          <header>
+            <span>LLM 诊断</span>
+            <strong>
+              {diagnostics.loading
+                ? "检测中"
+                : diagnostics.error
+                  ? "检测失败"
+                  : diagnostics.data?.configured
+                    ? "已配置"
+                    : "未配置"}
+            </strong>
+          </header>
+          {diagnostics.error ? <p role="alert">{diagnostics.error}</p> : null}
+          {diagnostics.data ? (
+            <dl>
+              <div>
+                <dt>Provider</dt>
+                <dd>{diagnostics.data.provider}</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>{diagnostics.data.model ?? "未设置"}</dd>
+              </div>
+              <div>
+                <dt>Probe</dt>
+                <dd>{diagnostics.data.probe_ok === true ? "正常" : diagnostics.data.probe_ok === false ? "失败" : "未执行"}</dd>
+              </div>
+              <div>
+                <dt>Timeout</dt>
+                <dd>{diagnostics.data.timeout_seconds}s</dd>
+              </div>
+            </dl>
+          ) : null}
+          {diagnostics.data?.probe_error ? <p role="status">{diagnostics.data.probe_error}</p> : null}
+        </aside>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <main className={shellClassName}>
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
           <span className="shadcn-prototype-brand-mark" aria-hidden="true">
-            <span className="shadcn-prototype-brand-letter">M</span>
+            <svg width="17" height="17" viewBox="0 0 14 14" fill="none">
+              <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </span>
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
@@ -1132,18 +1249,42 @@ export default function AssetsWorkspaceClient({
                 className={activeView === "conversation" && conversation.id === selectedConversation.id ? "shadcn-prototype-conversation-row active" : "shadcn-prototype-conversation-row"}
                 key={conversation.id}
               >
-                <Link
-                  className="shadcn-prototype-conversation-main"
-                  href={`${basePath}?conversation=${encodeURIComponent(conversation.id)}`}
-                  aria-current={activeView === "conversation" && conversation.id === selectedConversation.id ? "page" : undefined}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    handleSelectConversation(conversation.id);
-                  }}
-                >
-                  <strong title={conversation.title}>{conversation.title}</strong>
-                  <span>{conversation.updatedAt}</span>
-                </Link>
+                {renamingConversationId === conversation.id ? (
+                  <div className="shadcn-prototype-conversation-main shadcn-prototype-conversation-rename">
+                    <input
+                      autoFocus
+                      className="shadcn-prototype-conversation-rename-input"
+                      aria-label="重命名对话"
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.currentTarget.value)}
+                      onClick={(event) => event.stopPropagation()}
+                      onBlur={() => handleCommitRenameConversation(conversation)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleCommitRenameConversation(conversation);
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          handleCancelRenameConversation();
+                        }
+                      }}
+                    />
+                    <span>{conversation.updatedAt}</span>
+                  </div>
+                ) : (
+                  <Link
+                    className="shadcn-prototype-conversation-main"
+                    href={`${basePath}?conversation=${encodeURIComponent(conversation.id)}`}
+                    aria-current={activeView === "conversation" && conversation.id === selectedConversation.id ? "page" : undefined}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handleSelectConversation(conversation.id);
+                    }}
+                  >
+                    <strong title={conversation.title}>{conversation.title}</strong>
+                    <span>{conversation.updatedAt}</span>
+                  </Link>
+                )}
                 <button
                   className="shadcn-prototype-conversation-more"
                   type="button"
@@ -1158,7 +1299,7 @@ export default function AssetsWorkspaceClient({
                 </button>
                 {conversationMenuId === conversation.id ? (
                   <div className="shadcn-prototype-conversation-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => handleRenameConversation(conversation)}>
+                    <button type="button" onClick={() => handleStartRenameConversation(conversation)}>
                       <Pencil size={13} aria-hidden="true" />
                       重命名
                     </button>
@@ -1189,90 +1330,38 @@ export default function AssetsWorkspaceClient({
         </div>
       </aside>
 
-      <section className="shadcn-prototype-inset">
-        <header className="shadcn-prototype-topbar">
-          {sidebarState === "auto" && isNarrowViewport ? (
-            <button
-              className="shadcn-prototype-topbar-sidebar-toggle"
-              type="button"
-              aria-label="展开侧边栏"
-              title="展开侧边栏"
-              onClick={handleExpandSidebar}
-            >
-              <PanelLeftOpen size={16} aria-hidden="true" />
-            </button>
-          ) : null}
-          <div className="shadcn-prototype-breadcrumb">
-            {activeView === "conversation" ? (
-              isNewConversation ? (
-                <strong>新建对话</strong>
-              ) : null
-            ) : (
-              <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
-            )}
-          </div>
-          <div className="shadcn-prototype-actions">
-            {canShowDiagnostics ? <div className="shadcn-prototype-diagnostics">
+      <section className={insetClassName}>
+        {activeView !== "conversation" ? (
+          <header className="shadcn-prototype-topbar">
+            {sidebarState === "auto" && isNarrowViewport ? (
               <button
+                className="shadcn-prototype-topbar-sidebar-toggle"
                 type="button"
-                aria-expanded={diagnostics.open}
-                aria-controls="llm-diagnostics-panel"
-                onClick={() => {
-                  void handleToggleDiagnostics();
-                }}
+                aria-label="展开侧边栏"
+                title="展开侧边栏"
+                onClick={handleExpandSidebar}
               >
-                <Gauge size={15} aria-hidden="true" />
-                诊断
+                <PanelLeftOpen size={16} aria-hidden="true" />
               </button>
-              {diagnostics.open ? (
-                <aside id="llm-diagnostics-panel" className="shadcn-prototype-diagnostics-panel" aria-label="LLM 诊断">
-                  <header>
-                    <span>LLM 诊断</span>
-                    <strong>
-                      {diagnostics.loading
-                        ? "检测中"
-                        : diagnostics.data?.configured
-                          ? "已配置"
-                          : "未配置"}
-                    </strong>
-                  </header>
-                  {diagnostics.error ? <p role="alert">{diagnostics.error}</p> : null}
-                  {diagnostics.data ? (
-                    <dl>
-                      <div>
-                        <dt>Provider</dt>
-                        <dd>{diagnostics.data.provider}</dd>
-                      </div>
-                      <div>
-                        <dt>Model</dt>
-                        <dd>{diagnostics.data.model ?? "未设置"}</dd>
-                      </div>
-                      <div>
-                        <dt>Probe</dt>
-                        <dd>{diagnostics.data.probe_ok === true ? "正常" : diagnostics.data.probe_ok === false ? "失败" : "未执行"}</dd>
-                      </div>
-                      <div>
-                        <dt>Timeout</dt>
-                        <dd>{diagnostics.data.timeout_seconds}s</dd>
-                      </div>
-                    </dl>
-                  ) : null}
-                  {diagnostics.data?.probe_error ? <p role="status">{diagnostics.data.probe_error}</p> : null}
-                </aside>
-              ) : null}
-            </div> : null}
-            <input
-              ref={uploadInputRef}
-              type="file"
-              accept={uploadAcceptForView(activeView)}
-              style={{ display: "none" }}
-              onChange={(event) => {
-                void handleUploadFile(event.currentTarget.files?.[0]);
-              }}
-            />
-            {uploadError ? <span className="shadcn-prototype-upload-error" role="alert">{uploadError}</span> : null}
-          </div>
-        </header>
+            ) : null}
+            <div className="shadcn-prototype-breadcrumb">
+              <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
+            </div>
+            <div className="shadcn-prototype-actions">
+              {renderDiagnostics()}
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept={uploadAcceptForView(activeView)}
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  void handleUploadFile(event.currentTarget.files?.[0]);
+                }}
+              />
+              {uploadError ? <span className="shadcn-prototype-upload-error" role="alert">{uploadError}</span> : null}
+            </div>
+          </header>
+        ) : null}
 
         <div
           ref={workspaceRef}
@@ -1325,6 +1414,8 @@ export default function AssetsWorkspaceClient({
                   });
                 }}
                 onSendMessage={handleSendConversationMessage}
+                liveRunStepsByAssetId={liveRunStepsByAssetId}
+                diagnosticsSlot={renderDiagnostics()}
                 readonly={selectedConversation.readonly ?? false}
               />
               <div

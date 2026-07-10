@@ -129,6 +129,18 @@ export type AssetMessagePlan = {
   adjustLabel?: string;
   // Instruction submitted when the confirm button is pressed.
   confirmUtterance?: string;
+  // Video-size selector (spec §5.2): when present the confirm card renders a
+  // ratio toggle. `ratioDefault` is the initially-selected option; the chosen
+  // ratio is woven into the confirm instruction so the backend can honor it.
+  ratioOptions?: AssetPlanRatioOption[];
+  ratioDefault?: string;
+};
+
+export type AssetPlanRatioOption = {
+  // Canonical ratio the backend parses ("9:16" | "16:9" | "1:1").
+  value: string;
+  // Merchant-facing chip label, e.g. "横屏 16:9".
+  label: string;
 };
 
 // A single agent execution step (demo workspace「MultiMix 已完成执行」clist).
@@ -152,6 +164,8 @@ export type AssetConversationMessage = {
   runSteps?: AgentRunStep[];
   // Backend-backed message fields (optional for mock data).
   assetId?: number | null;
+  metadata?: Record<string, unknown>;
+  localState?: "failed" | "stopped" | "unsubmitted";
   pending?: boolean;
 };
 
@@ -211,6 +225,8 @@ export type AssetWorkshop = {
     format?: string;
     contentType?: string;
     statusLabel?: string;
+    updatedLabel?: string;
+    updatedAtIso?: string;
     referenceCount?: number;
     sourceLabel?: string;
     sourceUrl?: string;

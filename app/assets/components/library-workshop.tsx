@@ -21,9 +21,9 @@ const SEARCH_PLACEHOLDER: Record<Exclude<ActiveView, "conversation">, string> = 
 };
 
 const UPLOAD_LABEL: Record<Exclude<ActiveView, "conversation">, string> = {
-  assets: "上传资料",
+  assets: "上传",
   copy: "上传",
-  image: "上传素材",
+  image: "上传",
   video: "上传"
 };
 
@@ -79,15 +79,23 @@ function publicMediaSource(candidate: PublicMaterialCandidate): string {
 }
 
 function displayMeta(row: LibraryRow, currentView: Exclude<ActiveView, "conversation">) {
+  // Unified meta across text libraries: the category shows as the top badge, so
+  // the meta line carries only the status. Category/contentType are not repeated
+  // here (contentType lives in the detail drawer per the design doc).
+  if ((currentView === "copy" || currentView === "assets") && row.category) {
+    return row.statusLabel ?? "";
+  }
   if (currentView !== "assets" && row.category) {
     return row.statusLabel ? `${row.category} · ${row.statusLabel}` : row.category;
   }
-  if (currentView === "assets" && row.category) {
-    const detail = [row.contentType, row.statusLabel].filter(Boolean).join(" · ");
-    return detail ? `${row.category} · ${detail}` : row.category;
-  }
   if (!row.category) return row.meta;
   return row.meta.includes(row.category) ? row.meta : `${row.category} · ${row.meta}`;
+}
+
+// Reference-count label shared by every library card. A row with no usage (0 or
+// missing count) reads "未使用" so users can tell it has never been referenced.
+function referenceCountLabel(row: LibraryRow): string {
+  return row.referenceCount ? `被引用 ${row.referenceCount} 次` : "未使用";
 }
 
 function libraryRowMediaKind(row: LibraryRow): "image" | "video" | null {
@@ -144,6 +152,55 @@ function downloadFilename(row: LibraryRow, label = "asset") {
   if (row.kind === "image") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.png`;
   if (row.kind === "video") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.mp4`;
   return title;
+}
+
+// Demo-final detail: understanding is "ready" when the status reads 已理解/
+// 已解析/可检索 (final/library.html st: ok) — anything else is still pending.
+function understandingReady(row: LibraryRow): boolean {
+  const label = row.statusLabel ?? "";
+  if (label.includes("失败")) return false;
+  return label.startsWith("已") || label === "可检索";
+}
+
+// Demo-final usage record ("被「对话」引用 N 次"). We only have referenceCount,
+// so synthesize the count line as a preview of the prototype's usage section.
+function usageText(row: LibraryRow): string | null {
+  if (row.referenceCount == null) return null;
+  return row.referenceCount > 0 ? `已被引用 ${row.referenceCount} 次。` : "尚未被使用。";
+}
+
+// Demo-final voiceover 试听 bar. There is no audio URL on LibraryRow yet, so this
+// mirrors the prototype's accelerated 30s progress animation as a preview.
+function VoiceoverAudioBar() {
+  const [progress, setProgress] = useState(0);
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = setInterval(() => {
+      setProgress((value) => {
+        if (value >= 30) {
+          setPlaying(false);
+          return 0;
+        }
+        return value + 1;
+      });
+    }, 100);
+    return () => clearInterval(timer);
+  }, [playing]);
+
+  const seconds = String(Math.min(progress, 30)).padStart(2, "0");
+  return (
+    <div className="shadcn-prototype-library-audio">
+      <button type="button" className="ab-play" aria-label={playing ? "暂停试听" : "试听配音"} onClick={() => setPlaying((value) => !value)}>
+        <Play size={12} fill="currentColor" aria-hidden="true" />
+      </button>
+      <span className="ab-wave" aria-hidden="true">
+        <span className="ab-fill" style={{ width: `${(Math.min(progress, 30) / 30) * 100}%` }} />
+      </span>
+      <span className="ab-t">00:{seconds} / 00:30</span>
+    </div>
+  );
 }
 
 export type LibraryActionIntent = "create" | "video" | "regenerate-image";
@@ -425,7 +482,39 @@ export default function LibraryWorkshop({
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
       <div className="shadcn-prototype-workshop-body">
         <div className="shadcn-prototype-library-toolbar">
-          <h2 className="shadcn-prototype-library-title">{workshop.title}</h2>
+          <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
+            {FILTERS[view].map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                className={filter === activeFilter ? "active" : undefined}
+                onClick={() => setActiveFilter(filter)}
+              >
+                {filter}
+              </button>
+            ))}
+            {view === "image" ? (
+              <>
+                <span className="shadcn-prototype-library-filter-sep" aria-hidden="true" />
+                <button
+                  type="button"
+                  className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
+                  onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
+                >
+                  <i className="dot-ok" aria-hidden="true" />
+                  已解析
+                </button>
+                <button
+                  type="button"
+                  className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
+                  onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
+                >
+                  <i className="dot-wait" aria-hidden="true" />
+                  待处理
+                </button>
+              </>
+            ) : null}
+          </div>
           <label className="shadcn-prototype-library-search compact">
             <Search size={15} aria-hidden="true" />
             <input
@@ -455,40 +544,6 @@ export default function LibraryWorkshop({
         </div>
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
-        <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
-          {FILTERS[view].map((filter) => (
-            <button
-              key={filter}
-              type="button"
-              className={filter === activeFilter ? "active" : undefined}
-              onClick={() => setActiveFilter(filter)}
-            >
-              {filter}
-            </button>
-          ))}
-          {view === "image" ? (
-            <>
-              <span className="shadcn-prototype-library-filter-sep" aria-hidden="true" />
-              <button
-                type="button"
-                className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
-                onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
-              >
-                <i className="dot-ok" aria-hidden="true" />
-                已解析
-              </button>
-              <button
-                type="button"
-                className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
-                onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
-              >
-                <i className="dot-wait" aria-hidden="true" />
-                待处理
-              </button>
-            </>
-          ) : null}
-        </div>
-
         {filteredRows.length === 0 ? (
           <article className="shadcn-prototype-workshop-empty">
             <div>
@@ -510,9 +565,9 @@ export default function LibraryWorkshop({
                 // thumbnail; the body keeps only title + usage stat.
                 const rowMedia = renderLibraryRowMedia(row, view);
                 const rowMediaKind = libraryRowMediaKind(row);
-                const stat = row.referenceCount != null
-                  ? (row.referenceCount > 0 ? `被引用 ${row.referenceCount} 次` : "未使用")
-                  : statusKind === "wait" ? "刚上传" : "";
+                // Unified media meta: updated time + reference count. Status shows
+                // as the pill on the thumbnail, so it is not repeated here.
+                const stat = [row.updatedLabel, referenceCountLabel(row)].filter(Boolean).join(" · ");
                 return (
                   <button
                     key={`${row.kind}-${row.title}-${index}`}
@@ -549,6 +604,7 @@ export default function LibraryWorkshop({
                     {view === "assets" ? (
                       <>
                         <i className="fic" aria-hidden="true"><FileText size={13} /></i>
+                        {row.category ? <i className="cat">{row.category}</i> : null}
                         <strong>{row.title}</strong>
                       </>
                     ) : null}
@@ -556,8 +612,9 @@ export default function LibraryWorkshop({
                   {view !== "assets" ? <strong className="shadcn-prototype-library-text-title">{row.title}</strong> : null}
                   {row.note ? <p>{row.note}</p> : null}
                   <span className="shadcn-prototype-library-text-meta">
-                    {displayMeta(row, view)}
-                    {row.referenceCount != null ? ` · 被引用 ${row.referenceCount} 次` : ""}
+                    {[row.updatedLabel, referenceCountLabel(row), displayMeta(row, view)]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </span>
                   {row.searchReasons && row.searchReasons.length > 0 ? (
                     <em className="shadcn-prototype-library-reasons">
@@ -567,17 +624,6 @@ export default function LibraryWorkshop({
                 </button>
               );
             })}
-            {(view === "image" || view === "assets") && onUploadClick ? (
-              <button
-                type="button"
-                className="shadcn-prototype-library-upload-card"
-                onClick={onUploadClick}
-                disabled={uploading}
-              >
-                <Plus size={20} aria-hidden="true" />
-                {view === "image" ? "上传更多素材" : "上传更多资料"}
-              </button>
-            ) : null}
           </div>
         )}
       </div>
@@ -603,11 +649,19 @@ export default function LibraryWorkshop({
               </div>
             </header>
 
+            {/* Preview (demo md-preview) */}
             {view === "image" ? (
               <div className="shadcn-prototype-library-image-preview">
-                <ImageIcon size={34} aria-hidden="true" />
-                <strong>{selectedRow.title}</strong>
-                <span>{selectedRow.format ?? "图片素材"}</span>
+                {selectedRow.previewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={selectedRow.previewUrl} alt={selectedRow.title} loading="lazy" />
+                ) : (
+                  <>
+                    <ImageIcon size={34} aria-hidden="true" />
+                    <strong>{selectedRow.title}</strong>
+                    <span>{selectedRow.format ?? "图片素材"}</span>
+                  </>
+                )}
               </div>
             ) : view === "video" ? (
               selectedRow.previewUrl ? (
@@ -629,16 +683,159 @@ export default function LibraryWorkshop({
                   <span>{selectedRow.format ?? "视频预览"}</span>
                 </div>
               )
-            ) : view === "assets" ? (
-              <dl className="shadcn-prototype-library-meta">
-                <div><dt>来源分类</dt><dd>{selectedRow.category ?? "待识别"}</dd></div>
-                <div><dt>内容类型</dt><dd>{selectedRow.contentType ?? "资料"}</dd></div>
-                <div><dt>处理状态</dt><dd>{selectedRow.statusLabel ?? "待解析"}</dd></div>
-                <div><dt>来源</dt><dd>{selectedRow.sourceLabel ?? selectedRow.meta}</dd></div>
-                <div><dt>索引状态</dt><dd>{selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
-              </dl>
             ) : null}
 
+            {/* Content sections in demo order; actions moved to the bottom. */}
+            {view === "image" ? (
+              <>
+                <section className="shadcn-prototype-library-content">
+                  <h3>
+                    AI 理解
+                    {understandingReady(selectedRow) ? (
+                      <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />已理解</span>
+                    ) : null}
+                  </h3>
+                  {understandingReady(selectedRow) ? (
+                    <div className="shadcn-prototype-library-understand">{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</div>
+                  ) : (
+                    <div className="shadcn-prototype-library-pending">
+                      <span className="row"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />AI 正在理解这张图…</span>
+                      <span className="bar" aria-hidden="true" />
+                      <span className="hint">完成后会自动生成画面描述、可用场景和检索关键词</span>
+                    </div>
+                  )}
+                </section>
+                {selectedRow.understandingRoles && selectedRow.understandingRoles.length > 0 ? (
+                  <section className="shadcn-prototype-library-content">
+                    <h3>可用场景</h3>
+                    <div className="shadcn-prototype-library-chips">
+                      {selectedRow.understandingRoles.slice(0, 6).map((role) => <span key={role}>{role}</span>)}
+                    </div>
+                  </section>
+                ) : null}
+                <section className="shadcn-prototype-library-content">
+                  <h3>检索关键词</h3>
+                  <div className="shadcn-prototype-library-chips">
+                    {selectedKeywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
+                  </div>
+                </section>
+                {usageText(selectedRow) ? (
+                  <section className="shadcn-prototype-library-content">
+                    <h3>使用记录</h3>
+                    <div className="shadcn-prototype-library-usage">{usageText(selectedRow)}</div>
+                  </section>
+                ) : null}
+              </>
+            ) : view === "copy" ? (
+              <>
+                <section className="shadcn-prototype-library-content">
+                  <h3>{selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
+                  <div className="shadcn-prototype-library-prose">
+                    {selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}
+                  </div>
+                </section>
+                {selectedRow.category === "配音稿" ? (
+                  <section className="shadcn-prototype-library-content">
+                    <h3>试听 <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />配音预览</span></h3>
+                    <VoiceoverAudioBar />
+                  </section>
+                ) : null}
+                <section className="shadcn-prototype-library-content">
+                  <h3>来源</h3>
+                  <div className="shadcn-prototype-library-usage">{selectedRow.sourceLabel ?? selectedRow.meta}{usageText(selectedRow) ? ` · ${usageText(selectedRow)}` : ""}</div>
+                </section>
+              </>
+            ) : view === "video" ? (
+              <>
+                <section className="shadcn-prototype-library-content">
+                  <h3>规格</h3>
+                  <div className="shadcn-prototype-library-usage">{[selectedRow.format, selectedRow.meta].filter(Boolean).join(" · ") || "视频素材"}</div>
+                </section>
+                <section className="shadcn-prototype-library-content">
+                  <h3>{isDigitalHuman(selectedRow) ? "口播文稿" : selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
+                  {isDigitalHuman(selectedRow) ? (
+                    <div className="shadcn-prototype-library-prose">
+                      {selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}
+                    </div>
+                  ) : (
+                    <div className="shadcn-prototype-library-timeline">
+                      {selectedBody.map((line, index) => (
+                        <article key={`${line}-${index}`}>
+                          <span>{String(index + 1).padStart(2, "0")}</span>
+                          <p>{line}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+                {selectedRow.understandingTags && selectedRow.understandingTags.length > 0 ? (
+                  <section className="shadcn-prototype-library-content">
+                    <h3>检索关键词</h3>
+                    <div className="shadcn-prototype-library-chips">
+                      {selectedRow.understandingTags.slice(0, 6).map((tag) => <span key={tag}>{tag}</span>)}
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <section className="shadcn-prototype-library-content">
+                  <h3>
+                    AI 摘要
+                    {understandingReady(selectedRow) ? (
+                      <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />已解析</span>
+                    ) : null}
+                  </h3>
+                  {selectedRow.statusLabel === "解析失败" ? (
+                    <div className="shadcn-prototype-library-understand">这份资料解析失败，可重试处理后再查看摘要。</div>
+                  ) : understandingReady(selectedRow) ? (
+                    <div className="shadcn-prototype-library-understand">{selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`} style={index > 0 ? { marginTop: 8 } : undefined}>{paragraph}</p>)}</div>
+                  ) : (
+                    <div className="shadcn-prototype-library-pending">
+                      <span className="row"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />AI 正在解析这份资料…</span>
+                      <span className="bar" aria-hidden="true" />
+                      <span className="hint">完成后会自动生成摘要和检索关键词</span>
+                    </div>
+                  )}
+                </section>
+                <section className="shadcn-prototype-library-content">
+                  <h3>检索关键词</h3>
+                  <div className="shadcn-prototype-library-chips">
+                    {selectedKeywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
+                  </div>
+                </section>
+                <dl className="shadcn-prototype-library-meta">
+                  <div><dt>来源分类</dt><dd>{selectedRow.category ?? "待识别"}</dd></div>
+                  <div><dt>内容类型</dt><dd>{selectedRow.contentType ?? "资料"}</dd></div>
+                  <div><dt>处理状态</dt><dd>{selectedRow.statusLabel ?? "待解析"}</dd></div>
+                  <div><dt>来源</dt><dd>{selectedRow.sourceLabel ?? selectedRow.meta}</dd></div>
+                  <div><dt>索引状态</dt><dd>{selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
+                </dl>
+                {sourceOpen ? (
+                  <section className="shadcn-prototype-library-content">
+                    <h3>来源详情</h3>
+                    <div className="shadcn-prototype-library-prose">
+                      <p>来源：{selectedRow.sourceLabel ?? selectedRow.meta}</p>
+                      {selectedRow.sourceUrl ? <p>URL：{selectedRow.sourceUrl}</p> : null}
+                      {selectedRow.sourceRefs?.length ? <p>引用：{selectedRow.sourceRefs.join(" / ")}</p> : <p>暂无来源引用。</p>}
+                    </div>
+                  </section>
+                ) : null}
+              </>
+            )}
+
+            {selectedRow.versions && selectedRow.versions.length > 0 ? (
+              <section className="shadcn-prototype-library-keywords">
+                <h3>版本历史</h3>
+                <div>
+                  {selectedRow.versions.map((version) => (
+                    <span key={version}>{version}</span>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
               {view === "copy" ? (
                 <>
@@ -682,92 +879,6 @@ export default function LibraryWorkshop({
                 </>
               )}
             </div>
-
-            {sourceOpen ? (
-              <section className="shadcn-prototype-library-content">
-                <h3>来源详情</h3>
-                <div className="shadcn-prototype-library-prose">
-                  <p>来源：{selectedRow.sourceLabel ?? selectedRow.meta}</p>
-                  {selectedRow.sourceUrl ? <p>URL：{selectedRow.sourceUrl}</p> : null}
-                  {selectedRow.sourceRefs?.length ? <p>引用：{selectedRow.sourceRefs.join(" / ")}</p> : <p>暂无来源引用。</p>}
-                  <p>{selectedBody[0] ?? selectedRow.note}</p>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="shadcn-prototype-library-content">
-              <h3>{view === "video" && isDigitalHuman(selectedRow) ? "口播文稿" : selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
-              {view === "video" && !isDigitalHuman(selectedRow) ? (
-                <div className="shadcn-prototype-library-timeline">
-                  {selectedBody.map((line, index) => (
-                    <article key={`${line}-${index}`}>
-                      <span>{String(index + 1).padStart(2, "0")}</span>
-                      <p>{line}</p>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="shadcn-prototype-library-prose">
-                  {selectedBody.map((paragraph, index) => (
-                    <p key={`${paragraph}-${index}`}>{paragraph}</p>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {view === "image" ? (
-              <dl className="shadcn-prototype-library-meta">
-                <div><dt>理解状态</dt><dd>{selectedRow.statusLabel ?? "待理解"}</dd></div>
-                <div><dt>标签</dt><dd>{selectedRow.understandingTags?.slice(0, 6).join("、") || "暂无标签"}</dd></div>
-                <div><dt>适合角色</dt><dd>{selectedRow.understandingRoles?.slice(0, 3).join("、") || "待识别"}</dd></div>
-              </dl>
-            ) : view === "video" ? (
-              <dl className="shadcn-prototype-library-meta">
-                <div><dt>理解状态</dt><dd>{selectedRow.statusLabel ?? "待理解"}</dd></div>
-                <div><dt>标签</dt><dd>{selectedRow.understandingTags?.slice(0, 6).join("、") || "暂无标签"}</dd></div>
-                <div><dt>适合角色</dt><dd>{selectedRow.understandingRoles?.slice(0, 3).join("、") || "待识别"}</dd></div>
-              </dl>
-            ) : null}
-
-            {(view === "image" || view === "video") ? (
-              <section className="shadcn-prototype-library-keywords">
-                <h3>素材理解</h3>
-                <div>
-                  <span>{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</span>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="shadcn-prototype-library-keywords">
-              <h3>检索关键词</h3>
-              <div>
-                {selectedKeywords.map((keyword) => (
-                  <span key={keyword}>{keyword}</span>
-                ))}
-              </div>
-            </section>
-
-            {selectedRow.sourceRefs && selectedRow.sourceRefs.length > 0 ? (
-              <section className="shadcn-prototype-library-keywords">
-                <h3>来源引用</h3>
-                <div>
-                  {selectedRow.sourceRefs.map((sourceRef) => (
-                    <span key={sourceRef}>{sourceRef}</span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {selectedRow.versions && selectedRow.versions.length > 0 ? (
-              <section className="shadcn-prototype-library-keywords">
-                <h3>版本历史</h3>
-                <div>
-                  {selectedRow.versions.map((version) => (
-                    <span key={version}>{version}</span>
-                  ))}
-                </div>
-              </section>
-            ) : null}
           </aside>
         </div>
       ) : null}

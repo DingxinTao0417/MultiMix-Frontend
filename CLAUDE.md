@@ -2,22 +2,22 @@
 
 本文件指导各类代码代理（含 Claude Code、Codex 等）在此仓库中工作。响应使用简体中文，代码注释保持英文且精简。
 
-> 本文件与 `AGENTS.md` 内容一致（仅标题不同）。**只手改 `CLAUDE.md`**，然后运行 `npm run sync:agents` 重新生成 `AGENTS.md`；`npm run check:agents` 校验一致性。
+> 本文件与 `AGENTS.md` 内容一致（仅标题不同）。**只手改 `CLAUDE.md`**，然后运行 `npm run sync:agents` 重新生成 `AGENTS.md`；`npm run check:agents` 校验一致性并运行工作区文档准入检查。
 
 ## 项目概述
 
 MultiMix 是一个内容生成工作台（content generation workspace），用对话驱动生成文案、图片、视频、音频、数字人口播、MG 动画等产物，并内嵌浏览器端视频剪辑器。
 
-本仓库是 **前端仓库**（`multimix_frontend`）。后端是独立仓库 `multimix_backend`。本机两仓库并排放置：
+本仓库是 **前端仓库**（`MultiMix-Frontend`）。后端是独立仓库 `MultiMix-Backend`。本机两仓库并排放置：
 
-- 前端：`/Users/tao/Desktop/MultiMix/multimix_frontend`（Next.js 15，部署 Vercel）
-- 后端：`/Users/tao/Desktop/MultiMix/multimix_backend`（FastAPI，ChangeIn 基座 + 视频编排 + MG 动效，部署 Railway，详见其 `README.md`）
+- 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`（Next.js 15，部署 Vercel）
+- 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`（FastAPI，ChangeIn 基座 + 视频编排 + MG 动效，部署 Railway，详见其 `README.md`）
 
 剪辑器是 video-studio 的 OpenCut 引擎（`editor-engine/vendor/`），作为 `/editor` 路由嵌入，也能以 `?embed=1` 模式内嵌进对话工作台。
 
 前端保留 adapter 层 + mock：未配 `NEXT_PUBLIC_API_BASE_URL` 时离线跑 mock，配了则走后端。不应为后端实现重写工作台 UI。
 
-完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/MULTIMIX_ASSET_UNDERSTANDING_AND_SEGMENT_REFERENCING.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情抽屉、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。工作区文档地图见 `../docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/authority/asset-understanding-and-segment-referencing.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
 ## 技术栈
 
@@ -37,15 +37,17 @@ npm run lint          # eslint .
 npm run test          # vitest run（app/assets/__tests__ + editor-engine/vendor/buildProject.test.ts）
 npm run build         # next build（含 /editor，glsl/worker/Tailwind v4 已配）
 npm run sync:agents   # 由 CLAUDE.md 重新生成 AGENTS.md
+npm run docs:check    # 检查根 docs 分类、状态头、旧路径和 UI 原型归档规则
+npm run test:docs-check # 单测 docs:check 的守门逻辑
 npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归集
 ```
 
-后端（`../multimix_backend`）：
+后端（`../MultiMix-Backend`）：
 
 ```bash
-.venv/bin/python -m uvicorn app.main:app --port 8199
-.venv/bin/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py -q
-.venv/bin/python -m ruff check --line-length 100 app/
+.venv\Scripts\python -m uvicorn app.main:app --port 8199
+.venv\Scripts\python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py -q
+.venv\Scripts\python -m ruff check --line-length 100 app/
 ```
 
 改完前端至少跑 `typecheck` + `lint` + `test` + `build`；改完后端跑相关 pytest + ruff。两个仓库都配了 GitHub Actions CI（`.github/workflows/ci.yml`），push/PR 会自动跑同样的检查。
@@ -76,7 +78,7 @@ app/
   app/assets/page.tsx               # 路由 "/app/assets"，同上但 basePath 不同
   layout.tsx                        # 根布局（html lang=zh-CN）
   multimix-app.tsx                  # 认证壳：Supabase / local 自动登录，注入 searchParams
-  globals.css                       # 单一全局样式表（约 5300 行，前缀约定见「已知问题」）
+  globals.css                       # 单一全局样式表（前缀约定见「已知问题」）
   editor/                           # /editor 剪辑器路由（dynamic ssr:false + Tailwind v4 CSS scope）
   admin/public-sources/page.tsx     # 公开素材源管理页（需真实后端）
   assets/
@@ -85,7 +87,7 @@ app/
       assets-workspace-client.tsx   # 主壳：全局状态、侧边栏、顶栏、拖拽分栏、布局编排
       conversation-start.tsx        # 新对话空白起始页（建议 + 首条消息输入框）
       conversation-studio.tsx       # 对话区：消息流、产物卡列表、输入框
-      product-workspace.tsx         # 展示区容器：标题、详情抽屉、操作按钮、时间轴
+      product-workspace.tsx         # 展示区容器：标题、详情浮层、操作按钮、时间轴
       product-preview.tsx           # 按 product.mode 分发的预览（copy/image/audio/digital-human/video）
       library-workshop.tsx          # 资产库/文案库/图片库/视频库视图
     lib/                            # 数据 + 逻辑层（新增数据/adapter/helper 放这里）
@@ -123,7 +125,7 @@ scripts/
 
 ### UI 关键约定（来自设计文档）
 
-对话决定产物类型；展示区只显示当前选中的单个产物，**不加一级产物类型 Tab**；产物切换靠对话流里的产物卡；详情走右侧抽屉；下一步建议放在助手回复里。数字人是视频的一种表现形式，不是一级产物类型。面向普通用户的文案只出现「文案、图片、视频、确认生成」等表达，内部能力名/模型名/调试状态留在后端 metadata 或管理员诊断入口。
+对话决定产物类型；展示区只显示当前选中的单个产物，**不加一级产物类型 Tab**；产物切换靠对话流里的产物卡；库详情用居中模态弹窗，工作台产物详情用顶部「详情」浮层；下一步建议放在助手回复里。数字人是视频的一种表现形式，不是一级产物类型。面向普通用户的文案只出现「文案、图片、视频、确认生成」等表达，内部能力名/模型名/调试状态留在后端 metadata 或管理员诊断入口。
 
 ### 资源库分类（以设计文档为准）
 
@@ -131,7 +133,7 @@ scripts/
 - 文案库分类固定为：`选题方案`、`文案稿`、`配音稿`、`编导稿`。
 - 图片库分类固定为：`封面图`、`素材图`、`分镜图`。
 - 视频库分类固定为：`混剪视频`、`数字人视频`、`MG动画视频`、`实景拍摄视频`、`生成视频素材`。
-- 文案库、图片库和视频库列表只显示一个正式分类，不显示额外版本、状态或关键词标签。点击条目从右侧抽屉打开详情；数字人视频详情只展示口播文稿，不展示分镜部分。
+- 文案库、图片库和视频库列表只显示一个正式分类，不显示额外版本、状态或关键词标签。点击库条目用居中模态弹窗打开详情；数字人视频详情只展示口播文稿，不展示分镜部分。
 
 ## 数据边界（严格遵守）
 
@@ -144,8 +146,8 @@ scripts/
 
 当用户要求“提交代码”、“拉最新代码”、“合并代码”、“处理冲突”、“推送远程”或类似发布动作时，默认按下面流程自动执行，不需要再停下来只给计划。当前工作区包含两个独立仓库：
 
-- 前端：`/Users/tao/Desktop/MultiMix/multimix_frontend`
-- 后端：`/Users/tao/Desktop/MultiMix/multimix_backend`
+- 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`
+- 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`
 
 ### 提交前
 
@@ -161,11 +163,12 @@ scripts/
   - `npm run typecheck`
   - `npm run lint`
   - `npm run test`
-  - `npm run check:agents`（校验 `CLAUDE.md` 与 `AGENTS.md` 一致；只改了其一时会失败，跑 `npm run sync:agents` 修复）
+  - `npm run check:agents`（校验 `CLAUDE.md` 与 `AGENTS.md` 一致，并运行 `docs:check`；只改了其一时会失败，跑 `npm run sync:agents` 修复）
+  - 改动 `scripts/check-docs.mjs` 或文档准入规则时，加跑 `npm run test:docs-check`
   - 影响构建、路由、依赖、Next 配置、数据 adapter 或关键 UI 时，再运行 `npm run build`
 - 后端有代码改动时，运行对应测试。当前优先运行：
-  - `.venv/bin/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py -q`
-  - `.venv/bin/python -m ruff check --line-length 100 app/`
+  - `.venv\Scripts\python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py -q`
+  - `.venv\Scripts\python -m ruff check --line-length 100 app/`
   - 改动涉及其他模块（MG、编排器、采集等）时，加跑 `app/tests/` 下对应的 `test_*.py`。
 
 检查失败时停止提交或推送，先修复问题；如果无法修复，向用户报告失败命令和原因。
@@ -203,7 +206,7 @@ scripts/
 
 ## 已知问题 / 注意事项
 
-- `app/globals.css` 约 6100 行，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`docs/superpowers/specs/2026-07-08-multimix-ui-redesign-agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
+- `app/globals.css` 是单一全局样式表，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`../docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
 - `editor-engine/vendor/editor/` 内部的 `__tests__` 用 bun:test，已在 `vitest.config.ts` 里排除；`npm run test` 只跑 `app/assets/__tests__/` 和 vendor 根下的 `buildProject.test.ts`。
 - 本地 SQLite 走 Node 实验性 `node:sqlite` API（`scripts/db-init.ts`），Node < 22 会直接失败。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
