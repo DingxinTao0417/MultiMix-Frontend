@@ -35,6 +35,7 @@ import ConversationStudio, { type ChatImageAttachment } from "./conversation-stu
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
 import { UI_V3_BG_STATUS } from "../lib/ui-flags";
 import type { LibraryActionIntent } from "./library-workshop";
+import { LibraryWorkspaceLoading } from "./library-workspace-state";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -44,7 +45,10 @@ const EmptyProductWorkspace = dynamic(
   () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
   { ssr: false, loading: () => null }
 );
-const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => null });
+const AssetLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="资产库" /> });
+const CopyLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="文案库" /> });
+const ImageLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="图片库" /> });
+const VideoLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="视频库" /> });
 
 type SidebarState = "auto" | "collapsed" | "expanded";
 type DiagnosticsState = {
@@ -1544,6 +1548,14 @@ export default function AssetsWorkspaceClient({
     </div>
   ) : null;
 
+  const LibraryWorkshopForActiveView = activeView === "assets"
+    ? AssetLibraryWorkshop
+    : activeView === "copy"
+      ? CopyLibraryWorkshop
+      : activeView === "image"
+        ? ImageLibraryWorkshop
+        : VideoLibraryWorkshop;
+
   return (
     <main className={shellClassName}>
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
@@ -1906,7 +1918,7 @@ export default function AssetsWorkspaceClient({
               )}
             </>
           ) : (
-            <LibraryWorkshop
+            <LibraryWorkshopForActiveView
               view={activeView}
               token={token}
               key={`${activeView}-${libraryRefreshKey}`}
