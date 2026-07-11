@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { assertPortFree, safeRemoveRunDatabase, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const backendRoot = path.resolve(frontendRoot, "..", "MultiMix-Backend");
@@ -31,43 +31,10 @@ function run(command, args, options = {}) {
   });
 }
 
-function assertPortFree(port) {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once("error", () => reject(new Error(`Test port ${port} is already in use`)));
-    server.listen(port, "127.0.0.1", () => server.close(resolve));
-  });
-}
-
-async function waitFor(url, child, timeoutMs = 60_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (child.exitCode != null) throw new Error(`${url} process exited with ${child.exitCode}`);
-    try {
-      const response = await fetch(url);
-      if (response.ok) return;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(`Timed out waiting for ${url}`);
-}
-
-function startLogged(command, args, cwd, env, logName) {
-  const log = fs.createWriteStream(path.join(resultDir, logName), { flags: "w" });
-  const child = spawn(command, args, { cwd, env, shell: process.platform === "win32" && command.endsWith(".cmd"), stdio: ["ignore", "pipe", "pipe"] });
-  child.stdout.pipe(log);
-  child.stderr.pipe(log);
-  children.push({ child, log });
-  return child;
-}
-
-async function stopChild(child) {
-  if (!child || child.exitCode != null) return;
-  if (process.platform === "win32") {
-    await run("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(() => {});
-  } else {
-    child.kill("SIGTERM");
-  }
+function startDisplayProcess(command, args, cwd, env, logName) {
+  const started = startLogged(command, args, { cwd, env, logPath: path.join(resultDir, logName) });
+  children.push(started);
+  return started.child;
 }
 
 const clearedExternalEnv = {
@@ -117,9 +84,9 @@ try {
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
   };
 
-  const backend = startLogged(process.env.PYTHON ?? "python", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)], backendRoot, backendEnv, "backend.log");
+  const backend = startDisplayProcess(process.env.PYTHON ?? "python", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)], backendRoot, backendEnv, "backend.log");
   await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend);
-  const frontend = startLogged(npmCommand, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)], frontendRoot, frontendEnv, "frontend.log");
+  const frontend = startDisplayProcess(npmCommand, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)], frontendRoot, frontendEnv, "frontend.log");
   await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 120_000);
   if (cleanupProbe) throw new Error("Intentional display coverage cleanup probe");
 
@@ -132,6 +99,6 @@ try {
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  for (const suffix of ["", "-wal", "-shm", "-journal"]) fs.rmSync(`${databasePath}${suffix}`, { force: true });
+  safeRemoveRunDatabase(databasePath, runId);
   fs.rmSync(artifactDir, { recursive: true, force: true });
 }
