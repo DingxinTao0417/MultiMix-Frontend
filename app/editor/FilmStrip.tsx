@@ -46,7 +46,17 @@ type RecomposeState =
 const OVERWRITE_FALLBACK_MESSAGE =
   "重新合成会覆盖你在剪辑器里做的手工剪辑（裁剪/分割）；素材、配音、字卡的修改不受影响。确认后将继续。";
 
-export default function FilmStrip({ assetId, token }: { assetId: string | null; token: string | null }) {
+export default function FilmStrip({
+  assetId,
+  token,
+  initialSegmentId = null,
+  openMaterialPicker = false,
+}: {
+  assetId: string | null;
+  token: string | null;
+  initialSegmentId?: string | null;
+  openMaterialPicker?: boolean;
+}) {
   const core = EditorCore.getInstance();
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -59,6 +69,8 @@ export default function FilmStrip({ assetId, token }: { assetId: string | null; 
   const stripRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ edge: "left" | "right"; startX: number; committed: boolean } | null>(null);
+  const initialSelectionAppliedRef = useRef(false);
+  const initialPickerOpenedRef = useRef(false);
 
   useEffect(() => core.timeline.subscribe(() => setRevision((r) => r + 1)), [core]);
 
@@ -99,6 +111,15 @@ export default function FilmStrip({ assetId, token }: { assetId: string | null; 
   }, [tracks, selectedSegmentId, revision]);
 
   useEffect(() => setVoiceDraft(selectedText), [selectedText]);
+
+  useEffect(() => {
+    if (initialSelectionAppliedRef.current || !initialSegmentId || !clips.length) return;
+    const clip = clips.find((element) => segmentIdByElementId[element.id] === initialSegmentId);
+    if (!clip) return;
+    initialSelectionAppliedRef.current = true;
+    setSelectedId(clip.id);
+    core.playback.seek({ time: clip.startTime + 0.01 });
+  }, [clips, core, initialSegmentId]);
 
   const authHeaders = useMemo(
     () => (token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)),
@@ -284,7 +305,7 @@ export default function FilmStrip({ assetId, token }: { assetId: string | null; 
     return () => clearInterval(timer);
   }, [runningJobId, authHeaders]);
 
-  const openPicker = async () => {
+  const openPicker = useCallback(async () => {
     if (!assetId || !token || !selectedSegmentId) return;
     setPickerOpen(true);
     setPickerRecommended([]);
@@ -326,7 +347,19 @@ export default function FilmStrip({ assetId, token }: { assetId: string | null; 
     } catch {
       // Degrade per spec §12: an empty recommended list hides that section.
     }
-  };
+  }, [assetId, authHeaders, selectedSegmentId, token]);
+
+  useEffect(() => {
+    if (
+      initialPickerOpenedRef.current
+      || !openMaterialPicker
+      || !initialSegmentId
+      || selectedSegmentId !== initialSegmentId
+      || !token
+    ) return;
+    initialPickerOpenedRef.current = true;
+    void openPicker();
+  }, [initialSegmentId, openMaterialPicker, openPicker, selectedSegmentId, token]);
 
   const handlePickMaterial = (item: AssetPickerItem) => {
     setPickerOpen(false);

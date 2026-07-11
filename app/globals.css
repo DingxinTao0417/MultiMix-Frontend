@@ -2653,6 +2653,69 @@ button:disabled {
   background: #f5f3ef;
 }
 
+.shadcn-prototype-project-preview {
+  display: grid;
+  width: 220px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--sp-border);
+  border-radius: 20px;
+  background: var(--sp-card);
+  box-shadow: var(--sp-shadow);
+  padding: 7px;
+}
+
+.shadcn-prototype-project-preview-screen {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #101514;
+}
+
+.shadcn-prototype-project-preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #101514;
+}
+
+.shadcn-prototype-project-preview-controls {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 4px 3px;
+  color: var(--sp-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shadcn-prototype-project-preview-controls button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sp-text);
+  color: #fff;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.shadcn-prototype-project-preview-controls button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.shadcn-prototype-project-preview-controls input[type="range"] {
+  width: 100%;
+  accent-color: var(--sp-ai-a, #7c5cff);
+}
+
 .shadcn-prototype-product-detail-popover summary {
   list-style: none;
 }

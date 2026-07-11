@@ -68,6 +68,8 @@ export default function ProductWorkspace({
   const [editorReady, setEditorReady] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [editSegmentId, setEditSegmentId] = useState<string | null>(null);
+  const [openSegmentMaterialPicker, setOpenSegmentMaterialPicker] = useState(false);
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
@@ -75,7 +77,7 @@ export default function ProductWorkspace({
     ? product.metadata
     : {}) as Record<string, unknown>;
   // Video products backed by a real orchestration project can open the editor.
-  const hasVideoProject = Boolean(product.backendAssetId && productMetadata.video_project);
+  const hasVideoProject = Boolean(product.backendAssetId && product.videoProjectReady);
   // While the orchestration job runs (TTS + material search), there is no
   // editable project yet; surface stage-level progress instead of the editor.
   const orchestrationPending = Boolean(
@@ -111,7 +113,7 @@ export default function ProductWorkspace({
   // for any generated project — with or without an exported MP4, and even
   // without a backendAssetId (mock / externally-hosted). Mirror that here so the
   // legacy timeline strip never doubles up under it.
-  const previewShowsBrowse = Boolean(productMetadata.video_project);
+  const previewShowsBrowse = Boolean(product.videoProjectReady);
   // Image products download their real hero file; without a URL the button hides.
   const imageDownloadUrl = product.mode === "image"
     ? (() => {
@@ -138,6 +140,8 @@ export default function ProductWorkspace({
     // Switching products always lands on the browse surface; the editor is
     // re-entered explicitly per product (demo 默认态).
     setVideoSurface("browse");
+    setEditSegmentId(null);
+    setOpenSegmentMaterialPicker(false);
   }, [currentAssetId]);
 
   useEffect(() => {
@@ -374,7 +378,11 @@ export default function ProductWorkspace({
             {showEditorEmbed ? (
               <>
                 {canBrowseVideo ? (
-                  <button type="button" className="primary" onClick={() => setVideoSurface("browse")}>
+                  <button type="button" className="primary" onClick={() => {
+                    setVideoSurface("browse");
+                    setEditSegmentId(null);
+                    setOpenSegmentMaterialPicker(false);
+                  }}>
                     完成编辑
                   </button>
                 ) : null}
@@ -404,7 +412,7 @@ export default function ProductWorkspace({
             <iframe
               ref={editorFrameRef}
               key={`editor-${product.backendAssetId}`}
-              src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1`}
+              src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1${editSegmentId ? `&segment=${encodeURIComponent(editSegmentId)}` : ""}${openSegmentMaterialPicker ? "&replace=1" : ""}`}
               style={{ width: "100%", height: "100%", border: "none", display: "block" }}
               title="视频剪辑器"
               allow="autoplay; clipboard-write"
@@ -412,7 +420,14 @@ export default function ProductWorkspace({
           </div>
         ) : previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
-            <ProductPreview product={product} />
+            <ProductPreview
+              product={product}
+              onEditSegment={(segmentId, replaceMaterial) => {
+                setEditSegmentId(segmentId);
+                setOpenSegmentMaterialPicker(replaceMaterial);
+                setVideoSurface("edit");
+              }}
+            />
           </div>
         ) : orchestrationPending ? (
           <div className="shadcn-prototype-product-main">

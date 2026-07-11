@@ -38,13 +38,30 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
   throw new Error("项目格式不兼容（缺少 tracks）");
 }
 
-export default function EditorView({ jobId, assetId, token, embed }: { jobId: string | null; assetId: string | null; token: string | null; embed?: boolean }) {
+export default function EditorView({
+  jobId,
+  assetId,
+  token,
+  embed,
+  mode = "edit",
+  initialSegmentId = null,
+  openMaterialPicker = false,
+}: {
+  jobId: string | null;
+  assetId: string | null;
+  token: string | null;
+  embed?: boolean;
+  mode?: "edit" | "preview";
+  initialSegmentId?: string | null;
+  openMaterialPicker?: boolean;
+}) {
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [loadingDetail, setLoadingDetail] = useState("");
   const startedRef = useRef(false);
   const exportBusyRef = useRef(false);
+  const previewOnly = mode === "preview";
 
   const postToParent = useCallback((payload: Record<string, unknown>) => {
     if (!embed || typeof window === "undefined" || window.parent === window) return;
@@ -149,19 +166,46 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if ((data as { source?: string }).source !== "multimix-workspace") return;
-      if ((data as { type?: string }).type !== "multimix-editor-export") return;
+      const message = data as { type?: string; time?: number };
       if (state !== "ready") {
-        postToParent({ type: "multimix-editor-export-error", message: "剪辑器尚未准备完成" });
+        if (message.type === "multimix-editor-export") {
+          postToParent({ type: "multimix-editor-export-error", message: "剪辑器尚未准备完成" });
+        }
         return;
       }
-      void handleEmbeddedExport();
+      const editor = EditorCore.getInstance();
+      if (message.type === "multimix-editor-export") {
+        void handleEmbeddedExport();
+      } else if (previewOnly && message.type === "multimix-editor-preview-seek" && typeof message.time === "number") {
+        editor.playback.seek({ time: message.time });
+      } else if (previewOnly && message.type === "multimix-editor-preview-toggle") {
+        editor.playback.toggle();
+      } else if (previewOnly && message.type === "multimix-editor-preview-play") {
+        editor.playback.play();
+      } else if (previewOnly && message.type === "multimix-editor-preview-pause") {
+        editor.playback.pause();
+      }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [embed, state, handleEmbeddedExport, postToParent]);
+  }, [embed, state, handleEmbeddedExport, postToParent, previewOnly]);
+
+  useEffect(() => {
+    if (!embed || !previewOnly || state !== "ready") return;
+    const editor = EditorCore.getInstance();
+    const publish = () => postToParent({
+      type: "multimix-editor-preview-state",
+      time: editor.playback.getCurrentTime(),
+      playing: editor.playback.getIsPlaying(),
+      duration: editor.timeline.getTotalDuration(),
+    });
+    const unsubscribe = editor.playback.subscribe(publish);
+    publish();
+    return unsubscribe;
+  }, [embed, postToParent, previewOnly, state]);
 
   return (
-    <div className="editor-root">
+    <div className={`editor-root${previewOnly ? " preview-only" : ""}`}>
       {!embed ? (
         <div className="editor-actionbar">
           <a href="/app/assets" className="editor-backlink">← 工作台</a>
@@ -187,21 +231,32 @@ export default function EditorView({ jobId, assetId, token, embed }: { jobId: st
       ) : null}
 
       {state === "ready" ? (
-        <div className="editor-layout">
-          <div className="editor-preview-region">
+        previewOnly ? (
+          <div className="editor-preview-only">
             <PreviewPanel />
-            <ReplacePanel assetId={assetId} token={token} />
           </div>
-          <div className="editor-timeline-region">
-            {embed && UI_V3_FILMSTRIP ? (
-              // Spec §5.5: the embed edit form is the film strip; the
-              // multi-track timeline stays a full-screen /editor capability.
-              <FilmStrip assetId={assetId} token={token} />
-            ) : (
-              <Timeline />
-            )}
+        ) : (
+          <div className="editor-layout">
+            <div className="editor-preview-region">
+              <PreviewPanel />
+              <ReplacePanel assetId={assetId} token={token} />
+            </div>
+            <div className="editor-timeline-region">
+              {embed && UI_V3_FILMSTRIP ? (
+                // Spec §5.5: the embed edit form is the film strip; the
+                // multi-track timeline stays a full-screen /editor capability.
+                <FilmStrip
+                  assetId={assetId}
+                  token={token}
+                  initialSegmentId={initialSegmentId}
+                  openMaterialPicker={openMaterialPicker}
+                />
+              ) : (
+                <Timeline />
+              )}
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="editor-loading-shell">
           {state === "error" ? error : loadingDetail || "正在准备剪辑器…"}

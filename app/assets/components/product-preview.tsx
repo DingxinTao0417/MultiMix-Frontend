@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
@@ -126,10 +126,64 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
 // (one number per URL) so it cannot grow unbounded in a session.
 const videoPlaybackPositions = new Map<string, number>();
 
-export default function ProductPreview({ product }: { product: ProductArtifact }) {
+function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number): string | null {
+  if (!segments?.length) return null;
+  const active = segments.find((segment) => (
+    segment.startSeconds != null
+    && segment.endSeconds != null
+    && time >= segment.startSeconds
+    && time < segment.endSeconds
+  ));
+  return active?.id ?? segments.findLast((segment) => segment.startSeconds != null && time >= segment.startSeconds)?.id ?? null;
+}
+
+function formatBrowseTime(value: number): string {
+  const safe = Math.max(0, Math.floor(value));
+  return `${String(Math.floor(safe / 60)).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
+export default function ProductPreview({
+  product,
+  onEditSegment,
+}: {
+  product: ProductArtifact;
+  onEditSegment?: (segmentId: string, replaceMaterial: boolean) => void;
+}) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
+  const projectPreviewRef = useRef<HTMLIFrameElement | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [projectPreviewReady, setProjectPreviewReady] = useState(false);
+  const [projectPreviewPlaying, setProjectPreviewPlaying] = useState(false);
+  const [projectPreviewTime, setProjectPreviewTime] = useState(0);
+  const segmentDuration = product.segments?.reduce((maximum, segment) => Math.max(maximum, segment.endSeconds ?? 0), 0) ?? 0;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !product.backendAssetId) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as { source?: string; assetId?: string | number; type?: string; time?: number; playing?: boolean };
+      if (data?.source !== "multimix-editor" || String(data.assetId ?? "") !== String(product.backendAssetId)) return;
+      if (data.type === "multimix-editor-ready") setProjectPreviewReady(true);
+      if (data.type === "multimix-editor-error") setProjectPreviewReady(false);
+      if (data.type === "multimix-editor-preview-state") {
+        const time = typeof data.time === "number" ? data.time : 0;
+        setProjectPreviewReady(true);
+        setProjectPreviewTime(time);
+        setProjectPreviewPlaying(Boolean(data.playing));
+        setActiveSegmentId(activeSegmentAtTime(product.segments, time));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [product.backendAssetId, product.segments]);
+
+  const postPreviewCommand = (type: string, time?: number) => {
+    projectPreviewRef.current?.contentWindow?.postMessage(
+      { source: "multimix-workspace", type, ...(time == null ? {} : { time }) },
+      window.location.origin,
+    );
+  };
 
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
@@ -273,7 +327,7 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   const visualPreviewFrames = product.preview?.frames ?? [];
   const planSummary = videoPlanSummary(product);
   const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "编导稿摘要";
-  const hasVideoProject = Boolean(product.metadata?.video_project);
+  const hasVideoProject = Boolean(product.videoProjectReady);
   const previewStageLabel = hasVideoProject ? "视频工程" : "编导稿草稿";
   const previewStageDescription = hasVideoProject
     ? "当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
@@ -287,7 +341,6 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
   // With a real MP4 the player is playable; before export it shows the poster
   // skeleton (demo .screen) — never the legacy phone + meta-text layout.
   if (hasVideoProject) {
-    const posterSubtitle = product.preview?.subtitle ?? planSummary?.topic ?? product.title;
     return (
       <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label="成片预览">
         <div className="shadcn-prototype-product-video">
@@ -307,22 +360,43 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
                 }
               }}
               onTimeUpdate={(event) => {
-                videoPlaybackPositions.set(exportedVideoUrl, event.currentTarget.currentTime);
+                const time = event.currentTarget.currentTime;
+                videoPlaybackPositions.set(exportedVideoUrl, time);
+                setActiveSegmentId(activeSegmentAtTime(product.segments, time));
               }}
             />
           ) : (
-            <div className="shadcn-prototype-video-poster" aria-label="视频工程预览">
-              <div className="shadcn-prototype-video-poster-screen">
-                {product.preview?.posterText ? (
-                  <span className="shadcn-prototype-video-poster-title">{product.preview.posterText}</span>
-                ) : null}
-                <span className="shadcn-prototype-video-poster-sub">{posterSubtitle}</span>
-                <span className="shadcn-prototype-video-poster-play" aria-hidden="true"><i /></span>
+            <div className="shadcn-prototype-project-preview" aria-label="视频工程预览">
+              <div className="shadcn-prototype-project-preview-screen">
+                <iframe
+                  ref={projectPreviewRef}
+                  className="shadcn-prototype-project-preview-frame"
+                  src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1&mode=preview`}
+                  title="视频工程只读预览"
+                  allow="autoplay"
+                />
               </div>
-              <div className="shadcn-prototype-video-poster-bar">
-                <span>00:00</span>
-                <i />
-                <span>{product.duration}</span>
+              <div className="shadcn-prototype-project-preview-controls">
+                <button
+                  type="button"
+                  disabled={!projectPreviewReady}
+                  onClick={() => postPreviewCommand("multimix-editor-preview-toggle")}
+                  aria-label={projectPreviewPlaying ? "暂停" : "播放"}
+                >
+                  {projectPreviewPlaying ? "❚❚" : "▶"}
+                </button>
+                <span>{formatBrowseTime(projectPreviewTime)}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(segmentDuration, 0.1)}
+                  step={0.05}
+                  value={Math.min(projectPreviewTime, Math.max(segmentDuration, 0.1))}
+                  disabled={!projectPreviewReady}
+                  aria-label="视频进度"
+                  onChange={(event) => postPreviewCommand("multimix-editor-preview-seek", Number(event.currentTarget.value))}
+                />
+                <span>{formatBrowseTime(segmentDuration)}</span>
               </div>
             </div>
           )}
@@ -330,17 +404,21 @@ export default function ProductPreview({ product }: { product: ProductArtifact }
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}
-            hint={exportedVideoUrl ? "点击任意分镜可跳转预览" : "点「编辑」可调整每个分镜"}
+            hint="点击任意分镜可跳转预览"
             activeId={activeSegmentId}
-            onSelect={exportedVideoUrl ? (segment) => {
+            onSelect={(segment) => {
               if (segment.startSeconds == null) return;
               setActiveSegmentId(segment.id);
               const player = browsePlayerRef.current;
               if (player) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
+              } else {
+                postPreviewCommand("multimix-editor-preview-seek", segment.startSeconds);
+                postPreviewCommand("multimix-editor-preview-play");
               }
-            } : undefined}
+            }}
+            onReplaceMaterial={(segment) => onEditSegment?.(segment.id, true)}
           />
         ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}

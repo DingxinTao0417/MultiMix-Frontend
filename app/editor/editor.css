@@ -389,6 +389,13 @@
     padding: 0;
   }
 
+  .editor-preview-only {
+    display: block;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
   .preview-video-surface:hover ~ .preview-canvas-controls .preview-play-button,
   .preview-canvas-controls:focus-within .preview-play-button,
   .preview-canvas-controls .preview-play-button:hover {
