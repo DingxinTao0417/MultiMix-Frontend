@@ -4,6 +4,23 @@ MultiMix 是一个面向短视频内容生产的对话式工作台。用户可�
 
 当前仓库是 MultiMix 前端优先版本，使用本地 mock 数据展示完整产品体验；真实后端能力通过 adapter 层逐步接入。
 
+## Demo Material Browser Automation
+
+工作区根目录的 `demo_material_packs/` 支持两层浏览器验收：
+
+```powershell
+# 稳定状态回归：一次性 SQLite + 确定性 seed，执行四场景 UI/结构验证
+npm run test:e2e:demo
+
+# 真实模型：完整上传、vision/LLM 和生成链路，单场景手动触发
+npm run test:e2e:demo:live -- --scenario 04
+
+# 真实模型：全量场景手动触发
+npm run test:e2e:demo:live -- --all
+```
+
+稳定层不调用模型；真实层不会进入普通测试门禁。两者都使用独立端口和一次性 SQLite，运行器会在创建前打印数据库完整路径，并在 `finally` 中清理本次进程、数据库及 sidecar。结果写入 `test-results/demo-material-packs/<run-id>/`。
+
 ## Product Features
 
 ### 对话驱动

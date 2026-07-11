@@ -43,7 +43,10 @@ export async function createFixtureProvider({ port = 8398 } = {}) {
             { title: "沟通方案", narration: "把现场情况发来我们先帮你梳理改造方向。", subtitle: "咨询改造方案", visual_brief: "顾问展示门窗改造方案", keywords: ["home consultation", "floor plan"], source_refs: [] }
           ]
         };
-        if (!content) return send(response, 422, { detail: "missing LLM fixture", fixture_key: key.slice(0, 200) });
+        if (!content) {
+          console.error(JSON.stringify({ event: "missing_llm_fixture", system: system.slice(0, 240), fixture_key: key.slice(0, 240) }));
+          return send(response, 422, { detail: "missing LLM fixture", fixture_key: key.slice(0, 200) });
+        }
         return send(response, 200, { id: "fixture-completion", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(content) }, finish_reason: "stop" }] });
       }
       return send(response, 404, { detail: "not found" });

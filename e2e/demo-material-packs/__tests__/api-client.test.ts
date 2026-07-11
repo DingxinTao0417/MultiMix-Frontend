@@ -10,13 +10,15 @@ describe("DemoApiClient local authentication", () => {
         calls.push({ url, headers: options?.headers });
         return url.endsWith("/auth/local-dev-admin")
           ? { ok: () => true, json: async () => ({ access_token: "signed-local-token" }) }
-          : { ok: () => true, json: async () => ({ id: 7, metadata: {} }) };
+          : { ok: () => true, json: async () => ({ asset: { id: 7, metadata: {} }, inbound_relations: [], outbound_relations: [] }) };
       },
     };
 
     const client = await DemoApiClient.create(request as never, "http://backend");
-    await client.getAsset(7);
+    const asset = await client.getAsset(7);
 
+    expect(asset.id).toBe(7);
+    expect(calls[1].url).toBe("http://backend/v1/assets/detail/7");
     expect(calls[1].headers).toEqual({ Authorization: "Bearer signed-local-token" });
   });
 });

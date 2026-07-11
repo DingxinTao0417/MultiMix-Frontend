@@ -17,9 +17,11 @@ export class DemoApiClient {
     return response.json() as Promise<{ id: number; metadata?: Record<string, unknown> }>;
   }
   async getAsset(id: number) {
-    const response = await this.request.get(`${this.baseUrl}/v1/assets/${id}`, { headers: this.headers() });
+    const response = await this.request.get(`${this.baseUrl}/v1/assets/detail/${id}`, { headers: this.headers() });
     if (!response.ok()) throw new Error(`Asset read failed ${response.status()}`);
-    return response.json() as Promise<Record<string, unknown>>;
+    const detail = await response.json() as { asset?: Record<string, unknown> };
+    if (!detail.asset) throw new Error(`Asset detail ${id} is missing the asset payload`);
+    return detail.asset;
   }
   async waitForUnderstanding(id: number, timeoutMs = 30_000) {
     const deadline = Date.now() + timeoutMs;
