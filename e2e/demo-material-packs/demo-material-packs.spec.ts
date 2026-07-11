@@ -12,7 +12,7 @@ const ids = (process.env.DEMO_SCENARIOS ?? "04").split(",") as ScenarioId[];
 
 for (const id of ids) {
   test(`demo material scenario ${id}`, async ({ page, request }) => {
-    const api = new DemoApiClient(request, process.env.DEMO_BACKEND_URL ?? "http://127.0.0.1:8298");
+    const api = await DemoApiClient.create(request, process.env.DEMO_BACKEND_URL ?? "http://127.0.0.1:8298");
     const evidence = await runScenario(page, api, loadScenario(packsRoot, id));
     const resultDir = process.env.DEMO_RESULT_DIR;
     if (resultDir) writeScenarioArtifacts(resultDir, id, { id, status: "passed", checks: [] }, evidence);

@@ -3,6 +3,13 @@ import type { APIRequestContext } from "@playwright/test";
 
 export class DemoApiClient {
   constructor(private readonly request: APIRequestContext, private readonly baseUrl: string, private readonly token?: string) {}
+  static async create(request: APIRequestContext, baseUrl: string) {
+    const response = await request.get(`${baseUrl}/v1/auth/local-dev-admin`);
+    if (!response.ok()) throw new Error(`Local authentication failed ${response.status()}`);
+    const payload = await response.json() as { access_token?: string };
+    if (!payload.access_token) throw new Error("Local authentication returned no access token");
+    return new DemoApiClient(request, baseUrl, payload.access_token);
+  }
   private headers(): Record<string, string> { return this.token ? { Authorization: `Bearer ${this.token}` } : {}; }
   async uploadAsset(filePath: string, targetKind = "image") {
     const response = await this.request.post(`${this.baseUrl}/v1/assets/upload`, { headers: this.headers(), multipart: { file: { name: filePath.split(/[\\/]/).at(-1)!, mimeType: "application/octet-stream", buffer: fs.readFileSync(filePath) }, target_kind: targetKind } });
