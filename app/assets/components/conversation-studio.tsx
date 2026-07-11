@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { mergeVisibleConversationMessages, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR } from "../../../lib/api";
-import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan } from "../lib/asset-workspace-types";
+import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation } from "../lib/asset-workspace-types";
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
@@ -19,10 +20,11 @@ type OptimisticExchange = {
   assistantText: string;
   status: "pending" | "stopped" | "failed" | "unsubmitted";
   clientRequestId?: string;
+  presentation?: AssetMessagePresentation;
   runSteps?: AgentRunStep[];
 };
 
-type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "runSteps">;
+type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "presentation" | "runSteps">;
 
 export type ChatImageAttachment = {
   id: string;
@@ -109,6 +111,27 @@ function mapProductsToConversationMessages(messages: VisibleConversationMessage[
   return result;
 }
 
+export function resolveExecutionTimelineSteps(
+  liveRunState: {
+    jobId: string;
+    status: string;
+    steps: AgentRunStep[];
+    errorMessage: string | null;
+  } | undefined,
+  fallbackSteps: AgentRunStep[] | undefined,
+): AgentRunStep[] {
+  if (liveRunState?.steps.length) return liveRunState.steps;
+  if (liveRunState?.status === "failed") {
+    return [{
+      key: "execution_failed",
+      label: "视频工程生成失败",
+      status: "fail",
+      retryJobId: liveRunState.jobId,
+    }];
+  }
+  return fallbackSteps ?? [];
+}
+
 export default function ConversationStudio({
   basePath,
   contextAssets = [],
@@ -122,7 +145,8 @@ export default function ConversationStudio({
   pendingExchange = null,
   onPendingExchangeChange,
   onSendMessage,
-  liveRunStepsByAssetId,
+  liveRunStateByAssetId,
+  onRetryExecution,
   diagnosticsSlot = null,
   readonly = false
 }: {
@@ -138,10 +162,16 @@ export default function ConversationStudio({
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
   onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string) => Promise<void>;
-  // Real per-step timeline for in-flight/finished video jobs, keyed by backend
-  // asset id. Sourced from the live job poller (spec §5.2 ★, real elapsed times,
-  // no fake progress). Preferred over a message's static runSteps when present.
-  liveRunStepsByAssetId?: Record<number, AgentRunStep[]>;
+  // Main execution aggregates keyed by backend asset id. The job id stays bound
+  // to the same card while exact failed main/MG child jobs are retried.
+  liveRunStateByAssetId?: Record<number, {
+    jobId: string;
+    status: string;
+    steps: AgentRunStep[];
+    errorMessage: string | null;
+    completionConfirmed: boolean;
+  }>;
+  onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
   diagnosticsSlot?: ReactNode;
   readonly?: boolean;
 }) {
@@ -173,21 +203,10 @@ export default function ConversationStudio({
     ].filter((message) => message.text.trim() || message.suggestions?.length);
   }, [selectedConversation.delivery, selectedConversation.messages, selectedConversation.prompt, selectedConversation.response, selectedConversation.suggestions]);
 
-  const visibleConversationMessages = useMemo<VisibleConversationMessage[]>(() => (
-    optimisticExchange
-      ? [
-        ...conversationMessages,
-        { role: "user" as const, text: optimisticExchange.userText },
-        {
-          role: "assistant" as const,
-          text: optimisticExchange.assistantText,
-          pending: optimisticExchange.status === "pending",
-          localState: optimisticExchange.status === "pending" ? undefined : optimisticExchange.status,
-          runSteps: optimisticExchange.runSteps
-        }
-      ]
-      : conversationMessages
-  ), [conversationMessages, optimisticExchange]);
+  const visibleConversationMessages = useMemo<VisibleConversationMessage[]>(
+    () => mergeVisibleConversationMessages(conversationMessages, optimisticExchange),
+    [conversationMessages, optimisticExchange]
+  );
 
   const productCardsByMessageIndex = useMemo(
     () => mapProductsToConversationMessages(visibleConversationMessages, products),
@@ -244,6 +263,7 @@ export default function ConversationStudio({
       assistantText: optimisticFeedback?.assistantText ?? "",
       status: "pending",
       clientRequestId,
+      presentation: optimisticFeedback?.presentation,
       runSteps: optimisticFeedback?.runSteps
     } satisfies OptimisticExchange;
     onPendingExchangeChange?.(selectedConversation.id, exchange);
@@ -290,10 +310,11 @@ export default function ConversationStudio({
     try {
       await sendInstruction(instruction, {
         assistantText: "已确认，正在创建视频工程任务。",
+        presentation: "execution_anchor",
         runSteps: [
           {
-            key: "confirm-video-plan",
-            label: "确认方案并创建视频任务",
+            key: "create_job",
+            label: "创建视频工程任务",
             status: "run"
           }
         ]
@@ -455,10 +476,12 @@ export default function ConversationStudio({
               message.pending ? "pending" : "",
               message.localState ? `local-${message.localState}` : ""
             ].filter(Boolean).join(" ")}>
-              <p>
-                {message.text}
-                {message.pending ? <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span> : null}
-              </p>
+              {shouldRenderMessageBody(message) ? (
+                <p>
+                  {message.text}
+                  {message.pending ? <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span> : null}
+                </p>
+              ) : null}
               {UI_V3_CONFIRM_CARD && message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
@@ -469,12 +492,24 @@ export default function ConversationStudio({
                 />
               ) : null}
               {(() => {
-                // Prefer the live job's real steps for this message's asset; fall
-                // back to any static runSteps (mock / persisted). Absent → no
-                // timeline (spec §12 降级规则: 无事件不渲染).
-                const liveSteps = message.assetId ? liveRunStepsByAssetId?.[message.assetId] : undefined;
-                const timelineSteps = liveSteps?.length ? liveSteps : message.runSteps;
-                return timelineSteps?.length ? <AgentRunTimeline steps={timelineSteps} /> : null;
+                // Prefer the live main-job aggregate for this persisted execution
+                // anchor; static steps remain the mock/offline fallback.
+                const liveRunState = message.assetId
+                  ? liveRunStateByAssetId?.[message.assetId]
+                  : undefined;
+                const timelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
+                return timelineSteps?.length ? (
+                  <AgentRunTimeline
+                    steps={timelineSteps}
+                    errorMessage={liveRunState?.errorMessage}
+                    completionConfirmed={liveRunState?.completionConfirmed}
+                    onRetry={liveRunState && onRetryExecution
+                      ? (retryJobId) => {
+                          void onRetryExecution(retryJobId, liveRunState.jobId);
+                        }
+                      : undefined}
+                  />
+                ) : null;
               })()}
               {(() => {
                 const suggestions = visibleSuggestions(message)

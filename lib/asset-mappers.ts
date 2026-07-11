@@ -2,7 +2,8 @@
 // frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
 // frontend assets-workspace-client.tsx helpers.
 
-import type { AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRatioOption, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
+import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";
+import type { AgentRunStep, AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRatioOption, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -348,17 +349,13 @@ export function videoJobStepIndex(stage: string): number {
 // backend only exposes a coarse render_stage today, so this maps that single
 // signal onto the ≥3 semantic steps the timeline requires (§12 硬约定①).
 export const VIDEO_JOB_TIMELINE_STEPS = [
-  { key: "script", label: "理解素材并写脚本" },
-  { key: "segment", label: "匹配素材并合成配音" },
-  { key: "render", label: "组装分镜与时间线" }
+  { key: "create_job", label: "创建视频工程任务" },
+  { key: "prepare_scenes", label: "读取已确认方案并准备分镜" },
+  { key: "prepare_media", label: "匹配分镜素材并准备配音、字幕" },
+  { key: "build_project", label: "组装可编辑视频工程" }
 ] as const;
 
-export type AgentTimelineStep = {
-  key: string;
-  label: string;
-  status: "done" | "run" | "wait" | "fail";
-  elapsedLabel?: string;
-};
+export type AgentTimelineStep = AgentRunStep;
 
 // Backend semantic step (spec §5.2 ★): key/label/status + real elapsed seconds.
 export type VideoJobBackendStep = {
@@ -366,13 +363,17 @@ export type VideoJobBackendStep = {
   label: string;
   status: string;
   elapsedSeconds?: number | null;
+  retryJobId?: string | null;
 };
 
 // Format real elapsed seconds into a merchant-facing label ("8秒" / "1分12秒").
-function elapsedLabel(seconds: number): string | undefined {
+function formatStepElapsed(seconds: number): string | undefined {
+  if (seconds < 60) {
+    const rounded = Math.round(seconds * 10) / 10;
+    if (rounded <= 0) return undefined;
+    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}秒`;
+  }
   const total = Math.round(seconds);
-  if (total <= 0) return undefined;
-  if (total < 60) return `${total}秒`;
   const minutes = Math.floor(total / 60);
   const rest = total % 60;
   return rest ? `${minutes}分${rest}秒` : `${minutes}分`;
@@ -389,11 +390,28 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
     if (!label || !key) return [];
     const status: AgentTimelineStep["status"] =
       step.status === "done" || step.status === "run" || step.status === "fail" ? step.status : "wait";
-    const elapsed = typeof step.elapsedSeconds === "number" && Number.isFinite(step.elapsedSeconds)
-      ? elapsedLabel(step.elapsedSeconds)
+    const elapsedSeconds = typeof step.elapsedSeconds === "number" && Number.isFinite(step.elapsedSeconds)
+      ? step.elapsedSeconds
       : undefined;
-    return [{ key, label, status, elapsedLabel: elapsed }];
+    const retryJobId = typeof step.retryJobId === "string" ? step.retryJobId : undefined;
+    return [{
+      key,
+      label,
+      status,
+      elapsedSeconds,
+      elapsedLabel: elapsedSeconds === undefined ? undefined : formatStepElapsed(elapsedSeconds),
+      retryJobId,
+    }];
   });
+}
+
+function videoJobTimelineStepIndex(stage: string): number {
+  if (stage === "queued") return 0;
+  if (stage === "script") return 1;
+  if (stage === "segment") return 2;
+  if (stage === "render") return 3;
+  if (stage === "done") return 4;
+  return 3;
 }
 
 // Build agent-timeline steps from a live video job's render_stage + status.
@@ -401,7 +419,7 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 // shimmer fallback (spec §12: 无事件不渲染, 视频链路事件已有先上视频).
 export function videoJobTimelineSteps(stage: string, status: string): AgentTimelineStep[] {
   const failed = status === "failed" || stage === "failed" || stage === "missing_asset" || stage === "invalid_spec" || stage === "stale";
-  const activeIndex = videoJobStepIndex(stage);
+  const activeIndex = videoJobTimelineStepIndex(stage);
   return VIDEO_JOB_TIMELINE_STEPS.map((step, index): AgentTimelineStep => {
     if (failed) {
       if (index < activeIndex) return { ...step, status: "done" };
@@ -680,6 +698,7 @@ export function conversationFromPersisted(
   const messages: AssetConversationMessage[] = row.messages.map((message) => ({
     role: message.role,
     text: message.text,
+    presentation: confirmationMessagePresentation(message.role, message.metadata),
     assetId: message.asset_id,
     metadata: message.metadata,
     suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,

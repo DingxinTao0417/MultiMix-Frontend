@@ -143,18 +143,23 @@ export type AssetPlanRatioOption = {
   label: string;
 };
 
+export type AssetMessagePresentation = "standard" | "hidden_confirmation" | "execution_anchor";
+
 // A single agent execution step (demo workspace「MultiMix 已完成执行」clist).
 // Mapped from real backend task events; three visual states + optional elapsed.
 export type AgentRunStep = {
   key: string;
   label: string;
   status: "done" | "run" | "wait" | "fail";
+  elapsedSeconds?: number;
   elapsedLabel?: string;
+  retryJobId?: string;
 };
 
 export type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
+  presentation?: AssetMessagePresentation;
   suggestions?: string[];
   suggestionActions?: AssetSuggestionAction[];
   // Structured confirmation card payload (spec §5.2); undefined → suggestion chips.

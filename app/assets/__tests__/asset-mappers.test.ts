@@ -288,8 +288,14 @@ describe("video job stage helpers", () => {
 describe("agent timeline steps", () => {
   it("marks the active stage as running and earlier stages as done", () => {
     const steps = videoJobTimelineSteps("segment", "running");
-    expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
-    expect(steps).toHaveLength(3);
+    expect(steps.map((step) => step.status)).toEqual(["done", "done", "run", "wait"]);
+    expect(steps).toHaveLength(4);
+    expect(steps.map((step) => step.label)).toEqual([
+      "创建视频工程任务",
+      "读取已确认方案并准备分镜",
+      "匹配分镜素材并准备配音、字幕",
+      "组装可编辑视频工程",
+    ]);
   });
 
   it("marks all steps done once the job completes", () => {
@@ -299,7 +305,7 @@ describe("agent timeline steps", () => {
 
   it("marks the current stage failed when the job fails", () => {
     const steps = videoJobTimelineSteps("segment", "failed");
-    expect(steps.map((step) => step.status)).toEqual(["done", "fail", "wait"]);
+    expect(steps.map((step) => step.status)).toEqual(["done", "done", "fail", "wait"]);
   });
 
   it("maps backend steps[] with real elapsed labels", () => {
@@ -311,6 +317,30 @@ describe("agent timeline steps", () => {
     expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
     expect(steps[0].elapsedLabel).toBe("8秒");
     expect(steps[1].elapsedLabel).toBeUndefined();
+  });
+
+  it("preserves backend elapsed seconds for execution summaries", () => {
+    const steps = agentTimelineStepsFromBackend([
+      { key: "create_job", label: "创建视频工程任务", status: "done", elapsedSeconds: null },
+      { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "done", elapsedSeconds: 1.25 },
+    ]);
+    expect(steps[1].elapsedSeconds).toBe(1.25);
+    expect(steps[1].elapsedLabel).toBe("1.3秒");
+  });
+
+  it("preserves a backend retry job id only when one exists", () => {
+    const steps = agentTimelineStepsFromBackend([
+      {
+        key: "prepare_media",
+        label: "匹配分镜素材并准备配音、字幕",
+        status: "fail",
+        elapsedSeconds: 4,
+        retryJobId: "video-job-1",
+      },
+      { key: "build_project", label: "组装可编辑视频工程", status: "wait" },
+    ]);
+    expect(steps[0].retryJobId).toBe("video-job-1");
+    expect(steps[1].retryJobId).toBeUndefined();
   });
 
   it("formats minute-scale elapsed and skips malformed backend steps", () => {
@@ -330,6 +360,59 @@ describe("agent timeline steps", () => {
 });
 
 describe("message plan mapping", () => {
+  it("classifies persisted confirmation control events for presentation", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-control-events",
+        title: "确认视频工程",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-07-08T00:00:00Z",
+        updated_at: "2026-07-08T00:00:00Z",
+        products: [],
+        messages: [
+          {
+            id: 1,
+            role: "user",
+            text: "确认，生成视频工程",
+            asset_id: null,
+            created_at: "2026-07-08T00:00:00Z",
+            metadata: {
+              confirmation_idempotency_key: "confirm-1",
+              video_workflow_stage: "director_script_confirmed",
+            },
+          },
+          {
+            id: 2,
+            role: "assistant",
+            text: "视频工程已进入生成队列",
+            asset_id: 451,
+            created_at: "2026-07-08T00:00:01Z",
+            metadata: {
+              confirmation_idempotency_key: "confirm-1",
+              video_workflow_stage: "video_project_queued",
+            },
+          },
+          {
+            id: 3,
+            role: "assistant",
+            text: "普通回复",
+            asset_id: null,
+            created_at: "2026-07-08T00:00:02Z",
+            metadata: {},
+          },
+        ],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.map((message) => message.presentation)).toEqual([
+      "hidden_confirmation",
+      "execution_anchor",
+      "standard",
+    ]);
+  });
+
   it("parses a structured plan from assistant message metadata", () => {
     const conversation = conversationFromPersisted(
       {

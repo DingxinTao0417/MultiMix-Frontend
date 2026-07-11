@@ -20,8 +20,8 @@ import {
   Video
 } from "lucide-react";
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
-import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
-import { assetWorkspaceAdapter, type LibraryRow, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
+import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
 import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
@@ -87,20 +87,286 @@ export type VideoJobLiveStatus = {
   renderStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
+  completionConfirmed: boolean;
 };
 
-function pendingVideoJobIds(conversations: Conversation[]): string[] {
+export function executionRunKey(jobId: string, generation: number): string {
+  return jobId + "::" + generation;
+}
+
+export function nextExecutionRunGeneration(generation: number): number {
+  return generation + 1;
+}
+
+export function resolveLiveExecutionTimelineSteps(
+  live: Pick<VideoJobLiveStatus, "jobId" | "status" | "renderStage" | "steps">,
+  mapBackendSteps: (steps: VideoJobStepResult[]) => AgentRunStep[] = agentTimelineStepsFromBackend,
+  mapLegacySteps: (stage: string, status: string) => AgentRunStep[] = videoJobTimelineSteps,
+): AgentRunStep[] {
+  const backendSteps = mapBackendSteps(live.steps);
+  if (backendSteps.length) return backendSteps;
+
+  return mapLegacySteps(live.renderStage, live.status).map((step) => (
+    step.status === "fail"
+      ? { ...step, retryJobId: live.jobId }
+      : step
+  ));
+}
+
+export function executionVideoJobIds(
+  conversations: Conversation[],
+  selectedConversationId: string,
+): string[] {
   const ids = new Set<string>();
   for (const conversation of conversations) {
-    const products = conversation.products && conversation.products.length > 0 ? conversation.products : [conversation.product];
+    const selected = conversation.id === selectedConversationId;
+    const products = conversation.products?.length ? conversation.products : [conversation.product];
     for (const product of products) {
       const metadata = product.metadata as Record<string, unknown> | undefined;
       const jobId = metadata?.latest_job_public_id;
-      const pending = Boolean(metadata?.orchestration_pending && !metadata?.video_project && typeof jobId === "string");
-      if (pending && typeof jobId === "string") ids.add(jobId);
+      if (typeof jobId !== "string") continue;
+      if (selected || metadata?.orchestration_pending === true) ids.add(jobId);
     }
   }
   return [...ids];
+}
+
+export function isExecutionTerminal(job: VideoJobResult): boolean {
+  if (job.status === "failed") return true;
+  if (job.status !== "completed") return false;
+  return !job.steps.some(
+    (step) => step.status === "run" || step.status === "wait",
+  );
+}
+
+export function resolveExecutionTerminalObservation(
+  wasObserved: boolean,
+  isTerminal: boolean,
+): { observed: boolean; shouldFinalize: boolean } {
+  if (!isTerminal) return { observed: false, shouldFinalize: false };
+  return { observed: true, shouldFinalize: wasObserved };
+}
+
+export function startExecutionJobPolls<T>({
+  jobIds,
+  inFlightJobIds,
+  requestIdentity,
+  isRequestCurrent,
+  getJob,
+  isCancelled,
+  onJob,
+  onFetchError,
+}: {
+  jobIds: Iterable<string>;
+  inFlightJobIds: Set<string>;
+  requestIdentity?: (jobId: string) => string;
+  isRequestCurrent?: (jobId: string, identity: string) => boolean;
+  getJob: (jobId: string) => Promise<T>;
+  isCancelled: () => boolean;
+  onJob: (job: T) => void;
+  onFetchError: (jobId: string, error: unknown) => void;
+}): void {
+  for (const jobId of jobIds) {
+    const identity = requestIdentity?.(jobId) ?? jobId;
+    const current = () => isRequestCurrent?.(jobId, identity) ?? true;
+    if (isCancelled() || !current() || inFlightJobIds.has(identity)) continue;
+    inFlightJobIds.add(identity);
+    void (async () => {
+      try {
+        let job: T;
+        try {
+          job = await getJob(jobId);
+        } catch (error) {
+          if (!isCancelled() && current()) onFetchError(jobId, error);
+          return;
+        }
+        if (isCancelled() || !current()) return;
+        onJob(job);
+      } finally {
+        inFlightJobIds.delete(identity);
+      }
+    })();
+  }
+}
+
+export function startReadyConversationRefresh<T>({
+  jobId,
+  requestIdentity,
+  isRequestCurrent,
+  successfulJobIds,
+  inFlightJobIds,
+  isCancelled,
+  refresh,
+  onRefreshed,
+  onRefreshError,
+}: {
+  jobId: string;
+  requestIdentity?: string;
+  isRequestCurrent?: (identity: string) => boolean;
+  successfulJobIds: Set<string>;
+  inFlightJobIds: Set<string>;
+  isCancelled: () => boolean;
+  refresh: () => Promise<T>;
+  onRefreshed: (value: T) => void;
+  onRefreshError: (error: unknown) => void;
+}): boolean {
+  const identity = requestIdentity ?? jobId;
+  const current = () => isRequestCurrent?.(identity) ?? true;
+  if (
+    isCancelled()
+    || !current()
+    || successfulJobIds.has(identity)
+    || inFlightJobIds.has(identity)
+  ) {
+    return false;
+  }
+  inFlightJobIds.add(identity);
+  void (async () => {
+    try {
+      const value = await refresh();
+      if (isCancelled() || !current()) return;
+      onRefreshed(value);
+      if (isCancelled() || !current()) return;
+      successfulJobIds.add(identity);
+    } catch (error) {
+      if (isCancelled() || !current()) return;
+      onRefreshError(error);
+    } finally {
+      inFlightJobIds.delete(identity);
+    }
+  })();
+  return true;
+}
+
+export function applyExecutionJobResult({
+  job,
+  isCancelled,
+  publishJob,
+  startReadyRefresh,
+  readyRefreshSucceeded,
+  hasTerminalObservation,
+  setTerminalObservation,
+  finalizeJob,
+}: {
+  job: VideoJobResult;
+  isCancelled: () => boolean;
+  publishJob: (job: VideoJobResult) => void;
+  startReadyRefresh: (jobId: string) => void;
+  readyRefreshSucceeded: (jobId: string) => boolean;
+  hasTerminalObservation: (jobId: string) => boolean;
+  setTerminalObservation: (jobId: string, observed: boolean) => void;
+  finalizeJob: (job: VideoJobResult) => void;
+}): void {
+  if (isCancelled()) return;
+  publishJob(job);
+  if (isCancelled()) return;
+
+  const shouldRefreshConversation = job.status === "completed" || job.status === "failed";
+  if (shouldRefreshConversation) {
+    startReadyRefresh(job.id);
+    if (isCancelled()) return;
+  }
+
+  const executionTerminal = isExecutionTerminal(job);
+  const observation = job.status === "completed"
+    ? resolveExecutionTerminalObservation(
+        hasTerminalObservation(job.id),
+        executionTerminal,
+      )
+    : {
+        observed: false,
+        shouldFinalize: executionTerminal,
+      };
+  if (isCancelled()) return;
+  setTerminalObservation(job.id, observation.observed);
+  if (isCancelled() || !observation.shouldFinalize) return;
+  if (
+    shouldRefreshConversation
+    && !readyRefreshSucceeded(job.id)
+  ) {
+    return;
+  }
+  if (isCancelled()) return;
+  finalizeJob(job);
+}
+
+export async function retryExecutionJob<T>({
+  retryJobId,
+  executionJobId,
+  isCancelled,
+  retryJob,
+  getExecutionJob,
+  reactivateExecution,
+  storeExecution,
+  restartPolling,
+  onRetryRejected,
+  onAggregateRefreshFailed,
+  onSuccess,
+}: {
+  retryJobId: string;
+  executionJobId: string;
+  isCancelled: () => boolean;
+  retryJob: (jobId: string) => Promise<unknown>;
+  getExecutionJob: (jobId: string) => Promise<T>;
+  reactivateExecution: (jobId: string) => void;
+  storeExecution: (job: T) => void;
+  restartPolling: () => void;
+  onRetryRejected: (error: unknown) => void;
+  onAggregateRefreshFailed: (notice: string, error: unknown) => void;
+  onSuccess: () => void;
+}): Promise<void> {
+  try {
+    await retryJob(retryJobId);
+  } catch (error) {
+    if (!isCancelled()) onRetryRejected(error);
+    return;
+  }
+  if (isCancelled()) return;
+
+  reactivateExecution(executionJobId);
+  if (isCancelled()) return;
+
+  let refreshed: T;
+  try {
+    refreshed = await getExecutionJob(executionJobId);
+  } catch (error) {
+    if (isCancelled()) return;
+    onAggregateRefreshFailed(
+      "重试已受理，状态刷新失败，正在继续轮询",
+      error,
+    );
+    if (isCancelled()) return;
+    restartPolling();
+    return;
+  }
+  if (isCancelled()) return;
+
+  storeExecution(refreshed);
+  if (isCancelled()) return;
+  restartPolling();
+  if (isCancelled()) return;
+  onSuccess();
+}
+
+export async function dispatchProductVideoJobRetry({
+  product,
+  retryExecution,
+  onMissingJob,
+}: {
+  product: ProductArtifact;
+  retryExecution: (retryJobId: string, executionJobId: string) => Promise<void>;
+  onMissingJob: () => void;
+}): Promise<boolean> {
+  const metadata = product.metadata as Record<string, unknown> | undefined;
+  const jobId = typeof metadata?.latest_job_public_id === "string"
+    ? metadata.latest_job_public_id
+    : null;
+  if (!jobId) {
+    onMissingJob();
+    return false;
+  }
+  await retryExecution(jobId, jobId);
+  return true;
 }
 
 // Background understanding tasks for the sidebar capsule (spec §5.1): assets
@@ -216,6 +482,15 @@ export default function AssetsWorkspaceClient({
   // Live per-asset video job status (stage + error) fed by the poller so the
   // workspace can show stage-level progress instead of a bare "生成中".
   const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
+  const terminalVideoJobIdsRef = useRef(new Set<string>());
+  const inFlightVideoJobIdsRef = useRef(new Set<string>());
+  const readyConversationRefreshRef = useRef(new Set<string>());
+  const readyConversationRefreshInFlightRef = useRef(new Set<string>());
+  const executionRunGenerationRef = useRef(new Map<string, number>());
+  const terminalObservationVideoJobIdsRef = useRef(new Set<string>());
+  const activeExecutionVideoJobIdsRef = useRef(new Set<string>());
+  const workspaceMountedRef = useRef(true);
+  const [videoJobPollRevision, setVideoJobPollRevision] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
@@ -238,6 +513,13 @@ export default function AssetsWorkspaceClient({
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
+
+  useEffect(() => {
+    workspaceMountedRef.current = true;
+    return () => {
+      workspaceMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -299,98 +581,251 @@ export default function AssetsWorkspaceClient({
     };
   }, [token]);
 
-  // Poll all orchestration jobs that are still building. These jobs run in the
-  // background, so their visible pending state must survive conversation switches.
-  // Keyed on the joined job-id string (not the conversations array) so unrelated
-  // conversation updates don't tear down and restart the interval.
-  const pendingVideoJobKey = useMemo(() => pendingVideoJobIds(conversations).join(","), [conversations]);
+  // Poll every pending background execution plus the selected conversation's
+  // latest job. The selected job restores its persisted card once after refresh.
+  const executionVideoJobKey = [
+    ...new Set([
+      ...executionVideoJobIds(conversations, selectedConversationId),
+      ...activeExecutionVideoJobIdsRef.current,
+    ]),
+  ].sort().join(",");
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    const jobIds = pendingVideoJobKey ? pendingVideoJobKey.split(",") : [];
-    if (!jobIds.length) return;
+    const jobIds = executionVideoJobKey ? executionVideoJobKey.split(",") : [];
+    jobIds.forEach((jobId) => {
+      if (!terminalVideoJobIdsRef.current.has(jobId)) {
+        activeExecutionVideoJobIdsRef.current.add(jobId);
+      }
+    });
+    const activeJobIds = new Set(activeExecutionVideoJobIdsRef.current);
+    if (!activeJobIds.size) return;
     let cancelled = false;
     let stopped = false;
-    const tick = async () => {
-      if (stopped || document.hidden) return;
-      try {
-        const results = await Promise.allSettled(jobIds.map((jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId)));
-        if (cancelled) return;
-        // Publish live stage/error per asset so the workspace can render
-        // stage-level progress and persistent failure details.
-        setVideoJobLive((current) => {
-          const next = { ...current };
-          for (const result of results) {
-            if (result.status !== "fulfilled") continue;
-            const job = result.value;
-            next[job.assetId] = {
-              jobId: job.id,
-              status: job.status,
-              renderStage: job.renderStage,
-              steps: job.steps,
-              errorMessage: job.errorMessage
-            };
-          }
-          return next;
-        });
-        const finished = results.some((result) => (
-          result.status === "fulfilled"
-          && (result.value.status === "completed" || result.value.status === "failed")
-        ));
-        if (finished) {
-          stopped = true;
-          clearInterval(timer);
-          const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
-          if (!cancelled) setConversations(rows);
-          const failed = results.find((result) => result.status === "fulfilled" && result.value.status === "failed");
-          if (failed && failed.status === "fulfilled") {
-            const detail = failed.value.errorMessage ? `：${failed.value.errorMessage}` : "，请重试或调整指令。";
-            toast.error(`视频生成失败${detail}`);
-          }
-        }
-      } catch {
-        // transient poll error; keep trying until cleared
-      }
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stopPolling = () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
     };
-    const timer = setInterval(() => void tick(), 4000);
+
+    const startReadyRefresh = (jobId: string) => {
+      if (cancelled) return;
+      const requestIdentity = executionRunKey(
+        jobId,
+        executionRunGenerationRef.current.get(jobId) ?? 0,
+      );
+      startReadyConversationRefresh({
+        jobId,
+        requestIdentity,
+        isRequestCurrent: (identity) => identity === executionRunKey(
+          jobId,
+          executionRunGenerationRef.current.get(jobId) ?? 0,
+        ),
+        successfulJobIds: readyConversationRefreshRef.current,
+        inFlightJobIds: readyConversationRefreshInFlightRef.current,
+        isCancelled: () => cancelled,
+        refresh: () => assetWorkspaceAdapter.loadConversations(
+          token,
+          assetWorkspaceAdapter.listConversations(),
+        ),
+        onRefreshed: (rows) => {
+          if (cancelled) return;
+          setConversations(rows);
+        },
+        onRefreshError: () => {
+          // Keep the job active; a later poll retries this refresh.
+        },
+      });
+    };
+
+    const publishJob = (job: VideoJobResult) => {
+      if (cancelled) return;
+      setVideoJobLive((current) => ({
+        ...current,
+        [job.assetId]: {
+          jobId: job.id,
+          status: job.status,
+          renderStage: job.renderStage,
+          steps: job.steps,
+          errorMessage: job.errorMessage,
+          completionConfirmed: false,
+        },
+      }));
+    };
+
+    const setTerminalObservation = (jobId: string, observed: boolean) => {
+      if (cancelled) return;
+      if (observed) terminalObservationVideoJobIdsRef.current.add(jobId);
+      else terminalObservationVideoJobIdsRef.current.delete(jobId);
+    };
+
+    const finalizeJob = (job: VideoJobResult) => {
+      if (cancelled) return;
+      setVideoJobLive((current) => {
+        const live = current[job.assetId];
+        if (!live || live.jobId !== job.id || live.completionConfirmed) return current;
+        return {
+          ...current,
+          [job.assetId]: {
+            ...live,
+            completionConfirmed: true,
+          },
+        };
+      });
+      terminalObservationVideoJobIdsRef.current.delete(job.id);
+      terminalVideoJobIdsRef.current.add(job.id);
+      activeExecutionVideoJobIdsRef.current.delete(job.id);
+      activeJobIds.delete(job.id);
+      if (cancelled) return;
+      if (job.status === "failed") {
+        const detail = job.errorMessage ? "：" + job.errorMessage : "，请重试或调整指令。";
+        toast.error("视频生成失败" + detail);
+      }
+      if (!activeJobIds.size) stopPolling();
+    };
+
+    const processJob = (job: VideoJobResult) => {
+      applyExecutionJobResult({
+        job,
+        isCancelled: () => cancelled,
+        publishJob,
+        startReadyRefresh,
+        readyRefreshSucceeded: (jobId) => readyConversationRefreshRef.current.has(
+          executionRunKey(
+            jobId,
+            executionRunGenerationRef.current.get(jobId) ?? 0,
+          ),
+        ),
+        hasTerminalObservation: (jobId) => terminalObservationVideoJobIdsRef.current.has(jobId),
+        setTerminalObservation,
+        finalizeJob,
+      });
+    };
+
+    const tick = () => {
+      if (stopped || document.hidden) return;
+      const pollJobIds = [...activeJobIds].filter(
+        (jobId) => !terminalVideoJobIdsRef.current.has(jobId),
+      );
+      if (!pollJobIds.length) {
+        stopPolling();
+        return;
+      }
+      startExecutionJobPolls({
+        jobIds: pollJobIds,
+        inFlightJobIds: inFlightVideoJobIdsRef.current,
+        requestIdentity: (jobId) => executionRunKey(
+          jobId,
+          executionRunGenerationRef.current.get(jobId) ?? 0,
+        ),
+        isRequestCurrent: (jobId, identity) => identity === executionRunKey(
+          jobId,
+          executionRunGenerationRef.current.get(jobId) ?? 0,
+        ),
+        getJob: (jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId),
+        isCancelled: () => cancelled,
+        onJob: processJob,
+        onFetchError: () => {
+          // Transient per-job error; its own next interval retries it.
+        },
+      });
+    };
+    timer = setInterval(() => void tick(), 4000);
     void tick();
     return () => {
       cancelled = true;
-      stopped = true;
-      clearInterval(timer);
+      stopPolling();
     };
-  }, [token, pendingVideoJobKey]);
+  }, [token, executionVideoJobKey, videoJobPollRevision]);
 
-  // Convert the live video jobs' real steps into agent-timeline steps keyed by
-  // backend asset id, so the conversation thread can show the same execution
-  // timeline the product pane does (real elapsed times, no fake progress).
-  const liveRunStepsByAssetId = useMemo<Record<number, AgentRunStep[]>>(() => {
-    const map: Record<number, AgentRunStep[]> = {};
+  // Keep the main job identity with its aggregate steps/error so an MG retry can
+  // target its exact child job without replacing the original execution card.
+  const liveRunStateByAssetId = useMemo(() => {
+    const map: Record<number, {
+      jobId: string;
+      status: string;
+      steps: AgentRunStep[];
+      errorMessage: string | null;
+      completionConfirmed: boolean;
+    }> = {};
     for (const [assetId, live] of Object.entries(videoJobLive)) {
-      const steps = agentTimelineStepsFromBackend(live.steps);
-      if (steps.length) map[Number(assetId)] = steps;
+      map[Number(assetId)] = {
+        jobId: live.jobId,
+        status: live.status,
+        steps: resolveLiveExecutionTimelineSteps(live),
+        errorMessage: live.errorMessage,
+        completionConfirmed: live.completionConfirmed,
+      };
     }
     return map;
   }, [videoJobLive]);
 
-  const handleRetryVideoJob = async (product: ProductArtifact) => {
-    const metadata = product.metadata as Record<string, unknown> | undefined;
-    const jobId = typeof metadata?.latest_job_public_id === "string" ? metadata.latest_job_public_id : null;
-    if (!token || !jobId) {
-      toast.error("找不到可重试的任务。");
+  const handleRetryExecution = async (retryJobId: string, executionJobId: string) => {
+    if (!token) {
+      toast.error("登录状态已失效，请重新登录后重试。");
       return;
     }
-    try {
-      const job = await assetWorkspaceAdapter.retryVideoJob(token, jobId);
-      setVideoJobLive((current) => ({
-        ...current,
-        [job.assetId]: { jobId: job.id, status: job.status, renderStage: job.renderStage, steps: job.steps, errorMessage: job.errorMessage }
-      }));
-      const rows = await assetWorkspaceAdapter.loadConversations(token, assetWorkspaceAdapter.listConversations());
-      setConversations(rows);
-      toast.success("已重新开始生成视频。");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "重试失败，请稍后再试。");
-    }
+    await retryExecutionJob({
+      retryJobId,
+      executionJobId,
+      isCancelled: () => !workspaceMountedRef.current,
+      retryJob: (jobId) => assetWorkspaceAdapter.retryVideoJob(token, jobId),
+      getExecutionJob: (jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId),
+      reactivateExecution: (jobId) => {
+        const previousGeneration = executionRunGenerationRef.current.get(jobId) ?? 0;
+        readyConversationRefreshRef.current.delete(
+          executionRunKey(jobId, previousGeneration),
+        );
+        executionRunGenerationRef.current.set(
+          jobId,
+          nextExecutionRunGeneration(previousGeneration),
+        );
+        terminalVideoJobIdsRef.current.delete(jobId);
+        terminalObservationVideoJobIdsRef.current.delete(jobId);
+        activeExecutionVideoJobIdsRef.current.add(jobId);
+      },
+      storeExecution: (refreshed) => {
+        setVideoJobLive((current) => ({
+          ...current,
+          [refreshed.assetId]: {
+            jobId: refreshed.id,
+            status: refreshed.status,
+            renderStage: refreshed.renderStage,
+            steps: refreshed.steps,
+            errorMessage: refreshed.errorMessage,
+            completionConfirmed: false,
+          },
+        }));
+      },
+      restartPolling: () => setVideoJobPollRevision((current) => current + 1),
+      onRetryRejected: (error) => {
+        const message = error instanceof Error ? error.message : "请稍后再试。";
+        toast.error("重试请求失败：" + message);
+      },
+      onAggregateRefreshFailed: (notice) => {
+        setVideoJobLive((current) => {
+          const entry = Object.entries(current).find(([, live]) => live.jobId === executionJobId);
+          if (!entry) return current;
+          const [assetId, live] = entry;
+          return {
+            ...current,
+            [Number(assetId)]: {
+              ...live,
+              errorMessage: notice,
+            },
+          };
+        });
+        toast.error(notice);
+      },
+      onSuccess: () => toast.success("已重新开始失败步骤。"),
+    });
+  };
+
+  const handleRetryVideoJob = async (product: ProductArtifact) => {
+    await dispatchProductVideoJobRetry({
+      product,
+      retryExecution: handleRetryExecution,
+      onMissingJob: () => toast.error("找不到可重试的任务。"),
+    });
   };
 
   const startDividerResize = (clientX: number) => {
@@ -1400,7 +1835,8 @@ export default function AssetsWorkspaceClient({
                   });
                 }}
                 onSendMessage={handleSendConversationMessage}
-                liveRunStepsByAssetId={liveRunStepsByAssetId}
+                liveRunStateByAssetId={liveRunStateByAssetId}
+                onRetryExecution={handleRetryExecution}
                 diagnosticsSlot={renderDiagnostics()}
                 readonly={selectedConversation.readonly ?? false}
               />

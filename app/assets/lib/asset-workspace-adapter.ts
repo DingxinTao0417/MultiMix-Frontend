@@ -240,6 +240,7 @@ export type VideoJobStepResult = {
   label: string;
   status: string;
   elapsedSeconds: number | null;
+  retryJobId: string | null;
 };
 
 export type VideoJobResult = {
@@ -257,7 +258,13 @@ type RawVideoJob = {
   asset_id: number;
   status: string;
   render_stage: string;
-  steps?: Array<{ key?: string; label?: string; status?: string; elapsed_seconds?: number | null }> | null;
+  steps?: Array<{
+    key?: string;
+    label?: string;
+    status?: string;
+    elapsed_seconds?: number | null;
+    retry_job_id?: string | null;
+  }> | null;
   error_message: string | null;
   project: Record<string, unknown> | null;
 };
@@ -275,7 +282,8 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
           key,
           label,
           status: typeof step.status === "string" ? step.status : "wait",
-          elapsedSeconds: typeof step.elapsed_seconds === "number" ? step.elapsed_seconds : null
+          elapsedSeconds: typeof step.elapsed_seconds === "number" ? step.elapsed_seconds : null,
+          retryJobId: typeof step.retry_job_id === "string" ? step.retry_job_id : null
         }];
       })
     : [];
