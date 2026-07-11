@@ -70,6 +70,7 @@ export type AssetProductSegment = {
   assetThumbnailUrl?: string;
   isFallback: boolean;
   mgLabel?: string;
+  mgStatus?: string;
 };
 
 export type AssetProduct = {
@@ -96,6 +97,9 @@ export type AssetProduct = {
   preview?: AssetProductPreview;
   // Set when this product is backed by a real backend ContentAsset.
   backendAssetId?: number;
+  // True only when the backend project satisfies the shared editor-readiness
+  // contract. UI surfaces must not infer readiness from raw metadata presence.
+  videoProjectReady?: boolean;
   metadata?: Record<string, unknown>;
 };
 

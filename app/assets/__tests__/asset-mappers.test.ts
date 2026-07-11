@@ -225,6 +225,75 @@ describe("asset product mapper", () => {
     expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
   });
 
+  it("projects real video-project track timing onto semantic scenes", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_segments: [
+          {
+            id: "scene-1",
+            title: "痛点开场",
+            narration: "装修最烧钱的坑",
+            duration_seconds: 4,
+            asset_reference: {
+              status: "matched",
+              source_snapshot: { title: "客厅素材", preview_url: "https://cdn.example/scene-1.jpg" }
+            },
+            mg_decision: { needed: true, chosen_template: "title_card", status: "rendered" }
+          },
+          {
+            id: "scene-2",
+            title: "案例展示",
+            narration: "这是刚交付的案例",
+            duration_seconds: 5,
+            asset_reference: { status: "no_asset_hit" },
+            mg_decision: { needed: true, chosen_template: "data_card", status: "failed" }
+          }
+        ],
+        video_project: {
+          metadata: { duration: 12.75 },
+          media: [],
+          tracks: [
+            {
+              id: "track-text",
+              type: "text",
+              elements: [
+                { id: "tel-0", segmentId: "scene-1", startTime: 0, duration: 5.25 },
+                { id: "tel-1", segmentId: "scene-2", startTime: 5.25, duration: 7.5 }
+              ]
+            }
+          ],
+          script: { title: "测试工程", content: "装修最烧钱的坑\n这是刚交付的案例" },
+          orchestration: { segment_count: 2 }
+        }
+      }
+    }));
+
+    expect(product.videoProjectReady).toBe(true);
+    expect(product.segments).toMatchObject([
+      {
+        id: "scene-1",
+        startSeconds: 0,
+        endSeconds: 5.25,
+        assetThumbnailUrl: "https://cdn.example/scene-1.jpg",
+        mgLabel: "title_card",
+        mgStatus: "rendered"
+      },
+      {
+        id: "scene-2",
+        startSeconds: 5.25,
+        endSeconds: 12.75,
+        mgLabel: "data_card",
+        mgStatus: "failed"
+      }
+    ]);
+  });
+
   it("builds a source summary from source_mapping for copy products", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "copy",

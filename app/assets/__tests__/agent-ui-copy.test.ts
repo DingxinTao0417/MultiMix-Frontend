@@ -1249,6 +1249,13 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-brand-mark svg");
   });
 
+  it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {
+    const globals = readAssetFile("app/globals.css");
+
+    expect(globals).toContain("grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;");
+    expect(globals).not.toContain("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;");
+  });
+
   it("does not show left icons for copy rows and uses media thumbnails for image or video rows", () => {
     const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
 

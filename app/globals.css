@@ -164,7 +164,7 @@ button:disabled {
 
 .shadcn-prototype-sidebar {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   height: 100svh;
   min-height: 0;
   overflow: hidden;
@@ -604,12 +604,13 @@ button:disabled {
   font-weight: 650;
   line-height: 1.3;
   scrollbar-width: none;
-  text-overflow: clip;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .shadcn-prototype-conversation-row:hover strong {
   overflow-x: auto;
+  text-overflow: clip;
 }
 
 .shadcn-prototype-conversation-list strong::-webkit-scrollbar {
@@ -6921,6 +6922,7 @@ label {
 }
 
 .shadcn-prototype-segment-cards li {
+  position: relative;
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr);
   gap: 12px;
@@ -7281,6 +7283,49 @@ label {
   font-weight: 650;
   text-align: left;
   cursor: pointer;
+}
+
+.shadcn-prototype-segment-actions {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  display: none;
+  transform: translateY(-50%);
+}
+
+.shadcn-prototype-segment-cards li:hover .shadcn-prototype-segment-actions,
+.shadcn-prototype-segment-cards li:focus-within .shadcn-prototype-segment-actions,
+.shadcn-prototype-segment-cards li.active .shadcn-prototype-segment-actions {
+  display: inline-flex;
+}
+
+.shadcn-prototype-segment-actions button {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--sp-border-strong);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: var(--sp-muted-text);
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.shadcn-prototype-segment-actions button:hover,
+.shadcn-prototype-segment-actions button:focus-visible {
+  color: var(--sp-text);
+  box-shadow: var(--sp-shadow);
+}
+
+.shadcn-prototype-segment-mg-status {
+  color: var(--sp-muted-text);
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.shadcn-prototype-segment-mg-status.failed {
+  color: var(--sp-danger, #b42318);
 }
 
 .shadcn-prototype-agent-run-head:focus-visible {

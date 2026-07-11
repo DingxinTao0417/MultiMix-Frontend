@@ -7,6 +7,18 @@ function segmentRange(segment: AssetProductSegment): string | null {
   return `${Math.round(segment.startSeconds)}–${Math.round(segment.endSeconds)}s`;
 }
 
+function mgStatusLabel(status: string | undefined): string | null {
+  if (!status) return null;
+  return ({
+    planned: "待渲染",
+    queued: "待渲染",
+    rendering: "渲染中",
+    rendered: "已渲染",
+    failed: "渲染失败",
+    stale: "待更新",
+  } as Record<string, string>)[status] ?? status;
+}
+
 // Pure display list for storyboard segment summaries (序号/时长/台词/素材引用/
 // MG 徽章/兜底标注). Callers only render it when segment data exists. When
 // onSelect is wired (成片浏览态) the cards double as jump-to-preview targets.
@@ -14,12 +26,14 @@ export default function SegmentCards({
   segments,
   hint,
   activeId,
-  onSelect
+  onSelect,
+  onReplaceMaterial,
 }: {
   segments: AssetProductSegment[];
   hint?: string;
   activeId?: string | null;
   onSelect?: (segment: AssetProductSegment) => void;
+  onReplaceMaterial?: (segment: AssetProductSegment) => void;
 }) {
   if (segments.length === 0) return null;
   return (
@@ -31,18 +45,19 @@ export default function SegmentCards({
       <ol>
         {segments.map((segment) => {
           const range = segmentRange(segment);
-          const clickable = Boolean(onSelect && segment.startSeconds != null);
+          const selectable = Boolean(onSelect);
+          const mgStatus = mgStatusLabel(segment.mgStatus);
           return (
             <li
               key={segment.id}
               className={[
                 segment.id === activeId ? "active" : "",
-                clickable ? "clickable" : ""
+                selectable ? "clickable" : ""
               ].filter(Boolean).join(" ") || undefined}
-              role={clickable ? "button" : undefined}
-              tabIndex={clickable ? 0 : undefined}
-              onClick={clickable ? () => onSelect?.(segment) : undefined}
-              onKeyDown={clickable ? (event) => {
+              role={selectable ? "button" : undefined}
+              tabIndex={selectable ? 0 : undefined}
+              onClick={selectable ? () => onSelect?.(segment) : undefined}
+              onKeyDown={selectable ? (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   onSelect?.(segment);
@@ -60,6 +75,7 @@ export default function SegmentCards({
                 <span className="shadcn-prototype-segment-line1">
                   <strong>{[segment.title, segment.line].filter(Boolean).join(" · ") || `分镜 ${segment.index}`}</strong>
                   {segment.mgLabel ? <i className="shadcn-prototype-segment-mg">{segment.mgLabel}</i> : null}
+                  {mgStatus ? <i className={`shadcn-prototype-segment-mg-status ${segment.mgStatus ?? ""}`}>{mgStatus}</i> : null}
                   {segment.isFallback ? <i className="shadcn-prototype-segment-stock">兜底素材</i> : null}
                 </span>
                 {segment.assetTitle || segment.subLine ? (
@@ -68,6 +84,19 @@ export default function SegmentCards({
                   </span>
                 ) : null}
               </span>
+              {onReplaceMaterial ? (
+                <span className="shadcn-prototype-segment-actions">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onReplaceMaterial(segment);
+                    }}
+                  >
+                    换素材
+                  </button>
+                </span>
+              ) : null}
             </li>
           );
         })}

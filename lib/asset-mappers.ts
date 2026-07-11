@@ -212,11 +212,36 @@ function thumbnailUrlFromRef(ref: string): string | undefined {
   return undefined;
 }
 
+type SegmentTiming = { start: number; end: number };
+
+function segmentTimingsFromProject(project: Record<string, unknown> | undefined): Map<string, SegmentTiming> {
+  const timings = new Map<string, SegmentTiming>();
+  if (!project || !Array.isArray(project.tracks)) return timings;
+  for (const track of project.tracks) {
+    if (!isRecord(track) || !Array.isArray(track.elements)) continue;
+    for (const element of track.elements) {
+      if (!isRecord(element)) continue;
+      const segmentId = stringValue(element.segmentId);
+      const start = numberOrUndefined(element.startTime);
+      const duration = numberOrUndefined(element.duration);
+      if (!segmentId || start == null || duration == null || duration < 0) continue;
+      const end = start + duration;
+      const previous = timings.get(segmentId);
+      timings.set(segmentId, {
+        start: previous ? Math.min(previous.start, start) : start,
+        end: previous ? Math.max(previous.end, end) : end,
+      });
+    }
+  }
+  return timings;
+}
+
 // Storyboard summary for the segment cards. Reads the semantic layer in
 // priority order: video_project.segments → video_segments → video_plan.scenes.
 // asset_reference / mg_decision are authoritative; stock is fallback only.
 function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProductSegment[] | undefined {
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const projectTimings = segmentTimingsFromProject(videoProject);
   const videoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
   const rawSegments = Array.isArray(videoProject?.segments) && videoProject.segments.length
     ? videoProject.segments
@@ -232,9 +257,10 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     const snapshot = reference && isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
     const decision = isRecord(segment.mg_decision) ? segment.mg_decision : null;
     const visible = decision && isRecord(decision.visible_summary) ? decision.visible_summary : null;
-    const start = numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
+    const projectTiming = projectTimings.get(stringValue(segment.id));
+    const start = projectTiming?.start ?? numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
     const duration = numberOrUndefined(segment.duration) ?? numberOrUndefined(segment.duration_seconds);
-    const end = numberOrUndefined(segment.endTime) ?? (start != null && duration != null ? start + duration : undefined);
+    const end = projectTiming?.end ?? numberOrUndefined(segment.endTime) ?? (start != null && duration != null ? start + duration : undefined);
     return {
       id: stringValue(segment.id) || `segment-${index + 1}`,
       index: index + 1,
@@ -250,7 +276,8 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       isFallback: Boolean(reference) && stringValue(reference?.status) !== "matched",
       mgLabel: decision?.needed === true
         ? stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG"
-        : undefined
+        : undefined,
+      mgStatus: decision?.needed === true ? stringValue(decision.status) || undefined : undefined,
     };
   });
 }
@@ -649,6 +676,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
+    videoProjectReady: Boolean(videoProject),
     metadata,
     mode,
     title: normalizeProductTitle(asset.title),
