@@ -737,3 +737,14 @@ npm run build         # next build
 
 改完代码后至少跑 `typecheck` + `lint` + `build` 验证。
 
+## 展示区自动化覆盖
+
+展示区案例只在测试时创建，不写入开发数据库或 Supabase。完整 E2E 需要前端仓库同级存在 `MultiMix-Backend`，默认使用独立端口 3219/8299 和随机临时 SQLite；成功或失败都会清理进程、数据库和媒体副本。
+
+```powershell
+npm run test:display-components
+npm run test:display-e2e
+npm run test:display-coverage
+```
+
+`test:display-components` 验证真实 React 组件；`test:display-e2e` 启动隔离前后端并运行八个浏览器案例；`test:display-coverage` 依次执行两层覆盖。

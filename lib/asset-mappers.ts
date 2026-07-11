@@ -268,7 +268,12 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       startSeconds: start,
       endSeconds: end,
       line: stringValue(segment.narration) || stringValue(segment.line) || undefined,
-      subLine: stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
+      subLine: decision?.needed === true && stringValue(decision.status) === "failed"
+        ? [
+            stringValue(segment.subtitle_focus) || stringValue(segment.subtitle),
+            "MG 渲染失败，原分镜仍保留",
+          ].filter(Boolean).join(" · ")
+        : stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
       assetTitle: stringValue(snapshot?.title) || undefined,
       assetThumbnailUrl: thumbnailUrlFromRef(
         stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
@@ -532,7 +537,7 @@ function contentAssetTypeLabel(contentType: string): string {
 
 function productModeFromAsset(asset: ContentAsset, unsupported: boolean): AssetProductMode {
   if (unsupported) return "copy";
-  if (asset.content_type === "video_script") return "copy";
+  if (asset.content_type === "video_script") return "video";
   if (asset.content_type === "digital_human_video") return "digital-human";
   if (asset.asset_kind === "image") return "image";
   if (asset.asset_kind === "video" || asset.asset_kind === "video_render") return "video";

@@ -571,7 +571,18 @@ export default function AssetsWorkspaceClient({
     void assetWorkspaceAdapter
       .loadConversations(token, assetWorkspaceAdapter.listConversations())
       .then((rows) => {
-        if (!cancelled) setConversations(rows);
+        if (cancelled) return;
+        setConversations(rows);
+        if (initialConversationId && rows.some((conversation) => conversation.id === initialConversationId)) {
+          setSelectedConversationId(initialConversationId);
+          setActiveView("conversation");
+          if (initialProductId) {
+            setSelectedProductIds((current) => ({
+              ...current,
+              [initialConversationId]: initialProductId,
+            }));
+          }
+        }
       })
       .catch(() => {
         toast.error("无法加载对话历史，显示本地样例数据。");
@@ -579,7 +590,7 @@ export default function AssetsWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [initialConversationId, initialProductId, token]);
 
   // Poll every pending background execution plus the selected conversation's
   // latest job. The selected job restores its persisted card once after refresh.
@@ -977,6 +988,10 @@ export default function AssetsWorkspaceClient({
     setSelectedConversationId(conversationId);
     setActiveView("conversation");
     setConversationMenuId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.set("conversation", conversationId);
+    url.searchParams.delete("product");
+    window.history.replaceState(window.history.state, "", url);
   };
 
   const handleSelectProduct = (conversationId: string, productId: string) => {
