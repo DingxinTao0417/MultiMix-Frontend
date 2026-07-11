@@ -2280,6 +2280,22 @@ button:disabled {
   color: #6e6a64;
 }
 
+/* Calm waiting shimmer for the display area while the real step timeline runs
+   in the conversation (spec §5.3 生成态 shimmer / §2.2 渐变纪律). */
+.shadcn-prototype-video-progress-shimmer {
+  width: 160px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sp-line) 25%, var(--sp-ai-soft) 50%, var(--sp-line) 75%);
+  background-size: 200% 100%;
+  animation: shadcn-prototype-video-progress-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes shadcn-prototype-video-progress-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .shadcn-prototype-video-progress-steps {
   display: flex;
   align-items: flex-start;

@@ -2,11 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
-import { VIDEO_JOB_STEPS, agentTimelineStepsFromBackend, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
-import { UI_V3_AGENT_TIMELINE, UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
+import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
-import AgentRunTimeline from "./agent-run-timeline";
 import ProductPreview from "./product-preview";
 
 type EditorBridgeMessage = {
@@ -89,15 +88,9 @@ export default function ProductWorkspace({
     (videoJobLive?.status === "failed")
     || (typeof productMetadata.latest_job_public_id === "string" && product.status.includes("失败"))
   );
-  const liveStage = videoJobLive?.renderStage ?? "queued";
-  const liveStageLabel = videoJobStageLabel(liveStage);
-  const liveStepIndex = videoJobStepIndex(liveStage);
-  // Prefer the backend's real steps[] (with genuine elapsed times); fall back to
-  // the render_stage-derived steps when the backend omits them (spec §12 降级).
-  const backendTimelineSteps = agentTimelineStepsFromBackend(videoJobLive?.steps);
-  const agentTimelineSteps = backendTimelineSteps.length
-    ? backendTimelineSteps
-    : videoJobTimelineSteps(liveStage, videoJobLive?.status ?? "running");
+  // The pending pill still surfaces the coarse stage label; the step-by-step
+  // timeline itself is owned by the conversation, not the display area.
+  const liveStageLabel = videoJobStageLabel(videoJobLive?.renderStage ?? "queued");
   const failureDetail = videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
@@ -431,24 +424,14 @@ export default function ProductWorkspace({
           </div>
         ) : orchestrationPending ? (
           <div className="shadcn-prototype-product-main">
+            {/* The step-by-step execution timeline lives in the conversation
+                (spec video-confirmation-execution-card §5.2 / agentic-workbench
+                §194). The display area only shows a calm waiting state; it must
+                not duplicate the execution card here. */}
             <div className="shadcn-prototype-video-progress" role="status" aria-live="polite">
+              <span className="shadcn-prototype-video-progress-shimmer" aria-hidden="true" />
               <strong>视频工程生成中</strong>
-              {UI_V3_AGENT_TIMELINE ? (
-                <AgentRunTimeline steps={agentTimelineSteps} />
-              ) : (
-                <ol className="shadcn-prototype-video-progress-steps">
-                  {VIDEO_JOB_STEPS.map((step, index) => (
-                    <li
-                      key={step}
-                      className={index < liveStepIndex ? "done" : index === liveStepIndex ? "active" : ""}
-                    >
-                      <i aria-hidden="true" />
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              <p>{liveStageLabel}。可以切换到其他对话，完成后这里会自动展示剪辑器。</p>
+              <p>生成进度在对话区实时更新，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>
         ) : orchestrationFailed ? (
