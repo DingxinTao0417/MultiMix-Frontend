@@ -1,0 +1,5 @@
+{
+  "fixture:health": { "ok": true },
+  "确认，生成视频工程": { "action": "confirm_video_project", "confidence": 0.99 },
+  "这是疑问句吗": { "action": "ask", "confidence": 0.99 }
+}
