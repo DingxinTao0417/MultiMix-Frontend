@@ -67,7 +67,7 @@ export async function main(args = process.argv.slice(2)) {
     const frontend = startLogged(npm, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(ports.frontend)], { cwd: frontendRoot, env: frontendEnv, logPath: path.join(resultDir, "frontend.log") });
     children.push(frontend); await waitFor(`http://127.0.0.1:${ports.frontend}/app/assets`, frontend.child, 120_000);
     if (options.cleanupProbe) throw new Error("Intentional demo cleanup probe");
-    await run(npx, ["playwright", "test", "e2e/demo-material-packs/demo-material-packs.spec.ts"], { cwd: frontendRoot, env: { ...frontendEnv, DEMO_PACKS_ROOT: packsRoot, DEMO_RUN_ID: runId, DEMO_MODE: options.mode, DEMO_SCENARIOS: options.scenarios.join(","), DEMO_BACKEND_URL: `http://127.0.0.1:${ports.backend}`, PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${ports.frontend}`, PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright") } });
+    await run(npx, ["playwright", "test", "e2e/demo-material-packs/demo-material-packs.spec.ts"], { cwd: frontendRoot, env: { ...frontendEnv, DEMO_PACKS_ROOT: packsRoot, DEMO_RUN_ID: runId, DEMO_MODE: options.mode, DEMO_SCENARIOS: options.scenarios.join(","), DEMO_BACKEND_URL: `http://127.0.0.1:${ports.backend}`, DEMO_RESULT_DIR: resultDir, PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${ports.frontend}`, PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright") } });
   } finally {
     for (const started of children.reverse()) await stopChild(started.child);
     for (const started of children) started.log.end();
