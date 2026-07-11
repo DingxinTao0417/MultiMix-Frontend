@@ -25,10 +25,26 @@ export async function createFixtureProvider({ port = 8398 } = {}) {
       }
       if (request.url === "/v1/chat/completions" || request.url === "/chat/completions") {
         const messages = Array.isArray(payload.messages) ? payload.messages : [];
+        const system = String(messages.find((message) => message.role === "system")?.content || "");
         const key = String(messages.at(-1)?.content || "").trim();
         const match = Object.entries(llm).find(([candidate]) => key.includes(candidate));
-        if (!match) return send(response, 422, { detail: "missing LLM fixture", fixture_key: key.slice(0, 200) });
-        return send(response, 200, { id: "fixture-completion", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(match[1]) }, finish_reason: "stop" }] });
+        let content = match?.[1];
+        if (!content && system.includes("classify a MultiMix content-production instruction")) content = { capability: "video_render", channel: "short_video", audience: "本地门窗客户", format: "video_project", ratio: "9:16", duration: "30", style: "真实克制", video_mode: "real_scene", operation: "draft", asset_requirements: [], confidence: 0.99 };
+        if (!content && system.includes("generate ChangeIn/MultiMix content artifacts")) content = {
+          title: "门窗隔音获客视频",
+          body_markdown: "# 门窗隔音获客视频\n\n素材不足的分镜需补充公开素材，不把施工图冒充为其他场景。",
+          assistant_message: "已生成可编辑的编导稿，并标出素材缺口。",
+          suggestions: ["确认，生成视频工程", "调整分镜"],
+          video_segments: [
+            { title: "噪音痛点", narration: "临街噪音是不是总打断你的休息？", subtitle: "临街噪音困扰", visual_brief: "临街住宅窗外车流", keywords: ["street traffic", "apartment window"], source_refs: [] },
+            { title: "施工过程", narration: "规范安装过程决定门窗最终的密封表现。", subtitle: "安装过程", visual_brief: "工人在现场安装门窗", keywords: ["window installation", "worker tools"], source_refs: [] },
+            { title: "现场测量", narration: "先测量窗洞和使用环境再确定方案。", subtitle: "先测量再设计", visual_brief: "技术人员使用仪器测量窗户", keywords: ["window measuring", "technician"], source_refs: [] },
+            { title: "产品细节", narration: "型材玻璃和密封结构都需要逐项确认。", subtitle: "检查关键细节", visual_brief: "门窗型材与密封条特写", keywords: ["window frame", "rubber seal"], source_refs: [] },
+            { title: "沟通方案", narration: "把现场情况发来我们先帮你梳理改造方向。", subtitle: "咨询改造方案", visual_brief: "顾问展示门窗改造方案", keywords: ["home consultation", "floor plan"], source_refs: [] }
+          ]
+        };
+        if (!content) return send(response, 422, { detail: "missing LLM fixture", fixture_key: key.slice(0, 200) });
+        return send(response, 200, { id: "fixture-completion", choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(content) }, finish_reason: "stop" }] });
       }
       return send(response, 404, { detail: "not found" });
     } catch (error) { return send(response, 400, { detail: error instanceof Error ? error.message : "invalid request" }); }
