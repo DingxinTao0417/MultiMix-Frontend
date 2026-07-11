@@ -14,6 +14,12 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function positiveIntegerValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
 function normalizeRatioLabel(value: string): string {
   const normalized = value.replace(/：/g, ":").trim();
   const ratio = normalized.match(/\d+(?:\.\d+)?:\d+(?:\.\d+)?/);
@@ -732,7 +738,7 @@ export function conversationFromPersisted(
     role: message.role,
     text: message.text,
     presentation: confirmationMessagePresentation(message.role, message.metadata),
-    assetId: message.asset_id,
+    assetId: message.asset_id ?? positiveIntegerValue(message.metadata.product_id),
     metadata: message.metadata,
     suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
     suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined,

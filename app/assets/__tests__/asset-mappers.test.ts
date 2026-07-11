@@ -455,10 +455,11 @@ describe("message plan mapping", () => {
             id: 2,
             role: "assistant",
             text: "视频工程已进入生成队列",
-            asset_id: 451,
+            asset_id: null,
             created_at: "2026-07-08T00:00:01Z",
             metadata: {
               confirmation_idempotency_key: "confirm-1",
+              product_id: 451,
               video_workflow_stage: "video_project_queued",
             },
           },
@@ -480,6 +481,7 @@ describe("message plan mapping", () => {
       "execution_anchor",
       "standard",
     ]);
+    expect(conversation.messages?.[1].assetId).toBe(451);
   });
 
   it("parses a structured plan from assistant message metadata", () => {
