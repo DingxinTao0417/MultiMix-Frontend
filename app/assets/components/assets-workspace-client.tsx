@@ -35,7 +35,7 @@ import ConversationStudio, { type ChatImageAttachment } from "./conversation-stu
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
 import { UI_V3_BG_STATUS } from "../lib/ui-flags";
 import type { LibraryActionIntent } from "./library-workshop";
-import { LibraryWorkspaceLoading } from "./library-workspace-state";
+import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "./library-workspace-state";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -1918,15 +1918,17 @@ export default function AssetsWorkspaceClient({
               )}
             </>
           ) : (
-            <LibraryWorkshopForActiveView
-              view={activeView}
-              token={token}
-              key={`${activeView}-${libraryRefreshKey}`}
-              onUploadClick={handleUploadClick}
-              uploading={uploading}
-              onUseAsset={handleUseLibraryAsset}
-              onAddAssetToConversation={handleAddAssetToConversation}
-            />
+            <LibraryWorkspaceErrorBoundary key={activeView}>
+              <LibraryWorkshopForActiveView
+                view={activeView}
+                token={token}
+                key={`${activeView}-${libraryRefreshKey}`}
+                onUploadClick={handleUploadClick}
+                uploading={uploading}
+                onUseAsset={handleUseLibraryAsset}
+                onAddAssetToConversation={handleAddAssetToConversation}
+              />
+            </LibraryWorkspaceErrorBoundary>
           )}
         </div>
       </section>
