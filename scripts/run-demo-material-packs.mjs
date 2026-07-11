@@ -1,0 +1,79 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+
+import { assertPortFree, createRunPaths, safeRemoveRunDatabase, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+
+const ids = ["01", "02", "03", "04"];
+
+export function parseArgs(args) {
+  const value = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : undefined; };
+  const mode = value("--mode") ?? "stable";
+  if (!['stable', 'live'].includes(mode)) throw new Error(`Unknown mode: ${mode}`);
+  const scenario = value("--scenario");
+  if (scenario && !ids.includes(scenario)) throw new Error(`Unknown scenario: ${scenario}`);
+  const all = args.includes("--all");
+  if (scenario && all) throw new Error("Choose --scenario or --all, not both");
+  if (mode === "live" && !scenario && !all) throw new Error("Live mode requires --scenario or --all");
+  return { mode, scenarios: all ? ids : [scenario ?? "04"], cleanupProbe: args.includes("--cleanup-probe") };
+}
+
+function findWorkspace(start) {
+  let cursor = path.resolve(start);
+  while (path.dirname(cursor) !== cursor) {
+    if (fs.existsSync(path.join(cursor, "demo_material_packs")) && fs.existsSync(path.join(cursor, "MultiMix-Backend"))) return cursor;
+    cursor = path.dirname(cursor);
+  }
+  throw new Error("Cannot locate MultiMix workspace root");
+}
+
+async function run(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { shell: process.platform === "win32" && command.endsWith(".cmd"), stdio: "inherit", ...options });
+    child.once("error", reject); child.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)));
+  });
+}
+
+export async function main(args = process.argv.slice(2)) {
+  const options = parseArgs(args);
+  const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const workspaceRoot = findWorkspace(frontendRoot);
+  const backendRoot = path.join(workspaceRoot, "MultiMix-Backend");
+  const packsRoot = path.join(workspaceRoot, "demo_material_packs");
+  const runId = crypto.randomUUID();
+  const { databasePath, artifactDir } = createRunPaths("multimix-demo", runId);
+  const resultDir = path.join(frontendRoot, "test-results", "demo-material-packs", runId);
+  const ports = { frontend: 3229, backend: 8298, fixture: 8398 };
+  const children = [];
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
+  console.log(`Temporary SQLite: ${databasePath}`);
+  console.log("Purpose: isolated demo material browser automation; cleanup: always removed in finally.");
+  try {
+    fs.mkdirSync(resultDir, { recursive: true });
+    await Promise.all(Object.values(ports).map(assertPortFree));
+    if (options.mode === "stable") {
+      const started = startLogged(process.execPath, ["scripts/demo-e2e/fixture-provider.mjs"], { cwd: frontendRoot, env: { ...process.env, DEMO_FIXTURE_PORT: String(ports.fixture) }, logPath: path.join(resultDir, "fixture.log") });
+      children.push(started); await waitFor(`http://127.0.0.1:${ports.fixture}/healthz`, started.child);
+    }
+    const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
+    const backendEnv = { ...process.env, CHANGEIN_ENV: "local", CHANGEIN_AUTH_PROVIDER: "local", CHANGEIN_DATABASE_URL: databaseUrl, CHANGEIN_ARTIFACT_DIR: artifactDir, CHANGEIN_SUPABASE_URL: "", CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "", CHANGEIN_MODULES_MONITORING_ENABLED: "false", CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true", CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${ports.frontend}` };
+    if (options.mode === "stable") Object.assign(backendEnv, { CHANGEIN_LLM_BASE_URL: `http://127.0.0.1:${ports.fixture}/v1`, CHANGEIN_LLM_API_KEY: "fixture-only", CHANGEIN_LLM_MODEL: "fixture", CHANGEIN_VISION_SERVICE_URL: `http://127.0.0.1:${ports.fixture}` });
+    const backend = startLogged(process.env.PYTHON ?? "python", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(ports.backend)], { cwd: backendRoot, env: backendEnv, logPath: path.join(resultDir, "backend.log") });
+    children.push(backend); await waitFor(`http://127.0.0.1:${ports.backend}/healthz`, backend.child, 90_000);
+    const frontendEnv = { ...process.env, NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${ports.backend}`, NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "" };
+    const frontend = startLogged(npm, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(ports.frontend)], { cwd: frontendRoot, env: frontendEnv, logPath: path.join(resultDir, "frontend.log") });
+    children.push(frontend); await waitFor(`http://127.0.0.1:${ports.frontend}/app/assets`, frontend.child, 120_000);
+    if (options.cleanupProbe) throw new Error("Intentional demo cleanup probe");
+    await run(npx, ["playwright", "test", "e2e/demo-material-packs/demo-material-packs.spec.ts"], { cwd: frontendRoot, env: { ...frontendEnv, DEMO_PACKS_ROOT: packsRoot, DEMO_RUN_ID: runId, DEMO_MODE: options.mode, DEMO_SCENARIOS: options.scenarios.join(","), DEMO_BACKEND_URL: `http://127.0.0.1:${ports.backend}`, PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${ports.frontend}`, PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright") } });
+  } finally {
+    for (const started of children.reverse()) await stopChild(started.child);
+    for (const started of children) started.log.end();
+    safeRemoveRunDatabase(databasePath, runId);
+    fs.rmSync(artifactDir, { recursive: true, force: true });
+  }
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((error) => { console.error(error.message); process.exitCode = error.message.includes("requires") || error.message.includes("Unknown") ? 2 : 1; });

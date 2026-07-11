@@ -19,3 +19,4 @@ Thumbs.db
 .playwright-mcp
 .gstack/
 .worktrees/
+test-results/demo-material-packs/
