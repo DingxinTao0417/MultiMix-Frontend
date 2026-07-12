@@ -37,7 +37,7 @@ describe("video browse actions", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "换素材" })[0]!);
 
-    expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "为分镜 #1 换素材" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /施工过程记录/ })).toBeInTheDocument());
   });

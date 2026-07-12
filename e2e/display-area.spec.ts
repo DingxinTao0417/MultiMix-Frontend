@@ -19,6 +19,41 @@ async function openCase(page: Page, caseId: string) {
   return workspace;
 }
 
+async function expectProportionalFramelessSurface(page: Page, surface: ReturnType<Page["locator"]>, expectedRatio: number) {
+  await expect(surface).toBeVisible();
+  await expect(surface).toHaveCSS("border-top-width", "0px");
+  await expect(surface).toHaveCSS("border-right-width", "0px");
+  await expect(surface).toHaveCSS("border-bottom-width", "0px");
+  await expect(surface).toHaveCSS("border-left-width", "0px");
+  await expect(surface).toHaveCSS("box-shadow", "none");
+
+  const before = await surface.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return { width: rect.width, ratio: rect.width / rect.height };
+  });
+  expect(Math.abs(before.ratio - expectedRatio)).toBeLessThan(0.01);
+
+  const divider = page.getByRole("separator", { name: "调整对话和展示区宽度" });
+  const dividerBox = await divider.boundingBox();
+  const viewport = page.viewportSize();
+  expect(dividerBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (!dividerBox || !viewport) return;
+
+  const y = dividerBox.y + dividerBox.height / 2;
+  await page.mouse.move(dividerBox.x + dividerBox.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(viewport.width - 160, y, { steps: 8 });
+  await page.mouse.up();
+
+  await expect.poll(() => surface.evaluate((node) => node.getBoundingClientRect().width)).toBeLessThan(before.width - 10);
+  const afterRatio = await surface.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width / rect.height;
+  });
+  expect(Math.abs(afterRatio - expectedRatio)).toBeLessThan(0.01);
+}
+
 test("CASE-01 shows a director draft without project controls", async ({ page }) => {
   const workspace = await openCase(page, "case-01-director-draft");
   await expect(workspace.locator("article.shadcn-prototype-copy-document")).toBeVisible();
@@ -36,7 +71,7 @@ test("CASE-02 shows the saved asset reference", async ({ page }) => {
 test("CASE-03 tells public fallback apart from saved assets", async ({ page }) => {
   const workspace = await openCase(page, "case-03-no-asset-hit");
   await expect(workspace.getByText("未命中素材", { exact: false }).first()).toBeVisible();
-  await expect(workspace.getByText("基于 3 段兜底素材生成", { exact: false })).toBeVisible();
+  await expect(workspace.getByText("基于 3 个公共素材生成", { exact: false })).toBeVisible();
   await expect(workspace.getByText("测试门店素材", { exact: false })).toHaveCount(0);
 });
 
@@ -60,18 +95,22 @@ test("CASE-06 is editable but has no video element", async ({ page }) => {
   await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
+  await expectProportionalFramelessSurface(page, workspace.locator(".shadcn-prototype-project-preview-screen"), 16 / 9);
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   test.setTimeout(60_000);
   const workspace = await openCase(page, "case-07-project-ready-mp4");
   const video = workspace.locator("video").first();
+  const player = workspace.locator(".shadcn-prototype-preview-player");
   const segmentList = workspace.locator(".shadcn-prototype-segment-cards > ol");
   await expect(video).toBeVisible();
+  await expect(video).toHaveCSS("object-fit", "contain");
   await expect(segmentList).toHaveCSS("overflow-y", "auto");
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(1);
   await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.5);
+  await expectProportionalFramelessSurface(page, player, 16 / 9);
 });
 
 test("CASE-08 keeps the project editable when MG fails", async ({ page }) => {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import VideoPreviewPlayer from "./video-preview-player";
 
 type SegmentMedia = {
   kind: "image" | "video";
@@ -66,15 +67,14 @@ export default function StoryboardPreview({
 
   return (
     <div className={`shadcn-prototype-project-preview ${getProductRatioClass(product.ratio)}`.trim()} aria-label="轻量分镜预览">
+      <span className="shadcn-prototype-preview-mode-label">分镜预览 · #{segment?.index ?? 1}</span>
       <div className="shadcn-prototype-project-preview-screen">
         {!failed && currentSegmentMedia?.kind === "video" ? (
-          <video
+          <VideoPreviewPlayer
             key={currentSegmentMedia.src}
-            className="shadcn-prototype-product-video-player"
             src={currentSegmentMedia.src}
-            controls
-            preload="metadata"
-            playsInline
+            label={`分镜 #${segment?.index ?? 1} 视频`}
+            ratioClassName={getProductRatioClass(product.ratio)}
             onError={() => setFailed(true)}
           />
         ) : null}
@@ -89,7 +89,7 @@ export default function StoryboardPreview({
         {failed || !currentSegmentMedia ? (
           <div className="shadcn-prototype-video-placeholder-screen" role={failed ? "alert" : undefined}>
             <span className="shadcn-prototype-video-placeholder-stage">分镜 {segment?.index ?? 1}</span>
-            <strong>{segment?.title || segment?.assetTitle || "分镜预览"}</strong>
+            <strong>{failed ? (segment?.title || segment?.assetTitle || "分镜预览") : "待补素材"}</strong>
             <p>{failed ? "该分镜预览暂不可用" : segment?.line || "该分镜暂无可预览素材"}</p>
           </div>
         ) : null}

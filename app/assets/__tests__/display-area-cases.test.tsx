@@ -2,14 +2,17 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProductPreview from "../components/product-preview";
 import ProductWorkspace from "../components/product-workspace";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 function renderWorkspace(caseId: keyof typeof displayProducts) {
   const product = displayProducts[caseId];
@@ -48,14 +51,62 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it("shows a lightweight storyboard preview when the ready project has no MP4", () => {
+  it("labels the no-MP4 project as a single storyboard preview", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
     expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.getByText("分镜预览 · #1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
     expect(screen.queryByTitle("视频工程只读预览")).not.toBeInTheDocument();
   });
 
-  it("shows the finished-video surface for the MP4 case", () => {
+  it("uses the shared player for a playable finished video", () => {
     render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
+    expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "播放视频" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "调整视频预览高度" })).toBeInTheDocument();
+  });
+
+  it("seeks the finished video when a storyboard card is selected", () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
+    const video = container.querySelector("video")!;
+
+    fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
+
+    expect(video.currentTime).toBe(1.5);
+    expect(play).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
+  });
+
+  it("updates the active storyboard from finished-video playback time", () => {
+    const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
+    const video = container.querySelector("video")!;
+
+    video.currentTime = 2;
+    fireEvent.timeUpdate(video);
+
+    expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
+  });
+
+  it("switches only the selected storyboard when no finished video exists", () => {
+    const { container } = render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
+
+    expect(screen.getByText("分镜预览 · #2")).toBeInTheDocument();
+    expect(container.querySelector("video")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
+  });
+
+  it("switches a failed full video to a recoverable storyboard preview", () => {
+    const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
+
+    fireEvent.error(container.querySelector("video")!);
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("成片加载失败");
+    fireEvent.click(screen.getByRole("button", { name: "重试成片" }));
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
   });
 

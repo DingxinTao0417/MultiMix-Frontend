@@ -2628,7 +2628,7 @@ button:disabled {
 .shadcn-prototype-video-browse {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -2639,11 +2639,155 @@ button:disabled {
 .shadcn-prototype-video-browse > .shadcn-prototype-product-video {
   display: grid;
   flex: 0 0 auto;
-  justify-content: center;
-  overflow: visible;
+  min-height: 0;
+  place-items: center;
+  container-type: size;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: transparent;
+}
+
+.shadcn-prototype-preview-player {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 16px;
+  background: #101514;
+  box-shadow: none;
+}
+
+.shadcn-prototype-preview-player.ratio-landscape {
+  aspect-ratio: 16 / 9;
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: auto;
+}
+
+.shadcn-prototype-preview-player.ratio-portrait {
+  aspect-ratio: 9 / 16;
+  width: auto;
+  height: min(100cqh, calc(100cqw * 16 / 9));
+}
+
+.shadcn-prototype-preview-player-screen {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: hidden;
+  border: 0;
+  background: #101514;
+  color: #ffffff;
+  padding: 0;
+}
+
+.shadcn-prototype-preview-player-screen video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #101514;
+}
+
+.shadcn-prototype-preview-player-screen > svg {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  padding: 11px;
+  box-sizing: content-box;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #201f1e;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.shadcn-prototype-preview-player .shadcn-prototype-project-preview-controls {
+  padding: 8px 10px;
+  background: #ffffff;
+}
+
+.shadcn-prototype-preview-player-error {
+  display: grid;
+  grid-row: 1 / -1;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  min-width: 220px;
+  min-height: 160px;
+  color: #ffffff;
+  padding: 20px;
+  text-align: center;
+}
+
+.shadcn-prototype-preview-player-error button {
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  padding: 6px 12px;
+}
+
+.shadcn-prototype-video-preview-resizer {
+  position: relative;
+  flex: 0 0 18px;
+  width: 100%;
+  cursor: row-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.shadcn-prototype-video-preview-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 8px 0 auto;
+  height: 1px;
+  background: var(--sp-border);
+}
+
+.shadcn-prototype-video-preview-resizer span {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 42px;
+  height: 7px;
+  border: 1px solid var(--sp-border-strong);
+  border-radius: 999px;
+  background: var(--sp-card);
+  box-shadow: 0 1px 3px rgba(32, 31, 30, 0.08);
+  transform: translateX(-50%);
+  transition: border-color 140ms ease, background-color 140ms ease, width 140ms ease;
+}
+
+.shadcn-prototype-video-preview-resizer:is(:hover, :focus-visible, .dragging) span {
+  width: 54px;
+  border-color: var(--sp-ai-a);
+  background: var(--sp-accent-soft);
+}
+
+.shadcn-prototype-video-preview-fallback {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--sp-subtle);
+  font-size: 11px;
+}
+
+.shadcn-prototype-video-preview-fallback button {
+  border: 0;
+  background: transparent;
+  color: var(--sp-accent);
+  padding: 2px 0;
+  font-weight: 650;
 }
 
 .shadcn-prototype-video-browse .shadcn-prototype-product-video-player {
@@ -2762,20 +2906,40 @@ button:disabled {
 }
 
 .shadcn-prototype-project-preview {
+  position: relative;
   display: grid;
-  width: 220px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  place-items: center;
   max-width: 100%;
+  container-type: size;
   overflow: hidden;
-  border: 1px solid var(--sp-border);
-  border-radius: 20px;
-  background: var(--sp-card);
-  box-shadow: var(--sp-shadow);
-  padding: 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.shadcn-prototype-preview-mode-label {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3;
+  border-radius: 999px;
+  background: rgba(32, 31, 30, 0.72);
+  color: #ffffff;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .shadcn-prototype-project-preview-screen {
   position: relative;
   aspect-ratio: 9 / 16;
+  max-width: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow: hidden;
   border-radius: 14px;
@@ -2783,22 +2947,34 @@ button:disabled {
 }
 
 .shadcn-prototype-project-preview.ratio-landscape {
-  width: min(100%, 640px);
+  width: 100%;
 }
 
 .shadcn-prototype-project-preview.ratio-landscape .shadcn-prototype-project-preview-screen {
   aspect-ratio: 16 / 9;
+  width: min(100cqw, calc(100cqh * 16 / 9), 720px);
+  height: auto;
 }
 
 .shadcn-prototype-project-preview.ratio-portrait .shadcn-prototype-project-preview-screen {
   aspect-ratio: 9 / 16;
+  width: auto;
+  height: min(100cqh, calc(100cqw * 16 / 9));
 }
 
 .shadcn-prototype-project-preview-screen > :is(img, video) {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.shadcn-prototype-project-preview-screen > .shadcn-prototype-preview-player {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .shadcn-prototype-project-preview-screen > .shadcn-prototype-video-placeholder-screen {
@@ -7117,6 +7293,7 @@ label {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
+  margin-top: 8px;
 }
 
 .shadcn-prototype-segment-cards > header {

@@ -37,9 +37,11 @@ export default function SegmentCards({
           const mgStatus = segment.mgStatus === "failed" ? "渲染失败" : null;
           const needsMaterial = segment.isFallback && !segment.assetTitle && !segment.assetThumbnailUrl;
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
-          const secondaryCopy = segment.title
-            ? segment.line || segment.subLine || segment.assetTitle
-            : segment.subLine || segment.assetTitle;
+          const secondaryCopy = mgStatus && segment.subLine
+            ? segment.subLine
+            : segment.title
+              ? segment.line || segment.subLine || segment.assetTitle
+              : segment.subLine || segment.assetTitle;
           return (
             <li
               key={segment.id}

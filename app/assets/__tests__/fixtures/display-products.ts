@@ -184,7 +184,13 @@ export const displayProducts: Record<DisplayCaseId, AssetProduct> = {
     phase: "视频工程",
     videoProjectReady: true,
     segments: [
-      { ...readySegments[0], mgLabel: "数字强调", mgStatus: "failed", subLine: "MG 渲染失败，原分镜仍保留" },
+      {
+        ...readySegments[0],
+        line: "这是有口播内容的失败分镜",
+        mgLabel: "数字强调",
+        mgStatus: "failed",
+        subLine: "MG 渲染失败，原分镜仍保留",
+      },
       readySegments[1],
     ],
     metadata: {

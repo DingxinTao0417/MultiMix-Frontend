@@ -72,8 +72,20 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
   });
 
-  test("fits lightweight segment media and its fallback inside the preview frame", () => {
-    expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*:(?:is|where)\(img, video\)\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*cover;/s);
+  test("preserves source ratio and exposes a usable preview resize handle", () => {
+    expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*:(?:is|where)\(img, video\)\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain;/s);
     expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*\.shadcn-prototype-video-placeholder-screen\s*\{[^}]*height:\s*100%;/s);
+    expect(css).toMatch(/\.shadcn-prototype-video-preview-resizer\s*\{[^}]*cursor:\s*row-resize;[^}]*touch-action:\s*none;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player-screen video\s*\{[^}]*object-fit:\s*contain;/s);
+  });
+
+  test("scales video surfaces proportionally with the available stage and removes their frame", () => {
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*0;[^}]*box-shadow:\s*none;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*width:\s*min\(100cqw, calc\(100cqh \* 16 \/ 9\)\);[^}]*height:\s*auto;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*width:\s*auto;[^}]*height:\s*min\(100cqh, calc\(100cqw \* 16 \/ 9\)\);/s);
+    expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*min\(100cqw, calc\(100cqh \* 16 \/ 9\), 720px\);[^}]*height:\s*auto;/s);
+    expect(css).toMatch(/ratio-portrait[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*auto;[^}]*height:\s*min\(100cqh, calc\(100cqw \* 16 \/ 9\)\);/s);
   });
 });

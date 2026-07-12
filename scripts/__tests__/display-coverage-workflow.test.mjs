@@ -4,6 +4,8 @@ import path from "node:path";
 import test from "node:test";
 
 const workflow = path.resolve(import.meta.dirname, "..", "..", ".github", "workflows", "display-coverage.yml");
+const runner = path.resolve(import.meta.dirname, "..", "run-display-coverage.mjs");
+const nextConfig = path.resolve(import.meta.dirname, "..", "..", "next.config.mjs");
 
 test("display coverage workflow runs both repositories and retains safe failure evidence", () => {
   const source = fs.readFileSync(workflow, "utf8");
@@ -14,4 +16,15 @@ test("display coverage workflow runs both repositories and retains safe failure 
   assert.match(source, /schedule/);
   assert.match(source, /if: failure\(\)/);
   assert.doesNotMatch(source, /\.sqlite\*.*upload|\.env\*.*upload/i);
+});
+
+test("local display coverage uses and cleans an isolated Next development directory", () => {
+  const runnerSource = fs.readFileSync(runner, "utf8");
+  const nextConfigSource = fs.readFileSync(nextConfig, "utf8");
+
+  assert.match(nextConfigSource, /process\.env\.NEXT_DEV_DIST_DIR/);
+  assert.match(runnerSource, /NEXT_DEV_DIST_DIR:\s*"\.next-display-coverage"/);
+  assert.match(runnerSource, /fs\.rmSync\(path\.join\(frontendRoot, "\.next-display-coverage"\)/);
+  assert.match(runnerSource, /snapshotWorkspaceFiles/);
+  assert.match(runnerSource, /restoreWorkspaceFiles/);
 });

@@ -19,6 +19,26 @@ const children = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 
+function snapshotWorkspaceFiles(filePaths) {
+  return filePaths.map((filePath) => ({
+    filePath,
+    existed: fs.existsSync(filePath),
+    contents: fs.existsSync(filePath) ? fs.readFileSync(filePath) : null,
+  }));
+}
+
+function restoreWorkspaceFiles(snapshots) {
+  for (const snapshot of snapshots) {
+    if (snapshot.existed && snapshot.contents) fs.writeFileSync(snapshot.filePath, snapshot.contents);
+    else fs.rmSync(snapshot.filePath, { force: true });
+  }
+}
+
+const workspaceFileSnapshots = snapshotWorkspaceFiles([
+  path.join(frontendRoot, "next-env.d.ts"),
+  path.join(frontendRoot, "tsconfig.json"),
+]);
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { shell: process.platform === "win32" && command.endsWith(".cmd"), stdio: ["ignore", "pipe", "pipe"], ...options });
@@ -78,6 +98,7 @@ try {
   };
   const frontendEnv = {
     ...process.env,
+    NEXT_DEV_DIST_DIR: ".next-display-coverage",
     NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}`,
     NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local",
     NEXT_PUBLIC_SUPABASE_URL: "",
@@ -101,4 +122,6 @@ try {
   for (const { log } of children) log.end();
   safeRemoveRunDatabase(databasePath, runId);
   fs.rmSync(artifactDir, { recursive: true, force: true });
+  fs.rmSync(path.join(frontendRoot, ".next-display-coverage"), { recursive: true, force: true });
+  restoreWorkspaceFiles(workspaceFileSnapshots);
 }

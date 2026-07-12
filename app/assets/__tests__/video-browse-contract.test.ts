@@ -12,11 +12,17 @@ const workspace = readFileSync(new URL("../components/product-workspace.tsx", im
 describe("video project browse-player contract", () => {
   test("uses a lightweight storyboard surface when a ready project has no MP4", () => {
     expect(preview).toContain("<StoryboardPreview");
+    expect(preview).toContain("<VideoPreviewPlayer");
+    expect(preview).toContain("<VideoPreviewResizer");
+    expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
+    expect(preview).toContain("hint={showFullVideo");
     expect(preview).not.toContain("mode=preview");
     expect(preview).not.toContain("shadcn-prototype-project-preview-frame");
     expect(storyboardPreview).toContain("activeSegmentId");
     expect(storyboardPreview).toContain("currentSegmentMedia");
     expect(storyboardPreview).toContain("该分镜预览暂不可用");
+    expect(storyboardPreview).toContain("分镜预览 · #");
+    expect(storyboardPreview).not.toContain("controls");
     expect(preview).toContain("activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}");
     expect(preview).not.toContain('hint={exportedVideoUrl ?');
     expect(editorPage).toContain('searchParams.get("mode") === "preview"');
@@ -35,7 +41,8 @@ describe("video project browse-player contract", () => {
     expect(storyboardPreview).toContain("getProductRatioClass(product.ratio)");
     expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
     expect(css).toMatch(/ratio-portrait[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/s);
-    expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-product-video-player\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/s);
     expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-video-placeholder-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
   });
 

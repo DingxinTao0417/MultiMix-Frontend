@@ -1,15 +1,23 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { API_BASE } from "../../../lib/api";
-import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
 import SegmentCards from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
+import VideoPreviewPlayer from "./video-preview-player";
+import {
+  clampPreviewHeight,
+  PREVIEW_DEFAULT_HEIGHT,
+  PREVIEW_MIN_HEIGHT,
+  previewMaxHeight,
+  VideoPreviewResizer,
+} from "./video-preview-resizer";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -149,6 +157,26 @@ export default function ProductPreview({
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [previewHeight, setPreviewHeight] = useState(PREVIEW_DEFAULT_HEIGHT);
+  const [previewMax, setPreviewMax] = useState(() => (
+    typeof window === "undefined" ? 640 : previewMaxHeight(window.innerHeight)
+  ));
+  const [fullVideoFailed, setFullVideoFailed] = useState(false);
+  const exportedVideoUrl = playableVideoUrl(product);
+
+  useEffect(() => {
+    const updatePreviewMax = () => {
+      const nextMax = previewMaxHeight(window.innerHeight);
+      setPreviewMax(nextMax);
+      setPreviewHeight((current) => clampPreviewHeight(current, PREVIEW_MIN_HEIGHT, nextMax));
+    };
+    window.addEventListener("resize", updatePreviewMax);
+    return () => window.removeEventListener("resize", updatePreviewMax);
+  }, []);
+
+  useEffect(() => {
+    setFullVideoFailed(false);
+  }, [exportedVideoUrl]);
 
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
@@ -299,36 +327,28 @@ export default function ProductPreview({
     : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
   const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? product.title;
   const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
-  const exportedVideoUrl = playableVideoUrl(product);
-
   // Demo-final browse state for any generated project (workspace-video.html
   // 默认态): centered 9:16 player + jumpable segment cards + source block.
   // With a real MP4 the player is playable; before export it shows the poster
   // skeleton (demo .screen) — never the legacy phone + meta-text layout.
   if (hasVideoProject) {
+    const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
     return (
-      <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label="成片预览">
-        <div className="shadcn-prototype-product-video">
-          {exportedVideoUrl ? (
-            <video
+      <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
+        <div className="shadcn-prototype-product-video" style={{ height: previewHeight }}>
+          {showFullVideo ? (
+            <VideoPreviewPlayer
               key={exportedVideoUrl}
               ref={browsePlayerRef}
-              className="shadcn-prototype-product-video-player"
               src={exportedVideoUrl}
-              controls
-              preload="metadata"
-              playsInline
-              onLoadedMetadata={(event) => {
-                const saved = videoPlaybackPositions.get(exportedVideoUrl);
-                if (saved && saved < event.currentTarget.duration) {
-                  event.currentTarget.currentTime = saved;
-                }
-              }}
-              onTimeUpdate={(event) => {
-                const time = event.currentTarget.currentTime;
+              label="成片播放器"
+              ratioClassName={getProductRatioClass(product.ratio)}
+              initialTime={videoPlaybackPositions.get(exportedVideoUrl) ?? 0}
+              onTimeUpdate={(time) => {
                 videoPlaybackPositions.set(exportedVideoUrl, time);
                 setActiveSegmentId(activeSegmentAtTime(product.segments, time));
               }}
+              onError={() => setFullVideoFailed(true)}
             />
           ) : (
             <StoryboardPreview
@@ -337,15 +357,27 @@ export default function ProductPreview({
             />
           )}
         </div>
+        {fullVideoFailed ? (
+          <div className="shadcn-prototype-video-preview-fallback" role="alert">
+            <span>成片加载失败，已切换到分镜预览。</span>
+            <button type="button" onClick={() => setFullVideoFailed(false)}>重试成片</button>
+          </div>
+        ) : null}
+        <VideoPreviewResizer
+          value={previewHeight}
+          min={PREVIEW_MIN_HEIGHT}
+          max={previewMax}
+          onChange={setPreviewHeight}
+        />
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}
-            hint="点击任意分镜可跳转预览"
+            hint={showFullVideo ? "点击任意分镜可跳转成片" : "点击任意分镜可切换预览"}
             activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);
               const player = browsePlayerRef.current;
-              if (player && segment.startSeconds != null) {
+              if (showFullVideo && player && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
               }

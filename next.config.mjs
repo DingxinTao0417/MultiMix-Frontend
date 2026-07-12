@@ -4,13 +4,14 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const editorRoot = path.resolve(dirname, "editor-engine/vendor/editor");
+const devDistDir = process.env.NEXT_DEV_DIST_DIR?.trim() || ".next";
 
 /**
  * @param {string} phase
  * @returns {import('next').NextConfig}
  */
 const createNextConfig = (phase) => ({
-  distDir: phase === PHASE_DEVELOPMENT_SERVER ? ".next" : ".next-build",
+  distDir: phase === PHASE_DEVELOPMENT_SERVER ? devDistDir : ".next-build",
   devIndicators: false,
   webpack: (config) => {
     // Embedded video-studio editor (OpenCut) module aliases.
