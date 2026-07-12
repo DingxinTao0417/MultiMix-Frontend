@@ -318,6 +318,17 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(html).not.toContain("MultiMix 执行");
   });
 
+  it("renders an active run with a yellow status dot", () => {
+    const html = renderTimeline({
+      steps: [
+        { key: "create_job", label: "创建任务", status: "done" },
+        { key: "build_project", label: "组装工程", status: "run" },
+      ],
+    });
+
+    expect(html).toContain('<span class="shadcn-prototype-agent-run-title-status running"><span class="shadcn-prototype-agent-run-title-dot" aria-hidden="true"></span></span>');
+  });
+
   it("renders an initially completed run collapsed", () => {
     const html = renderTimeline({
       steps: [

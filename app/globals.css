@@ -7441,7 +7441,7 @@ label {
   align-items: center;
   gap: 8px;
   color: var(--sp-text);
-  font-size: 17px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -7459,6 +7459,10 @@ label {
 
 .shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.fail {
   color: var(--sp-danger);
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.running {
+  color: var(--sp-warn);
 }
 
 .shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-dot {
@@ -7985,6 +7989,7 @@ label {
 
 .shadcn-prototype-thread .shadcn-prototype-confirm-done-head > strong {
   color: var(--sp-text);
+  font-size: 12px;
 }
 
 .shadcn-prototype-thread .assistant .shadcn-prototype-confirm-ok {

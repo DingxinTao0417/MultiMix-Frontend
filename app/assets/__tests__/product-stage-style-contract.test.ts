@@ -23,13 +23,14 @@ describe("product stage style contract", () => {
       expect(css).toMatch(new RegExp(`\\.shadcn-prototype-agent-run-${className}\\s*\\{[^}]*width:\\s*18px;[^}]*height:\\s*18px;`, "s"));
     }
     expect(css).toMatch(/\.shadcn-prototype-agent-run-title-dot\s*\{[^}]*width:\s*6px;[^}]*height:\s*6px;[^}]*border-radius:\s*999px;/s);
-    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*17px;[^}]*font-weight:\s*700;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*12px;[^}]*font-weight:\s*700;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title-status\.running\s*\{[^}]*color:\s*var\(--sp-warn\);/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic > :is\([^)]*agent-run-ok[^)]*agent-run-failmark[^)]*\)\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
   });
 
   test("uses the same title size for the video plan and video generation progress", () => {
-    expect(css).toMatch(/\.shadcn-prototype-confirm-done-head\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*17px;[^}]*font-weight:\s*700;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.shadcn-prototype-confirm-done-head > strong\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*12px;/s);
     expect(css).toMatch(/\.shadcn-prototype-confirm-ok\s*\{[^}]*color:\s*var\(--sp-green\);[^}]*background:\s*var\(--sp-green-soft\);/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.shadcn-prototype-confirm-done-head > strong\s*\{[^}]*color:\s*var\(--sp-text\);/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-confirm-ok\s*\{[^}]*color:\s*var\(--sp-green\);/s);

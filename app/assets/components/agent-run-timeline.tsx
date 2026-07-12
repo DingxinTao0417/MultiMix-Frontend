@@ -85,11 +85,11 @@ export default function AgentRunTimeline({
     ? executionErrorPresentation(errorMessage ?? "")
     : null;
   const title = "视频生成进度";
-  const terminalTone = summary.allDone
+  const statusTone = summary.allDone
     ? "success"
     : summary.hasFailure
       ? "fail"
-      : null;
+      : "running";
   const countLabel = summary.projectReady && summary.mgActive
     ? `视频已生成，可立即编辑 · 第 ${currentStep} 步 / 共 ${summary.total} 步`
     : summary.allDone
@@ -111,14 +111,10 @@ export default function AgentRunTimeline({
         ))}
       >
         <span className="shadcn-prototype-agent-run-title">
-          {terminalTone ? (
-            <>
-              {title}
-              <span className={`shadcn-prototype-agent-run-title-status ${terminalTone}`}>
-                <span className="shadcn-prototype-agent-run-title-dot" aria-hidden="true" />
-              </span>
-            </>
-          ) : title}
+          {title}
+          <span className={`shadcn-prototype-agent-run-title-status ${statusTone}`}>
+            <span className="shadcn-prototype-agent-run-title-dot" aria-hidden="true" />
+          </span>
         </span>
         <span className="shadcn-prototype-agent-run-count">{countLabel}</span>
         <ChevronDown
