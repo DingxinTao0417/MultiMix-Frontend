@@ -1,5 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
   api,
@@ -221,6 +221,17 @@ export type AssetWorkspaceAdapter = {
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
+  loadSegmentMaterialOptions(token: string, projectAssetId: number, segmentId: string): Promise<SegmentMaterialOptions>;
+  replaceSegmentMaterial(
+    token: string,
+    projectAssetId: number,
+    segmentId: string,
+    replacementAssetId: number,
+    confirmOverwrite?: boolean,
+  ): Promise<
+    | { kind: "confirm_overwrite"; message: string }
+    | { kind: "started"; job: VideoJobResult }
+  >;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
   uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">): Promise<ContentAsset>;
   createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
@@ -340,6 +351,13 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     errorMessage: raw.error_message,
     project: raw.project
   };
+}
+
+function materialPreviewUrl(value: unknown): string | undefined {
+  const ref = stringValue(value);
+  if (!ref) return undefined;
+  if (/^https?:\/\//i.test(ref) || ref.startsWith("data:") || ref.startsWith("blob:")) return ref;
+  return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
 }
 
 // Map a library view to the backend asset_kind values it should display.
@@ -825,6 +843,70 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         method: "POST",
       });
       return mapVideoJob(raw);
+    },
+    async loadSegmentMaterialOptions(token, projectAssetId, segmentId) {
+      const [suggestionResult, imageResult, videoResult] = await Promise.allSettled([
+        api<{ suggestions?: Array<Record<string, unknown>> }>(
+          `/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/asset-suggestions`,
+          token,
+        ),
+        api<ContentAsset[]>("/assets?kind=image&limit=200", token),
+        api<ContentAsset[]>("/assets?kind=video&limit=200", token),
+      ]);
+      const suggestions = suggestionResult.status === "fulfilled" && Array.isArray(suggestionResult.value.suggestions)
+        ? suggestionResult.value.suggestions
+        : [];
+      const libraryAssets = [imageResult, videoResult].flatMap((result) => (
+        result.status === "fulfilled" ? result.value : []
+      ));
+      return {
+        recommended: suggestions.flatMap((item) => {
+          const id = item.asset_id == null ? "" : String(item.asset_id);
+          if (!id) return [];
+          return [{
+            id,
+            title: stringValue(item.title) || `素材 ${id}`,
+            thumbnailUrl: materialPreviewUrl(item.preview_url),
+            reason: stringValue(item.match_reason) || undefined,
+          }];
+        }),
+        library: libraryAssets
+          .filter((item) => !item.archived && (item.asset_kind === "image" || item.asset_kind === "video") && item.original_ref)
+          .map((item) => ({
+            id: String(item.id),
+            title: item.title || `素材 ${item.id}`,
+            thumbnailUrl: materialPreviewUrl(item.original_ref),
+          })),
+      };
+    },
+    async replaceSegmentMaterial(token, projectAssetId, segmentId, replacementAssetId, confirmOverwrite = false) {
+      const response = await fetch(
+        `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            operation: "replace_material",
+            asset_id: replacementAssetId,
+            confirm_overwrite: confirmOverwrite,
+          }),
+        },
+      );
+      const payload = await response.json().catch(() => null);
+      if (response.status === 409 && isRecord(payload) && isRecord(payload.detail) && payload.detail.code === "timeline_dirty") {
+        return {
+          kind: "confirm_overwrite" as const,
+          message: stringValue(payload.detail.message) || "重新合成会覆盖现有手工剪辑，是否继续？",
+        };
+      }
+      if (!response.ok || !isRecord(payload)) {
+        const detail = isRecord(payload) ? payload.detail : null;
+        throw new Error(typeof detail === "string" ? detail : `HTTP ${response.status}`);
+      }
+      return { kind: "started" as const, job: mapVideoJob(payload as unknown as RawVideoJob) };
     },
     async listLibrary(token, view, query) {
       const kinds = libraryKindsForView(view);

@@ -19,13 +19,13 @@ function formatElapsedSeconds(seconds?: number) {
 
 function RunStatusIcon({ status }: { status: AgentRunStep["status"] }) {
   if (status === "done") {
-    return <span className="shadcn-prototype-agent-run-ok"><Check size={10} /></span>;
+    return <span className="shadcn-prototype-agent-run-ok"><Check size={12} strokeWidth={3} /></span>;
   }
   if (status === "run") {
     return <span className="shadcn-prototype-agent-run-active"><Sparkles size={10} /></span>;
   }
   if (status === "fail") {
-    return <span className="shadcn-prototype-agent-run-failmark"><X size={11} /></span>;
+    return <span className="shadcn-prototype-agent-run-failmark"><X size={12} strokeWidth={3} /></span>;
   }
   return <span className="shadcn-prototype-agent-run-wait" />;
 }

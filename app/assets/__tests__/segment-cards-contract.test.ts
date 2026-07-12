@@ -21,9 +21,17 @@ describe("storyboard segment-card interaction contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-segment-cards li\.active \.shadcn-prototype-segment-actions/s);
   });
 
-  test("renders the MG decision status alongside its template label", () => {
-    expect(component).toContain("segment.mgStatus");
+  test("keeps the MG label compact and only surfaces a failed render state", () => {
+    expect(component).toContain('segment.mgStatus === "failed"');
     expect(component).toContain("shadcn-prototype-segment-mg-status");
+    expect(component).not.toContain("function mgStatusLabel");
+  });
+
+  test("keeps normal cards quiet and only labels a genuinely empty segment", () => {
+    expect(component).not.toContain(">兜底素材<");
+    expect(component).toContain("const needsMaterial");
+    expect(component).toContain(">待补素材<");
+    expect(component).toContain("!segment.assetTitle && !segment.assetThumbnailUrl");
   });
 
   test("renders every segment in one vertical list without paging or collapsing", () => {

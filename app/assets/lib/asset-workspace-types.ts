@@ -73,6 +73,18 @@ export type AssetProductSegment = {
   mgStatus?: string;
 };
 
+export type SegmentMaterialOption = {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+  reason?: string;
+};
+
+export type SegmentMaterialOptions = {
+  recommended: SegmentMaterialOption[];
+  library: SegmentMaterialOption[];
+};
+
 export type AssetProduct = {
   id: string;
   mode: AssetProductMode;

@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import rehypeSanitize from "rehype-sanitize";
 import { API_BASE } from "../../../lib/api";
 import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import type { AssetProductSegment } from "../lib/asset-workspace-types";
 import SegmentCards from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
@@ -140,10 +141,10 @@ function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number
 
 export default function ProductPreview({
   product,
-  onEditSegment,
+  onReplaceMaterial,
 }: {
   product: ProductArtifact;
-  onEditSegment?: (segmentId: string, replaceMaterial: boolean) => void;
+  onReplaceMaterial?: (segment: AssetProductSegment) => void;
 }) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -349,7 +350,7 @@ export default function ProductPreview({
                 void player.play().catch(() => {});
               }
             }}
-            onReplaceMaterial={(segment) => onEditSegment?.(segment.id, true)}
+            onReplaceMaterial={onReplaceMaterial}
           />
         ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}

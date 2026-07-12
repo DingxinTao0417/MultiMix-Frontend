@@ -337,11 +337,11 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
       }
       const parts = [
         matched ? `${matched} 个已保存素材` : "",
-        fallback ? `${fallback} 段兜底素材` : ""
+        fallback ? `${fallback} 个公共素材` : ""
       ].filter(Boolean);
       return {
         headline: `基于 ${parts.join(" + ")}生成`,
-        note: `素材命中率 ${matched}/${segments.length} · 兜底素材只在没有你的素材可用时使用`,
+        note: `已保存素材命中 ${matched}/${segments.length} · 公共素材仅在未命中已保存素材时使用`,
         refs
       };
     }

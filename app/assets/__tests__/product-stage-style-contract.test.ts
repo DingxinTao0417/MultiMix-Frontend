@@ -17,6 +17,8 @@ describe("product stage style contract", () => {
   test("uses one aligned status grid and SVG icons across execution states", () => {
     expect(agentRunTimeline).toContain("import { Check, ChevronDown, Sparkles, X }");
     expect(agentRunTimeline).not.toContain(">✕</span>");
+    expect(agentRunTimeline).toContain("<Check size={12} strokeWidth={3} />");
+    expect(agentRunTimeline).toContain("<X size={12} strokeWidth={3} />");
     expect(css).toMatch(/\.shadcn-prototype-agent-run-head\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 15px;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-step\s*\{[^}]*grid-template-columns:\s*30px minmax\(0, 1fr\) auto;/s);
     for (const className of ["ok", "active", "wait", "failmark"]) {
@@ -25,8 +27,13 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-agent-run-title-dot\s*\{[^}]*width:\s*6px;[^}]*height:\s*6px;[^}]*border-radius:\s*999px;/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*12px;[^}]*font-weight:\s*700;/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title-status\.running\s*\{[^}]*color:\s*var\(--sp-warn\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-title-status\.running \.shadcn-prototype-agent-run-title-dot\s*\{[^}]*background:\s*var\(--sp-warn\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-title-status\.success \.shadcn-prototype-agent-run-title-dot\s*\{[^}]*background:\s*var\(--sp-green\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-title-status\.fail \.shadcn-prototype-agent-run-title-dot\s*\{[^}]*background:\s*var\(--sp-danger\);/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
     expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic > :is\([^)]*agent-run-ok[^)]*agent-run-failmark[^)]*\)\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-ok\s*\{[^}]*border:\s*1px solid var\(--sp-green-line\);[^}]*background:\s*var\(--sp-green-soft\);[^}]*color:\s*var\(--sp-green\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-failmark\s*\{[^}]*border:\s*1px solid var\(--sp-danger-line\);[^}]*background:\s*var\(--sp-danger-soft\);[^}]*color:\s*var\(--sp-danger\);/s);
   });
 
   test("uses the same title size for the video plan and video generation progress", () => {
@@ -37,14 +44,14 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-agent-run-head\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*13\.5px;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-tx\s*\{[^}]*font-size:\s*14px;[^}]*font-weight:\s*600;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-tm\s*\{[^}]*font-size:\s*13px;[^}]*font-weight:\s*500;[^}]*font-variant-numeric:\s*tabular-nums;/s);
-    expect(css).toMatch(/\.shadcn-prototype-agent-run-step \.shadcn-prototype-agent-run-ok\s*\{[^}]*transform:\s*scale\(0\.88\);[^}]*opacity:\s*0\.78;/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-step \.shadcn-prototype-agent-run-ok\s*\{[^}]*transform:\s*none;[^}]*opacity:\s*1;/s);
   });
 
   test("uses one shared stage scroll surface across copy and video paths", () => {
     expect(preview).toContain("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface");
     expect(preview).toContain("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface");
     expect(workspace).toContain('product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : ""');
-    expect(workspace).toContain(") : previewShowsBrowse ? (");
+    expect(workspace).toContain("!showEditorEmbed && previewShowsBrowse ? (");
     expect(css).toMatch(/\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-stage-scroll-surface\s*\{[^}]*width:\s*calc\(100% \+ 24px\);[^}]*margin-right:\s*-24px;[^}]*padding-right:\s*var\(--shadcn-prototype-stage-scroll-right-padding, 24px\);/s);
     expect(css).toMatch(/\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-artifact \.shadcn-prototype-product-main\s*\{[^}]*overflow:\s*visible;/s);
     expect(css).toMatch(/\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-product-preview\.copy\s*\{[^}]*overflow:\s*visible;/s);

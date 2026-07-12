@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { API_BASE } from "../../../lib/api";
-import { isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 
 type SegmentMedia = {
   kind: "image" | "video";
@@ -65,7 +65,7 @@ export default function StoryboardPreview({
   }, [currentSegmentMedia?.src]);
 
   return (
-    <div className="shadcn-prototype-project-preview" aria-label="轻量分镜预览">
+    <div className={`shadcn-prototype-project-preview ${getProductRatioClass(product.ratio)}`.trim()} aria-label="轻量分镜预览">
       <div className="shadcn-prototype-project-preview-screen">
         {!failed && currentSegmentMedia?.kind === "video" ? (
           <video

@@ -2262,6 +2262,48 @@ button:disabled {
   transform: none;
 }
 
+.shadcn-prototype-editor-host {
+  padding: 0;
+  overflow: hidden;
+}
+
+.shadcn-prototype-editor-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.shadcn-prototype-export-bridge-host {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.shadcn-prototype-export-bridge {
+  width: 1px;
+  height: 1px;
+  border: 0;
+}
+
+.shadcn-prototype-material-recompose-status,
+.shadcn-prototype-material-recompose-error {
+  margin: 8px 16px 0;
+  font-size: 12px;
+}
+
+.shadcn-prototype-material-recompose-status {
+  color: var(--sp-warn);
+}
+
+.shadcn-prototype-material-recompose-error,
+.shadcn-prototype-picker-error {
+  color: var(--sp-danger);
+}
+
 .shadcn-prototype-product-pending {
   display: inline-flex;
   align-items: center;
@@ -2615,6 +2657,18 @@ button:disabled {
   box-shadow: 0 20px 50px rgba(15, 23, 42, 0.14);
 }
 
+.shadcn-prototype-product-preview.video.ratio-landscape .shadcn-prototype-product-video-player {
+  aspect-ratio: 16 / 9;
+  width: min(100%, 720px);
+  height: auto;
+}
+
+.shadcn-prototype-product-preview.video.ratio-portrait .shadcn-prototype-product-video-player {
+  aspect-ratio: 9 / 16;
+  width: auto;
+  height: min(52vh, 440px);
+}
+
 /* Poster skeleton shown in the browse state before an MP4 is exported
    (demo workspace-video.html .player/.screen/.pbar). Centered 9:16 phone,
    never the legacy phone + meta-text split layout. */
@@ -2726,6 +2780,18 @@ button:disabled {
   overflow: hidden;
   border-radius: 14px;
   background: #101514;
+}
+
+.shadcn-prototype-project-preview.ratio-landscape {
+  width: min(100%, 640px);
+}
+
+.shadcn-prototype-project-preview.ratio-landscape .shadcn-prototype-project-preview-screen {
+  aspect-ratio: 16 / 9;
+}
+
+.shadcn-prototype-project-preview.ratio-portrait .shadcn-prototype-project-preview-screen {
+  aspect-ratio: 9 / 16;
 }
 
 .shadcn-prototype-project-preview-screen > :is(img, video) {
@@ -3993,6 +4059,15 @@ button:disabled {
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.1);
 }
 
+.shadcn-prototype-product-preview.video.ratio-landscape .shadcn-prototype-video-placeholder-preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shadcn-prototype-product-preview.video.ratio-landscape .shadcn-prototype-video-placeholder-phone {
+  width: min(100%, 520px);
+  border-radius: 16px;
+}
+
 .shadcn-prototype-video-placeholder-screen {
   position: relative;
   display: grid;
@@ -4007,6 +4082,14 @@ button:disabled {
     linear-gradient(165deg, #c9dcec 0%, #edf3f6 45%, #d8c5a6 68%, #827363 100%);
   color: #ffffff;
   padding: 12px;
+}
+
+.shadcn-prototype-product-preview.video.ratio-landscape .shadcn-prototype-video-placeholder-screen {
+  aspect-ratio: 16 / 9;
+}
+
+.shadcn-prototype-product-preview.video.ratio-portrait .shadcn-prototype-video-placeholder-screen {
+  aspect-ratio: 9 / 16;
 }
 
 .shadcn-prototype-video-placeholder-screen::after {
@@ -7129,7 +7212,7 @@ label {
   flex: none;
 }
 
-.shadcn-prototype-segment-thumb.is-fallback {
+.shadcn-prototype-segment-thumb.needs-material {
   box-shadow: inset 0 0 0 1px var(--sp-border-strong);
   opacity: 0.85;
 }
@@ -7175,7 +7258,7 @@ label {
   white-space: nowrap;
 }
 
-.shadcn-prototype-segment-stock {
+.shadcn-prototype-segment-material-needed {
   flex: none;
   border: 1px solid var(--sp-border-strong);
   border-radius: 999px;
@@ -7308,6 +7391,20 @@ label {
   box-shadow: 0 0 0 1.5px var(--sp-ai-a), var(--sp-shadow);
 }
 
+.shadcn-prototype-picker-item.selected .shadcn-prototype-picker-thumb,
+.shadcn-prototype-picker-item:focus-visible .shadcn-prototype-picker-thumb {
+  transform: translateY(-1px);
+  box-shadow: 0 0 0 2px var(--sp-accent), var(--sp-shadow);
+}
+
+.shadcn-prototype-picker.ratio-landscape .shadcn-prototype-picker-thumb {
+  aspect-ratio: 16 / 9;
+}
+
+.shadcn-prototype-picker.ratio-portrait .shadcn-prototype-picker-thumb {
+  aspect-ratio: 9 / 16;
+}
+
 .shadcn-prototype-picker-thumb img {
   position: absolute;
   inset: 0;
@@ -7338,9 +7435,47 @@ label {
 }
 
 .shadcn-prototype-picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 18px 16px;
   font-size: 11.5px;
   color: var(--sp-faint);
+}
+
+.shadcn-prototype-picker-error {
+  margin: 0;
+  padding: 10px 18px 0;
+  font-size: 12px;
+}
+
+.shadcn-prototype-picker-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.shadcn-prototype-picker-actions > button {
+  height: 30px;
+  border: 1px solid var(--sp-border-strong);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: var(--sp-subtle);
+  padding: 0 12px;
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.shadcn-prototype-picker-actions > button.primary {
+  border-color: var(--sp-text);
+  background: var(--sp-text);
+  color: var(--sp-card);
+}
+
+.shadcn-prototype-picker-actions > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .shadcn-prototype-picker-link {
@@ -7474,6 +7609,18 @@ label {
   background: currentColor;
 }
 
+.shadcn-prototype-agent-run-title-status.running .shadcn-prototype-agent-run-title-dot {
+  background: var(--sp-warn);
+}
+
+.shadcn-prototype-agent-run-title-status.success .shadcn-prototype-agent-run-title-dot {
+  background: var(--sp-green);
+}
+
+.shadcn-prototype-agent-run-title-status.fail .shadcn-prototype-agent-run-title-dot {
+  background: var(--sp-danger);
+}
+
 .shadcn-prototype-segment-actions {
   position: absolute;
   right: 10px;
@@ -7601,6 +7748,7 @@ label {
   width: 18px;
   height: 18px;
   border-radius: 999px;
+  border: 1px solid var(--sp-green-line);
   background: var(--sp-green-soft);
   color: var(--sp-green);
 }
@@ -7629,6 +7777,7 @@ label {
   width: 18px;
   height: 18px;
   border-radius: 999px;
+  border: 1px solid var(--sp-danger-line);
   background: var(--sp-danger-soft);
   color: var(--sp-danger);
   font-size: 10px;
@@ -7664,8 +7813,8 @@ label {
 }
 
 .shadcn-prototype-agent-run-step .shadcn-prototype-agent-run-ok {
-  transform: scale(0.88);
-  opacity: 0.78;
+  transform: none;
+  opacity: 1;
 }
 
 .shadcn-prototype-agent-run-shim {

@@ -17,15 +17,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorCore } from "@editor/core";
 import type { TimelineElement, TimelineTrack } from "@editor/lib/timeline/types";
-import { API_BASE, mediaUrl } from "@/editor-engine/vendor/api";
+import { API_BASE } from "@/editor-engine/vendor/api";
 import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { segmentIdByElementId, segmentTextByElementId } from "@/editor-engine/vendor/buildProject";
 import AssetPicker, { type AssetPickerItem } from "@/app/assets/components/asset-picker";
+import { assetWorkspaceAdapter } from "@/app/assets/lib/asset-workspace-adapter";
 import { UI_V3_ASSET_PICKER } from "@/app/assets/lib/ui-flags";
 import {
   applyEdgeTrim,
   formatClock,
-  previewSrc,
   segmentNumberByElementId,
   visibleDuration,
 } from "./filmstrip-utils";
@@ -91,6 +91,10 @@ export default function FilmStrip({
   );
   const totalVisible = clips.reduce((sum, el) => sum + visibleDuration(el), 0);
   const selected: TimelineElement | null = clips.find((el) => el.id === selectedId) ?? null;
+  const canvasSize = core.project.getActiveOrNull()?.settings.canvasSize;
+  const pickerRatio = canvasSize
+    ? canvasSize.width > canvasSize.height ? "16:9" : canvasSize.width < canvasSize.height ? "9:16" : "1:1"
+    : "";
   const selectedSegmentId = selected ? segmentIdByElementId[selected.id] : undefined;
   const selectedText = selected ? segmentTextByElementId[selected.id] ?? "" : "";
   const mediaName = useMemo(() => {
@@ -311,43 +315,13 @@ export default function FilmStrip({
     setPickerRecommended([]);
     setPickerLibrary([]);
     try {
-      const [suggestRes, libraryRes] = await Promise.all([
-        fetch(
-          `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(selectedSegmentId)}/asset-suggestions`,
-          { headers: authHeaders },
-        ),
-        fetch(`${API_BASE}/v1/assets`, { headers: authHeaders }),
-      ]);
-      if (suggestRes.ok) {
-        const data = await suggestRes.json();
-        const items = Array.isArray(data?.suggestions) ? data.suggestions : [];
-        setPickerRecommended(
-          items.map((s: Record<string, unknown>) => ({
-            id: String(s.asset_id),
-            title: String(s.title || `素材 ${s.asset_id}`),
-            thumbnailUrl: previewSrc(typeof s.preview_url === "string" ? s.preview_url : "", mediaUrl),
-            reason: typeof s.match_reason === "string" ? s.match_reason : undefined,
-          })),
-        );
-      }
-      if (libraryRes.ok) {
-        const rows = await libraryRes.json();
-        const usable = (Array.isArray(rows) ? rows : []).filter(
-          (row: Record<string, unknown>) =>
-            (row.asset_kind === "image" || row.asset_kind === "video") && row.original_ref && !row.archived,
-        );
-        setPickerLibrary(
-          usable.map((row: Record<string, unknown>) => ({
-            id: String(row.id),
-            title: String(row.title || `素材 ${row.id}`),
-            thumbnailUrl: previewSrc(String(row.original_ref || ""), mediaUrl),
-          })),
-        );
-      }
+      const options = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, Number(assetId), selectedSegmentId);
+      setPickerRecommended(options.recommended);
+      setPickerLibrary(options.library);
     } catch {
       // Degrade per spec §12: an empty recommended list hides that section.
     }
-  }, [assetId, authHeaders, selectedSegmentId, token]);
+  }, [assetId, selectedSegmentId, token]);
 
   useEffect(() => {
     if (
@@ -495,8 +469,9 @@ export default function FilmStrip({
 
       <AssetPicker
         open={pickerOpen}
-        title="为这段选择素材"
-        subtitle={selectedText ? `分镜 #${selectedNumber} · ${selectedText.slice(0, 24)}` : undefined}
+        title={`为分镜 #${selectedNumber ?? "-"} 换素材`}
+        subtitle="替换后只更新当前分镜，不影响其他分镜。"
+        ratio={pickerRatio}
         recommended={pickerRecommended}
         library={pickerLibrary}
         onSelect={handlePickMaterial}

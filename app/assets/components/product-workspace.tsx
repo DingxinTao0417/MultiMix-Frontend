@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
+import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
+import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
 
 type EditorBridgeMessage = {
@@ -43,11 +46,13 @@ export default function ProductWorkspace({
   copied,
   onCopyProduct,
   onSaveProduct,
+  onProductUpdated,
   onRestoreVersion,
   onRetryVideoJob,
   product,
   savedVersion,
   selectedConversation,
+  token,
   videoJobLive,
 }: {
   copied: boolean;
@@ -67,8 +72,12 @@ export default function ProductWorkspace({
   const [editorReady, setEditorReady] = useState(false);
   const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
-  const [editSegmentId, setEditSegmentId] = useState<string | null>(null);
-  const [openSegmentMaterialPicker, setOpenSegmentMaterialPicker] = useState(false);
+  const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
+  const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
+  const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
+  const [materialPickerState, setMaterialPickerState] = useState<"idle" | "loading" | "submitting">("idle");
+  const [materialError, setMaterialError] = useState("");
+  const [materialJobId, setMaterialJobId] = useState("");
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
@@ -133,8 +142,9 @@ export default function ProductWorkspace({
     // Switching products always lands on the browse surface; the editor is
     // re-entered explicitly per product (demo 默认态).
     setVideoSurface("browse");
-    setEditSegmentId(null);
-    setOpenSegmentMaterialPicker(false);
+    setMaterialPickerSegment(null);
+    setMaterialJobId("");
+    setMaterialError("");
   }, [currentAssetId]);
 
   useEffect(() => {
@@ -204,7 +214,7 @@ export default function ProductWorkspace({
   };
 
   const exportButtonLabel = !editorReady
-    ? "剪辑器加载中…"
+    ? "导出准备中…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
@@ -212,6 +222,96 @@ export default function ProductWorkspace({
         : exportState === "error"
           ? "导出失败，重试"
           : "导出视频";
+
+  const openBrowseMaterialPicker = useCallback(async (segment: AssetProductSegment) => {
+    setMaterialPickerSegment(segment);
+    setMaterialRecommended([]);
+    setMaterialLibrary([]);
+    setMaterialError("");
+    if (!token || !product.backendAssetId) {
+      setMaterialPickerState("idle");
+      setMaterialError("当前未连接素材服务，暂时无法更换素材。");
+      return;
+    }
+    setMaterialPickerState("loading");
+    try {
+      const options = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, product.backendAssetId, segment.id);
+      setMaterialRecommended(options.recommended);
+      setMaterialLibrary(options.library);
+    } catch (cause) {
+      setMaterialError(cause instanceof Error ? cause.message : "素材加载失败，请重试。");
+    } finally {
+      setMaterialPickerState("idle");
+    }
+  }, [product.backendAssetId, token]);
+
+  const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
+    if (!token || !product.backendAssetId || !materialPickerSegment) return;
+    setMaterialPickerState("submitting");
+    setMaterialError("");
+    try {
+      let result = await assetWorkspaceAdapter.replaceSegmentMaterial(
+        token,
+        product.backendAssetId,
+        materialPickerSegment.id,
+        Number(item.id),
+      );
+      if (result.kind === "confirm_overwrite") {
+        if (!window.confirm(result.message)) {
+          setMaterialPickerState("idle");
+          return;
+        }
+        result = await assetWorkspaceAdapter.replaceSegmentMaterial(
+          token,
+          product.backendAssetId,
+          materialPickerSegment.id,
+          Number(item.id),
+          true,
+        );
+      }
+      if (result.kind === "started") {
+        setMaterialPickerSegment(null);
+        setMaterialJobId(result.job.id);
+      }
+    } catch (cause) {
+      setMaterialError(cause instanceof Error ? cause.message : "素材替换失败，请重试。");
+    } finally {
+      setMaterialPickerState("idle");
+    }
+  }, [materialPickerSegment, product.backendAssetId, token]);
+
+  useEffect(() => {
+    if (!materialJobId || !token) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const job = await assetWorkspaceAdapter.getVideoJob(token, materialJobId);
+        if (cancelled) return;
+        if (job.status === "failed") {
+          setMaterialJobId("");
+          setMaterialError(job.errorMessage || "素材替换失败，请重试。");
+          return;
+        }
+        if (job.status !== "completed") return;
+        setMaterialJobId("");
+        if (!onProductUpdated || selectedConversation.id === "new") return;
+        const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+        if (cancelled) return;
+        const updated = (refreshed.products ?? [refreshed.product]).find(
+          (item) => item.backendAssetId === product.backendAssetId,
+        );
+        if (updated) onProductUpdated(updated);
+      } catch {
+        // Keep polling transient failures; the job remains the source of truth.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [materialJobId, onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
 
   const handleDownloadImage = async () => {
     if (!imageDownloadUrl) return;
@@ -369,25 +469,19 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {showEditorEmbed ? (
-              <>
-                {canBrowseVideo ? (
-                  <button type="button" className="primary" onClick={() => {
-                    setVideoSurface("browse");
-                    setEditSegmentId(null);
-                    setOpenSegmentMaterialPicker(false);
-                  }}>
-                    完成编辑
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="shadcn-prototype-open-editor"
-                  disabled={!editorReady || exportState === "exporting"}
-                  onClick={handleExportVideo}
-                >
-                  {exportButtonLabel}
-                </button>
-              </>
+              <button type="button" className="primary" onClick={() => setVideoSurface("browse")}>
+                完成编辑
+              </button>
+            ) : null}
+            {canBrowseVideo ? (
+              <button
+                type="button"
+                className="shadcn-prototype-open-editor"
+                disabled={!editorReady || exportState === "exporting"}
+                onClick={handleExportVideo}
+              >
+                {exportButtonLabel}
+              </button>
             ) : null}
             {orchestrationPending ? (
               <span className="shadcn-prototype-product-pending" aria-live="polite">
@@ -400,29 +494,27 @@ export default function ProductWorkspace({
           </div>
         </header>
 
-        {showEditorEmbed ? (
-          <div className="shadcn-prototype-product-main" style={{ padding: 0, overflow: "hidden" }}>
+        {hasVideoProject ? (
+          <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}
               key={`editor-${product.backendAssetId}`}
-              src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1${editSegmentId ? `&segment=${encodeURIComponent(editSegmentId)}` : ""}${openSegmentMaterialPicker ? "&replace=1" : ""}`}
-              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+              className={showEditorEmbed ? "shadcn-prototype-editor-frame" : "shadcn-prototype-export-bridge"}
+              src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1`}
               title="视频剪辑器"
               allow="autoplay; clipboard-write"
             />
           </div>
-        ) : previewShowsBrowse ? (
+        ) : null}
+
+        {!showEditorEmbed && previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
             <ProductPreview
               product={product}
-              onEditSegment={(segmentId, replaceMaterial) => {
-                setEditSegmentId(segmentId);
-                setOpenSegmentMaterialPicker(replaceMaterial);
-                setVideoSurface("edit");
-              }}
+              onReplaceMaterial={openBrowseMaterialPicker}
             />
           </div>
-        ) : orchestrationPending ? (
+        ) : !showEditorEmbed && orchestrationPending ? (
           <div className="shadcn-prototype-product-main">
             {/* The step-by-step execution timeline lives in the conversation
                 (spec video-confirmation-execution-card §5.2 / agentic-workbench
@@ -434,7 +526,7 @@ export default function ProductWorkspace({
               <p>生成进度在对话区实时更新，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>
-        ) : orchestrationFailed ? (
+        ) : !showEditorEmbed && orchestrationFailed ? (
           <div className="shadcn-prototype-product-main">
             <div className="shadcn-prototype-video-failed" role="alert">
               <strong>视频生成失败</strong>
@@ -466,13 +558,37 @@ export default function ProductWorkspace({
               </div>
             </div>
           </div>
-        ) : (
+        ) : !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
               <ProductPreview product={product} />
             </div>
           </div>
-        )}
+        ) : null}
+
+        {materialJobId ? (
+          <p className="shadcn-prototype-material-recompose-status" role="status">正在重新合成当前分镜，完成后会自动刷新。</p>
+        ) : materialError && !materialPickerSegment ? (
+          <p className="shadcn-prototype-material-recompose-error" role="alert">{materialError}</p>
+        ) : null}
+
+        <AssetPicker
+          open={Boolean(materialPickerSegment)}
+          title={`为分镜 #${materialPickerSegment?.index ?? "-"} 换素材`}
+          subtitle="替换后只更新当前分镜，不影响其他分镜。"
+          ratio={product.ratio}
+          recommended={materialRecommended}
+          library={materialLibrary}
+          loading={materialPickerState === "loading"}
+          submitting={materialPickerState === "submitting"}
+          error={materialError}
+          onSelect={(item) => void replaceBrowseMaterial(item)}
+          onClose={() => {
+            if (materialPickerState === "submitting") return;
+            setMaterialPickerSegment(null);
+            setMaterialError("");
+          }}
+        />
 
         {!hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section

@@ -84,6 +84,8 @@ describe("display-area eight-case matrix", () => {
     (caseId) => {
       const { container } = renderWorkspace(caseId);
       expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /导出/ })).toBeInTheDocument();
+      expect(container.querySelector("iframe.shadcn-prototype-export-bridge")).toBeInTheDocument();
       expect(container.querySelector("video")).not.toBeInTheDocument();
     },
   );

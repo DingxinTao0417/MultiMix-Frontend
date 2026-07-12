@@ -240,8 +240,9 @@ describe("asset product mapper", () => {
     });
     expect(product.segments?.[1]?.mgLabel).toBe("面积利用率 +35%");
     expect(product.segments?.[2]?.isFallback).toBe(true);
-    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 段兜底素材生成");
-    expect(product.sourceSummary?.note).toContain("素材命中率 2/3");
+    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 个公共素材生成");
+    expect(product.sourceSummary?.note).toContain("已保存素材命中 2/3");
+    expect(product.sourceSummary?.note).not.toContain("兜底素材");
     expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
   });
 
