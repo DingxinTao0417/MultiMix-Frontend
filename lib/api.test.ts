@@ -1,6 +1,30 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { apiForm } from "./api";
+import { api, API_CONNECTION_ERROR, apiForm } from "./api";
+
+describe("api", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("maps the backend database outage contract to a reconcilable connection error", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        detail: "数据库暂时不可用，请稍后重试。",
+        code: "database_temporarily_unavailable",
+        request_id: "request-1",
+      }), {
+        status: 503,
+        headers: { "Content-Type": "application/json", "Retry-After": "1" },
+      })
+    ));
+
+    await expect(api("/assets/conversations/messages", "token", {
+      method: "POST",
+      body: JSON.stringify({ instruction: "确认" }),
+    })).rejects.toThrow(API_CONNECTION_ERROR);
+  });
+});
 
 describe("apiForm", () => {
   afterEach(() => {

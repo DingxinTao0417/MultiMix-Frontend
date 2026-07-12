@@ -65,11 +65,10 @@ function renderTimeline({
 }
 
 describe("AgentRunTimeline summary", () => {
-  it("presents stale timeout failures in user-facing Chinese", () => {
+  it("keeps stale timeout details available without a duplicate failure summary", () => {
     expect(timelineModel.executionErrorPresentation(
       "Job exceeded its timeout without completing and was marked failed.",
     )).toEqual({
-      summary: "视频工程生成超时，请重试。",
       technicalDetail: "Job exceeded its timeout without completing and was marked failed.",
     });
   });
@@ -294,6 +293,31 @@ describe("AgentRunTimeline retry dispatch", () => {
 });
 
 describe("AgentRunTimeline rendered branches", () => {
+  it("renders terminal success as a green dot without status copy", () => {
+    const html = renderTimeline({
+      steps: [
+        { key: "create_job", label: "创建任务", status: "done" },
+        { key: "build_project", label: "组装工程", status: "done" },
+      ],
+    });
+
+    expect(html).toContain('class="shadcn-prototype-agent-run-title"');
+    expect(html).toContain('<span class="shadcn-prototype-agent-run-title-status success"><span class="shadcn-prototype-agent-run-title-dot" aria-hidden="true"></span></span>');
+    expect(html).toContain("视频生成进度");
+    expect(html).not.toContain("MultiMix 执行");
+  });
+
+  it("renders terminal failure as a red dot without status copy", () => {
+    const html = renderTimeline({
+      steps: [{ key: "build_project", label: "组装工程", status: "fail" }],
+      errorMessage: "任务失败",
+    });
+
+    expect(html).toContain('<span class="shadcn-prototype-agent-run-title-status fail"><span class="shadcn-prototype-agent-run-title-dot" aria-hidden="true"></span></span>');
+    expect(html).toContain("视频生成进度");
+    expect(html).not.toContain("MultiMix 执行");
+  });
+
   it("renders an initially completed run collapsed", () => {
     const html = renderTimeline({
       steps: [
@@ -320,7 +344,7 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(html).toContain("<ol");
   });
 
-  it("renders failures expanded with truncated copy and an exact retry control", () => {
+  it("renders failures expanded with technical detail but no duplicate failure summary", () => {
     const errorMessage = "渲染服务暂时不可用".repeat(30);
     const truncatedError = `${errorMessage.slice(0, 159)}…`;
     const html = renderTimeline({
@@ -336,11 +360,21 @@ describe("AgentRunTimeline rendered branches", () => {
 
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("<ol");
-    expect(html).toContain("视频工程生成失败，请重试。");
+    expect(html).not.toContain("视频工程生成失败，请重试。");
     expect(html).toContain("查看技术详情");
     expect(html).toContain(truncatedError);
     expect(html).not.toContain(errorMessage);
     expect(html).toContain("重新执行此步骤");
+  });
+
+  it("does not add a generic error footer when the failed step has no technical detail", () => {
+    const html = renderTimeline({
+      steps: [{ key: "create_job", label: "创建视频工程任务", status: "fail" }],
+    });
+
+    expect(html).toContain("创建视频工程任务");
+    expect(html).not.toContain("shadcn-prototype-agent-run-error");
+    expect(html).not.toContain("视频工程生成失败，请重试。");
   });
 
   it("does not render retry without both the exact ID and callback", () => {
@@ -373,7 +407,8 @@ describe("AgentRunTimeline rendered branches", () => {
     });
 
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain("视频工程已生成，可立即编辑");
+    expect(html).toContain("视频已生成，可立即编辑");
+    expect(html).not.toContain("视频工程已生成");
     expect(html).toContain("后台生成并添加 MG 动效（1/2）");
     expect(html).not.toContain("MG 动效处理中");
     expect(html).toContain("<ol");

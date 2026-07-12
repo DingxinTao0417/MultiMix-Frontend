@@ -1452,6 +1452,8 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("mergeVisibleConversationMessages");
     expect(conversationStudio).toContain("shouldRenderMessageBody(message)");
     expect(conversationStudio).not.toContain('{ role: "user" as const, text: optimisticExchange.userText }');
+    expect(conversationStudio).toContain('optimisticFeedback?.presentation !== "execution_anchor"');
+    expect(conversationStudio).toContain('sendError && optimisticExchange?.presentation !== "execution_anchor"');
   });
 
   it("renders visual placeholders instead of raw empty media labels in the library", () => {

@@ -17,16 +17,22 @@ describe("product stage style contract", () => {
   test("uses one aligned status grid and SVG icons across execution states", () => {
     expect(agentRunTimeline).toContain("import { Check, ChevronDown, Sparkles, X }");
     expect(agentRunTimeline).not.toContain(">✕</span>");
-    expect(css).toMatch(/\.shadcn-prototype-agent-run-head\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*30px minmax\(0, 1fr\) auto 15px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-head\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 15px;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-step\s*\{[^}]*grid-template-columns:\s*30px minmax\(0, 1fr\) auto;/s);
     for (const className of ["ok", "active", "wait", "failmark"]) {
       expect(css).toMatch(new RegExp(`\\.shadcn-prototype-agent-run-${className}\\s*\\{[^}]*width:\\s*18px;[^}]*height:\\s*18px;`, "s"));
     }
+    expect(css).toMatch(/\.shadcn-prototype-agent-run-title-dot\s*\{[^}]*width:\s*6px;[^}]*height:\s*6px;[^}]*border-radius:\s*999px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-title\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*17px;[^}]*font-weight:\s*700;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-agent-run-ic > :is\([^)]*agent-run-ok[^)]*agent-run-failmark[^)]*\)\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*center;/s);
   });
 
-  test("gives confirmed plans and completed runs a clear text hierarchy", () => {
+  test("uses the same title size for the video plan and video generation progress", () => {
     expect(css).toMatch(/\.shadcn-prototype-confirm-done-head\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*17px;[^}]*font-weight:\s*700;/s);
     expect(css).toMatch(/\.shadcn-prototype-confirm-ok\s*\{[^}]*color:\s*var\(--sp-green\);[^}]*background:\s*var\(--sp-green-soft\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.shadcn-prototype-confirm-done-head > strong\s*\{[^}]*color:\s*var\(--sp-text\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-thread \.assistant \.shadcn-prototype-confirm-ok\s*\{[^}]*color:\s*var\(--sp-green\);/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-head\s*\{[^}]*color:\s*var\(--sp-text\);[^}]*font-size:\s*13\.5px;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-tx\s*\{[^}]*font-size:\s*14px;[^}]*font-weight:\s*600;/s);
     expect(css).toMatch(/\.shadcn-prototype-agent-run-tm\s*\{[^}]*font-size:\s*13px;[^}]*font-weight:\s*500;[^}]*font-variant-numeric:\s*tabular-nums;/s);

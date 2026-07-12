@@ -738,6 +738,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
+        headers: clientRequestId ? { "X-Request-ID": clientRequestId } : undefined,
         body: JSON.stringify(buildConversationMessagePayload({
           conversationId,
           instruction,

@@ -288,7 +288,9 @@ export default function ConversationStudio({
         status: unsubmitted ? "unsubmitted" : "failed",
         runSteps: exchange.runSteps?.map((step) => step.status === "run" ? { ...step, status: "fail" } : step)
       } : null);
-      setSendError(message);
+      if (optimisticFeedback?.presentation !== "execution_anchor") {
+        setSendError(message);
+      }
     } finally {
       if (activeRequestRef.current === controller) {
         activeRequestRef.current = null;
@@ -682,7 +684,9 @@ export default function ConversationStudio({
           </button>
         </div>
         {imageAttachments.length ? <p className="shadcn-prototype-chat-attachment-help">{ATTACHMENT_HELP_TEXT}</p> : null}
-        {sendError ? <p className="shadcn-prototype-composer-error">{sendError}</p> : null}
+        {sendError && optimisticExchange?.presentation !== "execution_anchor" ? (
+          <p className="shadcn-prototype-composer-error">{sendError}</p>
+        ) : null}
       </form>
     </section>
   );

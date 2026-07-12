@@ -87,6 +87,11 @@ request ID；同一乐观轮次和重试必须复用它。
 才显示“未提交”，不得额外写入一条正式助手错误消息。这个 request ID 只用于传输对账；
 服务端仍以确认语义幂等键保证不会重复创建视频工程。
 
+确认请求同时发送 `X-Request-ID: <clientRequestId>`。后端数据库暂时不可用时返回
+HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
+`Retry-After` / `X-Request-ID` 响应头；adapter 必须把该契约映射为可对账的连接错误，
+继续执行上述 reconciliation，而不是直接显示正式失败消息。
+
 ### 2.2 方法详解
 
 #### `getSnapshot(): AssetWorkspaceData`

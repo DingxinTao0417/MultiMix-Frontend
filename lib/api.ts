@@ -76,6 +76,15 @@ export async function api<T>(path: string, token: string | null, init: RequestIn
     }
 
     const body = await response.json().catch(() => ({ detail: response.statusText }));
+    if (
+      response.status === 503
+      && body
+      && typeof body === "object"
+      && "code" in body
+      && (body as { code?: unknown }).code === "database_temporarily_unavailable"
+    ) {
+      throw new Error(API_CONNECTION_ERROR);
+    }
     throw nonRetryableError(responseErrorMessage(body, response.statusText));
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");

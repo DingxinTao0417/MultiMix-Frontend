@@ -57,5 +57,5 @@ export function mergeVisibleConversationMessages(
 
 export function shouldRenderMessageBody(message: AssetConversationMessage): boolean {
   if (message.presentation !== "execution_anchor") return Boolean(message.text.trim());
-  return Boolean(message.localState && message.text.trim());
+  return Boolean(message.localState && message.localState !== "failed" && message.text.trim());
 }

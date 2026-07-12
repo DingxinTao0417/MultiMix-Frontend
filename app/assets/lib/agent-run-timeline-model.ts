@@ -1,6 +1,5 @@
 import type { AgentRunStep } from "./asset-workspace-types";
 
-const STALE_TIMEOUT_ERROR = "Job exceeded its timeout without completing and was marked failed.";
 const MAX_TECHNICAL_DETAIL_LENGTH = 160;
 
 function formatDurationLabel(seconds: number): string {
@@ -17,18 +16,14 @@ function formatDurationLabel(seconds: number): string {
 }
 
 export function executionErrorPresentation(message: string): {
-  summary: string;
-  technicalDetail?: string;
-} {
+  technicalDetail: string;
+} | null {
   const normalized = message.trim();
-  const summary = normalized === STALE_TIMEOUT_ERROR
-    ? "视频工程生成超时，请重试。"
-    : "视频工程生成失败，请重试。";
-  if (!normalized) return { summary };
+  if (!normalized) return null;
   const technicalDetail = normalized.length > MAX_TECHNICAL_DETAIL_LENGTH
     ? `${normalized.slice(0, MAX_TECHNICAL_DETAIL_LENGTH - 1)}…`
     : normalized;
-  return { summary, technicalDetail };
+  return { technicalDetail };
 }
 
 export type AgentRunExpansionState = {

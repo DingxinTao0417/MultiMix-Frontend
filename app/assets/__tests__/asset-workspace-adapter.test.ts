@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { assetWorkspaceAdapter, conversationFromSummary, libraryCategoryForAsset, retryConversationDetailLoad } from "../lib/asset-workspace-adapter";
@@ -54,6 +54,34 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("correlates a confirmation request with the client request id header", async () => {
+    const clientRequestId = "13c3b93f-d5fa-4a9c-8f9d-38e62829498d";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        detail: "数据库暂时不可用，请稍后重试。",
+        code: "database_temporarily_unavailable",
+      }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(assetWorkspaceAdapter.sendMessage({
+      token: "token",
+      conversationId: "asset-conversation-450",
+      instruction: "确认，生成视频工程（横屏 16:9）",
+      selectedProductId: 450,
+      clientRequestId,
+    })).rejects.toThrow("MULTIMIX_API_CONNECTION_ERROR");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "X-Request-ID": clientRequestId,
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("retries one transient conversation detail failure", async () => {
     let attempts = 0;
     const result = await retryConversationDetailLoad(async () => {

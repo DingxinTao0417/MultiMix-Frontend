@@ -10,9 +10,10 @@ import type { AssetMessagePlan, AssetPlanField } from "../lib/asset-workspace-ty
 // Callers render this only when a message carries a structured plan; otherwise
 // the plain message + suggestion chips path is used (spec §12 降级规则).
 function PlanFieldRows({ fields, compact }: { fields: AssetPlanField[]; compact?: boolean }) {
+  const visibleFields = fields.filter((field) => field.key !== "cta");
   return (
     <>
-      {fields.map((field) => (
+      {visibleFields.map((field) => (
         <div className={compact ? "shadcn-prototype-confirm-summary-row" : "shadcn-prototype-confirm-row"} key={field.key}>
           <span className="k">{field.label}</span>
           <span className="v">
@@ -80,7 +81,6 @@ export default function ConfirmCard({
           待确认
         </span>
       </div>
-      {plan.subtitle ? <p className="shadcn-prototype-confirm-sub">{plan.subtitle}</p> : null}
       <div className="shadcn-prototype-confirm-fields">
         <PlanFieldRows fields={plan.fields} />
       </div>

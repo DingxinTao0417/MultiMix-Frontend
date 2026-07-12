@@ -7419,7 +7419,7 @@ label {
 
 .shadcn-prototype-agent-run-head {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto 15px;
+  grid-template-columns: minmax(0, 1fr) auto 15px;
   align-items: center;
   gap: 6px;
   width: 100%;
@@ -7433,6 +7433,41 @@ label {
   font-weight: 650;
   text-align: left;
   cursor: pointer;
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--sp-text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.success {
+  color: var(--sp-green);
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.fail {
+  color: var(--sp-danger);
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-dot {
+  display: block;
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .shadcn-prototype-segment-actions {
@@ -7534,6 +7569,26 @@ label {
   width: 18px;
   height: 18px;
   margin: 0 auto;
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-ic {
+  display: grid;
+  place-items: center;
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-ic > :is(
+  .shadcn-prototype-agent-run-ok,
+  .shadcn-prototype-agent-run-active,
+  .shadcn-prototype-agent-run-wait,
+  .shadcn-prototype-agent-run-failmark
+) {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.shadcn-prototype-agent-run-ic svg {
+  display: block;
 }
 
 .shadcn-prototype-agent-run-ok {
@@ -7926,6 +7981,14 @@ label {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+}
+
+.shadcn-prototype-thread .shadcn-prototype-confirm-done-head > strong {
+  color: var(--sp-text);
+}
+
+.shadcn-prototype-thread .assistant .shadcn-prototype-confirm-ok {
+  color: var(--sp-green);
 }
 
 .shadcn-prototype-confirm-summary {

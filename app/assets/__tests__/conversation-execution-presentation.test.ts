@@ -93,7 +93,7 @@ describe("confirmation message presentation", () => {
     })).toBe(false);
   });
 
-  it.each(["failed", "stopped", "unsubmitted"] as const)(
+  it.each(["stopped", "unsubmitted"] as const)(
     "shows %s execution-anchor copy",
     (localState) => {
       expect(shouldRenderMessageBody({
@@ -104,4 +104,13 @@ describe("confirmation message presentation", () => {
       })).toBe(true);
     },
   );
+
+  it("hides failed execution-anchor copy because the execution steps already show failure", () => {
+    expect(shouldRenderMessageBody({
+      role: "assistant",
+      text: "发送失败，请稍后重试。",
+      presentation: "execution_anchor",
+      localState: "failed",
+    })).toBe(false);
+  });
 });

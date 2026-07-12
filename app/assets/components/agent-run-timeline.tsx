@@ -84,14 +84,15 @@ export default function AgentRunTimeline({
   const errorPresentation = summary.hasFailure
     ? executionErrorPresentation(errorMessage ?? "")
     : null;
-  const title = summary.projectReady && summary.mgActive
-    ? "视频工程已生成，可立即编辑"
+  const title = "视频生成进度";
+  const terminalTone = summary.allDone
+    ? "success"
+    : summary.hasFailure
+      ? "fail"
+      : null;
+  const countLabel = summary.projectReady && summary.mgActive
+    ? `视频已生成，可立即编辑 · 第 ${currentStep} 步 / 共 ${summary.total} 步`
     : summary.allDone
-      ? "MultiMix 已完成"
-      : summary.hasFailure
-        ? "MultiMix 执行失败"
-        : "MultiMix 正在执行";
-  const countLabel = summary.allDone
     ? [`共 ${summary.total} 步`, summary.totalElapsedLabel ? `总历时 ${summary.totalElapsedLabel}` : undefined].filter(Boolean).join(" · ")
     : `第 ${currentStep} 步 / 共 ${summary.total} 步`;
 
@@ -109,10 +110,16 @@ export default function AgentRunTimeline({
           resolveAgentRunExpandedState(current, { type: "toggle" })
         ))}
       >
-        <span className="shadcn-prototype-agent-run-ic" aria-hidden="true">
-          <RunStatusIcon status={summary.allDone ? "done" : summary.hasFailure ? "fail" : "run"} />
+        <span className="shadcn-prototype-agent-run-title">
+          {terminalTone ? (
+            <>
+              {title}
+              <span className={`shadcn-prototype-agent-run-title-status ${terminalTone}`}>
+                <span className="shadcn-prototype-agent-run-title-dot" aria-hidden="true" />
+              </span>
+            </>
+          ) : title}
         </span>
-        <span>{title}</span>
         <span className="shadcn-prototype-agent-run-count">{countLabel}</span>
         <ChevronDown
           className={`shadcn-prototype-agent-run-chevron${expanded ? " expanded" : ""}`}
@@ -140,13 +147,10 @@ export default function AgentRunTimeline({
             <div className="shadcn-prototype-agent-run-error">
               {errorPresentation ? (
                 <div className="shadcn-prototype-agent-run-error-copy">
-                  <p>{errorPresentation.summary}</p>
-                  {errorPresentation.technicalDetail ? (
-                    <details>
-                      <summary>查看技术详情</summary>
-                      <code>{errorPresentation.technicalDetail}</code>
-                    </details>
-                  ) : null}
+                  <details>
+                    <summary>查看技术详情</summary>
+                    <code>{errorPresentation.technicalDetail}</code>
+                  </details>
                 </div>
               ) : null}
               {onRetry && retryJobId ? (
