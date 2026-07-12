@@ -146,16 +146,16 @@ scripts/
 
 ## 提交与同步流程
 
-当用户要求“提交代码”、“拉最新代码”、“合并代码”、“处理冲突”、“推送远程”或类似发布动作时，默认按下面流程自动执行，不需要再停下来只给计划。当前工作区包含两个独立仓库：
+当用户说“提交代码”时，默认授权并要求完成整套发布动作：确认范围并检查 -> 创建本地提交 -> fetch 远端 -> 检查分叉 -> 合并远端最新代码并检查冲突 -> 无冲突后推送 -> 最终同步校验。不得只做本地 commit 后停止，也不需要再停下来只给计划。“拉最新代码”、“合并代码”、“处理冲突”、“推送远程”等类似发布动作同样按其明确范围自动执行。当前工作区包含两个独立仓库：
 
 - 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`
 - 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`
 
 ### 提交前
 
-1. 分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和是否领先/落后远程。
+1. 分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和本次实际提交范围。
 2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
-3. 如果发现不属于当前任务的大量陌生改动，先说明风险；不要擅自回滚。
+3. 如果发现不属于当前任务的陌生改动，明确列出并保留在工作区；不要擅自回滚，也不要静默带入提交。
 
 ### 自动检查
 
@@ -178,33 +178,35 @@ scripts/
 ### 提交
 
 1. 每个仓库独立提交，不把前端和后端混成一个 git 操作。
-2. 使用 `git add -A` 暂存当前仓库需要提交的改动。
+2. 使用窄路径 `git add -- <path>...` 暂存本次任务文件；同一文件混有无关改动时按 hunk 拆分暂存。禁止用 `git add -A` 静默扫入陌生改动。
 3. 提交信息要概括实际变更，例如：
    - `Update MultiMix workspace libraries and conversation flow`
    - `Update asset upload validation and conversation assets`
-4. 提交后再次运行 `git status --short --branch`，确认工作区干净。
+4. 创建本地提交后再次运行 `git status --short --branch`，确认目标改动已经提交；允许保留已明确排除的无关脏文件，但必须在后续推送前后报告。
 
 ### 拉取与合并
 
-1. 先运行 `git fetch origin`。
-2. 优先使用 `git pull --rebase` 或 `git rebase origin/main` 把本地提交放到远程最新提交之后，保持历史线性。
-3. 如果只是确认是否有更新，可以先用 `git pull --ff-only`；出现分叉时再改用 rebase。
-4. 遇到冲突时不要强行覆盖：
+1. 本地提交完成后，在前端和后端分别运行 `git fetch origin --prune`。
+2. 运行 `git rev-list --left-right --count HEAD...origin/main` 检查 ahead/behind；落后为 0 时，用 `git merge --ff-only origin/main` 确认远端是当前提交的祖先或已经同步。
+3. 本地落后或双方分叉时，先运行 `git log --oneline --left-right --cherry-pick --graph HEAD...origin/main` 理解双方提交，再运行 `git merge --no-edit origin/main` 合并远端最新代码。
+4. 遇到冲突时不要强行覆盖，也不要继续推送：
    - 停止自动流程。
    - 用 `git status --short` 和冲突文件列表说明具体冲突。
    - 只在理解双方改动后编辑冲突文件。
-   - 冲突解决后运行必要检查，再 `git rebase --continue`。
+   - 冲突解决后重新运行必要检查，再完成 merge commit。
 5. 禁止使用 `git reset --hard`、`git checkout -- .` 等破坏性命令，除非用户明确要求。
 
 ### 推送
 
-1. 只有在工作区干净、检查通过、rebase/合并完成后，才运行 `git push origin main`。
-2. 推送后再次运行 `git status --short --branch`，确认本地 `main` 和 `origin/main` 同步。
-3. 最终回复需要说明：
+1. 只有在目标提交检查通过、远端合并完成且没有冲突后，才运行 `git push origin main`；已明确排除的无关脏文件可以继续留在工作区。
+2. 推送后再次运行 `git fetch origin --prune`、`git status --short --branch` 和 `git rev-list --left-right --count HEAD...origin/main`。
+3. 比较 `git rev-parse HEAD`、`git rev-parse origin/main` 与 `git ls-remote origin refs/heads/main`，确认本地、远端跟踪分支和真实远端分支一致。
+4. 最终回复需要说明：
    - 哪些仓库已提交和推送。
    - 最新提交哈希和提交信息。
    - 是否发生冲突以及如何处理。
    - 哪些检查已经通过，哪些检查未能运行及原因。
+   - 哪些无关文件仍未提交。
 
 ## 已知问题 / 注意事项
 
