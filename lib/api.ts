@@ -9,7 +9,11 @@ export const API_CONNECTION_ERROR = "MULTIMIX_API_CONNECTION_ERROR";
 export const MESSAGE_NOT_SUBMITTED_ERROR = "MULTIMIX_MESSAGE_NOT_SUBMITTED";
 export const API_AUTH_EXPIRED_EVENT = "multimix:auth-expired";
 
-// Whether a real backend is configured. When false, callers fall back to mock data.
+const TRANSIENT_UPLOAD_STATUSES = new Set([502, 503, 504]);
+const UPLOAD_RETRY_DELAY_MS = 300;
+
+// Whether a real backend is configured. When false, callers show an explicit
+// unconfigured state and must not fabricate runtime data.
 export const isApiConfigured = Boolean(CONFIGURED_API_BASE);
 
 // Dispatch when a 401 is received so the auth shell can clear the session.
@@ -105,13 +109,19 @@ export async function apiBlob(path: string, token: string | null, init: RequestI
 // Multipart upload (no Content-Type header so the browser sets the boundary).
 export async function apiForm<T>(path: string, token: string | null, formData: FormData): Promise<T> {
   try {
-    const response = await fetch(`${API_BASE}/v1${path}`, {
-      method: "POST",
-      body: formData,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    });
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      response = await fetch(`${API_BASE}/v1${path}`, {
+        method: "POST",
+        body: formData,
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        }
+      });
+      if (!TRANSIENT_UPLOAD_STATUSES.has(response.status) || attempt === 1) break;
+      await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
+    }
+    if (!response) throw new Error("Request failed");
     if (response.ok) {
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
