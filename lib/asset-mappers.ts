@@ -543,7 +543,7 @@ function contentAssetTypeLabel(contentType: string): string {
 
 function productModeFromAsset(asset: ContentAsset, unsupported: boolean): AssetProductMode {
   if (unsupported) return "copy";
-  if (asset.content_type === "video_script") return "video";
+  if (isVideoDirectorDraft(asset)) return "copy";
   if (asset.content_type === "digital_human_video") return "digital-human";
   if (asset.asset_kind === "image") return "image";
   if (asset.asset_kind === "video" || asset.asset_kind === "video_render") return "video";

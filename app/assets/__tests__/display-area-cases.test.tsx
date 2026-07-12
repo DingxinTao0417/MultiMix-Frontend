@@ -26,6 +26,18 @@ function renderWorkspace(caseId: keyof typeof displayProducts) {
 }
 
 describe("display-area eight-case matrix", () => {
+  it("renders a director script as continuous text without video chrome", () => {
+    render(<ProductPreview product={{
+      ...displayProducts["case-01-director-draft"],
+      mode: "copy",
+      markdownBody: "# 编导稿\n\n连续文字正文",
+    }} />);
+
+    expect(screen.getByRole("article")).toHaveTextContent("连续文字正文");
+    expect(screen.queryByLabelText(/视频工程预览|成片播放/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("分镜摘要")).not.toBeInTheDocument();
+  });
+
   it.each([
     ["case-01-director-draft", "编导稿草稿"],
     ["case-02-saved-asset-match", "已引用 测试门店素材"],

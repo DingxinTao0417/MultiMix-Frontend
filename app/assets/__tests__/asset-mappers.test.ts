@@ -54,17 +54,18 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
-  it("keeps video script drafts on the video display surface", () => {
+  it("maps director script drafts to the continuous document surface", () => {
     const product = contentAssetToProduct(asset({}));
 
-    expect(product.mode).toBe("video");
-    expect(product.timeline).toEqual([{ time: "00:00", title: "脚本", status: "草稿" }]);
+    expect(product.mode).toBe("copy");
+    expect(product.markdownBody).toContain("展示客厅空间");
+    expect(product.videoProjectReady).toBe(false);
   });
 
-  it("shows director drafts as video drafts before video project creation", () => {
+  it("keeps director draft metadata without presenting a video preview", () => {
     const product = contentAssetToProduct(asset({}));
 
-    expect(product.mode).toBe("video");
+    expect(product.mode).toBe("copy");
     expect(product.status).toBe("有来源");
     expect(product.phase).toBe("编导稿");
     expect(product.preview?.eyebrow).toBe("编导稿");
