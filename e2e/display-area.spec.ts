@@ -21,7 +21,9 @@ async function openCase(page: Page, caseId: string) {
 
 test("CASE-01 shows a director draft without project controls", async ({ page }) => {
   const workspace = await openCase(page, "case-01-director-draft");
-  await expect(workspace.getByText("编导稿草稿", { exact: false }).first()).toBeVisible();
+  await expect(workspace.locator("article.shadcn-prototype-copy-document")).toBeVisible();
+  await expect(workspace.getByLabel("视频工程预览")).toHaveCount(0);
+  await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
 });
@@ -63,7 +65,9 @@ test("CASE-06 is editable but has no video element", async ({ page }) => {
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   const workspace = await openCase(page, "case-07-project-ready-mp4");
   const video = workspace.locator("video").first();
+  const segmentList = workspace.locator(".shadcn-prototype-segment-cards > ol");
   await expect(video).toBeVisible();
+  await expect(segmentList).toHaveCSS("overflow-y", "auto");
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(1);
   await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.5);
