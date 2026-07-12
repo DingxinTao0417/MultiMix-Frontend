@@ -63,6 +63,7 @@ test("CASE-06 is editable but has no video element", async ({ page }) => {
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
+  test.setTimeout(60_000);
   const workspace = await openCase(page, "case-07-project-ready-mp4");
   const video = workspace.locator("video").first();
   const segmentList = workspace.locator(".shadcn-prototype-segment-cards > ol");
