@@ -6209,6 +6209,14 @@ textarea:focus {
   outline: 0;
 }
 
+/* These controls delegate focus feedback to their bordered containers. */
+.shadcn-prototype-start-dock textarea:focus,
+.shadcn-prototype-library-search input:focus {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
 textarea {
   min-height: 86px;
   resize: vertical;

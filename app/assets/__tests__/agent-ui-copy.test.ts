@@ -1237,6 +1237,17 @@ describe("agent conversation UI copy", () => {
     expect(globals).not.toContain("animation: shadcn-prototype-spin");
   });
 
+  it("keeps focus feedback on the input containers without an inner glow", () => {
+    const globals = readAssetFile("app/globals.css");
+
+    expect(globals).toMatch(
+      /\.shadcn-prototype-start-dock textarea:focus\s*,\s*\.shadcn-prototype-library-search input:focus\s*\{[^}]*box-shadow:\s*none;[^}]*outline:\s*none;/s,
+    );
+    expect(globals).toMatch(
+      /\.shadcn-prototype-library-search:focus-within\s*\{[^}]*border-color:\s*var\(--sp-accent-line\);/s,
+    );
+  });
+
   it("uses the same MultiMix brand glyph in the sidebar and login shell", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const appShell = readAssetFile("app/multimix-app.tsx");
