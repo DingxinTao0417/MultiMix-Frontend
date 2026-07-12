@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { libraryCategoryForAsset } from "../lib/asset-workspace-adapter";
 import type { ContentAsset } from "../../../lib/api";
 
@@ -48,5 +50,16 @@ describe("asset workspace category inference", () => {
     expect(libraryCategoryForAsset(asset({
       source_type: "web_capture"
     }))).toBe("采集资料");
+  });
+});
+
+describe("runtime data boundary", () => {
+  it("keeps bundled demo data out of the production adapter", () => {
+    const source = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
+
+    expect(source).not.toContain("asset-workspace-mock-data");
+    expect(source).not.toContain("mockAssetWorkspaceData");
+    expect(source).not.toContain("Local mock revision");
+    expect(source).not.toContain("Local mock restore");
   });
 });

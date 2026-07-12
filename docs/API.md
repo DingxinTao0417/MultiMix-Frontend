@@ -13,20 +13,17 @@
 ### 1.1 分层
 
 ```
-Mock 源数据          数据访问层（唯一接口边界）        UI 组件层
+真实后端 API         数据访问层（唯一接口边界）        UI 组件层
 ─────────────        ──────────────────────────       ──────────────
-asset-workspace  →   asset-workspace-adapter.ts   →   components/*.tsx
--mock-data.ts        （AssetWorkspaceAdapter）         （受控纯展示组件）
-        │                      │
-        │                      └── asset-workspace-shared.ts（跨组件 helper / 类型别名）
-        │
-        └── asset-workspace-types.ts（所有数据类型定义）
+lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
+                           │
+                           └── asset-workspace-shared.ts（跨组件 helper / 类型别名）
 ```
 
 关键约束：
 
-- **组件不直接 import mock 数据**。所有数据通过 `assetWorkspaceAdapter` 单例读取。
-- **接入真实后端只替换 `asset-workspace-adapter.ts` 的实现**，类型契约（`AssetWorkspaceAdapter` 接口 + `asset-workspace-types.ts`）保持不变，UI 不动。
+- **生产代码不 import 测试 fixture**。所有运行时数据通过 `assetWorkspaceAdapter` 从真实后端读取。
+- API 未配置、加载中、真实空列表和加载失败是明确状态，禁止回退演示数据。
 - 目录约定：UI 组件进 `app/assets/components/`，数据 / adapter / 共享 helper 进 `app/assets/lib/`。组件间引用用 `./xxx`，引用 lib 用 `../lib/xxx`。
 
 ### 1.2 运行时数据走向
@@ -34,7 +31,7 @@ asset-workspace  →   asset-workspace-adapter.ts   →   components/*.tsx
 1. `app/page.tsx`（`/`）和 `app/app/assets/page.tsx`（`/app/assets`）都渲染 `<MultiMixApp basePath="..." />`。
 2. `multimix-app.tsx` 做 localStorage 自动登录，读取 `searchParams` 中的 `conversation` / `product`，注入 `AssetsWorkspaceClient`。
 3. `AssetsWorkspaceClient` 是唯一持状态容器，调用 `assetWorkspaceAdapter` 取数据，向子组件下传 props + 回调。
-4. SQLite 运行库（`db/local/multimix.sqlite`）由 `scripts/db-init.ts` 从同一份 mock 源数据 seed，当前 UI **不在运行时读 SQLite**（为未来后端预留），mock 数据仍是前端真源。
+4. 前端不读取或创建本地 SQLite；测试使用测试目录内的最小 fixture，生产运行时不依赖它们。
 
 ### 1.3 文件清单与职责
 
@@ -50,17 +47,15 @@ asset-workspace  →   asset-workspace-adapter.ts   →   components/*.tsx
 | `app/assets/components/product-preview.tsx` | UI | 按 `product.mode` 分发的预览 |
 | `app/assets/components/library-workshop.tsx` | UI | 资产库 / 文案库 / 视频库视图 |
 | `app/assets/lib/asset-workspace-types.ts` | 数据 | 所有数据类型定义 |
-| `app/assets/lib/asset-workspace-mock-data.ts` | 数据 | mock 源数据 |
+| `app/assets/lib/asset-workspace-empty-data.ts` | 数据 | 未配置或加载前使用的空结构，不含演示内容 |
 | `app/assets/lib/asset-workspace-adapter.ts` | 数据 | 数据访问接口（后端接入点） |
 | `app/assets/lib/asset-workspace-shared.ts` | 数据 | 跨组件类型别名 + 纯 helper |
-| `db/schema.sql` | 数据 | 本地 SQLite 表结构 |
-| `scripts/db-init.ts` | 工具 | seed 本地 SQLite |
 
 ---
 
 ## 2. 数据访问层接口：`AssetWorkspaceAdapter`
 
-定义在 `app/assets/lib/asset-workspace-adapter.ts`。这是 UI 与数据之间唯一的接口边界。导出单例 `assetWorkspaceAdapter`（当前由 `createMockAssetWorkspaceAdapter(mockAssetWorkspaceData)` 创建）。
+定义在 `app/assets/lib/asset-workspace-adapter.ts`。这是 UI 与数据之间唯一的接口边界。导出单例 `assetWorkspaceAdapter`，生产运行时只请求真实后端。
 
 ```ts
 export type AssetWorkspaceAdapter = {
@@ -95,10 +90,10 @@ request ID；同一乐观轮次和重试必须复用它。
 ### 2.2 方法详解
 
 #### `getSnapshot(): AssetWorkspaceData`
-返回整份工作台数据快照（conversations / newConversation / workshops）。Mock 实现直接返回内存对象引用，**不做深拷贝**——调用方不应原地修改返回值。
+返回结构合法的空工作台快照（空 conversations、`newConversation` 壳和空 workshops），供异步真实数据加载前渲染。
 
 #### `listConversations(): AssetConversation[]`
-返回全部历史对话（不含 `newConversation`）。当前返回 17 条 mock 对话，顺序即 mock 数组顺序。UI 用它渲染侧边栏对话列表，并用 `[0].id` 作为默认选中对话。
+同步读取只返回空数组；真实历史对话由 `loadConversations` 异步加载。加载前显示骨架，不显示样例。
 
 #### `getConversation(conversationId): AssetConversation | undefined`
 按 `id` 精确查找单条对话，找不到返回 `undefined`。
@@ -124,13 +119,13 @@ request ID；同一乐观轮次和重试必须复用它。
 把产物转为可复制 / 可保存的纯文本。**规则**：`body` 非空则用 `body`，否则用 `[summary]`，再 `join("\n\n")`。供「复制」按钮使用。
 
 #### `saveProduct(product): Promise<{ version: string; savedAt: string }>`
-保存产物（异步）。Mock 实现：返回 `{ version: product.version ?? "v1", savedAt: <当前 ISO 时间> }`，**不做任何持久化**。UI 用返回的 `version` 更新「已保存 vX」状态。
+保存产物（异步）。只有真实 token、API 和后端资产 ID 齐全时才请求后端；否则抛出“未连接后端”，不伪造成功。
 
-### 2.2 接入真实后端
+### 2.3 真实后端边界
 
-- 实现一个新的 `createXxxAdapter(): AssetWorkspaceAdapter`，导出为 `assetWorkspaceAdapter`。
-- 同步方法（如 `listConversations`）若后端是异步，需要在 adapter 内部做缓存/预取，或重构组件为异步加载——**当前组件假设这些读取是同步的**，这是接入时的主要改造点。
-- `saveProduct` 已经是 `Promise`，可直接对接写接口。
+- `loadConversations`、`listLibrary` 和所有写操作只访问真实后端。
+- 同步方法只提供空结构和纯展示 helper；不能提供演示内容。
+- 失败由调用组件显示可重试状态；不能回退 fixture。
 - 服务端密钥（如 `LLM_API`）只能在 adapter 的服务端代码路径使用，**禁止加 `NEXT_PUBLIC_` 前缀**。
 
 ---
@@ -340,87 +335,6 @@ mode → 中文标签映射：
 
 ---
 
-## 5. 数据库 Schema 与 Seed 接口
-
-### 5.1 表结构（`db/schema.sql`）
-
-`PRAGMA foreign_keys = ON;`，6 张表：
-
-#### `conversations`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | TEXT | PRIMARY KEY | 对话 id |
-| `title` | TEXT | NOT NULL | 标题 |
-| `type` | TEXT | NOT NULL | 类型 |
-| `updated_at` | TEXT | NOT NULL | 更新时间文案 |
-| `asset_label` | TEXT | NOT NULL | 来源依据 |
-| `status` | TEXT | NOT NULL | 状态 |
-| `prompt` | TEXT | NOT NULL | 初始指令 |
-| `response` | TEXT | NOT NULL | 助手回应 |
-| `payload_json` | TEXT | NOT NULL | 完整 `AssetConversation` 的 JSON 序列化 |
-
-#### `messages`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | INTEGER | PK AUTOINCREMENT | 自增主键 |
-| `conversation_id` | TEXT | NOT NULL, FK→conversations(id) ON DELETE CASCADE | 所属对话 |
-| `role` | TEXT | NOT NULL | `user` / `assistant` |
-| `text` | TEXT | NOT NULL | 消息文本 |
-| `suggestions_json` | TEXT | NOT NULL DEFAULT '[]' | 推荐指令 JSON 数组 |
-| `sort_order` | INTEGER | NOT NULL | 消息顺序 |
-
-#### `products`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | TEXT | PRIMARY KEY | 复合 id：`${conversation_id}:${product.id}` |
-| `conversation_id` | TEXT | NOT NULL, FK→conversations(id) ON DELETE CASCADE | 所属对话 |
-| `mode` | TEXT | NOT NULL | 产物类型 |
-| `title` | TEXT | NOT NULL | 标题 |
-| `status` | TEXT | NOT NULL | 状态 |
-| `ratio` | TEXT | NOT NULL | 比例 |
-| `duration` | TEXT | NOT NULL | 时长 |
-| `phase` | TEXT | NOT NULL | 阶段 |
-| `version` | TEXT | 可空 | 版本号（`product.version ?? null`） |
-| `payload_json` | TEXT | NOT NULL | 完整 `AssetProduct` 的 JSON 序列化 |
-
-#### `workshops`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | TEXT | PRIMARY KEY | 视图键（`assets`/`copy`/`video`） |
-| `title` | TEXT | NOT NULL | 标题 |
-| `description` | TEXT | NOT NULL | 描述 |
-| `payload_json` | TEXT | NOT NULL | 完整 `AssetWorkshop` JSON |
-
-#### `local_users`
-| 列 | 类型 | 约束 | 说明 |
-| --- | --- | --- | --- |
-| `id` | INTEGER | PK AUTOINCREMENT | 自增主键 |
-| `email` | TEXT | NOT NULL UNIQUE | 邮箱 |
-| `display_name` | TEXT | NOT NULL | 显示名 |
-| `created_at` | TEXT | NOT NULL | 创建时间 ISO |
-
-> 设计模式：结构化列用于查询 / 索引，`payload_json` 保留完整对象，避免列与类型同步成本。读取时可直接 `JSON.parse(payload_json)` 还原为类型对象。
-
-### 5.2 Seed 脚本（`scripts/db-init.ts`）
-
-命令：`npm run setup:demo`（= `npm run db:init` = `node --import tsx scripts/db-init.ts`）。
-
-行为：
-1. 确保 `db/local/` 存在，打开 / 创建 `db/local/multimix.sqlite`（`node:sqlite` 的 `DatabaseSync`，**要求 Node ≥ 22**）。
-2. 执行 `schema.sql` 建表（`IF NOT EXISTS`）。
-3. 单事务内先 `DROP TABLE IF EXISTS sources`（清理历史遗留表），再 `DELETE FROM` 清空 5 张表（messages → products → conversations → workshops → local_users 顺序），失败 `ROLLBACK`。
-4. 遍历 `mockAssetWorkspaceData`：
-   - 插入每条 conversation；
-   - messages 取 `conversation.messages`，缺省时合成 `[{user, prompt}, {assistant, response, suggestions}]`；
-   - products 取 `products`（非空）或 `[product]`，主键写为 `${conversation.id}:${product.id}`；
-   - 插入 workshops（`Object.entries`）。
-5. 插入默认用户 `demo@multimix.local` / `MultiMix Demo` / 当前 ISO 时间。
-6. `COMMIT`，关闭，打印 `Seeded local MultiMix database: <path>`。
-
-幂等：可重复运行，每次先清空再 seed，等价于重置。
-
----
-
 ## 6. 组件 Props 契约
 
 所有子组件均为受控纯展示组件，状态集中在 `AssetsWorkspaceClient`。以下为各组件的 props 接口。
@@ -619,7 +533,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 | `LLM_API` | **否** | LLM 服务端密钥；**禁止加 `NEXT_PUBLIC_` 前缀**（会暴露到客户端） |
 
 数据边界（严格遵守）：
-- **提交**：UI 代码、mock 数据、`db/schema.sql`、seed 脚本、文档。
+- **提交**：UI 代码、测试专用最小 fixtures、文档。
 - **不提交**：运行时 `*.sqlite`/`*.db`、`.env.local`、生产密钥、构建产物、日志。
 
 ---
@@ -635,7 +549,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 - 静态占位按钮（无 onClick）：侧边栏搜索、顶栏「上传资产」、对话「发送」。
 - 已定义但 UI 未渲染的数据：产物 `versions`/`actions`/`sourceIds`、`preview.eyebrow/posterText/prompt`；对话 `raw/judgment/action/canvasTitle/canvasMeta/sourceIds`；`workshop.kicker`；整个 `AssetSource`（`listSources` 无人调用）。
-- 重命名 / 删除对话仅在前端 state 生效，不持久化、不改 mock 数据。
+- 重命名 / 删除对话通过真实后端持久化；失败时恢复前端状态。
 
 ### 11.3 接入真实后端的最小改动面
 
@@ -729,7 +643,6 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ```bash
 npm run dev -- --hostname 127.0.0.1 --port 3200   # 本地开发
-npm run setup:demo    # 重建 db/local/multimix.sqlite（可重复运行重置）
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint .
 npm run build         # next build

@@ -540,6 +540,30 @@ button:disabled {
   padding-right: 8px;
 }
 
+.shadcn-prototype-conversation-state {
+  display: grid;
+  gap: 6px;
+  padding: 12px 10px;
+  color: var(--sp-faint);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.shadcn-prototype-conversation-state strong {
+  color: var(--sp-text);
+  font-size: 12px;
+}
+
+.shadcn-prototype-conversation-state button {
+  justify-self: start;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
 .shadcn-prototype-conversation-row {
   position: relative;
   min-height: 34px;

@@ -2,7 +2,7 @@
 
 MultiMix 是一个面向短视频内容生产的对话式工作台。用户可以在同一个对话里提出创作需求、整理资料内容，并把生成出的文案、图片和视频产物沉淀到对应资源库中，方便后续检索、复用和继续生成。
 
-当前仓库是 MultiMix 前端优先版本，使用本地 mock 数据展示完整产品体验；真实后端能力通过 adapter 层逐步接入。
+当前仓库运行时只展示真实后端数据；测试数据仅存在于自动化测试 fixture 中，不参与页面初始化或错误降级。
 
 ## Demo Material Browser Automation
 
@@ -95,31 +95,28 @@ MultiMix 将来源资料和生成产物分开管理。
 
 ```bash
 npm install
-npm run setup:demo
 npm run dev -- --hostname 127.0.0.1 --port 3200
 ```
  
 Open:
 
 - `http://127.0.0.1:3200/`
-- `http://127.0.0.1:3200/app/assets?conversation=product-chain&product=digital-human-video`
+- `http://127.0.0.1:3200/app/assets`
 
-Local development auto-signs in with `demo@multimix.local`. The runtime user is stored in browser `localStorage` only.
-
-`npm run setup:demo` creates `db/local/multimix.sqlite` from committed schema and mock data. Running it again resets the local database to the same demo workspace.
+Local development uses the configured authentication mode. The workspace only displays data returned by `NEXT_PUBLIC_API_BASE_URL`.
 
 Optional local environment variables can be copied from `.env.example` into `.env.local`. `LLM_API` is reserved for a local or server-side generation proxy and must not be exposed through a `NEXT_PUBLIC_` variable.
 
 ## Data Boundary
 
-- Mock workspace data is committed as source data under `app/assets/`.
-- SQLite runtime files are generated under `db/local/` and ignored by git.
-- Share demo data through schema, seed scripts, and mock source data instead of committing `.sqlite`, `.db`, or `.sqlite3` files.
+- Runtime workspace data comes only from the configured backend.
+- Automated tests keep small, purpose-specific fixtures under test directories; production modules must not import them.
+- Do not commit `.sqlite`, `.db`, or `.sqlite3` files.
 - Keep service role keys, Railway tokens, Vercel tokens, and production secrets out of this repository.
 
-## Future Backend Adapter
+## Backend Adapter
 
-The current app is frontend-first with local mock data. Real services can be added behind adapters for:
+Real services are accessed behind the workspace adapter, including:
 
 - Supabase Auth
 - Railway API

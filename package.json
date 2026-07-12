@@ -14,8 +14,6 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "setup:demo": "npm run db:init",
-    "db:init": "node --import tsx scripts/db-init.ts",
     "test": "vitest run",
     "test:display-components": "vitest run app/assets/__tests__/display-area-readiness.test.tsx app/assets/__tests__/display-area-cases.test.tsx",
     "test:display-e2e": "node scripts/run-display-coverage.mjs --e2e-only",

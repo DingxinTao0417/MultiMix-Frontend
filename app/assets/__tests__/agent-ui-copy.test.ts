@@ -1459,6 +1459,19 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-admin-quota");
   });
 
+  it("renders explicit real-conversation loading states without demo fallback", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+    expect(workspaceClient).toContain("useState<Conversation[]>([])");
+    expect(workspaceClient).not.toContain("useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations())");
+    expect(workspaceClient).toContain("正在加载你的对话");
+    expect(workspaceClient).toContain("还没有对话");
+    expect(workspaceClient).toContain("对话加载失败");
+    expect(workspaceClient).toContain("未连接后端");
+    expect(workspaceClient).toContain("重新加载");
+    expect(workspaceClient).not.toContain("显示本地样例数据");
+  });
+
   it("uses uploaded documents as direct conversation source assets", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");

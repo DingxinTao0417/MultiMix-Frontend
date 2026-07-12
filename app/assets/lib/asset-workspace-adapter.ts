@@ -1,4 +1,4 @@
-import { mockAssetWorkspaceData } from "./asset-workspace-mock-data";
+import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
 import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop } from "./asset-workspace-types";
 import {
   API_BASE,
@@ -181,8 +181,8 @@ export type AssetWorkspaceAdapter = {
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
-  // Backend-backed operations. When no API is configured these are no-ops that
-  // keep the local mock workspace usable offline.
+  // Backend-backed operations. Without an API, callers render an explicit
+  // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   createConversation(token: string): Promise<AssetConversation>;
@@ -584,7 +584,7 @@ function mergeSearchResults(keywordRows: ContentAssetSearchResult[], semanticRow
     .map((item) => contentAssetToLibraryRow(item.asset, item.reasons));
 }
 
-function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
+function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
   return {
     getSnapshot() {
       return data;
@@ -623,23 +623,14 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
         const nextVersion = product.version ? `v${parseInt(product.version.replace("v", "")) + 1}` : "v2";
         return { version: nextVersion, savedAt: new Date().toISOString() };
       }
-      return {
-        version: product.version ?? "v1",
-        savedAt: new Date().toISOString()
-      };
+      throw new Error("未连接后端，无法保存产物。");
     },
     isBackendEnabled() {
       return isApiConfigured;
     },
     async loadConversations(token, current) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
-      // Backend is the source of truth once configured. Drop bundled sample
-      // conversations from the carried-over set so deleted samples can't
-      // reappear and real rows aren't shadowed; genuine in-session drafts
-      // (draft-*/optimistic ids) still survive the merge.
-      const mockConversationIds = new Set(data.conversations.map((conversation) => conversation.id));
-      const sessionConversations = current.filter((conversation) => !mockConversationIds.has(conversation.id));
-      return mergePersistedConversations(rows, sessionConversations, data.newConversation.product);
+      return mergePersistedConversations(rows, current, data.newConversation.product);
     },
     async createConversation(token) {
       const row = await api<AssetConversationResponse>("/assets/conversations", token, { method: "POST" });
@@ -702,8 +693,10 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
       };
     },
     async reviseProduct({ token, product, instruction, conversationId, signal }) {
-      if (isApiConfigured && token && product.backendAssetId) {
-        const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/revisions`, token, {
+      if (!isApiConfigured || !token || !product.backendAssetId) {
+        throw new Error("未连接后端，无法修订产物。");
+      }
+      const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/revisions`, token, {
           method: "POST",
           signal,
           body: JSON.stringify({
@@ -711,46 +704,25 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
             conversation_id: conversationId === "new" ? undefined : conversationId
           })
         });
-        return {
+      return {
           product: contentAssetToProduct(response.asset),
           assistantMessage: response.assistant_message,
           suggestions: response.suggestions,
           suggestionActions: normalizeSuggestionActions(response.suggestion_actions),
           diffSummary: response.diff_summary
-        };
-      }
-      const nextVersion = product.version ? `v${parseInt(product.version.replace("v", ""), 10) + 1}` : "v2";
-      return {
-        product: {
-          ...product,
-          version: nextVersion,
-          body: [...(product.body ?? [product.summary]), "", `修订指令：${instruction}`],
-          status: "本地修订"
-        },
-        assistantMessage: "已在本地 mock 中记录修订。",
-        suggestions: product.actions,
-        suggestionActions: undefined,
-        diffSummary: "Local mock revision"
       };
     },
     async restoreProductVersion({ token, product, versionId }) {
-      if (isApiConfigured && token && product.backendAssetId) {
-        const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/versions/${encodeURIComponent(versionId)}/restore`, token, {
+      if (!isApiConfigured || !token || !product.backendAssetId) {
+        throw new Error("未连接后端，无法恢复版本。");
+      }
+      const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/versions/${encodeURIComponent(versionId)}/restore`, token, {
           method: "POST"
         });
-        return {
+      return {
           product: contentAssetToProduct(response.asset),
           assistantMessage: response.assistant_message,
           diffSummary: response.diff_summary
-        };
-      }
-      return {
-        product: {
-          ...product,
-          version: product.versions?.find((version) => version.id === versionId)?.label ?? product.version
-        },
-        assistantMessage: "已在本地 mock 中恢复版本。",
-        diffSummary: "Local mock restore"
       };
     },
     async generateVideo(token, topic, opts) {
@@ -894,4 +866,4 @@ function createMockAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspa
   };
 }
 
-export const assetWorkspaceAdapter = createMockAssetWorkspaceAdapter(mockAssetWorkspaceData);
+export const assetWorkspaceAdapter = createAssetWorkspaceAdapter(emptyAssetWorkspaceData);

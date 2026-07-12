@@ -221,7 +221,10 @@ export default function LibraryWorkshop({
   onAddAssetToConversation?: (row: LibraryRow) => void;
 }) {
   const workshop = assetWorkspaceAdapter.getWorkshop(view);
-  const [backendRows, setBackendRows] = useState<LibraryRow[] | null>(null);
+  const [backendRows, setBackendRows] = useState<LibraryRow[]>([]);
+  const [libraryState, setLibraryState] = useState<"unconfigured" | "loading" | "ready" | "error">(() => (
+    assetWorkspaceAdapter.isBackendEnabled() ? "loading" : "unconfigured"
+  ));
   const [activeFilter, setActiveFilter] = useState("全部");
   const [statusFilter, setStatusFilter] = useState<"ok" | "wait" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -254,18 +257,26 @@ export default function LibraryWorkshop({
 
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      setBackendRows(null);
+      setBackendRows([]);
+      setLibraryState(assetWorkspaceAdapter.isBackendEnabled() ? "loading" : "unconfigured");
       return;
     }
     let cancelled = false;
     setLoadingRows(true);
+    setLibraryState("loading");
     void assetWorkspaceAdapter
       .listLibrary(token, view, debouncedQuery)
       .then((rows) => {
-        if (!cancelled) setBackendRows(rows);
+        if (!cancelled) {
+          setBackendRows(rows);
+          setLibraryState("ready");
+        }
       })
       .catch(() => {
-        if (!cancelled) setBackendRows(null);
+        if (!cancelled) {
+          setBackendRows([]);
+          setLibraryState("error");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingRows(false);
@@ -275,14 +286,14 @@ export default function LibraryWorkshop({
     };
   }, [token, view, debouncedQuery, refreshKey]);
 
-  const rows = backendRows !== null ? backendRows : workshop.rows;
+  const rows = backendRows;
   const filteredRows = useMemo(() => {
     let scopedRows = activeFilter === "全部" ? rows : rows.filter((row) => row.category === activeFilter);
     if (view === "image" && statusFilter) {
       scopedRows = scopedRows.filter((row) => rowStatusKind(row) === statusFilter);
     }
     const query = debouncedQuery.trim().toLowerCase();
-    if (backendRows && query) return scopedRows;
+    if (query) return scopedRows;
     if (!query) return scopedRows;
     return scopedRows.filter((row) => {
       const haystack = [
@@ -299,7 +310,7 @@ export default function LibraryWorkshop({
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(query);
     });
-  }, [activeFilter, statusFilter, view, backendRows, rows, debouncedQuery]);
+  }, [activeFilter, statusFilter, view, rows, debouncedQuery]);
   const selectedRow = selectedIndex === null ? null : filteredRows[selectedIndex];
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
@@ -544,7 +555,13 @@ export default function LibraryWorkshop({
         </div>
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
-        {filteredRows.length === 0 ? (
+        {libraryState === "unconfigured" ? (
+          <article className="shadcn-prototype-workshop-empty"><div><strong>未连接后端</strong><p>请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端。</p></div></article>
+        ) : libraryState === "error" ? (
+          <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>重新加载</button></div></article>
+        ) : libraryState === "loading" ? (
+          <article className="shadcn-prototype-workshop-empty" role="status"><div><strong>正在加载{workshop.title}…</strong></div></article>
+        ) : filteredRows.length === 0 ? (
           <article className="shadcn-prototype-workshop-empty">
             <div>
               <strong>这个分类还没有内容</strong>

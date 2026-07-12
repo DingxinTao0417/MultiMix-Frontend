@@ -21,7 +21,7 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 ## 技术栈
 
-- 前端：Next.js 15 (App Router) + React 19 + TypeScript strict、lucide-react、react-markdown、Supabase Auth（可选）、本地 `node:sqlite`（实验性 API，**要求 Node ≥ 22**）、ESLint flat config（`next/core-web-vitals` + `next/typescript`）、vitest
+- 前端：Next.js 15 (App Router) + React 19 + TypeScript strict、lucide-react、react-markdown、Supabase Auth（可选）、ESLint flat config（`next/core-web-vitals` + `next/typescript`）、vitest
 - 剪辑器：Tailwind v4 + Radix/shadcn + mediabunny(WebCodecs) + zustand（`editor-engine/vendor/`，从 video-studio 复制；tsc/eslint 均排除该目录）
 - 后端：FastAPI 0.115 + SQLAlchemy 2.0（SQLite 本地 / Postgres+Supabase 生产）+ Redis/RQ worker + Modal（MG 渲染），Python ≥ 3.11
 
@@ -31,7 +31,6 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 ```bash
 npm run dev -- --hostname 127.0.0.1 --port 3200   # 前端开发
-npm run setup:demo    # 从 schema + mock 数据重建 db/local/multimix.sqlite（可重复运行重置）
 npm run typecheck     # tsc --noEmit（排除 editor-engine/vendor）
 npm run lint          # eslint .
 npm run test          # vitest run（app/assets/__tests__ + editor-engine/vendor/buildProject.test.ts）
@@ -60,7 +59,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 
 ## 架构
 
-前端数据流：mock 数据 / 真实后端 → `app/assets/lib/asset-workspace-adapter.ts`（adapter 层，唯一后端边界）→ `components/` 组件。`lib/api.ts` 是 API 客户端（唯一 base-URL 解析与 Bearer 注入点，401 时广播 `multimix:auth-expired` 事件），`lib/asset-mappers.ts` 把后端 ContentAsset 映射成前端 AssetProduct，`lib/supabase.ts` 是可选 Supabase Auth 客户端。
+前端数据流：真实后端 → `app/assets/lib/asset-workspace-adapter.ts`（adapter 层，唯一后端边界）→ `components/` 组件。API 未配置、加载中、真实空列表和加载失败必须显示明确状态，禁止回退演示数据。`lib/api.ts` 是 API 客户端（唯一 base-URL 解析与 Bearer 注入点，401 时广播 `multimix:auth-expired` 事件），`lib/asset-mappers.ts` 把后端 ContentAsset 映射成前端 AssetProduct，`lib/supabase.ts` 是可选 Supabase Auth 客户端。
 
 后端模块（feature flag 控制，开关表见后端 `README.md`，路径均为后端仓库内路径）：
 
@@ -92,7 +91,7 @@ app/
       library-workshop.tsx          # 资产库/文案库/图片库/视频库视图
     lib/                            # 数据 + 逻辑层（新增数据/adapter/helper 放这里）
       asset-workspace-types.ts      # 所有数据类型定义（AssetProduct/AssetConversation/...）
-      asset-workspace-mock-data.ts  # mock 源数据（对话、产物、来源、workshop）
+      asset-workspace-empty-data.ts # 未配置/加载前使用的空结构，不含演示内容
       asset-workspace-adapter.ts    # 数据访问接口，接真实后端时只改这里
       asset-workspace-shared.ts     # 跨组件共享：类型别名 + 纯 helper（无 JSX/状态）
 lib/
@@ -100,10 +99,7 @@ lib/
   asset-mappers.ts                  # 后端 ContentAsset → 前端 AssetProduct 映射
   supabase.ts                       # 可选 Supabase Auth 客户端（未配置时为 null）
 editor-engine/vendor/               # OpenCut 剪辑器引擎 + buildProject 等接入层（@editor/* 别名）
-db/
-  schema.sql                        # 本地 SQLite 表结构（说明见 db/README.md）
 scripts/
-  db-init.ts                        # 读 schema + mock 数据，可复现地 seed db/local/multimix.sqlite
   sync-agents-md.mjs                # CLAUDE.md → AGENTS.md 同步/校验
 ```
 
@@ -137,10 +133,10 @@ scripts/
 
 ## 数据边界（严格遵守）
 
-- 提交：UI 代码、mock 数据、`db/schema.sql`、seed 脚本、文档
+- 提交：UI 代码、测试专用最小 fixtures、文档
 - **不提交**：运行时 `*.sqlite`/`*.db`、`.env.local`、生产密钥、构建产物、日志
 - `LLM_API` 等服务端密钥**禁止**加 `NEXT_PUBLIC_` 前缀（会暴露到客户端）
-- mock 数据是「源数据」，提交在 `app/assets/`；SQLite 运行库通过 seed 复现，不入库
+- 生产运行时只消费真实后端；测试 fixture 只能位于测试目录且不得被生产模块 import
 
 ## 提交与同步流程
 
@@ -208,7 +204,7 @@ scripts/
 
 - `app/globals.css` 是单一全局样式表，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`../docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
 - `editor-engine/vendor/editor/` 内部的 `__tests__` 用 bun:test，已在 `vitest.config.ts` 里排除；`npm run test` 只跑 `app/assets/__tests__/` 和 vendor 根下的 `buildProject.test.ts`。
-- 本地 SQLite 走 Node 实验性 `node:sqlite` API（`scripts/db-init.ts`），Node < 22 会直接失败。
+- 前端不创建或读取本地 SQLite；浏览器工作台只消费真实后端数据。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
 - 后端根目录的 `changein.sqlite3` 是本地开发数据库，不入库、不删除。
 - 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`CHANGEIN_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。

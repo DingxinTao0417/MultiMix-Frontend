@@ -2,11 +2,22 @@
 
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "../components/library-workspace-state";
 
 describe("library workspace dynamic states", () => {
+  it("does not fall back to bundled workshop rows", () => {
+    const workshop = readFileSync(resolve(process.cwd(), "app/assets/components/library-workshop.tsx"), "utf8");
+    const readyStrip = readFileSync(resolve(process.cwd(), "app/assets/components/materials-ready-strip.tsx"), "utf8");
+
+    expect(workshop).not.toContain("backendRows !== null ? backendRows : workshop.rows");
+    expect(workshop).toContain("资源库加载失败");
+    expect(workshop).toContain("未连接后端");
+    expect(readyStrip).not.toContain('assetWorkspaceAdapter.getWorkshop("image").rows');
+  });
   it("shows an accessible image-library loading state", () => {
     render(<LibraryWorkspaceLoading title="图片库" />);
 

@@ -51,6 +51,7 @@ const ImageLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: 
 const VideoLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="视频库" /> });
 
 type SidebarState = "auto" | "collapsed" | "expanded";
+type ConversationLoadState = "unconfigured" | "loading" | "ready" | "error";
 type DiagnosticsState = {
   open: boolean;
   loading: boolean;
@@ -452,11 +453,15 @@ export default function AssetsWorkspaceClient({
   token = null,
   onLogout
 }: AssetsWorkspaceClientProps) {
-  const [conversations, setConversations] = useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations());
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationLoadState, setConversationLoadState] = useState<ConversationLoadState>(() => (
+    assetWorkspaceAdapter.isBackendEnabled() ? "loading" : "unconfigured"
+  ));
+  const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
-  const [selectedConversationId, setSelectedConversationId] = useState(() => resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations()));
+  const [selectedConversationId, setSelectedConversationId] = useState(() => initialConversationId ?? "new");
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
-    const conversationId = resolveInitialConversationId(initialConversationId, assetWorkspaceAdapter.listConversations());
+    const conversationId = initialConversationId ?? "new";
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
   const selectedConversationIdRef = useRef(selectedConversationId);
@@ -570,13 +575,23 @@ export default function AssetsWorkspaceClient({
 
   // Load persisted conversation history from the backend when a token is present.
   useEffect(() => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    if (!assetWorkspaceAdapter.isBackendEnabled()) {
+      setConversationLoadState("unconfigured");
+      setConversations([]);
+      return;
+    }
+    if (!token) {
+      setConversationLoadState("loading");
+      return;
+    }
     let cancelled = false;
+    setConversationLoadState("loading");
     void assetWorkspaceAdapter
-      .loadConversations(token, assetWorkspaceAdapter.listConversations())
+      .loadConversations(token, [])
       .then((rows) => {
         if (cancelled) return;
         setConversations(rows);
+        setConversationLoadState("ready");
         if (initialConversationId && rows.some((conversation) => conversation.id === initialConversationId)) {
           setSelectedConversationId(initialConversationId);
           setActiveView("conversation");
@@ -589,12 +604,15 @@ export default function AssetsWorkspaceClient({
         }
       })
       .catch(() => {
-        toast.error("无法加载对话历史，显示本地样例数据。");
+        if (cancelled) return;
+        setConversations([]);
+        setConversationLoadState("error");
+        toast.error("无法加载对话历史，请重新加载。");
       });
     return () => {
       cancelled = true;
     };
-  }, [initialConversationId, initialProductId, token]);
+  }, [initialConversationId, initialProductId, token, conversationLoadRevision]);
 
   // Poll every pending background execution plus the selected conversation's
   // latest job. The selected job restores its persisted card once after refresh.
@@ -1689,9 +1707,28 @@ export default function AssetsWorkspaceClient({
         <div className="shadcn-prototype-conversation-section">
           <div className="shadcn-prototype-section-title">
             <span>对话列表</span>
-            <em>{visibleConversationRows.length}</em>
+            {conversationLoadState === "ready" ? <em>{visibleConversationRows.length}</em> : null}
           </div>
           <div className="shadcn-prototype-conversation-list">
+            {conversationLoadState === "loading" ? (
+              <div className="shadcn-prototype-conversation-state" role="status">正在加载你的对话…</div>
+            ) : conversationLoadState === "unconfigured" ? (
+              <div className="shadcn-prototype-conversation-state">
+                <strong>未连接后端</strong>
+                <span>请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端。</span>
+              </div>
+            ) : conversationLoadState === "error" ? (
+              <div className="shadcn-prototype-conversation-state" role="alert">
+                <strong>对话加载失败</strong>
+                <span>没有展示本地样例，避免与真实数据混淆。</span>
+                <button type="button" onClick={() => setConversationLoadRevision((value) => value + 1)}>重新加载</button>
+              </div>
+            ) : visibleConversationRows.length === 0 ? (
+              <div className="shadcn-prototype-conversation-state">
+                <strong>还没有对话</strong>
+                <span>从“新建对话”开始第一次创作。</span>
+              </div>
+            ) : null}
             {visibleConversationRows.map((conversation) => (
               <div
                 className={activeView === "conversation" && conversation.id === selectedConversation.id ? "shadcn-prototype-conversation-row active" : "shadcn-prototype-conversation-row"}

@@ -15,11 +15,11 @@ export default function MaterialsReadyStrip({
   token?: string | null;
   onOpenImageLibrary?: () => void;
 }) {
-  const [backendRows, setBackendRows] = useState<LibraryRow[] | null>(null);
+  const [backendRows, setBackendRows] = useState<LibraryRow[]>([]);
 
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      setBackendRows(null);
+      setBackendRows([]);
       return;
     }
     let cancelled = false;
@@ -29,14 +29,14 @@ export default function MaterialsReadyStrip({
         if (!cancelled) setBackendRows(rows);
       })
       .catch(() => {
-        if (!cancelled) setBackendRows(null);
+        if (!cancelled) setBackendRows([]);
       });
     return () => {
       cancelled = true;
     };
   }, [token]);
 
-  const rows = backendRows ?? assetWorkspaceAdapter.getWorkshop("image").rows;
+  const rows = backendRows;
   const ready = rows.filter((row) => READY_LABELS.has(row.statusLabel ?? ""));
   const processing = rows.filter((row) => PROCESSING_LABELS.has(row.statusLabel ?? ""));
   if (!ready.length) return null;
