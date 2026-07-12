@@ -4,8 +4,15 @@ import { describe, expect, test } from "vitest";
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const preview = readFileSync(new URL("../components/product-preview.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
+const conversationStudio = readFileSync(new URL("../components/conversation-studio.tsx", import.meta.url), "utf8");
 
 describe("product stage style contract", () => {
+  test("keeps confirmation and execution cards on one shared responsive width", () => {
+    expect(conversationStudio).toContain("shadcn-prototype-workflow-card-message");
+    expect(css).toMatch(/\.shadcn-prototype-thread article\.shadcn-prototype-workflow-card-message\s*\{[^}]*width:\s*min\(560px, 92%\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-workflow-card-message > :is\(\s*\.shadcn-prototype-confirm-card,\s*\.shadcn-prototype-agent-run\s*\)\s*\{[^}]*width:\s*100%;/s);
+  });
+
   test("uses one shared stage scroll surface across copy and video paths", () => {
     expect(preview).toContain("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface");
     expect(preview).toContain("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface");

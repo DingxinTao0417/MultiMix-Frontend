@@ -2012,6 +2012,19 @@ button:disabled {
   gap: 8px;
 }
 
+.shadcn-prototype-thread article.shadcn-prototype-workflow-card-message {
+  width: min(560px, 92%);
+  max-width: min(560px, 92%);
+}
+
+.shadcn-prototype-workflow-card-message > :is(
+  .shadcn-prototype-confirm-card,
+  .shadcn-prototype-agent-run
+) {
+  width: 100%;
+  max-width: none;
+}
+
 .shadcn-prototype-thread article.pending p {
   color: #6e6a64;
 }

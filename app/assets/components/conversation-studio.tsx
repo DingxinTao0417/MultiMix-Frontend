@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
-import { mergeVisibleConversationMessages, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
+import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR } from "../../../lib/api";
 import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation } from "../lib/asset-workspace-types";
@@ -311,13 +311,7 @@ export default function ConversationStudio({
       await sendInstruction(instruction, {
         assistantText: "已确认，正在创建视频工程任务。",
         presentation: "execution_anchor",
-        runSteps: [
-          {
-            key: "create_job",
-            label: "创建视频工程任务",
-            status: "run"
-          }
-        ]
+        runSteps: optimisticVideoProjectSteps()
       }, globalThis.crypto.randomUUID());
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
@@ -466,16 +460,26 @@ export default function ConversationStudio({
         {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
       </header>
       <div className="shadcn-prototype-thread">
-        {visibleConversationMessages.map((message, index) => (
-          <div
-            className="shadcn-prototype-message-group"
-            key={`${message.role}-${index}`}
-          >
-            <article className={[
-              message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
-              message.pending ? "pending" : "",
-              message.localState ? `local-${message.localState}` : ""
-            ].filter(Boolean).join(" ")}>
+        {visibleConversationMessages.map((message, index) => {
+          // Resolve once so layout and rendering agree on whether this message
+          // owns a workflow card. Real job steps still take precedence over the
+          // optimistic skeleton inside resolveExecutionTimelineSteps.
+          const liveRunState = message.assetId
+            ? liveRunStateByAssetId?.[message.assetId]
+            : undefined;
+          const timelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
+          const ownsWorkflowCard = Boolean(message.plan || timelineSteps.length);
+          return (
+            <div
+              className="shadcn-prototype-message-group"
+              key={`${message.role}-${index}`}
+            >
+              <article className={[
+                message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,
+                ownsWorkflowCard ? "shadcn-prototype-workflow-card-message" : "",
+                message.pending ? "pending" : "",
+                message.localState ? `local-${message.localState}` : ""
+              ].filter(Boolean).join(" ")}>
               {shouldRenderMessageBody(message) ? (
                 <p>
                   {message.text}
@@ -491,26 +495,18 @@ export default function ConversationStudio({
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />
               ) : null}
-              {(() => {
-                // Prefer the live main-job aggregate for this persisted execution
-                // anchor; static steps remain the mock/offline fallback.
-                const liveRunState = message.assetId
-                  ? liveRunStateByAssetId?.[message.assetId]
-                  : undefined;
-                const timelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
-                return timelineSteps?.length ? (
-                  <AgentRunTimeline
-                    steps={timelineSteps}
-                    errorMessage={liveRunState?.errorMessage}
-                    completionConfirmed={liveRunState?.completionConfirmed}
-                    onRetry={liveRunState && onRetryExecution
-                      ? (retryJobId) => {
-                          void onRetryExecution(retryJobId, liveRunState.jobId);
-                        }
-                      : undefined}
-                  />
-                ) : null;
-              })()}
+              {timelineSteps.length ? (
+                <AgentRunTimeline
+                  steps={timelineSteps}
+                  errorMessage={liveRunState?.errorMessage}
+                  completionConfirmed={liveRunState?.completionConfirmed}
+                  onRetry={liveRunState && onRetryExecution
+                    ? (retryJobId) => {
+                        void onRetryExecution(retryJobId, liveRunState.jobId);
+                      }
+                    : undefined}
+                />
+              ) : null}
               {(() => {
                 const suggestions = visibleSuggestions(message)
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
@@ -561,10 +557,11 @@ export default function ConversationStudio({
                   </div>
                 ) : null;
               })()}
-            </article>
-            {renderProductCards(index)}
-          </div>
-        ))}
+              </article>
+              {renderProductCards(index)}
+            </div>
+          );
+        })}
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>

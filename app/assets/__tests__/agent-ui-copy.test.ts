@@ -1448,8 +1448,7 @@ describe("agent conversation UI copy", () => {
 
     expect(conversationStudio).toContain("optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}");
     expect(conversationStudio).toContain('presentation: "execution_anchor"');
-    expect(conversationStudio).toContain('key: "create_job"');
-    expect(conversationStudio).toContain('label: "创建视频工程任务"');
+    expect(conversationStudio).toContain("runSteps: optimisticVideoProjectSteps()");
     expect(conversationStudio).toContain("mergeVisibleConversationMessages");
     expect(conversationStudio).toContain("shouldRenderMessageBody(message)");
     expect(conversationStudio).not.toContain('{ role: "user" as const, text: optimisticExchange.userText }');

@@ -2,10 +2,20 @@ import { describe, expect, it } from "vitest";
 import {
   confirmationMessagePresentation,
   mergeVisibleConversationMessages,
+  optimisticVideoProjectSteps,
   shouldRenderMessageBody,
 } from "../lib/conversation-execution-presentation";
 
 describe("confirmation message presentation", () => {
+  it("builds the complete optimistic video-project skeleton", () => {
+    expect(optimisticVideoProjectSteps()).toEqual([
+      { key: "create_job", label: "创建视频工程任务", status: "run" },
+      { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "wait" },
+      { key: "prepare_media", label: "匹配分镜素材并准备配音、字幕", status: "wait" },
+      { key: "build_project", label: "组装可编辑视频工程", status: "wait" },
+    ]);
+  });
+
   it("hides the persisted confirmation command", () => {
     expect(confirmationMessagePresentation("user", {
       confirmation_idempotency_key: "confirm-1",

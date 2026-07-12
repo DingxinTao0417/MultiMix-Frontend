@@ -12,6 +12,15 @@ export type ExecutionOptimisticExchange = {
   runSteps?: AgentRunStep[];
 };
 
+export function optimisticVideoProjectSteps(): AgentRunStep[] {
+  return [
+    { key: "create_job", label: "创建视频工程任务", status: "run" },
+    { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "wait" },
+    { key: "prepare_media", label: "匹配分镜素材并准备配音、字幕", status: "wait" },
+    { key: "build_project", label: "组装可编辑视频工程", status: "wait" },
+  ];
+}
+
 export function confirmationMessagePresentation(
   role: "user" | "assistant",
   metadata: Record<string, unknown> | undefined,
