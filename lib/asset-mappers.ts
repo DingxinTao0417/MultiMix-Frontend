@@ -589,21 +589,24 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const directorDraft = isVideoDirectorDraft(asset);
   // Orchestration lifecycle: pending while the async job runs, failed when the
   // job died without producing a project (retryable from the workspace).
-  const orchestrationPending = Boolean(metadata.orchestration_pending && !videoProject);
   const orchestrationFailed = Boolean(
     !videoProject
-    && !orchestrationPending
     && asset.status === "failed"
     && typeof metadata.latest_job_public_id === "string"
+  );
+  const orchestrationPending = Boolean(
+    metadata.orchestration_pending
+    && !videoProject
+    && !orchestrationFailed
   );
   const status = videoProject
     ? videoProjectStatusLabel(mp4State)
     : mp4Artifact
       ? "MP4 成片 · 已生成"
-    : orchestrationPending
-      ? "视频生成中 · 后台任务"
     : orchestrationFailed
       ? "生成失败 · 可重试"
+    : orchestrationPending
+      ? "视频生成中 · 后台任务"
     : invalidVideoProject
       ? "工程异常 · 待恢复"
     : unsupported
@@ -717,7 +720,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeProductTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

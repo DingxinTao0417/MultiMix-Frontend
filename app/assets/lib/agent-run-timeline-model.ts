@@ -1,5 +1,36 @@
 import type { AgentRunStep } from "./asset-workspace-types";
 
+const STALE_TIMEOUT_ERROR = "Job exceeded its timeout without completing and was marked failed.";
+const MAX_TECHNICAL_DETAIL_LENGTH = 160;
+
+function formatDurationLabel(seconds: number): string {
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}秒`;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = total % 60;
+  return [
+    hours ? `${hours}小时` : "",
+    minutes ? `${minutes}分` : "",
+    rest ? `${rest}秒` : "",
+  ].filter(Boolean).join("");
+}
+
+export function executionErrorPresentation(message: string): {
+  summary: string;
+  technicalDetail?: string;
+} {
+  const normalized = message.trim();
+  const summary = normalized === STALE_TIMEOUT_ERROR
+    ? "视频工程生成超时，请重试。"
+    : "视频工程生成失败，请重试。";
+  if (!normalized) return { summary };
+  const technicalDetail = normalized.length > MAX_TECHNICAL_DETAIL_LENGTH
+    ? `${normalized.slice(0, MAX_TECHNICAL_DETAIL_LENGTH - 1)}…`
+    : normalized;
+  return { summary, technicalDetail };
+}
+
 export type AgentRunExpansionState = {
   expanded: boolean;
   allDone: boolean;
@@ -115,7 +146,7 @@ export function summarizeAgentRunSteps(steps: AgentRunStep[]) {
     0,
   );
   const totalElapsedLabel = seconds > 0
-    ? `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}秒`
+    ? formatDurationLabel(seconds)
     : undefined;
 
   return {

@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, ChevronDown, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   dispatchAgentRunRetry,
+  executionErrorPresentation,
   resolveAgentRunExpandedState,
   summarizeAgentRunSteps,
 } from "../lib/agent-run-timeline-model";
@@ -11,18 +12,30 @@ import type { AgentRunStep } from "../lib/asset-workspace-types";
 
 export type { AgentRunStep };
 
-const MAX_ERROR_MESSAGE_LENGTH = 160;
-
 function formatElapsedSeconds(seconds?: number) {
   if (typeof seconds !== "number") return undefined;
   return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}秒`;
 }
 
-function truncateErrorMessage(message: string) {
-  const normalized = message.trim();
-  return normalized.length > MAX_ERROR_MESSAGE_LENGTH
-    ? `${normalized.slice(0, MAX_ERROR_MESSAGE_LENGTH - 1)}…`
-    : normalized;
+function RunStatusIcon({ status }: { status: AgentRunStep["status"] }) {
+  if (status === "done") {
+    return <span className="shadcn-prototype-agent-run-ok"><Check size={10} /></span>;
+  }
+  if (status === "run") {
+    return <span className="shadcn-prototype-agent-run-active"><Sparkles size={10} /></span>;
+  }
+  if (status === "fail") {
+    return <span className="shadcn-prototype-agent-run-failmark"><X size={11} /></span>;
+  }
+  return <span className="shadcn-prototype-agent-run-wait" />;
+}
+
+function visibleStepLabel(step: AgentRunStep) {
+  if (step.key !== "mg_overlay") return step.label;
+  if (step.status === "done") {
+    return step.label.startsWith("已") ? step.label : `已${step.label}`;
+  }
+  return step.label.startsWith("后台") ? step.label : `后台${step.label}`;
 }
 
 // Agent execution timeline (spec §5.2 ★). Renders only when real step events
@@ -68,18 +81,18 @@ export default function AgentRunTimeline({
       : Math.min(summary.total, summary.doneCount + 1);
   const failedStep = steps.find((step) => step.status === "fail");
   const retryJobId = failedStep?.retryJobId;
-  const visibleError = summary.hasFailure && errorMessage
-    ? truncateErrorMessage(errorMessage)
+  const errorPresentation = summary.hasFailure
+    ? executionErrorPresentation(errorMessage ?? "")
     : null;
   const title = summary.projectReady && summary.mgActive
-    ? "视频工程已就绪 · MG 动效处理中"
+    ? "视频工程已生成，可立即编辑"
     : summary.allDone
       ? "MultiMix 已完成"
       : summary.hasFailure
         ? "MultiMix 执行失败"
         : "MultiMix 正在执行";
   const countLabel = summary.allDone
-    ? [`共 ${summary.total} 步`, summary.totalElapsedLabel].filter(Boolean).join(" · ")
+    ? [`共 ${summary.total} 步`, summary.totalElapsedLabel ? `总历时 ${summary.totalElapsedLabel}` : undefined].filter(Boolean).join(" · ")
     : `第 ${currentStep} 步 / 共 ${summary.total} 步`;
 
   return (
@@ -96,13 +109,9 @@ export default function AgentRunTimeline({
           resolveAgentRunExpandedState(current, { type: "toggle" })
         ))}
       >
-        {summary.allDone ? (
-          <span className="shadcn-prototype-agent-run-ok" aria-hidden="true"><Check size={10} /></span>
-        ) : summary.hasFailure ? (
-          <span className="shadcn-prototype-agent-run-failmark" aria-hidden="true">✕</span>
-        ) : (
-          <span className="shadcn-prototype-agent-run-dot" aria-hidden="true" />
-        )}
+        <span className="shadcn-prototype-agent-run-ic" aria-hidden="true">
+          <RunStatusIcon status={summary.allDone ? "done" : summary.hasFailure ? "fail" : "run"} />
+        </span>
         <span>{title}</span>
         <span className="shadcn-prototype-agent-run-count">{countLabel}</span>
         <ChevronDown
@@ -117,17 +126,9 @@ export default function AgentRunTimeline({
             {steps.map((step) => (
               <li key={step.key} className={`shadcn-prototype-agent-run-step ${step.status}`}>
                 <span className="shadcn-prototype-agent-run-ic" aria-hidden="true">
-                  {step.status === "done" ? (
-                    <span className="shadcn-prototype-agent-run-ok"><Check size={10} /></span>
-                  ) : step.status === "run" ? (
-                    <span className="shadcn-prototype-agent-run-active"><Sparkles size={10} /></span>
-                  ) : step.status === "fail" ? (
-                    <span className="shadcn-prototype-agent-run-failmark">✕</span>
-                  ) : (
-                    <span className="shadcn-prototype-agent-run-wait" />
-                  )}
+                  <RunStatusIcon status={step.status} />
                 </span>
-                <span className="shadcn-prototype-agent-run-tx">{step.label}</span>
+                <span className="shadcn-prototype-agent-run-tx">{visibleStepLabel(step)}</span>
                 <span className="shadcn-prototype-agent-run-tm">
                   {step.elapsedLabel ?? formatElapsedSeconds(step.elapsedSeconds) ?? "—"}
                 </span>
@@ -135,16 +136,26 @@ export default function AgentRunTimeline({
               </li>
             ))}
           </ol>
-          {summary.hasFailure && (visibleError || (onRetry && retryJobId)) ? (
+          {summary.hasFailure && (errorPresentation || (onRetry && retryJobId)) ? (
             <div className="shadcn-prototype-agent-run-error">
-              {visibleError ? <p>{visibleError}</p> : null}
+              {errorPresentation ? (
+                <div className="shadcn-prototype-agent-run-error-copy">
+                  <p>{errorPresentation.summary}</p>
+                  {errorPresentation.technicalDetail ? (
+                    <details>
+                      <summary>查看技术详情</summary>
+                      <code>{errorPresentation.technicalDetail}</code>
+                    </details>
+                  ) : null}
+                </div>
+              ) : null}
               {onRetry && retryJobId ? (
                 <button
                   type="button"
                   className="shadcn-prototype-agent-run-retry"
                   onClick={() => dispatchAgentRunRetry(retryJobId, onRetry)}
                 >
-                  重试失败步骤
+                  重新执行此步骤
                 </button>
               ) : null}
             </div>

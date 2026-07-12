@@ -140,6 +140,25 @@ describe("asset product mapper", () => {
     expect(product.preview?.subtitle).toContain("后台生成");
   });
 
+  it("prefers persisted failure over stale orchestration-pending metadata", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_render",
+      status: "failed",
+      error_message: "Job exceeded its timeout without completing and was marked failed.",
+      metadata: {
+        capability: "video_render",
+        capability_label: "视频编排",
+        orchestration_pending: true,
+        latest_job_public_id: "video-job-stale",
+      },
+    }));
+
+    expect(product.status).toBe("生成失败 · 可重试");
+    expect(product.preview?.subtitle).toContain("生成失败");
+    expect(product.preview?.subtitle).not.toContain("后台生成");
+  });
+
   it("normalizes product ratios without horizontal or vertical wording", () => {
     const portrait = contentAssetToProduct(asset({
       metadata: {

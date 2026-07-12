@@ -7418,17 +7418,18 @@ label {
 }
 
 .shadcn-prototype-agent-run-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto 15px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   padding: 12px 17px;
   border: 0;
   border-bottom: 1px solid var(--sp-border);
   background: transparent;
-  color: inherit;
+  color: var(--sp-text);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 13.5px;
   font-weight: 650;
   text-align: left;
   cursor: pointer;
@@ -7496,7 +7497,6 @@ label {
 }
 
 .shadcn-prototype-agent-run-count {
-  margin-left: auto;
   color: var(--sp-faint);
   font-size: 11.5px;
   font-weight: 500;
@@ -7531,16 +7531,16 @@ label {
 .shadcn-prototype-agent-run-ic {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   margin: 0 auto;
 }
 
 .shadcn-prototype-agent-run-ok {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: var(--sp-green-soft);
   color: var(--sp-green);
@@ -7549,8 +7549,8 @@ label {
 .shadcn-prototype-agent-run-active {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: var(--sp-ai-grad);
   color: #ffffff;
@@ -7558,8 +7558,8 @@ label {
 }
 
 .shadcn-prototype-agent-run-wait {
-  width: 9px;
-  height: 9px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   border: 1.5px solid var(--sp-border-strong);
 }
@@ -7567,8 +7567,8 @@ label {
 .shadcn-prototype-agent-run-failmark {
   display: grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border-radius: 999px;
   background: var(--sp-danger-soft);
   color: var(--sp-danger);
@@ -7578,6 +7578,8 @@ label {
 
 .shadcn-prototype-agent-run-tx {
   color: var(--sp-faint);
+  font-size: 14px;
+  font-weight: 600;
   transition: color var(--motion-medium);
 }
 
@@ -7597,7 +7599,14 @@ label {
 
 .shadcn-prototype-agent-run-tm {
   color: var(--sp-faint);
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.shadcn-prototype-agent-run-step .shadcn-prototype-agent-run-ok {
+  transform: scale(0.88);
+  opacity: 0.78;
 }
 
 .shadcn-prototype-agent-run-shim {
@@ -7636,6 +7645,28 @@ label {
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+.shadcn-prototype-agent-run-error-copy {
+  min-width: 0;
+}
+
+.shadcn-prototype-agent-run-error details {
+  margin-top: 4px;
+  color: var(--sp-faint);
+  font-size: 11px;
+}
+
+.shadcn-prototype-agent-run-error summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.shadcn-prototype-agent-run-error code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .shadcn-prototype-agent-run-retry {
@@ -7689,8 +7720,9 @@ label {
 }
 
 .shadcn-prototype-confirm-title {
-  font-size: 14.5px;
-  font-weight: 650;
+  color: var(--sp-text);
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .shadcn-prototype-confirm-badge {
@@ -7878,8 +7910,9 @@ label {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14.5px;
-  font-weight: 650;
+  color: var(--sp-text);
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .shadcn-prototype-confirm-ok {

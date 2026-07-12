@@ -65,6 +65,15 @@ function renderTimeline({
 }
 
 describe("AgentRunTimeline summary", () => {
+  it("presents stale timeout failures in user-facing Chinese", () => {
+    expect(timelineModel.executionErrorPresentation(
+      "Job exceeded its timeout without completing and was marked failed.",
+    )).toEqual({
+      summary: "视频工程生成超时，请重试。",
+      technicalDetail: "Job exceeded its timeout without completing and was marked failed.",
+    });
+  });
+
   it("summarizes completed steps using real elapsed seconds", () => {
     expect(timelineModel.summarizeAgentRunSteps([
       { key: "create_job", label: "创建任务", status: "done" },
@@ -76,6 +85,14 @@ describe("AgentRunTimeline summary", () => {
       total: 3,
       totalElapsedLabel: "4秒",
     });
+  });
+
+  it("formats long totals as readable Chinese duration copy", () => {
+    expect(timelineModel.summarizeAgentRunSteps([
+      { key: "create_job", label: "等待执行", status: "done", elapsedSeconds: 3586.3 },
+      { key: "build_project", label: "组装工程", status: "done", elapsedSeconds: 38.6 },
+      { key: "mg_overlay", label: "生成并添加 MG 动效（2/2）", status: "done", elapsedSeconds: 164 },
+    ])).toMatchObject({ totalElapsedLabel: "1小时3分9秒" });
   });
 
   it("reports an empty run without claiming completion or readiness", () => {
@@ -111,7 +128,7 @@ describe("AgentRunTimeline summary", () => {
     expect(timelineModel.summarizeAgentRunSteps([
       { key: "create_job", label: "创建任务", status: "done" },
       { key: "build_project", label: "组装工程", status: "done" },
-      { key: "mg_overlay", label: "补充 MG 动效（1/2）", status: "wait" },
+      { key: "mg_overlay", label: "生成并添加 MG 动效（1/2）", status: "wait" },
     ])).toMatchObject({ projectReady: true, mgActive: true, allDone: false });
   });
 });
@@ -287,7 +304,7 @@ describe("AgentRunTimeline rendered branches", () => {
 
     expect(html).toContain('aria-expanded="false"');
     expect(html).not.toContain("<ol");
-    expect(html).toContain("共 2 步 · 4秒");
+    expect(html).toContain("共 2 步 · 总历时 4秒");
   });
 
   it("keeps an all-done live run expanded until polling confirms the terminal state", () => {
@@ -319,9 +336,11 @@ describe("AgentRunTimeline rendered branches", () => {
 
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("<ol");
+    expect(html).toContain("视频工程生成失败，请重试。");
+    expect(html).toContain("查看技术详情");
     expect(html).toContain(truncatedError);
     expect(html).not.toContain(errorMessage);
-    expect(html).toContain("重试失败步骤");
+    expect(html).toContain("重新执行此步骤");
   });
 
   it("does not render retry without both the exact ID and callback", () => {
@@ -340,21 +359,36 @@ describe("AgentRunTimeline rendered branches", () => {
       onRetry: vi.fn(),
     });
 
-    expect(withoutCallback).not.toContain("重试失败步骤");
-    expect(withoutId).not.toContain("重试失败步骤");
+    expect(withoutCallback).not.toContain("重新执行此步骤");
+    expect(withoutId).not.toContain("重新执行此步骤");
   });
 
-  it("renders project-ready copy while an MG step waits", () => {
+  it("makes clear that an MG step does not block the ready video project", () => {
     const html = renderTimeline({
       steps: [
         { key: "create_job", label: "创建任务", status: "done" },
         { key: "build_project", label: "组装工程", status: "done" },
-        { key: "mg_overlay", label: "补充 MG 动效（1/2）", status: "wait" },
+        { key: "mg_overlay", label: "生成并添加 MG 动效（1/2）", status: "wait" },
       ],
     });
 
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain("视频工程已就绪 · MG 动效处理中");
+    expect(html).toContain("视频工程已生成，可立即编辑");
+    expect(html).toContain("后台生成并添加 MG 动效（1/2）");
+    expect(html).not.toContain("MG 动效处理中");
     expect(html).toContain("<ol");
+  });
+
+  it("uses completed tense for a finished MG step", () => {
+    const html = renderTimeline({
+      steps: [
+        { key: "create_job", label: "创建任务", status: "done" },
+        { key: "mg_overlay", label: "生成并添加 MG 动效（2/2）", status: "done" },
+      ],
+      completionConfirmed: false,
+    });
+
+    expect(html).toContain("已生成并添加 MG 动效（2/2）");
+    expect(html).not.toContain("后台生成并添加 MG 动效（2/2）");
   });
 });
