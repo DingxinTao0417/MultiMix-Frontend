@@ -36,6 +36,10 @@ import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-statu
 import { UI_V3_BG_STATUS } from "../lib/ui-flags";
 import type { LibraryActionIntent } from "./library-workshop";
 import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "./library-workspace-state";
+import {
+  readConversationSummaryCache,
+  writeConversationSummaryCache,
+} from "../lib/conversation-summary-cache";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -458,6 +462,15 @@ function mergeContextAssets(current: ConversationContextAsset[], additions: Conv
   return [...byId.values()].slice(-8);
 }
 
+function cachedConversationSummaries(accountEmail: string) {
+  if (typeof window === "undefined") return [];
+  try {
+    return readConversationSummaryCache(window.localStorage, accountEmail);
+  } catch {
+    return [];
+  }
+}
+
 export default function AssetsWorkspaceClient({
   initialConversationId,
   initialProductId,
@@ -467,11 +480,18 @@ export default function AssetsWorkspaceClient({
   token = null,
   onLogout
 }: AssetsWorkspaceClientProps) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const initialConversationSummariesRef = useRef(cachedConversationSummaries(accountEmail));
+  const [conversations, setConversations] = useState<Conversation[]>(() => (
+    assetWorkspaceAdapter.mergeConversationSummaries(initialConversationSummariesRef.current, [])
+  ));
   const [conversationLoadState, setConversationLoadState] = useState<ConversationLoadState>(() => (
-    assetWorkspaceAdapter.isBackendEnabled() ? "loading" : "unconfigured"
+    assetWorkspaceAdapter.isBackendEnabled()
+      ? (initialConversationSummariesRef.current.length ? "ready" : "loading")
+      : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
+  const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
   const [selectedConversationId, setSelectedConversationId] = useState(() => initialConversationId ?? "new");
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
@@ -479,6 +499,8 @@ export default function AssetsWorkspaceClient({
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
   const selectedConversationIdRef = useRef(selectedConversationId);
+  const conversationsRef = useRef(conversations);
+  const conversationDetailGenerationRef = useRef(0);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
@@ -529,7 +551,10 @@ export default function AssetsWorkspaceClient({
   const visibleConversationRows = conversations;
   const selectedConversation =
     visibleConversationRows.find((conversation) => conversation.id === selectedConversationId) ?? assetWorkspaceAdapter.getNewConversation();
-  const selectedProduct = resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  const selectedConversationNeedsDetail = selectedConversation.detailsLoaded === false;
+  const selectedProduct = selectedConversation.detailsLoaded === false
+    ? null
+    : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
@@ -547,6 +572,10 @@ export default function AssetsWorkspaceClient({
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1180px)");
@@ -599,14 +628,22 @@ export default function AssetsWorkspaceClient({
       return;
     }
     let cancelled = false;
-    setConversationLoadState("loading");
+    if (!conversationsRef.current.length) setConversationLoadState("loading");
     void assetWorkspaceAdapter
-      .loadConversations(token, [])
-      .then((rows) => {
+      .loadConversationSummaries(token)
+      .then((summaries) => {
         if (cancelled) return;
-        setConversations(rows);
+        try {
+          writeConversationSummaryCache(window.localStorage, accountEmail, summaries);
+        } catch {
+          // Storage can be unavailable in private browsing; network data still wins.
+        }
+        setConversations((current) => assetWorkspaceAdapter.mergeConversationSummaries(
+          summaries,
+          current,
+        ));
         setConversationLoadState("ready");
-        if (initialConversationId && rows.some((conversation) => conversation.id === initialConversationId)) {
+        if (initialConversationId && summaries.some((conversation) => conversation.id === initialConversationId)) {
           setSelectedConversationId(initialConversationId);
           setActiveView("conversation");
           if (initialProductId) {
@@ -619,14 +656,47 @@ export default function AssetsWorkspaceClient({
       })
       .catch(() => {
         if (cancelled) return;
-        setConversations([]);
-        setConversationLoadState("error");
-        toast.error("无法加载对话历史，请重新加载。");
+        if (conversationsRef.current.length) {
+          setConversationLoadState("ready");
+          toast.error("无法刷新对话列表，正在显示上次记录。");
+        } else {
+          setConversations([]);
+          setConversationLoadState("error");
+          toast.error("无法加载对话历史，请重新加载。");
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [initialConversationId, initialProductId, token, conversationLoadRevision]);
+  }, [accountEmail, initialConversationId, initialProductId, token, conversationLoadRevision]);
+
+  useEffect(() => {
+    if (!token || selectedConversationId === "new") return;
+    const summary = conversationsRef.current.find((conversation) => conversation.id === selectedConversationId);
+    if (!summary || summary.detailsLoaded !== false) return;
+    const generation = conversationDetailGenerationRef.current + 1;
+    conversationDetailGenerationRef.current = generation;
+    setConversationDetailErrorId(null);
+    void assetWorkspaceAdapter
+      .loadConversationDetail(token, selectedConversationId)
+      .then((detail) => {
+        if (conversationDetailGenerationRef.current !== generation) return;
+        setConversations((current) => current.map((conversation) => (
+          conversation.id === detail.id ? detail : conversation
+        )));
+      })
+      .catch(() => {
+        if (conversationDetailGenerationRef.current === generation) {
+          setConversationDetailErrorId(selectedConversationId);
+          toast.error("无法加载这条对话的完整内容，请重试。");
+        }
+      });
+    return () => {
+      if (conversationDetailGenerationRef.current === generation) {
+        conversationDetailGenerationRef.current += 1;
+      }
+    };
+  }, [conversationDetailRetryRevision, selectedConversationId, selectedConversationNeedsDetail, token]);
 
   // Poll every pending background execution plus the selected conversation's
   // latest job. The selected job restores its persisted card once after refresh.
@@ -978,12 +1048,14 @@ export default function AssetsWorkspaceClient({
       item.id === conversation.id ? { ...item, title: nextTitle } : item
     ));
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    void assetWorkspaceAdapter.renameConversation(token, conversation.id, nextTitle).catch(() => {
-      setConversations((current) => current.map((item) =>
-        item.id === conversation.id ? { ...item, title: previousTitle } : item
-      ));
-      toast.error("重命名失败，请稍后重试。");
-    });
+    void assetWorkspaceAdapter.renameConversation(token, conversation.id, nextTitle)
+      .then(() => setConversationLoadRevision((value) => value + 1))
+      .catch(() => {
+        setConversations((current) => current.map((item) =>
+          item.id === conversation.id ? { ...item, title: previousTitle } : item
+        ));
+        toast.error("重命名失败，请稍后重试。");
+      });
   };
 
   const handleDeleteConversation = (conversationId: string) => {
@@ -1000,16 +1072,18 @@ export default function AssetsWorkspaceClient({
       setActiveView("conversation");
     }
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    void assetWorkspaceAdapter.deleteConversation(token, conversationId).catch(() => {
-      // Restore on failure so we never hide a conversation that still exists.
-      setConversations((current) => {
-        if (current.some((conversation) => conversation.id === removed.id)) return current;
-        const restored = [...current];
-        restored.splice(Math.min(index, restored.length), 0, removed);
-        return restored;
+    void assetWorkspaceAdapter.deleteConversation(token, conversationId)
+      .then(() => setConversationLoadRevision((value) => value + 1))
+      .catch(() => {
+        // Restore on failure so we never hide a conversation that still exists.
+        setConversations((current) => {
+          if (current.some((conversation) => conversation.id === removed.id)) return current;
+          const restored = [...current];
+          restored.splice(Math.min(index, restored.length), 0, removed);
+          return restored;
+        });
+        toast.error("删除失败，请稍后重试。");
       });
-      toast.error("删除失败，请稍后重试。");
-    });
   };
 
   const handleCollapseSidebar = () => {
@@ -1370,6 +1444,7 @@ export default function AssetsWorkspaceClient({
         [updatedProduct.id]: updatedProduct.version ?? revision.diffSummary
       }));
       setActiveView("conversation");
+      setConversationLoadRevision((value) => value + 1);
       return;
     }
     let result;
@@ -1470,6 +1545,7 @@ export default function AssetsWorkspaceClient({
     if (shouldKeepFocusOnResult) {
       setActiveView("conversation");
     }
+    setConversationLoadRevision((value) => value + 1);
   };
 
   const handleUploadClick = () => {
@@ -1916,6 +1992,8 @@ export default function AssetsWorkspaceClient({
                 liveRunStateByAssetId={liveRunStateByAssetId}
                 onRetryExecution={handleRetryExecution}
                 diagnosticsSlot={renderDiagnostics()}
+                detailLoadError={conversationDetailErrorId === selectedConversation.id}
+                onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
                 readonly={selectedConversation.readonly ?? false}
               />
               <div

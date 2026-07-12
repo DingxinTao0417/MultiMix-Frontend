@@ -10,6 +10,7 @@ import {
   type AssetIngestJobRead,
   type AssetConversationMessageResponse,
   type AssetConversationResponse,
+  type AssetConversationSummaryResponse,
   type ContentAsset,
   type ContentAssetSearchResult,
   type ContentAssetRevisionResponse,
@@ -184,6 +185,9 @@ export type AssetWorkspaceAdapter = {
   // Backend-backed operations. Without an API, callers render an explicit
   // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
+  loadConversationSummaries(token: string): Promise<AssetConversationSummaryResponse[]>;
+  mergeConversationSummaries(summaries: AssetConversationSummaryResponse[], current: AssetConversation[]): AssetConversation[];
+  loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   createConversation(token: string): Promise<AssetConversation>;
   deleteConversation(token: string, conversationId: string): Promise<void>;
@@ -234,6 +238,46 @@ export type AssetWorkspaceAdapter = {
   updateAdminPublicSource(token: string, provider: string, payload: Partial<Pick<PublicSourceRead, "enabled" | "media_types">>): Promise<PublicSourceRead>;
   checkAdminPublicSourceHealth(token: string, provider: string): Promise<PublicSourceRead>;
 };
+
+export function conversationFromSummary(
+  row: AssetConversationSummaryResponse,
+  newConversationProduct: AssetProduct,
+): AssetConversation {
+  return {
+    id: row.id,
+    detailsLoaded: false,
+    title: row.title,
+    type: "llm-generation",
+    updatedAt: relativeTimeLabel(row.updated_at),
+    assetLabel: "对话历史",
+    status: row.status,
+    prompt: "",
+    response: "",
+    canvasTitle: row.title,
+    canvasMeta: "",
+    raw: "",
+    judgment: "",
+    action: "",
+    delivery: "",
+    suggestions: [],
+    messages: [],
+    product: newConversationProduct,
+    products: [],
+    sourceIds: [],
+  };
+}
+
+export async function retryConversationDetailLoad<T>(
+  load: () => Promise<T>,
+  wait: () => Promise<void> = () => new Promise((resolve) => window.setTimeout(resolve, 600)),
+): Promise<T> {
+  try {
+    return await load();
+  } catch {
+    await wait();
+    return load();
+  }
+}
 
 export type VideoJobStepResult = {
   key: string;
@@ -628,9 +672,42 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     isBackendEnabled() {
       return isApiConfigured;
     },
+    async loadConversationSummaries(token) {
+      return api<AssetConversationSummaryResponse[]>("/assets/conversations/summaries", token);
+    },
+    mergeConversationSummaries(summaries, current) {
+      const currentById = new Map(current.map((conversation) => [conversation.id, conversation]));
+      return summaries.map((summary) => {
+        const existing = currentById.get(summary.id);
+        if (existing && existing.detailsLoaded !== false) {
+          return {
+            ...existing,
+            title: summary.title,
+            status: summary.status,
+            updatedAt: relativeTimeLabel(summary.updated_at),
+          };
+        }
+        return conversationFromSummary(summary, data.newConversation.product);
+      });
+    },
+    async loadConversationDetail(token, conversationId) {
+      const row = await retryConversationDetailLoad(
+        () => api<AssetConversationResponse>(
+          `/assets/conversations/${encodeURIComponent(conversationId)}`,
+          token,
+        ),
+      );
+      return {
+        ...conversationFromPersisted(row, data.newConversation.product),
+        detailsLoaded: true,
+      };
+    },
     async loadConversations(token, current) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
-      return mergePersistedConversations(rows, current, data.newConversation.product);
+      return mergePersistedConversations(rows, current, data.newConversation.product).map((conversation) => ({
+        ...conversation,
+        detailsLoaded: true,
+      }));
     },
     async createConversation(token) {
       const row = await api<AssetConversationResponse>("/assets/conversations", token, { method: "POST" });

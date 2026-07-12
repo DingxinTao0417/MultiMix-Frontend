@@ -92,8 +92,15 @@ request ID；同一乐观轮次和重试必须复用它。
 #### `getSnapshot(): AssetWorkspaceData`
 返回结构合法的空工作台快照（空 conversations、`newConversation` 壳和空 workshops），供异步真实数据加载前渲染。
 
+#### 对话摘要缓存与按需详情
+
+- `GET /v1/assets/conversations/summaries` 只返回 `id/title/status/metadata/created_at/updated_at`，不返回消息和产物。
+- 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。
+- `GET /v1/assets/conversations/{conversation_id}` 在用户选中对话后加载完整消息、产物和版本。
+- `loadConversations` 保留给任务完成刷新与幂等 reconciliation，不再作为首屏列表请求。
+
 #### `listConversations(): AssetConversation[]`
-同步读取只返回空数组；真实历史对话由 `loadConversations` 异步加载。加载前显示骨架，不显示样例。
+同步快照仍不包含演示对话；首屏历史由真实摘要缓存和 `loadConversationSummaries` 提供，不回退样例。
 
 #### `getConversation(conversationId): AssetConversation | undefined`
 按 `id` 精确查找单条对话，找不到返回 `undefined`。

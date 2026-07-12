@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { assetWorkspaceAdapter, libraryCategoryForAsset } from "../lib/asset-workspace-adapter";
-import type { ContentAsset } from "../../../lib/api";
+import { assetWorkspaceAdapter, conversationFromSummary, libraryCategoryForAsset, retryConversationDetailLoad } from "../lib/asset-workspace-adapter";
+import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
@@ -54,6 +54,37 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("retries one transient conversation detail failure", async () => {
+    let attempts = 0;
+    const result = await retryConversationDetailLoad(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("temporary database connection failure");
+      return "loaded";
+    }, async () => undefined);
+
+    expect(result).toBe("loaded");
+    expect(attempts).toBe(2);
+  });
+
+  it("maps lightweight summaries without fabricating messages or products", () => {
+    const summary: AssetConversationSummaryResponse = {
+      id: "asset-conversation-480",
+      title: "MultiMix 产品介绍短视频",
+      status: "active",
+      metadata: {},
+      created_at: "2026-07-12T08:00:00Z",
+      updated_at: "2026-07-12T09:00:00Z",
+    };
+
+    const conversation = conversationFromSummary(summary, assetWorkspaceAdapter.getNewConversation().product);
+
+    expect(conversation.id).toBe(summary.id);
+    expect(conversation.title).toBe(summary.title);
+    expect(conversation.detailsLoaded).toBe(false);
+    expect(conversation.messages).toEqual([]);
+    expect(conversation.products).toEqual([]);
+  });
+
   it("keeps bundled demo data out of the production adapter", () => {
     const source = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
 

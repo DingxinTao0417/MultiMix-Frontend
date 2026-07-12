@@ -195,6 +195,7 @@ export type AssetSuggestionAction = {
 
 export type AssetConversation = {
   id: string;
+  detailsLoaded?: boolean;
   // Read-only sample conversations cannot be continued (mock starters).
   readonly?: boolean;
   title: string;

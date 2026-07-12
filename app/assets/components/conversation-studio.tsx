@@ -148,6 +148,8 @@ export default function ConversationStudio({
   liveRunStateByAssetId,
   onRetryExecution,
   diagnosticsSlot = null,
+  detailLoadError = false,
+  onRetryDetail,
   readonly = false
 }: {
   basePath: string;
@@ -173,6 +175,8 @@ export default function ConversationStudio({
   }>;
   onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
   diagnosticsSlot?: ReactNode;
+  detailLoadError?: boolean;
+  onRetryDetail?: () => void;
   readonly?: boolean;
 }) {
   const products = getConversationProducts(selectedConversation);
@@ -460,7 +464,23 @@ export default function ConversationStudio({
         {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
       </header>
       <div className="shadcn-prototype-thread">
-        {visibleConversationMessages.map((message, index) => {
+        {selectedConversation.detailsLoaded === false ? (
+          <div className="shadcn-prototype-message-group" role={detailLoadError ? "alert" : "status"}>
+            <article className={detailLoadError ? "assistant" : "assistant pending"}>
+              {detailLoadError ? (
+                <p>
+                  对话内容加载失败。
+                  <button type="button" onClick={onRetryDetail}>重试加载</button>
+                </p>
+              ) : (
+                <p>
+                  正在加载对话内容
+                  <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+                </p>
+              )}
+            </article>
+          </div>
+        ) : visibleConversationMessages.map((message, index) => {
           // Resolve once so layout and rendering agree on whether this message
           // owns a workflow card. Real job steps still take precedence over the
           // optimistic skeleton inside resolveExecutionTimelineSteps.

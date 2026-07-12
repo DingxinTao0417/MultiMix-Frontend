@@ -1188,7 +1188,7 @@ describe("conversation execution timeline state", () => {
     }];
     const mgFailure: TimelineStep[] = [{
       key: "mg_overlay",
-      label: "补充 MG 动效",
+      label: "生成并添加 MG 动效",
       status: "fail",
       retryJobId: "mg-child",
     }];
@@ -1487,10 +1487,20 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-admin-quota");
   });
 
-  it("renders explicit real-conversation loading states without demo fallback", () => {
+  it("renders cached real-conversation summaries while revalidating without demo fallback", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
-    expect(workspaceClient).toContain("useState<Conversation[]>([])");
+    expect(workspaceClient).toContain("readConversationSummaryCache");
+    expect(workspaceClient).toContain("writeConversationSummaryCache");
+    expect(workspaceClient).toContain("loadConversationSummaries");
+    expect(workspaceClient).toContain("loadConversationDetail");
+    expect(workspaceClient).toContain("setConversations((current) => assetWorkspaceAdapter.mergeConversationSummaries(");
+    expect(workspaceClient).toContain("conversationDetailGenerationRef");
+    expect(workspaceClient).not.toContain("conversationDetailInFlightRef");
+    expect(workspaceClient).toContain("conversationDetailErrorId");
+    expect(workspaceClient).toContain("conversationDetailRetryRevision");
+    expect(workspaceClient).toContain("detailLoadError={conversationDetailErrorId === selectedConversation.id}");
+    expect(workspaceClient).toContain("onRetryDetail={() => setConversationDetailRetryRevision");
     expect(workspaceClient).not.toContain("useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations())");
     expect(workspaceClient).toContain("正在加载你的对话");
     expect(workspaceClient).toContain("还没有对话");

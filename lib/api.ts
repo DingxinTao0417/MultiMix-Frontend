@@ -203,6 +203,15 @@ export type AssetConversationResponse = {
   updated_at: string;
 };
 
+export type AssetConversationSummaryResponse = {
+  id: string;
+  title: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AssetConversationMessageResponse = {
   conversation_id: string;
   conversation: AssetConversationResponse;
