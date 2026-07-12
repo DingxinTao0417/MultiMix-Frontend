@@ -2547,18 +2547,19 @@ button:disabled {
 /* 助手消息渐变星标头像（demo .msg .avatar） */
 /* 成片浏览态（demo workspace-video 默认态）：播放器 + 分镜卡 + 来源块 */
 .shadcn-prototype-video-browse {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-content: start;
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding-right: 2px;
 }
 
-.shadcn-prototype-video-browse .shadcn-prototype-product-video {
+.shadcn-prototype-video-browse > .shadcn-prototype-product-video {
   display: grid;
+  flex: 0 0 auto;
   justify-content: center;
   overflow: visible;
   border: 0;
@@ -6971,6 +6972,13 @@ label {
   gap: 9px;
 }
 
+.shadcn-prototype-video-browse > .shadcn-prototype-segment-cards {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
 .shadcn-prototype-segment-cards > header {
   display: flex;
   min-height: 0;
@@ -6998,6 +7006,11 @@ label {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.shadcn-prototype-video-browse > .shadcn-prototype-segment-cards > ol {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .shadcn-prototype-segment-cards li {
@@ -7369,6 +7382,7 @@ label {
   right: 10px;
   top: 50%;
   display: none;
+  flex-shrink: 0;
   transform: translateY(-50%);
 }
 

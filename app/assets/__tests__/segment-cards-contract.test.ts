@@ -25,4 +25,11 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).toContain("segment.mgStatus");
     expect(component).toContain("shadcn-prototype-segment-mg-status");
   });
+
+  test("renders every segment in one vertical list without paging or collapsing", () => {
+    expect(component).toContain("segments.map((segment) =>");
+    expect(component).not.toContain("segments.slice(");
+    expect(component).not.toContain("展开更多");
+    expect(css).toMatch(/\.shadcn-prototype-segment-actions\s*\{[^}]*flex-shrink:\s*0;/s);
+  });
 });
