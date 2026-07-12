@@ -48,9 +48,10 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it("shows a project preview when the ready project has no MP4", () => {
+  it("shows a lightweight storyboard preview when the ready project has no MP4", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
-    expect(screen.getByLabelText("视频工程预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.queryByTitle("视频工程只读预览")).not.toBeInTheDocument();
   });
 
   it("shows the finished-video surface for the MP4 case", () => {

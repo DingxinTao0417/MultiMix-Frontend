@@ -73,6 +73,11 @@ type TestConversation = {
   id: string;
   product: { metadata?: Record<string, unknown> };
   products?: Array<{ metadata?: Record<string, unknown> }>;
+  messages?: Array<{
+    role: "user" | "assistant";
+    presentation?: string;
+    metadata?: Record<string, unknown>;
+  }>;
 };
 
 type TestVideoJob = {
@@ -160,6 +165,30 @@ describe("video execution polling decisions", () => {
     expect(executionVideoJobIds(conversations, "selected")).toEqual([
       "job-selected",
       "job-background",
+    ]);
+  });
+
+  it("restores the selected main job from the persisted execution anchor when asset metadata lost it", () => {
+    const executionVideoJobIds = loadWorkspaceDecision<(
+      conversations: TestConversation[],
+      selectedConversationId: string,
+    ) => string[]>("executionVideoJobIds");
+    const conversations: TestConversation[] = [{
+      id: "selected",
+      product: { metadata: { latest_job_public_id: null } },
+      products: [{ metadata: { latest_job_public_id: null } }],
+      messages: [{
+        role: "assistant",
+        presentation: "execution_anchor",
+        metadata: {
+          job_public_id: "video-job-persisted",
+          video_workflow_stage: "video_project_ready",
+        },
+      }],
+    }];
+
+    expect(executionVideoJobIds(conversations, "selected")).toEqual([
+      "video-job-persisted",
     ]);
   });
 

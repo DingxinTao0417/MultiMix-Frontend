@@ -57,7 +57,7 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
 
 test("CASE-06 is editable but has no video element", async ({ page }) => {
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
-  await expect(workspace.getByLabel("视频工程预览")).toBeVisible();
+  await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
 });

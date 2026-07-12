@@ -2715,6 +2715,18 @@ button:disabled {
   background: #101514;
 }
 
+.shadcn-prototype-project-preview-screen > :is(img, video) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.shadcn-prototype-project-preview-screen > .shadcn-prototype-video-placeholder-screen {
+  height: 100%;
+  aspect-ratio: auto;
+}
+
 .shadcn-prototype-project-preview-frame {
   display: block;
   width: 100%;

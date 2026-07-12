@@ -125,6 +125,20 @@ export function executionVideoJobIds(
   const ids = new Set<string>();
   for (const conversation of conversations) {
     const selected = conversation.id === selectedConversationId;
+    if (selected) {
+      for (const message of conversation.messages ?? []) {
+        const metadata = message.metadata as Record<string, unknown> | undefined;
+        const jobId = metadata?.job_public_id;
+        const stage = metadata?.video_workflow_stage;
+        if (
+          typeof jobId === "string"
+          && (message.presentation === "execution_anchor"
+            || (typeof stage === "string" && stage.startsWith("video_project_")))
+        ) {
+          ids.add(jobId);
+        }
+      }
+    }
     const products = conversation.products?.length ? conversation.products : [conversation.product];
     for (const product of products) {
       const metadata = product.metadata as Record<string, unknown> | undefined;
