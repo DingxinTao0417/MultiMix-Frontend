@@ -29,7 +29,12 @@ const newConversation: AssetConversation = {
   judgment: "",
   action: "",
   delivery: "",
-  suggestions: [],
+  suggestions: [
+    "写一条小红书文案",
+    "生成 9:16 短视频脚本",
+    "做一张封面图",
+    "把好评截图变成种草帖",
+  ],
   messages: [],
   product: emptyProduct,
   products: [],

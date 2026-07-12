@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { libraryCategoryForAsset } from "../lib/asset-workspace-adapter";
+import { assetWorkspaceAdapter, libraryCategoryForAsset } from "../lib/asset-workspace-adapter";
 import type { ContentAsset } from "../../../lib/api";
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
@@ -61,5 +61,15 @@ describe("runtime data boundary", () => {
     expect(source).not.toContain("mockAssetWorkspaceData");
     expect(source).not.toContain("Local mock revision");
     expect(source).not.toContain("Local mock restore");
+  });
+
+  it("keeps product starter prompts without restoring demo conversations", () => {
+    expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
+    expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([
+      "写一条小红书文案",
+      "生成 9:16 短视频脚本",
+      "做一张封面图",
+      "把好评截图变成种草帖"
+    ]);
   });
 });
