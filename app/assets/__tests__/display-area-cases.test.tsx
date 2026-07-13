@@ -2,11 +2,13 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProductPreview from "../components/product-preview";
 import ProductWorkspace from "../components/product-workspace";
+import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import type { VideoQualityReport } from "../lib/video-quality";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
 afterEach(() => {
@@ -146,5 +148,83 @@ describe("display-area eight-case matrix", () => {
   it("renders a real video element only for the MP4 case", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     expect(container.querySelector("video")).toHaveAttribute("src", expect.stringContaining("display-sample.mp4"));
+  });
+
+  it("disables export when the backend preflight returns a blocker", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const blocked: VideoQualityReport = {
+      stage: "export_preflight",
+      status: "blocked",
+      blockers: [{
+        code: "main_track_gap",
+        segment_id: "scene-1",
+        object_type: "main_track",
+        message: "第 1 段主画面没有覆盖。",
+        attempted_fallbacks: ["saved_asset", "title_card"],
+        suggested_actions: ["补齐主轨素材"],
+      }],
+      warnings: [],
+    };
+    vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue(blocked);
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+
+    expect(await screen.findByText("第 1 段主画面缺失")).toBeVisible();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeDisabled();
+  });
+
+  it("allows warning-only preflight to reach the editor export bridge", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const warningOnly: VideoQualityReport = {
+      stage: "export_preflight",
+      status: "warning",
+      blockers: [],
+      warnings: [{
+        code: "material_low_confidence",
+        segment_id: "scene-1",
+        object_type: "material",
+        message: "素材相关度偏低。",
+        attempted_fallbacks: [],
+        suggested_actions: [],
+      }],
+    };
+    vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue(warningOnly);
+    const { container } = render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+    const frame = container.querySelector("iframe") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-export" },
+      window.location.origin,
+    ));
   });
 });

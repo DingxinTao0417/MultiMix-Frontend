@@ -125,6 +125,36 @@ export default function FilmStrip({
     core.playback.seek({ time: clip.startTime + 0.01 });
   }, [clips, core, initialSegmentId]);
 
+  useEffect(() => {
+    const onLocateMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const message = event.data as {
+        source?: string;
+        type?: string;
+        segmentId?: string;
+      };
+      if (
+        message?.source !== "multimix-workspace"
+        || message.type !== "multimix-editor-locate-segment"
+        || !message.segmentId
+      ) return;
+      const clipIndex = clips.findIndex(
+        (element) => segmentIdByElementId[element.id] === message.segmentId,
+      );
+      const clip = clips[clipIndex];
+      if (!clip) return;
+      setSelectedId(clip.id);
+      core.playback.seek({ time: clip.startTime + 0.01 });
+      const clipButton = stripRef.current?.children.item(clipIndex);
+      if (clipButton instanceof HTMLElement) {
+        clipButton.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        clipButton.focus();
+      }
+    };
+    window.addEventListener("message", onLocateMessage);
+    return () => window.removeEventListener("message", onLocateMessage);
+  }, [clips, core]);
+
   const authHeaders = useMemo(
     () => (token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)),
     [token],

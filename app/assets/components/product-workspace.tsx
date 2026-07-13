@@ -7,9 +7,11 @@ import { getProductModeLabel, getProductRatioClass, stringValue, type Conversati
 import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
+import VideoQualityPanel from "./video-quality-panel";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -70,8 +72,9 @@ export default function ProductWorkspace({
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
   const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
@@ -136,6 +139,7 @@ export default function ProductWorkspace({
     setEditorReady(false);
     setExportState("idle");
     setExportProgress(null);
+    setQualityReport(null);
   }, [currentAssetId, hasVideoProject]);
 
   useEffect(() => {
@@ -198,10 +202,30 @@ export default function ProductWorkspace({
     return () => window.removeEventListener("message", onMessage);
   }, [currentAssetId, hasVideoProject]);
 
-  const handleExportVideo = () => {
-    if (!currentAssetId || !editorReady || exportState === "exporting") return;
+  const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
+    if (!token || !product.backendAssetId) {
+      setExportState("error");
+      return null;
+    }
+    setExportState("checking");
+    setExportProgress(null);
+    try {
+      const report = await assetWorkspaceAdapter.getVideoQuality(token, product.backendAssetId);
+      setQualityReport(report);
+      setExportState("idle");
+      return report;
+    } catch {
+      setExportState("error");
+      return null;
+    }
+  };
+
+  const handleExportVideo = async () => {
+    if (!currentAssetId || !editorReady || exportState === "exporting" || exportState === "checking") return;
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return;
+    const report = await requestExportQuality();
+    if (!report || hasBlockingVideoIssues(report)) return;
     setExportState("exporting");
     setExportProgress(null);
     frameWindow.postMessage(
@@ -213,8 +237,25 @@ export default function ProductWorkspace({
     );
   };
 
+  const locateQualityIssue = (segmentId: string, objectType: string) => {
+    setVideoSurface("edit");
+    window.requestAnimationFrame(() => {
+      editorFrameRef.current?.contentWindow?.postMessage(
+        {
+          source: "multimix-workspace",
+          type: "multimix-editor-locate-segment",
+          segmentId,
+          objectType,
+        },
+        window.location.origin,
+      );
+    });
+  };
+
   const exportButtonLabel = !editorReady
     ? "导出准备中…"
+    : exportState === "checking"
+      ? "正在检查…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
@@ -244,6 +285,17 @@ export default function ProductWorkspace({
       setMaterialPickerState("idle");
     }
   }, [product.backendAssetId, token]);
+
+  const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
+    Boolean(issue.segment_id)
+    && ["main_track_gap", "naked_black_interval"].includes(issue.code)
+    && Boolean(product.segments?.some((segment) => segment.id === issue.segment_id))
+  );
+
+  const repairQualityIssue = (issue: VideoQualityIssue) => {
+    const segment = product.segments?.find((item) => item.id === issue.segment_id);
+    if (segment) void openBrowseMaterialPicker(segment);
+  };
 
   const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
     if (!token || !product.backendAssetId || !materialPickerSegment) return;
@@ -477,8 +529,8 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={!editorReady || exportState === "exporting"}
-                onClick={handleExportVideo}
+                disabled={!editorReady || exportState === "exporting" || exportState === "checking" || hasBlockingVideoIssues(qualityReport)}
+                onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
               </button>
@@ -493,6 +545,16 @@ export default function ProductWorkspace({
             </button>
           </div>
         </header>
+
+        {qualityReport && (qualityReport.blockers.length || qualityReport.warnings.length) ? (
+          <VideoQualityPanel
+            report={qualityReport}
+            onLocate={locateQualityIssue}
+            onRepair={repairQualityIssue}
+            canRepair={canRepairQualityIssue}
+            onRecheck={() => void requestExportQuality()}
+          />
+        ) : null}
 
         {hasVideoProject ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>

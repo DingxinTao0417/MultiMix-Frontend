@@ -1,3 +1,5 @@
+import type { VideoQualityReport } from "./video-quality";
+
 export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
 export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
@@ -112,6 +114,7 @@ export type AssetProduct = {
   // True only when the backend project satisfies the shared editor-readiness
   // contract. UI surfaces must not infer readiness from raw metadata presence.
   videoProjectReady?: boolean;
+  videoQualityReport?: VideoQualityReport;
   metadata?: Record<string, unknown>;
 };
 
