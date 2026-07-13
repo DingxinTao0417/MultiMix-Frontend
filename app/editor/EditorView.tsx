@@ -129,13 +129,10 @@ export default function EditorView({
         postToParent({ type: "multimix-editor-export-blocked", report: verifiedReport });
         return;
       }
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `video-${Date.now()}.mp4`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      postToParent({ type: "multimix-editor-export-success", report: verifiedReport });
+      // Rendering and remote verification take long enough that the original
+      // click's browser user activation has expired. Hand the verified Blob to
+      // the parent and let a fresh, explicit download click consume it.
+      postToParent({ type: "multimix-editor-export-success", report: verifiedReport, blob });
     } catch (cause) {
       postToParent({
         type: "multimix-editor-export-error",

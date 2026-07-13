@@ -20,6 +20,7 @@ type EditorBridgeMessage = {
   progress?: number;
   message?: string;
   report?: VideoQualityReport;
+  blob?: Blob;
 };
 
 export function EmptyProductWorkspace() {
@@ -77,6 +78,7 @@ export default function ProductWorkspace({
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [exportError, setExportError] = useState("");
+  const [exportDownloaded, setExportDownloaded] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
   const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
@@ -84,6 +86,7 @@ export default function ProductWorkspace({
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
@@ -114,6 +117,9 @@ export default function ProductWorkspace({
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject;
+  const mgOverlayPending = Boolean(videoJobLive?.steps?.some(
+    (step) => step.key === "mg_overlay" && (step.status === "run" || step.status === "wait"),
+  ));
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = hasVideoProject && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
@@ -143,7 +149,9 @@ export default function ProductWorkspace({
     setExportProgress(null);
     setQualityReport(null);
     setExportError("");
-  }, [currentAssetId, hasVideoProject]);
+    setExportDownloaded(false);
+    verifiedExportBlobRef.current = null;
+  }, [currentAssetId, hasVideoProject, mgOverlayPending]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
@@ -177,16 +185,30 @@ export default function ProductWorkspace({
           setExportState("exporting");
           setExportProgress(null);
           setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         case "multimix-editor-export-progress":
           setExportState("exporting");
-          setExportProgress(typeof data.progress === "number" ? data.progress : null);
+          setExportProgress(
+            typeof data.progress === "number"
+              ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
+              : null,
+          );
           break;
         case "multimix-editor-export-success":
           if (data.report) setQualityReport(data.report);
-          setExportState("done");
-          setExportProgress(100);
-          setExportError("");
+          if (data.blob instanceof Blob) {
+            verifiedExportBlobRef.current = data.blob;
+            setExportState("done");
+            setExportProgress(100);
+            setExportError("");
+            setExportDownloaded(false);
+          } else {
+            setExportState("error");
+            setExportProgress(null);
+            setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
+          }
           break;
         case "multimix-editor-export-verifying":
           setExportState("verifying");
@@ -211,6 +233,8 @@ export default function ProductWorkspace({
           setExportState("idle");
           setExportProgress(null);
           setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         default:
           break;
@@ -243,6 +267,18 @@ export default function ProductWorkspace({
 
   const handleExportVideo = async () => {
     if (!currentAssetId || !editorReady || ["exporting", "checking", "verifying"].includes(exportState)) return;
+    if (exportState === "done" && verifiedExportBlobRef.current) {
+      const url = URL.createObjectURL(verifiedExportBlobRef.current);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `video-${Date.now()}.mp4`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportDownloaded(true);
+      return;
+    }
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return;
     const report = await requestExportQuality();
@@ -283,7 +319,7 @@ export default function ProductWorkspace({
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
-        ? "再次导出"
+        ? exportDownloaded ? "再次下载" : "下载成片"
         : exportState === "error"
           ? "导出失败，重试"
           : exportState === "blocked"
@@ -541,9 +577,14 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {canBrowseVideo && videoSurface === "browse" ? (
-              <button type="button" className="primary" onClick={() => setVideoSurface("edit")}>
+              <button
+                type="button"
+                className="primary"
+                disabled={mgOverlayPending}
+                onClick={() => setVideoSurface("edit")}
+              >
                 <Pencil size={12} aria-hidden="true" />
-                编辑
+                {mgOverlayPending ? "MG 合成中…" : "编辑"}
               </button>
             ) : null}
             {showEditorEmbed ? (
@@ -589,7 +630,7 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {hasVideoProject ? (
+        {hasVideoProject && !mgOverlayPending ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}

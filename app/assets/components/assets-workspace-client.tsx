@@ -274,8 +274,8 @@ export function applyExecutionJobResult({
   job: VideoJobResult;
   isCancelled: () => boolean;
   publishJob: (job: VideoJobResult) => void;
-  startReadyRefresh: (jobId: string) => void;
-  readyRefreshSucceeded: (jobId: string) => boolean;
+  startReadyRefresh: (jobId: string, phase: "project_ready" | "terminal") => void;
+  readyRefreshSucceeded: (jobId: string, phase: "project_ready" | "terminal") => boolean;
   hasTerminalObservation: (jobId: string) => boolean;
   setTerminalObservation: (jobId: string, observed: boolean) => void;
   finalizeJob: (job: VideoJobResult) => void;
@@ -284,13 +284,14 @@ export function applyExecutionJobResult({
   publishJob(job);
   if (isCancelled()) return;
 
+  const executionTerminal = isExecutionTerminal(job);
+  const refreshPhase = executionTerminal ? "terminal" : "project_ready";
   const shouldRefreshConversation = job.status === "completed" || job.status === "failed";
   if (shouldRefreshConversation) {
-    startReadyRefresh(job.id);
+    startReadyRefresh(job.id, refreshPhase);
     if (isCancelled()) return;
   }
 
-  const executionTerminal = isExecutionTerminal(job);
   const observation = job.status === "completed"
     ? resolveExecutionTerminalObservation(
         hasTerminalObservation(job.id),
@@ -305,7 +306,7 @@ export function applyExecutionJobResult({
   if (isCancelled() || !observation.shouldFinalize) return;
   if (
     shouldRefreshConversation
-    && !readyRefreshSucceeded(job.id)
+    && !readyRefreshSucceeded(job.id, refreshPhase)
   ) {
     return;
   }
@@ -724,19 +725,23 @@ export default function AssetsWorkspaceClient({
       if (timer) clearInterval(timer);
     };
 
-    const startReadyRefresh = (jobId: string) => {
+    const startReadyRefresh = (jobId: string, phase: "project_ready" | "terminal") => {
       if (cancelled) return;
-      const requestIdentity = executionRunKey(
+      const runIdentity = executionRunKey(
         jobId,
         executionRunGenerationRef.current.get(jobId) ?? 0,
       );
+      // The project becomes editable before non-blocking MG children finish.
+      // Refresh once for that milestone and again when all children are
+      // terminal so the editor receives the patched overlay track.
+      const requestIdentity = `${runIdentity}::${phase}`;
       startReadyConversationRefresh({
         jobId,
         requestIdentity,
-        isRequestCurrent: (identity) => identity === executionRunKey(
+        isRequestCurrent: (identity) => identity.startsWith(`${executionRunKey(
           jobId,
           executionRunGenerationRef.current.get(jobId) ?? 0,
-        ),
+        )}::`),
         successfulJobIds: readyConversationRefreshRef.current,
         inFlightJobIds: readyConversationRefreshInFlightRef.current,
         isCancelled: () => cancelled,
@@ -806,11 +811,11 @@ export default function AssetsWorkspaceClient({
         isCancelled: () => cancelled,
         publishJob,
         startReadyRefresh,
-        readyRefreshSucceeded: (jobId) => readyConversationRefreshRef.current.has(
-          executionRunKey(
+        readyRefreshSucceeded: (jobId, phase) => readyConversationRefreshRef.current.has(
+          `${executionRunKey(
             jobId,
             executionRunGenerationRef.current.get(jobId) ?? 0,
-          ),
+          )}::${phase}`,
         ),
         hasTerminalObservation: (jobId) => terminalObservationVideoJobIdsRef.current.has(jobId),
         setTerminalObservation,

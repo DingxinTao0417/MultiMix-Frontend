@@ -247,6 +247,14 @@ describe("display-area eight-case matrix", () => {
         data: {
           source: "multimix-editor",
           assetId: product.backendAssetId,
+          type: "multimix-editor-ready",
+        },
+      }));
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
           type: "multimix-editor-export-error",
           message: "VideoFrames can't be created from tainted sources.",
         },
@@ -256,5 +264,70 @@ describe("display-area eight-case matrix", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "VideoFrames can't be created from tainted sources.",
     );
+  });
+
+  it("renders fractional editor progress as a percentage", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
+          type: "multimix-editor-ready",
+        },
+      }));
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
+          type: "multimix-editor-export-progress",
+          progress: 0.42,
+        },
+      }));
+    });
+
+    expect(screen.getByRole("button", { name: "导出中 42%" })).toBeDisabled();
+  });
+
+  it("requires a fresh user click to download the verified export without rendering again", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    renderWorkspace("case-06-project-ready-no-mp4");
+
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
+          type: "multimix-editor-ready",
+        },
+      }));
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
+          type: "multimix-editor-export-success",
+          report: { stage: "export_output", status: "passed", blockers: [], warnings: [] },
+          blob: new Blob(["verified-mp4"], { type: "video/mp4" }),
+        },
+      }));
+    });
+
+    expect(screen.getByRole("button", { name: "下载成片" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "再次导出" })).not.toBeInTheDocument();
   });
 });
