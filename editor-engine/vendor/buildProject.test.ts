@@ -58,6 +58,29 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('preserves backend subtitle line boundaries without creating a third line', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-1',
+          type: 'text',
+          content: '1234567890\nabcdefghij',
+          startTime: 0,
+          duration: 5,
+          segmentId: 'seg-1',
+        }],
+      }],
+    });
+
+    const result = buildProject(bp);
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(String(element.content).split('\n')).toHaveLength(2);
+    expect(element.content).toBe('1234567890\nabcdefghij');
+  });
+
   describe('overlay → isMain mapping', () => {
     it('BackendTrack.overlay: true → track isMain: false', () => {
       const bp = makeProject({

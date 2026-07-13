@@ -99,16 +99,18 @@ function wrapCaption(text: string, maxChars: number): string {
   const t = (text || "").trim();
   if (!t) return "";
   const lines: string[] = [];
-  let cur = "";
-  for (const ch of t) {
-    cur += ch;
-    const atPunct = "，。！？；、,.!?;".includes(ch);
-    if (cur.length >= maxChars || (atPunct && cur.length >= maxChars * 0.6)) {
-      lines.push(cur);
-      cur = "";
+  for (const sourceLine of t.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+    let cur = "";
+    for (const ch of sourceLine) {
+      cur += ch;
+      const atPunct = "，。！？；、,.!?;".includes(ch);
+      if (cur.length >= maxChars || (atPunct && cur.length >= maxChars * 0.6)) {
+        lines.push(cur);
+        cur = "";
+      }
     }
+    if (cur) lines.push(cur);
   }
-  if (cur) lines.push(cur);
   return lines.join("\n");
 }
 
