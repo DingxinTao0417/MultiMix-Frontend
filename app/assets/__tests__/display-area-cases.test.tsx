@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProductPreview from "../components/product-preview";
@@ -226,5 +226,35 @@ describe("display-area eight-case matrix", () => {
       { source: "multimix-workspace", type: "multimix-editor-export" },
       window.location.origin,
     ));
+  });
+
+  it("surfaces the exact editor export error instead of a generic retry label", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new MessageEvent("message", {
+        origin: window.location.origin,
+        data: {
+          source: "multimix-editor",
+          assetId: product.backendAssetId,
+          type: "multimix-editor-export-error",
+          message: "VideoFrames can't be created from tainted sources.",
+        },
+      }));
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "VideoFrames can't be created from tainted sources.",
+    );
   });
 });

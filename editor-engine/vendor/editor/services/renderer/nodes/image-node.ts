@@ -25,6 +25,7 @@ export function loadImageSource(
 
 	const promise = (async (): Promise<CachedImageSource> => {
 		const image = new Image();
+		image.crossOrigin = "anonymous";
 
 		await new Promise<void>((resolve, reject) => {
 			image.onload = () => resolve();

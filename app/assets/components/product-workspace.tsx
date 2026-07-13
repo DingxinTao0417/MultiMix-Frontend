@@ -76,6 +76,7 @@ export default function ProductWorkspace({
   const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [exportError, setExportError] = useState("");
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
   const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
@@ -141,6 +142,7 @@ export default function ProductWorkspace({
     setExportState("idle");
     setExportProgress(null);
     setQualityReport(null);
+    setExportError("");
   }, [currentAssetId, hasVideoProject]);
 
   useEffect(() => {
@@ -174,6 +176,7 @@ export default function ProductWorkspace({
           setEditorReady(true);
           setExportState("exporting");
           setExportProgress(null);
+          setExportError("");
           break;
         case "multimix-editor-export-progress":
           setExportState("exporting");
@@ -183,6 +186,7 @@ export default function ProductWorkspace({
           if (data.report) setQualityReport(data.report);
           setExportState("done");
           setExportProgress(100);
+          setExportError("");
           break;
         case "multimix-editor-export-verifying":
           setExportState("verifying");
@@ -192,10 +196,12 @@ export default function ProductWorkspace({
           if (data.report) setQualityReport(data.report);
           setExportState("blocked");
           setExportProgress(null);
+          setExportError("");
           break;
         case "multimix-editor-export-error":
           setExportState("error");
           setExportProgress(null);
+          setExportError(data.message || "成片合成失败，请重试。");
           break;
         case "multimix-editor-recompose-started":
           // The film strip kicked off a segment recompose: the embed reloads
@@ -204,6 +210,7 @@ export default function ProductWorkspace({
           setEditorReady(false);
           setExportState("idle");
           setExportProgress(null);
+          setExportError("");
           break;
         default:
           break;
@@ -216,10 +223,12 @@ export default function ProductWorkspace({
   const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
     if (!token || !product.backendAssetId) {
       setExportState("error");
+      setExportError("导出身份信息不可用，请重新登录后重试。");
       return null;
     }
     setExportState("checking");
     setExportProgress(null);
+    setExportError("");
     try {
       const report = await assetWorkspaceAdapter.getVideoQuality(token, product.backendAssetId);
       setQualityReport(report);
@@ -227,6 +236,7 @@ export default function ProductWorkspace({
       return report;
     } catch {
       setExportState("error");
+      setExportError("导出前检查失败，请重试。");
       return null;
     }
   };
@@ -239,6 +249,7 @@ export default function ProductWorkspace({
     if (!report || hasBlockingVideoIssues(report)) return;
     setExportState("exporting");
     setExportProgress(null);
+    setExportError("");
     frameWindow.postMessage(
       {
         source: "multimix-workspace",
@@ -569,6 +580,13 @@ export default function ProductWorkspace({
             canRepair={canRepairQualityIssue}
             onRecheck={() => void requestExportQuality()}
           />
+        ) : null}
+
+        {exportState === "error" && exportError ? (
+          <div className="shadcn-prototype-video-failed" role="alert">
+            <strong>导出失败</strong>
+            <p>{exportError}</p>
+          </div>
         ) : null}
 
         {hasVideoProject ? (
