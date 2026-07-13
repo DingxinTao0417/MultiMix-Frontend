@@ -1296,6 +1296,15 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-brand-mark svg");
   });
 
+  it("keeps local auth details out of the login shell", () => {
+    const appShell = readAssetFile("app/multimix-app.tsx");
+
+    expect(appShell).toContain("登录即代表同意《服务条款》与《隐私政策》");
+    expect(appShell).not.toContain("本地演示模式直接进入");
+    expect(appShell).not.toContain("未配置 Supabase 时自动进入本地模式");
+    expect(appShell).not.toContain("multimix-auth-demo");
+  });
+
   it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {
     const globals = readAssetFile("app/globals.css");
 

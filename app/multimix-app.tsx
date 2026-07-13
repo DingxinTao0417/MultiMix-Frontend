@@ -239,34 +239,7 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Demo-final login shell: the demo-mode entry only exists where local mode
-  // is actually reachable (Supabase not configured); password reset only where
-  // Supabase can send the email (§12 数据不在就不渲染).
-  const canDemoEntry = !isSupabaseConfigured;
   const canResetPassword = isSupabaseConfigured && Boolean(supabase);
-
-  async function handleDemoEntry() {
-    setError(null);
-    setNotice(null);
-    if (isApiConfigured) {
-      setSubmitting(true);
-      try {
-        const { authLocalDevAdmin } = await import("../lib/api");
-        const response = await authLocalDevAdmin();
-        if (response.access_token) {
-          onAuthed({ email: response.email ?? "demo@multimix.local", token: response.access_token });
-          return;
-        }
-        setError("本地演示模式登录失败，请检查后端。");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "本地演示模式登录失败。");
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
-    onAuthed({ email: "demo@multimix.local" });
-  }
 
   async function handleForgotPassword() {
     if (!supabase) return;
@@ -398,20 +371,8 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
           )}
         </p>
 
-        {canDemoEntry ? (
-          <>
-            <div className="multimix-auth-divider" aria-hidden="true">或</div>
-            <button className="multimix-auth-demo" type="button" disabled={submitting} onClick={() => void handleDemoEntry()}>
-              <span className="multimix-auth-gdot" aria-hidden="true" />
-              本地演示模式直接进入
-            </button>
-          </>
-        ) : null}
-
         <p className="multimix-auth-foot">
           登录即代表同意《服务条款》与《隐私政策》
-          <br />
-          未配置 Supabase 时自动进入本地模式
         </p>
       </section>
     </main>
