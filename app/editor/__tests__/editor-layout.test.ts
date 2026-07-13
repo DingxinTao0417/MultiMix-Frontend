@@ -68,4 +68,17 @@ describe("editor layout constraints", () => {
 		expect(timelinePanel).not.toContain("展开 MG 动效轨");
 		expect(timelinePanel).not.toContain("{track.elements.length} 段");
 	});
+
+	it("verifies the rendered MP4 before creating a download URL", () => {
+		const view = readProjectFile("app/editor/EditorView.tsx");
+		const localPreflight = view.indexOf("inspectEditorProject(currentProject)");
+		const render = view.indexOf("renderer.exportProject");
+		const remoteVerification = view.indexOf("/exports/verify");
+		const download = view.indexOf("URL.createObjectURL(blob)");
+
+		expect(localPreflight).toBeGreaterThan(-1);
+		expect(localPreflight).toBeLessThan(render);
+		expect(remoteVerification).toBeGreaterThan(render);
+		expect(remoteVerification).toBeLessThan(download);
+	});
 });

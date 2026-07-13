@@ -12,14 +12,16 @@ import type { MediaAsset } from "@editor/lib/media/types";
 import { mediaUrl } from "./api";
 
 // Backend shapes (loose; mirror backend/timeline.py + pipeline.py output).
-interface BackendMedia {
+export interface BackendMedia {
   id: string;
   type: "video" | "image" | "audio";
   file_path: string;
   name: string;
   hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
-interface BackendElement {
+export type SafeRegion = { x: number; y: number; width: number; height: number };
+
+export interface BackendElement {
   id: string;
   type: "video" | "image" | "audio" | "text";
   name?: string;
@@ -31,9 +33,12 @@ interface BackendElement {
   content?: string;
   segmentId?: string;
   segmentText?: string;
+  displayText?: string;
+  focusText?: string;
+  safeRegion?: SafeRegion;
   muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
 }
-interface BackendTrack {
+export interface BackendTrack {
   id: string;
   type: "video" | "audio" | "text";
   name: string;
@@ -41,7 +46,17 @@ interface BackendTrack {
   overlay?: boolean;    // MG overlay track: composited above the main video, isMain=false
 }
 export interface BackendProject {
-  metadata: { title: string; duration: number };
+  metadata: {
+    title: string;
+    duration: number;
+    duration_contract?: {
+      target_seconds: number;
+      tolerance_ratio: number;
+      min_seconds: number;
+      max_seconds: number;
+    };
+    [key: string]: unknown;
+  };
   settings: { fps: number; width: number; height: number };
   media: BackendMedia[];
   tracks: BackendTrack[];
@@ -106,6 +121,9 @@ export const segmentTextByElementId: Record<string, string> = {};
 // the media proxy; segment ids anchor MG overlays).
 export const filePathByMediaId: Record<string, string> = {};
 export const segmentIdByElementId: Record<string, string> = {};
+export const safeRegionByElementId: Record<string, SafeRegion> = {};
+export const displayTextByElementId: Record<string, string> = {};
+export const focusTextByElementId: Record<string, string> = {};
 
 // A placeholder File to satisfy the MediaAsset type; rendering reads `url`, not bytes.
 function placeholderFile(name: string): File {
@@ -179,6 +197,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 
     for (const e of sourceElements) {
       if (e.segmentId) segmentIdByElementId[e.id] = e.segmentId;
+      if (e.safeRegion) safeRegionByElementId[e.id] = e.safeRegion;
+      if (e.displayText) displayTextByElementId[e.id] = e.displayText;
+      if (e.focusText) focusTextByElementId[e.id] = e.focusText;
     }
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
@@ -258,6 +279,16 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 }
 
 export function buildProject(bp: BackendProject): { project: TProject; assets: MediaAsset[] } {
+  for (const map of [
+    filePathByMediaId,
+    segmentIdByElementId,
+    segmentTextByElementId,
+    safeRegionByElementId,
+    displayTextByElementId,
+    focusTextByElementId,
+  ]) {
+    for (const key of Object.keys(map)) delete map[key];
+  }
   const now = new Date();
   const tracks = buildTracks(bp);
   const scene: TScene = {

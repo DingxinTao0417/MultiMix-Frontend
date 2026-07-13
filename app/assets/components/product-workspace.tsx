@@ -19,6 +19,7 @@ type EditorBridgeMessage = {
   type?: string;
   progress?: number;
   message?: string;
+  report?: VideoQualityReport;
 };
 
 export function EmptyProductWorkspace() {
@@ -72,7 +73,7 @@ export default function ProductWorkspace({
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
@@ -179,8 +180,18 @@ export default function ProductWorkspace({
           setExportProgress(typeof data.progress === "number" ? data.progress : null);
           break;
         case "multimix-editor-export-success":
+          if (data.report) setQualityReport(data.report);
           setExportState("done");
           setExportProgress(100);
+          break;
+        case "multimix-editor-export-verifying":
+          setExportState("verifying");
+          setExportProgress(100);
+          break;
+        case "multimix-editor-export-blocked":
+          if (data.report) setQualityReport(data.report);
+          setExportState("blocked");
+          setExportProgress(null);
           break;
         case "multimix-editor-export-error":
           setExportState("error");
@@ -221,7 +232,7 @@ export default function ProductWorkspace({
   };
 
   const handleExportVideo = async () => {
-    if (!currentAssetId || !editorReady || exportState === "exporting" || exportState === "checking") return;
+    if (!currentAssetId || !editorReady || ["exporting", "checking", "verifying"].includes(exportState)) return;
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return;
     const report = await requestExportQuality();
@@ -256,12 +267,16 @@ export default function ProductWorkspace({
     ? "导出准备中…"
     : exportState === "checking"
       ? "正在检查…"
+    : exportState === "verifying"
+      ? "正在检查成片…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
         ? "再次导出"
         : exportState === "error"
           ? "导出失败，重试"
+          : exportState === "blocked"
+            ? "修复后重新检查"
           : "导出视频";
 
   const openBrowseMaterialPicker = useCallback(async (segment: AssetProductSegment) => {
@@ -529,7 +544,7 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={!editorReady || exportState === "exporting" || exportState === "checking" || hasBlockingVideoIssues(qualityReport)}
+                disabled={!editorReady || ["exporting", "checking", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
                 onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
