@@ -152,7 +152,7 @@ function buildSegmentWindows(tracks: BackendTrack[]): Record<string, SegmentWind
   return windows;
 }
 
-function alignOverlayElementToSegment(
+function clampOverlayElementToSegment(
   element: BackendElement,
   segmentWindows: Record<string, SegmentWindow>,
 ): BackendElement {
@@ -160,11 +160,12 @@ function alignOverlayElementToSegment(
   const segmentWindow = segmentWindows[element.segmentId];
   if (!segmentWindow) return element;
 
-  return {
-    ...element,
-    startTime: segmentWindow.startTime,
-    duration: segmentWindow.duration,
-  };
+  const startTime = Math.max(segmentWindow.startTime, element.startTime);
+  const endTime = Math.min(
+    segmentWindow.startTime + segmentWindow.duration,
+    element.startTime + element.duration,
+  );
+  return { ...element, startTime, duration: Math.max(0, endTime - startTime) };
 }
 
 function buildTracks(bp: BackendProject): TimelineTrack[] {
@@ -173,7 +174,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 
   for (const t of bp.tracks) {
     const sourceElements = t.overlay
-      ? t.elements.map((element) => alignOverlayElementToSegment(element, segmentWindows))
+      ? t.elements.map((element) => clampOverlayElementToSegment(element, segmentWindows))
       : t.elements;
 
     for (const e of sourceElements) {

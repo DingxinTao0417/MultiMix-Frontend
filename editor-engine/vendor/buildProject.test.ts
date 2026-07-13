@@ -226,7 +226,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       expect(elements[0].muted).toBe(false);
     });
 
-    it('aligns overlay elements to the matching segment window', () => {
+    it('preserves a shorter overlay inside the matching segment window', () => {
       const bp = makeProject({
         media: [
           makeMedia({ id: 'media-main', file_path: '/test/main.mp4', name: 'main.mp4' }),
@@ -257,8 +257,8 @@ describe('buildProject - overlay/hasAlpha logic', () => {
               {
                 id: 'elem-ol-1',
                 type: 'video',
-                startTime: 5,
-                duration: 2,
+                startTime: 4.2,
+                duration: 3,
                 mediaId: 'media-ol',
                 segmentId: 'seg-1',
               },
@@ -273,8 +273,38 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       );
       const overlayElement = overlayTrack?.elements[0];
 
-      expect(overlayElement?.startTime).toBe(4);
-      expect(overlayElement?.duration).toBe(6);
+      expect(overlayElement?.startTime).toBe(4.2);
+      expect(overlayElement?.duration).toBe(3);
+    });
+
+    it('clamps an overlay that spills beyond its matching segment window', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ol', hasAlpha: true })],
+        tracks: [
+          {
+            id: 'track-main',
+            type: 'video',
+            name: 'Main',
+            elements: [
+              { id: 'main', type: 'video', startTime: 4, duration: 6, mediaId: 'main-media', segmentId: 'seg-1' },
+            ],
+          },
+          {
+            id: 'track-overlay',
+            type: 'video',
+            name: 'MG',
+            overlay: true,
+            elements: [
+              { id: 'overlay', type: 'video', startTime: 9, duration: 4, mediaId: 'media-ol', segmentId: 'seg-1' },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const overlay = project.scenes[0].tracks[1].elements[0];
+      expect(overlay.startTime).toBe(9);
+      expect(overlay.duration).toBe(1);
     });
   });
 });
