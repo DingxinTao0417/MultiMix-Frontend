@@ -19,14 +19,8 @@ async function openCase(page: Page, caseId: string) {
   return workspace;
 }
 
-async function expectProportionalFramelessSurface(page: Page, surface: ReturnType<Page["locator"]>, expectedRatio: number) {
+async function resizeProductPaneAndExpectRatio(page: Page, surface: ReturnType<Page["locator"]>, expectedRatio: number) {
   await expect(surface).toBeVisible();
-  await expect(surface).toHaveCSS("border-top-width", "0px");
-  await expect(surface).toHaveCSS("border-right-width", "0px");
-  await expect(surface).toHaveCSS("border-bottom-width", "0px");
-  await expect(surface).toHaveCSS("border-left-width", "0px");
-  await expect(surface).toHaveCSS("box-shadow", "none");
-
   const before = await surface.evaluate((node) => {
     const rect = node.getBoundingClientRect();
     return { width: rect.width, ratio: rect.width / rect.height };
@@ -52,6 +46,50 @@ async function expectProportionalFramelessSurface(page: Page, surface: ReturnTyp
     return rect.width / rect.height;
   });
   expect(Math.abs(afterRatio - expectedRatio)).toBeLessThan(0.01);
+}
+
+async function expectProportionalFramelessMediaCanvas(page: Page, surface: ReturnType<Page["locator"]>, expectedRatio: number) {
+  await expect(surface).toHaveCSS("border-top-width", "0px");
+  await expect(surface).toHaveCSS("border-right-width", "0px");
+  await expect(surface).toHaveCSS("border-bottom-width", "0px");
+  await expect(surface).toHaveCSS("border-left-width", "0px");
+  await expect(surface).toHaveCSS("box-shadow", "none");
+  await resizeProductPaneAndExpectRatio(page, surface, expectedRatio);
+}
+
+async function expectApprovedVideoPreviewShell(
+  page: Page,
+  player: ReturnType<Page["locator"]>,
+  video: ReturnType<Page["locator"]>,
+  expectedRatio: number,
+) {
+  await expect(player).toBeVisible();
+  await expect(player).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");
+  await expect(player).toHaveCSS("border-radius", "20px");
+  await expect(player).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(player).toHaveCSS("padding-top", "7px");
+  await expect(player).toHaveCSS("padding-right", "7px");
+  await expect(player).toHaveCSS("padding-bottom", "7px");
+  await expect(player).toHaveCSS("padding-left", "7px");
+  await expect(player).toHaveCSS("box-shadow", /rgba\(32, 31, 30, 0\.05\).*rgba\(32, 31, 30, 0\.07\)/);
+  const screen = player.locator(".shadcn-prototype-preview-player-screen");
+  const playIcon = screen.locator("svg");
+  const progress = player.getByRole("slider", { name: "播放进度" });
+  await expect(playIcon).toHaveCSS("width", "16px");
+  await expect(playIcon).toHaveCSS("height", "16px");
+  await expect(playIcon).toHaveCSS("padding", "14px");
+  await expect(progress).toHaveCSS("height", "3px");
+  await expect(progress).toHaveCSS("appearance", "none");
+  await expect(player.locator(".shadcn-prototype-project-preview-controls")).toHaveCSS("padding", "8px 6px 4px");
+  await video.evaluate((node: HTMLVideoElement) => {
+    node.pause();
+    node.currentTime = 0;
+  });
+  await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeLessThan(0.1);
+  await expect(player).toHaveScreenshot("video-preview-shell.png", {
+    animations: "disabled",
+  });
+  await resizeProductPaneAndExpectRatio(page, screen, expectedRatio);
 }
 
 test("CASE-01 shows a director draft without project controls", async ({ page }) => {
@@ -92,10 +130,19 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
 
 test("CASE-06 is editable but has no video element", async ({ page }) => {
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
+  const storyboard = workspace.locator(".shadcn-prototype-project-preview");
+  const storyboardScreen = workspace.locator(".shadcn-prototype-project-preview-screen");
   await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
-  await expectProportionalFramelessSurface(page, workspace.locator(".shadcn-prototype-project-preview-screen"), 16 / 9);
+  await expect(storyboard).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");
+  await expect(storyboard).toHaveCSS("border-radius", "20px");
+  await expect(storyboard).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(storyboard).toHaveCSS("padding", "7px");
+  await expect(storyboard).toHaveCSS("box-shadow", /rgba\(32, 31, 30, 0\.05\).*rgba\(32, 31, 30, 0\.07\)/);
+  await expect(storyboardScreen).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(storyboard).toHaveScreenshot("video-preview-storyboard-shell.png", { animations: "disabled" });
+  await expectProportionalFramelessMediaCanvas(page, storyboardScreen, 16 / 9);
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
@@ -104,13 +151,21 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   const video = workspace.locator("video").first();
   const player = workspace.locator(".shadcn-prototype-preview-player");
   const segmentList = workspace.locator(".shadcn-prototype-segment-cards > ol");
+  const segmentCards = workspace.locator(".shadcn-prototype-segment-cards");
   await expect(video).toBeVisible();
   await expect(video).toHaveCSS("object-fit", "contain");
   await expect(segmentList).toHaveCSS("overflow-y", "auto");
+  await expect(workspace.getByRole("separator", { name: "调整视频预览高度" })).toHaveCount(0);
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(1);
   await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(2.5);
-  await expectProportionalFramelessSurface(page, player, 16 / 9);
+  await expectApprovedVideoPreviewShell(page, player, video, 16 / 9);
+  const layoutGap = await Promise.all([player.boundingBox(), segmentCards.boundingBox()]);
+  expect(layoutGap[0]).not.toBeNull();
+  expect(layoutGap[1]).not.toBeNull();
+  if (layoutGap[0] && layoutGap[1]) {
+    expect(layoutGap[1].y - (layoutGap[0].y + layoutGap[0].height)).toBeLessThan(32);
+  }
 });
 
 test("CASE-08 keeps the project editable when MG fails", async ({ page }) => {

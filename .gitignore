@@ -18,6 +18,7 @@ db/local/*
 Thumbs.db
 
 .playwright-mcp
+playwright-report/
+test-results/
 .gstack/
 .worktrees/
-test-results/demo-material-packs/

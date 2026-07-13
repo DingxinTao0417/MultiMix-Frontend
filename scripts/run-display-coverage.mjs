@@ -9,12 +9,14 @@ const frontendRoot = path.resolve(import.meta.dirname, "..");
 const backendRoot = path.resolve(frontendRoot, "..", "MultiMix-Backend");
 const backendPort = 8299;
 const frontendPort = 3219;
-const runId = crypto.randomUUID();
+const runId = process.env.DISPLAY_COVERAGE_RUN_ID ?? crypto.randomUUID();
+if (!/^[a-zA-Z0-9-]+$/.test(runId)) throw new Error("DISPLAY_COVERAGE_RUN_ID must contain only letters, numbers, and hyphens");
 const databasePath = path.join(os.tmpdir(), `multimix-display-coverage-${runId}.sqlite3`);
 const artifactDir = path.join(os.tmpdir(), `multimix-display-artifacts-${runId}`);
 const resultDir = path.join(frontendRoot, "test-results", "display-coverage");
 const e2eOnly = process.argv.includes("--e2e-only");
 const cleanupProbe = process.argv.includes("--cleanup-probe");
+const updateSnapshots = process.argv.includes("--update-snapshots");
 const children = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -68,6 +70,8 @@ const clearedExternalEnv = {
 };
 
 try {
+  console.log(`Display coverage temp database: ${databasePath}`);
+  console.log(`Display coverage temp artifacts: ${artifactDir}`);
   fs.mkdirSync(resultDir, { recursive: true });
   await assertPortFree(backendPort);
   await assertPortFree(frontendPort);
@@ -111,7 +115,9 @@ try {
   await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 120_000);
   if (cleanupProbe) throw new Error("Intentional display coverage cleanup probe");
 
-  await run(npxCommand, ["playwright", "test", "e2e/display-area.spec.ts"], {
+  const playwrightArgs = ["playwright", "test", "e2e/display-area.spec.ts"];
+  if (updateSnapshots) playwrightArgs.push("--update-snapshots");
+  await run(npxCommand, playwrightArgs, {
     cwd: frontendRoot,
     env: { ...frontendEnv, DISPLAY_COVERAGE_SEED_JSON: JSON.stringify(seedJson) },
     stdout: process.stdout,

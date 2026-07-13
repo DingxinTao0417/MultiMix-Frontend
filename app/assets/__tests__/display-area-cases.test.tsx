@@ -66,7 +66,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
-    expect(screen.getByRole("separator", { name: "调整视频预览高度" })).toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: "调整视频预览高度" })).not.toBeInTheDocument();
   });
 
   it("seeks the finished video when a storyboard card is selected", () => {

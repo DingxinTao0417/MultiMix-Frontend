@@ -123,6 +123,16 @@ scripts/
 
 对话决定产物类型；展示区只显示当前选中的单个产物，**不加一级产物类型 Tab**；产物切换靠对话流里的产物卡；库详情用居中模态弹窗，工作台产物详情用顶部「详情」浮层；下一步建议放在助手回复里。数字人是视频的一种表现形式，不是一级产物类型。面向普通用户的文案只出现「文案、图片、视频、确认生成」等表达，内部能力名/模型名/调试状态留在后端 metadata 或管理员诊断入口。
 
+#### 视频预览壳不可回退门禁
+
+- `docs/MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v1` 与工作区原型 `../docs/specs/ui/prototypes/current/screens/workspace-video.html` 是权威。播放器外壳固定为白底、`1px solid #eae7e1`、`20px` 圆角、`7px` 内边距和双层柔和阴影；媒体画布内部可以黑底无边框，但不得把“画布无边框”解释为“播放器无外壳”。
+- 横竖比例只应用到媒体画布，不能应用到包含底部控制条的整个播放器；浏览态不得增加固定高度容器或独立纵向拖拽条，播放器后应直接衔接分镜摘要。
+- 播放控件必须保持原型数值：`44px` 圆形按钮、`16px` 图标、悬停 `scale(1.07)`、控制区 `8px 6px 4px`、`3px` 渐变进度轨，禁止恢复浏览器原生 range 滑块。
+- 成片播放器和无成片分镜预览必须共用白色细边框、圆角与阴影外壳；待补素材、首帧未加载和失败提示画布默认为白色，禁止退回无提示黑块。
+- `.shadcn-prototype-preview-player*`、`video-preview-player.tsx`、播放器契约测试、展示区 E2E 和截图基线是受保护链路。除非用户在当次任务中明确批准新的视觉方向，否则禁止改成 frameless、黑底外壳、零内边距或无阴影。
+- 禁止只修改实现和测试期望来证明新样式正确。契约变化必须同步更新设计依据、当前原型、独立契约检查和浏览器截图基线，并记录当次用户批准。
+- 改动受保护链路后必须运行 `npm run check:video-preview-contract`、`npm run test:product-stage-style` 和隔离的 `npm run test:display-coverage`。
+
 ### 资源库分类（以设计文档为准）
 
 - 资产库按来源分类：`上传资料`、`采集资料`、`对话沉淀`。不显示用途标签；内容类型、检索关键词、解析和索引状态放在详情层或检索层。
@@ -153,7 +163,7 @@ scripts/
 
 ### 提交前
 
-1. 分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和本次实际提交范围。
+1. 先运行 `node scripts/workspace-submit-guard.mjs begin` 获取工作区单写入锁并保存输出令牌；没有令牌时禁止 commit、merge 或 push。分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和本次实际提交范围。
 2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
 3. 如果发现不属于当前任务的陌生改动，明确列出并保留在工作区；不要擅自回滚，也不要静默带入提交。
 
@@ -175,6 +185,8 @@ scripts/
 
 检查失败时停止提交或推送，先修复问题；如果无法修复，向用户报告失败命令和原因。
 
+自动检查完成后运行 `node scripts/workspace-submit-guard.mjs verify --token <token>`；如果 HEAD、暂存区、文件集合或内容与开始检查时不同，说明有并发或晚到修改，必须停止。
+
 ### 提交
 
 1. 每个仓库独立提交，不把前端和后端混成一个 git 操作。
@@ -183,6 +195,7 @@ scripts/
    - `Update MultiMix workspace libraries and conversation flow`
    - `Update asset upload validation and conversation assets`
 4. 创建本地提交后再次运行 `git status --short --branch`，确认目标改动已经提交；允许保留已明确排除的无关脏文件，但必须在后续推送前后报告。
+5. 目标提交完成后运行 `node scripts/workspace-submit-guard.mjs checkpoint --token <token>`，把预期的新 HEAD 和工作区状态设为 push 前基线。
 
 ### 拉取与合并
 
@@ -199,9 +212,11 @@ scripts/
 ### 推送
 
 1. 只有在目标提交检查通过、远端合并完成且没有冲突后，才运行 `git push origin main`；已明确排除的无关脏文件可以继续留在工作区。
-2. 推送后再次运行 `git fetch origin --prune`、`git status --short --branch` 和 `git rev-list --left-right --count HEAD...origin/main`。
-3. 比较 `git rev-parse HEAD`、`git rev-parse origin/main` 与 `git ls-remote origin refs/heads/main`，确认本地、远端跟踪分支和真实远端分支一致。
-4. 最终回复需要说明：
+2. push 前必须运行 `node scripts/workspace-submit-guard.mjs verify --token <token>`；检测到任何晚到变化时立即停止。
+3. 推送后再次运行 `git fetch origin --prune`、`git status --short --branch` 和 `git rev-list --left-right --count HEAD...origin/main`。
+4. 比较 `git rev-parse HEAD`、`git rev-parse origin/main` 与 `git ls-remote origin refs/heads/main`，确认本地、远端跟踪分支和真实远端分支一致。
+5. 最终远端核对完成后运行 `node scripts/workspace-submit-guard.mjs end --token <token>` 释放工作区锁。
+6. 最终回复需要说明：
    - 哪些仓库已提交和推送。
    - 最新提交哈希和提交信息。
    - 是否发生冲突以及如何处理。

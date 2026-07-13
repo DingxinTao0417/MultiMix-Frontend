@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
+const player = readFileSync(new URL("../components/video-preview-player.tsx", import.meta.url), "utf8");
 const preview = readFileSync(new URL("../components/product-preview.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
 const conversationStudio = readFileSync(new URL("../components/conversation-studio.tsx", import.meta.url), "utf8");
@@ -72,21 +73,39 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
   });
 
-  test("preserves source ratio and exposes a usable preview resize handle", () => {
+  test("preserves source ratio without a detached preview resize region", () => {
     expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*:(?:is|where)\(img, video\)\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain;/s);
     expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*\.shadcn-prototype-video-placeholder-screen\s*\{[^}]*height:\s*100%;/s);
-    expect(css).toMatch(/\.shadcn-prototype-video-preview-resizer\s*\{[^}]*cursor:\s*row-resize;[^}]*touch-action:\s*none;/s);
+    expect(css).not.toMatch(/\.shadcn-prototype-video-preview-resizer\s*\{/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player-screen video\s*\{[^}]*object-fit:\s*contain;/s);
   });
 
-  test("scales video surfaces proportionally with the available stage and removes their frame", () => {
-    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
-    expect(css).toMatch(/\.shadcn-prototype-project-preview\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*0;[^}]*background:\s*#101514;[^}]*box-shadow:\s*none;[^}]*padding:\s*0;/s);
+  test("keeps media canvases frameless while giving both preview paths the approved shell", () => {
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*justify-items:\s*center;[^}]*border:\s*0;[^}]*padding:\s*4px 0 0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview\s*\{[^}]*height:\s*auto;[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player-screen\s*\{[^}]*border-radius:\s*14px;/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*width:\s*min\(100cqw, calc\(100cqh \* 16 \/ 9\)\);[^}]*height:\s*auto;/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*width:\s*auto;[^}]*height:\s*min\(100cqh, calc\(100cqw \* 16 \/ 9\)\);/s);
-    expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*min\(100cqw, calc\(100cqh \* 16 \/ 9\), 720px\);[^}]*height:\s*auto;/s);
-    expect(css).toMatch(/ratio-portrait[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*auto;[^}]*height:\s*min\(100cqh, calc\(100cqw \* 16 \/ 9\)\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player-screen\s*\{[^}]*background:\s*#ffffff;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player-screen video\s*\{[^}]*background:\s*transparent;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*\{[^}]*background:\s*#ffffff;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*\.shadcn-prototype-video-placeholder-screen\s*\{[^}]*background:\s*#ffffff;[^}]*color:\s*#201f1e;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview-screen\s*>\s*\.shadcn-prototype-video-placeholder-screen::after\s*\{[^}]*background:\s*none;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview\s*>\s*\.shadcn-prototype-preview-player\s*\{[^}]*width:\s*100%;[^}]*border:\s*0;[^}]*box-shadow:\s*none;[^}]*padding:\s*0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*width:\s*min\(100%, 640px\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*width:\s*min\(100%, 198px\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16;/s);
+    expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*100%;[^}]*height:\s*auto;/s);
+    expect(css).toMatch(/ratio-portrait[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*width:\s*100%;[^}]*height:\s*auto;/s);
+  });
+
+  test("matches the prototype play button and progress controls", () => {
+    expect(player).toContain("<Play size={16}");
+    expect(player).toContain('"--preview-progress"');
+    expect(css).toMatch(/\.shadcn-prototype-preview-player-screen > svg\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*padding:\s*14px;[^}]*transition:\s*transform \.15s ease;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player-screen:hover > svg\s*\{[^}]*transform:\s*translate\(-50%, -50%\) scale\(1\.07\);/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player \.shadcn-prototype-project-preview-controls\s*\{[^}]*padding:\s*8px 6px 4px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-project-preview-controls input\[type="range"\]\s*\{[^}]*appearance:\s*none;[^}]*height:\s*3px;[^}]*min-height:\s*3px;[^}]*padding:\s*0;[^}]*border-radius:\s*3px;[^}]*background:\s*linear-gradient\([^}]*var\(--preview-progress\)/s);
+    expect(css).toMatch(/input\[type="range"\]::-webkit-slider-thumb\s*\{[^}]*appearance:\s*none;[^}]*width:\s*0;[^}]*height:\s*0;/s);
   });
 });

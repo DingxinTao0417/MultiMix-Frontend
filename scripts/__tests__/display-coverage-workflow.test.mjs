@@ -28,3 +28,12 @@ test("local display coverage uses and cleans an isolated Next development direct
   assert.match(runnerSource, /snapshotWorkspaceFiles/);
   assert.match(runnerSource, /restoreWorkspaceFiles/);
 });
+
+test("display coverage can pin an auditable temp path and forward snapshot updates", () => {
+  const runnerSource = fs.readFileSync(runner, "utf8");
+
+  assert.match(runnerSource, /process\.env\.DISPLAY_COVERAGE_RUN_ID/);
+  assert.match(runnerSource, /--update-snapshots/);
+  assert.match(runnerSource, /multimix-display-coverage-/);
+  assert.match(runnerSource, /safeRemoveRunDatabase\(databasePath, runId\)/);
+});

@@ -13,7 +13,8 @@ describe("video project browse-player contract", () => {
   test("uses a lightweight storyboard surface when a ready project has no MP4", () => {
     expect(preview).toContain("<StoryboardPreview");
     expect(preview).toContain("<VideoPreviewPlayer");
-    expect(preview).toContain("<VideoPreviewResizer");
+    expect(preview).not.toContain("<VideoPreviewResizer");
+    expect(preview).not.toContain("previewHeight");
     expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
     expect(preview).toContain("hint={showFullVideo");
     expect(preview).not.toContain("mode=preview");
@@ -37,12 +38,21 @@ describe("video project browse-player contract", () => {
     expect(storyboardPreview).not.toContain("Promise.all");
   });
 
+  test("renders segment videos as a complete player inside the shared shell", () => {
+    const playerPosition = storyboardPreview.indexOf("<VideoPreviewPlayer");
+    const mediaScreenPosition = storyboardPreview.indexOf('<div className="shadcn-prototype-project-preview-screen">');
+    expect(playerPosition).toBeGreaterThan(0);
+    expect(mediaScreenPosition).toBeGreaterThan(playerPosition);
+    expect(storyboardPreview).toContain("const showSegmentVideo = !failed && currentSegmentMedia?.kind === \"video\"");
+  });
+
   test("keeps storyboard and player surfaces aligned with the project ratio", () => {
     expect(storyboardPreview).toContain("getProductRatioClass(product.ratio)");
     expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
     expect(css).toMatch(/ratio-portrait[^{}]*\.shadcn-prototype-project-preview-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16/s);
+    expect(css).not.toMatch(/\.shadcn-prototype-preview-player\.ratio-(?:landscape|portrait)\s*\{[^}]*aspect-ratio:/s);
     expect(css).toMatch(/ratio-landscape[^{}]*\.shadcn-prototype-video-placeholder-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
   });
 

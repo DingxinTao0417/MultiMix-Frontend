@@ -11,13 +11,6 @@ import SegmentCards from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
-import {
-  clampPreviewHeight,
-  PREVIEW_DEFAULT_HEIGHT,
-  PREVIEW_MIN_HEIGHT,
-  previewMaxHeight,
-  VideoPreviewResizer,
-} from "./video-preview-resizer";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -157,22 +150,8 @@ export default function ProductPreview({
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
-  const [previewHeight, setPreviewHeight] = useState(PREVIEW_DEFAULT_HEIGHT);
-  const [previewMax, setPreviewMax] = useState(() => (
-    typeof window === "undefined" ? 640 : previewMaxHeight(window.innerHeight)
-  ));
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
-
-  useEffect(() => {
-    const updatePreviewMax = () => {
-      const nextMax = previewMaxHeight(window.innerHeight);
-      setPreviewMax(nextMax);
-      setPreviewHeight((current) => clampPreviewHeight(current, PREVIEW_MIN_HEIGHT, nextMax));
-    };
-    window.addEventListener("resize", updatePreviewMax);
-    return () => window.removeEventListener("resize", updatePreviewMax);
-  }, []);
 
   useEffect(() => {
     setFullVideoFailed(false);
@@ -335,7 +314,7 @@ export default function ProductPreview({
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
     return (
       <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
-        <div className="shadcn-prototype-product-video" style={{ height: previewHeight }}>
+        <div className="shadcn-prototype-product-video">
           {showFullVideo ? (
             <VideoPreviewPlayer
               key={exportedVideoUrl}
@@ -363,12 +342,6 @@ export default function ProductPreview({
             <button type="button" onClick={() => setFullVideoFailed(false)}>重试成片</button>
           </div>
         ) : null}
-        <VideoPreviewResizer
-          value={previewHeight}
-          min={PREVIEW_MIN_HEIGHT}
-          max={previewMax}
-          onChange={setPreviewHeight}
-        />
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}

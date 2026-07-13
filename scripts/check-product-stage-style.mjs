@@ -18,5 +18,9 @@ assert.match(css, /\.shadcn-prototype-product-actions\s*\{[^}]*gap:\s*7px;/s, "p
 assert.match(css, /\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\s*\{[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*padding:\s*0 13px;[^}]*font-size:\s*12px;/s, "header action buttons must override the generic 34px card-header rule");
 assert.match(css, /\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\.primary\s*\{[^}]*background:\s*var\(--sp-text\);[^}]*color:\s*#ffffff;/s, "primary product actions must use the demo's dark filled style");
 assert.doesNotMatch(css, /video-project-mode[^}]*height:\s*26px/s, "video projects must not shrink header actions to 26px");
+assert.match(css, /\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s, "video preview players must keep the approved white card shell");
+assert.match(css, /\.shadcn-prototype-preview-player\.ratio-landscape\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9;/s, "landscape ratio must apply to the media screen, not the shell plus controls");
+assert.match(css, /\.shadcn-prototype-preview-player\.ratio-portrait\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16;/s, "portrait ratio must apply to the media screen, not the shell plus controls");
+assert.doesNotMatch(preview, /VideoPreviewResizer|previewHeight/, "browse preview must not reserve detached resizer space below the player");
 
 console.log("Product stage style contract passed.");

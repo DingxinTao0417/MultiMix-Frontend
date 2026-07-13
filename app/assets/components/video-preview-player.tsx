@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
 } from "react";
 
 export type VideoPreviewPlayerProps = {
@@ -41,6 +42,9 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     const [playing, setPlaying] = useState(false);
     const [failed, setFailed] = useState(false);
     const [reloadRevision, setReloadRevision] = useState(0);
+    const progressPercent = duration > 0
+      ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+      : 0;
 
     const assignRef = useCallback((node: HTMLVideoElement | null) => {
       localRef.current = node;
@@ -122,7 +126,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
               onError?.();
             }}
           />
-          {!playing ? <Play size={28} fill="currentColor" aria-hidden="true" /> : null}
+          {!playing ? <Play size={16} fill="currentColor" aria-hidden="true" /> : null}
         </button>
         <div className="shadcn-prototype-project-preview-controls">
           <span>{formatPreviewTime(currentTime)}</span>
@@ -133,6 +137,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             max={duration || 0}
             step="0.01"
             value={Math.min(currentTime, duration || currentTime)}
+            style={{ "--preview-progress": `${progressPercent}%` } as CSSProperties}
             disabled={!duration}
             onChange={handleSeek}
           />

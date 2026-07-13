@@ -24,8 +24,11 @@
     "sync:agents": "node scripts/sync-agents-md.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "test:docs-check": "node --test scripts/__tests__/check-docs.test.mjs",
+    "test:guardrails": "node --test scripts/__tests__/check-video-preview-contract.test.mjs scripts/__tests__/workspace-submit-guard.test.mjs",
+    "check:video-preview-contract": "node scripts/check-video-preview-contract.mjs",
+    "submit:guard": "node scripts/workspace-submit-guard.mjs",
     "test:product-stage-style": "node scripts/check-product-stage-style.mjs",
-    "check:agents": "node scripts/sync-agents-md.mjs --check && npm run docs:check",
+    "check:agents": "node scripts/sync-agents-md.mjs --check && npm run docs:check && npm run check:video-preview-contract",
     "check:backend": "cd ../MultiMix-Backend && .venv/Scripts/python -m ruff check --line-length 100 app/ && .venv/Scripts/python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_video_reliability.py app/tests/test_mg_render_flow.py app/tests/test_mg_scene_spec.py app/tests/test_mg_quality_reviewer.py app/tests/test_config.py app/tests/test_mcp_auth.py -q"
   },
   "dependencies": {
