@@ -1453,7 +1453,7 @@ export default function AssetsWorkspaceClient({
         token,
         conversationId: optimisticConversationId ?? conversation.id,
         instruction,
-        selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId,
+        selectedProductId: selectedBackendAssetId,
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         signal

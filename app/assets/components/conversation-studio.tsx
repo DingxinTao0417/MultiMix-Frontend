@@ -11,6 +11,7 @@ import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMes
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
+import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -467,21 +468,16 @@ export default function ConversationStudio({
       </header>
       <div className="shadcn-prototype-thread">
         {selectedConversation.detailsLoaded === false ? (
-          <div className="shadcn-prototype-message-group" role={detailLoadError ? "alert" : "status"}>
-            <article className={detailLoadError ? "assistant" : "assistant pending"}>
-              {detailLoadError ? (
+          detailLoadError ? (
+            <div className="shadcn-prototype-message-group" role="alert">
+              <article className="assistant">
                 <p>
                   对话内容加载失败。
                   <button type="button" onClick={onRetryDetail}>重试加载</button>
                 </p>
-              ) : (
-                <p>
-                  正在加载对话内容
-                  <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
-                </p>
-              )}
-            </article>
-          </div>
+              </article>
+            </div>
+          ) : <ConversationDetailSkeleton />
         ) : visibleConversationMessages.map((message, index) => {
           // Resolve once so layout and rendering agree on whether this message
           // owns a workflow card. Real job steps still take precedence over the
@@ -491,6 +487,10 @@ export default function ConversationStudio({
             : undefined;
           const timelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
           const ownsWorkflowCard = Boolean(message.plan || timelineSteps.length);
+          const showsAssistantWaiting = message.role === "assistant"
+            && message.pending === true
+            && !ownsWorkflowCard
+            && !message.text.trim();
           return (
             <div
               className="shadcn-prototype-message-group"
@@ -502,11 +502,10 @@ export default function ConversationStudio({
                 message.pending ? "pending" : "",
                 message.localState ? `local-${message.localState}` : ""
               ].filter(Boolean).join(" ")}>
-              {shouldRenderMessageBody(message) ? (
-                <p>
-                  {message.text}
-                  {message.pending ? <span className="shadcn-prototype-typing-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span> : null}
-                </p>
+              {showsAssistantWaiting ? (
+                <AssistantReplyPending />
+              ) : shouldRenderMessageBody(message) ? (
+                <p>{message.text}</p>
               ) : null}
               {UI_V3_CONFIRM_CARD && message.plan ? (
                 <ConfirmCard

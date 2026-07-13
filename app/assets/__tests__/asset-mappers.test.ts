@@ -54,6 +54,45 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("does not let a malformed non-script artifact replace the current director script", () => {
+    const director = asset({ id: 488, generation_state: "draft", metadata: { capability: "video_script", video_workflow_stage: "draft" } });
+    const malformed = asset({
+      id: 489,
+      parent_asset_id: 488,
+      content_type: "mg_animation_video",
+      metadata: { capability: "video_script", video_workflow_stage: "director_script_draft" },
+    });
+
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-malformed-director",
+      title: "商业计划书讲解",
+      status: "active",
+      metadata: {},
+      created_at: "2026-07-12T00:00:00Z",
+      updated_at: "2026-07-12T00:01:00Z",
+      products: [director, malformed],
+      messages: [],
+    }, newConversationProduct);
+
+    expect(conversation.product.backendAssetId).toBe(488);
+    expect(conversation.product.mode).toBe("copy");
+  });
+
+  it("keeps legacy video-script drafts on the continuous document surface", () => {
+    const product = contentAssetToProduct(asset({
+      generation_state: "draft",
+      metadata: {
+        capability: "video_script",
+        capability_label: "编导稿",
+        video_workflow_stage: "draft",
+      },
+    }));
+
+    expect(product.mode).toBe("copy");
+    expect(product.markdownBody).toContain("展示客厅空间");
+    expect(product.videoProjectReady).toBe(false);
+  });
+
   it("maps director script drafts to the continuous document surface", () => {
     const product = contentAssetToProduct(asset({}));
 

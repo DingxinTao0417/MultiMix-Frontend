@@ -55,7 +55,8 @@ describe("display-area eight-case matrix", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
     expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
-    expect(screen.getByText("分镜预览 · #1")).toBeInTheDocument();
+    expect(screen.queryByText("分镜预览 · #1")).not.toBeInTheDocument();
+    expect(screen.getByText("分镜 1")).toBeInTheDocument();
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
     expect(screen.queryByTitle("视频工程只读预览")).not.toBeInTheDocument();
   });
@@ -63,7 +64,7 @@ describe("display-area eight-case matrix", () => {
   it("uses the shared player for a playable finished video", () => {
     render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "播放视频" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
     expect(screen.getByRole("separator", { name: "调整视频预览高度" })).toBeInTheDocument();
   });
@@ -95,7 +96,8 @@ describe("display-area eight-case matrix", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
 
-    expect(screen.getByText("分镜预览 · #2")).toBeInTheDocument();
+    expect(screen.queryByText("分镜预览 · #2")).not.toBeInTheDocument();
+    expect(screen.getByText("分镜 2")).toBeInTheDocument();
     expect(container.querySelector("video")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
   });

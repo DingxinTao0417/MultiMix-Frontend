@@ -10,6 +10,13 @@ function readAssetFile(path: string) {
   return readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n");
 }
 
+it("keeps the selected product bound when confirmation also has linked context", () => {
+  const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+  expect(workspaceClient).toContain("selectedProductId: selectedBackendAssetId,");
+  expect(workspaceClient).not.toContain("selectedProductId: combinedLinkedAssetIds.length > 0 ? undefined : selectedBackendAssetId");
+});
+
 function loadProductionFunctions(
   path: string,
   names: string[],

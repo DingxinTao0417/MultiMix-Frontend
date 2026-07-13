@@ -1,6 +1,6 @@
 "use client";
 
-import { Pause, Play } from "lucide-react";
+import { Play } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -125,9 +125,6 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
           {!playing ? <Play size={28} fill="currentColor" aria-hidden="true" /> : null}
         </button>
         <div className="shadcn-prototype-project-preview-controls">
-          <button type="button" aria-label={playing ? "暂停视频" : "播放视频"} onClick={togglePlayback}>
-            {playing ? <Pause size={12} fill="currentColor" aria-hidden="true" /> : <Play size={12} fill="currentColor" aria-hidden="true" />}
-          </button>
           <span>{formatPreviewTime(currentTime)}</span>
           <input
             type="range"

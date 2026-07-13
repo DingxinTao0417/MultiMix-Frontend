@@ -480,8 +480,14 @@ function suggestionsForCapability(capability: string): string[] {
 }
 
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
+  return asset.content_type === "video_script";
+}
+
+function isMalformedDirectorDraft(asset: ContentAsset): boolean {
   const metadata = asset.metadata ?? {};
-  return asset.content_type === "video_script" && metadata.video_workflow_stage === "director_script_draft";
+  return asset.content_type !== "video_script"
+    && metadata.video_workflow_stage === "director_script_draft"
+    && metadata.capability === "video_script";
 }
 
 function assetLabelFromProduct(asset: ContentAsset): string {
@@ -734,9 +740,13 @@ export function conversationFromPersisted(
   fallbackProduct?: AssetProduct
 ): AssetConversation {
   const products = row.products.map(contentAssetToProduct);
+  let defaultProductIndex = row.products.length - 1;
+  while (defaultProductIndex >= 0 && isMalformedDirectorDraft(row.products[defaultProductIndex])) {
+    defaultProductIndex -= 1;
+  }
   const product = fallbackProduct
     ? products.find((item) => item.id === fallbackProduct.id) ?? fallbackProduct
-    : products[products.length - 1] ?? newConversationProduct;
+    : products[defaultProductIndex] ?? newConversationProduct;
   const messages: AssetConversationMessage[] = row.messages.map((message) => ({
     role: message.role,
     text: message.text,
@@ -775,7 +785,7 @@ export function conversationFromPersisted(
   }
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.text ?? "";
   const lastAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant")?.text ?? "";
-  const lastAsset = row.products[row.products.length - 1];
+  const lastAsset = row.products[defaultProductIndex];
   return {
     id: row.id,
     title: row.title || product.title,
@@ -791,7 +801,7 @@ export function conversationFromPersisted(
     judgment: "",
     action: "",
     delivery: lastAssistantMessage,
-    suggestions: products[products.length - 1]?.actions ?? [],
+    suggestions: product.actions ?? [],
     messages,
     product,
     products: fallbackProduct && !products.some((item) => item.id === fallbackProduct.id) ? [...products, fallbackProduct] : products,

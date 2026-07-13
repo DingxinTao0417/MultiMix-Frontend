@@ -67,7 +67,6 @@ export default function StoryboardPreview({
 
   return (
     <div className={`shadcn-prototype-project-preview ${getProductRatioClass(product.ratio)}`.trim()} aria-label="轻量分镜预览">
-      <span className="shadcn-prototype-preview-mode-label">分镜预览 · #{segment?.index ?? 1}</span>
       <div className="shadcn-prototype-project-preview-screen">
         {!failed && currentSegmentMedia?.kind === "video" ? (
           <VideoPreviewPlayer

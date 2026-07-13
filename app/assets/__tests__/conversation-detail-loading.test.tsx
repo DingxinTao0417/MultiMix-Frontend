@@ -2,16 +2,21 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import ConversationStudio from "../components/conversation-studio";
 import { assetWorkspaceAdapter, conversationFromSummary } from "../lib/asset-workspace-adapter";
 
-afterEach(cleanup);
+beforeEach(() => vi.useFakeTimers());
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("conversation detail loading", () => {
-  it("shows an explicit loading state instead of an empty conversation", () => {
+  it("shows a delayed neutral skeleton instead of an assistant reply", () => {
     const conversation = conversationFromSummary({
       id: "asset-conversation-480",
       title: "MultiMix 产品介绍短视频",
@@ -21,7 +26,7 @@ describe("conversation detail loading", () => {
       updated_at: "2026-07-12T00:00:00Z",
     }, assetWorkspaceAdapter.getNewConversation().product);
 
-    render(
+    const { container } = render(
       <ConversationStudio
         basePath="/app/assets"
         selectedConversation={conversation}
@@ -30,7 +35,11 @@ describe("conversation detail loading", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("正在加载对话内容");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(500));
+    expect(screen.getByRole("status")).toHaveTextContent("载入对话…");
+    expect(container.querySelector("article.assistant.pending")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".shadcn-prototype-conversation-skeleton-row")).toHaveLength(3);
   });
 
   it("shows a retry action when detail loading fails", () => {
@@ -56,6 +65,7 @@ describe("conversation detail loading", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent("对话内容加载失败");
+    expect(screen.queryByText("载入对话…")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重试加载" }));
     expect(retry).toHaveBeenCalledOnce();
   });

@@ -37,14 +37,15 @@ describe("video preview player", () => {
     fireEvent.click(screen.getByRole("button", { name: "点击画面播放视频" }));
     expect(play).toHaveBeenCalledOnce();
     fireEvent.play(video);
-    expect(screen.getByRole("button", { name: "暂停视频" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "点击画面暂停视频" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("slider", { name: "播放进度" }), { target: { value: "12" } });
     expect(video.currentTime).toBe(12);
     fireEvent.timeUpdate(video);
     expect(onTimeUpdate).toHaveBeenLastCalledWith(12);
 
-    fireEvent.click(screen.getByRole("button", { name: "暂停视频" }));
+    expect(screen.queryByRole("button", { name: "暂停视频" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "点击画面暂停视频" }));
     expect(pause).toHaveBeenCalledOnce();
   });
 

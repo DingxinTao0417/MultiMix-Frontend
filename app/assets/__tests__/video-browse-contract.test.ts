@@ -21,7 +21,7 @@ describe("video project browse-player contract", () => {
     expect(storyboardPreview).toContain("activeSegmentId");
     expect(storyboardPreview).toContain("currentSegmentMedia");
     expect(storyboardPreview).toContain("该分镜预览暂不可用");
-    expect(storyboardPreview).toContain("分镜预览 · #");
+    expect(storyboardPreview).not.toContain("分镜预览 · #");
     expect(storyboardPreview).not.toContain("controls");
     expect(preview).toContain("activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}");
     expect(preview).not.toContain('hint={exportedVideoUrl ?');
