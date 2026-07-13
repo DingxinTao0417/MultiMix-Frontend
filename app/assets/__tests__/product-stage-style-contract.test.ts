@@ -82,7 +82,7 @@ describe("product stage style contract", () => {
   test("scales video surfaces proportionally with the available stage and removes their frame", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
     expect(css).toMatch(/\.shadcn-prototype-project-preview\s*\{[^}]*container-type:\s*size;[^}]*border:\s*0;/s);
-    expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*0;[^}]*background:\s*#101514;[^}]*box-shadow:\s*none;[^}]*padding:\s*0;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player-screen\s*\{[^}]*border-radius:\s*14px;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-landscape\s*\{[^}]*width:\s*min\(100cqw, calc\(100cqh \* 16 \/ 9\)\);[^}]*height:\s*auto;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player\.ratio-portrait\s*\{[^}]*width:\s*auto;[^}]*height:\s*min\(100cqh, calc\(100cqw \* 16 \/ 9\)\);/s);
