@@ -203,6 +203,7 @@ try {
     CHANGEIN_MODULES_MONITORING_ENABLED: "false",
     CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
+    CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
     CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
   const frontendEnv = {
@@ -245,7 +246,10 @@ try {
       process.once("SIGTERM", resolve);
     });
   } else {
-    await run(npxCommand, ["playwright", "test", "e2e/pdf-video-quality.spec.ts"], {
+    const grep = process.env.PDF_VIDEO_GREP;
+    const playwrightArgs = ["playwright", "test", "e2e/pdf-video-quality.spec.ts"];
+    if (grep) playwrightArgs.push("--grep", grep);
+    await run(npxCommand, playwrightArgs, {
       cwd: frontendRoot,
       env: {
         ...frontendEnv,
