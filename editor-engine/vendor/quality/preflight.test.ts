@@ -84,6 +84,53 @@ describe("inspectEditorProject", () => {
     );
   });
 
+  it("passes when overlay and subtitle use the backend's disjoint safe regions", () => {
+    // Mirrors app/services/video_studio/safe_area.py: body band 0.12–0.72,
+    // subtitle band 0.72–0.98. Correctly-stamped elements must not collide.
+    const report = inspectEditorProject({
+      ...baseProject,
+      tracks: [
+        {
+          id: "track-video",
+          type: "video",
+          name: "素材",
+          elements: [{ id: "v1", type: "video", mediaId: "m1", startTime: 0, duration: 10, segmentId: "scene-1" }],
+        },
+        {
+          id: "track-text",
+          type: "text",
+          name: "字幕",
+          elements: [{
+            id: "t1",
+            type: "text",
+            content: "第一行\n第二行",
+            startTime: 0,
+            duration: 5,
+            segmentId: "scene-1",
+            safeRegion: { x: 0.08, y: 0.72, width: 0.84, height: 0.26 },
+          }],
+        },
+        {
+          id: "track-overlay",
+          type: "video",
+          name: "动效",
+          overlay: true,
+          elements: [{
+            id: "o1",
+            type: "video",
+            mediaId: "m1",
+            startTime: 0,
+            duration: 3,
+            segmentId: "scene-1",
+            safeRegion: { x: 0.06, y: 0.12, width: 0.88, height: 0.6 },
+          }],
+        },
+      ],
+    });
+
+    expect(report.blockers.map((item) => item.code)).not.toContain("overlay_subtitle_collision");
+  });
+
   it("blocks a missing media reference on the current timeline", () => {
     const report = inspectEditorProject({
       ...baseProject,
