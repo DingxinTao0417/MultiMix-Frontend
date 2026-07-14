@@ -7,9 +7,11 @@ import { getProductModeLabel, getProductRatioClass, stringValue, type Conversati
 import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
+import VideoQualityPanel from "./video-quality-panel";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -17,6 +19,8 @@ type EditorBridgeMessage = {
   type?: string;
   progress?: number;
   message?: string;
+  report?: VideoQualityReport;
+  blob?: Blob;
 };
 
 export function EmptyProductWorkspace() {
@@ -70,8 +74,11 @@ export default function ProductWorkspace({
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [exportError, setExportError] = useState("");
+  const [exportDownloaded, setExportDownloaded] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
   const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
@@ -79,6 +86,7 @@ export default function ProductWorkspace({
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
@@ -109,6 +117,9 @@ export default function ProductWorkspace({
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject;
+  const mgOverlayPending = Boolean(videoJobLive?.steps?.some(
+    (step) => step.key === "mg_overlay" && (step.status === "run" || step.status === "wait"),
+  ));
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = hasVideoProject && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
@@ -136,7 +147,11 @@ export default function ProductWorkspace({
     setEditorReady(false);
     setExportState("idle");
     setExportProgress(null);
-  }, [currentAssetId, hasVideoProject]);
+    setQualityReport(null);
+    setExportError("");
+    setExportDownloaded(false);
+    verifiedExportBlobRef.current = null;
+  }, [currentAssetId, hasVideoProject, mgOverlayPending]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
@@ -169,18 +184,46 @@ export default function ProductWorkspace({
           setEditorReady(true);
           setExportState("exporting");
           setExportProgress(null);
+          setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         case "multimix-editor-export-progress":
           setExportState("exporting");
-          setExportProgress(typeof data.progress === "number" ? data.progress : null);
+          setExportProgress(
+            typeof data.progress === "number"
+              ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
+              : null,
+          );
           break;
         case "multimix-editor-export-success":
-          setExportState("done");
+          if (data.report) setQualityReport(data.report);
+          if (data.blob instanceof Blob) {
+            verifiedExportBlobRef.current = data.blob;
+            setExportState("done");
+            setExportProgress(100);
+            setExportError("");
+            setExportDownloaded(false);
+          } else {
+            setExportState("error");
+            setExportProgress(null);
+            setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
+          }
+          break;
+        case "multimix-editor-export-verifying":
+          setExportState("verifying");
           setExportProgress(100);
+          break;
+        case "multimix-editor-export-blocked":
+          if (data.report) setQualityReport(data.report);
+          setExportState("blocked");
+          setExportProgress(null);
+          setExportError("");
           break;
         case "multimix-editor-export-error":
           setExportState("error");
           setExportProgress(null);
+          setExportError(data.message || "成片合成失败，请重试。");
           break;
         case "multimix-editor-recompose-started":
           // The film strip kicked off a segment recompose: the embed reloads
@@ -189,6 +232,9 @@ export default function ProductWorkspace({
           setEditorReady(false);
           setExportState("idle");
           setExportProgress(null);
+          setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         default:
           break;
@@ -198,12 +244,48 @@ export default function ProductWorkspace({
     return () => window.removeEventListener("message", onMessage);
   }, [currentAssetId, hasVideoProject]);
 
-  const handleExportVideo = () => {
-    if (!currentAssetId || !editorReady || exportState === "exporting") return;
+  const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
+    if (!token || !product.backendAssetId) {
+      setExportState("error");
+      setExportError("导出身份信息不可用，请重新登录后重试。");
+      return null;
+    }
+    setExportState("checking");
+    setExportProgress(null);
+    setExportError("");
+    try {
+      const report = await assetWorkspaceAdapter.getVideoQuality(token, product.backendAssetId);
+      setQualityReport(report);
+      setExportState("idle");
+      return report;
+    } catch {
+      setExportState("error");
+      setExportError("导出前检查失败，请重试。");
+      return null;
+    }
+  };
+
+  const handleExportVideo = async () => {
+    if (!currentAssetId || !editorReady || ["exporting", "checking", "verifying"].includes(exportState)) return;
+    if (exportState === "done" && verifiedExportBlobRef.current) {
+      const url = URL.createObjectURL(verifiedExportBlobRef.current);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `video-${Date.now()}.mp4`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportDownloaded(true);
+      return;
+    }
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return;
+    const report = await requestExportQuality();
+    if (!report || hasBlockingVideoIssues(report)) return;
     setExportState("exporting");
     setExportProgress(null);
+    setExportError("");
     frameWindow.postMessage(
       {
         source: "multimix-workspace",
@@ -213,14 +295,35 @@ export default function ProductWorkspace({
     );
   };
 
+  const locateQualityIssue = (segmentId: string, objectType: string) => {
+    setVideoSurface("edit");
+    window.requestAnimationFrame(() => {
+      editorFrameRef.current?.contentWindow?.postMessage(
+        {
+          source: "multimix-workspace",
+          type: "multimix-editor-locate-segment",
+          segmentId,
+          objectType,
+        },
+        window.location.origin,
+      );
+    });
+  };
+
   const exportButtonLabel = !editorReady
     ? "导出准备中…"
+    : exportState === "checking"
+      ? "正在检查…"
+    : exportState === "verifying"
+      ? "正在检查成片…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
-        ? "再次导出"
+        ? exportDownloaded ? "再次下载" : "下载成片"
         : exportState === "error"
           ? "导出失败，重试"
+          : exportState === "blocked"
+            ? "修复后重新检查"
           : "导出视频";
 
   const openBrowseMaterialPicker = useCallback(async (segment: AssetProductSegment) => {
@@ -244,6 +347,17 @@ export default function ProductWorkspace({
       setMaterialPickerState("idle");
     }
   }, [product.backendAssetId, token]);
+
+  const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
+    Boolean(issue.segment_id)
+    && ["main_track_gap", "naked_black_interval"].includes(issue.code)
+    && Boolean(product.segments?.some((segment) => segment.id === issue.segment_id))
+  );
+
+  const repairQualityIssue = (issue: VideoQualityIssue) => {
+    const segment = product.segments?.find((item) => item.id === issue.segment_id);
+    if (segment) void openBrowseMaterialPicker(segment);
+  };
 
   const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
     if (!token || !product.backendAssetId || !materialPickerSegment) return;
@@ -463,9 +577,14 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {canBrowseVideo && videoSurface === "browse" ? (
-              <button type="button" className="primary" onClick={() => setVideoSurface("edit")}>
+              <button
+                type="button"
+                className="primary"
+                disabled={mgOverlayPending}
+                onClick={() => setVideoSurface("edit")}
+              >
                 <Pencil size={12} aria-hidden="true" />
-                编辑
+                {mgOverlayPending ? "MG 合成中…" : "编辑"}
               </button>
             ) : null}
             {showEditorEmbed ? (
@@ -477,8 +596,8 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={!editorReady || exportState === "exporting"}
-                onClick={handleExportVideo}
+                disabled={!editorReady || ["exporting", "checking", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
+                onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
               </button>
@@ -494,7 +613,24 @@ export default function ProductWorkspace({
           </div>
         </header>
 
-        {hasVideoProject ? (
+        {qualityReport && (qualityReport.blockers.length || qualityReport.warnings.length) ? (
+          <VideoQualityPanel
+            report={qualityReport}
+            onLocate={locateQualityIssue}
+            onRepair={repairQualityIssue}
+            canRepair={canRepairQualityIssue}
+            onRecheck={() => void requestExportQuality()}
+          />
+        ) : null}
+
+        {exportState === "error" && exportError ? (
+          <div className="shadcn-prototype-video-failed" role="alert">
+            <strong>导出失败</strong>
+            <p>{exportError}</p>
+          </div>
+        ) : null}
+
+        {hasVideoProject && !mgOverlayPending ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}

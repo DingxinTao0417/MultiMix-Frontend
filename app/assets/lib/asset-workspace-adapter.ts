@@ -19,6 +19,7 @@ import {
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord } from "./asset-workspace-shared";
+import type { VideoQualityReport } from "./video-quality";
 
 export type LibraryRow = {
   assetId?: number;
@@ -221,6 +222,7 @@ export type AssetWorkspaceAdapter = {
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
+  getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
   loadSegmentMaterialOptions(token: string, projectAssetId: number, segmentId: string): Promise<SegmentMaterialOptions>;
   replaceSegmentMaterial(
     token: string,
@@ -843,6 +845,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         method: "POST",
       });
       return mapVideoJob(raw);
+    },
+    async getVideoQuality(token, projectAssetId) {
+      return api<VideoQualityReport>(
+        `/video/projects/${encodeURIComponent(projectAssetId)}/quality?stage=export_preflight`,
+        token,
+      );
     },
     async loadSegmentMaterialOptions(token, projectAssetId, segmentId) {
       const [suggestionResult, imageResult, videoResult] = await Promise.allSettled([

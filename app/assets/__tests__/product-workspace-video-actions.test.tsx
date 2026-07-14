@@ -14,6 +14,31 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("keeps the editor closed until planned MG overlays reach a terminal state", () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+        videoJobLive={{
+          jobId: "main-job",
+          status: "completed",
+          renderStage: "done",
+          steps: [{ key: "mg_overlay", label: "生成并添加 MG 动效", status: "run", elapsedSeconds: null, retryJobId: null }],
+          errorMessage: null,
+          completionConfirmed: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "MG 合成中…" })).toBeDisabled();
+  });
+
   it("opens the material picker without leaving the finished-video browse surface", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {

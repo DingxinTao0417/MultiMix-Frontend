@@ -10,6 +10,8 @@ import { ExportButton } from "@/editor-engine/vendor/ExportButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
+import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
+import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
 import { getExportMimeType } from "@editor/lib/export";
 import { UI_V3_FILMSTRIP } from "@/app/assets/lib/ui-flags";
 import FilmStrip from "./FilmStrip";
@@ -78,8 +80,22 @@ export default function EditorView({
   const handleEmbeddedExport = useCallback(async () => {
     if (exportBusyRef.current) return;
     exportBusyRef.current = true;
-    postToParent({ type: "multimix-editor-export-start" });
     try {
+      const serialized = serializeBackendProject(EditorCore.getInstance());
+      const currentProject = (
+        Array.isArray(serialized.tracks)
+          ? serialized
+          : serialized.timeline && typeof serialized.timeline === "object"
+            ? serialized.timeline
+            : serialized
+      ) as unknown as BackendProject;
+      const localReport = inspectEditorProject(currentProject);
+      if (localReport.blockers.length) {
+        postToParent({ type: "multimix-editor-export-blocked", report: localReport });
+        return;
+      }
+      if (!assetId || !token) throw new Error("缺少成片验证所需的项目身份信息");
+      postToParent({ type: "multimix-editor-export-start" });
       const result = await EditorCore.getInstance().renderer.exportProject({
         options: { format: "mp4", quality: "high", includeAudio: true },
         onProgress: ({ progress }) => postToParent({ type: "multimix-editor-export-progress", progress }),
@@ -89,13 +105,34 @@ export default function EditorView({
       }
       const mime = getExportMimeType({ format: "mp4" });
       const blob = new Blob([result.buffer], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `video-${Date.now()}.mp4`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      postToParent({ type: "multimix-editor-export-success" });
+      postToParent({ type: "multimix-editor-export-verifying" });
+      const formData = new FormData();
+      formData.append("file", blob, `video-${Date.now()}.mp4`);
+      const verifyResponse = await fetch(
+        `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/exports/verify`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        },
+      );
+      const verifyPayload = await verifyResponse.json().catch(() => null) as VideoQualityReport | { detail?: string } | null;
+      if (!verifyResponse.ok) {
+        throw new Error(
+          verifyPayload && "detail" in verifyPayload && typeof verifyPayload.detail === "string"
+            ? verifyPayload.detail
+            : `成片检查失败（HTTP ${verifyResponse.status}）`,
+        );
+      }
+      const verifiedReport = verifyPayload as VideoQualityReport;
+      if (verifiedReport.blockers?.length) {
+        postToParent({ type: "multimix-editor-export-blocked", report: verifiedReport });
+        return;
+      }
+      // Rendering and remote verification take long enough that the original
+      // click's browser user activation has expired. Hand the verified Blob to
+      // the parent and let a fresh, explicit download click consume it.
+      postToParent({ type: "multimix-editor-export-success", report: verifiedReport, blob });
     } catch (cause) {
       postToParent({
         type: "multimix-editor-export-error",
@@ -104,7 +141,7 @@ export default function EditorView({
     } finally {
       exportBusyRef.current = false;
     }
-  }, [postToParent]);
+  }, [assetId, postToParent, token]);
 
   const handleSave = async () => {
     if (!assetId || !token || saveState === "saving") return;

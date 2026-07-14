@@ -21,6 +21,7 @@
     "test:demo-units": "vitest run --config vitest.demo-e2e.config.ts && node --test scripts/__tests__/demo-e2e-*.test.mjs scripts/__tests__/run-demo-material-packs.test.mjs",
     "test:e2e:demo": "node scripts/run-demo-material-packs.mjs --mode stable --all",
     "test:e2e:demo:live": "node scripts/run-demo-material-packs.mjs --mode live",
+    "test:e2e:pdf-video-quality": "node scripts/run-pdf-video-quality.mjs",
     "sync:agents": "node scripts/sync-agents-md.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "test:docs-check": "node --test scripts/__tests__/check-docs.test.mjs",

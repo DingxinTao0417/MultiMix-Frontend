@@ -4,7 +4,14 @@
 // TProject carries no media file paths at all. This module is the inverse of
 // buildProject.ts.
 import type { EditorCore } from "@editor/core";
-import { filePathByMediaId, segmentIdByElementId, segmentTextByElementId } from "./buildProject";
+import {
+  displayTextByElementId,
+  filePathByMediaId,
+  focusTextByElementId,
+  safeRegionByElementId,
+  segmentIdByElementId,
+  segmentTextByElementId,
+} from "./buildProject";
 
 type RawProject = Record<string, unknown>;
 
@@ -15,11 +22,6 @@ let rawLoadedProject: RawProject | null = null;
 
 export function rememberRawProject(raw: RawProject): void {
   rawLoadedProject = raw;
-}
-
-function unwrapCaption(content: string): string {
-  // buildProject hard-wraps captions with "\n"; store the flat text.
-  return (content || "").replace(/\n/g, "");
 }
 
 function serializeElement(el: {
@@ -43,11 +45,17 @@ function serializeElement(el: {
     trimEnd: el.trimEnd ?? 0,
   };
   if (el.mediaId) out.mediaId = el.mediaId;
-  if (el.type === "text") out.content = unwrapCaption(el.content || "");
+  if (el.type === "text") out.content = el.content || "";
   const segmentId = segmentIdByElementId[el.id];
   if (segmentId) out.segmentId = segmentId;
   const segmentText = segmentTextByElementId[el.id];
   if (segmentText) out.segmentText = segmentText;
+  const safeRegion = safeRegionByElementId[el.id];
+  if (safeRegion) out.safeRegion = safeRegion;
+  const displayText = displayTextByElementId[el.id];
+  if (displayText) out.displayText = displayText;
+  const focusText = focusTextByElementId[el.id];
+  if (focusText) out.focusText = focusText;
   return out;
 }
 
