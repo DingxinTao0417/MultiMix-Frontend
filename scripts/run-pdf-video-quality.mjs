@@ -33,6 +33,7 @@ const resultDir = path.resolve(
     ?? path.join(workspaceRoot, "..", "multimix-test-results", timestamp),
 );
 const pdfPath = path.resolve(process.env.PDF_VIDEO_PATH ?? path.join(os.homedir(), "Desktop", "商业计划书v0.pdf"));
+const videoLayout = process.env.PDF_VIDEO_LAYOUT === "landscape" ? "landscape" : "portrait";
 const manualMode = process.argv.includes("--manual");
 const children = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -134,6 +135,12 @@ async function writeMediaReport() {
   ]).catch((error) => ({ stdout: "", stderr: String(error) }));
   fs.writeFileSync(path.join(resultDir, "blackdetect.log"), black.stderr);
   const duration = Number(parsed.format?.duration ?? video.duration ?? 0);
+  const ratioValid = videoLayout === "landscape"
+    ? Number(video.width ?? 0) > Number(video.height ?? 0)
+    : Number(video.height ?? 0) > Number(video.width ?? 0);
+  if (!ratioValid) {
+    throw new Error(`Expected ${videoLayout} output, got ${video.width ?? "?"}x${video.height ?? "?"}`);
+  }
   const keyframeDir = path.join(resultDir, "keyframes");
   fs.mkdirSync(keyframeDir, { recursive: true });
   const moments = [0.5, duration * 0.25, duration * 0.5, duration * 0.75, Math.max(0, duration - 0.5)];
@@ -151,7 +158,7 @@ async function writeMediaReport() {
     + `- 视频: ${video.width ?? "?"}x${video.height ?? "?"}, ${video.codec_name ?? "?"}\n`
     + `- 音频: ${audio.codec_name ?? "缺失"}\n- 裸黑区间: ${blackIntervals.length ? blackIntervals.join("、") : "未检出"}\n\n`
     + `## 自动验收\n\n${blackIntervals.length ? "- 检出连续裸黑区间，成片不应通过。" : "- 服务端质量门禁、来源内容断言与下载顺序均通过。"}\n\n`
-    + `## 待人工判定\n\n- MG 表达、素材语义和竖屏构图需结合关键帧与 PDF 原文做视觉复核；自动通过不代表内容质量通过。\n\n`
+    + `## 待人工判定\n\n- MG 表达、素材语义和${videoLayout === "landscape" ? "横屏" : "竖屏"}构图需结合关键帧与 PDF 原文做视觉复核；自动通过不代表内容质量通过。\n\n`
     + `## 优化建议\n\n- 持续保留本用例作为 PDF 视频链路的发布前回归。\n`;
   fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
 }
@@ -246,6 +253,7 @@ try {
         PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
         PDF_VIDEO_PATH: pdfPath,
         PDF_VIDEO_RESULT_DIR: resultDir,
+        PDF_VIDEO_LAYOUT: videoLayout,
       },
       stdout: process.stdout,
       stderr: process.stderr,

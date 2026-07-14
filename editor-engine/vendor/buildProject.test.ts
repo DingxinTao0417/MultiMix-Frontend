@@ -58,6 +58,30 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('gives subtitles a contrast-safe background by default', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-contrast',
+          type: 'text',
+          content: '白底素材上的字幕仍然清晰',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    });
+
+    const result = buildProject(bp);
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(element.background).toMatchObject({
+      enabled: true,
+      color: '#000000aa',
+    });
+  });
+
   it('preserves backend subtitle line boundaries without creating a third line', () => {
     const bp = makeProject({
       tracks: [{

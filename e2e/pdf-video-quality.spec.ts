@@ -5,6 +5,20 @@ import { expect, test, type Page } from "@playwright/test";
 
 const pdfPath = process.env.PDF_VIDEO_PATH;
 const resultDir = process.env.PDF_VIDEO_RESULT_DIR;
+const videoLayout = process.env.PDF_VIDEO_LAYOUT === "landscape" ? "landscape" : "portrait";
+const ratioLabel = videoLayout === "landscape" ? "16:9横屏" : "9:16竖屏";
+
+type E2EAsset = {
+  id: number;
+  title: string;
+  library_kind: string;
+  content_type: string;
+  metadata?: {
+    whole_page_visual?: boolean;
+    source_context_text?: string;
+    understanding?: { tags?: string[] };
+  };
+};
 
 async function waitForConversationPost(page: Page) {
   return page.waitForResponse(
@@ -85,7 +99,7 @@ async function waitForVideoProject(page: Page) {
       fallbackConfirmCount += 1;
       await sendComposerMessage(
         page,
-        "按你推荐的方案继续，确认生成30秒、9:16的可编辑视频工程。MG数量按每个分镜内容独立判断，不设固定上限。",
+        `按你推荐的方案继续，确认生成30秒、${ratioLabel}的可编辑视频工程。MG数量按每个分镜内容独立判断，不设固定上限。`,
       );
     }
     await page.waitForTimeout(2000);
@@ -142,23 +156,60 @@ test("uploads a real PDF through the UI and downloads only a verified MP4", asyn
   });
 
   await enterLocalWorkspace(page);
+  const uploadResponsePromise = page.waitForResponse(
+    (response) => response.request().method() === "POST"
+      && response.url().includes("/v1/assets/upload"),
+    { timeout: 180_000 },
+  );
   const chooserPromise = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "上传 PPT 或文档" }).click();
   const chooser = await chooserPromise;
   await chooser.setFiles(pdfPath);
+  const uploadResponse = await uploadResponsePromise;
+  expect(uploadResponse.ok(), `upload failed: ${uploadResponse.status()}`).toBe(true);
+  const uploadedSource = await uploadResponse.json();
+  expect(uploadedSource.metadata?.full_page_visuals_created).toBe(false);
+  expect(uploadedSource.metadata?.document_embedded_image_count).toBeGreaterThan(0);
+  const derivedImageIds = uploadedSource.metadata?.derived_visual_asset_ids ?? [];
+  expect(derivedImageIds.length).toBeGreaterThan(0);
+  const authorization = uploadResponse.request().headers().authorization;
+  const apiBaseUrl = new URL(uploadResponse.url()).origin;
+  const listAssets = async () => {
+    const response = await page.request.get(`${apiBaseUrl}/v1/assets`, {
+      headers: authorization ? { authorization } : {},
+    });
+    expect(response.ok(), `asset list failed: ${response.status()}`).toBe(true);
+    return response.json();
+  };
+  const assetsAfterUpload = await listAssets() as E2EAsset[];
+  const documentImages = assetsAfterUpload.filter((asset) => (
+    derivedImageIds.includes(asset.id)
+  ));
+  expect(documentImages).toHaveLength(derivedImageIds.length);
+  for (const image of documentImages) {
+    expect(image.library_kind).toBe("image");
+    expect(image.content_type).toBe("document_embedded_image");
+    expect(image.metadata?.whole_page_visual).toBe(false);
+    expect(image.metadata?.understanding?.tags?.length).toBeGreaterThan(0);
+    expect(image.metadata?.source_context_text).toBeTruthy();
+  }
   await expect(page.getByLabel("本次上传资料").getByText(/已入库|已识别/)).toBeVisible({ timeout: 180_000 });
 
   await sendComposerMessage(
     page,
-    "请严格基于刚上传的商业计划书，生成一条30秒、9:16的中文讲解视频。总时长允许27到33秒；MG按每个分镜内容独立判断，不设数量上限；数据必须来自PDF；字幕最多两行。先给我编导稿和分镜方案，确认后生成可编辑视频工程。",
+    `请严格基于刚上传的商业计划书，生成一条30秒、${ratioLabel}的中文讲解视频。总时长允许27到33秒；MG按每个分镜内容独立判断，不设数量上限；数据必须来自PDF；字幕最多两行。先给我编导稿和分镜方案，确认后生成可编辑视频工程。`,
   );
 
   const exportButton = await waitForVideoProject(page);
   await expect(exportButton).toBeVisible();
+  const assetsAfterProject = await listAssets();
+  const serializedProjectAssets = JSON.stringify(assetsAfterProject);
+  expect(serializedProjectAssets).not.toContain("/pdf-pages/");
+  expect(serializedProjectAssets).not.toContain("pdf_page_visual");
   const storyboardText = await page.getByLabel("分镜摘要").innerText();
   expect(storyboardText).toMatch(/商家|门店/);
   expect(storyboardText).toMatch(/素材理解|理解.{0,6}素材|素材.{0,6}理解/);
-  expect(storyboardText).toMatch(/情报拆解|拆解热点|热点.{0,6}拆解/);
+  expect(storyboardText).toMatch(/情报拆解|拆解热点|热点.{0,6}拆解|外部内容情报/);
   expect(storyboardText).toMatch(/编排生成|交付可发布|可发布.{0,8}短视频/);
   expect(storyboardText).not.toMatch(/数字证据\s*30\s*秒/);
   const editButton = page.getByRole("button", { name: "编辑", exact: true });
@@ -187,6 +238,19 @@ test("uploads a real PDF through the UI and downloads only a verified MP4", asyn
   await page.screenshot({ path: path.join(resultDir, "export-verified.png"), fullPage: true });
   fs.writeFileSync(
     path.join(resultDir, "browser-result.json"),
-    JSON.stringify({ pdfPath, exportPath, storyboardText, consoleErrors }, null, 2),
+    JSON.stringify({
+      pdfPath,
+      exportPath,
+      videoLayout,
+      storyboardText,
+      consoleErrors,
+      documentImages: documentImages.map((image) => ({
+        id: image.id,
+        title: image.title,
+        libraryKind: image.library_kind,
+        contentType: image.content_type,
+        metadata: image.metadata,
+      })),
+    }, null, 2),
   );
 });

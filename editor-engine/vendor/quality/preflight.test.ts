@@ -107,7 +107,7 @@ describe("inspectEditorProject", () => {
             startTime: 0,
             duration: 5,
             segmentId: "scene-1",
-            safeRegion: { x: 0.08, y: 0.72, width: 0.84, height: 0.26 },
+            safeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
           }],
         },
         {
@@ -122,7 +122,47 @@ describe("inspectEditorProject", () => {
             startTime: 0,
             duration: 3,
             segmentId: "scene-1",
-            safeRegion: { x: 0.06, y: 0.12, width: 0.88, height: 0.6 },
+            safeRegion: { x: 0.06, y: 0.12, width: 0.88, height: 0.56 },
+          }],
+        },
+      ],
+    });
+
+    expect(report.blockers.map((item) => item.code)).not.toContain("overlay_subtitle_collision");
+  });
+
+  it("keeps backend landscape body and subtitle regions disjoint", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      metadata: { ...baseProject.metadata, width: 1920, height: 1080 },
+      tracks: [
+        {
+          id: "track-text",
+          type: "text",
+          name: "字幕",
+          elements: [{
+            id: "t-landscape",
+            type: "text",
+            content: "横屏字幕",
+            startTime: 0,
+            duration: 5,
+            segmentId: "scene-1",
+            safeRegion: { x: 0.08, y: 0.76, width: 0.84, height: 0.18 },
+          }],
+        },
+        {
+          id: "track-overlay",
+          type: "video",
+          name: "动效",
+          overlay: true,
+          elements: [{
+            id: "o-landscape",
+            type: "video",
+            mediaId: "m1",
+            startTime: 0,
+            duration: 3,
+            segmentId: "scene-1",
+            safeRegion: { x: 0.06, y: 0.1, width: 0.88, height: 0.6 },
           }],
         },
       ],
