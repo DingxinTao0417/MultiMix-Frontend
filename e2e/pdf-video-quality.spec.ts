@@ -251,10 +251,13 @@ test("uploads a real PDF through the UI and downloads only a verified MP4", asyn
   expect.soft(storyboardText).toMatch(/编排生成|交付可发布|可发布.{0,8}短视频/);
   expect.soft(storyboardText).not.toMatch(/数字证据\s*30\s*秒/);
   const editButton = page.getByRole("button", { name: "编辑", exact: true });
-  await expect(editButton).toBeEnabled({ timeout: 5 * 60_000 });
+  // MG overlays render serially on Modal; a PDF that plans 4 MGs can exceed
+  // 5min. Widen to 15min so the edit gate reflects real render time, not a
+  // too-tight harness bound. Test-level cap is 30min (setTimeout above).
+  await expect(editButton).toBeEnabled({ timeout: 15 * 60_000 });
   await editButton.click();
   const readyExportButton = page.getByRole("button", { name: "导出视频", exact: true });
-  await expect(readyExportButton).toBeEnabled({ timeout: 180_000 });
+  await expect(readyExportButton).toBeEnabled({ timeout: 8 * 60_000 });
   const editor = page.frameLocator('iframe[title="视频剪辑器"]');
   const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
   const clipCount = await clips.count();

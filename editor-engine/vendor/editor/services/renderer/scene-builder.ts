@@ -41,6 +41,9 @@ function buildTrackNodes({
 
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
+		// Main-track visuals fill the canvas (cover) so mixed-ratio source clips
+		// no longer look like different aspect ratios; overlays keep contain.
+		const fitMode: "cover" | "contain" = isMainTrack(track) ? "cover" : "contain";
 
 		for (const element of elements) {
 			if (element.type === "effect") {
@@ -79,6 +82,7 @@ function buildTrackNodes({
 							blendMode: element.blendMode,
 							effects: element.effects,
 							masks: element.masks,
+							fitMode,
 						}),
 					);
 				}
@@ -96,6 +100,7 @@ function buildTrackNodes({
 							blendMode: element.blendMode,
 							effects: element.effects,
 							masks: element.masks,
+							fitMode,
 							...(isPreview && {
 								maxSourceSize: PREVIEW_MAX_IMAGE_SIZE,
 							}),
