@@ -25,6 +25,7 @@ import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type Video
 import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
+  shouldReviseSelectedProduct,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -443,16 +444,6 @@ function uploadAcceptForView(view: ActiveView): string {
 
 function chatUploadFileKind(file: File): ChatImageUpload["fileKind"] {
   return file.type.startsWith("image/") ? "image" : "source";
-}
-
-function shouldReviseSelectedProduct(instruction: string, product: ProductArtifact | null): boolean {
-  if (!product?.backendAssetId) return false;
-  const text = instruction.trim().toLowerCase();
-  if (!text) return false;
-  if (/(mp4|成片|渲染|导出视频|render|export)/i.test(text)) return false;
-  if (/(再做|另外|新增|新建|再生成|另做|add another|new one|create another)/i.test(text)) return false;
-  if (/(基于|做成|变成|转成|turn into|make it).*(文案|图片|图|视频|copy|image|video)/i.test(text)) return false;
-  return /(短一点|更短|缩短|压到|改写|重写|优化|删掉|保留|第二|镜头|字幕|口语|专业|构图|色调|shorten|revise|rewrite|edit)/i.test(text);
 }
 
 function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {

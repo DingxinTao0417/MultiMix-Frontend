@@ -39,6 +39,26 @@ export function isPlaceholderProduct(product: ProductArtifact | null | undefined
   return !product || product.id === "empty-product" || product.status === "等待指令";
 }
 
+export function shouldReviseSelectedProduct(
+  instruction: string,
+  product: { backendAssetId?: number } | null,
+): boolean {
+  if (!product?.backendAssetId) return false;
+  const text = instruction.trim().toLowerCase();
+  if (!text) return false;
+  if (/(mp4|成片|渲染|导出视频|render|export)/i.test(text)) return false;
+  if (/(再做|另外|新增|新建|再生成|另做|add another|new one|create another)/i.test(text)) return false;
+  if (/(基于|做成|变成|转成|turn into|make it).*(文案|图片|图|视频|copy|image|video)/i.test(text)) return false;
+
+  const explicitEditAction = /(修改|调整|改成|改为|改得|改写|重写|优化|润色|缩短|压到|扩写|提炼|删掉|删除|替换|换成|保留|shorten|revise|rewrite|edit|change|adjust|optimize)/i;
+  if (explicitEditAction.test(text)) return true;
+
+  const readOnlyQuestion = /[?？]|(是什么|说了什么|为什么|怎么安排|如何安排|是不是|有没有|多少|几段|几镜|吗|呢)$/i;
+  if (readOnlyQuestion.test(text)) return false;
+
+  return /(短一点|更短|更口语|更专业|构图更|色调更)/i.test(text);
+}
+
 export function getProductModeLabel(mode: ProductMode) {
   if (mode === "copy") return "文案";
   if (mode === "image") return "图片";
