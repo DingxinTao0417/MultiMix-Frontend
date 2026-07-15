@@ -270,6 +270,45 @@ export type PublicMaterialCandidate = {
   };
 };
 
+// Unified segment material candidate (backend
+// GET .../segments/{id}/material-candidates). Public rows never carry a
+// download URL; the server keeps it and resolves it on selection by candidate_id.
+export type SegmentMaterialCandidateResponse = {
+  candidate_id: string | null;
+  source_type: "saved_asset" | "public_asset" | "title_card";
+  source_asset_id: number | null;
+  provider: string;
+  provider_item_id: string;
+  media_type: string;
+  title: string;
+  preview_url: string;
+  width: number;
+  height: number;
+  duration: number;
+  license: string;
+  author: string;
+  attribution_url: string;
+  verification_status: string;
+  relevance_status: string;
+  relevance_reason: string;
+  requires_trim: boolean;
+  already_persisted: boolean;
+  selectable: boolean;
+};
+
+export type SegmentMaterialCandidatesResponse = {
+  scope: "local" | "public";
+  segment_id: string;
+  groups: {
+    current: SegmentMaterialCandidateResponse[];
+    recommended: SegmentMaterialCandidateResponse[];
+    library: SegmentMaterialCandidateResponse[];
+    public: SegmentMaterialCandidateResponse[];
+  };
+  provider_statuses: Array<{ provider: string; status: string; error?: string }>;
+  next_cursor: string | null;
+};
+
 export type AssetIngestJobRead = {
   id: string;
   asset_id: number;

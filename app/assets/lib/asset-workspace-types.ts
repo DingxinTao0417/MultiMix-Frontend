@@ -75,16 +75,56 @@ export type AssetProductSegment = {
   mgStatus?: string;
 };
 
+// A single material candidate shown in the picker. `id` stays the stable React
+// key (the saved asset id for local rows, the candidate id for public rows).
+// `candidateId` is the server-issued opaque id submitted to recompose; when it
+// is present the swap sends candidate_id, otherwise it falls back to assetId.
+export type SegmentMaterialSourceType = "saved_asset" | "public_asset" | "title_card";
+
 export type SegmentMaterialOption = {
   id: string;
   title: string;
   thumbnailUrl?: string;
   reason?: string;
+  // Unified-candidate fields (v2). All optional so the legacy asset-suggestions
+  // fallback path keeps working unchanged.
+  candidateId?: string;
+  assetId?: number;
+  sourceType?: SegmentMaterialSourceType;
+  mediaType?: "image" | "video";
+  provider?: string;
+  author?: string;
+  license?: string;
+  attributionUrl?: string;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  requiresTrim?: boolean;
+  verificationStatus?: string;
+  relevanceStatus?: string;
+  relevanceReason?: string;
+  alreadyPersisted?: boolean;
+  // false only for the non-selectable "current material" chip.
+  selectable?: boolean;
+};
+
+export type SegmentMaterialProviderStatus = {
+  provider: string;
+  status: string;
+  error?: string;
 };
 
 export type SegmentMaterialOptions = {
   recommended: SegmentMaterialOption[];
   library: SegmentMaterialOption[];
+  // v2-only groups. Legacy callers leave these undefined/empty.
+  current?: SegmentMaterialOption[];
+  public?: SegmentMaterialOption[];
+  providerStatuses?: SegmentMaterialProviderStatus[];
+  publicNextCursor?: string | null;
+  // true when the v2 candidate endpoint is disabled (flag off / 404): callers
+  // fall back to the legacy asset-suggestions + library path.
+  v2Disabled?: boolean;
 };
 
 export type AssetProduct = {

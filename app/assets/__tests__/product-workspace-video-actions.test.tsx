@@ -41,10 +41,46 @@ describe("video browse actions", () => {
 
   it("opens the material picker without leaving the finished-video browse surface", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
+    const localCandidates = {
+      scope: "local",
+      segment_id: "segment-1",
+      groups: {
+        current: [],
+        recommended: [{
+          candidate_id: "cand-12",
+          source_type: "saved_asset",
+          source_asset_id: 12,
+          provider: "library",
+          provider_item_id: "12",
+          media_type: "image",
+          title: "施工过程记录",
+          preview_url: "",
+          width: 0,
+          height: 0,
+          duration: 0,
+          license: "",
+          author: "",
+          attribution_url: "",
+          verification_status: "persisted",
+          relevance_status: "recommended",
+          relevance_reason: "匹配施工过程",
+          requires_trim: false,
+          already_persisted: true,
+          selectable: true,
+        }],
+        library: [],
+        public: [],
+      },
+      provider_statuses: [],
+      next_cursor: null,
+    };
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = String(input);
-      if (url.includes("asset-suggestions")) {
-        return new Response(JSON.stringify({ suggestions: [{ asset_id: 12, title: "施工过程记录", preview_url: "", match_reason: "匹配施工过程" }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (url.includes("material-candidates") && url.includes("scope=local")) {
+        return new Response(JSON.stringify(localCandidates), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("material-candidates")) {
+        return new Response(JSON.stringify({ scope: "public", segment_id: "segment-1", groups: { current: [], recommended: [], library: [], public: [] }, provider_statuses: [], next_cursor: null }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
     }));

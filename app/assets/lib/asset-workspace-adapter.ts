@@ -1,5 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOptions } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
   api,
@@ -15,7 +15,9 @@ import {
   type ContentAssetSearchResult,
   type ContentAssetRevisionResponse,
   type PublicMaterialCandidate,
-  type PublicSourceRead
+  type PublicSourceRead,
+  type SegmentMaterialCandidateResponse,
+  type SegmentMaterialCandidatesResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord } from "./asset-workspace-shared";
@@ -224,11 +226,19 @@ export type AssetWorkspaceAdapter = {
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
   loadSegmentMaterialOptions(token: string, projectAssetId: number, segmentId: string): Promise<SegmentMaterialOptions>;
+  loadSegmentMaterialCandidates(
+    token: string,
+    projectAssetId: number,
+    segmentId: string,
+    scope: "local" | "public",
+    cursor?: string | null,
+    limit?: number,
+  ): Promise<SegmentMaterialOptions>;
   replaceSegmentMaterial(
     token: string,
     projectAssetId: number,
     segmentId: string,
-    replacementAssetId: number,
+    selection: SegmentMaterialSelection,
     confirmOverwrite?: boolean,
   ): Promise<
     | { kind: "confirm_overwrite"; message: string }
@@ -648,6 +658,41 @@ function mergeSearchResults(keywordRows: ContentAssetSearchResult[], semanticRow
     .map((item) => contentAssetToLibraryRow(item.asset, item.reasons));
 }
 
+// A material swap targets either a server-issued candidate (preferred) or, for
+// legacy callers, a saved asset id. candidate_id resolves public assets safely
+// server-side; asset_id stays for the pre-v2 saved-asset path.
+export type SegmentMaterialSelection = { candidateId?: string; assetId?: number };
+
+function mapSegmentCandidate(row: SegmentMaterialCandidateResponse): SegmentMaterialOption {
+  const candidateId = stringValue(row.candidate_id) || undefined;
+  const assetId = typeof row.source_asset_id === "number" ? row.source_asset_id : undefined;
+  const mediaType = row.media_type === "video" ? "video" : row.media_type === "image" ? "image" : undefined;
+  return {
+    // Stable React key: candidate id when present, else the saved asset id.
+    id: candidateId ?? (assetId != null ? String(assetId) : `material-${row.provider_item_id || row.title}`),
+    title: stringValue(row.title) || "素材",
+    thumbnailUrl: materialPreviewUrl(row.preview_url),
+    reason: stringValue(row.relevance_reason) || undefined,
+    candidateId,
+    assetId,
+    sourceType: row.source_type,
+    mediaType,
+    provider: stringValue(row.provider) || undefined,
+    author: stringValue(row.author) || undefined,
+    license: stringValue(row.license) || undefined,
+    attributionUrl: stringValue(row.attribution_url) || undefined,
+    durationSeconds: typeof row.duration === "number" && row.duration > 0 ? row.duration : undefined,
+    width: typeof row.width === "number" && row.width > 0 ? row.width : undefined,
+    height: typeof row.height === "number" && row.height > 0 ? row.height : undefined,
+    requiresTrim: Boolean(row.requires_trim),
+    verificationStatus: stringValue(row.verification_status) || undefined,
+    relevanceStatus: stringValue(row.relevance_status) || undefined,
+    relevanceReason: stringValue(row.relevance_reason) || undefined,
+    alreadyPersisted: Boolean(row.already_persisted),
+    selectable: row.selectable !== false,
+  };
+}
+
 function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
   return {
     getSnapshot() {
@@ -887,7 +932,47 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           })),
       };
     },
-    async replaceSegmentMaterial(token, projectAssetId, segmentId, replacementAssetId, confirmOverwrite = false) {
+    async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {
+      const params = new URLSearchParams({ scope });
+      if (cursor) params.set("cursor", cursor);
+      if (limit) params.set("limit", String(limit));
+      const response = await fetch(
+        `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      // 404 = the v2 candidate surface is disabled (flag off). Signal it so the
+      // caller falls back to the legacy asset-suggestions + library path.
+      if (response.status === 404) {
+        return { recommended: [], library: [], current: [], public: [], providerStatuses: [], publicNextCursor: null, v2Disabled: true };
+      }
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !isRecord(payload)) {
+        const detail = isRecord(payload) ? payload.detail : null;
+        throw new Error(typeof detail === "string" ? detail : `HTTP ${response.status}`);
+      }
+      const data = payload as unknown as SegmentMaterialCandidatesResponse;
+      const groups = data.groups ?? { current: [], recommended: [], library: [], public: [] };
+      return {
+        current: (groups.current ?? []).map(mapSegmentCandidate),
+        recommended: (groups.recommended ?? []).map(mapSegmentCandidate),
+        library: (groups.library ?? []).map(mapSegmentCandidate),
+        public: (groups.public ?? []).map(mapSegmentCandidate),
+        providerStatuses: (data.provider_statuses ?? []).map((item) => ({
+          provider: stringValue(item.provider),
+          status: stringValue(item.status),
+          error: stringValue(item.error) || undefined,
+        })),
+        publicNextCursor: data.next_cursor ?? null,
+      };
+    },
+    async replaceSegmentMaterial(token, projectAssetId, segmentId, selection, confirmOverwrite = false) {
+      const body: Record<string, unknown> = {
+        operation: "replace_material",
+        confirm_overwrite: confirmOverwrite,
+      };
+      // Prefer the server-issued candidate id; fall back to the legacy asset id.
+      if (selection.candidateId) body.candidate_id = selection.candidateId;
+      else if (selection.assetId != null) body.asset_id = selection.assetId;
       const response = await fetch(
         `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
         {
@@ -896,11 +981,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            operation: "replace_material",
-            asset_id: replacementAssetId,
-            confirm_overwrite: confirmOverwrite,
-          }),
+          body: JSON.stringify(body),
         },
       );
       const payload = await response.json().catch(() => null);

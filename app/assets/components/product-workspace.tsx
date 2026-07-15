@@ -6,6 +6,7 @@ import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
@@ -80,11 +81,15 @@ export default function ProductWorkspace({
   const [exportError, setExportError] = useState("");
   const [exportDownloaded, setExportDownloaded] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
-  const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
-  const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
-  const [materialPickerState, setMaterialPickerState] = useState<"idle" | "loading" | "submitting">("idle");
+  const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
+  const materialCandidates = useSegmentMaterialCandidates({
+    token: token ?? null,
+    projectAssetId: product.backendAssetId ?? null,
+    segmentId: materialPickerSegment?.id ?? null,
+    enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
+  });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
@@ -326,26 +331,16 @@ export default function ProductWorkspace({
             ? "修复后重新检查"
           : "导出视频";
 
-  const openBrowseMaterialPicker = useCallback(async (segment: AssetProductSegment) => {
-    setMaterialPickerSegment(segment);
-    setMaterialRecommended([]);
-    setMaterialLibrary([]);
+  const openBrowseMaterialPicker = useCallback((segment: AssetProductSegment) => {
     setMaterialError("");
+    setMaterialPickerState("idle");
     if (!token || !product.backendAssetId) {
-      setMaterialPickerState("idle");
       setMaterialError("当前未连接素材服务，暂时无法更换素材。");
       return;
     }
-    setMaterialPickerState("loading");
-    try {
-      const options = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, product.backendAssetId, segment.id);
-      setMaterialRecommended(options.recommended);
-      setMaterialLibrary(options.library);
-    } catch (cause) {
-      setMaterialError(cause instanceof Error ? cause.message : "素材加载失败，请重试。");
-    } finally {
-      setMaterialPickerState("idle");
-    }
+    // The shared candidate hook loads local first, then public, keyed off the
+    // selected segment; opening the picker is enough to trigger it.
+    setMaterialPickerSegment(segment);
   }, [product.backendAssetId, token]);
 
   const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
@@ -361,6 +356,11 @@ export default function ProductWorkspace({
 
   const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
     if (!token || !product.backendAssetId || !materialPickerSegment) return;
+    // Prefer the server-issued candidate id; fall back to a saved asset id for
+    // the legacy (flag-off) recommendation rows that carry no candidate.
+    const selection = item.candidateId
+      ? { candidateId: item.candidateId }
+      : { assetId: item.assetId ?? Number(item.id) };
     setMaterialPickerState("submitting");
     setMaterialError("");
     try {
@@ -368,7 +368,7 @@ export default function ProductWorkspace({
         token,
         product.backendAssetId,
         materialPickerSegment.id,
-        Number(item.id),
+        selection,
       );
       if (result.kind === "confirm_overwrite") {
         if (!window.confirm(result.message)) {
@@ -379,7 +379,7 @@ export default function ProductWorkspace({
           token,
           product.backendAssetId,
           materialPickerSegment.id,
-          Number(item.id),
+          selection,
           true,
         );
       }
@@ -713,11 +713,18 @@ export default function ProductWorkspace({
           title={`为分镜 #${materialPickerSegment?.index ?? "-"} 换素材`}
           subtitle="替换后只更新当前分镜，不影响其他分镜。"
           ratio={product.ratio}
-          recommended={materialRecommended}
-          library={materialLibrary}
-          loading={materialPickerState === "loading"}
+          current={materialCandidates.current}
+          recommended={materialCandidates.recommended}
+          library={materialCandidates.library}
+          publicItems={materialCandidates.publicItems}
+          providerStatuses={materialCandidates.providerStatuses}
+          loading={materialCandidates.localLoading}
           submitting={materialPickerState === "submitting"}
-          error={materialError}
+          error={materialError || materialCandidates.localError}
+          publicLoading={materialCandidates.publicLoading}
+          publicError={materialCandidates.publicError}
+          hasMorePublic={materialCandidates.hasMorePublic}
+          onLoadMorePublic={materialCandidates.loadMorePublic}
           onSelect={(item) => void replaceBrowseMaterial(item)}
           onClose={() => {
             if (materialPickerState === "submitting") return;
