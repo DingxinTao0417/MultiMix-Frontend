@@ -90,11 +90,6 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
       // Local first (my library + recommendations), then public asynchronously
       // so a stock-provider outage never blanks out my own material.
       const local = await segmentMaterialCandidates(assetId, segmentId, "local", token);
-      if (local.disabled) {
-        setPublicError("统一素材候选未启用，请在后台开启后再使用。");
-        setLocalCandidates([]);
-        return;
-      }
       setLocalCandidates([
         ...local.groups.recommended,
         ...local.groups.library,
@@ -146,24 +141,19 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   // rebuilds video_project, then we reload the editor from that project.
   async function applyReplace(candidate: SegmentMaterialCandidate) {
     if (!selEl || !segmentId || !assetId || !candidate.selectable) return;
-    const selection = candidate.candidate_id
-      ? { candidateId: candidate.candidate_id }
-      : candidate.source_asset_id != null
-        ? { assetId: candidate.source_asset_id }
-        : null;
-    if (!selection) {
-      alert("该候选缺少可用标识，请换一个候选。");
+    if (!candidate.candidate_id) {
+      alert("该候选已失效，请刷新候选列表后重试。");
       return;
     }
     setReplacing(true);
     try {
-      let result = await recomposeSegmentMaterial(assetId, segmentId, selection, token);
+      let result = await recomposeSegmentMaterial(assetId, segmentId, candidate.candidate_id, token);
       if (result.kind === "confirm_overwrite") {
         if (!window.confirm(result.message)) {
           setReplacing(false);
           return;
         }
-        result = await recomposeSegmentMaterial(assetId, segmentId, selection, token, true);
+        result = await recomposeSegmentMaterial(assetId, segmentId, candidate.candidate_id, token, true);
       }
       if (result.kind === "started") {
         // Recompose runs server-side; reload the rebuilt project once it lands.

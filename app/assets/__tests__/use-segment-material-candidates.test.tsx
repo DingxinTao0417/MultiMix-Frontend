@@ -95,24 +95,18 @@ describe("useSegmentMaterialCandidates", () => {
     expect(result.current.publicItems).toEqual([]);
   });
 
-  it("falls back to the legacy options endpoint when v2 is disabled (404)", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("material-candidates")) {
-        return new Response(JSON.stringify({ detail: "disabled" }), { status: 404 });
-      }
-      if (url.includes("asset-suggestions")) {
-        return new Response(JSON.stringify({ suggestions: [{ asset_id: 5, title: "旧推荐", preview_url: "", match_reason: "r" }] }), { status: 200 });
-      }
-      return new Response(JSON.stringify([]), { status: 200 });
-    });
+  it("surfaces a local 404 without calling a deleted fallback endpoint", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "segment not found" }), { status: 404 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const { result } = renderHook(() => useSegmentMaterialCandidates(args));
 
-    await waitFor(() => expect(result.current.recommended).toHaveLength(1));
-    expect(result.current.recommended[0]?.title).toBe("旧推荐");
+    await waitFor(() => expect(result.current.localError).toBe("segment not found"));
+    expect(result.current.recommended).toEqual([]);
     expect(result.current.publicItems).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("appends and dedupes the next public page on load more", async () => {

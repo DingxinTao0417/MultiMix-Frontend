@@ -8,8 +8,7 @@
 //   external network dependency.
 // - Public candidates load asynchronously afterwards; a provider failure only
 //   affects the public group and never blanks out local candidates.
-// - When the v2 candidate endpoint is disabled (flag off → 404), fall back to
-//   the legacy asset-suggestions + library options so behaviour is unchanged.
+// - Endpoint failures are surfaced as real errors; there is no legacy fallback.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { assetWorkspaceAdapter } from "./asset-workspace-adapter";
@@ -79,22 +78,9 @@ export function useSegmentMaterialCandidates(args: {
     const run = ++runRef.current;
     cursorRef.current = null;
     setState({ ...EMPTY, localLoading: true, publicLoading: true });
-    let v2Disabled = false;
     try {
       const local = await assetWorkspaceAdapter.loadSegmentMaterialCandidates(token, projectAssetId, segmentId, "local");
       if (run !== runRef.current) return;
-      v2Disabled = Boolean(local.v2Disabled);
-      if (v2Disabled) {
-        // Legacy fallback: asset-suggestions + library, no public group.
-        const legacy = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, projectAssetId, segmentId);
-        if (run !== runRef.current) return;
-        setState({
-          ...EMPTY,
-          recommended: legacy.recommended,
-          library: legacy.library,
-        });
-        return;
-      }
       setState((prev) => ({
         ...prev,
         current: local.current ?? [],

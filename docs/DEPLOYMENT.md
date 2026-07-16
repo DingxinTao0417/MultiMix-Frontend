@@ -1,5 +1,9 @@
 # MultiMix 部署指南
 
+> Status: current
+> Owner: workspace
+> Last verified: 2026-07-17
+
 MultiMix 是两个并排的独立仓库：
 
 - **前端**：`MultiMix-Frontend`（Next.js 15，本仓库），部署到 **Vercel**。
@@ -37,17 +41,21 @@ MultiMix 是两个并排的独立仓库：
    # LLM（任选）
    CHANGEIN_DEEPSEEK_API_KEY=<key>
    # 或 CHANGEIN_LLM_BASE_URL / CHANGEIN_LLM_API_KEY / CHANGEIN_LLM_MODEL
-   # 视频素材源（可选，不配则只出字幕轨）
+   # 统一公共素材搜索（生产至少配置一个经合规策略允许自动采用的来源）
    CHANGEIN_PEXELS_API_KEY=<key>
    CHANGEIN_PIXABAY_API_KEY=<key>
+   CHANGEIN_MATERIAL_SEARCH_PROVIDER_NAMES=pexels,pixabay_video
    # 云 TTS（可选，不配则用估算时长）
    CHANGEIN_TTS_PROVIDER=openai
    CHANGEIN_TTS_API_KEY=<key>
    CHANGEIN_TTS_BASE_URL=https://api.openai.com/v1
-   # 对象存储（生成媒体/上传文件；不配走容器本地 artifacts，重启丢失）
+   # Redis（API/worker 共用队列、搜索缓存、分页 seen-set 与限流）
+   CHANGEIN_REDIS_URL=<Railway Redis 连接串>
+   # 对象存储（生产必填；S3 或 Supabase Storage 二选一，禁止容器本地 artifacts）
    CHANGEIN_S3_ENDPOINT_URL / CHANGEIN_S3_BUCKET / CHANGEIN_S3_ACCESS_KEY / CHANGEIN_S3_SECRET_KEY
    ```
-4. healthcheck 路径 `/healthz`（railway.json 已配）。
+4. Railway 常规 healthcheck 使用 `/healthz`（`railway.json` 已配）；发布门还必须检查 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
+5. API 与 video worker 必须从同一 commit 构建同一镜像 digest，不能分别从不同分支或不同构建产物发布。
 
 ### 视频编排 worker（异步生成）
 
@@ -58,7 +66,17 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 启动命令: python -m app.services.video_studio.worker
 ```
 
-需要 Railway Redis 插件并配 `CHANGEIN_REDIS_URL`。若不想跑 worker，把 INLINE 设 `true`，generate 在请求内同步执行（注意 Railway 请求超时）。
+需要 Railway Redis 插件并配 `CHANGEIN_REDIS_URL`。生产必须使用独立 worker 且 `INLINE=false`；`INLINE=true` 只用于本地开发，不能作为线上省略 worker 的降级方案。
+
+### 素材 provider 发布前 preflight
+
+常规健康检查不能调用上游 API。进入维护窗口前，由有 Railway shell/secret 权限的运维人员显式执行：
+
+```bash
+python -m app.material_search_cli preflight --providers pexels,pixabay_video
+```
+
+该命令会对每个指定 provider 发起一次最小搜索并消耗配额，校验配置、鉴权结果和候选 schema；失败时进程退出码为 `1`。输出不回显 key 或上游异常 URL。当前 adapter 协议不暴露响应头，命令会如实返回 `quota_observable=false`；剩余配额需同时到 provider 控制台核对。
 
 ## 前端部署到 Vercel
 
@@ -73,6 +91,7 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
    ```
    **严禁**给 LLM/TTS/服务端 key 加 `NEXT_PUBLIC_` 前缀（会暴露到浏览器）。
 4. 后端 CORS 已根据 `CHANGEIN_WEB_BASE_URL` + Vercel 域名正则放行（见 `config.py:allowed_origin_regex`）。
+5. 前后端必须在同一个维护窗口切换：新前端只调用 `material-candidates + recompose` 并只提交 `candidate_id`，不能与仍依赖旧素材接口的任一后端版本混用。
 
 ## 端到端冒烟（本地）
 
@@ -94,6 +113,6 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 ## 已知边界
 
 - 真正的 MP4 出片走**浏览器端 WebCodecs 导出**（剪辑器内「导出视频」），不依赖服务端 ffmpeg。
-- 视频生成的素材来自 Pexels/Pixabay 远程 URL（剪辑器直接 fetch）或后端 artifact 代理（`/v1/video/media`）。
+- 公共素材在进入工程前必须下载、校验并持久化到远程 ArtifactStore；剪辑器通过后端 `/v1/video/media` 读取持久化引用，不把 provider 原片 URL 作为工程权威地址。
 - 监控/采集模块（ChangeIn 原功能）默认关闭；要启用需用全功能 Dockerfile + Redis + 各 worker + Reader 服务，见 ChangeIn 原文档。
 - 知识库语义检索目前是关键词匹配（`asset_conversation.match_assets` + `knowledge_retrieval.match_knowledge_chunks`），向量检索为后续增强。

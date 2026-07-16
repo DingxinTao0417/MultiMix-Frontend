@@ -74,24 +74,6 @@ export function mediaUrl(filePath: string): string {
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(filePath)}`;
 }
 
-export interface MaterialOption {
-  file_path: string;
-  media_type: "video" | "image";
-  source_type: string;
-  duration: number;
-}
-
-export async function replaceOptions(segmentText: string, duration: number, layout = "portrait", page = 1): Promise<MaterialOption[]> {
-  const res = await fetch(`${API_BASE}/v1/video/replace-options`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segment_text: segmentText, duration, layout, page }),
-  });
-  if (!res.ok) throw new Error("replace_options failed");
-  const data = await res.json();
-  return data.options || [];
-}
-
 // Unified segment material candidate (backend
 // GET .../segments/{id}/material-candidates). Mirrors the app-layer type; kept
 // here so the vendor editor stays free of app imports.
@@ -121,11 +103,9 @@ export interface SegmentMaterialCandidatesResult {
   };
   provider_statuses: Array<{ provider: string; status: string; error?: string }>;
   next_cursor: string | null;
-  // true when the v2 endpoint is disabled (404); caller falls back to /replace-options.
-  disabled?: boolean;
 }
 
-// Fetch unified candidates for a segment. 404 → v2 disabled (flag off).
+// Fetch the only supported candidate contract for a segment.
 export async function segmentMaterialCandidates(
   assetId: string,
   segmentId: string,
@@ -139,9 +119,6 @@ export async function segmentMaterialCandidates(
     `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} },
   );
-  if (res.status === 404) {
-    return { scope, groups: { current: [], recommended: [], library: [], public: [] }, provider_statuses: [], next_cursor: null, disabled: true };
-  }
   if (!res.ok) throw new Error(`material candidates failed: HTTP ${res.status}`);
   return res.json();
 }
@@ -153,19 +130,21 @@ export interface RecomposeResult {
   error_message?: string | null;
 }
 
-// Server-side segment recompose. Prefers candidate_id; the editor never sends a
-// raw public URL. Returns { confirmOverwrite } on a 409 timeline_dirty so the
+// Server-side segment recompose. The editor submits only a scoped candidate_id
+// and never sends a raw public URL. Returns a confirmation on timeline_dirty so the
 // caller can re-send with confirm_overwrite=true.
 export async function recomposeSegmentMaterial(
   assetId: string,
   segmentId: string,
-  selection: { candidateId?: string; assetId?: number },
+  candidateId: string,
   token: string | null | undefined,
   confirmOverwrite = false,
 ): Promise<{ kind: "confirm_overwrite"; message: string } | { kind: "started"; job: RecomposeResult }> {
-  const body: Record<string, unknown> = { operation: "replace_material", confirm_overwrite: confirmOverwrite };
-  if (selection.candidateId) body.candidate_id = selection.candidateId;
-  else if (selection.assetId != null) body.asset_id = selection.assetId;
+  const body: Record<string, unknown> = {
+    operation: "replace_material",
+    candidate_id: candidateId,
+    confirm_overwrite: confirmOverwrite,
+  };
   const res = await fetch(
     `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
     {

@@ -420,11 +420,11 @@ export default function ProductWorkspace({
 
   const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
     if (!token || !product.backendAssetId || !materialPickerSegment) return;
-    // Prefer the server-issued candidate id; fall back to a saved asset id for
-    // the legacy (flag-off) recommendation rows that carry no candidate.
-    const selection = item.candidateId
-      ? { candidateId: item.candidateId }
-      : { assetId: item.assetId ?? Number(item.id) };
+    if (!item.candidateId) {
+      setMaterialError("该候选已失效，请刷新候选列表后重试。");
+      return;
+    }
+    const selection = { candidateId: item.candidateId };
     setMaterialPickerState("submitting");
     setMaterialError("");
     try {

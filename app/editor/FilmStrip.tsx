@@ -33,7 +33,6 @@ import {
 type RecomposeBody = {
   operation: "replace_material" | "revoice" | "toggle_mg";
   candidate_id?: string;
-  asset_id?: number;
   voiceover?: string;
   mg_enabled?: boolean;
 };
@@ -365,12 +364,10 @@ export default function FilmStrip({
 
   const handlePickMaterial = (item: AssetPickerItem) => {
     setPickerOpen(false);
-    // Prefer the server-issued candidate id; fall back to a saved asset id for
-    // the legacy (flag-off) recommendation rows.
     if (item.candidateId) {
       void submitRecompose({ operation: "replace_material", candidate_id: item.candidateId });
     } else {
-      void submitRecompose({ operation: "replace_material", asset_id: item.assetId ?? Number(item.id) });
+      setRecompose({ phase: "error", message: "该候选已失效，请刷新候选列表后重试。" });
     }
   };
 
