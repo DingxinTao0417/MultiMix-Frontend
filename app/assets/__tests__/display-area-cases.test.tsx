@@ -53,14 +53,15 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it("labels the no-MP4 project as a single storyboard preview", () => {
+  it("renders the ready no-MP4 project as a playable engineering preview", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
-    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
-    expect(screen.queryByText("分镜预览 · #1")).not.toBeInTheDocument();
-    expect(screen.getByText("分镜 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("视频工程播放器")).toBeInTheDocument();
+    expect(screen.getByTitle("视频工程预播").getAttribute("src")).toMatch(
+      /^\/editor\?asset=9100&embed=1&mode=preview&previewChannel=.+/,
+    );
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
-    expect(screen.queryByTitle("视频工程只读预览")).not.toBeInTheDocument();
   });
 
   it("uses the shared player for a playable finished video", () => {
@@ -93,13 +94,21 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
   });
 
-  it("switches only the selected storyboard when no finished video exists", () => {
+  it("seeks and plays the engineering timeline when a segment is selected", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
 
     fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
 
-    expect(screen.queryByText("分镜预览 · #2")).not.toBeInTheDocument();
-    expect(screen.getByText("分镜 2")).toBeInTheDocument();
+    expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-preview-seek", time: 1.5 },
+      window.location.origin,
+    );
+    expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-preview-play" },
+      window.location.origin,
+    );
     expect(container.querySelector("video")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
   });

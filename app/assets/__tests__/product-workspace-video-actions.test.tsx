@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
-  it("keeps the editor closed until planned MG overlays reach a terminal state", () => {
+  it("keeps preview and editing available while planned MG overlays run", () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
 
     render(
@@ -36,7 +36,8 @@ describe("video browse actions", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "MG 合成中…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeEnabled();
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
   });
 
   it("opens the material picker without leaving the finished-video browse surface", async () => {

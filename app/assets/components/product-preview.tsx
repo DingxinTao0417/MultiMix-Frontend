@@ -11,6 +11,7 @@ import SegmentCards from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
+import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -149,13 +150,16 @@ export default function ProductPreview({
 }) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
+  const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
+  const [projectPreviewFailed, setProjectPreviewFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
-  }, [exportedVideoUrl]);
+    setProjectPreviewFailed(false);
+  }, [exportedVideoUrl, product.id]);
 
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
@@ -312,6 +316,7 @@ export default function ProductPreview({
   // skeleton (demo .screen) — never the legacy phone + meta-text layout.
   if (hasVideoProject) {
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
+    const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
     return (
       <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
         <div className="shadcn-prototype-product-video">
@@ -328,6 +333,20 @@ export default function ProductPreview({
                 setActiveSegmentId(activeSegmentAtTime(product.segments, time));
               }}
               onError={() => setFullVideoFailed(true)}
+            />
+          ) : product.backendAssetId && !projectPreviewFailed ? (
+            <VideoProjectPreview
+              ref={projectPreviewRef}
+              assetId={product.backendAssetId}
+              ratioClassName={getProductRatioClass(product.ratio)}
+              durationSeconds={durationSeconds}
+              onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
+              onError={() => setProjectPreviewFailed(true)}
+            />
+          ) : projectPreviewFailed ? (
+            <StoryboardPreview
+              product={product}
+              activeSegmentId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
             />
           ) : (
             <StoryboardPreview
@@ -353,6 +372,8 @@ export default function ProductPreview({
               if (showFullVideo && player && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
+              } else if (!showFullVideo && segment.startSeconds != null) {
+                projectPreviewRef.current?.seekAndPlay(segment.startSeconds);
               }
             }}
             onReplaceMaterial={onReplaceMaterial}

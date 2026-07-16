@@ -128,21 +128,39 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
 });
 
-test("CASE-06 is editable but has no video element", async ({ page }) => {
+test("CASE-06 plays the ready engineering timeline before an MP4 exists", async ({ page }) => {
+  test.setTimeout(90_000);
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
-  const storyboard = workspace.locator(".shadcn-prototype-project-preview");
-  const storyboardScreen = workspace.locator(".shadcn-prototype-project-preview-screen");
-  await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
+  const player = workspace.getByLabel("视频工程播放器");
+  const screen = player.locator(".shadcn-prototype-preview-player-screen");
+  const previewFrame = workspace.getByTitle("视频工程预播");
+  const playButton = workspace.getByRole("button", { name: "点击画面播放视频" });
+  const progress = player.getByRole("slider", { name: "播放进度" });
+
+  await expect(player).toBeVisible();
+  await expect(previewFrame).toBeVisible();
+  await expect(previewFrame).toHaveAttribute("src", /mode=preview/);
+  // A fresh isolated Next instance compiles the large /editor bundle on first
+  // access. Wait for the editor's real ready message, not merely iframe load.
+  await expect(playButton).toBeEnabled({ timeout: 45_000 });
+  await expect(progress).toBeEnabled({ timeout: 45_000 });
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
-  await expect(storyboard).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");
-  await expect(storyboard).toHaveCSS("border-radius", "20px");
-  await expect(storyboard).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(storyboard).toHaveCSS("padding", "7px");
-  await expect(storyboard).toHaveCSS("box-shadow", /rgba\(32, 31, 30, 0\.05\).*rgba\(32, 31, 30, 0\.07\)/);
-  await expect(storyboardScreen).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(storyboard).toHaveScreenshot("video-preview-storyboard-shell.png", { animations: "disabled" });
-  await expectProportionalFramelessMediaCanvas(page, storyboardScreen, 16 / 9);
+  await expect(player).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");
+  await expect(player).toHaveCSS("border-radius", "20px");
+  await expect(player).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(player).toHaveCSS("padding", "7px");
+  await expect(player).toHaveCSS("box-shadow", /rgba\(32, 31, 30, 0\.05\).*rgba\(32, 31, 30, 0\.07\)/);
+  await expect(playButton.locator("svg")).toHaveCSS("width", "16px");
+  await expect(playButton.locator("svg")).toHaveCSS("padding", "14px");
+  await expect(progress).toHaveCSS("height", "3px");
+  await expect(player.locator(".shadcn-prototype-project-preview-controls")).toHaveCSS("padding", "8px 6px 4px");
+
+  await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
+  await expect.poll(async () => Number(await progress.inputValue())).toBeGreaterThanOrEqual(2.5);
+
+  await expect(player).toHaveScreenshot("video-preview-storyboard-shell.png", { animations: "disabled" });
+  await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {

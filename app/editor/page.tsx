@@ -45,6 +45,7 @@ function EditorPageContent() {
   const assetId = searchParams.get("asset");
   const embed = searchParams.get("embed") === "1";
   const mode = searchParams.get("mode") === "preview" ? "preview" : "edit";
+  const previewChannel = searchParams.get("previewChannel");
   const initialSegmentId = searchParams.get("segment");
   const openMaterialPicker = searchParams.get("replace") === "1";
   const [token, setToken] = useState<string | null>(null);
@@ -70,6 +71,7 @@ function EditorPageContent() {
       token={token}
       embed={embed}
       mode={mode}
+      previewChannel={previewChannel}
       initialSegmentId={initialSegmentId}
       openMaterialPicker={openMaterialPicker}
     />

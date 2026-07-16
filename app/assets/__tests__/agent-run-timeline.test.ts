@@ -378,6 +378,23 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(html).toContain("重新执行此步骤");
   });
 
+  it("keeps a mixed MG step running while exposing its failed child retry", () => {
+    const html = renderTimeline({
+      steps: [{
+        key: "mg_overlay",
+        label: "生成并添加 MG 动效（0/2，失败 1）",
+        status: "run",
+        retryJobId: "mg-job-failed",
+      }],
+      errorMessage: "MG render timeout",
+      onRetry: vi.fn(),
+    });
+
+    expect(html).toContain("生成并添加 MG 动效（0/2，失败 1）");
+    expect(html).toContain("shadcn-prototype-agent-run-step run");
+    expect(html).toContain("重新执行此步骤");
+  });
+
   it("does not add a generic error footer when the failed step has no technical detail", () => {
     const html = renderTimeline({
       steps: [{ key: "create_job", label: "创建视频工程任务", status: "fail" }],

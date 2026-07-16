@@ -46,6 +46,7 @@ export default function EditorView({
   token,
   embed,
   mode = "edit",
+  previewChannel = null,
   initialSegmentId = null,
   openMaterialPicker = false,
 }: {
@@ -54,6 +55,7 @@ export default function EditorView({
   token: string | null;
   embed?: boolean;
   mode?: "edit" | "preview";
+  previewChannel?: string | null;
   initialSegmentId?: string | null;
   openMaterialPicker?: boolean;
 }) {
@@ -71,11 +73,12 @@ export default function EditorView({
       {
         source: "multimix-editor",
         assetId,
+        previewChannel,
         ...payload,
       },
       window.location.origin
     );
-  }, [assetId, embed]);
+  }, [assetId, embed, previewChannel]);
 
   const handleEmbeddedExport = useCallback(async () => {
     if (exportBusyRef.current) return;

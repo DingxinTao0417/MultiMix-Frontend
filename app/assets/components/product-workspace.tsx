@@ -122,9 +122,6 @@ export default function ProductWorkspace({
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject;
-  const mgOverlayPending = Boolean(videoJobLive?.steps?.some(
-    (step) => step.key === "mg_overlay" && (step.status === "run" || step.status === "wait"),
-  ));
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = hasVideoProject && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
@@ -156,7 +153,7 @@ export default function ProductWorkspace({
     setExportError("");
     setExportDownloaded(false);
     verifiedExportBlobRef.current = null;
-  }, [currentAssetId, hasVideoProject, mgOverlayPending]);
+  }, [currentAssetId, hasVideoProject]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
@@ -580,11 +577,10 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="primary"
-                disabled={mgOverlayPending}
                 onClick={() => setVideoSurface("edit")}
               >
                 <Pencil size={12} aria-hidden="true" />
-                {mgOverlayPending ? "MG 合成中…" : "编辑"}
+                编辑
               </button>
             ) : null}
             {showEditorEmbed ? (
@@ -630,7 +626,7 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {hasVideoProject && !mgOverlayPending ? (
+        {hasVideoProject ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}
