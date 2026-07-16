@@ -83,7 +83,7 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("shadcn-prototype-export-bridge");
     expect(workspace).toContain("{exportButtonLabel}");
     expect(workspace).toContain("canBrowseVideo ? (");
-    expect(workspace).toContain("{hasVideoProject ? (");
+    expect(workspace).toContain("{!isTextEditing && hasVideoProject ? (");
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 });

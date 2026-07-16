@@ -84,6 +84,12 @@ export default function ProductWorkspace({
   const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
+  const [isTextEditing, setIsTextEditing] = useState(false);
+  const [textEditBody, setTextEditBody] = useState(product.markdownBody ?? "");
+  const [textEditSaving, setTextEditSaving] = useState(false);
+  const [textEditError, setTextEditError] = useState("");
+  const [textEditSaved, setTextEditSaved] = useState(false);
+  const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const materialCandidates = useSegmentMaterialCandidates({
     token: token ?? null,
     projectAssetId: product.backendAssetId ?? null,
@@ -93,6 +99,13 @@ export default function ProductWorkspace({
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
+  const editableTextArtifact = Boolean(
+    product.backendAssetId
+    && product.contentHash
+    && ["social_post", "content_plan", "manual_text", "copy_draft", "video_script", "short_video_narration"].includes(product.contentType ?? ""),
+  );
+  const isDirectorText = ["video_script", "short_video_narration"].includes(product.contentType ?? "");
+  const textEditDirty = textEditBody !== (product.markdownBody ?? "");
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
@@ -144,6 +157,60 @@ export default function ProductWorkspace({
     product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : "",
     getProductRatioClass(product.ratio)
   ].filter(Boolean).join(" ");
+
+  useEffect(() => {
+    setIsTextEditing(false);
+    setTextEditBody(product.markdownBody ?? "");
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+  }, [product.id, product.contentHash, product.markdownBody]);
+
+  useEffect(() => {
+    if (!isTextEditing || !textEditDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [isTextEditing, textEditDirty]);
+
+  const saveTextEdit = async (acceptStructuralChange: boolean) => {
+    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty) return;
+    setTextEditSaving(true);
+    setTextEditError("");
+    setTextEditSaved(false);
+    try {
+      const result = await assetWorkspaceAdapter.saveTextEdit({
+        token,
+        product,
+        body: textEditBody,
+        acceptStructuralChange,
+      });
+      if (result.kind === "structural_change") {
+        setStructuralChange({ message: result.message, changes: result.changes });
+        return;
+      }
+      setStructuralChange(null);
+      setTextEditBody(result.product.markdownBody ?? textEditBody);
+      setTextEditSaved(true);
+      setIsTextEditing(false);
+      onProductUpdated?.(result.product);
+    } catch (error) {
+      setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+    } finally {
+      setTextEditSaving(false);
+    }
+  };
+
+  const cancelTextEdit = () => {
+    if (textEditDirty && !window.confirm("当前有未保存修改，确定取消吗？")) return;
+    setTextEditBody(product.markdownBody ?? "");
+    setTextEditError("");
+    setStructuralChange(null);
+    setIsTextEditing(false);
+  };
 
   useEffect(() => {
     setEditorReady(false);
@@ -563,7 +630,36 @@ export default function ProductWorkspace({
 
               </aside>
             </details>
-            {product.mode === "copy" ? (
+            {editableTextArtifact && !isTextEditing ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setTextEditBody(product.markdownBody ?? "");
+                  setTextEditError("");
+                  setTextEditSaved(false);
+                  setStructuralChange(null);
+                  setIsTextEditing(true);
+                }}
+              >
+                <Pencil size={12} aria-hidden="true" />
+                编辑
+              </button>
+            ) : null}
+            {isTextEditing ? (
+              <>
+                <button type="button" onClick={cancelTextEdit} disabled={textEditSaving}>取消</button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!textEditDirty || textEditSaving}
+                  onClick={() => void saveTextEdit(false)}
+                >
+                  {textEditSaving ? "校验并保存中…" : "保存修改"}
+                </button>
+              </>
+            ) : null}
+            {product.mode === "copy" && !isTextEditing ? (
               <button type="button" className="primary" onClick={() => void onCopyProduct(product)}>
                 {copied ? "已复制" : "复制全文"}
               </button>
@@ -603,11 +699,52 @@ export default function ProductWorkspace({
                 {liveStageLabel}
               </span>
             ) : null}
-            <button type="button" onClick={() => void onSaveProduct(product)}>
-              {savedVersion ? `已保存 ${savedVersion}` : "保存"}
-            </button>
+            {!editableTextArtifact ? (
+              <button type="button" onClick={() => void onSaveProduct(product)}>
+                {savedVersion ? `已保存 ${savedVersion}` : "保存"}
+              </button>
+            ) : textEditSaved ? (
+              <span className="shadcn-prototype-text-edit-saved" role="status">已保存</span>
+            ) : null}
           </div>
         </header>
+
+        {isTextEditing ? (
+          <div className="shadcn-prototype-text-editor-shell">
+            <div className="shadcn-prototype-text-editor-status">
+              <span>{isDirectorText ? "整篇 Markdown 编导稿" : "整篇 Markdown 文案"}</span>
+              <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
+            </div>
+            <textarea
+              aria-label={isDirectorText ? "编辑编导稿" : "编辑文案稿"}
+              value={textEditBody}
+              onChange={(event) => {
+                setTextEditBody(event.target.value);
+                setTextEditError("");
+                setStructuralChange(null);
+              }}
+              spellCheck={false}
+            />
+            {textEditError ? <p className="shadcn-prototype-text-edit-error" role="alert">{textEditError}</p> : null}
+            {structuralChange ? (
+              <div className="shadcn-prototype-text-structure-review" role="alert">
+                <strong>检测到关键结构变化</strong>
+                <p>{structuralChange.message}</p>
+                <div>
+                  <button type="button" onClick={() => setStructuralChange(null)}>返回修改</button>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={textEditSaving}
+                    onClick={() => void saveTextEdit(true)}
+                  >
+                    {textEditSaving ? "校验并保存中…" : "按新结构保存"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {qualityReport && (qualityReport.blockers.length || qualityReport.warnings.length) ? (
           <VideoQualityPanel
@@ -626,7 +763,7 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {hasVideoProject ? (
+        {!isTextEditing && hasVideoProject ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}
@@ -639,14 +776,14 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {!showEditorEmbed && previewShowsBrowse ? (
+        {!isTextEditing && !showEditorEmbed && previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
             <ProductPreview
               product={product}
               onReplaceMaterial={openBrowseMaterialPicker}
             />
           </div>
-        ) : !showEditorEmbed && orchestrationPending ? (
+        ) : !isTextEditing && !showEditorEmbed && orchestrationPending ? (
           <div className="shadcn-prototype-product-main">
             {/* The step-by-step execution timeline lives in the conversation
                 (spec video-confirmation-execution-card §5.2 / agentic-workbench
@@ -658,7 +795,7 @@ export default function ProductWorkspace({
               <p>生成进度在对话区实时更新，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>
-        ) : !showEditorEmbed && orchestrationFailed ? (
+        ) : !isTextEditing && !showEditorEmbed && orchestrationFailed ? (
           <div className="shadcn-prototype-product-main">
             <div className="shadcn-prototype-video-failed" role="alert">
               <strong>视频生成失败</strong>
@@ -690,7 +827,7 @@ export default function ProductWorkspace({
               </div>
             </div>
           </div>
-        ) : !showEditorEmbed && !hasVideoProject ? (
+        ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
               <ProductPreview product={product} />

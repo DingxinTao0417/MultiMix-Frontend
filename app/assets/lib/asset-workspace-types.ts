@@ -151,6 +151,9 @@ export type AssetProduct = {
   preview?: AssetProductPreview;
   // Set when this product is backed by a real backend ContentAsset.
   backendAssetId?: number;
+  // Backend identity used by guarded Markdown edits.
+  contentType?: string;
+  contentHash?: string | null;
   // True only when the backend project satisfies the shared editor-readiness
   // contract. UI surfaces must not infer readiness from raw metadata presence.
   videoProjectReady?: boolean;

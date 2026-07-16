@@ -185,6 +185,15 @@ export type AssetWorkspaceAdapter = {
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
+  saveTextEdit(args: {
+    token: string;
+    product: AssetProduct;
+    body: string;
+    acceptStructuralChange: boolean;
+  }): Promise<
+    | { kind: "saved"; product: AssetProduct }
+    | { kind: "structural_change"; message: string; changes: Record<string, unknown> }
+  >;
   // Backend-backed operations. Without an API, callers render an explicit
   // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
@@ -733,6 +742,39 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         return { version: nextVersion, savedAt: new Date().toISOString() };
       }
       throw new Error("未连接后端，无法保存产物。");
+    },
+    async saveTextEdit({ token, product, body, acceptStructuralChange }) {
+      if (!product.backendAssetId || !product.contentHash) {
+        throw new Error("当前产物缺少可校验的编辑版本，请刷新后重试。");
+      }
+      const response = await fetch(`${API_BASE}/v1/assets/${product.backendAssetId}/text-edits`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          body,
+          base_content_hash: product.contentHash,
+          accept_structural_change: acceptStructuralChange,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const detail = isRecord(payload.detail) ? payload.detail : {};
+      if (response.status === 409 && stringValue(detail.code) === "structural_change_confirmation_required") {
+        return {
+          kind: "structural_change",
+          message: stringValue(detail.message) || "检测到关键结构变化，原版本尚未被覆盖。",
+          changes: isRecord(detail.changes) ? detail.changes : {},
+        };
+      }
+      if (!response.ok) {
+        throw new Error(
+          stringValue(detail.message)
+          || (stringValue(detail.code) === "edit_version_conflict" ? "产物已更新，请刷新后再编辑。" : "保存失败，请返回编辑后重试。"),
+        );
+      }
+      return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
     },
     isBackendEnabled() {
       return isApiConfigured;

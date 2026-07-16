@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { assetWorkspaceAdapter, conversationFromSummary, libraryCategoryForAsset, retryConversationDetailLoad } from "../lib/asset-workspace-adapter";
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
+import type { AssetProduct } from "../lib/asset-workspace-types";
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
@@ -54,6 +55,44 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("saves text edits through the guarded text-edit endpoint", async () => {
+    const updated = asset({
+      id: 88,
+      asset_kind: "copy",
+      content_type: "social_post",
+      content_hash: "new-hash",
+      body: "# 新文案\n\n已修改正文",
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(updated), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await assetWorkspaceAdapter.saveTextEdit({
+      token: "token",
+      product: {
+        backendAssetId: 88,
+        contentHash: "old-hash",
+      } as AssetProduct,
+      body: "# 新文案\n\n已修改正文",
+      acceptStructuralChange: false,
+    });
+
+    expect(result.kind).toBe("saved");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/assets/88/text-edits"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          body: "# 新文案\n\n已修改正文",
+          base_content_hash: "old-hash",
+          accept_structural_change: false,
+        }),
+      }),
+    );
+    vi.unstubAllGlobals();
+  });
+
   it("loads saved material recommendations and the understood media library independently", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
       const url = String(input);
