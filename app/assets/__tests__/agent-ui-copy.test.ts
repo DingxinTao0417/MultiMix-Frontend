@@ -1509,7 +1509,10 @@ describe("agent conversation UI copy", () => {
   it("uses a separate execution anchor for confirmation without a visible user bubble", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
 
-    expect(conversationStudio).toContain("optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}");
+    expect(conversationStudio).toContain("confirmingPlanKey === confirmationPlanKey(message.plan)");
+    expect(conversationStudio).toContain("optimisticExchange.confirmationPlanKey === confirmationPlanKey(message.plan)");
+    expect(conversationStudio).toContain("confirmationPlanKey: planKey");
+    expect(conversationStudio).toContain("persistOnConversationSwitch: Boolean(");
     expect(conversationStudio).toContain('presentation: "execution_anchor"');
     expect(conversationStudio).toContain("runSteps: optimisticVideoProjectSteps()");
     expect(conversationStudio).toContain("mergeVisibleConversationMessages");

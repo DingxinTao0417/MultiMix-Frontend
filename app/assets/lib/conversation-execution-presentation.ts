@@ -10,6 +10,7 @@ export type ExecutionOptimisticExchange = {
   status: "pending" | "stopped" | "failed" | "unsubmitted";
   presentation?: AssetMessagePresentation;
   runSteps?: AgentRunStep[];
+  confirmationPlanKey?: string;
 };
 
 export function optimisticVideoProjectSteps(): AgentRunStep[] {
