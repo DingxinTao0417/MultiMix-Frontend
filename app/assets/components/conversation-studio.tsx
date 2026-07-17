@@ -6,12 +6,13 @@ import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "luci
 import { attachmentSendBlockReason, getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
-import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR } from "../../../lib/api";
+import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
 import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation } from "../lib/asset-workspace-types";
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
+import { AssetGenerationJobCard } from "./asset-generation-job-card";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -153,6 +154,8 @@ export default function ConversationStudio({
   pendingExchange = null,
   onPendingExchangeChange,
   onSendMessage,
+  generationJob = null,
+  onRetryGeneration,
   liveRunStateByAssetId,
   onRetryExecution,
   diagnosticsSlot = null,
@@ -172,6 +175,8 @@ export default function ConversationStudio({
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
   onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string) => Promise<void>;
+  generationJob?: AssetGenerationJobResponse | null;
+  onRetryGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
   // to the same card while exact failed main/MG child jobs are retried.
   liveRunStateByAssetId?: Record<number, {
@@ -614,6 +619,9 @@ export default function ConversationStudio({
             </div>
           );
         })}
+        {generationJob ? (
+          <AssetGenerationJobCard job={generationJob} onRetry={onRetryGeneration} />
+        ) : null}
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>

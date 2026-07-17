@@ -55,6 +55,54 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("keeps a queued generation job in the send result", async () => {
+    const now = "2026-07-17T06:00:00Z";
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        conversation_id: "asset-conversation-queued",
+        conversation: {
+          id: "asset-conversation-queued",
+          title: "产品介绍",
+          status: "active",
+          metadata: {},
+          messages: [],
+          products: [],
+          created_at: now,
+          updated_at: now,
+        },
+        user_message: "生成产品介绍",
+        assistant_message: "内容生成任务已进入队列，完成后会自动更新当前对话。",
+        intent: { operation: "create" },
+        suggestions: [],
+        product: null,
+        generation_job: {
+          id: "asset-generation-job-1",
+          status: "queued",
+          stage: "queued",
+          attempts: 0,
+          result_asset_id: null,
+          error_code: null,
+          error_message: null,
+          created_at: now,
+          updated_at: now,
+        },
+      }), { status: 202, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await assetWorkspaceAdapter.sendMessage({
+      token: "token",
+      conversationId: "new",
+      instruction: "生成产品介绍",
+      clientRequestId: "00000000-0000-0000-0000-000000000111",
+    });
+
+    expect(result.product).toBeNull();
+    expect(result.generationJob?.id).toBe("asset-generation-job-1");
+    expect(result.generationJob?.status).toBe("queued");
+    vi.unstubAllGlobals();
+  });
+
   it("saves text edits through the guarded text-edit endpoint", async () => {
     const updated = asset({
       id: 88,

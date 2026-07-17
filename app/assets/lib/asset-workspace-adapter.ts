@@ -5,10 +5,13 @@ import {
   api,
   apiBlob,
   apiForm,
+  getAssetGenerationJob,
   isApiConfigured,
+  retryAssetGenerationJob,
   type AssetIngestJobActionRead,
   type AssetIngestJobRead,
   type AssetConversationMessageResponse,
+  type AssetGenerationJobResponse,
   type AssetConversationResponse,
   type AssetConversationSummaryResponse,
   type ContentAsset,
@@ -213,11 +216,13 @@ export type AssetWorkspaceAdapter = {
     linkedAssetIds?: number[];
     clientRequestId?: string;
     signal?: AbortSignal;
-  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null }>;
+  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null }>;
   reconcileMessage(args: {
     token: string;
     clientRequestId: string;
-  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null } | null>;
+  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null } | null>;
+  getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
+  retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   reviseProduct(args: {
     token: string;
     product: AssetProduct;
@@ -854,7 +859,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
       const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
       const product = generatedProduct ?? null;
-      return { conversationId: response.conversation_id, conversation, product };
+      return {
+        conversationId: response.conversation_id,
+        conversation,
+        product,
+        generationJob: response.generation_job ?? null,
+      };
     },
     async reconcileMessage({ token, clientRequestId }) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
@@ -863,6 +873,14 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const matchedMessage = row.messages.find(
         (message) => stringValue(message.metadata?.client_request_id) === clientRequestId && message.asset_id,
       );
+      const generationMessage = row.messages.find(
+        (message) => stringValue(message.metadata?.client_request_id) === clientRequestId
+          && stringValue(message.metadata?.asset_generation_job_id),
+      );
+      const generationJobId = stringValue(generationMessage?.metadata?.asset_generation_job_id);
+      const generationJob = generationJobId
+        ? await getAssetGenerationJob(token, generationJobId)
+        : null;
       const matchedAsset = matchedMessage?.asset_id
         ? row.products.find((asset) => asset.id === matchedMessage.asset_id)
         : row.products[row.products.length - 1];
@@ -872,7 +890,14 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         conversationId: row.id,
         conversation,
         product: generatedProduct ?? null,
+        generationJob,
       };
+    },
+    getGenerationJob(token, jobId, signal) {
+      return getAssetGenerationJob(token, jobId, signal);
+    },
+    retryGenerationJob(token, jobId) {
+      return retryAssetGenerationJob(token, jobId);
     },
     async reviseProduct({ token, product, instruction, conversationId, signal }) {
       if (!isApiConfigured || !token || !product.backendAssetId) {

@@ -1437,6 +1437,42 @@ button:disabled {
   padding: 24px clamp(18px, 4vw, 30px);
 }
 
+.shadcn-prototype-generation-job-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: min(680px, 92%);
+  border: 1px solid #eae7e1;
+  border-radius: 14px;
+  background: #faf9f7;
+  padding: 12px 14px;
+  color: #35312d;
+  font-size: 13px;
+}
+
+.shadcn-prototype-generation-job-card.status-failed {
+  align-items: flex-start;
+  border-color: #f2c8c2;
+  background: #fff7f5;
+}
+
+.shadcn-prototype-generation-job-card p {
+  flex: 1;
+  margin: 0;
+  color: #8f3e35;
+}
+
+.shadcn-prototype-generation-job-card button {
+  flex: 0 0 auto;
+  border: 1px solid #ded9d2;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 6px 12px;
+  color: #35312d;
+  cursor: pointer;
+}
+
 .shadcn-prototype-thread article {
   max-width: min(680px, 92%);
   border: 0;
