@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { assetWorkspaceAdapter, conversationFromSummary, libraryCategoryForAsset, retryConversationDetailLoad } from "../lib/asset-workspace-adapter";
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
+import type { AssetProduct } from "../lib/asset-workspace-types";
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
@@ -54,32 +55,162 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
-  it("loads saved material recommendations and the understood media library independently", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = String(input);
-      if (url.includes("asset-suggestions")) {
-        return new Response(JSON.stringify({ suggestions: [{
-          asset_id: 12,
-          title: "施工过程记录",
-          preview_url: "local://施工.jpg",
-          match_reason: "匹配施工过程",
-        }] }), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("kind=image")) {
-        return new Response(JSON.stringify([asset({ id: 21, asset_kind: "image", original_ref: "local://图片.jpg", title: "门店图片" })]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      if (url.includes("kind=video")) {
-        return new Response(JSON.stringify([asset({ id: 22, asset_kind: "video", original_ref: "https://example.com/video.mp4", title: "门店视频" })]), { status: 200, headers: { "Content-Type": "application/json" } });
-      }
-      return new Response("not found", { status: 404 });
+  it("saves text edits through the guarded text-edit endpoint", async () => {
+    const updated = asset({
+      id: 88,
+      asset_kind: "copy",
+      content_type: "social_post",
+      content_hash: "new-hash",
+      body: "# 新文案\n\n已修改正文",
     });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(updated), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await assetWorkspaceAdapter.loadSegmentMaterialOptions("token", 9100, "segment-1");
+    const result = await assetWorkspaceAdapter.saveTextEdit({
+      token: "token",
+      product: {
+        backendAssetId: 88,
+        contentHash: "old-hash",
+      } as AssetProduct,
+      body: "# 新文案\n\n已修改正文",
+      acceptStructuralChange: false,
+    });
 
-    expect(result.recommended).toEqual([expect.objectContaining({ id: "12", title: "施工过程记录", reason: "匹配施工过程" })]);
-    expect(result.library.map((item) => item.title)).toEqual(["门店图片", "门店视频"]);
-    expect(result.library[0]?.thumbnailUrl).toContain("/v1/video/media?ref=");
+    expect(result.kind).toBe("saved");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/v1/assets/88/text-edits"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          body: "# 新文案\n\n已修改正文",
+          base_content_hash: "old-hash",
+          accept_structural_change: false,
+        }),
+      }),
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("maps unified local candidates into current/recommended/library groups", async () => {
+    const candidate = (overrides: Record<string, unknown>) => ({
+      candidate_id: "cand-1",
+      source_type: "saved_asset",
+      source_asset_id: 12,
+      provider: "library",
+      provider_item_id: "12",
+      media_type: "image",
+      title: "施工过程记录",
+      preview_url: "https://cdn/preview.jpg",
+      width: 1080,
+      height: 1920,
+      duration: 0,
+      license: "",
+      author: "",
+      attribution_url: "",
+      verification_status: "persisted",
+      relevance_status: "recommended",
+      relevance_reason: "匹配施工过程",
+      requires_trim: false,
+      already_persisted: true,
+      selectable: true,
+      ...overrides,
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        scope: "local",
+        segment_id: "segment-1",
+        groups: {
+          current: [candidate({ candidate_id: "cur-1", relevance_status: "current", selectable: false })],
+          recommended: [candidate({})],
+          library: [candidate({ candidate_id: "cand-2", source_asset_id: 13, relevance_status: "related" })],
+          public: [],
+        },
+        provider_statuses: [],
+        next_cursor: null,
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "local");
+
+    expect(result.current?.[0]).toMatchObject({ candidateId: "cur-1", selectable: false });
+    expect(result.recommended[0]).toMatchObject({ candidateId: "cand-1", assetId: 12, reason: "匹配施工过程" });
+    expect(result.library[0]).toMatchObject({ candidateId: "cand-2" });
+    vi.unstubAllGlobals();
+  });
+
+  it("surfaces a candidate endpoint 404 instead of falling back to deleted routes", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Segment material candidates v2 is disabled." }), { status: 404, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "local"),
+    ).rejects.toThrow("Segment material candidates v2 is disabled.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("returns public candidates with provider statuses and next cursor", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        scope: "public",
+        segment_id: "segment-1",
+        groups: {
+          current: [],
+          recommended: [],
+          library: [],
+          public: [{
+            candidate_id: "pub-1",
+            source_type: "public_asset",
+            source_asset_id: null,
+            provider: "pexels",
+            provider_item_id: "9988",
+            media_type: "video",
+            title: "门店安装",
+            preview_url: "https://cdn/pub.jpg",
+            width: 1080,
+            height: 1920,
+            duration: 8,
+            license: "Pexels License",
+            author: "Jane",
+            attribution_url: "https://pexels/9988",
+            verification_status: "unverified",
+            relevance_status: "unverified",
+            relevance_reason: "由结构化搜索召回",
+            requires_trim: true,
+            already_persisted: false,
+            selectable: true,
+          }],
+        },
+        provider_statuses: [{ provider: "pexels", status: "ok", error: "" }],
+        next_cursor: "cursor-2",
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "public");
+
+    expect(result.public?.[0]).toMatchObject({ candidateId: "pub-1", provider: "pexels", requiresTrim: true, mediaType: "video" });
+    expect(result.providerStatuses).toEqual([{ provider: "pexels", status: "ok", error: undefined }]);
+    expect(result.publicNextCursor).toBe("cursor-2");
+    vi.unstubAllGlobals();
+  });
+
+  it("submits candidate_id when replacing with a unified candidate", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ id: "job-1", asset_id: 9100, status: "queued", render_stage: "queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-9" })).resolves.toMatchObject({
+      kind: "started",
+      job: { id: "job-1" },
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ operation: "replace_material", candidate_id: "cand-9" });
     vi.unstubAllGlobals();
   });
 
@@ -89,15 +220,19 @@ describe("runtime data boundary", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-recompose", asset_id: 9100, status: "queued", render_stage: "queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", 12)).resolves.toEqual({
+    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-12" })).resolves.toEqual({
       kind: "confirm_overwrite",
       message: "会覆盖手工剪辑",
     });
-    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", 12, true)).resolves.toMatchObject({
+    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-12" }, true)).resolves.toMatchObject({
       kind: "started",
       job: { id: "job-recompose" },
     });
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({ confirm_overwrite: true });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      operation: "replace_material",
+      candidate_id: "cand-12",
+      confirm_overwrite: true,
+    });
     vi.unstubAllGlobals();
   });
 

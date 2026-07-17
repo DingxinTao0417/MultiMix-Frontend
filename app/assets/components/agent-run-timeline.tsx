@@ -79,8 +79,10 @@ export default function AgentRunTimeline({
     : failedIndex >= 0
       ? failedIndex + 1
       : Math.min(summary.total, summary.doneCount + 1);
-  const failedStep = steps.find((step) => step.status === "fail");
-  const retryJobId = failedStep?.retryJobId;
+  const retryStep = steps.find(
+    (step) => step.status === "fail" && step.retryJobId,
+  ) ?? steps.find((step) => step.retryJobId);
+  const retryJobId = retryStep?.retryJobId;
   const errorPresentation = summary.hasFailure
     ? executionErrorPresentation(errorMessage ?? "")
     : null;

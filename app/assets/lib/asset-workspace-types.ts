@@ -1,3 +1,5 @@
+import type { VideoQualityReport } from "./video-quality";
+
 export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
 export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
@@ -73,16 +75,49 @@ export type AssetProductSegment = {
   mgStatus?: string;
 };
 
+// A single material candidate shown in the picker. Every selectable row carries
+// a server-issued `candidateId`; `assetId` is source metadata only.
+export type SegmentMaterialSourceType = "saved_asset" | "public_asset" | "title_card";
+
 export type SegmentMaterialOption = {
   id: string;
   title: string;
   thumbnailUrl?: string;
   reason?: string;
+  // Current/non-selectable rows may omit the candidate id.
+  candidateId?: string;
+  assetId?: number;
+  sourceType?: SegmentMaterialSourceType;
+  mediaType?: "image" | "video";
+  provider?: string;
+  author?: string;
+  license?: string;
+  attributionUrl?: string;
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  requiresTrim?: boolean;
+  verificationStatus?: string;
+  relevanceStatus?: string;
+  relevanceReason?: string;
+  alreadyPersisted?: boolean;
+  // false only for the non-selectable "current material" chip.
+  selectable?: boolean;
+};
+
+export type SegmentMaterialProviderStatus = {
+  provider: string;
+  status: string;
+  error?: string;
 };
 
 export type SegmentMaterialOptions = {
   recommended: SegmentMaterialOption[];
   library: SegmentMaterialOption[];
+  current?: SegmentMaterialOption[];
+  public?: SegmentMaterialOption[];
+  providerStatuses?: SegmentMaterialProviderStatus[];
+  publicNextCursor?: string | null;
 };
 
 export type AssetProduct = {
@@ -109,9 +144,13 @@ export type AssetProduct = {
   preview?: AssetProductPreview;
   // Set when this product is backed by a real backend ContentAsset.
   backendAssetId?: number;
+  // Backend identity used by guarded Markdown edits.
+  contentType?: string;
+  contentHash?: string | null;
   // True only when the backend project satisfies the shared editor-readiness
   // contract. UI surfaces must not infer readiness from raw metadata presence.
   videoProjectReady?: boolean;
+  videoQualityReport?: VideoQualityReport;
   metadata?: Record<string, unknown>;
 };
 

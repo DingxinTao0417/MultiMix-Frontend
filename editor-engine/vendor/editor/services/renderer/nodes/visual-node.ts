@@ -1,6 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
 import { BaseNode } from "./base-node";
+import { computeFitScale, type FitMode } from "./fit-scale";
 import type { Effect } from "@editor/lib/effects/types";
 import type { Mask } from "@editor/lib/masks/types";
 import type { BlendMode, Transform } from "@editor/lib/rendering";
@@ -31,6 +32,10 @@ export interface VisualNodeParams {
 	blendMode?: BlendMode;
 	effects?: Effect[];
 	masks?: Mask[];
+	// How the source fills the canvas. Main-track visuals use "cover" so every
+	// clip fills the unified canvas (segments never look like mixed ratios);
+	// overlays/others default to "contain" (no crop).
+	fitMode?: FitMode;
 }
 
 export abstract class VisualNode<
@@ -91,12 +96,15 @@ export abstract class VisualNode<
 			animations: this.params.animations,
 			localTime: animationLocalTime,
 		});
-		const containScale = Math.min(
-			renderer.width / sourceWidth,
-			renderer.height / sourceHeight,
+		const fitScale = computeFitScale(
+			renderer.width,
+			renderer.height,
+			sourceWidth,
+			sourceHeight,
+			this.params.fitMode,
 		);
-		const scaledWidth = sourceWidth * containScale * transform.scaleX;
-		const scaledHeight = sourceHeight * containScale * transform.scaleY;
+		const scaledWidth = sourceWidth * fitScale * transform.scaleX;
+		const scaledHeight = sourceHeight * fitScale * transform.scaleY;
 		const absWidth = Math.abs(scaledWidth);
 		const absHeight = Math.abs(scaledHeight);
 		const x = renderer.width / 2 + transform.position.x - absWidth / 2;

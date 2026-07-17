@@ -23,9 +23,16 @@ type OptimisticExchange = {
   clientRequestId?: string;
   presentation?: AssetMessagePresentation;
   runSteps?: AgentRunStep[];
+  confirmationPlanKey?: string;
 };
 
-type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "presentation" | "runSteps">;
+type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "presentation" | "runSteps" | "confirmationPlanKey">;
+
+type ActiveRequest = {
+  controller: AbortController;
+  conversationId: string;
+  persistOnConversationSwitch: boolean;
+};
 
 export type ChatImageAttachment = {
   id: string;
@@ -193,7 +200,9 @@ export default function ConversationStudio({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
-  const activeRequestRef = useRef<AbortController | null>(null);
+  const activeRequestRef = useRef<ActiveRequest | null>(null);
+  const selectedConversationIdRef = useRef(selectedConversation.id);
+  selectedConversationIdRef.current = selectedConversation.id;
   const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
 
@@ -232,9 +241,14 @@ export default function ConversationStudio({
     setAdjustHint(false);
     setConfirmingPlanKey(null);
     return () => {
-      // Abort the in-flight send when switching conversations or unmounting so
-      // stale responses cannot land after the view has moved on.
-      activeRequestRef.current?.abort();
+      const activeRequest = activeRequestRef.current;
+      if (activeRequest?.conversationId !== selectedConversation.id) return;
+      // Ordinary chat requests keep their existing cancel-on-switch behavior.
+      // A video confirmation is a durable command identified by its request ID,
+      // so switching views must not turn it into a client-side cancellation.
+      if (!activeRequest.persistOnConversationSwitch) {
+        activeRequest.controller.abort();
+      }
       activeRequestRef.current = null;
     };
   }, [selectedConversation.id]);
@@ -257,7 +271,14 @@ export default function ConversationStudio({
     }
     if (readonly || !onSendMessage || (!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || sending) return;
     const controller = new AbortController();
-    activeRequestRef.current = controller;
+    const requestConversationId = selectedConversation.id;
+    activeRequestRef.current = {
+      controller,
+      conversationId: requestConversationId,
+      persistOnConversationSwitch: Boolean(
+        clientRequestId && optimisticFeedback?.presentation === "execution_anchor"
+      ),
+    };
     setSending(true);
     setSendError(null);
     setComposerValue("");
@@ -269,7 +290,8 @@ export default function ConversationStudio({
       status: "pending",
       clientRequestId,
       presentation: optimisticFeedback?.presentation,
-      runSteps: optimisticFeedback?.runSteps
+      runSteps: optimisticFeedback?.runSteps,
+      confirmationPlanKey: optimisticFeedback?.confirmationPlanKey,
     } satisfies OptimisticExchange;
     onPendingExchangeChange?.(selectedConversation.id, exchange);
     try {
@@ -293,10 +315,12 @@ export default function ConversationStudio({
         setSendError(message);
       }
     } finally {
-      if (activeRequestRef.current === controller) {
+      if (activeRequestRef.current?.controller === controller) {
         activeRequestRef.current = null;
       }
-      setSending(false);
+      if (selectedConversationIdRef.current === requestConversationId) {
+        setSending(false);
+      }
     }
   };
 
@@ -318,7 +342,8 @@ export default function ConversationStudio({
       await sendInstruction(instruction, {
         assistantText: "已确认，正在创建视频工程任务。",
         presentation: "execution_anchor",
-        runSteps: optimisticVideoProjectSteps()
+        runSteps: optimisticVideoProjectSteps(),
+        confirmationPlanKey: planKey,
       }, globalThis.crypto.randomUUID());
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
@@ -386,7 +411,7 @@ export default function ConversationStudio({
 
   const stopGeneration = () => {
     if (!sending) return;
-    activeRequestRef.current?.abort();
+    activeRequestRef.current?.controller.abort();
     activeRequestRef.current = null;
     setSending(false);
     if (pendingExchange) {
@@ -510,7 +535,13 @@ export default function ConversationStudio({
               {UI_V3_CONFIRM_CARD && message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
-                  optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}
+                  optimisticallyConfirmed={
+                    confirmingPlanKey === confirmationPlanKey(message.plan)
+                    || (
+                      optimisticExchange?.status === "pending"
+                      && optimisticExchange.confirmationPlanKey === confirmationPlanKey(message.plan)
+                    )
+                  }
                   disabled={sending || !canSend}
                   onConfirm={(plan, ratio) => void handleConfirmPlan(plan, ratio)}
                   onAdjust={(plan) => handleAdjustPlan(plan)}

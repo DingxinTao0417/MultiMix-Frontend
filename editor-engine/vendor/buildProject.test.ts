@@ -58,6 +58,53 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('gives subtitles a contrast-safe background by default', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-contrast',
+          type: 'text',
+          content: '白底素材上的字幕仍然清晰',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    });
+
+    const result = buildProject(bp);
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(element.background).toMatchObject({
+      enabled: true,
+      color: '#000000aa',
+    });
+  });
+
+  it('preserves backend subtitle line boundaries without creating a third line', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-1',
+          type: 'text',
+          content: '1234567890\nabcdefghij',
+          startTime: 0,
+          duration: 5,
+          segmentId: 'seg-1',
+        }],
+      }],
+    });
+
+    const result = buildProject(bp);
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(String(element.content).split('\n')).toHaveLength(2);
+    expect(element.content).toBe('1234567890\nabcdefghij');
+  });
+
   describe('overlay → isMain mapping', () => {
     it('BackendTrack.overlay: true → track isMain: false', () => {
       const bp = makeProject({
@@ -226,7 +273,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       expect(elements[0].muted).toBe(false);
     });
 
-    it('aligns overlay elements to the matching segment window', () => {
+    it('preserves a shorter overlay inside the matching segment window', () => {
       const bp = makeProject({
         media: [
           makeMedia({ id: 'media-main', file_path: '/test/main.mp4', name: 'main.mp4' }),
@@ -257,8 +304,8 @@ describe('buildProject - overlay/hasAlpha logic', () => {
               {
                 id: 'elem-ol-1',
                 type: 'video',
-                startTime: 5,
-                duration: 2,
+                startTime: 4.2,
+                duration: 3,
                 mediaId: 'media-ol',
                 segmentId: 'seg-1',
               },
@@ -273,8 +320,38 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       );
       const overlayElement = overlayTrack?.elements[0];
 
-      expect(overlayElement?.startTime).toBe(4);
-      expect(overlayElement?.duration).toBe(6);
+      expect(overlayElement?.startTime).toBe(4.2);
+      expect(overlayElement?.duration).toBe(3);
+    });
+
+    it('clamps an overlay that spills beyond its matching segment window', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ol', hasAlpha: true })],
+        tracks: [
+          {
+            id: 'track-main',
+            type: 'video',
+            name: 'Main',
+            elements: [
+              { id: 'main', type: 'video', startTime: 4, duration: 6, mediaId: 'main-media', segmentId: 'seg-1' },
+            ],
+          },
+          {
+            id: 'track-overlay',
+            type: 'video',
+            name: 'MG',
+            overlay: true,
+            elements: [
+              { id: 'overlay', type: 'video', startTime: 9, duration: 4, mediaId: 'media-ol', segmentId: 'seg-1' },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const overlay = project.scenes[0].tracks[1].elements[0];
+      expect(overlay.startTime).toBe(9);
+      expect(overlay.duration).toBe(1);
     });
   });
 });

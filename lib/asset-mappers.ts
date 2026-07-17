@@ -480,7 +480,7 @@ function suggestionsForCapability(capability: string): string[] {
 }
 
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
-  return asset.content_type === "video_script";
+  return asset.content_type === "video_script" || asset.content_type === "short_video_narration";
 }
 
 function isMalformedDirectorDraft(asset: ContentAsset): boolean {
@@ -492,6 +492,7 @@ function isMalformedDirectorDraft(asset: ContentAsset): boolean {
 
 function assetLabelFromProduct(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
+  if (metadata.template_mode === true || metadata.grounding_status === "keyword_template") return "关键词模板";
   if (metadata.no_asset_hit) return "未命中素材";
   const count = Array.isArray(asset.linked_asset_ids) ? asset.linked_asset_ids.length : 0;
   return count > 0 ? `已关联 ${count} 个素材` : "模型通用知识";
@@ -524,6 +525,7 @@ export function statusLabelFromProduct(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
   if (metadata.video_project) return "视频工程";
   if (metadata.unsupported_adapter) return "可执行方案";
+  if (metadata.template_mode === true || metadata.grounding_status === "keyword_template") return "关键词模板";
   if (metadata.no_asset_hit) return "通用能力生成";
   return "有来源";
 }
@@ -591,6 +593,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const body = markdownToParagraphs(asset.body);
   const sourceCount = Array.isArray(asset.linked_asset_ids) ? asset.linked_asset_ids.length : 0;
   const noAssetHit = Boolean(metadata.no_asset_hit);
+  const templateMode = metadata.template_mode === true || metadata.grounding_status === "keyword_template";
   const mp4State = stringValue(videoProject?.mp4_state) || "";
   const directorDraft = isVideoDirectorDraft(asset);
   // Orchestration lifecycle: pending while the async job runs, failed when the
@@ -617,6 +620,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       ? "工程异常 · 待恢复"
     : unsupported
     ? "可执行方案 · 待生成"
+    : templateMode
+      ? "关键词模板"
     : directorDraft
       ? noAssetHit
         ? "未命中素材"
@@ -641,9 +646,13 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     },
     {
       label: "来源",
-      title: noAssetHit ? "未命中素材" : `${sourceCount} 个素材`,
-      detail: noAssetHit ? "该产物使用模型通用知识生成，不能视为素材证据支持。" : "生成 metadata 保留了素材来源映射。",
-      status: noAssetHit ? "no-asset-hit" : "已关联"
+      title: templateMode ? "待补充资料" : noAssetHit ? "未命中素材" : `${sourceCount} 个素材`,
+      detail: templateMode
+        ? "当前内容只按用户关键词生成，可继续补充真实服务、案例或数据。"
+        : noAssetHit
+          ? "该产物使用模型通用知识生成，不能视为素材证据支持。"
+          : "生成 metadata 保留了素材来源映射。",
+      status: templateMode ? "keyword-template" : noAssetHit ? "no-asset-hit" : "已关联"
     },
     {
       label: "参数",
@@ -696,6 +705,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
+    contentType: asset.content_type,
+    contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
     metadata,
     mode,
@@ -726,7 +737,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeProductTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

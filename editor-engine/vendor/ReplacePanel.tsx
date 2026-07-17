@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
 import { useEditor } from "@editor/hooks/use-editor";
-import type { MediaAsset } from "@editor/lib/media/types";
-import { API_BASE, replaceOptions, generateMG, mediaUrl, type MaterialOption } from "./api";
+import {
+  API_BASE,
+  generateMG,
+  recomposeSegmentMaterial,
+  segmentMaterialCandidates,
+  type SegmentMaterialCandidate,
+} from "./api";
 import { updateEditorProject } from "./bootstrap";
-import { filePathByMediaId, segmentTextByElementId, type BackendProject } from "./buildProject";
+import { segmentIdByElementId, segmentTextByElementId, type BackendProject } from "./buildProject";
 import {
   Sheet,
   SheetContent,
@@ -24,8 +29,11 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   const projH = canvasSize?.height ?? 1920;
   const projLayout = projW > projH ? "landscape" : projW === projH ? "square" : "portrait";
 
-  const [options, setOptions] = useState<MaterialOption[]>([]);
+  const [localCandidates, setLocalCandidates] = useState<SegmentMaterialCandidate[]>([]);
+  const [publicCandidates, setPublicCandidates] = useState<SegmentMaterialCandidate[]>([]);
+  const [publicError, setPublicError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [mgUrl, setMgUrl] = useState<string | null>(null);
   const [mgLoading, setMgLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -44,11 +52,16 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
 
   // Clear options when selection changes.
   useEffect(() => {
-    setOptions([]);
+    setLocalCandidates([]);
+    setPublicCandidates([]);
+    setPublicError(null);
     setMgUrl(null);
   }, [selEl?.id]);
   const segText = selEl ? segmentTextByElementId[selEl.id] || "" : "";
-  const canReplace = Boolean(selEl && segText);
+  // Real segment id (not the timeline element id) is what the recompose and
+  // candidate endpoints are scoped to.
+  const segmentId = selEl ? segmentIdByElementId[selEl.id] || "" : "";
+  const canReplace = Boolean(selEl && segmentId && assetId && token);
 
   async function reloadProject() {
     if (!assetId) return;
@@ -70,16 +83,35 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   }
 
   async function fetchOptions() {
-    if (!selEl || !segText) return;
+    if (!selEl || !segmentId || !assetId) return;
     setLoading(true);
+    setPublicError(null);
     try {
-      const opts = await replaceOptions(segText, selEl.duration, projLayout);
-      setOptions(opts);
+      // Local first (my library + recommendations), then public asynchronously
+      // so a stock-provider outage never blanks out my own material.
+      const local = await segmentMaterialCandidates(assetId, segmentId, "local", token);
+      setLocalCandidates([
+        ...local.groups.recommended,
+        ...local.groups.library,
+      ]);
+      try {
+        const remote = await segmentMaterialCandidates(assetId, segmentId, "public", token);
+        setPublicCandidates(remote.groups.public);
+      } catch (e) {
+        setPublicError(e instanceof Error ? e.message : "公共素材加载失败。");
+      }
     } catch (e) {
-      console.warn("replace options failed", e);
+      setPublicError(e instanceof Error ? e.message : "素材加载失败。");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function reloadAndClose() {
+    await reloadProject();
+    setLocalCandidates([]);
+    setPublicCandidates([]);
+    setOpen(false);
   }
 
   async function makeMG() {
@@ -104,40 +136,78 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     }
   }
 
-  async function applyReplace(opt: MaterialOption) {
-    if (!selEl) return;
-    // Download the new material into a File so mediabunny can decode it.
-    const url = mediaUrl(opt.file_path);
-    const response = await fetch(url);
-    if (!response.ok) {
-      alert(`素材下载失败：HTTP ${response.status}`);
+  // Replace through the authoritative server recompose (not a browser-only
+  // timeline edit): the backend persists the material into video_plan and
+  // rebuilds video_project, then we reload the editor from that project.
+  async function applyReplace(candidate: SegmentMaterialCandidate) {
+    if (!selEl || !segmentId || !assetId || !candidate.selectable) return;
+    if (!candidate.candidate_id) {
+      alert("该候选已失效，请刷新候选列表后重试。");
       return;
     }
-    const blob = await response.blob();
-    if (!blob.type.startsWith(`${opt.media_type}/`)) {
-      alert("素材格式不正确，请换一个候选。");
-      return;
+    setReplacing(true);
+    try {
+      let result = await recomposeSegmentMaterial(assetId, segmentId, candidate.candidate_id, token);
+      if (result.kind === "confirm_overwrite") {
+        if (!window.confirm(result.message)) {
+          setReplacing(false);
+          return;
+        }
+        result = await recomposeSegmentMaterial(assetId, segmentId, candidate.candidate_id, token, true);
+      }
+      if (result.kind === "started") {
+        // Recompose runs server-side; reload the rebuilt project once it lands.
+        // The job publishes atomically, so a short reload reflects the new
+        // material (the workbench poll path shares the same job contract).
+        await reloadAndClose();
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "素材替换失败，请重试。");
+    } finally {
+      setReplacing(false);
     }
-    const name = opt.file_path.split("/").pop() || "material";
-    const file = new File([blob], name, { type: blob.type });
-    const newId = `repl-${Date.now()}`;
-    // Register the backend ref so "保存项目" can serialize this replacement.
-    filePathByMediaId[newId] = opt.file_path;
-    const asset: MediaAsset = {
-      id: newId,
-      name,
-      type: opt.media_type,
-      file,
-      url: URL.createObjectURL(blob),
-      thumbnailUrl: URL.createObjectURL(blob),
-    } as MediaAsset;
-    // Add asset then point the element at it.
-    editor.media.setAssets({ assets: [...editor.media.getAssets(), asset] });
-    editor.timeline.updateElements({
-      updates: [{ trackId: selEl.trackId, elementId: selEl.id, updates: { mediaId: newId } as never }],
-    });
-    setOptions([]);
-    setOpen(false);
+  }
+
+  function renderCandidateGroup(label: string, items: SegmentMaterialCandidate[]) {
+    if (!items.length) return null;
+    return (
+      <div className="space-y-3">
+        <div className="text-[12px] font-semibold text-[#17211d]">{label}</div>
+        <div className="grid grid-cols-2 gap-3">
+          {items.map((candidate, i) => {
+            const meta = [
+              candidate.media_type === "image" ? "图片" : "视频",
+              candidate.duration ? `${candidate.duration.toFixed(1)}s` : "",
+              candidate.provider,
+              candidate.requires_trim ? "需裁切" : "",
+            ].filter(Boolean).join(" · ");
+            return (
+              <button
+                key={candidate.candidate_id ?? `${candidate.provider}-${i}`}
+                type="button"
+                disabled={replacing || !candidate.selectable}
+                onClick={() => applyReplace(candidate)}
+                className="overflow-hidden rounded-2xl border border-[#d7ded7] bg-white text-left shadow-[0_8px_18px_rgba(21,32,27,0.04)] transition hover:-translate-y-px hover:shadow-[0_12px_24px_rgba(21,32,27,0.08)] disabled:cursor-default disabled:opacity-60"
+              >
+                {candidate.preview_url ? (
+                  candidate.media_type === "image" ? (
+                    <img src={candidate.preview_url} className="block h-28 w-full object-cover" />
+                  ) : (
+                    <video src={candidate.preview_url} muted className="block h-28 w-full object-cover" />
+                  )
+                ) : (
+                  <div className="flex h-28 w-full items-center justify-center bg-[#f4f6f4] text-[11px] text-[#9aa39d]">无预览</div>
+                )}
+                <div className="px-3 py-2">
+                  <div className="truncate text-[12px] font-medium text-[#17211d]" title={candidate.title}>{candidate.title}</div>
+                  {meta ? <div className="mt-0.5 text-[10px] text-[#627069]">{meta}</div> : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -186,29 +256,11 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
                   </button>
                 </div>
 
-                {options.length ? (
-                  <div className="space-y-3">
-                    <div className="text-[12px] font-semibold text-[#17211d]">候选素材</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {options.map((opt, i) => {
-                        const ourl = mediaUrl(opt.file_path);
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => applyReplace(opt)}
-                            className="overflow-hidden rounded-2xl border border-[#d7ded7] bg-white text-left shadow-[0_8px_18px_rgba(21,32,27,0.04)] transition hover:-translate-y-px hover:shadow-[0_12px_24px_rgba(21,32,27,0.08)]"
-                          >
-                            {opt.media_type === "image" ? (
-                              <img src={ourl} className="block h-28 w-full object-cover" />
-                            ) : (
-                              <video src={ourl} muted className="block h-28 w-full object-cover" />
-                            )}
-                            <div className="px-3 py-2 text-[11px] font-medium text-[#627069]">点击替换当前片段</div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                {renderCandidateGroup("我的素材 / 推荐", localCandidates)}
+                {renderCandidateGroup("公共素材", publicCandidates)}
+                {publicError ? (
+                  <div className="rounded-2xl border border-[#f0d9d9] bg-[#fbf3f3] px-4 py-3 text-[12px] leading-5 text-[#9c4a4a]">
+                    {publicError}
                   </div>
                 ) : null}
 

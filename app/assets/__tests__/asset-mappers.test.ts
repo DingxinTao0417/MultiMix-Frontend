@@ -101,6 +101,38 @@ describe("asset product mapper", () => {
     expect(product.videoProjectReady).toBe(false);
   });
 
+  it("keeps short narration drafts on the editable text surface", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "short_video_narration",
+      metadata: { capability: "short_video_narration" },
+    }));
+
+    expect(product.mode).toBe("copy");
+    expect(product.contentType).toBe("short_video_narration");
+    expect(product.markdownBody).toContain("展示客厅空间");
+  });
+
+  it("labels keyword copy templates as ungrounded templates instead of sourced content", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "copy",
+      content_type: "social_post",
+      metadata: {
+        capability: "social_post",
+        template_mode: true,
+        grounding_status: "keyword_template",
+        template_fields_grounded: false,
+      },
+    }));
+
+    expect(product.status).toBe("关键词模板");
+    expect(product.sections.find((section) => section.label === "来源")).toMatchObject({
+      title: "待补充资料",
+      status: "keyword-template",
+    });
+    expect(product.preview?.subtitle).toContain("不代表真实业务事实");
+  });
+
   it("keeps director draft metadata without presenting a video preview", () => {
     const product = contentAssetToProduct(asset({}));
 

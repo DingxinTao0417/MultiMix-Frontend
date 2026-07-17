@@ -1,5 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOptions } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
   api,
@@ -15,10 +15,13 @@ import {
   type ContentAssetSearchResult,
   type ContentAssetRevisionResponse,
   type PublicMaterialCandidate,
-  type PublicSourceRead
+  type PublicSourceRead,
+  type SegmentMaterialCandidateResponse,
+  type SegmentMaterialCandidatesResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord } from "./asset-workspace-shared";
+import type { VideoQualityReport } from "./video-quality";
 
 export type LibraryRow = {
   assetId?: number;
@@ -182,6 +185,15 @@ export type AssetWorkspaceAdapter = {
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
+  saveTextEdit(args: {
+    token: string;
+    product: AssetProduct;
+    body: string;
+    acceptStructuralChange: boolean;
+  }): Promise<
+    | { kind: "saved"; product: AssetProduct }
+    | { kind: "structural_change"; message: string; changes: Record<string, unknown> }
+  >;
   // Backend-backed operations. Without an API, callers render an explicit
   // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
@@ -221,12 +233,20 @@ export type AssetWorkspaceAdapter = {
   generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
-  loadSegmentMaterialOptions(token: string, projectAssetId: number, segmentId: string): Promise<SegmentMaterialOptions>;
+  getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
+  loadSegmentMaterialCandidates(
+    token: string,
+    projectAssetId: number,
+    segmentId: string,
+    scope: "local" | "public",
+    cursor?: string | null,
+    limit?: number,
+  ): Promise<SegmentMaterialOptions>;
   replaceSegmentMaterial(
     token: string,
     projectAssetId: number,
     segmentId: string,
-    replacementAssetId: number,
+    selection: SegmentMaterialSelection,
     confirmOverwrite?: boolean,
   ): Promise<
     | { kind: "confirm_overwrite"; message: string }
@@ -646,6 +666,39 @@ function mergeSearchResults(keywordRows: ContentAssetSearchResult[], semanticRow
     .map((item) => contentAssetToLibraryRow(item.asset, item.reasons));
 }
 
+// Every selectable local/public row is scoped and signed by the server.
+export type SegmentMaterialSelection = { candidateId: string };
+
+function mapSegmentCandidate(row: SegmentMaterialCandidateResponse): SegmentMaterialOption {
+  const candidateId = stringValue(row.candidate_id) || undefined;
+  const assetId = typeof row.source_asset_id === "number" ? row.source_asset_id : undefined;
+  const mediaType = row.media_type === "video" ? "video" : row.media_type === "image" ? "image" : undefined;
+  return {
+    // Current/non-selectable rows can omit a candidate id.
+    id: candidateId ?? (assetId != null ? String(assetId) : `material-${row.provider_item_id || row.title}`),
+    title: stringValue(row.title) || "素材",
+    thumbnailUrl: materialPreviewUrl(row.preview_url),
+    reason: stringValue(row.relevance_reason) || undefined,
+    candidateId,
+    assetId,
+    sourceType: row.source_type,
+    mediaType,
+    provider: stringValue(row.provider) || undefined,
+    author: stringValue(row.author) || undefined,
+    license: stringValue(row.license) || undefined,
+    attributionUrl: stringValue(row.attribution_url) || undefined,
+    durationSeconds: typeof row.duration === "number" && row.duration > 0 ? row.duration : undefined,
+    width: typeof row.width === "number" && row.width > 0 ? row.width : undefined,
+    height: typeof row.height === "number" && row.height > 0 ? row.height : undefined,
+    requiresTrim: Boolean(row.requires_trim),
+    verificationStatus: stringValue(row.verification_status) || undefined,
+    relevanceStatus: stringValue(row.relevance_status) || undefined,
+    relevanceReason: stringValue(row.relevance_reason) || undefined,
+    alreadyPersisted: Boolean(row.already_persisted),
+    selectable: row.selectable !== false,
+  };
+}
+
 function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
   return {
     getSnapshot() {
@@ -686,6 +739,39 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         return { version: nextVersion, savedAt: new Date().toISOString() };
       }
       throw new Error("未连接后端，无法保存产物。");
+    },
+    async saveTextEdit({ token, product, body, acceptStructuralChange }) {
+      if (!product.backendAssetId || !product.contentHash) {
+        throw new Error("当前产物缺少可校验的编辑版本，请刷新后重试。");
+      }
+      const response = await fetch(`${API_BASE}/v1/assets/${product.backendAssetId}/text-edits`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          body,
+          base_content_hash: product.contentHash,
+          accept_structural_change: acceptStructuralChange,
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const detail = isRecord(payload.detail) ? payload.detail : {};
+      if (response.status === 409 && stringValue(detail.code) === "structural_change_confirmation_required") {
+        return {
+          kind: "structural_change",
+          message: stringValue(detail.message) || "检测到关键结构变化，原版本尚未被覆盖。",
+          changes: isRecord(detail.changes) ? detail.changes : {},
+        };
+      }
+      if (!response.ok) {
+        throw new Error(
+          stringValue(detail.message)
+          || (stringValue(detail.code) === "edit_version_conflict" ? "产物已更新，请刷新后再编辑。" : "保存失败，请返回编辑后重试。"),
+        );
+      }
+      return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
     },
     isBackendEnabled() {
       return isApiConfigured;
@@ -844,42 +930,46 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       });
       return mapVideoJob(raw);
     },
-    async loadSegmentMaterialOptions(token, projectAssetId, segmentId) {
-      const [suggestionResult, imageResult, videoResult] = await Promise.allSettled([
-        api<{ suggestions?: Array<Record<string, unknown>> }>(
-          `/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/asset-suggestions`,
-          token,
-        ),
-        api<ContentAsset[]>("/assets?kind=image&limit=200", token),
-        api<ContentAsset[]>("/assets?kind=video&limit=200", token),
-      ]);
-      const suggestions = suggestionResult.status === "fulfilled" && Array.isArray(suggestionResult.value.suggestions)
-        ? suggestionResult.value.suggestions
-        : [];
-      const libraryAssets = [imageResult, videoResult].flatMap((result) => (
-        result.status === "fulfilled" ? result.value : []
-      ));
+    async getVideoQuality(token, projectAssetId) {
+      return api<VideoQualityReport>(
+        `/video/projects/${encodeURIComponent(projectAssetId)}/quality?stage=export_preflight`,
+        token,
+      );
+    },
+    async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {
+      const params = new URLSearchParams({ scope });
+      if (cursor) params.set("cursor", cursor);
+      if (limit) params.set("limit", String(limit));
+      const response = await fetch(
+        `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !isRecord(payload)) {
+        const detail = isRecord(payload) ? payload.detail : null;
+        throw new Error(typeof detail === "string" ? detail : `HTTP ${response.status}`);
+      }
+      const data = payload as unknown as SegmentMaterialCandidatesResponse;
+      const groups = data.groups ?? { current: [], recommended: [], library: [], public: [] };
       return {
-        recommended: suggestions.flatMap((item) => {
-          const id = item.asset_id == null ? "" : String(item.asset_id);
-          if (!id) return [];
-          return [{
-            id,
-            title: stringValue(item.title) || `素材 ${id}`,
-            thumbnailUrl: materialPreviewUrl(item.preview_url),
-            reason: stringValue(item.match_reason) || undefined,
-          }];
-        }),
-        library: libraryAssets
-          .filter((item) => !item.archived && (item.asset_kind === "image" || item.asset_kind === "video") && item.original_ref)
-          .map((item) => ({
-            id: String(item.id),
-            title: item.title || `素材 ${item.id}`,
-            thumbnailUrl: materialPreviewUrl(item.original_ref),
-          })),
+        current: (groups.current ?? []).map(mapSegmentCandidate),
+        recommended: (groups.recommended ?? []).map(mapSegmentCandidate),
+        library: (groups.library ?? []).map(mapSegmentCandidate),
+        public: (groups.public ?? []).map(mapSegmentCandidate),
+        providerStatuses: (data.provider_statuses ?? []).map((item) => ({
+          provider: stringValue(item.provider),
+          status: stringValue(item.status),
+          error: stringValue(item.error) || undefined,
+        })),
+        publicNextCursor: data.next_cursor ?? null,
       };
     },
-    async replaceSegmentMaterial(token, projectAssetId, segmentId, replacementAssetId, confirmOverwrite = false) {
+    async replaceSegmentMaterial(token, projectAssetId, segmentId, selection, confirmOverwrite = false) {
+      const body: Record<string, unknown> = {
+        operation: "replace_material",
+        confirm_overwrite: confirmOverwrite,
+      };
+      body.candidate_id = selection.candidateId;
       const response = await fetch(
         `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
         {
@@ -888,11 +978,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            operation: "replace_material",
-            asset_id: replacementAssetId,
-            confirm_overwrite: confirmOverwrite,
-          }),
+          body: JSON.stringify(body),
         },
       );
       const payload = await response.json().catch(() => null);

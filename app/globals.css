@@ -2492,6 +2492,60 @@ button:disabled {
   font-weight: 600;
 }
 
+.shadcn-prototype-video-quality {
+  display: grid;
+  gap: 10px;
+  margin: 0 18px 14px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, #d97706 34%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, #f59e0b 8%, var(--card));
+}
+
+.shadcn-prototype-video-quality.blocked {
+  border-color: color-mix(in srgb, #dc2626 36%, var(--border));
+  background: color-mix(in srgb, #dc2626 7%, var(--card));
+}
+
+.shadcn-prototype-video-quality > header,
+.shadcn-prototype-video-quality article,
+.shadcn-prototype-video-quality-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shadcn-prototype-video-quality > header > div,
+.shadcn-prototype-video-quality article > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.shadcn-prototype-video-quality header span,
+.shadcn-prototype-video-quality article p,
+.shadcn-prototype-video-quality article small {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.shadcn-prototype-video-quality-list {
+  display: grid;
+  gap: 8px;
+}
+
+.shadcn-prototype-video-quality article {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--background);
+}
+
+.shadcn-prototype-video-quality button {
+  white-space: nowrap;
+}
+
 .shadcn-prototype-video-failed {
   display: grid;
   gap: 11px;
@@ -3020,7 +3074,52 @@ button:disabled {
   width: 100%;
   height: 100%;
   border: 0;
-  background: #101514;
+  background: #ffffff;
+  pointer-events: none;
+}
+
+.shadcn-prototype-project-preview-loading {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  color: #6e6a64;
+  font-size: 12px;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.shadcn-prototype-project-preview-toggle {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: #201f1e;
+  padding: 0;
+  cursor: pointer;
+}
+
+.shadcn-prototype-project-preview-toggle > svg {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 16px;
+  height: 16px;
+  box-sizing: content-box;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+  padding: 14px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: transform .15s ease;
+}
+
+.shadcn-prototype-project-preview-toggle:hover > svg {
+  transform: translate(-50%, -50%) scale(1.07);
+}
+
+.shadcn-prototype-project-preview-toggle:disabled {
+  cursor: default;
 }
 
 .shadcn-prototype-project-preview-controls {
@@ -8697,4 +8796,72 @@ label {
     opacity: 0.55;
     transform: none;
   }
+}
+.shadcn-prototype-text-editor-shell {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  padding: 18px 20px 22px;
+  border-top: 1px solid #ece9e3;
+  background: #fff;
+}
+
+.shadcn-prototype-text-editor-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #817b72;
+  font-size: 12px;
+}
+
+.shadcn-prototype-text-editor-status strong {
+  color: #755cf0;
+  font-weight: 650;
+}
+
+.shadcn-prototype-text-editor-shell textarea {
+  width: 100%;
+  min-height: min(66vh, 760px);
+  resize: vertical;
+  padding: 20px;
+  border: 1px solid #dedad2;
+  border-radius: 14px;
+  outline: none;
+  background: #fbfaf8;
+  color: #24211d;
+  font: 14px/1.75 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.shadcn-prototype-text-editor-shell textarea:focus {
+  border-color: #8b77ee;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(117, 92, 240, 0.12);
+}
+
+.shadcn-prototype-text-edit-error,
+.shadcn-prototype-text-structure-review {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #efc9c2;
+  border-radius: 12px;
+  background: #fff8f6;
+  color: #8a3426;
+  font-size: 13px;
+}
+
+.shadcn-prototype-text-structure-review p {
+  margin: 5px 0 10px;
+}
+
+.shadcn-prototype-text-structure-review > div {
+  display: flex;
+  gap: 8px;
+}
+
+.shadcn-prototype-text-edit-saved {
+  color: #278060;
+  font-size: 12px;
+  font-weight: 650;
 }

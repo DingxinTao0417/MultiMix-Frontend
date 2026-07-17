@@ -74,22 +74,94 @@ export function mediaUrl(filePath: string): string {
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(filePath)}`;
 }
 
-export interface MaterialOption {
-  file_path: string;
-  media_type: "video" | "image";
-  source_type: string;
+// Unified segment material candidate (backend
+// GET .../segments/{id}/material-candidates). Mirrors the app-layer type; kept
+// here so the vendor editor stays free of app imports.
+export interface SegmentMaterialCandidate {
+  candidate_id: string | null;
+  source_type: "saved_asset" | "public_asset" | "title_card";
+  source_asset_id: number | null;
+  provider: string;
+  media_type: string;
+  title: string;
+  preview_url: string;
   duration: number;
+  license: string;
+  author: string;
+  requires_trim: boolean;
+  relevance_reason: string;
+  selectable: boolean;
 }
 
-export async function replaceOptions(segmentText: string, duration: number, layout = "portrait", page = 1): Promise<MaterialOption[]> {
-  const res = await fetch(`${API_BASE}/v1/video/replace-options`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ segment_text: segmentText, duration, layout, page }),
-  });
-  if (!res.ok) throw new Error("replace_options failed");
-  const data = await res.json();
-  return data.options || [];
+export interface SegmentMaterialCandidatesResult {
+  scope: "local" | "public";
+  groups: {
+    current: SegmentMaterialCandidate[];
+    recommended: SegmentMaterialCandidate[];
+    library: SegmentMaterialCandidate[];
+    public: SegmentMaterialCandidate[];
+  };
+  provider_statuses: Array<{ provider: string; status: string; error?: string }>;
+  next_cursor: string | null;
+}
+
+// Fetch the only supported candidate contract for a segment.
+export async function segmentMaterialCandidates(
+  assetId: string,
+  segmentId: string,
+  scope: "local" | "public",
+  token: string | null | undefined,
+  cursor?: string | null,
+): Promise<SegmentMaterialCandidatesResult> {
+  const params = new URLSearchParams({ scope });
+  if (cursor) params.set("cursor", cursor);
+  const res = await fetch(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!res.ok) throw new Error(`material candidates failed: HTTP ${res.status}`);
+  return res.json();
+}
+
+export interface RecomposeResult {
+  public_id?: string;
+  status?: string;
+  render_stage?: string;
+  error_message?: string | null;
+}
+
+// Server-side segment recompose. The editor submits only a scoped candidate_id
+// and never sends a raw public URL. Returns a confirmation on timeline_dirty so the
+// caller can re-send with confirm_overwrite=true.
+export async function recomposeSegmentMaterial(
+  assetId: string,
+  segmentId: string,
+  candidateId: string,
+  token: string | null | undefined,
+  confirmOverwrite = false,
+): Promise<{ kind: "confirm_overwrite"; message: string } | { kind: "started"; job: RecomposeResult }> {
+  const body: Record<string, unknown> = {
+    operation: "replace_material",
+    candidate_id: candidateId,
+    confirm_overwrite: confirmOverwrite,
+  };
+  const res = await fetch(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    },
+  );
+  const payload = await res.json().catch(() => null);
+  if (res.status === 409 && payload?.detail && typeof payload.detail === "object" && payload.detail.code === "timeline_dirty") {
+    return { kind: "confirm_overwrite", message: typeof payload.detail.message === "string" ? payload.detail.message : "重新合成会覆盖手工剪辑，是否继续？" };
+  }
+  if (!res.ok) {
+    const detail = payload?.detail;
+    throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
+  }
+  return { kind: "started", job: payload as RecomposeResult };
 }
 
 export interface MGResult {

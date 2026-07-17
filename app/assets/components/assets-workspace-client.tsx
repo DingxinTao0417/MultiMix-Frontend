@@ -25,6 +25,7 @@ import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type Video
 import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
+  shouldReviseSelectedProduct,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -274,8 +275,8 @@ export function applyExecutionJobResult({
   job: VideoJobResult;
   isCancelled: () => boolean;
   publishJob: (job: VideoJobResult) => void;
-  startReadyRefresh: (jobId: string) => void;
-  readyRefreshSucceeded: (jobId: string) => boolean;
+  startReadyRefresh: (jobId: string, phase: "project_ready" | "terminal") => void;
+  readyRefreshSucceeded: (jobId: string, phase: "project_ready" | "terminal") => boolean;
   hasTerminalObservation: (jobId: string) => boolean;
   setTerminalObservation: (jobId: string, observed: boolean) => void;
   finalizeJob: (job: VideoJobResult) => void;
@@ -284,13 +285,14 @@ export function applyExecutionJobResult({
   publishJob(job);
   if (isCancelled()) return;
 
+  const executionTerminal = isExecutionTerminal(job);
+  const refreshPhase = executionTerminal ? "terminal" : "project_ready";
   const shouldRefreshConversation = job.status === "completed" || job.status === "failed";
   if (shouldRefreshConversation) {
-    startReadyRefresh(job.id);
+    startReadyRefresh(job.id, refreshPhase);
     if (isCancelled()) return;
   }
 
-  const executionTerminal = isExecutionTerminal(job);
   const observation = job.status === "completed"
     ? resolveExecutionTerminalObservation(
         hasTerminalObservation(job.id),
@@ -305,7 +307,7 @@ export function applyExecutionJobResult({
   if (isCancelled() || !observation.shouldFinalize) return;
   if (
     shouldRefreshConversation
-    && !readyRefreshSucceeded(job.id)
+    && !readyRefreshSucceeded(job.id, refreshPhase)
   ) {
     return;
   }
@@ -442,16 +444,6 @@ function uploadAcceptForView(view: ActiveView): string {
 
 function chatUploadFileKind(file: File): ChatImageUpload["fileKind"] {
   return file.type.startsWith("image/") ? "image" : "source";
-}
-
-function shouldReviseSelectedProduct(instruction: string, product: ProductArtifact | null): boolean {
-  if (!product?.backendAssetId) return false;
-  const text = instruction.trim().toLowerCase();
-  if (!text) return false;
-  if (/(mp4|成片|渲染|导出视频|render|export)/i.test(text)) return false;
-  if (/(再做|另外|新增|新建|再生成|另做|add another|new one|create another)/i.test(text)) return false;
-  if (/(基于|做成|变成|转成|turn into|make it).*(文案|图片|图|视频|copy|image|video)/i.test(text)) return false;
-  return /(短一点|更短|缩短|压到|改写|重写|优化|删掉|保留|第二|镜头|字幕|口语|专业|构图|色调|shorten|revise|rewrite|edit)/i.test(text);
 }
 
 function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
@@ -724,19 +716,23 @@ export default function AssetsWorkspaceClient({
       if (timer) clearInterval(timer);
     };
 
-    const startReadyRefresh = (jobId: string) => {
+    const startReadyRefresh = (jobId: string, phase: "project_ready" | "terminal") => {
       if (cancelled) return;
-      const requestIdentity = executionRunKey(
+      const runIdentity = executionRunKey(
         jobId,
         executionRunGenerationRef.current.get(jobId) ?? 0,
       );
+      // The project becomes editable before non-blocking MG children finish.
+      // Refresh once for that milestone and again when all children are
+      // terminal so the editor receives the patched overlay track.
+      const requestIdentity = `${runIdentity}::${phase}`;
       startReadyConversationRefresh({
         jobId,
         requestIdentity,
-        isRequestCurrent: (identity) => identity === executionRunKey(
+        isRequestCurrent: (identity) => identity.startsWith(`${executionRunKey(
           jobId,
           executionRunGenerationRef.current.get(jobId) ?? 0,
-        ),
+        )}::`),
         successfulJobIds: readyConversationRefreshRef.current,
         inFlightJobIds: readyConversationRefreshInFlightRef.current,
         isCancelled: () => cancelled,
@@ -806,11 +802,11 @@ export default function AssetsWorkspaceClient({
         isCancelled: () => cancelled,
         publishJob,
         startReadyRefresh,
-        readyRefreshSucceeded: (jobId) => readyConversationRefreshRef.current.has(
-          executionRunKey(
+        readyRefreshSucceeded: (jobId, phase) => readyConversationRefreshRef.current.has(
+          `${executionRunKey(
             jobId,
             executionRunGenerationRef.current.get(jobId) ?? 0,
-          ),
+          )}::${phase}`,
         ),
         hasTerminalObservation: (jobId) => terminalObservationVideoJobIdsRef.current.has(jobId),
         setTerminalObservation,

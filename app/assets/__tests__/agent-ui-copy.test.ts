@@ -888,6 +888,53 @@ describe("video execution polling decisions", () => {
     expect(finalized).toEqual(["main-1"]);
   });
 
+  it("refreshes the project again when MG children become terminal", () => {
+    const production = loadProductionFunctions(
+      "app/assets/components/assets-workspace-client.tsx",
+      [
+        "isExecutionTerminal",
+        "resolveExecutionTerminalObservation",
+        "applyExecutionJobResult",
+      ],
+    );
+    const applyExecutionJobResult = production.applyExecutionJobResult as unknown as (args: {
+      job: TestFullVideoJob;
+      isCancelled: () => boolean;
+      publishJob: (job: TestFullVideoJob) => void;
+      startReadyRefresh: (jobId: string, phase: "project_ready" | "terminal") => void;
+      readyRefreshSucceeded: (jobId: string, phase: "project_ready" | "terminal") => boolean;
+      hasTerminalObservation: (jobId: string) => boolean;
+      setTerminalObservation: (jobId: string, observed: boolean) => void;
+      finalizeJob: (job: TestFullVideoJob) => void;
+    }) => void;
+    const phases: string[] = [];
+    const terminalObservations = new Set<string>();
+    const apply = (job: TestFullVideoJob) => applyExecutionJobResult({
+      job,
+      isCancelled: () => false,
+      publishJob: () => undefined,
+      startReadyRefresh: (jobId, phase) => phases.push(`${jobId}:${phase}`),
+      readyRefreshSucceeded: () => true,
+      hasTerminalObservation: (jobId) => terminalObservations.has(jobId),
+      setTerminalObservation: (jobId, observed) => {
+        if (observed) terminalObservations.add(jobId);
+        else terminalObservations.delete(jobId);
+      },
+      finalizeJob: () => undefined,
+    });
+
+    apply(fullVideoJob("main-1", {
+      status: "completed",
+      steps: [{ key: "mg_overlay", label: "生成 MG", status: "run", elapsedSeconds: null, retryJobId: null }],
+    }));
+    apply(fullVideoJob("main-1", {
+      status: "completed",
+      steps: [{ key: "mg_overlay", label: "生成 MG", status: "done", elapsedSeconds: null, retryJobId: null }],
+    }));
+
+    expect(phases).toEqual(["main-1:project_ready", "main-1:terminal"]);
+  });
+
   it("publishes a failed main job but retries its conversation refresh before terminalizing", async () => {
     const production = loadProductionFunctions(
       "app/assets/components/assets-workspace-client.tsx",
@@ -1462,7 +1509,10 @@ describe("agent conversation UI copy", () => {
   it("uses a separate execution anchor for confirmation without a visible user bubble", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
 
-    expect(conversationStudio).toContain("optimisticallyConfirmed={confirmingPlanKey === confirmationPlanKey(message.plan)}");
+    expect(conversationStudio).toContain("confirmingPlanKey === confirmationPlanKey(message.plan)");
+    expect(conversationStudio).toContain("optimisticExchange.confirmationPlanKey === confirmationPlanKey(message.plan)");
+    expect(conversationStudio).toContain("confirmationPlanKey: planKey");
+    expect(conversationStudio).toContain("persistOnConversationSwitch: Boolean(");
     expect(conversationStudio).toContain('presentation: "execution_anchor"');
     expect(conversationStudio).toContain("runSteps: optimisticVideoProjectSteps()");
     expect(conversationStudio).toContain("mergeVisibleConversationMessages");

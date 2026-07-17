@@ -21,7 +21,7 @@ import { API_BASE } from "@/editor-engine/vendor/api";
 import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { segmentIdByElementId, segmentTextByElementId } from "@/editor-engine/vendor/buildProject";
 import AssetPicker, { type AssetPickerItem } from "@/app/assets/components/asset-picker";
-import { assetWorkspaceAdapter } from "@/app/assets/lib/asset-workspace-adapter";
+import { useSegmentMaterialCandidates } from "@/app/assets/lib/use-segment-material-candidates";
 import { UI_V3_ASSET_PICKER } from "@/app/assets/lib/ui-flags";
 import {
   applyEdgeTrim,
@@ -32,7 +32,7 @@ import {
 
 type RecomposeBody = {
   operation: "replace_material" | "revoice" | "toggle_mg";
-  asset_id?: number;
+  candidate_id?: string;
   voiceover?: string;
   mg_enabled?: boolean;
 };
@@ -64,8 +64,6 @@ export default function FilmStrip({
   const [saveNote, setSaveNote] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recompose, setRecompose] = useState<RecomposeState>({ phase: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerRecommended, setPickerRecommended] = useState<AssetPickerItem[]>([]);
-  const [pickerLibrary, setPickerLibrary] = useState<AssetPickerItem[]>([]);
   const stripRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragRef = useRef<{ edge: "left" | "right"; startX: number; committed: boolean } | null>(null);
@@ -97,6 +95,12 @@ export default function FilmStrip({
     : "";
   const selectedSegmentId = selected ? segmentIdByElementId[selected.id] : undefined;
   const selectedText = selected ? segmentTextByElementId[selected.id] ?? "" : "";
+  const materialCandidates = useSegmentMaterialCandidates({
+    token,
+    projectAssetId: assetId ? Number(assetId) : null,
+    segmentId: selectedSegmentId ?? null,
+    enabled: Boolean(pickerOpen && assetId && token && selectedSegmentId),
+  });
   const mediaName = useMemo(() => {
     if (!selected || !("mediaId" in selected) || !selected.mediaId) return "";
     return core.media.getAssets().find((a) => a.id === selected.mediaId)?.name ?? "";
@@ -124,6 +128,36 @@ export default function FilmStrip({
     setSelectedId(clip.id);
     core.playback.seek({ time: clip.startTime + 0.01 });
   }, [clips, core, initialSegmentId]);
+
+  useEffect(() => {
+    const onLocateMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const message = event.data as {
+        source?: string;
+        type?: string;
+        segmentId?: string;
+      };
+      if (
+        message?.source !== "multimix-workspace"
+        || message.type !== "multimix-editor-locate-segment"
+        || !message.segmentId
+      ) return;
+      const clipIndex = clips.findIndex(
+        (element) => segmentIdByElementId[element.id] === message.segmentId,
+      );
+      const clip = clips[clipIndex];
+      if (!clip) return;
+      setSelectedId(clip.id);
+      core.playback.seek({ time: clip.startTime + 0.01 });
+      const clipButton = stripRef.current?.children.item(clipIndex);
+      if (clipButton instanceof HTMLElement) {
+        clipButton.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+        clipButton.focus();
+      }
+    };
+    window.addEventListener("message", onLocateMessage);
+    return () => window.removeEventListener("message", onLocateMessage);
+  }, [clips, core]);
 
   const authHeaders = useMemo(
     () => (token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)),
@@ -309,18 +343,11 @@ export default function FilmStrip({
     return () => clearInterval(timer);
   }, [runningJobId, authHeaders]);
 
-  const openPicker = useCallback(async () => {
+  const openPicker = useCallback(() => {
     if (!assetId || !token || !selectedSegmentId) return;
+    // The shared candidate hook loads local first, then public, keyed off
+    // pickerOpen + the selected segment.
     setPickerOpen(true);
-    setPickerRecommended([]);
-    setPickerLibrary([]);
-    try {
-      const options = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, Number(assetId), selectedSegmentId);
-      setPickerRecommended(options.recommended);
-      setPickerLibrary(options.library);
-    } catch {
-      // Degrade per spec §12: an empty recommended list hides that section.
-    }
   }, [assetId, selectedSegmentId, token]);
 
   useEffect(() => {
@@ -337,7 +364,11 @@ export default function FilmStrip({
 
   const handlePickMaterial = (item: AssetPickerItem) => {
     setPickerOpen(false);
-    void submitRecompose({ operation: "replace_material", asset_id: Number(item.id) });
+    if (item.candidateId) {
+      void submitRecompose({ operation: "replace_material", candidate_id: item.candidateId });
+    } else {
+      setRecompose({ phase: "error", message: "该候选已失效，请刷新候选列表后重试。" });
+    }
   };
 
   const handleRevoice = () => {
@@ -472,8 +503,17 @@ export default function FilmStrip({
         title={`为分镜 #${selectedNumber ?? "-"} 换素材`}
         subtitle="替换后只更新当前分镜，不影响其他分镜。"
         ratio={pickerRatio}
-        recommended={pickerRecommended}
-        library={pickerLibrary}
+        current={materialCandidates.current}
+        recommended={materialCandidates.recommended}
+        library={materialCandidates.library}
+        publicItems={materialCandidates.publicItems}
+        providerStatuses={materialCandidates.providerStatuses}
+        loading={materialCandidates.localLoading}
+        error={materialCandidates.localError}
+        publicLoading={materialCandidates.publicLoading}
+        publicError={materialCandidates.publicError}
+        hasMorePublic={materialCandidates.hasMorePublic}
+        onLoadMorePublic={materialCandidates.loadMorePublic}
         onSelect={handlePickMaterial}
         onClose={() => setPickerOpen(false)}
       />

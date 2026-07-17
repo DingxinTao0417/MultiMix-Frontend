@@ -610,28 +610,33 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - 确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中后端确认门。
 - 已持久化的确认结果可能是 `processing / video_project_queued`，此时展示排队状态，不能因有占位 metadata 就显示编辑器。
 
-### 12.3 素材推荐端点（素材选择器 AI 推荐区）
+### 12.3 统一分镜素材候选端点（三入口共用）
 
-`GET /v1/video/projects/{asset_id}/segments/{segment_id}/asset-suggestions`
+`GET /v1/video/projects/{asset_id}/segments/{segment_id}/material-candidates?scope=local|public&cursor=&limit=`
 
-- 返回 `{ segment_id, role, suggestions: [{ asset_id, title, media_type, preview_url, match_reason, matched_terms, match_confidence }] }`（按匹配度排序，只读）。
-- `suggestions: []` → 选择器推荐区隐藏，仅显示图片库网格。
-- 前端字段映射：`asset_id→id`、`preview_url→thumbnailUrl`、`match_reason→reason`。
+- 这是唯一素材候选接口，不受版本 flag 控制；404 表示工程或分镜不存在，前端展示真实错误，不调用旧接口。
+- `scope=local`：返回 `groups.current / recommended / library`（无外部网络依赖，首屏即可展示），`public` 为空。
+- `scope=public`：返回 `groups.public`、`next_cursor`（游标翻页「换一批」）和逐 provider `provider_statuses`；公共 provider 失败只影响公共分组，不影响本地候选。
+- 候选契约（每项）：`candidate_id`（服务端签发的不透明 ID，公共素材不返回 `download_url`）、`source_type`、`source_asset_id`、`provider`、`media_type`、`title`、`preview_url`、`width/height/duration`、`license/author/attribution_url`、`verification_status`、`relevance_status/relevance_reason`、`requires_trim`、`already_persisted`、`selectable`。
+- `current` 项 `selectable=false`，仅作为「当前使用」展示，不可重复选择，也不签发可提交的 candidate ID。
+- 前端：工作台分镜卡、嵌入式 FilmStrip、全屏 OpenCut `ReplacePanel` 共用同一 adapter（`loadSegmentMaterialCandidates`）与同一候选组件（`AssetPicker`）；本地先出、公共异步补充。
 
-### 12.4 局部重合成端点（分镜属性卡）
+### 12.4 局部重合成端点（分镜属性卡 / 三入口统一替换）
 
 `POST /v1/video/projects/{asset_id}/segments/{segment_id}/recompose`
 
 ```jsonc
 { "operation": "replace_material" | "revoice" | "toggle_mg",
-  "asset_id": 123,            // replace_material 必填
+  "candidate_id": "segment-candidate-…", // replace_material 必填（服务端签发）
   "voiceover": "...",         // revoice 必填
   "mg_enabled": true,          // toggle_mg 必填
   "confirm_overwrite": false } // 见 12.5
 ```
 
-- 只 patch 目标分镜的权威字段（`asset_reference`+`materials` / `narration` / `mg_decision`），随后复用整条编排重建工程（规范 §12 允许的降级，loading 文案按分钟级书写）。
-- 返回 `VideoJobRead`（202）；错误：404 工程/分镜不存在、422 参数或素材不可用。
+- `replace_material` 只接受服务端签发且绑定用户/工程/分镜的 `candidate_id`；已保存素材也先由 local 候选接口签发。公共候选只有经服务端资产化（下载 + 校验 + 持久化）后才进入 pending plan，**前端不得提交任意素材 ID 或公共 URL**。
+- 只 patch 目标分镜的权威字段（`asset_reference`+`materials` / `narration` / `mg_decision`），随后复用整条编排重建工程（adapter=`segment_recompose`）。排队/运行/失败期间保留替换前 ready 工程；仅在质量检查通过后原子发布新版本，并追加版本快照（可通过 `POST /assets/{id}/versions/{version_id}/restore` 恢复）。
+- 全屏 `ReplacePanel` 不再直接下载 URL 改浏览器内存时间线；替换走本端点后调用 `reloadProject()` 重新加载权威工程。
+- 返回 `VideoJobRead`（202）；错误：404 工程/分镜不存在、410 候选过期、422 参数或素材不可用。
 
 ### 12.5 timeline 脏标记（两层数据边界，规范 §5.5）
 

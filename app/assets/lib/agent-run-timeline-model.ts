@@ -135,7 +135,12 @@ export function summarizeAgentRunSteps(steps: AgentRunStep[]) {
   const projectReady = projectSteps.length > 0
     && projectSteps.every((step) => step.status === "done");
   const mgActive = mgStep?.status === "run" || mgStep?.status === "wait";
-  const hasFailure = steps.some((step) => step.status === "fail");
+  // An aggregate MG step can remain running while one sibling has already
+  // failed. The backend attaches that exact child retry id to the live step so
+  // the failure stays actionable without pretending all MG work has stopped.
+  const hasFailure = steps.some(
+    (step) => step.status === "fail" || Boolean(step.retryJobId),
+  );
   const seconds = steps.reduce(
     (sum, step) => sum + (typeof step.elapsedSeconds === "number" ? step.elapsedSeconds : 0),
     0,

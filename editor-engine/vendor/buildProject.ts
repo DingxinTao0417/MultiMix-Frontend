@@ -12,14 +12,16 @@ import type { MediaAsset } from "@editor/lib/media/types";
 import { mediaUrl } from "./api";
 
 // Backend shapes (loose; mirror backend/timeline.py + pipeline.py output).
-interface BackendMedia {
+export interface BackendMedia {
   id: string;
   type: "video" | "image" | "audio";
   file_path: string;
   name: string;
   hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
-interface BackendElement {
+export type SafeRegion = { x: number; y: number; width: number; height: number };
+
+export interface BackendElement {
   id: string;
   type: "video" | "image" | "audio" | "text";
   name?: string;
@@ -31,9 +33,12 @@ interface BackendElement {
   content?: string;
   segmentId?: string;
   segmentText?: string;
+  displayText?: string;
+  focusText?: string;
+  safeRegion?: SafeRegion;
   muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
 }
-interface BackendTrack {
+export interface BackendTrack {
   id: string;
   type: "video" | "audio" | "text";
   name: string;
@@ -41,7 +46,17 @@ interface BackendTrack {
   overlay?: boolean;    // MG overlay track: composited above the main video, isMain=false
 }
 export interface BackendProject {
-  metadata: { title: string; duration: number };
+  metadata: {
+    title: string;
+    duration: number;
+    duration_contract?: {
+      target_seconds: number;
+      tolerance_ratio: number;
+      min_seconds: number;
+      max_seconds: number;
+    };
+    [key: string]: unknown;
+  };
   settings: { fps: number; width: number; height: number };
   media: BackendMedia[];
   tracks: BackendTrack[];
@@ -66,7 +81,10 @@ export interface SubtitleStyle {
 export const defaultSubtitleStyle: SubtitleStyle = {
   fontFamily: "sans-serif",
   color: "#ffffff",
-  bgEnabled: false,
+  // Source material can be light, dark, or change mid-shot. A translucent
+  // carrier keeps captions readable without trying to infer every frame's
+  // contrast, and applies consistently to landscape and portrait projects.
+  bgEnabled: true,
   bgColor: "#000000aa",
   maxLineChars: 16,
   sizeScale: 1,
@@ -84,16 +102,18 @@ function wrapCaption(text: string, maxChars: number): string {
   const t = (text || "").trim();
   if (!t) return "";
   const lines: string[] = [];
-  let cur = "";
-  for (const ch of t) {
-    cur += ch;
-    const atPunct = "，。！？；、,.!?;".includes(ch);
-    if (cur.length >= maxChars || (atPunct && cur.length >= maxChars * 0.6)) {
-      lines.push(cur);
-      cur = "";
+  for (const sourceLine of t.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
+    let cur = "";
+    for (const ch of sourceLine) {
+      cur += ch;
+      const atPunct = "，。！？；、,.!?;".includes(ch);
+      if (cur.length >= maxChars || (atPunct && cur.length >= maxChars * 0.6)) {
+        lines.push(cur);
+        cur = "";
+      }
     }
+    if (cur) lines.push(cur);
   }
-  if (cur) lines.push(cur);
   return lines.join("\n");
 }
 
@@ -106,6 +126,9 @@ export const segmentTextByElementId: Record<string, string> = {};
 // the media proxy; segment ids anchor MG overlays).
 export const filePathByMediaId: Record<string, string> = {};
 export const segmentIdByElementId: Record<string, string> = {};
+export const safeRegionByElementId: Record<string, SafeRegion> = {};
+export const displayTextByElementId: Record<string, string> = {};
+export const focusTextByElementId: Record<string, string> = {};
 
 // A placeholder File to satisfy the MediaAsset type; rendering reads `url`, not bytes.
 function placeholderFile(name: string): File {
@@ -152,7 +175,7 @@ function buildSegmentWindows(tracks: BackendTrack[]): Record<string, SegmentWind
   return windows;
 }
 
-function alignOverlayElementToSegment(
+function clampOverlayElementToSegment(
   element: BackendElement,
   segmentWindows: Record<string, SegmentWindow>,
 ): BackendElement {
@@ -160,11 +183,12 @@ function alignOverlayElementToSegment(
   const segmentWindow = segmentWindows[element.segmentId];
   if (!segmentWindow) return element;
 
-  return {
-    ...element,
-    startTime: segmentWindow.startTime,
-    duration: segmentWindow.duration,
-  };
+  const startTime = Math.max(segmentWindow.startTime, element.startTime);
+  const endTime = Math.min(
+    segmentWindow.startTime + segmentWindow.duration,
+    element.startTime + element.duration,
+  );
+  return { ...element, startTime, duration: Math.max(0, endTime - startTime) };
 }
 
 function buildTracks(bp: BackendProject): TimelineTrack[] {
@@ -173,11 +197,14 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 
   for (const t of bp.tracks) {
     const sourceElements = t.overlay
-      ? t.elements.map((element) => alignOverlayElementToSegment(element, segmentWindows))
+      ? t.elements.map((element) => clampOverlayElementToSegment(element, segmentWindows))
       : t.elements;
 
     for (const e of sourceElements) {
       if (e.segmentId) segmentIdByElementId[e.id] = e.segmentId;
+      if (e.safeRegion) safeRegionByElementId[e.id] = e.safeRegion;
+      if (e.displayText) displayTextByElementId[e.id] = e.displayText;
+      if (e.focusText) focusTextByElementId[e.id] = e.focusText;
     }
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
@@ -257,6 +284,16 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 }
 
 export function buildProject(bp: BackendProject): { project: TProject; assets: MediaAsset[] } {
+  for (const map of [
+    filePathByMediaId,
+    segmentIdByElementId,
+    segmentTextByElementId,
+    safeRegionByElementId,
+    displayTextByElementId,
+    focusTextByElementId,
+  ]) {
+    for (const key of Object.keys(map)) delete map[key];
+  }
   const now = new Date();
   const tracks = buildTracks(bp);
   const scene: TScene = {

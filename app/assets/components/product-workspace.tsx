@@ -6,10 +6,13 @@ import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
+import VideoQualityPanel from "./video-quality-panel";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -17,6 +20,8 @@ type EditorBridgeMessage = {
   type?: string;
   progress?: number;
   message?: string;
+  report?: VideoQualityReport;
+  blob?: Blob;
 };
 
 export function EmptyProductWorkspace() {
@@ -70,16 +75,37 @@ export default function ProductWorkspace({
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "exporting" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [exportError, setExportError] = useState("");
+  const [exportDownloaded, setExportDownloaded] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
-  const [materialRecommended, setMaterialRecommended] = useState<SegmentMaterialOption[]>([]);
-  const [materialLibrary, setMaterialLibrary] = useState<SegmentMaterialOption[]>([]);
-  const [materialPickerState, setMaterialPickerState] = useState<"idle" | "loading" | "submitting">("idle");
+  const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
+  const [isTextEditing, setIsTextEditing] = useState(false);
+  const [textEditBody, setTextEditBody] = useState(product.markdownBody ?? "");
+  const [textEditSaving, setTextEditSaving] = useState(false);
+  const [textEditError, setTextEditError] = useState("");
+  const [textEditSaved, setTextEditSaved] = useState(false);
+  const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
+  const materialCandidates = useSegmentMaterialCandidates({
+    token: token ?? null,
+    projectAssetId: product.backendAssetId ?? null,
+    segmentId: materialPickerSegment?.id ?? null,
+    enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
+  });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
+  const editableTextArtifact = Boolean(
+    product.backendAssetId
+    && product.contentHash
+    && ["social_post", "content_plan", "manual_text", "copy_draft", "video_script", "short_video_narration"].includes(product.contentType ?? ""),
+  );
+  const isDirectorText = ["video_script", "short_video_narration"].includes(product.contentType ?? "");
+  const textEditDirty = textEditBody !== (product.markdownBody ?? "");
   const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
@@ -133,9 +159,67 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
+    setIsTextEditing(false);
+    setTextEditBody(product.markdownBody ?? "");
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+  }, [product.id, product.contentHash, product.markdownBody]);
+
+  useEffect(() => {
+    if (!isTextEditing || !textEditDirty) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [isTextEditing, textEditDirty]);
+
+  const saveTextEdit = async (acceptStructuralChange: boolean) => {
+    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty) return;
+    setTextEditSaving(true);
+    setTextEditError("");
+    setTextEditSaved(false);
+    try {
+      const result = await assetWorkspaceAdapter.saveTextEdit({
+        token,
+        product,
+        body: textEditBody,
+        acceptStructuralChange,
+      });
+      if (result.kind === "structural_change") {
+        setStructuralChange({ message: result.message, changes: result.changes });
+        return;
+      }
+      setStructuralChange(null);
+      setTextEditBody(result.product.markdownBody ?? textEditBody);
+      setTextEditSaved(true);
+      setIsTextEditing(false);
+      onProductUpdated?.(result.product);
+    } catch (error) {
+      setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+    } finally {
+      setTextEditSaving(false);
+    }
+  };
+
+  const cancelTextEdit = () => {
+    if (textEditDirty && !window.confirm("当前有未保存修改，确定取消吗？")) return;
+    setTextEditBody(product.markdownBody ?? "");
+    setTextEditError("");
+    setStructuralChange(null);
+    setIsTextEditing(false);
+  };
+
+  useEffect(() => {
     setEditorReady(false);
     setExportState("idle");
     setExportProgress(null);
+    setQualityReport(null);
+    setExportError("");
+    setExportDownloaded(false);
+    verifiedExportBlobRef.current = null;
   }, [currentAssetId, hasVideoProject]);
 
   useEffect(() => {
@@ -169,18 +253,46 @@ export default function ProductWorkspace({
           setEditorReady(true);
           setExportState("exporting");
           setExportProgress(null);
+          setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         case "multimix-editor-export-progress":
           setExportState("exporting");
-          setExportProgress(typeof data.progress === "number" ? data.progress : null);
+          setExportProgress(
+            typeof data.progress === "number"
+              ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
+              : null,
+          );
           break;
         case "multimix-editor-export-success":
-          setExportState("done");
+          if (data.report) setQualityReport(data.report);
+          if (data.blob instanceof Blob) {
+            verifiedExportBlobRef.current = data.blob;
+            setExportState("done");
+            setExportProgress(100);
+            setExportError("");
+            setExportDownloaded(false);
+          } else {
+            setExportState("error");
+            setExportProgress(null);
+            setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
+          }
+          break;
+        case "multimix-editor-export-verifying":
+          setExportState("verifying");
           setExportProgress(100);
+          break;
+        case "multimix-editor-export-blocked":
+          if (data.report) setQualityReport(data.report);
+          setExportState("blocked");
+          setExportProgress(null);
+          setExportError("");
           break;
         case "multimix-editor-export-error":
           setExportState("error");
           setExportProgress(null);
+          setExportError(data.message || "成片合成失败，请重试。");
           break;
         case "multimix-editor-recompose-started":
           // The film strip kicked off a segment recompose: the embed reloads
@@ -189,6 +301,9 @@ export default function ProductWorkspace({
           setEditorReady(false);
           setExportState("idle");
           setExportProgress(null);
+          setExportError("");
+          setExportDownloaded(false);
+          verifiedExportBlobRef.current = null;
           break;
         default:
           break;
@@ -198,12 +313,48 @@ export default function ProductWorkspace({
     return () => window.removeEventListener("message", onMessage);
   }, [currentAssetId, hasVideoProject]);
 
-  const handleExportVideo = () => {
-    if (!currentAssetId || !editorReady || exportState === "exporting") return;
+  const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
+    if (!token || !product.backendAssetId) {
+      setExportState("error");
+      setExportError("导出身份信息不可用，请重新登录后重试。");
+      return null;
+    }
+    setExportState("checking");
+    setExportProgress(null);
+    setExportError("");
+    try {
+      const report = await assetWorkspaceAdapter.getVideoQuality(token, product.backendAssetId);
+      setQualityReport(report);
+      setExportState("idle");
+      return report;
+    } catch {
+      setExportState("error");
+      setExportError("导出前检查失败，请重试。");
+      return null;
+    }
+  };
+
+  const handleExportVideo = async () => {
+    if (!currentAssetId || !editorReady || ["exporting", "checking", "verifying"].includes(exportState)) return;
+    if (exportState === "done" && verifiedExportBlobRef.current) {
+      const url = URL.createObjectURL(verifiedExportBlobRef.current);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `video-${Date.now()}.mp4`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setExportDownloaded(true);
+      return;
+    }
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return;
+    const report = await requestExportQuality();
+    if (!report || hasBlockingVideoIssues(report)) return;
     setExportState("exporting");
     setExportProgress(null);
+    setExportError("");
     frameWindow.postMessage(
       {
         source: "multimix-workspace",
@@ -213,40 +364,67 @@ export default function ProductWorkspace({
     );
   };
 
+  const locateQualityIssue = (segmentId: string, objectType: string) => {
+    setVideoSurface("edit");
+    window.requestAnimationFrame(() => {
+      editorFrameRef.current?.contentWindow?.postMessage(
+        {
+          source: "multimix-workspace",
+          type: "multimix-editor-locate-segment",
+          segmentId,
+          objectType,
+        },
+        window.location.origin,
+      );
+    });
+  };
+
   const exportButtonLabel = !editorReady
     ? "导出准备中…"
+    : exportState === "checking"
+      ? "正在检查…"
+    : exportState === "verifying"
+      ? "正在检查成片…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
-        ? "再次导出"
+        ? exportDownloaded ? "再次下载" : "下载成片"
         : exportState === "error"
           ? "导出失败，重试"
+          : exportState === "blocked"
+            ? "修复后重新检查"
           : "导出视频";
 
-  const openBrowseMaterialPicker = useCallback(async (segment: AssetProductSegment) => {
-    setMaterialPickerSegment(segment);
-    setMaterialRecommended([]);
-    setMaterialLibrary([]);
+  const openBrowseMaterialPicker = useCallback((segment: AssetProductSegment) => {
     setMaterialError("");
+    setMaterialPickerState("idle");
     if (!token || !product.backendAssetId) {
-      setMaterialPickerState("idle");
       setMaterialError("当前未连接素材服务，暂时无法更换素材。");
       return;
     }
-    setMaterialPickerState("loading");
-    try {
-      const options = await assetWorkspaceAdapter.loadSegmentMaterialOptions(token, product.backendAssetId, segment.id);
-      setMaterialRecommended(options.recommended);
-      setMaterialLibrary(options.library);
-    } catch (cause) {
-      setMaterialError(cause instanceof Error ? cause.message : "素材加载失败，请重试。");
-    } finally {
-      setMaterialPickerState("idle");
-    }
+    // The shared candidate hook loads local first, then public, keyed off the
+    // selected segment; opening the picker is enough to trigger it.
+    setMaterialPickerSegment(segment);
   }, [product.backendAssetId, token]);
+
+  const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
+    Boolean(issue.segment_id)
+    && ["main_track_gap", "naked_black_interval"].includes(issue.code)
+    && Boolean(product.segments?.some((segment) => segment.id === issue.segment_id))
+  );
+
+  const repairQualityIssue = (issue: VideoQualityIssue) => {
+    const segment = product.segments?.find((item) => item.id === issue.segment_id);
+    if (segment) void openBrowseMaterialPicker(segment);
+  };
 
   const replaceBrowseMaterial = useCallback(async (item: SegmentMaterialOption) => {
     if (!token || !product.backendAssetId || !materialPickerSegment) return;
+    if (!item.candidateId) {
+      setMaterialError("该候选已失效，请刷新候选列表后重试。");
+      return;
+    }
+    const selection = { candidateId: item.candidateId };
     setMaterialPickerState("submitting");
     setMaterialError("");
     try {
@@ -254,7 +432,7 @@ export default function ProductWorkspace({
         token,
         product.backendAssetId,
         materialPickerSegment.id,
-        Number(item.id),
+        selection,
       );
       if (result.kind === "confirm_overwrite") {
         if (!window.confirm(result.message)) {
@@ -265,7 +443,7 @@ export default function ProductWorkspace({
           token,
           product.backendAssetId,
           materialPickerSegment.id,
-          Number(item.id),
+          selection,
           true,
         );
       }
@@ -452,7 +630,36 @@ export default function ProductWorkspace({
 
               </aside>
             </details>
-            {product.mode === "copy" ? (
+            {editableTextArtifact && !isTextEditing ? (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setTextEditBody(product.markdownBody ?? "");
+                  setTextEditError("");
+                  setTextEditSaved(false);
+                  setStructuralChange(null);
+                  setIsTextEditing(true);
+                }}
+              >
+                <Pencil size={12} aria-hidden="true" />
+                编辑
+              </button>
+            ) : null}
+            {isTextEditing ? (
+              <>
+                <button type="button" onClick={cancelTextEdit} disabled={textEditSaving}>取消</button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!textEditDirty || textEditSaving}
+                  onClick={() => void saveTextEdit(false)}
+                >
+                  {textEditSaving ? "校验并保存中…" : "保存修改"}
+                </button>
+              </>
+            ) : null}
+            {product.mode === "copy" && !isTextEditing ? (
               <button type="button" className="primary" onClick={() => void onCopyProduct(product)}>
                 {copied ? "已复制" : "复制全文"}
               </button>
@@ -463,7 +670,11 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {canBrowseVideo && videoSurface === "browse" ? (
-              <button type="button" className="primary" onClick={() => setVideoSurface("edit")}>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => setVideoSurface("edit")}
+              >
                 <Pencil size={12} aria-hidden="true" />
                 编辑
               </button>
@@ -477,8 +688,8 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={!editorReady || exportState === "exporting"}
-                onClick={handleExportVideo}
+                disabled={!editorReady || ["exporting", "checking", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
+                onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
               </button>
@@ -488,13 +699,71 @@ export default function ProductWorkspace({
                 {liveStageLabel}
               </span>
             ) : null}
-            <button type="button" onClick={() => void onSaveProduct(product)}>
-              {savedVersion ? `已保存 ${savedVersion}` : "保存"}
-            </button>
+            {!editableTextArtifact ? (
+              <button type="button" onClick={() => void onSaveProduct(product)}>
+                {savedVersion ? `已保存 ${savedVersion}` : "保存"}
+              </button>
+            ) : textEditSaved ? (
+              <span className="shadcn-prototype-text-edit-saved" role="status">已保存</span>
+            ) : null}
           </div>
         </header>
 
-        {hasVideoProject ? (
+        {isTextEditing ? (
+          <div className="shadcn-prototype-text-editor-shell">
+            <div className="shadcn-prototype-text-editor-status">
+              <span>{isDirectorText ? "整篇 Markdown 编导稿" : "整篇 Markdown 文案"}</span>
+              <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
+            </div>
+            <textarea
+              aria-label={isDirectorText ? "编辑编导稿" : "编辑文案稿"}
+              value={textEditBody}
+              onChange={(event) => {
+                setTextEditBody(event.target.value);
+                setTextEditError("");
+                setStructuralChange(null);
+              }}
+              spellCheck={false}
+            />
+            {textEditError ? <p className="shadcn-prototype-text-edit-error" role="alert">{textEditError}</p> : null}
+            {structuralChange ? (
+              <div className="shadcn-prototype-text-structure-review" role="alert">
+                <strong>检测到关键结构变化</strong>
+                <p>{structuralChange.message}</p>
+                <div>
+                  <button type="button" onClick={() => setStructuralChange(null)}>返回修改</button>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={textEditSaving}
+                    onClick={() => void saveTextEdit(true)}
+                  >
+                    {textEditSaving ? "校验并保存中…" : "按新结构保存"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {qualityReport && (qualityReport.blockers.length || qualityReport.warnings.length) ? (
+          <VideoQualityPanel
+            report={qualityReport}
+            onLocate={locateQualityIssue}
+            onRepair={repairQualityIssue}
+            canRepair={canRepairQualityIssue}
+            onRecheck={() => void requestExportQuality()}
+          />
+        ) : null}
+
+        {exportState === "error" && exportError ? (
+          <div className="shadcn-prototype-video-failed" role="alert">
+            <strong>导出失败</strong>
+            <p>{exportError}</p>
+          </div>
+        ) : null}
+
+        {!isTextEditing && hasVideoProject ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}
@@ -507,14 +776,14 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {!showEditorEmbed && previewShowsBrowse ? (
+        {!isTextEditing && !showEditorEmbed && previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
             <ProductPreview
               product={product}
               onReplaceMaterial={openBrowseMaterialPicker}
             />
           </div>
-        ) : !showEditorEmbed && orchestrationPending ? (
+        ) : !isTextEditing && !showEditorEmbed && orchestrationPending ? (
           <div className="shadcn-prototype-product-main">
             {/* The step-by-step execution timeline lives in the conversation
                 (spec video-confirmation-execution-card §5.2 / agentic-workbench
@@ -526,7 +795,7 @@ export default function ProductWorkspace({
               <p>生成进度在对话区实时更新，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>
-        ) : !showEditorEmbed && orchestrationFailed ? (
+        ) : !isTextEditing && !showEditorEmbed && orchestrationFailed ? (
           <div className="shadcn-prototype-product-main">
             <div className="shadcn-prototype-video-failed" role="alert">
               <strong>视频生成失败</strong>
@@ -558,7 +827,7 @@ export default function ProductWorkspace({
               </div>
             </div>
           </div>
-        ) : !showEditorEmbed && !hasVideoProject ? (
+        ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
               <ProductPreview product={product} />
@@ -577,11 +846,18 @@ export default function ProductWorkspace({
           title={`为分镜 #${materialPickerSegment?.index ?? "-"} 换素材`}
           subtitle="替换后只更新当前分镜，不影响其他分镜。"
           ratio={product.ratio}
-          recommended={materialRecommended}
-          library={materialLibrary}
-          loading={materialPickerState === "loading"}
+          current={materialCandidates.current}
+          recommended={materialCandidates.recommended}
+          library={materialCandidates.library}
+          publicItems={materialCandidates.publicItems}
+          providerStatuses={materialCandidates.providerStatuses}
+          loading={materialCandidates.localLoading}
           submitting={materialPickerState === "submitting"}
-          error={materialError}
+          error={materialError || materialCandidates.localError}
+          publicLoading={materialCandidates.publicLoading}
+          publicError={materialCandidates.publicError}
+          hasMorePublic={materialCandidates.hasMorePublic}
+          onLoadMorePublic={materialCandidates.loadMorePublic}
           onSelect={(item) => void replaceBrowseMaterial(item)}
           onClose={() => {
             if (materialPickerState === "submitting") return;
