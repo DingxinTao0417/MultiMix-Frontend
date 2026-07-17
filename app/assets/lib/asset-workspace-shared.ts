@@ -4,6 +4,21 @@ import type { AssetConversation, AssetProduct, AssetProductMode, AssetWorkspaceV
 export type ActiveView = AssetWorkspaceView;
 export type ProductMode = AssetProductMode;
 export type ProductArtifact = AssetProduct;
+
+export async function runExclusiveConversationDelete(
+  inFlightConversationIds: Set<string>,
+  conversationId: string,
+  operation: () => Promise<void>,
+): Promise<boolean> {
+  if (inFlightConversationIds.has(conversationId)) return false;
+  inFlightConversationIds.add(conversationId);
+  try {
+    await operation();
+    return true;
+  } finally {
+    inFlightConversationIds.delete(conversationId);
+  }
+}
 export type Conversation = AssetConversation;
 
 // Type guards for untyped JSON payloads (backend metadata, video_project blobs).

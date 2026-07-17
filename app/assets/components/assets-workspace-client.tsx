@@ -25,6 +25,7 @@ import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type Video
 import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
+  runExclusiveConversationDelete,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -488,6 +489,7 @@ export default function AssetsWorkspaceClient({
       : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const deletingConversationIdsRef = useRef(new Set<string>());
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
@@ -1203,31 +1205,38 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleDeleteConversation = (conversationId: string) => {
-    setConversationMenuId(null);
-    if (conversationId === "new") return;
-    const index = conversations.findIndex((conversation) => conversation.id === conversationId);
-    if (index === -1) return;
-    const removed = conversations[index];
-    const nextConversation = conversations.find((conversation) => conversation.id !== conversationId);
-    // Optimistically drop the row so the sidebar reacts instantly.
-    setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
-    if (selectedConversationId === conversationId) {
-      setSelectedConversationId(nextConversation?.id ?? "new");
-      setActiveView("conversation");
-    }
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    void assetWorkspaceAdapter.deleteConversation(token, conversationId)
-      .then(() => setConversationLoadRevision((value) => value + 1))
-      .catch(() => {
-        // Restore on failure so we never hide a conversation that still exists.
-        setConversations((current) => {
-          if (current.some((conversation) => conversation.id === removed.id)) return current;
-          const restored = [...current];
-          restored.splice(Math.min(index, restored.length), 0, removed);
-          return restored;
-        });
-        toast.error("删除失败，请稍后重试。");
-      });
+    void runExclusiveConversationDelete(
+      deletingConversationIdsRef.current,
+      conversationId,
+      async () => {
+        setConversationMenuId(null);
+        if (conversationId === "new") return;
+        const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+        if (index === -1) return;
+        const removed = conversations[index];
+        const nextConversation = conversations.find((conversation) => conversation.id !== conversationId);
+        // Optimistically drop the row so the sidebar reacts instantly.
+        setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
+        if (selectedConversationId === conversationId) {
+          setSelectedConversationId(nextConversation?.id ?? "new");
+          setActiveView("conversation");
+        }
+        if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+        try {
+          await assetWorkspaceAdapter.deleteConversation(token, conversationId);
+          setConversationLoadRevision((value) => value + 1);
+        } catch {
+          // Restore on failure so we never hide a conversation that still exists.
+          setConversations((current) => {
+            if (current.some((conversation) => conversation.id === removed.id)) return current;
+            const restored = [...current];
+            restored.splice(Math.min(index, restored.length), 0, removed);
+            return restored;
+          });
+          toast.error("删除失败，请稍后重试。");
+        }
+      },
+    );
   };
 
   const handleCollapseSidebar = () => {
