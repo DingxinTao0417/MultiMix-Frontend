@@ -5,5 +5,6 @@
 - `MULTIMIX_WORKSPACE_DESIGN.md`：前端工作台产品定位、交互规则、资源库分类和数据边界。
 - `API.md`：adapter、类型、helper、测试 fixture 边界、URL、环境变量和后端接入契约。
 - `DEPLOYMENT.md`：Vercel/Railway 部署与本地端到端冒烟。
+- `GAPS.md`：功能缺口与待完善清单（跨前后端，基于全仓库代码审查）。
 
 前端 `AGENTS.md` 由 `../CLAUDE.md` 生成；修改入口规则时先改 `CLAUDE.md`，再运行 `npm run sync:agents` 和 `npm run check:agents`。
