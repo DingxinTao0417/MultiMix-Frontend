@@ -29,12 +29,13 @@ MultiMix 是两个并排的独立仓库：
 
 步骤：
 
-1. Railway 新建服务，指向 `MultiMix-Backend` 仓库根目录，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
+1. 在后端仓库 GitHub Actions 手动运行 `Publish backend image`，从 `main` 用 `Dockerfile.lean` 构建一次并发布私有 GHCR 镜像。记录运行摘要中的完整 `ghcr.io/...@sha256:<digest>`；生产禁止使用可漂移 tag。
+2. Railway 的 API 与 video worker 必须都指向上述完全相同的 digest。私有 GHCR 拉取需在 Railway 配置只读 registry 凭据，并使用支持私有外部镜像的 Railway 套餐；条件不满足时不得切断当前正常运行的源码部署。
    API 服务必须在 Railway 服务设置中显式配置启动命令：
    `python -c "import os; os.execvp('python', ['python', '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', os.environ.get('PORT', '8000')])"`。
    `railway.json` 不保存启动命令，因为同仓的 API 与 video worker 需要使用不同命令，config-as-code 会覆盖服务级设置。
-2. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
-3. 配环境变量：
+3. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
+4. 配环境变量：
    ```
    CHANGEIN_ENV=production
    CHANGEIN_SECRET_KEY=<32+ 随机字符串>
@@ -57,8 +58,8 @@ MultiMix 是两个并排的独立仓库：
    # 对象存储（生产必填；S3 或 Supabase Storage 二选一，禁止容器本地 artifacts）
    CHANGEIN_S3_ENDPOINT_URL / CHANGEIN_S3_BUCKET / CHANGEIN_S3_ACCESS_KEY / CHANGEIN_S3_SECRET_KEY
    ```
-4. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
-5. API 与 video worker 必须从同一 commit 构建同一镜像 digest，不能分别从不同分支或不同构建产物发布。
+5. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
+6. API 与 video worker 必须回读到同一镜像 digest。发布前记录两服务原 digest；回滚时两个服务同时改回同一个已验证旧 digest，禁止只回滚一个服务或现场重建旧 commit。
 
 ### 视频编排 worker（异步生成）
 
