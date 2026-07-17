@@ -129,6 +129,21 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByText("你的素材", { exact: false })).not.toBeInTheDocument();
   });
 
+  it("prioritizes material-search failure over the generic material-gap notice", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    render(<ProductPreview product={{
+      ...base,
+      metadata: {
+        ...base.metadata,
+        material_search_notice: "公共素材搜索暂不可用，2 个分镜已使用标题卡占位，可重试素材匹配。",
+        material_gap_notice: "2 个分镜没有找到合适素材。",
+      },
+    }} />);
+
+    expect(screen.getByText("公共素材搜索暂不可用", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("2 个分镜没有找到合适素材。", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("keeps a running project out of edit and export", () => {
     renderWorkspace("case-04-project-running");
     expect(screen.getAllByRole("status").some((node) => node.textContent?.includes("视频工程生成中"))).toBe(true);
