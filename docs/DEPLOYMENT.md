@@ -57,7 +57,7 @@ MultiMix 是两个并排的独立仓库：
    # 对象存储（生产必填；S3 或 Supabase Storage 二选一，禁止容器本地 artifacts）
    CHANGEIN_S3_ENDPOINT_URL / CHANGEIN_S3_BUCKET / CHANGEIN_S3_ACCESS_KEY / CHANGEIN_S3_SECRET_KEY
    ```
-4. Railway 常规 healthcheck 使用 `/healthz`（`railway.json` 已配）；发布门还必须检查 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
+4. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
 5. API 与 video worker 必须从同一 commit 构建同一镜像 digest，不能分别从不同分支或不同构建产物发布。
 
 ### 视频编排 worker（异步生成）
