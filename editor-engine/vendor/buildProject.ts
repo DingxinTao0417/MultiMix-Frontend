@@ -9,6 +9,7 @@ import type {
   TextElement,
 } from "@editor/lib/timeline/types";
 import type { MediaAsset } from "@editor/lib/media/types";
+import type { ElementAnimations } from "@editor/lib/animation/types";
 import { mediaUrl } from "./api";
 
 // Backend shapes (loose; mirror backend/timeline.py + pipeline.py output).
@@ -16,6 +17,7 @@ export interface BackendMedia {
   id: string;
   type: "video" | "image" | "audio";
   file_path: string;
+  playback_url?: string;
   name: string;
   hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
@@ -37,6 +39,8 @@ export interface BackendElement {
   focusText?: string;
   safeRegion?: SafeRegion;
   muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
+  volume?: number;
+  animations?: ElementAnimations;
 }
 export interface BackendTrack {
   id: string;
@@ -244,7 +248,8 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         startTime: e.startTime,
         trimStart: e.trimStart ?? 0,
         trimEnd: e.trimEnd ?? 0,
-        volume: 1,
+        volume: e.volume ?? 1,
+        animations: e.animations,
       }));
       tracks.push({ id: t.id, name: t.name, type: "audio", elements, muted: false });
     } else if (t.type === "text") {

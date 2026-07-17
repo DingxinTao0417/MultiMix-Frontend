@@ -4,6 +4,7 @@
 // TProject carries no media file paths at all. This module is the inverse of
 // buildProject.ts.
 import type { EditorCore } from "@editor/core";
+import type { ElementAnimations } from "@editor/lib/animation/types";
 import {
   displayTextByElementId,
   filePathByMediaId,
@@ -34,6 +35,8 @@ function serializeElement(el: {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  volume?: number;
+  animations?: ElementAnimations;
 }): Record<string, unknown> {
   const out: Record<string, unknown> = {
     id: el.id,
@@ -46,6 +49,10 @@ function serializeElement(el: {
   };
   if (el.mediaId) out.mediaId = el.mediaId;
   if (el.type === "text") out.content = el.content || "";
+  if (el.type === "audio") {
+    out.volume = el.volume ?? 1;
+    if (el.animations) out.animations = el.animations;
+  }
   const segmentId = segmentIdByElementId[el.id];
   if (segmentId) out.segmentId = segmentId;
   const segmentText = segmentTextByElementId[el.id];
