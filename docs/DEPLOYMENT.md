@@ -30,6 +30,9 @@ MultiMix 是两个并排的独立仓库：
 步骤：
 
 1. Railway 新建服务，指向 `MultiMix-Backend` 仓库根目录，Railway 会读 `railway.json` 用 `Dockerfile.lean`。
+   API 服务必须在 Railway 服务设置中显式配置启动命令：
+   `python -c "import os; os.execvp('python', ['python', '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', os.environ.get('PORT', '8000')])"`。
+   `railway.json` 不保存启动命令，因为同仓的 API 与 video worker 需要使用不同命令，config-as-code 会覆盖服务级设置。
 2. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
 3. 配环境变量：
    ```
