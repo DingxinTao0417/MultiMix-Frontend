@@ -32,10 +32,18 @@ export interface VisualNodeParams {
 	blendMode?: BlendMode;
 	effects?: Effect[];
 	masks?: Mask[];
-	// How the source fills the canvas. Main-track visuals use "cover" so every
-	// clip fills the unified canvas (segments never look like mixed ratios);
-	// overlays/others default to "contain" (no crop).
 	fitMode?: FitMode;
+	filter?: string;
+	adjustment?: {
+		brightness: number;
+		contrast: number;
+		saturate: number;
+		blur: number;
+	};
+	transition?: {
+		type: string;
+		duration: number;
+	};
 }
 
 export abstract class VisualNode<
@@ -86,13 +94,45 @@ export abstract class VisualNode<
 		const animationLocalTime = this.getAnimationLocalTime({
 			time: timelineTime,
 		});
+		const baseTransform = this.params.transform;
+		const baseOpacity = this.params.opacity;
+		const transition = this.params.transition;
+		const localTime = timelineTime - this.params.timeOffset;
+		const transitionDuration = transition?.duration ?? 0;
+		const hasTransition = transition && transition.type !== "none" && transitionDuration > 0;
+		const transitionProgress = hasTransition
+			? Math.min(1, Math.max(0, localTime / transitionDuration))
+			: 1;
+
+		let transitionOpacityMultiplier = 1;
+		let transitionOffsetX = 0;
+		if (hasTransition && transitionProgress < 1) {
+			if (transition.type === "fade" || transition.type === "dissolve") {
+				transitionOpacityMultiplier = transitionProgress;
+			}
+			if (transition.type === "slide_left") {
+				transitionOpacityMultiplier = transitionProgress;
+				transitionOffsetX = -renderer.width * (1 - transitionProgress);
+			}
+			if (transition.type === "slide_right") {
+				transitionOpacityMultiplier = transitionProgress;
+				transitionOffsetX = renderer.width * (1 - transitionProgress);
+			}
+		}
+
 		const transform = resolveTransformAtTime({
-			baseTransform: this.params.transform,
+			baseTransform: {
+				...baseTransform,
+				position: {
+					x: baseTransform.position.x + transitionOffsetX,
+					y: baseTransform.position.y,
+				},
+			},
 			animations: this.params.animations,
 			localTime: animationLocalTime,
 		});
-		const opacity = resolveOpacityAtTime({
-			baseOpacity: this.params.opacity,
+		const animatedOpacity = resolveOpacityAtTime({
+			baseOpacity: baseOpacity,
 			animations: this.params.animations,
 			localTime: animationLocalTime,
 		});
@@ -115,7 +155,8 @@ export abstract class VisualNode<
 				? this.params.blendMode
 				: "source-over"
 		) as GlobalCompositeOperation;
-		renderer.context.globalAlpha = opacity;
+		renderer.context.globalAlpha = animatedOpacity * transitionOpacityMultiplier;
+		renderer.context.filter = this.buildCanvasFilter();
 
 		const flipX = scaledWidth < 0 ? -1 : 1;
 		const flipY = scaledHeight < 0 ? -1 : 1;
@@ -184,6 +225,31 @@ export abstract class VisualNode<
 
 		renderer.context.drawImage(elementCanvas, x, y, absWidth, absHeight);
 		renderer.context.restore();
+	}
+
+	private buildCanvasFilter(): string {
+		const adjustment = this.params.adjustment;
+		const filter = this.params.filter;
+		const parts: string[] = [];
+		if (filter) {
+			parts.push(filter);
+		}
+		if (adjustment) {
+			const { brightness, contrast, saturate, blur } = adjustment;
+			if (brightness !== 100) {
+				parts.push(`brightness(${brightness}%)`);
+			}
+			if (contrast !== 100) {
+				parts.push(`contrast(${contrast}%)`);
+			}
+			if (saturate !== 100) {
+				parts.push(`saturate(${saturate}%)`);
+			}
+			if (blur > 0) {
+				parts.push(`blur(${blur}px)`);
+			}
+		}
+		return parts.join(" ") || "none";
 	}
 
 	private applyEffects({

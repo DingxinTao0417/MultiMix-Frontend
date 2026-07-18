@@ -12,6 +12,7 @@ import {
 	buildElementFromMedia,
 	buildEffectElement,
 } from "@editor/lib/timeline/element-utils";
+import { UpdateElementCommand } from "@editor/lib/commands/timeline/element/update-element";
 import { AddTrackCommand, InsertElementCommand } from "@editor/lib/commands/timeline";
 import { BatchCommand } from "@editor/lib/commands";
 import { computeDropTarget } from "@editor/lib/timeline/drop-utils";
@@ -318,7 +319,20 @@ export function useTimelineDragDrop({
 	const executeMediaDrop = useCallback(
 		({ target, dragData }: { target: DropTarget; dragData: MediaDragData }) => {
 			if (target.targetElement) {
-				toast.info("Replace media source is coming soon!");
+				const mediaAssets = editor.media.getAssets();
+				const mediaAsset = mediaAssets.find((m) => m.id === dragData.id);
+				if (!mediaAsset) return;
+
+				editor.command.execute({
+					command: new UpdateElementCommand({
+						trackId: target.targetElement.trackId,
+						elementId: target.targetElement.elementId,
+						updates: {
+							mediaId: mediaAsset.id,
+							name: mediaAsset.name,
+						},
+					}),
+				});
 				return;
 			}
 

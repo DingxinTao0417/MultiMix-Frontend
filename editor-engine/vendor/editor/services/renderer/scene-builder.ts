@@ -83,6 +83,9 @@ function buildTrackNodes({
 							effects: element.effects,
 							masks: element.masks,
 							fitMode,
+							filter: element.filter,
+							adjustment: element.adjustment,
+							transition: element.transition,
 						}),
 					);
 				}
@@ -101,6 +104,9 @@ function buildTrackNodes({
 							effects: element.effects,
 							masks: element.masks,
 							fitMode,
+							filter: element.filter,
+							adjustment: element.adjustment,
+							transition: element.transition,
 							...(isPreview && {
 								maxSourceSize: PREVIEW_MAX_IMAGE_SIZE,
 							}),
