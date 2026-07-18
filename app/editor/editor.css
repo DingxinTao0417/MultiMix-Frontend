@@ -3,6 +3,7 @@
 /* Scan the embedded editor source + route files for utility classes. */
 @source "../../editor-engine/vendor";
 @source "./EditorView.tsx";
+@source "./BgmPanel.tsx";
 
 /* Custom variant for dark mode */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -423,5 +424,145 @@
     justify-content: center;
     color: #6e6a64;
     font-size: 14px;
+  }
+
+  .editor-bgm-panel {
+    position: absolute;
+    z-index: 24;
+    top: 12px;
+    right: 12px;
+    display: grid;
+    width: min(360px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    gap: 10px;
+    overflow: hidden;
+    border: 1px solid #e5e1da;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.96);
+    padding: 12px;
+    box-shadow: 0 18px 48px rgba(32, 31, 30, 0.14);
+    backdrop-filter: blur(16px);
+  }
+
+  .editor-bgm-heading,
+  .editor-bgm-card,
+  .editor-bgm-card-actions,
+  .editor-bgm-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .editor-bgm-heading,
+  .editor-bgm-card {
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .editor-bgm-heading > div:first-child,
+  .editor-bgm-card-copy {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .editor-bgm-heading strong {
+    font-size: 14px;
+  }
+
+  .editor-bgm-heading span,
+  .editor-bgm-card-copy > span:not(.editor-bgm-title),
+  .editor-bgm-card-copy small {
+    color: #77716a;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .editor-bgm-actions,
+  .editor-bgm-card-actions {
+    flex-shrink: 0;
+    gap: 5px;
+  }
+
+  .editor-bgm-panel button {
+    border: 1px solid #ddd9d1;
+    border-radius: 999px;
+    background: #fff;
+    padding: 5px 8px;
+    color: #4d4944;
+    font-size: 10px;
+    font-weight: 650;
+  }
+
+  .editor-bgm-panel button:hover:not(:disabled),
+  .editor-bgm-panel button.active {
+    border-color: #7c5cff;
+    background: #f2efff;
+    color: #5b45e0;
+  }
+
+  .editor-bgm-panel button:disabled {
+    cursor: default;
+    opacity: 0.52;
+  }
+
+  .editor-bgm-filters {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .editor-bgm-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .editor-bgm-filters button {
+    flex: 0 0 auto;
+  }
+
+  .editor-bgm-list {
+    display: grid;
+    min-height: 58px;
+    gap: 7px;
+    overflow-y: auto;
+  }
+
+  .editor-bgm-card {
+    border: 1px solid #ece8e1;
+    border-radius: 12px;
+    background: #faf9f7;
+    padding: 8px;
+  }
+
+  .editor-bgm-card.current {
+    border-color: #cfc5ff;
+    background: #f7f5ff;
+  }
+
+  .editor-bgm-title {
+    overflow: hidden;
+    color: #201f1e;
+    font-size: 12px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .editor-bgm-card-copy small {
+    margin-top: 2px;
+    color: #5b45e0;
+  }
+
+  .editor-bgm-empty,
+  .editor-bgm-message {
+    margin: 0;
+    color: #77716a;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .editor-bgm-message.error {
+    color: #b42318;
   }
 }

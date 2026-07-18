@@ -15,6 +15,7 @@ import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
 import { getExportMimeType } from "@editor/lib/export";
 import { UI_V3_FILMSTRIP } from "@/app/assets/lib/ui-flags";
 import FilmStrip from "./FilmStrip";
+import BgmPanel from "./BgmPanel";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -33,10 +34,16 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Bac
   }
   const raw = data.project;
   rememberRawProject(raw);
+  return unwrapProject(raw);
+}
+
+function unwrapProject(raw: Record<string, unknown>): BackendProject {
   // ChangeIn format: video_project.timeline has the BackendProject shape.
   // video_orchestration format: the project itself IS the BackendProject.
-  if (raw.tracks) return raw as BackendProject;
-  if (raw.timeline && raw.timeline.tracks) return raw.timeline as BackendProject;
+  if (raw.tracks) return raw as unknown as BackendProject;
+  if (raw.timeline && typeof raw.timeline === "object" && (raw.timeline as Record<string, unknown>).tracks) {
+    return raw.timeline as unknown as BackendProject;
+  }
   throw new Error("项目格式不兼容（缺少 tracks）");
 }
 
@@ -146,17 +153,31 @@ export default function EditorView({
     }
   }, [assetId, postToParent, token]);
 
+  const persistCurrentProject = useCallback(async () => {
+    if (!assetId) throw new Error("缺少项目 ID");
+    const body = serializeBackendProject(EditorCore.getInstance());
+    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    rememberRawProject(body);
+  }, [assetId, token]);
+
+  const handleBgmProjectChanged = useCallback(async (raw: Record<string, unknown>) => {
+    rememberRawProject(raw);
+    await initEditorWithProject(unwrapProject(raw));
+  }, []);
+
   const handleSave = async () => {
-    if (!assetId || !token || saveState === "saving") return;
+    if (!assetId || saveState === "saving") return;
     setSaveState("saving");
     try {
-      const body = serializeBackendProject(EditorCore.getInstance());
-      const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await persistCurrentProject();
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2000);
     } catch {
@@ -280,6 +301,14 @@ export default function EditorView({
             <div className="editor-preview-region">
               <PreviewPanel />
               <ReplacePanel assetId={assetId} token={token} />
+              {assetId ? (
+                <BgmPanel
+                  assetId={assetId}
+                  token={token}
+                  onPrepareChange={persistCurrentProject}
+                  onProjectChanged={handleBgmProjectChanged}
+                />
+              ) : null}
             </div>
             <div className="editor-timeline-region">
               {embed && UI_V3_FILMSTRIP ? (

@@ -58,6 +58,42 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('preserves backend BGM gain and fade keyframes', () => {
+    const animations = {
+      channels: {
+        volume: {
+          valueKind: 'number' as const,
+          keyframes: [
+            { id: 'fade-in', time: 0, value: 0, interpolation: 'linear' as const },
+            { id: 'steady', time: 0.12, value: 0.18, interpolation: 'linear' as const },
+          ],
+        },
+      },
+    };
+    const bp = makeProject({
+      media: [makeMedia({ id: 'media-bgm', type: 'audio', file_path: 'bgm://bgm-tech-01', name: 'BGM' })],
+      tracks: [{
+        id: 'track-bgm',
+        type: 'audio',
+        name: '背景音乐',
+        elements: [{
+          id: 'bgm-1',
+          type: 'audio',
+          startTime: 0,
+          duration: 10,
+          mediaId: 'media-bgm',
+          volume: 0.18,
+          animations,
+        }],
+      }],
+    } as BackendProject);
+
+    const audio = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+
+    expect(audio.volume).toBe(0.18);
+    expect(audio.animations).toEqual(animations);
+  });
+
   it('gives subtitles a contrast-safe background by default', () => {
     const bp = makeProject({
       tracks: [{

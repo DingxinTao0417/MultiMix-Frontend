@@ -1454,6 +1454,20 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).not.toContain('error: "诊断失败"');
   });
 
+  it("keeps conversation creation and revision on the durable generation-job path", () => {
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+    expect(workspaceClient).toContain("assetGenerationJobsFromConversations");
+    expect(workspaceClient).toContain("getGenerationJob");
+    expect(workspaceClient).toContain("retryGenerationJob");
+    expect(workspaceClient).toContain("generationJob={selectedAssetGenerationJob}");
+    expect(workspaceClient).toContain("const message = formatComposerError(error)");
+    expect(workspaceClient).not.toContain("assetWorkspaceAdapter.reviseProduct({");
+    expect(conversationStudio).toContain("<AssetGenerationJobCard");
+    expect(conversationStudio).toContain("onRetryGeneration");
+  });
+
   it("feeds live video-job steps into the conversation execution timeline", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");

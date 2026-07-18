@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, API_CONNECTION_ERROR, apiForm } from "./api";
+import { api, API_CONNECTION_ERROR, apiForm, formatComposerError } from "./api";
 
 describe("api", () => {
   afterEach(() => {
@@ -23,6 +23,18 @@ describe("api", () => {
       method: "POST",
       body: JSON.stringify({ instruction: "确认" }),
     })).rejects.toThrow(API_CONNECTION_ERROR);
+  });
+
+  it("never exposes an English provider read timeout", () => {
+    expect(formatComposerError(
+      new Error("AI generation service failed: The read operation timed out"),
+    )).toBe("内容生成超时，本轮没有创建产物，可以直接重试。");
+  });
+
+  it("maps mixed-language provider timeouts before returning raw detail", () => {
+    expect(formatComposerError(
+      new Error("生成失败: The read operation timed out"),
+    )).toBe("内容生成超时，本轮没有创建产物，可以直接重试。");
   });
 });
 

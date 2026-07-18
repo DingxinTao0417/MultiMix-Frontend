@@ -230,6 +230,19 @@ export type AssetConversationMessageResponse = {
   suggestions: string[];
   suggestion_actions?: Array<Record<string, unknown>>;
   product: ContentAsset | null;
+  generation_job?: AssetGenerationJobResponse | null;
+};
+
+export type AssetGenerationJobResponse = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  stage: string;
+  attempts: number;
+  result_asset_id: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ContentAssetSearchResult = {
@@ -413,9 +426,11 @@ export function formatComposerError(error: unknown): string {
   if (!message) return "发送失败，请稍后重试。";
   if (message === API_CONNECTION_ERROR) return "无法连接后端服务，请稍后重试。";
   if (message === MESSAGE_NOT_SUBMITTED_ERROR) return "未提交：后端没有记录这次操作，可以重试。";
-  if (/[一-鿿]/.test(message)) return message;
-
   const lower = message.toLowerCase();
+  if (lower.includes("timed out") || lower.includes("timeout") || lower.includes("provider_timeout")) {
+    return "内容生成超时，本轮没有创建产物，可以直接重试。";
+  }
+  if (/[一-鿿]/.test(message)) return message;
   if (lower.includes("quota exceeded") || lower.includes("payment required")) {
     return "本月生成额度已用完，请升级配额或下月再试。";
   }
@@ -429,4 +444,27 @@ export function formatComposerError(error: unknown): string {
     return "生成服务暂时不可达，请稍后重试。";
   }
   return "发送失败，请稍后重试。";
+}
+
+export async function getAssetGenerationJob(
+  token: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<AssetGenerationJobResponse> {
+  return api<AssetGenerationJobResponse>(
+    `/assets/generation-jobs/${encodeURIComponent(jobId)}`,
+    token,
+    { signal },
+  );
+}
+
+export async function retryAssetGenerationJob(
+  token: string,
+  jobId: string,
+): Promise<AssetGenerationJobResponse> {
+  return api<AssetGenerationJobResponse>(
+    `/assets/generation-jobs/${encodeURIComponent(jobId)}/retry`,
+    token,
+    { method: "POST" },
+  );
 }

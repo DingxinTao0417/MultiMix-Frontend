@@ -19,13 +19,13 @@ import {
   Trash2,
   Video
 } from "lucide-react";
-import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
+import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
 import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
-  shouldReviseSelectedProduct,
+  runExclusiveConversationDelete,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -41,6 +41,7 @@ import {
   readConversationSummaryCache,
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
+import { assetGenerationJobsFromConversations, assetGenerationPollLifecycleKey } from "../lib/asset-generation-poller";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -89,6 +90,12 @@ type PendingConversationExchange = {
 
 type ChatImageUpload = ChatImageAttachment & {
   file: File;
+};
+
+type AssetGenerationJobLive = {
+  conversationId: string;
+  job: AssetGenerationJobResponse;
+  run: number;
 };
 
 export type VideoJobLiveStatus = {
@@ -482,6 +489,7 @@ export default function AssetsWorkspaceClient({
       : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const deletingConversationIdsRef = useRef(new Set<string>());
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
@@ -511,6 +519,10 @@ export default function AssetsWorkspaceClient({
   const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
+  const [assetGenerationJobs, setAssetGenerationJobs] = useState<Record<string, AssetGenerationJobLive>>({});
+  const assetGenerationJobsRef = useRef(assetGenerationJobs);
+  const inFlightAssetGenerationJobRunsRef = useRef(new Set<string>());
+  const refreshedAssetGenerationJobRunsRef = useRef(new Set<string>());
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
@@ -547,6 +559,7 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = selectedConversation.detailsLoaded === false
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  const selectedAssetGenerationJob = assetGenerationJobs[selectedConversation.id]?.job ?? null;
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
@@ -567,6 +580,37 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    assetGenerationJobsRef.current = assetGenerationJobs;
+  }, [assetGenerationJobs]);
+
+  useEffect(() => {
+    const persisted = assetGenerationJobsFromConversations(conversations);
+    if (!persisted.length) return;
+    setAssetGenerationJobs((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const entry of persisted) {
+        const live = next[entry.conversationId];
+        if (!live) {
+          next[entry.conversationId] = { ...entry, run: 0 };
+          changed = true;
+          continue;
+        }
+        if (live.job.id !== entry.job.id) {
+          next[entry.conversationId] = { ...entry, run: live.run + 1 };
+          changed = true;
+          continue;
+        }
+        if (live.run === 0 && live.job.status !== entry.job.status) {
+          next[entry.conversationId] = { ...live, job: entry.job };
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
   }, [conversations]);
 
   useEffect(() => {
@@ -689,6 +733,92 @@ export default function AssetsWorkspaceClient({
       }
     };
   }, [conversationDetailRetryRevision, selectedConversationId, selectedConversationNeedsDetail, token]);
+
+  const assetGenerationPollKey = assetGenerationPollLifecycleKey(
+    Object.values(assetGenerationJobs),
+  );
+  useEffect(() => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled() || !assetGenerationPollKey) return;
+    const authToken = token;
+    let cancelled = false;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+
+    function schedule(live: AssetGenerationJobLive, delay: number) {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        void poll(live);
+      }, delay);
+      timers.add(timer);
+    }
+
+    async function poll(live: AssetGenerationJobLive) {
+      const identity = `${live.job.id}::${live.run}`;
+      const current = assetGenerationJobsRef.current[live.conversationId];
+      if (
+        cancelled
+        || current?.job.id !== live.job.id
+        || current.run !== live.run
+        || inFlightAssetGenerationJobRunsRef.current.has(identity)
+      ) return;
+      inFlightAssetGenerationJobRunsRef.current.add(identity);
+      try {
+        const remote = await assetWorkspaceAdapter.getGenerationJob(authToken, live.job.id);
+        if (cancelled) return;
+        const latest = assetGenerationJobsRef.current[live.conversationId];
+        if (latest?.job.id !== live.job.id || latest.run !== live.run) return;
+        const remoteLive = { ...latest, job: remote };
+        assetGenerationJobsRef.current = {
+          ...assetGenerationJobsRef.current,
+          [live.conversationId]: remoteLive,
+        };
+        setAssetGenerationJobs((jobs) => ({
+          ...jobs,
+          [live.conversationId]: remoteLive,
+        }));
+        if (remote.status === "completed") {
+          if (refreshedAssetGenerationJobRunsRef.current.has(identity)) return;
+          refreshedAssetGenerationJobRunsRef.current.add(identity);
+          try {
+            const detail = await assetWorkspaceAdapter.loadConversationDetail(authToken, live.conversationId);
+            if (cancelled) return;
+            setConversations((items) => items.map((item) => item.id === detail.id ? detail : item));
+            const nextRef = { ...assetGenerationJobsRef.current };
+            const currentRef = nextRef[live.conversationId];
+            if (currentRef?.job.id === live.job.id && currentRef.run === live.run) {
+              delete nextRef[live.conversationId];
+              assetGenerationJobsRef.current = nextRef;
+            }
+            setAssetGenerationJobs((jobs) => {
+              const latest = jobs[live.conversationId];
+              if (latest?.job.id !== live.job.id || latest.run !== live.run) return jobs;
+              const next = { ...jobs };
+              delete next[live.conversationId];
+              return next;
+            });
+          } catch {
+            refreshedAssetGenerationJobRunsRef.current.delete(identity);
+            toast.error("内容已生成，但对话刷新失败，请重新打开这条对话。");
+          }
+          return;
+        }
+        if (remote.status === "queued" || remote.status === "running") {
+          schedule({ ...live, job: remote }, 2500);
+        }
+      } catch {
+        if (!cancelled) schedule(live, 4000);
+      } finally {
+        inFlightAssetGenerationJobRunsRef.current.delete(identity);
+      }
+    }
+
+    for (const live of Object.values(assetGenerationJobsRef.current)) {
+      if (live.job.status === "queued" || live.job.status === "running") schedule(live, 200);
+    }
+    return () => {
+      cancelled = true;
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [assetGenerationPollKey, token]);
 
   // Poll every pending background execution plus the selected conversation's
   // latest job. The selected job restores its persisted card once after refresh.
@@ -871,6 +1001,26 @@ export default function AssetsWorkspaceClient({
     }
     return map;
   }, [videoJobLive]);
+
+  const handleRetryGeneration = async (jobId: string) => {
+    if (!token) return;
+    const entry = Object.values(assetGenerationJobsRef.current).find((live) => live.job.id === jobId);
+    if (!entry) return;
+    try {
+      const remote = await assetWorkspaceAdapter.retryGenerationJob(token, jobId);
+      const nextEntry = { ...entry, job: remote, run: entry.run + 1 };
+      assetGenerationJobsRef.current = {
+        ...assetGenerationJobsRef.current,
+        [entry.conversationId]: nextEntry,
+      };
+      setAssetGenerationJobs((jobs) => ({
+        ...jobs,
+        [entry.conversationId]: nextEntry,
+      }));
+    } catch (error) {
+      toast.error(formatComposerError(error));
+    }
+  };
 
   const handleRetryExecution = async (retryJobId: string, executionJobId: string) => {
     if (!token) {
@@ -1055,31 +1205,38 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleDeleteConversation = (conversationId: string) => {
-    setConversationMenuId(null);
-    if (conversationId === "new") return;
-    const index = conversations.findIndex((conversation) => conversation.id === conversationId);
-    if (index === -1) return;
-    const removed = conversations[index];
-    const nextConversation = conversations.find((conversation) => conversation.id !== conversationId);
-    // Optimistically drop the row so the sidebar reacts instantly.
-    setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
-    if (selectedConversationId === conversationId) {
-      setSelectedConversationId(nextConversation?.id ?? "new");
-      setActiveView("conversation");
-    }
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    void assetWorkspaceAdapter.deleteConversation(token, conversationId)
-      .then(() => setConversationLoadRevision((value) => value + 1))
-      .catch(() => {
-        // Restore on failure so we never hide a conversation that still exists.
-        setConversations((current) => {
-          if (current.some((conversation) => conversation.id === removed.id)) return current;
-          const restored = [...current];
-          restored.splice(Math.min(index, restored.length), 0, removed);
-          return restored;
-        });
-        toast.error("删除失败，请稍后重试。");
-      });
+    void runExclusiveConversationDelete(
+      deletingConversationIdsRef.current,
+      conversationId,
+      async () => {
+        setConversationMenuId(null);
+        if (conversationId === "new") return;
+        const index = conversations.findIndex((conversation) => conversation.id === conversationId);
+        if (index === -1) return;
+        const removed = conversations[index];
+        const nextConversation = conversations.find((conversation) => conversation.id !== conversationId);
+        // Optimistically drop the row so the sidebar reacts instantly.
+        setConversations((current) => current.filter((conversation) => conversation.id !== conversationId));
+        if (selectedConversationId === conversationId) {
+          setSelectedConversationId(nextConversation?.id ?? "new");
+          setActiveView("conversation");
+        }
+        if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+        try {
+          await assetWorkspaceAdapter.deleteConversation(token, conversationId);
+          setConversationLoadRevision((value) => value + 1);
+        } catch {
+          // Restore on failure so we never hide a conversation that still exists.
+          setConversations((current) => {
+            if (current.some((conversation) => conversation.id === removed.id)) return current;
+            const restored = [...current];
+            restored.splice(Math.min(index, restored.length), 0, removed);
+            return restored;
+          });
+          toast.error("删除失败，请稍后重试。");
+        }
+      },
+    );
   };
 
   const handleCollapseSidebar = () => {
@@ -1390,59 +1547,6 @@ export default function AssetsWorkspaceClient({
         }));
       }
     }
-    if (selectedProduct && shouldReviseSelectedProduct(instruction, selectedProduct)) {
-      const revision = await assetWorkspaceAdapter.reviseProduct({
-        token,
-        product: selectedProduct,
-        conversationId: conversation.id,
-        instruction,
-        signal
-      });
-      if (signal?.aborted) return;
-      const updatedProduct = revision.product;
-      setConversations((current) => current.map((item) => {
-        if (item.id !== conversation.id) return item;
-        const products = item.products ?? [item.product];
-        const nextProducts = products.some((product) => product.id === updatedProduct.id)
-          ? products.map((product) => product.id === updatedProduct.id ? updatedProduct : product)
-          : [...products, updatedProduct];
-        const nextMessages = [
-          ...(item.messages ?? []),
-          { role: "user" as const, text: instruction },
-          {
-            role: "assistant" as const,
-            text: revision.assistantMessage,
-            suggestions: revision.suggestions,
-            suggestionActions: revision.suggestionActions
-          }
-        ];
-        return {
-          ...item,
-          product: updatedProduct,
-          products: nextProducts,
-          messages: nextMessages,
-          prompt: instruction,
-          response: revision.assistantMessage,
-          suggestions: revision.suggestions,
-          status: updatedProduct.status,
-          canvasTitle: updatedProduct.title,
-          canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
-          raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
-          updatedAt: "刚刚"
-        };
-      }));
-      setSelectedProductIds((current) => ({
-        ...current,
-        [conversation.id]: updatedProduct.id
-      }));
-      setSavedProductIds((current) => ({
-        ...current,
-        [updatedProduct.id]: updatedProduct.version ?? revision.diffSummary
-      }));
-      setActiveView("conversation");
-      setConversationLoadRevision((value) => value + 1);
-      return;
-    }
     let result;
     try {
       result = await assetWorkspaceAdapter.sendMessage({
@@ -1477,7 +1581,7 @@ export default function AssetsWorkspaceClient({
         // Reconciliation found the durable request; do not render a local error.
       } else {
       if (optimisticConversationId && !signal?.aborted) {
-        const message = error instanceof Error ? error.message : "生成失败，请稍后重试。";
+        const message = formatComposerError(error);
         setConversations((current) => current.map((item) => {
           if (item.id !== optimisticConversationId) return item;
           return {
@@ -1497,7 +1601,7 @@ export default function AssetsWorkspaceClient({
       }
     }
     if (signal?.aborted) return;
-    const { conversationId: targetConversationId, conversation: persistedConversation, product } = result;
+    const { conversationId: targetConversationId, conversation: persistedConversation, product, generationJob } = result;
     setConversations((current) => {
       const existingIndex = current.findIndex((item) => item.id === (optimisticConversationId ?? conversation.id) || item.id === conversation.id || item.id === targetConversationId);
       if (existingIndex >= 0) {
@@ -1509,6 +1613,17 @@ export default function AssetsWorkspaceClient({
     if (shouldKeepFocusOnResult) {
       selectedConversationIdRef.current = targetConversationId;
       setSelectedConversationId(targetConversationId);
+    }
+    if (generationJob && generationJob.status !== "completed") {
+      const live = { conversationId: targetConversationId, job: generationJob, run: 0 };
+      assetGenerationJobsRef.current = {
+        ...assetGenerationJobsRef.current,
+        [targetConversationId]: live,
+      };
+      setAssetGenerationJobs((jobs) => ({
+        ...jobs,
+        [targetConversationId]: live,
+      }));
     }
     if (targetConversationId !== conversation.id && combinedLinkedAssetIds.length > 0) {
       setConversationContextAssets((current) => {
@@ -1985,6 +2100,8 @@ export default function AssetsWorkspaceClient({
                   });
                 }}
                 onSendMessage={handleSendConversationMessage}
+                generationJob={selectedAssetGenerationJob}
+                onRetryGeneration={handleRetryGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}
                 onRetryExecution={handleRetryExecution}
                 diagnosticsSlot={renderDiagnostics()}

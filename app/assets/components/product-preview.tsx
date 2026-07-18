@@ -53,6 +53,8 @@ function videoPlanSummary(product: ProductArtifact) {
 }
 
 function materialGapNotice(product: ProductArtifact, fallbackCount = 0) {
+  const searchNotice = product.metadata?.material_search_notice;
+  if (typeof searchNotice === "string" && searchNotice.trim()) return searchNotice;
   const metadataNotice = product.metadata?.material_gap_notice;
   if (typeof metadataNotice === "string" && metadataNotice.trim()) return metadataNotice;
   const project = isRecord(product.metadata?.video_project) ? product.metadata.video_project : null;

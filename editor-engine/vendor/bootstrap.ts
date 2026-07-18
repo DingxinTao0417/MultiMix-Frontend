@@ -15,8 +15,10 @@ async function hydrateAssetFiles(
   bp: BackendProject,
   onProgress?: HydrateProgress,
 ): Promise<MediaAsset[]> {
-  const pathById: Record<string, string> = {};
-  for (const m of bp.media) pathById[m.id] = m.file_path;
+  const playbackUrlById: Record<string, string> = {};
+  for (const m of bp.media) {
+    playbackUrlById[m.id] = m.playback_url || mediaUrl(m.file_path);
+  }
 
   // Download in small batches so network isn't flooded by 30+ parallel fetches.
   const BATCH = 6;
@@ -28,7 +30,7 @@ async function hydrateAssetFiles(
     const batchResults = await Promise.all(
       batch.map(async (asset) => {
         try {
-          const url = mediaUrl(pathById[asset.id]);
+          const url = playbackUrlById[asset.id];
           const res = await fetch(url);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const blob = await res.blob();

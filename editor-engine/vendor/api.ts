@@ -105,6 +105,94 @@ export interface SegmentMaterialCandidatesResult {
   next_cursor: string | null;
 }
 
+export type BGMAction = "enable" | "disable" | "select" | "restore_auto";
+
+export interface BGMChoice {
+  enabled: boolean;
+  catalog_id: string;
+  alternate_ids: string[];
+  selection_reason: string;
+  alternate_reasons: Record<string, string>;
+  catalog_version: string;
+  selected_by: "auto" | "user";
+  locked_by_user: boolean;
+}
+
+export interface BGMCatalogTrack {
+  id: string;
+  title: string;
+  artist: string;
+  provider: string;
+  category: string;
+  mood_tags: string[];
+  duration_seconds: number;
+  preview_url: string;
+  match_reason?: string;
+}
+
+export interface BGMCatalogResponse {
+  catalog_version: string;
+  current_choice: BGMChoice | null;
+  recommended_ids: string[];
+  tracks: BGMCatalogTrack[];
+}
+
+export interface BGMUpdateResponse {
+  asset_id: number;
+  catalog_version: string;
+  choice: BGMChoice;
+  project: Record<string, unknown>;
+}
+
+async function bgmJson<T>(url: string, token: string | null, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = payload && typeof payload.detail === "string" ? payload.detail : `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+  return payload as T;
+}
+
+export async function getProjectBGMCatalog(
+  assetId: string,
+  token: string | null,
+): Promise<BGMCatalogResponse> {
+  const payload = await bgmJson<BGMCatalogResponse & { choice?: BGMChoice | null }>(
+    `${API_BASE}/v1/video/bgm/catalog?asset_id=${encodeURIComponent(assetId)}`,
+    token,
+  );
+  const currentChoice = payload.current_choice ?? payload.choice ?? null;
+  return {
+    ...payload,
+    current_choice: currentChoice,
+    recommended_ids: payload.recommended_ids?.length
+      ? payload.recommended_ids
+      : [currentChoice?.catalog_id, ...(currentChoice?.alternate_ids || [])].filter(
+          (value): value is string => Boolean(value),
+        ),
+  };
+}
+
+export async function updateProjectBGM(
+  assetId: string,
+  token: string | null,
+  body: { action: BGMAction; catalog_id?: string; catalog_version: string },
+): Promise<BGMUpdateResponse> {
+  return bgmJson<BGMUpdateResponse>(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/bgm`,
+    token,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
 // Fetch the only supported candidate contract for a segment.
 export async function segmentMaterialCandidates(
   assetId: string,
