@@ -189,6 +189,7 @@ export default function ProductPreview({
     return (
       <div className="shadcn-prototype-image-card" aria-label="图片产物预览">
         <div className="shadcn-prototype-image-card-hero">
+          {/* eslint-disable-next-line @next/next/no-img-element -- dynamic remote hero URLs are unsupported by next/image */}
           {/^https?:\/\//i.test(heroUrl) ? <img src={heroUrl} alt={product.preview?.title ?? product.title} loading="lazy" /> : <span>{product.ratio}</span>}
         </div>
         <div className="shadcn-prototype-image-card-caption">

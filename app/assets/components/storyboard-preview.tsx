@@ -82,10 +82,12 @@ export default function StoryboardPreview({
       ) : (
         <div className="shadcn-prototype-project-preview-screen">
           {!failed && currentSegmentMedia?.kind === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote segment media URLs are unsupported by next/image
             <img
               key={currentSegmentMedia.src}
               src={currentSegmentMedia.src}
               alt={segment?.assetTitle || segment?.title || `分镜 ${segment?.index ?? 1}`}
+              loading="lazy"
               onError={() => setFailed(true)}
             />
           ) : null}

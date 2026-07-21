@@ -18,6 +18,7 @@ export default function SourceRefBlock({ summary }: { summary: AssetProductSourc
           {summary.refs.map((ref) => (
             <li key={ref.id} className={ref.isFallback ? "is-fallback" : undefined}>
               <span className="shadcn-prototype-source-thumb" aria-hidden={ref.thumbnailUrl ? undefined : true}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image */}
                 {ref.thumbnailUrl ? <img src={ref.thumbnailUrl} alt="" loading="lazy" /> : null}
               </span>
               <span className="shadcn-prototype-source-copy">

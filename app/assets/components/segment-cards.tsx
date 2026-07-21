@@ -75,6 +75,7 @@ export default function SegmentCards({
                   segment.primaryVisualMediaType === "video" || segment.primaryVisualSourceType === "generated_scene" ? (
                     <video src={segment.assetThumbnailUrl} muted preload="metadata" playsInline />
                   ) : (
+                    // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
                     <img src={segment.assetThumbnailUrl} alt="" loading="lazy" />
                   )
                 ) : null}

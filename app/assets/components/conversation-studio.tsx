@@ -631,7 +631,8 @@ export default function ConversationStudio({
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
               {imageAttachments.map((attachment) => (
                 <article key={attachment.id} className={attachment.status}>
-                  {attachment.previewUrl ? <img src={attachment.previewUrl} alt="" /> : <span className="shadcn-prototype-chat-attachment-fallback"><FileText size={14} aria-hidden="true" /></span>}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image */}
+                  {attachment.previewUrl ? <img src={attachment.previewUrl} alt="" loading="lazy" /> : <span className="shadcn-prototype-chat-attachment-fallback"><FileText size={14} aria-hidden="true" /></span>}
                   <div>
                     <strong title={attachment.title || attachment.fileName}>{attachment.title || attachment.fileName}</strong>
                     <em aria-live="polite">{chatAttachmentStatusLabel(attachment)}</em>

@@ -99,6 +99,7 @@ export default function AssetPicker({
             onClick={() => selectable && setSelectedId(item.id)}
           >
             <span className="shadcn-prototype-picker-thumb" aria-hidden={item.thumbnailUrl ? undefined : true}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image */}
               {item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" loading="lazy" /> : null}
             </span>
             <span className="shadcn-prototype-picker-name" title={item.title}>{item.title}</span>

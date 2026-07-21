@@ -58,6 +58,7 @@ export default function MaterialsReadyStrip({
       <div className="shadcn-prototype-start-ready-thumbs" aria-hidden="true">
         {ready.slice(0, 5).map((row, index) => (
           <span className="shadcn-prototype-start-ready-thumb" key={row.assetId ?? `${row.title}-${index}`}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image */}
             {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : null}
           </span>
         ))}
