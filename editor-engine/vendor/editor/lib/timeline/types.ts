@@ -108,28 +108,37 @@ interface BaseTimelineElement {
 	animations?: ElementAnimations;
 }
 
-export interface VideoElement extends BaseTimelineElement {
+interface BaseVisualElement extends BaseTimelineElement {
+	hidden?: boolean;
+	transform: Transform;
+	opacity: number;
+	blendMode?: BlendMode;
+	effects?: Effect[];
+	filter?: string;
+	adjustment?: {
+		brightness: number;
+		contrast: number;
+		saturate: number;
+		blur: number;
+	};
+	transition?: {
+		type: string;
+		duration: number;
+	};
+}
+
+export interface VideoElement extends BaseVisualElement {
 	type: "video";
 	mediaId: string;
 	volume?: number;
 	muted?: boolean;
-	hidden?: boolean;
 	retime?: RetimeConfig;
-	transform: Transform;
-	opacity: number;
-	blendMode?: BlendMode;
-	effects?: Effect[];
 	masks?: Mask[];
 }
 
-export interface ImageElement extends BaseTimelineElement {
+export interface ImageElement extends BaseVisualElement {
 	type: "image";
 	mediaId: string;
-	hidden?: boolean;
-	transform: Transform;
-	opacity: number;
-	blendMode?: BlendMode;
-	effects?: Effect[];
 	masks?: Mask[];
 }
 
@@ -143,7 +152,7 @@ export interface TextBackground {
 	offsetY?: number;
 }
 
-export interface TextElement extends BaseTimelineElement {
+export interface TextElement extends BaseVisualElement {
 	type: "text";
 	content: string;
 	fontSize: number;
@@ -156,35 +165,20 @@ export interface TextElement extends BaseTimelineElement {
 	textDecoration: "none" | "underline" | "line-through";
 	letterSpacing?: number;
 	lineHeight?: number;
-	hidden?: boolean;
-	transform: Transform;
-	opacity: number;
-	blendMode?: BlendMode;
-	effects?: Effect[];
 }
 
-export interface StickerElement extends BaseTimelineElement {
+export interface StickerElement extends BaseVisualElement {
 	type: "sticker";
 	stickerId: string;
 	/** Natural dimensions of the sticker asset, stored at insert time. Used by renderer and preview bounds to avoid split-brain geometry. */
 	intrinsicWidth?: number;
 	intrinsicHeight?: number;
-	hidden?: boolean;
-	transform: Transform;
-	opacity: number;
-	blendMode?: BlendMode;
-	effects?: Effect[];
 }
 
-export interface GraphicElement extends BaseTimelineElement {
+export interface GraphicElement extends BaseVisualElement {
 	type: "graphic";
 	definitionId: string;
 	params: ParamValues;
-	hidden?: boolean;
-	transform: Transform;
-	opacity: number;
-	blendMode?: BlendMode;
-	effects?: Effect[];
 	masks?: Mask[];
 }
 
