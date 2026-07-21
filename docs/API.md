@@ -1,5 +1,9 @@
 # MultiMix 接口文档
 
+> Status: current
+> Owner: frontend
+> Last verified: 2026-07-19
+
 本文档描述 MultiMix 内容生成工作台原型阶段的全部「接口」：数据访问层（adapter）、数据类型契约、共享 helper、Mock 数据契约、数据库 schema、seed 脚本、组件 props 契约、路由 / URL 接口、本地认证、环境变量、CSS 类名约定，以及未来接入真实后端的指引。
 
 > 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
@@ -590,6 +594,22 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 - ≥ 3 个语义步（理解/规划/生成），由 `render_stage` + 真实阶段时间戳（`result_payload.step_marks`）派生，禁止假进度。
 - 旧后端缺字段 → adapter 解析为空数组 → 时间线回退 `render_stage` 映射（`videoJobTimelineSteps`）。
+
+两阶段素材驱动流水线只能投影为现有用户语义步骤，不得直接显示内部 stage：
+
+| 内部 `render_stage` | 用户步骤 key | 用户文案 |
+| --- | --- | --- |
+| `script`、`asset_driven_planning`、`planning_assets`、`asset_manifest_ready` | `plan` | `正在准备分镜画面` |
+| `composing`、`voice`、`project`、`rendering` | `generate` | `正在生成视频` |
+| `reviewing`、`quality` | `review` | `正在完成质量检查` |
+| `needs_script_revision` | `review` | `需要先调整编导稿` |
+
+- API 可以在受保护的 metadata 中保留 pipeline、manifest、Provider 和内部 stage 供诊断，但普通
+  `steps[]`、产物卡、编导稿和展示区不得出现 `animated_explainer`、`hybrid`、`asset_manifest`、
+  Provider、Skill、模型名或原始 `render_stage`。
+- adapter 必须使用穷举映射；遇到未知内部 stage 时显示通用“正在生成视频”，不得把原始字符串
+  直接透传给用户。
+- `needs_script_revision` 不是视频工程 ready 状态。前端重新聚焦原编导稿，并使用现有调整与确认入口。
 
 ### 12.2 结构化确认卡 `metadata.plan`
 

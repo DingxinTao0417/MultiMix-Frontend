@@ -156,7 +156,7 @@ scripts/
 
 ## 提交与同步流程
 
-当用户说“提交代码”时，默认授权并要求完成整套发布动作：确认范围并检查 -> 创建本地提交 -> fetch 远端 -> 检查分叉 -> 合并远端最新代码并检查冲突 -> 无冲突后推送 -> 最终同步校验。不得只做本地 commit 后停止，也不需要再停下来只给计划。“拉最新代码”、“合并代码”、“处理冲突”、“推送远程”等类似发布动作同样按其明确范围自动执行。当前工作区包含两个独立仓库：
+当用户说“提交代码”时，默认只完成本地 `main`：确认范围并检查 -> 创建本地提交 -> 报告本地提交结果。不得自动 fetch、合并远端或推送。“合并代码”也只在本地 `main` 完成用户明确指定的合并。只有用户在当次请求中明确要求“推送到远端”或等效表述时，才执行 fetch、远端分叉检查、远端合并、推送和最终远端同步校验。当前工作区包含两个独立仓库：
 
 - 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`
 - 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`
@@ -194,10 +194,10 @@ scripts/
 3. 提交信息要概括实际变更，例如：
    - `Update MultiMix workspace libraries and conversation flow`
    - `Update asset upload validation and conversation assets`
-4. 创建本地提交后再次运行 `git status --short --branch`，确认目标改动已经提交；允许保留已明确排除的无关脏文件，但必须在后续推送前后报告。
-5. 目标提交完成后运行 `node scripts/workspace-submit-guard.mjs checkpoint --token <token>`，把预期的新 HEAD 和工作区状态设为 push 前基线。
+4. 创建本地提交后再次运行 `git status --short --branch`，确认目标改动已经提交；允许保留已明确排除的无关脏文件，但必须报告。
+5. 用户未明确要求远端推送时，在此结束并运行 `node scripts/workspace-submit-guard.mjs end --token <token>` 释放锁；只有进入明确授权的远端流程时才运行 checkpoint。
 
-### 拉取与合并
+### 远端拉取与合并（仅用户明确要求推送到远端时）
 
 1. 本地提交完成后，在前端和后端分别运行 `git fetch origin --prune`。
 2. 运行 `git rev-list --left-right --count HEAD...origin/main` 检查 ahead/behind；落后为 0 时，用 `git merge --ff-only origin/main` 确认远端是当前提交的祖先或已经同步。
@@ -209,9 +209,9 @@ scripts/
    - 冲突解决后重新运行必要检查，再完成 merge commit。
 5. 禁止使用 `git reset --hard`、`git checkout -- .` 等破坏性命令，除非用户明确要求。
 
-### 推送
+### 推送（仅用户明确要求推送到远端时）
 
-1. 只有在目标提交检查通过、远端合并完成且没有冲突后，才运行 `git push origin main`；已明确排除的无关脏文件可以继续留在工作区。
+1. 只有用户在当次请求中明确要求推送到远端，且目标提交检查通过、远端合并完成且没有冲突后，才运行 `git push origin main`；已明确排除的无关脏文件可以继续留在工作区。
 2. push 前必须运行 `node scripts/workspace-submit-guard.mjs verify --token <token>`；检测到任何晚到变化时立即停止。
 3. 推送后再次运行 `git fetch origin --prune`、`git status --short --branch` 和 `git rev-list --left-right --count HEAD...origin/main`。
 4. 比较 `git rev-parse HEAD`、`git rev-parse origin/main` 与 `git ls-remote origin refs/heads/main`，确认本地、远端跟踪分支和真实远端分支一致。
