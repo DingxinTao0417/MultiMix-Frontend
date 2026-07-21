@@ -28,6 +28,29 @@ export function playableVideoUrl(product: ProductArtifact): string {
   return "";
 }
 
+export function browseBgmSummary(product: ProductArtifact): string {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  const project = isRecord(metadata.video_project) ? metadata.video_project : null;
+  const projectMetadata = isRecord(project?.metadata) ? project.metadata : {};
+  const choice = isRecord(projectMetadata.bgm_choice)
+    ? projectMetadata.bgm_choice
+    : isRecord(metadata.bgm_choice)
+      ? metadata.bgm_choice
+      : null;
+  if (!choice) return "";
+  if (choice.enabled === false) return "已关闭";
+  const catalogId = stringValue(choice.catalog_id);
+  if (!catalogId) return "";
+  const media = Array.isArray(project?.media) ? project.media.filter(isRecord) : [];
+  const selectedMedia = media.find((item) => (
+    stringValue(item.file_path) === `bgm://${catalogId}`
+    || stringValue(item.metadata && isRecord(item.metadata) ? item.metadata.catalog_id : "") === catalogId
+  ));
+  const title = stringValue(selectedMedia?.name) || catalogId;
+  const selection = choice.selected_by === "auto" ? "AI 匹配" : "已选择";
+  return `${title} · ${selection}`;
+}
+
 function videoPlanSummary(product: ProductArtifact) {
   const plan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : null;
   if (!plan) return null;
@@ -328,6 +351,7 @@ export default function ProductPreview({
   if (hasVideoProject) {
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
     const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
+    const bgmSummary = browseBgmSummary(product);
     return (
       <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
         <div className="shadcn-prototype-product-video">
@@ -366,6 +390,7 @@ export default function ProductPreview({
             />
           )}
         </div>
+        {bgmSummary ? <p className="shadcn-prototype-video-bgm-summary" role="status" aria-label="背景音乐">背景音乐：{bgmSummary}</p> : null}
         {fullVideoFailed ? (
           <div className="shadcn-prototype-video-preview-fallback" role="alert">
             <span>成片加载失败，已切换到分镜预览。</span>

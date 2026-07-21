@@ -171,13 +171,15 @@ export default function EditorView({
   const handleBgmProjectChanged = useCallback(async (raw: Record<string, unknown>) => {
     rememberRawProject(raw);
     await initEditorWithProject(unwrapProject(raw));
-  }, []);
+    postToParent({ type: "multimix-editor-project-updated", reason: "bgm" });
+  }, [postToParent]);
 
   const handleSave = async () => {
     if (!assetId || saveState === "saving") return;
     setSaveState("saving");
     try {
       await persistCurrentProject();
+      postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2000);
     } catch {

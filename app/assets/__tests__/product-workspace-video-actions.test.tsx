@@ -5,6 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import ProductWorkspace from "../components/product-workspace";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
@@ -102,5 +103,75 @@ describe("video browse actions", () => {
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
     expect(await screen.findByRole("dialog", { name: "为分镜 #1 换素材" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /施工过程记录/ })).toBeInTheDocument());
+  });
+
+  it("refreshes the browse product after the embedded editor persists an update", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const updated = {
+      ...product,
+      summary: "已更新的工程摘要",
+      segments: product.segments?.map((segment, index) => index === 0
+        ? { ...segment, materialLabel: "更新后的施工素材" }
+        : segment),
+    };
+    const onProductUpdated = vi.fn();
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({
+      ...conversationForDisplayProduct(updated),
+      product: updated,
+      products: [updated],
+    });
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={onProductUpdated}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-project-updated",
+      },
+    }));
+
+    await waitFor(() => expect(onProductUpdated).toHaveBeenCalledWith(updated));
+  });
+
+  it("keeps the existing browse product and exposes retry when persisted refresh fails", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockRejectedValue(new Error("暂时无法读取工程"));
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-project-updated",
+      },
+    }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("已保存编辑，但浏览态刷新失败");
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重试刷新" })).toBeEnabled();
   });
 });

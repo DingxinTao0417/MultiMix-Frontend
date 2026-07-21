@@ -7,6 +7,7 @@ const storyboardPreview = existsSync(storyboardPreviewUrl) ? readFileSync(storyb
 const projectPreviewUrl = new URL("../components/video-project-preview.tsx", import.meta.url);
 const projectPreview = existsSync(projectPreviewUrl) ? readFileSync(projectPreviewUrl, "utf8") : "";
 const editorView = readFileSync(new URL("../../editor/EditorView.tsx", import.meta.url), "utf8");
+const filmStrip = readFileSync(new URL("../../editor/FilmStrip.tsx", import.meta.url), "utf8");
 const editorPage = readFileSync(new URL("../../editor/page.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
@@ -85,5 +86,14 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("canBrowseVideo ? (");
     expect(workspace).toContain("{!isTextEditing && hasVideoProject ? (");
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
+  });
+
+  test("notifies the workbench only after embedded edits persist a new project", () => {
+    expect(editorView).toContain('type: "multimix-editor-project-updated"');
+    expect(editorView).toContain("handleBgmProjectChanged");
+    expect(filmStrip).toContain('type: "multimix-editor-project-updated"');
+    expect(filmStrip).toContain("job.status === \"completed\"");
+    expect(workspace).toContain('case "multimix-editor-project-updated"');
+    expect(workspace).toContain("refreshPersistedVideoProject");
   });
 });

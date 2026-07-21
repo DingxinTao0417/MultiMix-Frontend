@@ -164,6 +164,14 @@ export default function FilmStrip({
     [token],
   );
 
+  const postToParent = useCallback(
+    (payload: Record<string, unknown>) => {
+      if (typeof window === "undefined" || window.parent === window) return;
+      window.parent.postMessage({ source: "multimix-editor", assetId, ...payload }, window.location.origin);
+    },
+    [assetId],
+  );
+
   // Render-layer edits persist via debounced save; the backend marks
   // timeline_dirty so AI rebuilds ask before overwriting (API.md §12.5).
   const queueSave = useCallback(() => {
@@ -179,12 +187,13 @@ export default function FilmStrip({
           body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
         setSaveNote("saved");
       } catch {
         setSaveNote("error");
       }
     }, 800);
-  }, [assetId, token, authHeaders]);
+  }, [assetId, token, authHeaders, postToParent]);
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -266,14 +275,6 @@ export default function FilmStrip({
     window.addEventListener("pointerup", up);
   };
 
-  const postToParent = useCallback(
-    (payload: Record<string, unknown>) => {
-      if (typeof window === "undefined" || window.parent === window) return;
-      window.parent.postMessage({ source: "multimix-editor", assetId, ...payload }, window.location.origin);
-    },
-    [assetId],
-  );
-
   // Semantic-layer change → partial recompose. Falls back to the timeline
   // dirty confirmation loop on 409 (docs/API.md §12.4/§12.5).
   const submitRecompose = useCallback(
@@ -327,6 +328,7 @@ export default function FilmStrip({
         const job = await res.json();
         if (job.status === "completed") {
           clearInterval(timer);
+          postToParent({ type: "multimix-editor-project-updated", reason: "recompose" });
           window.location.reload();
         } else if (job.status === "failed") {
           clearInterval(timer);
@@ -341,7 +343,7 @@ export default function FilmStrip({
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [runningJobId, authHeaders]);
+  }, [runningJobId, authHeaders, postToParent]);
 
   const openPicker = useCallback(() => {
     if (!assetId || !token || !selectedSegmentId) return;

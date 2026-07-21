@@ -72,6 +72,28 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByRole("separator", { name: "调整视频预览高度" })).not.toBeInTheDocument();
   });
 
+  it("shows the persisted BGM choice in browse mode without loading the music catalog", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    render(<ProductPreview product={{
+      ...product,
+      metadata: {
+        ...product.metadata,
+        video_project: {
+          ...(product.metadata?.video_project as Record<string, unknown>),
+          media: [
+            { id: "media-1", type: "image", ref: "display-sample.png" },
+            { id: "media-bgm-tech", type: "audio", file_path: "bgm://bgm-tech-01", name: "科技向前" },
+          ],
+          metadata: {
+            bgm_choice: { enabled: true, catalog_id: "bgm-tech-01", selected_by: "auto" },
+          },
+        },
+      },
+    }} />);
+
+    expect(screen.getByRole("status", { name: "背景音乐" })).toHaveTextContent("科技向前 · AI 匹配");
+  });
+
   it("seeks the finished video when a storyboard card is selected", () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);

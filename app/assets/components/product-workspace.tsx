@@ -79,6 +79,7 @@ export default function ProductWorkspace({
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [exportError, setExportError] = useState("");
+  const [projectSyncError, setProjectSyncError] = useState("");
   const [exportDownloaded, setExportDownloaded] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
@@ -231,6 +232,20 @@ export default function ProductWorkspace({
     setMaterialError("");
   }, [currentAssetId]);
 
+  const refreshPersistedVideoProject = useCallback(async () => {
+    if (!token || !onProductUpdated || selectedConversation.id === "new" || !product.backendAssetId) return;
+    setProjectSyncError("");
+    try {
+      const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+      const updated = (refreshed.products ?? [refreshed.product]).find(
+        (item) => item.backendAssetId === product.backendAssetId,
+      );
+      if (updated) onProductUpdated(updated);
+    } catch {
+      setProjectSyncError("已保存编辑，但浏览态刷新失败。");
+    }
+  }, [onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
+
   useEffect(() => {
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
     const onMessage = (event: MessageEvent) => {
@@ -305,13 +320,16 @@ export default function ProductWorkspace({
           setExportDownloaded(false);
           verifiedExportBlobRef.current = null;
           break;
+        case "multimix-editor-project-updated":
+          void refreshPersistedVideoProject();
+          break;
         default:
           break;
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [currentAssetId, hasVideoProject]);
+  }, [currentAssetId, hasVideoProject, refreshPersistedVideoProject]);
 
   const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
     if (!token || !product.backendAssetId) {
@@ -760,6 +778,13 @@ export default function ProductWorkspace({
           <div className="shadcn-prototype-video-failed" role="alert">
             <strong>导出失败</strong>
             <p>{exportError}</p>
+          </div>
+        ) : null}
+
+        {projectSyncError ? (
+          <div className="shadcn-prototype-video-preview-fallback" role="alert">
+            <span>{projectSyncError}</span>
+            <button type="button" onClick={() => void refreshPersistedVideoProject()}>重试刷新</button>
           </div>
         ) : null}
 
