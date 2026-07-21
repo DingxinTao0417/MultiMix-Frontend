@@ -7,6 +7,13 @@ function segmentRange(segment: AssetProductSegment): string | null {
   return `${Math.round(segment.startSeconds)}–${Math.round(segment.endSeconds)}s`;
 }
 
+export function segmentNeedsMaterial(segment: AssetProductSegment): boolean {
+  return segment.primaryVisualSourceType !== "generated_scene"
+    && Boolean(segment.isFallback)
+    && !segment.assetTitle
+    && !segment.assetThumbnailUrl;
+}
+
 // Pure display list for storyboard segment summaries (序号/时长/标题/口播/
 // 必要异常状态). Callers only render it when segment data exists. When
 // onSelect is wired (成片浏览态) the cards double as jump-to-preview targets.
@@ -35,7 +42,7 @@ export default function SegmentCards({
           const range = segmentRange(segment);
           const selectable = Boolean(onSelect);
           const mgStatus = segment.mgStatus === "failed" ? "渲染失败" : null;
-          const needsMaterial = segment.isFallback && !segment.assetTitle && !segment.assetThumbnailUrl;
+          const needsMaterial = segmentNeedsMaterial(segment);
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
           const secondaryCopy = mgStatus && segment.subLine
             ? segment.subLine
@@ -64,18 +71,30 @@ export default function SegmentCards({
                 {range ? <span>{range}</span> : null}
               </span>
               <span className={`shadcn-prototype-segment-thumb${needsMaterial ? " needs-material" : ""}`} aria-hidden={segment.assetThumbnailUrl ? undefined : true}>
-                {segment.assetThumbnailUrl ? <img src={segment.assetThumbnailUrl} alt="" loading="lazy" /> : null}
+                {segment.assetThumbnailUrl ? (
+                  segment.primaryVisualMediaType === "video" || segment.primaryVisualSourceType === "generated_scene" ? (
+                    <video src={segment.assetThumbnailUrl} muted preload="metadata" playsInline />
+                  ) : (
+                    <img src={segment.assetThumbnailUrl} alt="" loading="lazy" />
+                  )
+                ) : null}
               </span>
               <span className="shadcn-prototype-segment-copy">
                 <span className="shadcn-prototype-segment-line1">
                   <strong>{primaryCopy}</strong>
                   {segment.mgLabel ? <i className="shadcn-prototype-segment-mg">{segment.mgLabel}</i> : null}
+                  {segment.visualStatusLabel ? <i className="shadcn-prototype-segment-mg">{segment.visualStatusLabel}</i> : null}
                   {mgStatus ? <i className={`shadcn-prototype-segment-mg-status ${segment.mgStatus ?? ""}`}>{mgStatus}</i> : null}
                   {needsMaterial ? <i className="shadcn-prototype-segment-material-needed">待补素材</i> : null}
                 </span>
                 {secondaryCopy ? (
                   <span className="shadcn-prototype-segment-line2">
                     {secondaryCopy}
+                  </span>
+                ) : null}
+                {segment.businessHint ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    {segment.businessHint}
                   </span>
                 ) : null}
               </span>

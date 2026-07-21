@@ -55,13 +55,21 @@ function suggestionActionsValue(value: unknown): AssetSuggestionAction[] | undef
   return actions.length ? actions : undefined;
 }
 
-// Store refs (local://, supabase://, s3://) are only readable through the
-// backend media proxy; plain http(s) URLs pass through untouched.
-function planThumbnailUrl(ref: string): string | undefined {
+function browserReadableMediaUrl(ref: string): string | undefined {
   if (!ref) return undefined;
-  if (/^https?:\/\//i.test(ref)) return ref;
-  if (/^[a-z0-9+.-]+:\/\//i.test(ref)) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
+  if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
+  if (/^[a-z0-9+.-]+:\/\//i.test(ref)) {
+    const artifactPath = ref.split("://", 2)[1] ?? "";
+    if (!/(?:^|\/)(?:video-orchestration|product-media|mg)\//i.test(artifactPath)) {
+      return undefined;
+    }
+    return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
+  }
   return undefined;
+}
+
+function planThumbnailUrl(ref: string): string | undefined {
+  return browserReadableMediaUrl(ref);
 }
 
 function planRefsValue(value: unknown): AssetPlanRef[] | undefined {
@@ -212,13 +220,28 @@ function numberOrUndefined(value: unknown): number | undefined {
 // Store refs (local://, supabase://, s3://) are only readable through the
 // backend media proxy; plain http(s) URLs pass through untouched.
 function thumbnailUrlFromRef(ref: string): string | undefined {
-  if (!ref) return undefined;
-  if (/^https?:\/\//i.test(ref)) return ref;
-  if (/^[a-z0-9+.-]+:\/\//i.test(ref)) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
-  return undefined;
+  return browserReadableMediaUrl(ref);
 }
 
 type SegmentTiming = { start: number; end: number };
+
+type PrimaryVisualSourceType = "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
+
+function primaryVisualSourceType(value: unknown): PrimaryVisualSourceType | undefined {
+  return value === "saved_asset" || value === "public_asset" || value === "product_asset" || value === "generated_scene"
+    ? value
+    : undefined;
+}
+
+function primaryVisualMediaType(
+  ref: string,
+  sourceType: PrimaryVisualSourceType | undefined,
+): "image" | "video" | undefined {
+  const normalized = ref.split("?", 1)[0]?.toLowerCase() ?? "";
+  if (/\.(mp4|webm|mov|m4v)$/.test(normalized)) return "video";
+  if (/\.(png|jpe?g|webp|gif|svg)$/.test(normalized)) return "image";
+  return sourceType === "generated_scene" ? "video" : undefined;
+}
 
 function segmentTimingsFromProject(project: Record<string, unknown> | undefined): Map<string, SegmentTiming> {
   const timings = new Map<string, SegmentTiming>();
@@ -249,6 +272,10 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const projectTimings = segmentTimingsFromProject(videoProject);
   const videoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
+  const planScenes = Array.isArray(videoPlan?.scenes) ? videoPlan.scenes.filter(isRecord) : [];
+  const planScenesById = new Map(
+    planScenes.map((scene) => [stringValue(scene.id), scene] as const).filter(([id]) => id),
+  );
   const rawSegments = Array.isArray(videoProject?.segments) && videoProject.segments.length
     ? videoProject.segments
     : Array.isArray(metadata.video_segments) && metadata.video_segments.length
@@ -259,10 +286,33 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   const records = rawSegments.filter(isRecord);
   if (!records.length) return undefined;
   return records.map((segment, index) => {
+    const planScene = planScenesById.get(stringValue(segment.id));
     const reference = isRecord(segment.asset_reference) ? segment.asset_reference : null;
     const snapshot = reference && isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
     const decision = isRecord(segment.mg_decision) ? segment.mg_decision : null;
     const visible = decision && isRecord(decision.visible_summary) ? decision.visible_summary : null;
+    const primaryVisual = isRecord(segment.primary_visual)
+      ? segment.primary_visual
+      : isRecord(planScene?.primary_visual)
+        ? planScene.primary_visual
+        : null;
+    const primaryStrategy = isRecord(segment.primary_visual_strategy)
+      ? segment.primary_visual_strategy
+      : isRecord(planScene?.primary_visual_strategy)
+        ? planScene.primary_visual_strategy
+        : null;
+    const primarySourceType = primaryVisualSourceType(primaryVisual?.source_type);
+    const primaryPersisted = stringValue(primaryVisual?.status) === "persisted";
+    const primaryArtifactRef = stringValue(primaryVisual?.preview_ref) || stringValue(primaryVisual?.artifact_ref);
+    const primaryThumbnailUrl = primaryPersisted
+      ? thumbnailUrlFromRef(primaryArtifactRef)
+      : undefined;
+    const generatedPrimaryAvailable = primaryPersisted
+      && primarySourceType === "generated_scene"
+      && Boolean(primaryThumbnailUrl);
+    const productPrimaryAvailable = primaryPersisted
+      && primarySourceType === "product_asset"
+      && Boolean(primaryThumbnailUrl);
     const projectTiming = projectTimings.get(stringValue(segment.id));
     const start = projectTiming?.start ?? numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
     const duration = numberOrUndefined(segment.duration) ?? numberOrUndefined(segment.duration_seconds);
@@ -281,10 +331,24 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
           ].filter(Boolean).join(" · ")
         : stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
       assetTitle: stringValue(snapshot?.title) || undefined,
-      assetThumbnailUrl: thumbnailUrlFromRef(
+      assetThumbnailUrl: primaryThumbnailUrl || thumbnailUrlFromRef(
         stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
       ),
-      isFallback: Boolean(reference) && stringValue(reference?.status) !== "matched",
+      isFallback: generatedPrimaryAvailable || productPrimaryAvailable
+        ? false
+        : Boolean(reference) && stringValue(reference?.status) !== "matched",
+      primaryVisualSourceType: primarySourceType,
+      primaryVisualMediaType: primaryPersisted && Boolean(primaryThumbnailUrl)
+        ? primaryVisualMediaType(primaryArtifactRef, primarySourceType)
+        : undefined,
+      visualStatusLabel: generatedPrimaryAvailable
+        ? "已生成画面"
+        : productPrimaryAvailable
+          ? "产品界面"
+          : undefined,
+      businessHint: stringValue(primaryStrategy?.business_hint) === "missing_real_case_material"
+        ? "建议补充真实案例素材"
+        : undefined,
       mgLabel: decision?.needed === true
         ? stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG"
         : undefined,
@@ -368,7 +432,17 @@ export function videoJobStageLabel(stage: string): string {
     failed: "生成失败",
     stale: "任务超时",
     missing_asset: "生成失败",
-    invalid_spec: "动效参数无效"
+    invalid_spec: "动效参数无效",
+    asset_driven_planning: "正在准备分镜画面",
+    planning_assets: "正在准备分镜画面",
+    asset_manifest_ready: "正在准备分镜画面",
+    composing: "正在生成视频",
+    voice: "正在生成视频",
+    project: "正在生成视频",
+    rendering: "正在生成视频",
+    reviewing: "正在完成质量检查",
+    quality: "正在完成质量检查",
+    needs_script_revision: "需要先调整编导稿"
   };
   return labels[stage] ?? "正在生成";
 }
@@ -404,6 +478,27 @@ export type VideoJobBackendStep = {
   retryJobId?: string | null;
 };
 
+const SAFE_BACKEND_STEP_COPY: Record<string, { key: string; label: string }> = {
+  create_job: { key: "create_job", label: "创建视频工程任务" },
+  prepare_scenes: { key: "prepare_scenes", label: "读取已确认方案并准备分镜" },
+  prepare_media: { key: "prepare_media", label: "匹配分镜素材并准备配音、字幕" },
+  build_project: { key: "build_project", label: "组装可编辑视频工程" },
+  mg_overlay: { key: "mg_overlay", label: "生成画面动效" },
+  understand: { key: "prepare_scenes", label: "正在准备分镜画面" },
+  plan: { key: "prepare_media", label: "正在准备分镜画面" },
+  generate: { key: "build_project", label: "正在生成视频" },
+  asset_driven_planning: { key: "prepare_scenes", label: "正在准备分镜画面" },
+  planning_assets: { key: "prepare_media", label: "正在准备分镜画面" },
+  asset_manifest_ready: { key: "prepare_media", label: "正在准备分镜画面" },
+  composing: { key: "build_project", label: "正在生成视频" },
+  voice: { key: "build_project", label: "正在生成视频" },
+  project: { key: "build_project", label: "正在生成视频" },
+  rendering: { key: "build_project", label: "正在生成视频" },
+  reviewing: { key: "quality_check", label: "正在完成质量检查" },
+  quality: { key: "quality_check", label: "正在完成质量检查" },
+  needs_script_revision: { key: "revise_director_script", label: "需要先调整编导稿" },
+};
+
 // Format real elapsed seconds into a merchant-facing label ("8秒" / "1分12秒").
 function formatStepElapsed(seconds: number): string | undefined {
   if (seconds < 60) {
@@ -423,9 +518,12 @@ function formatStepElapsed(seconds: number): string | undefined {
 export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | undefined | null): AgentTimelineStep[] {
   if (!Array.isArray(steps)) return [];
   return steps.flatMap((step): AgentTimelineStep[] => {
-    const label = typeof step.label === "string" ? step.label.trim() : "";
-    const key = typeof step.key === "string" ? step.key.trim() : "";
-    if (!label || !key) return [];
+    const rawKey = typeof step.key === "string" ? step.key.trim() : "";
+    if (!rawKey) return [];
+    const safe = SAFE_BACKEND_STEP_COPY[rawKey] ?? {
+      key: "video_progress",
+      label: "正在处理视频",
+    };
     const status: AgentTimelineStep["status"] =
       step.status === "done" || step.status === "run" || step.status === "fail" ? step.status : "wait";
     const elapsedSeconds = typeof step.elapsedSeconds === "number" && Number.isFinite(step.elapsedSeconds)
@@ -433,8 +531,8 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
       : undefined;
     const retryJobId = typeof step.retryJobId === "string" ? step.retryJobId : undefined;
     return [{
-      key,
-      label,
+      key: safe.key,
+      label: safe.label,
       status,
       elapsedSeconds,
       elapsedLabel: elapsedSeconds === undefined ? undefined : formatStepElapsed(elapsedSeconds),
@@ -445,9 +543,10 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 
 function videoJobTimelineStepIndex(stage: string): number {
   if (stage === "queued") return 0;
-  if (stage === "script") return 1;
-  if (stage === "segment") return 2;
-  if (stage === "render") return 3;
+  if (stage === "script" || stage === "asset_driven_planning") return 1;
+  if (stage === "segment" || stage === "planning_assets" || stage === "asset_manifest_ready") return 2;
+  if (["render", "composing", "voice", "project", "rendering", "reviewing", "quality"].includes(stage)) return 3;
+  if (stage === "needs_script_revision") return 1;
   if (stage === "done") return 4;
   return 3;
 }
@@ -683,7 +782,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
           `渲染 ${stringValue(stageResults.mp4_render) || "pending"}`
         ].join(" / "),
         detail: "执行阶段会写回 metadata，失败时保留可编辑工程和稳定失败原因。",
-        status: stringValue(videoProject.latest_render_stage) || "执行状态"
+        status: videoJobStageLabel(stringValue(videoProject.latest_render_stage) || "")
       });
     }
   }

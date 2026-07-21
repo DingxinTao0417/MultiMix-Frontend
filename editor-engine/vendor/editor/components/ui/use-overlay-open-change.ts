@@ -33,27 +33,6 @@ export function useOverlayOpenChange({
 	useEffect(() => {
 		return () => {
 			if (!isTrackedRef.current) return;
-			// #region agent log
-			fetch(
-				"http://127.0.0.1:7245/ingest/669b22f8-172b-4e65-aa3f-1c702ede83f7",
-				{
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"X-Debug-Session-Id": "3997d9",
-					},
-					body: JSON.stringify({
-						sessionId: "3997d9",
-						runId: "post-fix",
-						hypothesisId: "H2",
-						location: "use-overlay-open-change.ts:cleanup",
-						message: "Overlay closed during unmount cleanup",
-						data: { source, overlayId },
-						timestamp: Date.now(),
-					}),
-				},
-			).catch(() => {});
-			// #endregion
 			closeOverlay(overlayId, source);
 			isTrackedRef.current = false;
 		};

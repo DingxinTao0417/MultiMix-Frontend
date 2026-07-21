@@ -7,7 +7,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
-import SegmentCards from "./segment-cards";
+import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
@@ -52,9 +52,10 @@ function videoPlanSummary(product: ProductArtifact) {
   };
 }
 
-function materialGapNotice(product: ProductArtifact, fallbackCount = 0) {
+function materialGapNotice(product: ProductArtifact, fallbackCount = 0, allSegmentsCovered = false) {
   const searchNotice = product.metadata?.material_search_notice;
   if (typeof searchNotice === "string" && searchNotice.trim()) return searchNotice;
+  if (allSegmentsCovered) return "";
   const metadataNotice = product.metadata?.material_gap_notice;
   if (typeof metadataNotice === "string" && metadataNotice.trim()) return metadataNotice;
   const project = isRecord(product.metadata?.video_project) ? product.metadata.video_project : null;
@@ -311,7 +312,14 @@ export default function ProductPreview({
     ? "当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
     : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
   const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? product.title;
-  const gapNotice = materialGapNotice(product, planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0);
+  const allSegmentsCovered = hasVideoProject
+    && Boolean(product.segments?.length)
+    && !product.segments?.some(segmentNeedsMaterial);
+  const gapNotice = materialGapNotice(
+    product,
+    planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0,
+    allSegmentsCovered,
+  );
   // Demo-final browse state for any generated project (workspace-video.html
   // 默认态): centered 9:16 player + jumpable segment cards + source block.
   // With a real MP4 the player is playable; before export it shows the poster

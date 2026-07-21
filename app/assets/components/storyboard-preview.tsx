@@ -43,7 +43,10 @@ export function findMediaForSegment(
 
   const segment = product.segments?.find((item) => item.id === segmentId) ?? product.segments?.[0];
   return segment?.assetThumbnailUrl
-    ? { kind: "image", src: segment.assetThumbnailUrl }
+    ? {
+        kind: segment.primaryVisualMediaType ?? (segment.primaryVisualSourceType === "generated_scene" ? "video" : "image"),
+        src: segment.assetThumbnailUrl,
+      }
     : null;
 }
 
@@ -89,7 +92,7 @@ export default function StoryboardPreview({
           {failed || !currentSegmentMedia ? (
             <div className="shadcn-prototype-video-placeholder-screen" role={failed ? "alert" : undefined}>
               <span className="shadcn-prototype-video-placeholder-stage">分镜 {segment?.index ?? 1}</span>
-              <strong>{failed ? (segment?.title || segment?.assetTitle || "分镜预览") : "待补素材"}</strong>
+              <strong>{failed ? (segment?.title || segment?.assetTitle || "分镜预览") : segment?.visualStatusLabel || "待补素材"}</strong>
               <p>{failed ? "该分镜预览暂不可用" : segment?.line || "该分镜暂无可预览素材"}</p>
             </div>
           ) : null}

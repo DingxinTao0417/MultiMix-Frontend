@@ -31,7 +31,13 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).not.toContain(">兜底素材<");
     expect(component).toContain("const needsMaterial");
     expect(component).toContain(">待补素材<");
-    expect(component).toContain("!segment.assetTitle && !segment.assetThumbnailUrl");
+    expect(component).toContain("!segment.assetTitle");
+    expect(component).toContain("!segment.assetThumbnailUrl");
+    expect(component).toContain("segment.primaryVisualSourceType !== \"generated_scene\"");
+    expect(component).toContain("segment.visualStatusLabel");
+    expect(component).toContain("segment.businessHint");
+    expect(component).toContain('segment.primaryVisualSourceType === "generated_scene"');
+    expect(component).toContain("<video");
   });
 
   test("renders every segment in one vertical list without paging or collapsing", () => {

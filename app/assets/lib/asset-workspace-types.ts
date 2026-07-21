@@ -71,6 +71,10 @@ export type AssetProductSegment = {
   assetTitle?: string;
   assetThumbnailUrl?: string;
   isFallback: boolean;
+  visualStatusLabel?: "已生成画面" | "产品界面";
+  businessHint?: "建议补充真实案例素材";
+  primaryVisualSourceType?: "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
+  primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
   mgStatus?: string;
 };

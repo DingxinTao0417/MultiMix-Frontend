@@ -58,6 +58,46 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('converts explicitly linear backend gains and fades to editor dB values once', () => {
+    const bp = makeProject({
+      media: [makeMedia({ id: 'media-bgm', type: 'audio', file_path: 'bgm://bgm-tech-01', name: 'BGM' })],
+      tracks: [{
+        id: 'track-bgm',
+        type: 'audio',
+        name: '背景音乐',
+        elements: [{
+          id: 'bgm-linear',
+          type: 'audio',
+          startTime: 0,
+          duration: 10,
+          mediaId: 'media-bgm',
+          volume: 0.25,
+          volumeUnit: 'linear',
+          animations: {
+            channels: {
+              volume: {
+                valueKind: 'number',
+                keyframes: [
+                  { id: 'silent', time: 0, value: 0, interpolation: 'linear' },
+                  { id: 'steady', time: 0.12, value: 0.25, interpolation: 'linear' },
+                ],
+              },
+            },
+          },
+        }],
+      }],
+    } as BackendProject);
+
+    const audio = buildProject(bp).project.scenes[0].tracks[0].elements[0] as AudioElement;
+    const volumeKeyframes = audio.animations?.channels.volume?.keyframes ?? [];
+
+    expect(audio.volume).toBeCloseTo(-12.0412, 4);
+    expect(volumeKeyframes.map((keyframe) => keyframe.value)).toEqual([
+      -60,
+      expect.closeTo(-12.0412, 4),
+    ]);
+  });
+
   it('preserves backend BGM gain and fade keyframes', () => {
     const animations = {
       channels: {
@@ -116,6 +156,47 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       enabled: true,
       color: '#000000aa',
     });
+  });
+
+  it('keeps default 1080p subtitles within a professional lower-third size', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-size',
+          type: 'text',
+          content: '上传实拍，选方向，自动编导',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    });
+
+    const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
+    expect(renderedFontSize).toBeLessThanOrEqual(64);
+  });
+
+  it('never splits an English product token across subtitle lines', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-product-name',
+          type: 'text',
+          content: '1234567890MultiMix',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    });
+
+    const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(element.content).toBe('1234567890MultiMix');
   });
 
   it('preserves backend subtitle line boundaries without creating a third line', () => {

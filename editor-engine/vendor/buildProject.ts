@@ -10,6 +10,10 @@ import type {
 } from "@editor/lib/timeline/types";
 import type { MediaAsset } from "@editor/lib/media/types";
 import type { ElementAnimations } from "@editor/lib/animation/types";
+import {
+  VOLUME_DB_MAX,
+  VOLUME_DB_MIN,
+} from "./editor/lib/timeline/audio-constants";
 import { mediaUrl } from "./api";
 
 // Backend shapes (loose; mirror backend/timeline.py + pipeline.py output).
@@ -40,6 +44,7 @@ export interface BackendElement {
   safeRegion?: SafeRegion;
   muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
   volume?: number;
+  volumeUnit?: "db" | "linear";
   animations?: ElementAnimations;
 }
 export interface BackendTrack {
@@ -90,8 +95,8 @@ export const defaultSubtitleStyle: SubtitleStyle = {
   // contrast, and applies consistently to landscape and portrait projects.
   bgEnabled: true,
   bgColor: "#000000aa",
-  maxLineChars: 16,
-  sizeScale: 1,
+  maxLineChars: 24,
+  sizeScale: 0.8,
   bottomOffset: 0.34,
 };
 
@@ -108,10 +113,16 @@ function wrapCaption(text: string, maxChars: number): string {
   const lines: string[] = [];
   for (const sourceLine of t.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
     let cur = "";
-    for (const ch of sourceLine) {
-      cur += ch;
-      const atPunct = "，。！？；、,.!?;".includes(ch);
-      if (cur.length >= maxChars || (atPunct && cur.length >= maxChars * 0.6)) {
+    const tokens = sourceLine.match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*|./gu) ?? [];
+    for (const token of tokens) {
+      if (cur && cur.length + token.length > maxChars) {
+        lines.push(cur.trimEnd());
+        cur = token.trimStart();
+      } else {
+        cur += token;
+      }
+      const atPunct = "，。！？；、,.!?;".includes(token);
+      if (atPunct && cur.length >= maxChars * 0.6) {
         lines.push(cur);
         cur = "";
       }
@@ -124,6 +135,33 @@ function wrapCaption(text: string, maxChars: number): string {
 // Side map: element id -> segment text (OpenCut element type has no such field).
 // Used by the replace-material panel to re-search by the segment's script text.
 export const segmentTextByElementId: Record<string, string> = {};
+
+function linearGainToEditorDb(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return VOLUME_DB_MIN;
+  return Math.min(VOLUME_DB_MAX, Math.max(VOLUME_DB_MIN, 20 * Math.log10(value)));
+}
+
+function audioAnimationsForEditor(
+  animations: ElementAnimations | undefined,
+  volumeUnit: BackendElement["volumeUnit"],
+): ElementAnimations | undefined {
+  if (!animations || volumeUnit !== "linear") return animations;
+  const volume = animations.channels.volume;
+  if (!volume || volume.valueKind !== "number") return animations;
+  return {
+    ...animations,
+    channels: {
+      ...animations.channels,
+      volume: {
+        ...volume,
+        keyframes: volume.keyframes.map((keyframe) => ({
+          ...keyframe,
+          value: linearGainToEditorDb(keyframe.value),
+        })),
+      },
+    },
+  };
+}
 
 // Side maps for saving: OpenCut's types carry neither the backend file_path nor
 // the segment id, but both must survive the save round-trip (media refs feed
@@ -248,8 +286,10 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         startTime: e.startTime,
         trimStart: e.trimStart ?? 0,
         trimEnd: e.trimEnd ?? 0,
-        volume: e.volume ?? 1,
-        animations: e.animations,
+        volume: e.volumeUnit === "linear"
+          ? linearGainToEditorDb(e.volume ?? 1)
+          : (e.volume ?? 1),
+        animations: audioAnimationsForEditor(e.animations, e.volumeUnit),
       }));
       tracks.push({ id: t.id, name: t.name, type: "audio", elements, muted: false });
     } else if (t.type === "text") {

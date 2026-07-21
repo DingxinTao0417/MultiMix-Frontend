@@ -10,6 +10,29 @@ function readAssetFile(path: string) {
   return readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n");
 }
 
+it("keeps internal production names out of generated-scene user surfaces", () => {
+  const userSurface = [
+    readAssetFile("app/assets/components/segment-cards.tsx"),
+    readAssetFile("app/assets/components/storyboard-preview.tsx"),
+  ].join("\n");
+
+  expect(userSurface).not.toMatch(/animated[-_ ]explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b|\bpipeline\b/i);
+});
+
+it("keeps two-stage runtime terms out of live execution steps", () => {
+  const steps = agentTimelineStepsFromBackend([
+    { key: "planning_assets", label: "provider pexels", status: "done" },
+    { key: "composing", label: "animated_explainer pipeline", status: "run" },
+    { key: "reviewing", label: "VLM review", status: "wait" },
+  ]);
+  expect(JSON.stringify(steps)).not.toMatch(/animated_explainer|planning_assets|pexels|provider|vlm|pipeline/i);
+  expect(steps.map((step) => step.label)).toEqual([
+    "正在准备分镜画面",
+    "正在生成视频",
+    "正在完成质量检查",
+  ]);
+});
+
 it("keeps the selected product bound when confirmation also has linked context", () => {
   const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
