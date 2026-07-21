@@ -203,7 +203,13 @@ try {
     CHANGEIN_MODULES_MONITORING_ENABLED: "false",
     CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
+    // This isolated run has no RQ worker. Never inherit a reachable Redis
+    // endpoint from the developer environment, or MG child jobs can remain
+    // queued after the main project finishes.
+    CHANGEIN_REDIS_URL: "redis://127.0.0.1:1/0",
     CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
+    CHANGEIN_MG_MODAL_APP_NAME: "multimix-remotion",
+    CHANGEIN_MG_MODAL_FUNCTION_NAME: "render_mg",
     CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
   const frontendEnv = {
