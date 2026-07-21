@@ -181,4 +181,22 @@ describe("BgmPanel", () => {
     expect(instances[0].pause).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
+
+  it("hides itself when this deployment has not enabled the BGM feature", async () => {
+    vi.mocked(fetch).mockImplementation(async () => (
+      jsonResponse({ detail: "Video BGM is disabled." }, 404)
+    ));
+
+    render(
+      <BgmPanel
+        assetId="12"
+        token="token"
+        onPrepareChange={vi.fn()}
+        onProjectChanged={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.queryByLabelText("背景音乐")).not.toBeInTheDocument());
+    expect(screen.queryByText(/音乐库加载失败/)).not.toBeInTheDocument();
+  });
 });

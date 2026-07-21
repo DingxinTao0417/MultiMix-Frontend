@@ -134,7 +134,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(audio.animations).toEqual(animations);
   });
 
-  it('gives subtitles a contrast-safe background by default', () => {
+  it('keeps subtitles readable without a black background by default', () => {
     const bp = makeProject({
       tracks: [{
         id: 'track-text',
@@ -152,10 +152,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const result = buildProject(bp);
     const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
-    expect(element.background).toMatchObject({
-      enabled: true,
-      color: '#000000aa',
-    });
+    expect(element.background).toMatchObject({ enabled: false });
   });
 
   it('keeps default 1080p subtitles within a professional lower-third size', () => {

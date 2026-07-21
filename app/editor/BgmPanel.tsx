@@ -34,6 +34,7 @@ export default function BgmPanel({
   onProjectChanged: (project: Record<string, unknown>) => Promise<void>;
 }) {
   const [catalog, setCatalog] = useState<BGMCatalogResponse | null>(null);
+  const [available, setAvailable] = useState(true);
   const [choice, setChoice] = useState<BGMChoice | null>(null);
   const [filter, setFilter] = useState<Filter>("AI 推荐");
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,13 @@ export default function BgmPanel({
         setChoice(result.current_choice);
       })
       .catch((cause) => {
-        if (active) setMessage(`音乐库加载失败：${cause instanceof Error ? cause.message : String(cause)}`);
+        if (!active) return;
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        if (detail === "Video BGM is disabled.") {
+          setAvailable(false);
+          return;
+        }
+        setMessage(`音乐库加载失败：${detail}`);
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -70,6 +77,8 @@ export default function BgmPanel({
     const byId = new Map(catalog.tracks.map((track) => [track.id, track]));
     return catalog.recommended_ids.map((id) => byId.get(id)).filter((track): track is BGMCatalogTrack => Boolean(track));
   }, [catalog, filter]);
+
+  if (!available) return null;
 
   function togglePreview(track: BGMCatalogTrack) {
     if (previewingId === track.id) {

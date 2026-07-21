@@ -90,11 +90,10 @@ export interface SubtitleStyle {
 export const defaultSubtitleStyle: SubtitleStyle = {
   fontFamily: "sans-serif",
   color: "#ffffff",
-  // Source material can be light, dark, or change mid-shot. A translucent
-  // carrier keeps captions readable without trying to infer every frame's
-  // contrast, and applies consistently to landscape and portrait projects.
-  bgEnabled: true,
-  bgColor: "#000000aa",
+  // Caption readability comes from the white type treatment and its existing
+  // shadow/outline controls. A dark carrier obscures the visual content.
+  bgEnabled: false,
+  bgColor: "#00000000",
   maxLineChars: 24,
   sizeScale: 0.8,
   bottomOffset: 0.34,
