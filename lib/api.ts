@@ -192,6 +192,15 @@ export type ContentAsset = {
   versions: ContentAssetVersion[];
 };
 
+export type VideoPrimaryVisualRead = {
+  status: "planned" | "persisted" | "failed" | string;
+  source_type: "saved_asset" | "public_asset" | "product_asset" | "generated_scene" | string;
+  asset_id?: number | null;
+  artifact_ref?: string | null;
+  preview_ref?: string | null;
+  strategy_mode?: string | null;
+};
+
 export type AssetConversationMessageItemResponse = {
   id: number;
   role: "user" | "assistant";

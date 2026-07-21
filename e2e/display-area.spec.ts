@@ -129,7 +129,7 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
 });
 
 test("CASE-06 plays the ready engineering timeline before an MP4 exists", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
   const player = workspace.getByLabel("视频工程播放器");
   const screen = player.locator(".shadcn-prototype-preview-player-screen");
@@ -142,8 +142,8 @@ test("CASE-06 plays the ready engineering timeline before an MP4 exists", async 
   await expect(previewFrame).toHaveAttribute("src", /mode=preview/);
   // A fresh isolated Next instance compiles the large /editor bundle on first
   // access. Wait for the editor's real ready message, not merely iframe load.
-  await expect(playButton).toBeEnabled({ timeout: 45_000 });
-  await expect(progress).toBeEnabled({ timeout: 45_000 });
+  await expect(playButton).toBeEnabled({ timeout: 75_000 });
+  await expect(progress).toBeEnabled({ timeout: 75_000 });
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
   await expect(player).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");

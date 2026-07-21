@@ -129,6 +129,44 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByText("你的素材", { exact: false })).not.toBeInTheDocument();
   });
 
+  it("shows a generated scene as available media with a non-blocking case hint", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    render(<ProductPreview product={{
+      ...base,
+      backendAssetId: undefined,
+      metadata: {
+        ...base.metadata,
+        material_gap_notice: "1 个分镜没有找到合适素材，已用字幕/标题卡占位。",
+        video_plan: {
+          summary: {
+            material_unfilled_count: 1,
+            material_gap_count: 1,
+          },
+        },
+      },
+      segments: [{
+        id: "generated-scene",
+        index: 1,
+        title: "上传流程",
+        line: "上传资料后自动生成视频。",
+        assetThumbnailUrl: "/display-sample.png",
+        isFallback: false,
+        primaryVisualSourceType: "generated_scene",
+        visualStatusLabel: "已生成画面",
+        businessHint: "建议补充真实案例素材",
+      }],
+    }} />);
+
+    expect(screen.getByLabelText("分镜 #1 视频").querySelector("video")).toHaveAttribute(
+      "src",
+      "/display-sample.png",
+    );
+    expect(screen.getByText("已生成画面")).toBeInTheDocument();
+    expect(screen.getByText("建议补充真实案例素材")).toBeInTheDocument();
+    expect(screen.queryByText("待补素材")).not.toBeInTheDocument();
+    expect(screen.queryByText("字幕/标题卡占位", { exact: false })).not.toBeInTheDocument();
+  });
+
   it("prioritizes material-search failure over the generic material-gap notice", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
     render(<ProductPreview product={{

@@ -3,10 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { assertPortFree, safeRemoveRunDatabase, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+import { assertPortFree, safeRemoveRunDatabaseWithRetries, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
-const backendRoot = path.resolve(frontendRoot, "..", "MultiMix-Backend");
+const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
+  ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
+  : path.resolve(frontendRoot, "..", "MultiMix-Backend");
 const backendPort = 8299;
 const frontendPort = 3219;
 const runId = process.env.DISPLAY_COVERAGE_RUN_ID ?? crypto.randomUUID();
@@ -104,7 +106,7 @@ try {
     ...process.env,
     NEXT_DEV_DIST_DIR: ".next-display-coverage",
     NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}`,
-    NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local",
+    NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "dev-admin",
     NEXT_PUBLIC_SUPABASE_URL: "",
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
   };
@@ -126,8 +128,15 @@ try {
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  safeRemoveRunDatabase(databasePath, runId);
-  fs.rmSync(artifactDir, { recursive: true, force: true });
-  fs.rmSync(path.join(frontendRoot, ".next-display-coverage"), { recursive: true, force: true });
-  restoreWorkspaceFiles(workspaceFileSnapshots);
+  let databaseCleanupError;
+  try {
+    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
+  } catch (error) {
+    databaseCleanupError = error;
+  } finally {
+    fs.rmSync(artifactDir, { recursive: true, force: true });
+    fs.rmSync(path.join(frontendRoot, ".next-display-coverage"), { recursive: true, force: true });
+    restoreWorkspaceFiles(workspaceFileSnapshots);
+  }
+  if (databaseCleanupError) throw databaseCleanupError;
 }

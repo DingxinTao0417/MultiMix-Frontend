@@ -4,6 +4,11 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
 import type { ActiveView } from "./assets/lib/asset-workspace-shared";
+import {
+  parseStoredLocalUser,
+  shouldAttemptLocalDevAdmin,
+  type LocalUser,
+} from "./lib/local-auth-session";
 import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 
@@ -12,11 +17,7 @@ const DEFAULT_LOCAL_USER: LocalUser = {
   email: "demo@multimix.local"
 };
 const AUTH_INIT_TIMEOUT_MS = 4000;
-
-type LocalUser = {
-  email: string;
-  token?: string | null;
-};
+const AUTH_MODE = process.env.NEXT_PUBLIC_MULTIMIX_AUTH_MODE || "";
 
 function activeViewFromParam(value: string | null): ActiveView | undefined {
   if (value === "assets" || value === "copy" || value === "image" || value === "video") return value;
@@ -118,10 +119,21 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       };
     }
 
-    // Non-Supabase with a backend: always refresh the local dev token so stale
-    // Supabase sessions from earlier runs cannot force a password login.
+    // Non-Supabase with a backend: prefer a refreshed local-dev admin token when
+    // available, but preserve a valid signed-in session when that optional route
+    // is disabled. A later API 401 still clears the saved session through the
+    // existing auth-expired event.
     if (isApiConfigured) {
-      window.localStorage.removeItem(LOCAL_USER_KEY);
+      const storedRaw = window.localStorage.getItem(LOCAL_USER_KEY);
+      const storedUser = parseStoredLocalUser(storedRaw);
+      if (storedRaw && !storedUser) window.localStorage.removeItem(LOCAL_USER_KEY);
+      if (!shouldAttemptLocalDevAdmin(AUTH_MODE)) {
+        setUser(storedUser);
+        finishReady();
+        return () => {
+          cancelled = true;
+        };
+      }
       void import("../lib/api")
         .then(({ authLocalDevAdmin }) => withTimeout(authLocalDevAdmin(), AUTH_INIT_TIMEOUT_MS))
         .then((response) => {
@@ -131,11 +143,11 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
             window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
             setUser(nextUser);
           } else {
-            setUser(null);
+            setUser(storedUser);
           }
         })
         .catch(() => {
-          if (!cancelled) setUser(null);
+          if (!cancelled) setUser(storedUser);
         })
         .finally(() => {
           finishReady();

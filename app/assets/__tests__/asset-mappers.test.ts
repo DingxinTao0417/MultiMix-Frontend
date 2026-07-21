@@ -311,10 +311,164 @@ describe("asset product mapper", () => {
     });
     expect(product.segments?.[1]?.mgLabel).toBe("面积利用率 +35%");
     expect(product.segments?.[2]?.isFallback).toBe(true);
+    expect(product.segments?.[0]?.visualStatusLabel).toBeUndefined();
+    expect(product.segments?.[0]?.primaryVisualSourceType).toBeUndefined();
     expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 个公共素材生成");
     expect(product.sourceSummary?.note).toContain("已保存素材命中 2/3");
     expect(product.sourceSummary?.note).not.toContain("兜底素材");
     expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
+  });
+
+  it("maps a persisted generated primary visual as available scene media", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_segments: [
+          {
+            id: "scene-2",
+            title: "上传流程",
+            narration: "上传资料后自动生成视频。",
+            asset_reference: { status: "no_asset_hit" },
+            primary_visual: {
+              status: "persisted",
+              source_type: "generated_scene",
+              artifact_ref: "local://video-orchestration/1/primary-scenes/scene-2.mp4",
+            },
+            primary_visual_strategy: {
+              mode: "evidence_card",
+              business_hint: "missing_real_case_material",
+            },
+          },
+        ],
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      id: "scene-2",
+      isFallback: false,
+      primaryVisualSourceType: "generated_scene",
+      visualStatusLabel: "已生成画面",
+      businessHint: "建议补充真实案例素材",
+    });
+    expect(product.segments?.[0]?.assetThumbnailUrl).toContain(
+      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fprimary-scenes%2Fscene-2.mp4",
+    );
+  });
+
+  it("maps approved product media as an available product interface", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_segments: [
+          {
+            id: "scene-product-ui",
+            title: "产品界面",
+            narration: "上传资料后进入可编辑的视频工程。",
+            asset_reference: { status: "no_asset_hit" },
+            primary_visual: {
+              status: "persisted",
+              source_type: "product_asset",
+              artifact_ref: "local://product-media/v1/workspace.png",
+            },
+          },
+        ],
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      id: "scene-product-ui",
+      isFallback: false,
+      primaryVisualSourceType: "product_asset",
+      visualStatusLabel: "产品界面",
+    });
+    expect(product.segments?.[0]?.assetThumbnailUrl).toContain(
+      "/v1/video/media?ref=local%3A%2F%2Fproduct-media%2Fv1%2Fworkspace.png",
+    );
+  });
+
+  it("prefers a streamable saved primary video over its private source snapshot", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_segments: [
+          {
+            id: "scene-saved-video",
+            title: "真实展厅",
+            narration: "展示真实展厅环境。",
+            asset_reference: {
+              status: "matched",
+              source_snapshot: {
+                title: "真实展厅",
+                original_ref: "local://content-assets/1/original/private-source",
+              },
+            },
+            primary_visual: {
+              status: "persisted",
+              source_type: "saved_asset",
+              artifact_ref: "local://video-orchestration/1/materials/showroom.mp4",
+            },
+          },
+        ],
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      primaryVisualSourceType: "saved_asset",
+      primaryVisualMediaType: "video",
+    });
+    expect(product.segments?.[0]?.assetThumbnailUrl).toContain(
+      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fmaterials%2Fshowroom.mp4",
+    );
+    expect(product.segments?.[0]?.assetThumbnailUrl).not.toContain("content-assets");
+  });
+
+  it("does not request private saved refs before manifest materialization", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_script",
+      status: "draft",
+      metadata: {
+        capability: "video_script",
+        video_segments: [
+          {
+            id: "scene-private-saved",
+            title: "确认前真实素材",
+            narration: "等待视频工程持久化素材。",
+            asset_reference: {
+              status: "matched",
+              source_snapshot: {
+                title: "真实展厅",
+                original_ref: "local://content-assets/1/original/private-source",
+              },
+            },
+            materials: [{
+              asset_id: 4,
+              url: "local://content-assets/1/original/private-source",
+            }],
+            primary_visual: {
+              status: "persisted",
+              source_type: "saved_asset",
+              artifact_ref: "local://content-assets/1/original/private-source",
+            },
+          },
+        ],
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      primaryVisualSourceType: "saved_asset",
+    });
+    expect(product.segments?.[0]?.assetThumbnailUrl).toBeUndefined();
+    expect(product.segments?.[0]?.primaryVisualMediaType).toBeUndefined();
   });
 
   it("projects real video-project track timing onto semantic scenes", () => {
@@ -438,6 +592,19 @@ describe("video job stage helpers", () => {
     expect(videoJobStageLabel("unknown_stage")).toBe("正在生成");
   });
 
+  it("projects every two-stage runtime value to a restrained user-facing state", () => {
+    expect(videoJobStageLabel("asset_driven_planning")).toBe("正在准备分镜画面");
+    expect(videoJobStageLabel("planning_assets")).toBe("正在准备分镜画面");
+    expect(videoJobStageLabel("asset_manifest_ready")).toBe("正在准备分镜画面");
+    expect(videoJobStageLabel("composing")).toBe("正在生成视频");
+    expect(videoJobStageLabel("voice")).toBe("正在生成视频");
+    expect(videoJobStageLabel("project")).toBe("正在生成视频");
+    expect(videoJobStageLabel("rendering")).toBe("正在生成视频");
+    expect(videoJobStageLabel("reviewing")).toBe("正在完成质量检查");
+    expect(videoJobStageLabel("quality")).toBe("正在完成质量检查");
+    expect(videoJobStageLabel("needs_script_revision")).toBe("需要先调整编导稿");
+  });
+
   it("maps stages onto ordered progress steps", () => {
     expect(videoJobStepIndex("queued")).toBe(0);
     expect(videoJobStepIndex("script")).toBe(0);
@@ -478,6 +645,21 @@ describe("agent timeline steps", () => {
     expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
     expect(steps[0].elapsedLabel).toBe("8秒");
     expect(steps[1].elapsedLabel).toBeUndefined();
+  });
+
+  it("never forwards internal stage keys or backend labels into timeline copy", () => {
+    const steps = agentTimelineStepsFromBackend([
+      { key: "asset_manifest_ready", label: "Pexels provider asset_manifest_ready", status: "done" },
+      { key: "reviewing", label: "animated_explainer VLM pipeline review", status: "run" },
+      { key: "future_internal_stage", label: "Remotion private stage", status: "wait" },
+    ]);
+    const visible = JSON.stringify(steps);
+    expect(visible).not.toMatch(/asset_manifest|animated_explainer|pexels|provider|vlm|pipeline|remotion|future_internal/i);
+    expect(steps.map((step) => step.label)).toEqual([
+      "正在准备分镜画面",
+      "正在完成质量检查",
+      "正在处理视频",
+    ]);
   });
 
   it("preserves backend elapsed seconds for execution summaries", () => {
@@ -616,6 +798,49 @@ describe("message plan mapping", () => {
     expect(plan?.fields).toHaveLength(2);
     expect(plan?.fields[1]?.refs?.[0]?.title).toBe("完工全景");
     expect(plan?.confirmUtterance).toBe("确认，开始生成");
+  });
+
+  it("keeps private content-asset plan refs as provenance without a thumbnail request", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-private-plan-ref",
+        title: "编导方案",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-07-08T00:00:00Z",
+        updated_at: "2026-07-08T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请确认方案",
+          asset_id: null,
+          created_at: "2026-07-08T00:00:00Z",
+          metadata: {
+            plan: {
+              title: "视频方案",
+              fields: [{
+                key: "material",
+                label: "真实素材",
+                value: "展厅实拍",
+                refs: [{
+                  title: "真实展厅",
+                  ref: "local://content-assets/1/original/private-video",
+                }],
+              }],
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan?.fields[0]?.refs?.[0]).toMatchObject({
+      title: "真实展厅",
+    });
+    expect(
+      conversation.messages?.[0]?.plan?.fields[0]?.refs?.[0]?.thumbnailUrl,
+    ).toBeUndefined();
   });
 
   it("ignores a plan payload with no usable fields", () => {

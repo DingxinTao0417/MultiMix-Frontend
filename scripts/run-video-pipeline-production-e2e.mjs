@@ -1,0 +1,607 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+
+import {
+  assertPortFree,
+  safeRemoveRunDatabaseWithRetries,
+  startLogged,
+  stopChild,
+  waitFor,
+} from "./demo-e2e/environment-manager.mjs";
+
+const frontendRoot = path.resolve(import.meta.dirname, "..");
+const workspaceRoot = path.resolve(frontendRoot, "..", "..");
+const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
+  ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
+  : path.join(workspaceRoot, ".worktrees", "animated-explainer-hybrid-backend");
+const canonicalBackendRoot = path.join(workspaceRoot, "MultiMix-Backend");
+const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
+const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
+if (!Number.isInteger(backendPort) || !Number.isInteger(frontendPort)) {
+  throw new Error("VIDEO_PIPELINE_BACKEND_PORT and VIDEO_PIPELINE_FRONTEND_PORT must be integers");
+}
+const runId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
+const databasePath = path.join(os.tmpdir(), `multimix-video-pipeline-e2e-${runId}.sqlite3`);
+const artifactDir = path.join(os.tmpdir(), `multimix-video-pipeline-artifacts-${runId}`);
+const resultDir = path.resolve(
+  process.env.VIDEO_PIPELINE_RESULT_DIR
+    ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
+);
+const sourceDocument = path.resolve(
+  process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
+    ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
+);
+const pythonCommand = process.env.PYTHON
+  ?? path.join(canonicalBackendRoot, ".venv", "Scripts", "python.exe");
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
+const ffprobeCommand = process.env.FFPROBE ?? "ffprobe";
+const ffmpegCommand = process.env.FFMPEG ?? "ffmpeg";
+const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? "-0.1");
+const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
+const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
+const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
+  || scenario === "animated_public";
+const children = [];
+let providerProxy;
+
+function startProviderEgressProxy(allowedHosts) {
+  const allowed = new Set(allowedHosts.map((host) => host.toLowerCase()));
+  const sockets = new Set();
+  const server = http.createServer((_request, response) => {
+    response.writeHead(405, { Connection: "close" });
+    response.end();
+  });
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.once("close", () => sockets.delete(socket));
+  });
+  server.on("connect", (request, clientSocket, head) => {
+    const authority = String(request.url ?? "");
+    const separator = authority.lastIndexOf(":");
+    const host = separator > 0 ? authority.slice(0, separator).toLowerCase() : "";
+    const port = Number(authority.slice(separator + 1));
+    if (!allowed.has(host) || port !== 443) {
+      clientSocket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      return;
+    }
+    const upstream = net.connect({ host, port });
+    sockets.add(upstream);
+    upstream.once("close", () => sockets.delete(upstream));
+    upstream.once("connect", () => {
+      clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length > 0) upstream.write(head);
+      upstream.pipe(clientSocket);
+      clientSocket.pipe(upstream);
+    });
+    upstream.once("error", () => {
+      if (!clientSocket.destroyed) {
+        clientSocket.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+      }
+    });
+    clientSocket.once("error", () => upstream.destroy());
+  });
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Provider egress proxy did not bind to a TCP port"));
+        return;
+      }
+      resolve({
+        port: address.port,
+        close: () => new Promise((closeResolve, closeReject) => {
+          for (const socket of sockets) socket.destroy();
+          server.close((error) => (error ? closeReject(error) : closeResolve()));
+        }),
+      });
+    });
+  });
+}
+
+function parseEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  const output = {};
+  for (const rawLine of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const index = line.indexOf("=");
+    if (index < 1) continue;
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    output[key] = value;
+  }
+  return output;
+}
+
+function run(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      shell: process.platform === "win32" && command.endsWith(".cmd"),
+      stdio: ["ignore", "pipe", "pipe"],
+      ...options,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => { stdout += chunk; options.stdout?.write(chunk); });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; options.stderr?.write(chunk); });
+    child.once("error", reject);
+    child.once("exit", (code) => (
+      code === 0
+        ? resolve({ stdout, stderr })
+        : reject(new Error(`${command} exited ${code}\n${stderr || stdout}`))
+    ));
+  });
+}
+
+function snapshotFiles(filePaths) {
+  return filePaths.map((filePath) => ({
+    filePath,
+    existed: fs.existsSync(filePath),
+    contents: fs.existsSync(filePath) ? fs.readFileSync(filePath) : null,
+  }));
+}
+
+function restoreFiles(snapshots) {
+  for (const snapshot of snapshots) {
+    if (snapshot.existed && snapshot.contents) fs.writeFileSync(snapshot.filePath, snapshot.contents);
+    else fs.rmSync(snapshot.filePath, { force: true });
+  }
+}
+
+function stageReviewedBgmCatalog() {
+  const sourceRoot = path.join(canonicalBackendRoot, "artifacts", "bgm");
+  const sourceManifestPath = path.join(sourceRoot, "catalog", "v1", "manifest.json");
+  const decisionsPath = path.resolve(
+    process.env.VIDEO_PIPELINE_BGM_REVIEW_DECISIONS
+      ?? "C:\\temp\\multimix-bgm-review-20260718\\bgm-review-decisions.json",
+  );
+  if (!fs.existsSync(sourceManifestPath) || !fs.existsSync(decisionsPath)) {
+    throw new Error("Reviewed BGM catalog or bgm-review-decisions.json is missing");
+  }
+  const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, "utf8"));
+  const decisions = JSON.parse(fs.readFileSync(decisionsPath, "utf8")).decisions ?? {};
+  const tracks = Array.isArray(manifest.tracks) ? manifest.tracks : [];
+  if (tracks.length !== 30) throw new Error(`Reviewed BGM catalog must contain 30 tracks, got ${tracks.length}`);
+  for (const track of tracks) {
+    const decision = decisions[track.id];
+    if (
+      decision?.decision !== "passed"
+      || !decision.checks
+      || Object.values(decision.checks).some((value) => value !== true)
+    ) {
+      throw new Error(`BGM track ${track.id} has not passed every human review check`);
+    }
+  }
+  for (const directory of ["library", "previews", "licenses"]) {
+    fs.cpSync(path.join(sourceRoot, directory), path.join(artifactDir, "bgm", directory), { recursive: true });
+  }
+  const stagedManifest = {
+    ...manifest,
+    tracks: tracks.map((track) => ({ ...track, status: "active" })),
+  };
+  const manifestPath = path.join(artifactDir, "bgm", "catalog", "v1", "manifest.json");
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify(stagedManifest, null, 2));
+  return {
+    manifestRef: "local://bgm/catalog/v1/manifest.json",
+    defaultCatalogId: tracks[0].id,
+  };
+}
+
+function stageApprovedProductMediaCatalog() {
+  const raw = process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES;
+  if (!raw) throw new Error("VIDEO_PIPELINE_PRODUCT_MEDIA_FILES is required for product-media QA");
+  let sources;
+  try {
+    sources = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`VIDEO_PIPELINE_PRODUCT_MEDIA_FILES must be JSON: ${error.message}`);
+  }
+  if (!Array.isArray(sources) || sources.length < 2) {
+    throw new Error("VIDEO_PIPELINE_PRODUCT_MEDIA_FILES must provide at least two approved captures");
+  }
+  const entries = sources.map((source, index) => {
+    const sourcePath = path.resolve(String(source?.path ?? ""));
+    const roles = Array.isArray(source?.roles) ? source.roles.map(String).filter(Boolean) : [];
+    if (!fs.existsSync(sourcePath) || roles.length === 0) {
+      throw new Error(`Approved product capture ${index + 1} is missing or has no roles: ${sourcePath}`);
+    }
+    const extension = path.extname(sourcePath).toLowerCase();
+    const mediaType = extension === ".mp4" ? "video" : "image";
+    if (!new Set([".png", ".jpg", ".jpeg", ".webp", ".mp4"]).has(extension)) {
+      throw new Error(`Unsupported approved product capture type: ${extension}`);
+    }
+    const identifier = `multimix-ui-${index + 1}`;
+    const key = path.join("product-media", "v1", `${identifier}${extension}`).replaceAll("\\", "/");
+    const targetPath = path.join(artifactDir, ...key.split("/"));
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.copyFileSync(sourcePath, targetPath);
+    return {
+      id: identifier,
+      title: String(source?.title ?? `MultiMix 产品界面 ${index + 1}`),
+      status: "approved",
+      media_type: mediaType,
+      artifact_ref: `local://${key}`,
+      roles,
+      width: Number(source?.width ?? 2048),
+      height: Number(source?.height ?? 1024),
+      duration_seconds: mediaType === "video" ? Number(source?.duration_seconds ?? 3) : 0,
+      priority: Number(source?.priority ?? index + 1),
+      source: "user_approved_product_capture",
+    };
+  });
+  const manifestPath = path.join(artifactDir, "product-media", "v1", "manifest.json");
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify({
+    version: "multimix_product_media_v1",
+    product: "MultiMix",
+    entries,
+  }, null, 2));
+  return "local://product-media/v1/manifest.json";
+}
+
+function startProcess(command, args, cwd, env, logName) {
+  const started = startLogged(command, args, {
+    cwd,
+    env,
+    logPath: path.join(resultDir, logName),
+  });
+  children.push(started);
+  return started.child;
+}
+
+async function verifyCandidateVideo() {
+  const candidatePath = path.join(resultDir, "multimix-candidate.mp4");
+  if (!fs.existsSync(candidatePath)) throw new Error(`Exported candidate is missing: ${candidatePath}`);
+  const { stdout } = await run(ffprobeCommand, [
+    "-v", "error",
+    "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,pix_fmt",
+    "-of", "json",
+    candidatePath,
+  ]);
+  const probe = JSON.parse(stdout);
+  const streams = Array.isArray(probe.streams) ? probe.streams : [];
+  const video = streams.find((stream) => stream.codec_type === "video");
+  const audio = streams.find((stream) => stream.codec_type === "audio");
+  const duration = Number(probe.format?.duration);
+  const failures = [];
+  if (video?.codec_name !== "h264") failures.push(`codec_name=${video?.codec_name ?? "missing"}, expected h264`);
+  if (video?.pix_fmt !== "yuv420p") failures.push(`pix_fmt=${video?.pix_fmt ?? "missing"}, expected yuv420p`);
+  if (video?.width !== 1920) failures.push(`width=${video?.width ?? "missing"}, expected 1920`);
+  if (video?.height !== 1080) failures.push(`height=${video?.height ?? "missing"}, expected 1080`);
+  if (audio?.codec_name !== "aac") failures.push(`audio codec_name=${audio?.codec_name ?? "missing"}, expected aac`);
+  if (!Number.isFinite(duration) || duration < 27 || duration > 33) {
+    failures.push(`duration=${Number.isFinite(duration) ? duration : "missing"}, expected 27-33`);
+  }
+  const { stderr: loudnessStderr } = await run(ffmpegCommand, [
+    "-hide_banner",
+    "-nostats",
+    "-i", candidatePath,
+    "-vn",
+    "-af", "loudnorm=I=-24:TP=-2:LRA=7:print_format=json",
+    "-f", "null",
+    process.platform === "win32" ? "NUL" : "/dev/null",
+  ]);
+  const loudnessMatches = [...loudnessStderr.matchAll(/\{\s*"input_i"[\s\S]*?\}/g)];
+  const loudnessRaw = loudnessMatches.at(-1)?.[0];
+  if (!loudnessRaw) failures.push("rendered loudness measurement missing");
+  const loudness = loudnessRaw ? JSON.parse(loudnessRaw) : {};
+  const integratedLufs = Number(loudness.input_i);
+  const truePeakDbfs = Number(loudness.input_tp);
+  const clipping = !Number.isFinite(truePeakDbfs) || truePeakDbfs > maxTruePeakDbfs;
+  if (clipping) {
+    failures.push(
+      `true_peak_dbfs=${Number.isFinite(truePeakDbfs) ? truePeakDbfs : "missing"}, expected <= ${maxTruePeakDbfs}`,
+    );
+  }
+  const browserResultPath = path.join(resultDir, "browser-result.json");
+  const browserResult = fs.existsSync(browserResultPath)
+    ? JSON.parse(fs.readFileSync(browserResultPath, "utf8"))
+    : {};
+  const report = {
+    passed: failures.length === 0,
+    duration,
+    video,
+    audio,
+    renderedAudio: {
+      integratedLufs,
+      truePeakDbfs,
+      clipping,
+    },
+    projectAudioMix: browserResult.qualityMetrics?.audio_mix ?? {},
+    failures,
+  };
+  fs.writeFileSync(path.join(resultDir, "media-probe.json"), JSON.stringify(report, null, 2));
+  if (failures.length > 0) throw new Error(`Formal MP4 contract failed: ${failures.join("; ")}`);
+}
+
+async function waitForManifestArtifact(timeoutMs = 20 * 60_000, signal) {
+  const probeScript = [
+    "import json, pathlib, sqlite3, sys, time",
+    "timeout_at=time.monotonic() + (int(sys.argv[2]) / 1000)",
+    "database_uri=pathlib.Path(sys.argv[1]).resolve().as_uri() + '?mode=ro'",
+    "while time.monotonic() < timeout_at:",
+    " try:",
+    "  with sqlite3.connect(database_uri, uri=True, timeout=0.05) as connection:",
+    "   row=connection.execute(\"select metadata from content_assets where content_type='video_render' order by id desc limit 1\").fetchone()",
+    "  metadata=json.loads(row[0] or '{}') if row else {}",
+    "  artifacts=metadata.get('pipeline_artifacts') or {}",
+    "  if isinstance(artifacts.get('asset_manifest'), dict):",
+    "   print('ready', flush=True)",
+    "   raise SystemExit(0)",
+    " except (OSError, sqlite3.Error, json.JSONDecodeError):",
+    "  pass",
+    " time.sleep(0.05)",
+    "print('wait', flush=True)",
+  ].join("\n");
+  if (signal && signal.aborted) throw new Error("Manifest polling aborted");
+  const { stdout } = await run(pythonCommand, ["-c", probeScript, databasePath, String(timeoutMs)], {
+    cwd: backendRoot,
+    signal,
+  });
+  if (stdout.trim() === "ready") return;
+  throw new Error("Timed out waiting for persisted asset_manifest before interruption");
+}
+
+async function recoverInterruptedVideoJob(backendEnv) {
+  const recoveryScript = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.services.video_project_recovery import recover_video_project_jobs",
+    "from app.services.video_studio.jobs import run_video_orchestration_job",
+    "with SessionLocal() as db:",
+    " result=recover_video_project_jobs(db, dispatch=run_video_orchestration_job, stale_after_seconds=1)",
+    "print(json.dumps(result, ensure_ascii=False))",
+    "assert result.get('resume_queued') == 1, result",
+    "assert result.get('dispatched') == 1, result",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", recoveryScript], {
+    cwd: backendRoot,
+    env: backendEnv,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+  const resultLine = stdout.trim().split(/\r?\n/).at(-1) ?? "{}";
+  const result = JSON.parse(resultLine);
+  fs.writeFileSync(
+    path.join(resultDir, "worker-recovery-result.json"),
+    JSON.stringify(result, null, 2),
+  );
+}
+
+async function writeQaReport() {
+  const resultPath = path.join(resultDir, "browser-result.json");
+  if (!fs.existsSync(resultPath)) return;
+  const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  const candidateVideoExists = fs.existsSync(path.join(resultDir, "multimix-candidate.mp4"));
+  const errors = Array.isArray(result.consoleErrors) ? result.consoleErrors : [];
+  const requestFailures = Array.isArray(result.requestFailures) ? result.requestFailures : [];
+  const actionableRequestFailures = requestFailures.filter((failure) => failure?.error !== "net::ERR_ABORTED");
+  const otherRefsStable = Object.entries(result.beforeRefs ?? {})
+    .filter(([sceneId]) => sceneId !== result.targetSegmentId)
+    .every(([sceneId, ref]) => result.afterRefs?.[sceneId] === ref);
+  const resumeReuse = result.resumeReuse === true;
+  const health = errors.length === 0 && actionableRequestFailures.length === 0 && otherRefsStable
+    ? 100
+    : Math.max(0, 100 - errors.length * 5 - actionableRequestFailures.length * 5 - (otherRefsStable ? 0 : 40));
+  const report = `# Animated Explainer / Hybrid 浏览器验收\n\n`
+    + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
+    + `## 结果\n\n- 健康评分：${health}/100\n- 六镜主画面：通过\n- 待补素材：未出现\n`
+    + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
+    + `- 单镜重做未改动其他分镜：${otherRefsStable ? "通过" : "失败"}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
+    + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n\n`
+    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、六镜落库和单镜重做链路；视觉专业感仍需把本轮真实成片与 OpenMontage 参考样片并排评分。\n`;
+  fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
+  fs.writeFileSync(path.join(resultDir, "two-stage-evaluation-report.json"), JSON.stringify({
+    assetManifestCoverage: result.assetManifestCoverage,
+    publicCandidateOnlyCount: result.publicCandidateOnlyCount,
+    manifestProjectReferenceMatch: result.manifestProjectReferenceMatch,
+    sourceMix: result.sourceMix,
+    sendBacks: result.sendBacks ?? 0,
+    resumeReuse,
+    internalTermsVisible: result.internalTermsVisible,
+    consoleErrors: errors.length,
+    actionableRequestFailures: actionableRequestFailures.length,
+  }, null, 2));
+  fs.writeFileSync(path.join(resultDir, "openmontage-comparison.md"), [
+    "# OpenMontage 对照验收",
+    "",
+    `> Status: qa`,
+    `> Owner: workspace`,
+    `> Last verified: ${new Date().toISOString().slice(0, 10)}`,
+    "",
+    "| 维度 | MultiMix | OpenMontage | 证据/问题 |",
+    "| --- | ---: | ---: | --- |",
+    "| 叙事清晰 | 待人工评分 | 待人工评分 | |",
+    "| 素材相关 | 待人工评分 | 待人工评分 | |",
+    "| 节奏 | 待人工评分 | 待人工评分 | |",
+    "| 品牌一致 | 待人工评分 | 待人工评分 | |",
+    "| 信息密度 | 待人工评分 | 待人工评分 | |",
+    "| 真实素材使用 | 待人工评分 | 待人工评分 | |",
+    "| 证据真实性 | 待人工评分 | 待人工评分 | |",
+    "",
+    "- P0/P1：待候选成片与参考样片生成后填写。",
+  ].join("\n"));
+}
+
+const workspaceSnapshots = snapshotFiles([
+  path.join(frontendRoot, "next-env.d.ts"),
+  path.join(frontendRoot, "tsconfig.json"),
+]);
+
+try {
+  if (!fs.existsSync(sourceDocument)) throw new Error(`Source document not found: ${sourceDocument}`);
+  if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
+  if (!fs.existsSync(pythonCommand)) throw new Error(`Python interpreter not found: ${pythonCommand}`);
+  fs.mkdirSync(resultDir, { recursive: true });
+  for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4"]) {
+    fs.rmSync(path.join(resultDir, generatedName), { force: true });
+  }
+  fs.mkdirSync(artifactDir, { recursive: true });
+  const stagedBgm = stageReviewedBgmCatalog();
+  const productMediaManifestRef = stageApprovedProductMediaCatalog();
+  console.log(`Video pipeline E2E temp database: ${databasePath}`);
+  console.log(`Video pipeline E2E temp artifacts: ${artifactDir}`);
+  console.log(`Video pipeline E2E ports: backend ${backendPort}, frontend ${frontendPort}`);
+  console.log(`Video pipeline E2E results: ${resultDir}`);
+  console.log("Cleanup: child processes, SQLite sidecars, temp artifacts, and isolated Next build are removed in finally.");
+  await assertPortFree(backendPort);
+  await assertPortFree(frontendPort);
+
+  const providerProxyHosts = ["www.pexels.com", "videos.pexels.com", "images.pexels.com"];
+  providerProxy = await startProviderEgressProxy(providerProxyHosts);
+
+  const canonicalEnv = {
+    ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
+    ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
+  };
+  const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
+  const backendEnv = {
+    ...process.env,
+    ...canonicalEnv,
+    CHANGEIN_ENV: "local",
+    CHANGEIN_AUTH_PROVIDER: "local",
+    CHANGEIN_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
+    CHANGEIN_DATABASE_URL: databaseUrl,
+    CHANGEIN_ARTIFACT_DIR: artifactDir,
+    CHANGEIN_SUPABASE_URL: "",
+    CHANGEIN_SUPABASE_PUBLISHABLE_KEY: "",
+    CHANGEIN_SUPABASE_ANON_KEY: "",
+    CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "",
+    SUPABASE_URL: "",
+    SUPABASE_ANON_KEY: "",
+    SUPABASE_SERVICE_ROLE_KEY: "",
+    CHANGEIN_S3_ENDPOINT_URL: "",
+    CHANGEIN_S3_ACCESS_KEY: "",
+    CHANGEIN_S3_SECRET_KEY: "",
+    CHANGEIN_MODULES_MONITORING_ENABLED: "false",
+    CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
+    CHANGEIN_ASSET_GENERATION_QUEUE_ENABLED: "true",
+    CHANGEIN_REDIS_URL: "redis://127.0.0.1:6398/15",
+    CHANGEIN_LLM_TIMEOUT_SECONDS: "120",
+    CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
+    CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ORCHESTRATION_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_STRUCTURED_REUSE_INTENT_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PUBLIC_VLM_REQUIRED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
+    CHANGEIN_VIDEO_BGM_ENABLED: "true",
+    CHANGEIN_VIDEO_BGM_MANIFEST_REF: stagedBgm.manifestRef,
+    CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID: stagedBgm.defaultCatalogId,
+    CHANGEIN_VIDEO_VOICE_TO_MUSIC_RATIO: "4.0",
+    CHANGEIN_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
+    CHANGEIN_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
+    CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
+  };
+  const nextDistDir = `.next-video-pipeline-${runId}`;
+  const frontendEnv = {
+    ...process.env,
+    NEXT_DEV_DIST_DIR: nextDistDir,
+    NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}`,
+    NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local",
+    NEXT_PUBLIC_SUPABASE_URL: "",
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+    VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
+  };
+
+  await run(pythonCommand, ["-c", "from app.db import create_schema; create_schema()"], {
+    cwd: backendRoot,
+    env: backendEnv,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+  let backend = startProcess(
+    pythonCommand,
+    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+    backendRoot,
+    backendEnv,
+    "backend.log",
+  );
+  await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+  const frontend = startProcess(
+    npmCommand,
+    ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+    frontendRoot,
+    frontendEnv,
+    "frontend.log",
+  );
+  await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+  const playwrightRun = run(npxCommand, ["playwright", "test", "e2e/video-pipeline-production.spec.ts", "--workers=1"], {
+    cwd: frontendRoot,
+    env: {
+      ...frontendEnv,
+      PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+      PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
+      VIDEO_PIPELINE_SOURCE_DOCUMENT: sourceDocument,
+      VIDEO_PIPELINE_RESULT_DIR: resultDir,
+      VIDEO_PIPELINE_SCENARIO: scenario,
+      VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
+      VIDEO_PIPELINE_HYBRID_MEDIA_FILES: process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES ?? "[]",
+      VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
+    },
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+  playwrightRun.catch(() => undefined);
+  if (interruptAfterManifest) {
+    const manifestAbort = new AbortController();
+    const manifestWait = waitForManifestArtifact(20 * 60_000, manifestAbort.signal);
+    try {
+      await Promise.race([
+        manifestWait,
+        playwrightRun.then(() => {
+          throw new Error("Playwright finished before asset_manifest publication");
+        }),
+      ]);
+    } catch (error) {
+      manifestAbort.abort();
+      await manifestWait.catch(() => undefined);
+      throw error;
+    }
+    manifestAbort.abort();
+    await stopChild(backend);
+    backend = startProcess(
+      pythonCommand,
+      ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+      backendRoot,
+      backendEnv,
+      "backend-restarted.log",
+    );
+    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    await recoverInterruptedVideoJob(backendEnv);
+  }
+  await playwrightRun;
+  await verifyCandidateVideo();
+  await writeQaReport();
+} finally {
+  for (const { child } of children.reverse()) await stopChild(child);
+  for (const { log } of children) log.end();
+  if (providerProxy) await providerProxy.close();
+  let cleanupError;
+  try {
+    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
+  } catch (error) {
+    cleanupError = error;
+  } finally {
+    fs.rmSync(artifactDir, { recursive: true, force: true });
+    fs.rmSync(path.join(frontendRoot, `.next-video-pipeline-${runId}`), { recursive: true, force: true });
+    restoreFiles(workspaceSnapshots);
+  }
+  console.log(`Cleanup complete: ports ${backendPort}/${frontendPort} stopped; temp database and artifacts removed.`);
+  if (cleanupError) throw cleanupError;
+}

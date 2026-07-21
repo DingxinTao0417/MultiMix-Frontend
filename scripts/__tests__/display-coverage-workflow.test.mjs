@@ -27,6 +27,7 @@ test("local display coverage uses and cleans an isolated Next development direct
   assert.match(runnerSource, /fs\.rmSync\(path\.join\(frontendRoot, "\.next-display-coverage"\)/);
   assert.match(runnerSource, /snapshotWorkspaceFiles/);
   assert.match(runnerSource, /restoreWorkspaceFiles/);
+  assert.match(runnerSource, /NEXT_PUBLIC_MULTIMIX_AUTH_MODE:\s*"dev-admin"/);
 });
 
 test("display coverage can pin an auditable temp path and forward snapshot updates", () => {
@@ -35,5 +36,5 @@ test("display coverage can pin an auditable temp path and forward snapshot updat
   assert.match(runnerSource, /process\.env\.DISPLAY_COVERAGE_RUN_ID/);
   assert.match(runnerSource, /--update-snapshots/);
   assert.match(runnerSource, /multimix-display-coverage-/);
-  assert.match(runnerSource, /safeRemoveRunDatabase\(databasePath, runId\)/);
+  assert.match(runnerSource, /safeRemoveRunDatabaseWithRetries\(databasePath, runId\)/);
 });

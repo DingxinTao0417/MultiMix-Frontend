@@ -15,7 +15,33 @@ export function safeRemoveRunDatabase(databasePath, runId) {
   const resolved = path.resolve(databasePath);
   if (path.dirname(resolved) !== path.resolve(os.tmpdir())) throw new Error(`Database path is outside temp directory: ${resolved}`);
   if (!path.basename(resolved).includes(runId)) throw new Error(`Database path does not contain current run id: ${resolved}`);
-  for (const suffix of ["", "-wal", "-shm", "-journal"]) fs.rmSync(`${resolved}${suffix}`, { force: true });
+  for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+    fs.rmSync(`${resolved}${suffix}`, {
+      force: true,
+      recursive: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
+  }
+}
+
+export async function safeRemoveRunDatabaseWithRetries(
+  databasePath,
+  runId,
+  { attempts = 10, retryDelay = 250 } = {},
+) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      safeRemoveRunDatabase(databasePath, runId);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!["EBUSY", "EPERM"].includes(error?.code) || attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
+    }
+  }
+  throw lastError;
 }
 
 export function assertPortFree(port) {
