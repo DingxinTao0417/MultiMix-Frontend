@@ -8,10 +8,10 @@ import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
 
 const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,.mp4,.mov,.webm,.mkv";
-const SOURCE_UPLOAD_ACCEPT = ".pptx,.pdf,.docx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
+const SOURCE_UPLOAD_ACCEPT = ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PPT/文档会作为来源资产。";
+const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
 
 // Demo-final suggestion cards carry a hint line and a richer fill utterance;
 // unknown labels degrade to a title-only card (no invented copy).
@@ -117,7 +117,7 @@ export default function ConversationStart({
   const handleAttachmentFiles = (files: FileList | File[]) => {
     const acceptedFiles = Array.from(files).filter((file) => {
       if (file.type.startsWith("image/")) return true;
-      return /\.(pptx|pdf|docx|txt|md|markdown|html|htm|xlsx|xlsm)$/i.test(file.name);
+      return /\.(pdf|txt|md|markdown|html|htm|xlsx|xlsm)$/i.test(file.name);
     });
     if (acceptedFiles.length) onUploadImages?.(acceptedFiles);
   };
@@ -201,7 +201,7 @@ export default function ConversationStart({
               ))}
             </div>
           ) : null}
-          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PPT / 图片素材</div> : null}
+          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片素材</div> : null}
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
@@ -248,14 +248,14 @@ export default function ConversationStart({
             <button
               className="shadcn-prototype-start-dock-attach"
               type="button"
-              aria-label="上传 PPT 或文档"
-              title="上传 PPT 或文档"
+              aria-label="上传 PDF 或文档"
+              title="上传 PDF 或文档"
               disabled={!onSend || !onUploadImages}
               onClick={() => sourceInputRef.current?.click()}
             >
               <FileText size={15} aria-hidden="true" />
             </button>
-            <span className="shadcn-prototype-start-dock-hint">支持拖入 PPT / 图片素材 · 只上传资料时，AI 会先问你要做什么</span>
+            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么</span>
             <button
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"

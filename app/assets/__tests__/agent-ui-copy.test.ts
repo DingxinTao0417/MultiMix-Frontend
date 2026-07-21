@@ -1421,7 +1421,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain(".mp4,.mov,.webm,.mkv");
     expect(conversationStart).toContain("chatAttachmentStatusLabel(attachment)");
     expect(conversationStart).toContain('role="progressbar"');
-    expect(conversationStudio).toContain(".pptx");
+    expect(conversationStudio).toContain(".pdf");
     expect(conversationStudio).toContain("DOC_ONLY_INSTRUCTION");
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
@@ -1444,7 +1444,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("今天想做什么内容？");
     expect(conversationStart).toContain("从一句话开始，MultiMix 会带着你的素材一起创作");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
-    expect(conversationStart).toContain("支持拖入 PPT / 图片素材 · 只上传资料时，AI 会先问你要做什么");
+    expect(conversationStart).toContain("支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
     expect(globals).toContain(".shadcn-prototype-start-dock");
     expect(globals).toContain(".shadcn-prototype-start-sugg-grid");

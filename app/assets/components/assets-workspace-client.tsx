@@ -444,10 +444,10 @@ function resolveInitialView(initialView: ActiveView | undefined): ActiveView {
 }
 
 function uploadAcceptForView(view: ActiveView): string {
-  if (view === "copy") return ".txt,.md,.markdown,.pdf,.docx,.html,.htm";
+  if (view === "copy") return ".txt,.md,.markdown,.pdf,.html,.htm";
   if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
   if (view === "video") return ".mp4,.mov,.webm,.mkv";
-  return ".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm,.txt";
+  return ".md,.markdown,.pdf,.xlsx,.xlsm,.html,.htm,.txt";
 }
 
 function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
