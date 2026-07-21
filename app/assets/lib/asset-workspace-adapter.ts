@@ -2,6 +2,7 @@ import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
 import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
+  API_CONNECTION_ERROR,
   api,
   apiBlob,
   apiForm,
@@ -58,6 +59,55 @@ export type LibraryRow = {
   licenseLabel?: string;
   variant?: "digital-human" | "standard";
 };
+
+type UploadProgressCallback = (percent: number | null) => void;
+
+function uploadErrorMessage(payload: unknown, fallback: string): string {
+  if (isRecord(payload) && typeof payload.detail === "string") return payload.detail;
+  return fallback || "Request failed";
+}
+
+function uploadAssetWithProgress<T>(
+  path: string,
+  token: string | null,
+  formData: FormData,
+  onProgress: UploadProgressCallback,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+    const send = () => {
+      const request = new XMLHttpRequest();
+      request.open("POST", `${API_BASE}/v1${path}`);
+      if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
+      request.upload.onprogress = (event) => {
+        onProgress(event.lengthComputable && event.total > 0
+          ? Math.min(99, Math.round((event.loaded / event.total) * 100))
+          : null);
+      };
+      request.onerror = () => reject(new Error(API_CONNECTION_ERROR));
+      request.onload = () => {
+        let payload: unknown;
+        try {
+          payload = request.responseText ? JSON.parse(request.responseText) as unknown : undefined;
+        } catch {
+          payload = undefined;
+        }
+        if (request.status >= 200 && request.status < 300) {
+          resolve(payload as T);
+          return;
+        }
+        if ([502, 503, 504].includes(request.status) && attempt === 0) {
+          attempt += 1;
+          setTimeout(send, 300);
+          return;
+        }
+        reject(new Error(uploadErrorMessage(payload, request.statusText)));
+      };
+      request.send(formData);
+    };
+    send();
+  });
+}
 
 // Trimming variant on purpose: adapter-level strings feed UI labels directly.
 function stringValue(value: unknown): string {
@@ -258,7 +308,7 @@ export type AssetWorkspaceAdapter = {
     | { kind: "started"; job: VideoJobResult }
   >;
   listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
-  uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">): Promise<ContentAsset>;
+  uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">, onProgress?: UploadProgressCallback): Promise<ContentAsset>;
   createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   getLatestIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
@@ -1052,10 +1102,11 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         .map((asset) => contentAssetToLibraryRow(asset))
         .sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
     },
-    async uploadAsset(token, file, view) {
+    async uploadAsset(token, file, view, onProgress) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("target_kind", view === "assets" ? "asset" : view);
+      if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
     },
     async createTextAsset(token, payload) {

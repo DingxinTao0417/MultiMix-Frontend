@@ -1412,9 +1412,15 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
     expect(conversationStudio).toContain("IMAGE_UPLOAD_ACCEPT");
     expect(conversationStudio).toContain("SOURCE_UPLOAD_ACCEPT");
+    expect(conversationStudio).toContain(".mp4,.mov,.webm,.mkv");
+    expect(conversationStudio).toContain("chatAttachmentStatusLabel(attachment)");
+    expect(conversationStudio).toContain('role="progressbar"');
     expect(conversationStart).toContain("shadcn-prototype-start-dock-attach");
     expect(conversationStart).toContain("IMAGE_UPLOAD_ACCEPT");
     expect(conversationStart).toContain("SOURCE_UPLOAD_ACCEPT");
+    expect(conversationStart).toContain(".mp4,.mov,.webm,.mkv");
+    expect(conversationStart).toContain("chatAttachmentStatusLabel(attachment)");
+    expect(conversationStart).toContain('role="progressbar"');
     expect(conversationStudio).toContain(".pptx");
     expect(conversationStudio).toContain("DOC_ONLY_INSTRUCTION");
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
@@ -1426,6 +1432,7 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
     expect(globals).toContain(".shadcn-prototype-chat-drop-hint");
     expect(globals).toContain(".shadcn-prototype-chat-file-attachment-button");
+    expect(globals).toContain(".shadcn-prototype-chat-upload-progress");
   });
 
   it("renders the demo-final start hero and input dock", () => {

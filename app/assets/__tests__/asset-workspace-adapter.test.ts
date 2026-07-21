@@ -55,6 +55,62 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("reports actual multipart upload progress and returns the uploaded asset", async () => {
+    class FakeUploadRequest {
+      static instance: FakeUploadRequest | null = null;
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = JSON.stringify(asset({ id: 42 }));
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => {
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 } as ProgressEvent<EventTarget>);
+        this.onload?.();
+      });
+
+      constructor() {
+        FakeUploadRequest.instance = this;
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    const progress = vi.fn();
+
+    await expect(
+      assetWorkspaceAdapter.uploadAsset("token", new File(["image"], "cover.png", { type: "image/png" }), "image", progress),
+    ).resolves.toMatchObject({ id: 42 });
+
+    expect(progress).toHaveBeenCalledWith(25);
+    expect(FakeUploadRequest.instance?.open).toHaveBeenCalledWith("POST", expect.stringContaining("/v1/assets/upload"));
+    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith("Authorization", "Bearer token");
+    vi.unstubAllGlobals();
+  });
+
+  it("reports an indeterminate progress state when the browser cannot compute total bytes", async () => {
+    class FakeUploadRequest {
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = JSON.stringify(asset({ id: 43 }));
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => {
+        this.upload.onprogress?.({ lengthComputable: false, loaded: 25, total: 0 } as ProgressEvent<EventTarget>);
+        this.onload?.();
+      });
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    const progress = vi.fn();
+
+    await assetWorkspaceAdapter.uploadAsset("token", new File(["document"], "brief.pdf", { type: "application/pdf" }), "assets", progress);
+
+    expect(progress).toHaveBeenCalledWith(null);
+    vi.unstubAllGlobals();
+  });
+
   it("keeps a queued generation job in the send result", async () => {
     const now = "2026-07-17T06:00:00Z";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(

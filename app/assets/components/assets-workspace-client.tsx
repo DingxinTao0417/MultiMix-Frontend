@@ -26,6 +26,7 @@ import type { AgentRunStep } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
   runExclusiveConversationDelete,
+  chatAttachmentFileKind,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -447,10 +448,6 @@ function uploadAcceptForView(view: ActiveView): string {
   if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
   if (view === "video") return ".mp4,.mov,.webm,.mkv";
   return ".md,.markdown,.pdf,.xlsx,.xlsm,.docx,.pptx,.html,.htm,.txt";
-}
-
-function chatUploadFileKind(file: File): ChatImageUpload["fileKind"] {
-  return file.type.startsWith("image/") ? "image" : "source";
 }
 
 function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
@@ -1389,7 +1386,7 @@ export default function AssetsWorkspaceClient({
     }
     const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
     const currentUploads = chatImageUploads[targetConversationId] ?? [];
-    const imageCount = files.filter((file) => chatUploadFileKind(file) === "image").length;
+    const imageCount = files.filter((file) => chatAttachmentFileKind(file) === "image").length;
     const currentImageCount = currentUploads.filter((upload) => upload.fileKind === "image").length;
     if (currentImageCount + imageCount > 20) {
       toast.error("上传图片不能超过 20 张。");
@@ -1403,9 +1400,10 @@ export default function AssetsWorkspaceClient({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
       fileName: file.name,
-      fileKind: chatUploadFileKind(file),
+      fileKind: chatAttachmentFileKind(file),
       title: file.name,
       status: "uploading",
+      uploadProgress: 0,
       previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined
     }));
     setChatImageUploads((current) => ({
@@ -1422,7 +1420,19 @@ export default function AssetsWorkspaceClient({
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
     try {
-      const asset = await assetWorkspaceAdapter.uploadAsset(token, upload.file, upload.fileKind === "source" ? "assets" : "image");
+      const asset = await assetWorkspaceAdapter.uploadAsset(
+        token,
+        upload.file,
+        upload.fileKind === "source" ? "assets" : upload.fileKind,
+        (uploadProgress) => {
+          setChatImageUploads((current) => ({
+            ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) => (
+              item.id === upload.id ? { ...item, uploadProgress } : item
+            ))
+          }));
+        },
+      );
       setChatImageUploads((current) => ({
         ...current,
         [conversationId]: (current[conversationId] ?? []).map((item) =>
@@ -1432,6 +1442,7 @@ export default function AssetsWorkspaceClient({
               assetId: asset.id,
               title: asset.title || item.fileName,
               status: asset.status === "ready" ? "ready" : "processing",
+              uploadProgress: 100,
               error: undefined
             }
             : item
@@ -1462,7 +1473,7 @@ export default function AssetsWorkspaceClient({
     setChatImageUploads((current) => ({
       ...current,
       [selectedConversation.id]: (current[selectedConversation.id] ?? []).map((item) =>
-        item.id === attachmentId ? { ...item, status: "uploading", error: undefined } : item
+        item.id === attachmentId ? { ...item, status: "uploading", uploadProgress: 0, error: undefined } : item
       )
     }));
     void uploadChatImage(selectedConversation.id, upload);
@@ -1483,7 +1494,7 @@ export default function AssetsWorkspaceClient({
 
   const sourceAttachmentAssets = (conversationId: string): ConversationContextAsset[] => (
     (chatImageUploads[conversationId] ?? [])
-      .filter((upload) => upload.fileKind === "source" && upload.status === "ready" && upload.assetId)
+      .filter((upload) => (upload.fileKind === "source" || upload.fileKind === "video") && upload.status === "ready" && upload.assetId)
       .map((upload) => ({ id: upload.assetId!, title: upload.title || upload.fileName }))
   );
 

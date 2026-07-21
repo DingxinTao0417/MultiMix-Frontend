@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, getConversationProducts, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
@@ -39,14 +39,15 @@ export type ChatImageAttachment = {
   id: string;
   fileName: string;
   title: string;
-  status: "uploading" | "processing" | "ready" | "failed";
-  fileKind: "image" | "source";
+  status: ChatAttachmentStatus;
+  fileKind: ChatAttachmentFileKind;
+  uploadProgress?: number | null;
   assetId?: number;
   previewUrl?: string;
   error?: string;
 };
 
-const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp";
+const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,.mp4,.mov,.webm,.mkv";
 const SOURCE_UPLOAD_ACCEPT = ".pptx,.pdf,.docx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
@@ -208,7 +209,7 @@ export default function ConversationStudio({
   const activeRequestRef = useRef<ActiveRequest | null>(null);
   const selectedConversationIdRef = useRef(selectedConversation.id);
   selectedConversationIdRef.current = selectedConversation.id;
-  const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
+  const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
 
   const conversationMessages = useMemo<VisibleConversationMessage[]>(() => {
@@ -633,7 +634,19 @@ export default function ConversationStudio({
                   {attachment.previewUrl ? <img src={attachment.previewUrl} alt="" /> : <span className="shadcn-prototype-chat-attachment-fallback"><FileText size={14} aria-hidden="true" /></span>}
                   <div>
                     <strong title={attachment.title || attachment.fileName}>{attachment.title || attachment.fileName}</strong>
-                    <em>{attachment.status === "ready" ? (attachment.fileKind === "image" ? "已识别" : "已入库") : attachment.status === "failed" ? attachment.error ?? "上传失败" : attachment.status === "processing" ? "解析中" : "上传中"}</em>
+                    <em aria-live="polite">{chatAttachmentStatusLabel(attachment)}</em>
+                    {attachment.status === "uploading" ? (
+                      <span
+                        className={typeof attachment.uploadProgress === "number" ? "shadcn-prototype-chat-upload-progress" : "shadcn-prototype-chat-upload-progress indeterminate"}
+                        role="progressbar"
+                        aria-label={`${attachment.fileName} 上传进度`}
+                        {...(typeof attachment.uploadProgress === "number"
+                          ? { "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": attachment.uploadProgress }
+                          : {})}
+                      >
+                        <span style={typeof attachment.uploadProgress === "number" ? { width: `${attachment.uploadProgress}%` } : undefined} />
+                      </span>
+                    ) : null}
                   </div>
                   {attachment.status === "failed" ? (
                     <button type="button" onClick={() => onRetryImageAttachment?.(attachment.id)}>重试</button>
@@ -655,8 +668,8 @@ export default function ConversationStudio({
           <button
             className="shadcn-prototype-chat-attachment-button shadcn-prototype-chat-image-attachment-button"
             type="button"
-            aria-label="上传图片素材"
-            title="上传图片素材"
+            aria-label="上传图片或视频素材"
+            title="上传图片或视频素材"
             disabled={!canSend || !onUploadImages}
             onClick={() => imageInputRef.current?.click()}
           >

@@ -93,9 +93,29 @@ export function getProductRatioClass(ratio: string) {
 // Minimal shape of a chat composer attachment, mirrored from ChatImageAttachment
 // in conversation-studio.tsx. Kept local so both composers can share the send
 // guard without a component <-> lib import cycle.
+export type ChatAttachmentStatus = "uploading" | "processing" | "ready" | "failed";
+export type ChatAttachmentFileKind = "image" | "video" | "source";
+
 type AttachmentState = {
-  status: "uploading" | "processing" | "ready" | "failed";
+  status: ChatAttachmentStatus;
 };
+
+export function chatAttachmentFileKind(file: Pick<File, "name" | "type">): ChatAttachmentFileKind {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/") || /\.(mp4|mov|webm|mkv)$/i.test(file.name)) return "video";
+  return "source";
+}
+
+export function chatAttachmentStatusLabel(attachment: Pick<AttachmentState, "status"> & {
+  uploadProgress?: number | null;
+  error?: string;
+}): string {
+  if (attachment.status === "failed") return attachment.error || "上传失败";
+  if (attachment.status === "uploading") {
+    return typeof attachment.uploadProgress === "number" ? `上传中 ${attachment.uploadProgress}%` : "上传中";
+  }
+  return "上传完成";
+}
 
 // Whether the composer should refuse to send because attachments are not yet
 // usable. An upload that failed (e.g. storage timeout) or is still in flight has
@@ -108,7 +128,7 @@ export function attachmentSendBlockReason(attachments: readonly AttachmentState[
     return "有素材上传失败，请点“重试”或移除后再发送。";
   }
   if (attachments.some((attachment) => attachment.status === "uploading" || attachment.status === "processing")) {
-    return "素材还在上传/解析中，等它就绪后再发送，AI 才能基于它创作。";
+    return "资料正在准备，暂不可发送。";
   }
   return null;
 }

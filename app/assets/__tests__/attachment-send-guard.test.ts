@@ -22,8 +22,8 @@ describe("attachmentSendBlockReason", () => {
   });
 
   it("blocks sending while an upload is still in flight", () => {
-    expect(attachmentSendBlockReason([{ status: "uploading" }])).toContain("上传/解析中");
-    expect(attachmentSendBlockReason([{ status: "processing" }])).toContain("上传/解析中");
+    expect(attachmentSendBlockReason([{ status: "uploading" }])).toBe("资料正在准备，暂不可发送。");
+    expect(attachmentSendBlockReason([{ status: "processing" }])).toBe("资料正在准备，暂不可发送。");
   });
 
   it("prioritises the failure message over the in-flight message", () => {
