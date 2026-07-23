@@ -25,6 +25,7 @@ function git(repo, args, options = {}) {
     cwd: repo,
     encoding: options.encoding ?? "buffer",
     stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
   });
 }
 
