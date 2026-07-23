@@ -33,6 +33,12 @@ function overlapsInTime(left: BackendElement, right: BackendElement): boolean {
   );
 }
 
+function isSubtitleElement(trackId: string, element: BackendElement): boolean {
+  return element.textRole
+    ? element.textRole === "subtitle"
+    : trackId === "track-text";
+}
+
 export function inspectEditorProject(project: BackendProject): VideoQualityReport {
   const blockers: VideoQualityIssue[] = [];
   const duration = Number(project.metadata.duration || 0);
@@ -86,10 +92,14 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
           "material",
         ));
       }
-      if (element.type === "text" && String(element.content || "").split("\n").length > 2) {
+      if (
+        element.type === "text"
+        && isSubtitleElement(track.id, element)
+        && String(element.content || "").split("\n").length > 2
+      ) {
         blockers.push(issue(
           "subtitle_too_many_lines",
-          "当前字幕超过两行，可能越出竖屏安全区。",
+          "当前字幕超过两行，可能遮挡主画面或越出安全区。",
           element,
           "subtitle",
         ));
@@ -99,7 +109,7 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
 
   const subtitles = project.tracks
     .filter((track) => track.type === "text")
-    .flatMap((track) => track.elements)
+    .flatMap((track) => track.elements.filter((element) => isSubtitleElement(track.id, element)))
     .filter((element) => Boolean(element.safeRegion));
   const overlays = project.tracks
     .filter((track) => track.type === "video" && track.overlay)

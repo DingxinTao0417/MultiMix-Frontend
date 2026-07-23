@@ -12,7 +12,7 @@ const catalog = {
     enabled: true,
     catalog_id: "bgm-tech-01",
     alternate_ids: ["bgm-fun-01"],
-    selection_reason: "科技感与产品演示节奏匹配。",
+    selection_reason: "当前阶段按视频工程稳定随机选择，尚未执行语义匹配。",
     alternate_reasons: { "bgm-fun-01": "更轻松的备选。" },
     catalog_version: "v1",
     selected_by: "auto",
@@ -29,7 +29,7 @@ const catalog = {
       mood_tags: ["现代", "清晰"],
       duration_seconds: 32,
       preview_url: "https://preview.test/tech",
-      match_reason: "科技感与产品演示节奏匹配。",
+      match_reason: "当前阶段按视频工程稳定随机选择，尚未执行语义匹配。",
     },
     {
       id: "bgm-fun-01",
@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 describe("BgmPanel", () => {
-  it("shows the current AI choice and all six music categories", async () => {
+  it("shows the current automatic choice and all six music categories", async () => {
     render(
       <BgmPanel
         assetId="12"
@@ -84,7 +84,7 @@ describe("BgmPanel", () => {
 
     expect(await screen.findByText("背景音乐")).toBeInTheDocument();
     for (const label of [
-      "AI 推荐",
+      "自动配乐",
       "全部音乐",
       "商务稳重",
       "轻快活力",
@@ -95,8 +95,9 @@ describe("BgmPanel", () => {
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
+    expect(screen.getByText("已自动配乐")).toBeInTheDocument();
     expect(screen.getByText("科技脉冲")).toHaveAttribute("data-current", "true");
-    expect(screen.getByText("科技感与产品演示节奏匹配。")).toBeInTheDocument();
+    expect(screen.getByText("当前阶段按视频工程稳定随机选择，尚未执行语义匹配。")).toBeInTheDocument();
     expect(screen.getByText(/CC0/)).toBeInTheDocument();
   });
 
@@ -142,7 +143,7 @@ describe("BgmPanel", () => {
       expect.stringContaining("/bgm"),
       expect.objectContaining({ method: "PUT", body: expect.stringContaining('"action":"disable"') }),
     ));
-    fireEvent.click(screen.getByRole("button", { name: "恢复 AI 推荐" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复自动配乐" }));
     await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
       expect.stringContaining("/bgm"),
       expect.objectContaining({ method: "PUT", body: expect.stringContaining('"action":"restore_auto"') }),

@@ -71,6 +71,16 @@ function findFreePort() {
   });
 }
 
+function configuredPort(name) {
+  const raw = process.env[name];
+  if (!raw) return null;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 || FORBIDDEN_PORTS.has(port)) {
+    throw new Error(`${name} must be an allowed TCP port between 1024 and 65535`);
+  }
+  return port;
+}
+
 function startProcess(command, args, cwd, env, logName) {
   const started = startLogged(command, args, {
     cwd,
@@ -132,9 +142,13 @@ const snapshots = snapshotFiles([
 ]);
 
 try {
-  const backendPort = await findFreePort();
-  const frontendPort = await findFreePort();
-  if (FORBIDDEN_PORTS.has(backendPort) || FORBIDDEN_PORTS.has(frontendPort)) {
+  const backendPort = configuredPort("BGM_E2E_BACKEND_PORT") ?? await findFreePort();
+  const frontendPort = configuredPort("BGM_E2E_FRONTEND_PORT") ?? await findFreePort();
+  if (
+    backendPort === frontendPort
+    || FORBIDDEN_PORTS.has(backendPort)
+    || FORBIDDEN_PORTS.has(frontendPort)
+  ) {
     throw new Error("BGM E2E selected a protected development port");
   }
   console.log(`Video BGM E2E temporary SQLite: ${databasePath}`);
@@ -170,9 +184,9 @@ try {
     CHANGEIN_MODULES_MONITORING_ENABLED: "false",
     CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
-    CHANGEIN_VIDEO_BGM_ENABLED: "true",
     CHANGEIN_VIDEO_BGM_MANIFEST_REF: "local://bgm/catalog/v1/manifest.json",
   };
+  delete backendEnv.CHANGEIN_VIDEO_BGM_ENABLED;
   const seed = await run(
     pythonCommand,
     ["-m", "tools.seed_video_bgm_e2e", "--database-url", databaseUrl, "--artifact-dir", artifactDir],

@@ -112,4 +112,73 @@ describe('BGM editor round-trip', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://signed.example.test/bgm-tech-01');
     expect(editorMock.media.setAssets).toHaveBeenCalled();
   });
+
+  it('preserves split decisions and support text roles across save and reload', () => {
+    const support = {
+      headline: '从对话直接进入分镜编辑',
+      items: ['保留可编辑结构', '同步视频预览'],
+    };
+    const backend: BackendProject = {
+      metadata: { title: 'Product split', duration: 5 },
+      settings: { fps: 30, width: 1920, height: 1080 },
+      media: [{
+        id: 'media-ui',
+        type: 'image',
+        file_path: 'local://product/ui.png',
+        name: 'ui.png',
+      }],
+      tracks: [
+        {
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'ui-main',
+            type: 'image',
+            startTime: 0,
+            duration: 5,
+            mediaId: 'media-ui',
+            segmentId: 'scene-1',
+            editDecision: { layout: 'split', presentation_support: support },
+          }],
+        },
+        {
+          id: 'track-support',
+          type: 'text',
+          name: '支撑信息',
+          elements: [{
+            id: 'support-1',
+            type: 'text',
+            content: '从对话直接进入分镜编辑\n• 保留可编辑结构\n• 同步视频预览',
+            startTime: 0,
+            duration: 5,
+            segmentId: 'scene-1',
+            textRole: 'presentation_support',
+          }],
+        },
+      ],
+    };
+    const { project, assets } = buildProject(backend);
+    rememberRawProject(backend as unknown as Record<string, unknown>);
+    editorMock.project.getActive.mockReturnValue(project);
+    editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+    editorMock.media.getAssets.mockReturnValue(assets);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    expect(serialized.tracks[0].elements[0].editDecision).toEqual({
+      layout: 'split',
+      presentation_support: support,
+    });
+    expect(serialized.tracks[1].elements[0].textRole).toBe('presentation_support');
+
+    const rebuilt = buildProject(serialized).project;
+    expect(rebuilt.scenes[0].tracks[0].elements[0].transform).toMatchObject({
+      scaleX: 0.62,
+      scaleY: 0.62,
+    });
+    expect(rebuilt.scenes[0].tracks[1].elements[0]).toMatchObject({
+      background: { enabled: true, color: '#171b26' },
+      textAlign: 'left',
+    });
+  });
 });

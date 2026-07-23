@@ -13,9 +13,16 @@ test("video BGM E2E runner isolates storage, ports, and cleanup", () => {
   assert.match(source, /multimix-video-bgm-.*\.sqlite3/);
   assert.match(source, /multimix-video-bgm-artifacts-/);
   assert.match(source, /CHANGEIN_DATABASE_URL/);
-  assert.match(source, /CHANGEIN_VIDEO_BGM_ENABLED:\s*"true"/);
+  assert.doesNotMatch(source, /CHANGEIN_VIDEO_BGM_ENABLED:\s*"true"/);
+  assert.match(source, /delete backendEnv\.CHANGEIN_VIDEO_BGM_ENABLED/);
+  assert.doesNotMatch(
+    source,
+    /backendEnv\.CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID\s*=\s*seedData\.default_track_id/,
+  );
   assert.match(source, /CHANGEIN_SUPABASE_URL:\s*""/);
   assert.match(source, /findFreePort/);
+  assert.match(source, /BGM_E2E_BACKEND_PORT/);
+  assert.match(source, /BGM_E2E_FRONTEND_PORT/);
   assert.match(source, /FORBIDDEN_PORTS/);
   assert.match(source, /8199/);
   assert.match(source, /3117/);
@@ -36,6 +43,7 @@ test("video BGM E2E covers default, change, refresh, and both gain modes", () =>
   assert.match(source, /page\.reload/);
   assert.match(source, /0\.18/);
   assert.match(source, /0\.5/);
+  assert.match(source, /assertDuckingEnvelope/);
   assert.match(source, /ffprobe/);
 });
 
@@ -48,6 +56,14 @@ test("video BGM E2E seed creates an authoritative completed main render job", ()
   assert.doesNotMatch(source, /adapter="local_e2e"/);
   assert.match(source, /status="completed"/);
   assert.match(source, /render_stage="done"/);
+  assert.match(source, /"brand_tones"/);
+  assert.match(source, /"narrative_fit"/);
+  assert.match(source, /"speech_density_fit"/);
+  assert.match(source, /"music_intent"/);
+  assert.match(source, /"narrative_energy_curve"/);
+  assert.match(source, /from app\.services\.video_bgm\.selection import select_bgm/);
+  assert.match(source, /selection_seed=str\(asset\.id\)/);
+  assert.doesNotMatch(source, /BGMSelection\(/);
   assert.match(source, /local:\/\/video-orchestration\/e2e\/background\.png/);
   assert.doesNotMatch(source, /local:\/\/e2e\//);
 });

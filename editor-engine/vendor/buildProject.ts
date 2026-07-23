@@ -26,6 +26,15 @@ export interface BackendMedia {
   hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
 export type SafeRegion = { x: number; y: number; width: number; height: number };
+export interface BackendPresentationSupport {
+  headline: string;
+  items: string[];
+}
+export interface BackendEditDecision {
+  layout?: string;
+  presentation_support?: BackendPresentationSupport;
+  [key: string]: unknown;
+}
 
 export interface BackendElement {
   id: string;
@@ -46,6 +55,8 @@ export interface BackendElement {
   volume?: number;
   volumeUnit?: "db" | "linear";
   animations?: ElementAnimations;
+  editDecision?: BackendEditDecision;
+  textRole?: "subtitle" | "presentation_support";
 }
 export interface BackendTrack {
   id: string;
@@ -90,10 +101,10 @@ export interface SubtitleStyle {
 export const defaultSubtitleStyle: SubtitleStyle = {
   fontFamily: "sans-serif",
   color: "#ffffff",
-  // Caption readability comes from the white type treatment and its existing
-  // shadow/outline controls. A dark carrier obscures the visual content.
-  bgEnabled: false,
-  bgColor: "#00000000",
+  // A compact carrier keeps the caption readable over light UI, dark footage,
+  // and moving media without occupying a full-width subtitle band.
+  bgEnabled: true,
+  bgColor: "#111827b8",
   maxLineChars: 24,
   sizeScale: 0.8,
   bottomOffset: 0.34,
@@ -104,31 +115,90 @@ let subtitleStyle: SubtitleStyle = { ...defaultSubtitleStyle };
 export function setSubtitleStyle(s: SubtitleStyle) { subtitleStyle = s; }
 export function getSubtitleStyle(): SubtitleStyle { return subtitleStyle; }
 
-// Hard-wrap a caption into lines of at most maxChars, breaking preferably at
-// punctuation, joining lines with "\n" (the only break OpenCut honors).
-function wrapCaption(text: string, maxChars: number): string {
-  const t = (text || "").trim();
-  if (!t) return "";
-  const lines: string[] = [];
-  for (const sourceLine of t.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)) {
-    let cur = "";
-    const tokens = sourceLine.match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*|./gu) ?? [];
-    for (const token of tokens) {
-      if (cur && cur.length + token.length > maxChars) {
-        lines.push(cur.trimEnd());
-        cur = token.trimStart();
-      } else {
-        cur += token;
-      }
-      const atPunct = "，。！？；、,.!?;".includes(token);
-      if (atPunct && cur.length >= maxChars * 0.6) {
-        lines.push(cur);
-        cur = "";
-      }
+type CaptionMeasure = (text: string, fontPx: number) => number;
+
+export interface CaptionLayoutOptions {
+  availableWidth: number;
+  preferredFontPx: number;
+  minimumFontPx: number;
+  fontFamily?: string;
+  measureText?: CaptionMeasure;
+}
+
+export interface CaptionLayout {
+  text: string;
+  lines: 0 | 1 | 2;
+  fontPx: number;
+}
+
+function fallbackTextWidth(text: string, fontPx: number): number {
+  return Array.from(text).reduce((width, character) => {
+    if (/\s/u.test(character)) return width + fontPx * 0.32;
+    if (/[\u0000-\u00ff]/u.test(character)) return width + fontPx * 0.58;
+    return width + fontPx;
+  }, 0);
+}
+
+function browserTextWidth(fontFamily: string): CaptionMeasure {
+  let context: OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null = null;
+  try {
+    if (typeof OffscreenCanvas !== "undefined") {
+      context = new OffscreenCanvas(1, 1).getContext("2d");
+    } else if (typeof document !== "undefined") {
+      context = document.createElement("canvas").getContext("2d");
     }
-    if (cur) lines.push(cur);
+  } catch {
+    context = null;
   }
-  return lines.join("\n");
+  if (!context) return fallbackTextWidth;
+  return (text, fontPx) => {
+    context.font = `700 ${fontPx}px ${fontFamily}`;
+    return context.measureText(text).width;
+  };
+}
+
+function captionTokens(text: string): string[] {
+  return text.match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*|./gu) ?? [];
+}
+
+function bestTwoLineSplit(text: string, fontPx: number, measure: CaptionMeasure): string | null {
+  const tokens = captionTokens(text);
+  if (tokens.length < 2) return null;
+  let best: { text: string; widest: number } | null = null;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const left = tokens.slice(0, index).join("").trim();
+    const right = tokens.slice(index).join("").trim();
+    if (!left || !right) continue;
+    const widest = Math.max(measure(left, fontPx), measure(right, fontPx));
+    if (!best || widest < best.widest) best = { text: `${left}\n${right}`, widest };
+  }
+  return best?.text ?? null;
+}
+
+export function layoutCaption(text: string, options: CaptionLayoutOptions): CaptionLayout {
+  const compact = (text || "").trim();
+  if (!compact) return { text: "", lines: 0, fontPx: options.preferredFontPx };
+  const preferred = Math.max(options.minimumFontPx, options.preferredFontPx);
+  const minimum = Math.min(preferred, options.minimumFontPx);
+  const measure = options.measureText ?? browserTextWidth(options.fontFamily ?? "sans-serif");
+  const hardLines = compact.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (hardLines.length > 1) {
+    const preserved = hardLines.slice(0, 2).join("\n");
+    const widest = Math.max(...hardLines.slice(0, 2).map((line) => measure(line, preferred)));
+    const fitted = Math.max(minimum, Math.min(preferred, preferred * options.availableWidth / Math.max(1, widest)));
+    return { text: preserved, lines: Math.min(2, hardLines.length) as 1 | 2, fontPx: fitted };
+  }
+
+  const preferredWidth = measure(compact, preferred);
+  if (preferredWidth <= options.availableWidth) {
+    return { text: compact, lines: 1, fontPx: preferred };
+  }
+  const fitted = Math.max(minimum, preferred * options.availableWidth / preferredWidth);
+  if (measure(compact, fitted) <= options.availableWidth) {
+    return { text: compact, lines: 1, fontPx: fitted };
+  }
+  const split = bestTwoLineSplit(compact, minimum, measure);
+  return { text: split ?? compact, lines: split ? 2 : 1, fontPx: minimum };
 }
 
 // Side map: element id -> segment text (OpenCut element type has no such field).
@@ -170,6 +240,90 @@ export const segmentIdByElementId: Record<string, string> = {};
 export const safeRegionByElementId: Record<string, SafeRegion> = {};
 export const displayTextByElementId: Record<string, string> = {};
 export const focusTextByElementId: Record<string, string> = {};
+export const editDecisionByElementId: Record<string, BackendEditDecision> = {};
+export const textRoleByElementId: Record<string, NonNullable<BackendElement["textRole"]>> = {};
+
+function validatedSplitSupport(
+  decision: BackendEditDecision | undefined,
+): BackendPresentationSupport | null {
+  if (!decision || decision.layout !== "split") return null;
+  const support = decision.presentation_support;
+  if (!support || typeof support.headline !== "string" || !support.headline.trim()) {
+    return null;
+  }
+  if (
+    !Array.isArray(support.items)
+    || support.items.length < 1
+    || support.items.length > 3
+    || support.items.some((item) => typeof item !== "string" || !item.trim())
+  ) {
+    return null;
+  }
+  return support;
+}
+
+function mediaTransformForDecision(
+  decision: BackendEditDecision | undefined,
+  canvasWidth: number,
+) {
+  if (!validatedSplitSupport(decision)) return { ...IDENTITY_TRANSFORM };
+  return {
+    scaleX: 0.62,
+    scaleY: 0.62,
+    position: { x: -Math.round(canvasWidth * 0.18), y: 0 },
+    rotate: 0,
+  };
+}
+
+function supportCardTextElement(
+  element: BackendElement,
+  settings: BackendProject["settings"],
+): TextElement {
+  const content = (element.content || "").trim();
+  const lines = content.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  const preferredFontPx = Math.min(42, Math.max(30, settings.height * 0.038));
+  const minimumFontPx = Math.min(preferredFontPx, Math.max(24, preferredFontPx * 0.72));
+  const measure = browserTextWidth(subtitleStyle.fontFamily);
+  const widest = Math.max(
+    1,
+    ...lines.map((line) => measure(line, preferredFontPx)),
+  );
+  const availableWidth = settings.width * 0.27;
+  const fontPx = Math.max(
+    minimumFontPx,
+    Math.min(preferredFontPx, preferredFontPx * availableWidth / widest),
+  );
+  return {
+    id: element.id,
+    name: element.name || "支撑信息",
+    type: "text",
+    content: lines.join("\n"),
+    duration: element.duration,
+    startTime: element.startTime,
+    trimStart: element.trimStart ?? 0,
+    trimEnd: element.trimEnd ?? 0,
+    fontSize: Math.max(2, (fontPx * 90) / settings.height),
+    fontFamily: subtitleStyle.fontFamily,
+    color: "#f8fafc",
+    background: {
+      enabled: true,
+      color: "#171b26",
+      cornerRadius: 18,
+      paddingX: Math.round(settings.width * 0.015),
+      paddingY: Math.round(settings.height * 0.08),
+    },
+    textAlign: "left",
+    fontWeight: "bold",
+    fontStyle: "normal",
+    textDecoration: "none",
+    lineHeight: 1.45,
+    transform: {
+      ...IDENTITY_TRANSFORM,
+      position: { x: Math.round(settings.width * 0.17), y: 0 },
+    },
+    opacity: 1,
+  };
+}
 
 // A placeholder File to satisfy the MediaAsset type; rendering reads `url`, not bytes.
 function placeholderFile(name: string): File {
@@ -246,6 +400,8 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       if (e.safeRegion) safeRegionByElementId[e.id] = e.safeRegion;
       if (e.displayText) displayTextByElementId[e.id] = e.displayText;
       if (e.focusText) focusTextByElementId[e.id] = e.focusText;
+      if (e.editDecision) editDecisionByElementId[e.id] = e.editDecision;
+      if (e.textRole) textRoleByElementId[e.id] = e.textRole;
     }
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
@@ -257,7 +413,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           startTime: e.startTime,
           trimStart: e.trimStart ?? 0,
           trimEnd: e.trimEnd ?? 0,
-          transform: { ...IDENTITY_TRANSFORM },
+          transform: mediaTransformForDecision(e.editDecision, bp.settings.width),
           opacity: 1,
         };
         if (e.type === "image") {
@@ -296,19 +452,29 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       // breaks lines on "\n" (no auto-wrap). So we pick a per-line char budget,
       // hard-wrap the sentence into lines, and size the font to that budget.
       const style = subtitleStyle;
-      const maxLineChars = style.maxLineChars;
-      const targetPx = (bp.settings.width * 0.9) / maxLineChars;
-      const fontSize = Math.max(2, (targetPx * 90) / bp.settings.height) * style.sizeScale;
-      const elements = sourceElements.map((e): TextElement => ({
+      const preferredFontPx = Math.min(56, Math.max(42, bp.settings.height * 0.05)) * style.sizeScale;
+      const minimumFontPx = Math.min(preferredFontPx, Math.max(34, preferredFontPx * 0.78));
+      const elements = sourceElements.map((e): TextElement => {
+        if (e.textRole === "presentation_support") {
+          return supportCardTextElement(e, bp.settings);
+        }
+        const availableWidth = bp.settings.width * (e.safeRegion?.width ?? 0.84);
+        const caption = layoutCaption(e.content || "", {
+          availableWidth,
+          preferredFontPx,
+          minimumFontPx,
+          fontFamily: style.fontFamily,
+        });
+        return ({
         id: e.id,
         name: e.name || "text",
         type: "text",
-        content: wrapCaption(e.content || "", maxLineChars),
+        content: caption.text,
         duration: e.duration,
         startTime: e.startTime,
         trimStart: e.trimStart ?? 0,
         trimEnd: e.trimEnd ?? 0,
-        fontSize,
+        fontSize: Math.max(2, (caption.fontPx * 90) / bp.settings.height),
         fontFamily: style.fontFamily,
         color: style.color,
         background: style.bgEnabled
@@ -320,7 +486,8 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         textDecoration: "none",
         transform: { ...IDENTITY_TRANSFORM, position: { x: 0, y: Math.round(bp.settings.height * style.bottomOffset) } },
         opacity: 1,
-      }));
+      });
+      });
       tracks.push({ id: t.id, name: t.name, type: "text", elements, hidden: false });
     }
   }
@@ -335,6 +502,8 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     safeRegionByElementId,
     displayTextByElementId,
     focusTextByElementId,
+    editDecisionByElementId,
+    textRoleByElementId,
   ]) {
     for (const key of Object.keys(map)) delete map[key];
   }

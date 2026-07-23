@@ -9,14 +9,32 @@ type Seed = {
   password: string;
   narrated_asset_id: number;
   no_narration_asset_id: number;
-  default_track_id: string;
-  alternate_track_id: string;
+  narrated_default_track_id: string;
+  narrated_default_title: string;
+  narrated_default_frequency: number;
+  narrated_alternate_track_id: string;
+  narrated_alternate_title: string;
+  narrated_alternate_frequency: number;
+  no_narration_default_track_id: string;
+  no_narration_default_title: string;
+  no_narration_default_frequency: number;
 };
 
 type ProjectResponse = {
   project: {
-    metadata: { bgm_choice?: { catalog_id?: string; selected_by?: string } };
-    tracks: Array<{ id: string; elements: Array<{ volume?: number }> }>;
+    metadata: { bgm_choice?: { catalog_id?: string; selected_by?: string; enabled?: boolean } };
+    tracks: Array<{
+      id: string;
+      elements: Array<{
+        startTime?: number;
+        volume?: number;
+        animations?: {
+          channels?: {
+            volume?: { keyframes?: Array<{ time?: number; value?: number }> };
+          };
+        };
+      }>;
+    }>;
   };
 };
 
@@ -51,6 +69,27 @@ function assertStaticGain(project: ProjectResponse, expected: number) {
   const bgm = project.project.tracks.find((track) => track.id === "track-bgm");
   expect(bgm, "project must contain a BGM track").toBeTruthy();
   expect(new Set(bgm?.elements.map((element) => element.volume))).toEqual(new Set([expected]));
+}
+
+function assertDuckingEnvelope(project: ProjectResponse) {
+  const bgm = project.project.tracks.find((track) => track.id === "track-bgm");
+  expect(bgm, "project must contain a BGM track").toBeTruthy();
+  const points = (bgm?.elements ?? []).flatMap((element) => (
+    element.animations?.channels?.volume?.keyframes ?? []
+  ).map((keyframe) => ({
+    time: (element.startTime ?? 0) + (keyframe.time ?? 0),
+    value: keyframe.value ?? -1,
+  })));
+  const valueAt = (time: number) => {
+    const point = points.find((candidate) => Math.abs(candidate.time - time) < 0.002);
+    expect(point, `missing BGM envelope point at ${time}s`).toBeTruthy();
+    return point?.value ?? -1;
+  };
+  const ducked = 0.18 * (10 ** (-6 / 20));
+  expect(valueAt(4.8)).toBeCloseTo(0.18, 5);
+  expect(valueAt(5)).toBeCloseTo(ducked, 5);
+  expect(valueAt(20)).toBeCloseTo(ducked, 5);
+  expect(valueAt(20.5)).toBeCloseTo(0.18, 5);
 }
 
 async function exportProject(page: Page, fileName: string): Promise<string> {
@@ -108,24 +147,36 @@ test("default BGM survives change, refresh, export, and restore_auto", async ({ 
   await expect(bgmPanel).toBeVisible({
     timeout: 180_000,
   });
-  await expect(bgmPanel.getByText("Modern Pulse", { exact: true })).toHaveAttribute("data-current", "true");
-  assertStaticGain(await readProject(page, seed.narrated_asset_id, token), 0.18);
+  await expect(bgmPanel.getByText("已自动配乐", { exact: true })).toBeVisible();
+  await expect(bgmPanel.getByRole("button", { name: "恢复自动配乐", exact: true })).toBeVisible();
+  await expect(bgmPanel.getByText(seed.narrated_default_title, { exact: true })).toHaveAttribute("data-current", "true");
+  const initial = await readProject(page, seed.narrated_asset_id, token);
+  expect(initial.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_default_track_id);
+  assertStaticGain(initial, 0.18);
+  assertDuckingEnvelope(initial);
 
   await page.getByRole("button", { name: "全部音乐", exact: true }).click();
-  await page.getByRole("button", { name: "选择 Warm Circuit", exact: true }).click();
+  await page.getByRole("button", { name: `选择 ${seed.narrated_alternate_title}`, exact: true }).click();
   await expect(page.getByText("背景音乐已更新。", { exact: true })).toBeVisible();
-  await expect(bgmPanel.getByText("Warm Circuit", { exact: true })).toHaveAttribute("data-current", "true");
+  await expect(bgmPanel.getByText(seed.narrated_alternate_title, { exact: true })).toHaveAttribute("data-current", "true");
   await page.reload();
   await expect(bgmPanel).toBeVisible({
     timeout: 180_000,
   });
   await page.getByRole("button", { name: "全部音乐", exact: true }).click();
-  await expect(bgmPanel.getByText("Warm Circuit", { exact: true })).toHaveAttribute("data-current", "true");
+  await expect(bgmPanel.getByText(seed.narrated_alternate_title, { exact: true })).toHaveAttribute("data-current", "true");
   const changed = await readProject(page, seed.narrated_asset_id, token);
-  expect(changed.project.metadata.bgm_choice?.catalog_id).toBe(seed.alternate_track_id);
+  expect(changed.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_alternate_track_id);
   assertStaticGain(changed, 0.18);
+  assertDuckingEnvelope(changed);
 
-  probeExport(await exportProject(page, "narrated-warm-circuit.mp4"), 660);
+  probeExport(await exportProject(page, "narrated-manual-bgm.mp4"), seed.narrated_alternate_frequency);
+
+  await bgmPanel.getByRole("button", { name: "无配乐", exact: true }).click();
+  await expect(page.getByText("已关闭背景音乐。", { exact: true })).toBeVisible();
+  const disabled = await readProject(page, seed.narrated_asset_id, token);
+  expect(disabled.project.metadata.bgm_choice?.enabled).toBe(false);
+  expect(disabled.project.tracks.some((track) => track.id === "track-bgm")).toBe(false);
 
   if (!backendUrl) throw new Error("BGM_E2E_BACKEND_URL is missing");
   const restore = await page.request.put(
@@ -136,10 +187,14 @@ test("default BGM survives change, refresh, export, and restore_auto", async ({ 
     },
   );
   expect(restore.ok(), `restore_auto failed: ${restore.status()}`).toBe(true);
+  const restoredBody = await restore.json() as { choice?: { catalog_id?: string } };
+  expect(restoredBody.choice?.catalog_id).toBe(seed.narrated_default_track_id);
   await page.reload();
-  await expect(bgmPanel.getByText("Modern Pulse", { exact: true })).toHaveAttribute("data-current", "true");
+  await expect(bgmPanel.getByText("已自动配乐", { exact: true })).toBeVisible();
+  await expect(bgmPanel.getByText(seed.narrated_default_title, { exact: true })).toHaveAttribute("data-current", "true");
   const restored = await readProject(page, seed.narrated_asset_id, token);
   expect(restored.project.metadata.bgm_choice?.selected_by).toBe("auto");
+  expect(restored.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_default_track_id);
 });
 
 test("no-narration project keeps static 0.5 BGM gain in MP4 export", async ({ page }) => {
@@ -147,9 +202,13 @@ test("no-narration project keeps static 0.5 BGM gain in MP4 export", async ({ pa
   if (!seed) throw new Error("BGM_E2E_SEED is missing");
   const token = await authenticate(page);
   await page.goto(`/editor?asset=${seed.no_narration_asset_id}`);
-  await expect(page.getByRole("complementary", { name: "背景音乐", exact: true })).toBeVisible({
+  const bgmPanel = page.getByRole("complementary", { name: "背景音乐", exact: true });
+  await expect(bgmPanel).toBeVisible({
     timeout: 180_000,
   });
-  assertStaticGain(await readProject(page, seed.no_narration_asset_id, token), 0.5);
-  probeExport(await exportProject(page, "no-narration-modern-pulse.mp4"), 440);
+  const project = await readProject(page, seed.no_narration_asset_id, token);
+  expect(project.project.metadata.bgm_choice?.catalog_id).toBe(seed.no_narration_default_track_id);
+  await expect(bgmPanel.getByText(seed.no_narration_default_title, { exact: true })).toHaveAttribute("data-current", "true");
+  assertStaticGain(project, 0.5);
+  probeExport(await exportProject(page, "no-narration-stable-bgm.mp4"), seed.no_narration_default_frequency);
 });

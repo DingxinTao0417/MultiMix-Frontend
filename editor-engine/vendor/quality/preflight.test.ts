@@ -84,6 +84,72 @@ describe("inspectEditorProject", () => {
     );
   });
 
+  it("checks subtitle roles without treating presentation support as captions", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      tracks: [
+        {
+          id: "track-video",
+          type: "video",
+          name: "素材",
+          elements: [{ id: "v1", type: "video", mediaId: "m1", startTime: 0, duration: 10, segmentId: "scene-1" }],
+        },
+        {
+          id: "track-support",
+          type: "text",
+          name: "截图补充信息",
+          elements: [{
+            id: "support-1",
+            type: "text",
+            textRole: "presentation_support",
+            content: "已审核截图\n完整工作流\n来源可追溯",
+            startTime: 0,
+            duration: 5,
+            segmentId: "scene-support",
+            safeRegion: { x: 0.1, y: 0.1, width: 0.4, height: 0.5 },
+          }],
+        },
+        {
+          id: "track-text",
+          type: "text",
+          name: "字幕",
+          elements: [{
+            id: "subtitle-1",
+            type: "text",
+            textRole: "subtitle",
+            content: "第一行\n第二行\n第三行",
+            startTime: 5,
+            duration: 5,
+            segmentId: "scene-subtitle",
+            safeRegion: { x: 0.1, y: 0.7, width: 0.8, height: 0.2 },
+          }],
+        },
+        {
+          id: "track-overlay",
+          type: "video",
+          name: "动效",
+          overlay: true,
+          elements: [{
+            id: "overlay-1",
+            type: "video",
+            mediaId: "m1",
+            startTime: 0,
+            duration: 3,
+            segmentId: "scene-support",
+            safeRegion: { x: 0.2, y: 0.2, width: 0.3, height: 0.3 },
+          }],
+        },
+      ],
+    });
+
+    expect(
+      report.blockers
+        .filter((item) => item.code === "subtitle_too_many_lines")
+        .map((item) => item.segment_id),
+    ).toEqual(["scene-subtitle"]);
+    expect(report.blockers.map((item) => item.code)).not.toContain("overlay_subtitle_collision");
+  });
+
   it("passes when overlay and subtitle use the backend's disjoint safe regions", () => {
     // Mirrors app/services/video_studio/safe_area.py: body band 0.12–0.72,
     // subtitle band 0.72–0.98. Correctly-stamped elements must not collide.

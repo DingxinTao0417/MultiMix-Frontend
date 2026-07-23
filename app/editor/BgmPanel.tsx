@@ -19,7 +19,7 @@ const CATEGORIES = [
   "情绪叙事",
   "轻松趣味",
 ] as const;
-const FILTERS = ["AI 推荐", "全部音乐", ...CATEGORIES] as const;
+const FILTERS = ["自动配乐", "全部音乐", ...CATEGORIES] as const;
 type Filter = (typeof FILTERS)[number];
 
 export default function BgmPanel({
@@ -36,7 +36,7 @@ export default function BgmPanel({
   const [catalog, setCatalog] = useState<BGMCatalogResponse | null>(null);
   const [available, setAvailable] = useState(true);
   const [choice, setChoice] = useState<BGMChoice | null>(null);
-  const [filter, setFilter] = useState<Filter>("AI 推荐");
+  const [filter, setFilter] = useState<Filter>("自动配乐");
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState("");
@@ -73,7 +73,7 @@ export default function BgmPanel({
   const tracks = useMemo(() => {
     if (!catalog) return [];
     if (filter === "全部音乐") return catalog.tracks;
-    if (filter !== "AI 推荐") return catalog.tracks.filter((track) => track.category === filter);
+    if (filter !== "自动配乐") return catalog.tracks.filter((track) => track.category === filter);
     const byId = new Map(catalog.tracks.map((track) => [track.id, track]));
     return catalog.recommended_ids.map((id) => byId.get(id)).filter((track): track is BGMCatalogTrack => Boolean(track));
   }, [catalog, filter]);
@@ -125,11 +125,11 @@ export default function BgmPanel({
       <div className="editor-bgm-heading">
         <div>
           <strong>背景音乐</strong>
-          <span>{choice?.enabled === false ? "已关闭" : choice?.selected_by === "auto" ? "AI 已匹配" : "已自选"}</span>
+          <span>{choice?.enabled === false ? "已关闭" : choice?.selected_by === "auto" ? "已自动配乐" : "已自选"}</span>
         </div>
         <div className="editor-bgm-actions">
           <button type="button" disabled={updating || loading} onClick={() => void mutate("disable")}>无配乐</button>
-          <button type="button" disabled={updating || loading} onClick={() => void mutate("restore_auto")}>恢复 AI 推荐</button>
+          <button type="button" disabled={updating || loading} onClick={() => void mutate("restore_auto")}>恢复自动配乐</button>
         </div>
       </div>
 

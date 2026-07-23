@@ -12,6 +12,30 @@ const spec = fs.readFileSync(
   path.join(root, "e2e", "video-pipeline-production.spec.ts"),
   "utf8",
 );
+const comparisonRunnerPath = path.join(
+  root,
+  "scripts",
+  "run-video-pipeline-on-off-comparison.mjs",
+);
+const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+
+test("production pipeline runner resolves workspace files from the frontend parent", () => {
+  assert.match(runner, /const workspaceRoot = path\.resolve\(frontendRoot, "\.\."\);/);
+  assert.doesNotMatch(runner, /const workspaceRoot = path\.resolve\(frontendRoot, "\.\.", "\.\."\);/);
+  assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-Backend"\)/);
+  assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-商业计划\.md"\)/);
+});
+
+test("production pipeline restores tracked Next config before removing its temporary build", () => {
+  const restoreIndex = runner.indexOf("restoreFiles(workspaceSnapshots);");
+  const nextBuildCleanupIndex = runner.indexOf(
+    "path.join(frontendRoot, `.next-video-pipeline-${runId}`)",
+  );
+  assert.notEqual(restoreIndex, -1);
+  assert.notEqual(nextBuildCleanupIndex, -1);
+  assert.ok(restoreIndex < nextBuildCleanupIndex);
+  assert.ok(runner.lastIndexOf("restoreFiles(workspaceSnapshots);") > nextBuildCleanupIndex);
+});
 
 test("production pipeline QA stages reviewed BGM and approved product captures", () => {
   assert.match(runner, /stageReviewedBgmCatalog/);
@@ -23,6 +47,7 @@ test("production pipeline QA stages reviewed BGM and approved product captures",
 });
 
 test("production pipeline E2E proves product media and BGM enter the project", () => {
+  assert.match(spec, /getByRole\("button", \{ name: "上传 PDF 或文档" \}\)\.click\(\)/);
   assert.match(spec, /source_type\?\:\s*string/);
   assert.match(spec, /product_asset/);
   assert.match(spec, /track-bgm/);
@@ -35,8 +60,29 @@ test("production pipeline E2E proves product media and BGM enter the project", (
   assert.match(runner, /可行动失败请求/);
 });
 
-test("production pipeline E2E enables the two-stage runtime and records resume/comparison evidence", () => {
-  assert.match(runner, /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED:\s*"true"/);
+test("production pipeline E2E can verify intentional no-BGM degradation", () => {
+  assert.match(spec, /VIDEO_PIPELINE_EXPECT_BGM/);
+  assert.match(spec, /expectBgm/);
+  assert.match(spec, /bgm_choice\?\.enabled/);
+  assert.match(spec, /track-bgm/);
+  assert.match(spec, /measurement_status/);
+});
+
+test("production pipeline E2E explicitly parameterizes the two-stage runtime and records the run manifest", () => {
+  assert.match(runner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
+  assert.match(runner, /twoStageEnabled/);
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED:\s*twoStageEnabled\s*\?\s*"true"\s*:\s*"false"/,
+  );
+  assert.doesNotMatch(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED:\s*"true"/,
+  );
+  assert.match(runner, /VIDEO_PIPELINE_EXPECT_TWO_STAGE/);
+  assert.match(runner, /run-manifest\.json/);
+  assert.match(spec, /VIDEO_PIPELINE_EXPECT_TWO_STAGE/);
+  assert.match(spec, /expectTwoStage/);
   assert.match(runner, /two-stage-evaluation-report\.json/);
   assert.match(runner, /resumeReuse/);
   assert.match(runner, /openmontage-comparison\.md/);
@@ -45,6 +91,34 @@ test("production pipeline E2E enables the two-stage runtime and records resume/c
   assert.match(spec, /manifestProjectReferenceMatch/);
   assert.match(spec, /publicCandidateOnlyCount/);
   assert.match(spec, /transport-error/);
+});
+
+test("production pipeline E2E separates two-stage evidence from the shared export contract", () => {
+  assert.match(spec, /if \(expectTwoStage\) \{/);
+  assert.match(spec, /if \(expectTwoStage && requirePublicAsset\) \{/);
+  assert.match(spec, /let recomposeTested = false/);
+  assert.match(spec, /recomposeTested = true/);
+  assert.match(spec, /twoStageEnabled: expectTwoStage/);
+  assert.match(spec, /recomposeTested,/);
+  assert.match(spec, /Shared quality and export contract for both pipeline modes/);
+});
+
+test("on-off comparison runner uses isolated sequential runs and validates identical inputs", () => {
+  assert.equal(fs.existsSync(comparisonRunnerPath), true);
+  const comparisonRunner = fs.readFileSync(comparisonRunnerPath, "utf8");
+  assert.match(comparisonRunner, /for \(const mode of \["off", "on"\]\)/);
+  assert.match(comparisonRunner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
+  assert.match(comparisonRunner, /VIDEO_PIPELINE_RUN_ID/);
+  assert.match(comparisonRunner, /VIDEO_PIPELINE_RESULT_DIR/);
+  assert.match(comparisonRunner, /path\.join\(comparisonRoot, mode\)/);
+  assert.match(comparisonRunner, /assertComparableManifests/);
+  assert.match(comparisonRunner, /comparison-report\.json/);
+  assert.match(comparisonRunner, /blind-scorecard\.md/);
+  assert.match(comparisonRunner, /blind-map\.json/);
+  assert.equal(
+    packageJson.scripts["test:e2e:video-pipeline-compare"],
+    "node scripts/run-video-pipeline-on-off-comparison.mjs",
+  );
 });
 
 test("production pipeline E2E verifies the formal MP4 media contract", () => {

@@ -15,11 +15,11 @@ import {
 } from "./demo-e2e/environment-manager.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
-const workspaceRoot = path.resolve(frontendRoot, "..", "..");
+const workspaceRoot = path.resolve(frontendRoot, "..");
+const canonicalBackendRoot = path.join(workspaceRoot, "MultiMix-Backend");
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
   ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
-  : path.join(workspaceRoot, ".worktrees", "animated-explainer-hybrid-backend");
-const canonicalBackendRoot = path.join(workspaceRoot, "MultiMix-Backend");
+  : canonicalBackendRoot;
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
 if (!Number.isInteger(backendPort) || !Number.isInteger(frontendPort)) {
@@ -45,6 +45,11 @@ const ffmpegCommand = process.env.FFMPEG ?? "ffmpeg";
 const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? "-0.1");
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
+const rawTwoStageEnabled = process.env.VIDEO_PIPELINE_TWO_STAGE_ENABLED ?? "true";
+if (!new Set(["true", "false"]).has(rawTwoStageEnabled)) {
+  throw new Error("VIDEO_PIPELINE_TWO_STAGE_ENABLED must be true or false");
+}
+const twoStageEnabled = rawTwoStageEnabled === "true";
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || scenario === "animated_public";
 const children = [];
@@ -160,6 +165,29 @@ function restoreFiles(snapshots) {
   }
 }
 
+function fingerprintFile(filePath) {
+  const resolved = path.resolve(filePath);
+  if (!fs.existsSync(resolved)) return { path: resolved, sha256: null };
+  return {
+    path: resolved,
+    sha256: crypto.createHash("sha256").update(fs.readFileSync(resolved)).digest("hex"),
+  };
+}
+
+function configuredInputFingerprints(raw) {
+  if (!raw) return [];
+  try {
+    const values = JSON.parse(raw);
+    if (!Array.isArray(values)) return [];
+    return values
+      .map((value) => String(value?.path ?? "").trim())
+      .filter(Boolean)
+      .map(fingerprintFile);
+  } catch {
+    return [];
+  }
+}
+
 function stageReviewedBgmCatalog() {
   const sourceRoot = path.join(canonicalBackendRoot, "artifacts", "bgm");
   const sourceManifestPath = path.join(sourceRoot, "catalog", "v1", "manifest.json");
@@ -224,6 +252,42 @@ function stageApprovedProductMediaCatalog() {
       throw new Error(`Unsupported approved product capture type: ${extension}`);
     }
     const identifier = `multimix-ui-${index + 1}`;
+    const rawRegions = source?.regions;
+    if (rawRegions !== undefined && !Array.isArray(rawRegions)) {
+      throw new Error(`Approved product capture ${index + 1} regions must be an array`);
+    }
+    const regionIds = new Set();
+    const regions = (rawRegions ?? []).map((region, regionIndex) => {
+      const id = String(region?.id ?? "").trim();
+      const regionRoles = Array.isArray(region?.roles)
+        ? region.roles.map(String).map((role) => role.trim()).filter(Boolean)
+        : [];
+      const box = region?.box;
+      const normalizedBox = Object.fromEntries(
+        ["x", "y", "w", "h"].map((key) => [key, Number(box?.[key])]),
+      );
+      if (!id || regionIds.has(id) || regionRoles.length === 0) {
+        throw new Error(
+          `Approved product capture ${index + 1} region ${regionIndex + 1} requires a unique id and roles`,
+        );
+      }
+      const { x, y, w, h } = normalizedBox;
+      if (
+        ![x, y, w, h].every(Number.isFinite)
+        || x < 0
+        || y < 0
+        || w <= 0
+        || h <= 0
+        || x + w > 1
+        || y + h > 1
+      ) {
+        throw new Error(
+          `Approved product capture ${index + 1} region ${id} must stay within normalized bounds`,
+        );
+      }
+      regionIds.add(id);
+      return { id, roles: [...new Set(regionRoles)], box: normalizedBox };
+    });
     const key = path.join("product-media", "v1", `${identifier}${extension}`).replaceAll("\\", "/");
     const targetPath = path.join(artifactDir, ...key.split("/"));
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
@@ -240,6 +304,7 @@ function stageApprovedProductMediaCatalog() {
       duration_seconds: mediaType === "video" ? Number(source?.duration_seconds ?? 3) : 0,
       priority: Number(source?.priority ?? index + 1),
       source: "user_approved_product_capture",
+      ...(regions.length > 0 ? { regions } : {}),
     };
   });
   const manifestPath = path.join(artifactDir, "product-media", "v1", "manifest.json");
@@ -310,6 +375,49 @@ async function verifyCandidateVideo() {
   const browserResult = fs.existsSync(browserResultPath)
     ? JSON.parse(fs.readFileSync(browserResultPath, "utf8"))
     : {};
+  const keyframeDir = path.join(resultDir, "keyframes");
+  fs.rmSync(keyframeDir, { recursive: true, force: true });
+  fs.mkdirSync(keyframeDir, { recursive: true });
+  const sceneWindows = Array.isArray(browserResult.sceneWindows)
+    ? browserResult.sceneWindows.filter((window) => (
+      Number.isFinite(Number(window?.startTime))
+      && Number.isFinite(Number(window?.duration))
+      && Number(window.duration) > 0
+    )).slice(0, 6)
+    : [];
+  const keyframeWindows = sceneWindows.length === 6
+    ? sceneWindows
+    : Array.from({ length: 6 }, (_value, index) => ({
+      sceneId: `scene-${index + 1}`,
+      startTime: (duration * index) / 6,
+      duration: duration / 6,
+    }));
+  const keyframes = [];
+  for (const [index, window] of keyframeWindows.entries()) {
+    const sceneId = String(window.sceneId ?? `scene-${index + 1}`)
+      .replace(/[^a-zA-Z0-9_-]/g, "-");
+    const outputPath = path.join(
+      keyframeDir,
+      `keyframe-${String(index + 1).padStart(2, "0")}-${sceneId}.png`,
+    );
+    const seekSeconds = Math.max(
+      0,
+      Math.min(duration - 0.05, Number(window.startTime) + Number(window.duration) / 2),
+    );
+    await run(ffmpegCommand, [
+      "-hide_banner",
+      "-loglevel", "error",
+      "-y",
+      "-ss", seekSeconds.toFixed(3),
+      "-i", candidatePath,
+      "-frames:v", "1",
+      outputPath,
+    ]);
+    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+      failures.push(`keyframe ${index + 1} is missing`);
+    }
+    keyframes.push({ sceneId, seekSeconds, path: outputPath });
+  }
   const report = {
     passed: failures.length === 0,
     duration,
@@ -321,6 +429,7 @@ async function verifyCandidateVideo() {
       clipping,
     },
     projectAudioMix: browserResult.qualityMetrics?.audio_mix ?? {},
+    keyframes,
     failures,
   };
   fs.writeFileSync(path.join(resultDir, "media-probe.json"), JSON.stringify(report, null, 2));
@@ -396,25 +505,44 @@ async function writeQaReport() {
   const health = errors.length === 0 && actionableRequestFailures.length === 0 && otherRefsStable
     ? 100
     : Math.max(0, 100 - errors.length * 5 - actionableRequestFailures.length * 5 - (otherRefsStable ? 0 : 40));
-  const report = `# Animated Explainer / Hybrid 浏览器验收\n\n`
+  const recomposeResult = result.recomposeTested === true
+    ? (otherRefsStable ? "通过" : "失败")
+    : "不适用（当前模式不支持两阶段单镜重做证据）";
+  const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
-    + `## 结果\n\n- 健康评分：${health}/100\n- 六镜主画面：通过\n- 待补素材：未出现\n`
+    + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- 六镜主轨：通过\n- 待补素材：未出现\n`
+    + `- 信息增量分镜：${Number(result.informationIncrement?.sceneCount ?? 0)} 个；MG 已渲染 ${Number(result.informationIncrement?.mgRenderedCount ?? 0)} 个\n`
+    + `- 审核截图分镜：${Number(result.productPresentation?.productSceneCount ?? 0)} 个；单次分屏 ${Number(result.productPresentation?.splitSceneCount ?? 0)} 个\n`
     + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
-    + `- 单镜重做未改动其他分镜：${otherRefsStable ? "通过" : "失败"}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
-    + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n\n`
-    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、六镜落库和单镜重做链路；视觉专业感仍需把本轮真实成片与 OpenMontage 参考样片并排评分。\n`;
+    + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
+    + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
+    + `- 六个分镜关键帧：keyframes/keyframe-01…06-*.png\n\n`
+    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、六镜落库和正式导出链路；视觉专业感仍需把开关两轮真实成片匿名并排评分。\n`;
   fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
-  fs.writeFileSync(path.join(resultDir, "two-stage-evaluation-report.json"), JSON.stringify({
+  const evaluationReport = {
+    twoStageEnabled: result.twoStageEnabled === true,
     assetManifestCoverage: result.assetManifestCoverage,
     publicCandidateOnlyCount: result.publicCandidateOnlyCount,
     manifestProjectReferenceMatch: result.manifestProjectReferenceMatch,
     sourceMix: result.sourceMix,
+    informationIncrement: result.informationIncrement,
+    productPresentation: result.productPresentation,
     sendBacks: result.sendBacks ?? 0,
     resumeReuse,
     internalTermsVisible: result.internalTermsVisible,
     consoleErrors: errors.length,
     actionableRequestFailures: actionableRequestFailures.length,
-  }, null, 2));
+  };
+  fs.writeFileSync(
+    path.join(resultDir, "pipeline-evaluation-report.json"),
+    JSON.stringify(evaluationReport, null, 2),
+  );
+  if (result.twoStageEnabled === true) {
+    fs.writeFileSync(
+      path.join(resultDir, "two-stage-evaluation-report.json"),
+      JSON.stringify(evaluationReport, null, 2),
+    );
+  }
   fs.writeFileSync(path.join(resultDir, "openmontage-comparison.md"), [
     "# OpenMontage 对照验收",
     "",
@@ -446,7 +574,7 @@ try {
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
   if (!fs.existsSync(pythonCommand)) throw new Error(`Python interpreter not found: ${pythonCommand}`);
   fs.mkdirSync(resultDir, { recursive: true });
-  for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4"]) {
+  for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4", "keyframes"]) {
     fs.rmSync(path.join(resultDir, generatedName), { force: true });
   }
   fs.mkdirSync(artifactDir, { recursive: true });
@@ -467,6 +595,18 @@ try {
     ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
     ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
   };
+  fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
+    runId,
+    scenario,
+    twoStageEnabled,
+    sourceDocument: fingerprintFile(sourceDocument),
+    productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
+    hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
+    llm: {
+      baseUrl: canonicalEnv.CHANGEIN_LLM_BASE_URL ?? canonicalEnv.CHANGEIN_DEEPSEEK_BASE_URL ?? null,
+      model: canonicalEnv.CHANGEIN_LLM_MODEL ?? canonicalEnv.CHANGEIN_DEEPSEEK_MODEL ?? null,
+    },
+  }, null, 2));
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const backendEnv = {
     ...process.env,
@@ -494,7 +634,9 @@ try {
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
     CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ORCHESTRATION_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED: twoStageEnabled ? "true" : "false",
+    CHANGEIN_MULTIMIX_VIDEO_INFORMATION_INCREMENT_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_PRODUCT_MEDIA_PRESENTATIONS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_STRUCTURED_REUSE_INTENT_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PUBLIC_VLM_REQUIRED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
@@ -553,6 +695,7 @@ try {
       VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
       VIDEO_PIPELINE_HYBRID_MEDIA_FILES: process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES ?? "[]",
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
+      VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
     },
     stdout: process.stdout,
     stderr: process.stderr,
@@ -598,8 +741,17 @@ try {
   } catch (error) {
     cleanupError = error;
   } finally {
-    fs.rmSync(artifactDir, { recursive: true, force: true });
-    fs.rmSync(path.join(frontendRoot, `.next-video-pipeline-${runId}`), { recursive: true, force: true });
+    restoreFiles(workspaceSnapshots);
+    for (const cleanupPath of [
+      artifactDir,
+      path.join(frontendRoot, `.next-video-pipeline-${runId}`),
+    ]) {
+      try {
+        fs.rmSync(cleanupPath, { recursive: true, force: true });
+      } catch (error) {
+        cleanupError ??= error;
+      }
+    }
     restoreFiles(workspaceSnapshots);
   }
   console.log(`Cleanup complete: ports ${backendPort}/${frontendPort} stopped; temp database and artifacts removed.`);

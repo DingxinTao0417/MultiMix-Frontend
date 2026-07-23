@@ -12,7 +12,12 @@ vi.mock('./api', () => ({
     `https://api.example.com/media?ref=${encodeURIComponent(ref)}`,
 }));
 
-import { buildProject, buildMediaAssets } from './buildProject';
+import {
+  buildProject,
+  buildMediaAssets,
+  editDecisionByElementId,
+  layoutCaption,
+} from './buildProject';
 import type { BackendProject } from './buildProject';
 
 // ---------------------------------------------------------------------------
@@ -58,7 +63,47 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
-  it('converts explicitly linear backend gains and fades to editor dB values once', () => {
+  it('keeps a subtitle on one line when the rendered glyph width fits', () => {
+    const result = layoutCaption('上传资料，自动生成可编辑视频', {
+      availableWidth: 900,
+      preferredFontPx: 50,
+      minimumFontPx: 36,
+      measureText: (text, fontPx) => text.length * fontPx,
+    });
+
+    expect(result.text).toBe('上传资料，自动生成可编辑视频');
+    expect(result.lines).toBe(1);
+    expect(result.fontPx).toBe(50);
+  });
+
+  it('shrinks a fitting subtitle before introducing a second line', () => {
+    const result = layoutCaption('一行刚好可以缩小显示', {
+      availableWidth: 400,
+      preferredFontPx: 50,
+      minimumFontPx: 36,
+      measureText: (text, fontPx) => text.length * fontPx,
+    });
+
+    expect(result.text).not.toContain('\n');
+    expect(result.lines).toBe(1);
+    expect(result.fontPx).toBeGreaterThanOrEqual(36);
+    expect(result.fontPx).toBeLessThan(50);
+  });
+
+  it('uses at most two measured lines when shrinking cannot fit one line', () => {
+    const result = layoutCaption('上传资料理解内容生成脚本编辑导出', {
+      availableWidth: 360,
+      preferredFontPx: 50,
+      minimumFontPx: 36,
+      measureText: (text, fontPx) => text.length * fontPx,
+    });
+
+    expect(result.text.split('\n')).toHaveLength(2);
+    expect(result.lines).toBe(2);
+    expect(result.fontPx).toBeGreaterThanOrEqual(36);
+  });
+
+  it('converts backend BGM fades and ducking keyframes to editor dB once', () => {
     const bp = makeProject({
       media: [makeMedia({ id: 'media-bgm', type: 'audio', file_path: 'bgm://bgm-tech-01', name: 'BGM' })],
       tracks: [{
@@ -71,7 +116,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
           startTime: 0,
           duration: 10,
           mediaId: 'media-bgm',
-          volume: 0.25,
+          volume: 0.18,
           volumeUnit: 'linear',
           animations: {
             channels: {
@@ -79,7 +124,10 @@ describe('buildProject - overlay/hasAlpha logic', () => {
                 valueKind: 'number',
                 keyframes: [
                   { id: 'silent', time: 0, value: 0, interpolation: 'linear' },
-                  { id: 'steady', time: 0.12, value: 0.25, interpolation: 'linear' },
+                  { id: 'steady', time: 1.2, value: 0.18, interpolation: 'linear' },
+                  { id: 'duck', time: 5, value: 0.18 * (10 ** (-6 / 20)), interpolation: 'linear' },
+                  { id: 'hold', time: 8, value: 0.18 * (10 ** (-6 / 20)), interpolation: 'linear' },
+                  { id: 'recover', time: 8.5, value: 0.18, interpolation: 'linear' },
                 ],
               },
             },
@@ -91,10 +139,14 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     const audio = buildProject(bp).project.scenes[0].tracks[0].elements[0] as AudioElement;
     const volumeKeyframes = audio.animations?.channels.volume?.keyframes ?? [];
 
-    expect(audio.volume).toBeCloseTo(-12.0412, 4);
+    expect(audio.volume).toBeCloseTo(-14.8945, 4);
+    expect(volumeKeyframes.map((keyframe) => keyframe.time)).toEqual([0, 1.2, 5, 8, 8.5]);
     expect(volumeKeyframes.map((keyframe) => keyframe.value)).toEqual([
       -60,
-      expect.closeTo(-12.0412, 4),
+      expect.closeTo(-14.8945, 4),
+      expect.closeTo(-20.8945, 4),
+      expect.closeTo(-20.8945, 4),
+      expect.closeTo(-14.8945, 4),
     ]);
   });
 
@@ -134,7 +186,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(audio.animations).toEqual(animations);
   });
 
-  it('keeps subtitles readable without a black background by default', () => {
+  it('keeps subtitles readable on light and moving media with a compact dark carrier', () => {
     const bp = makeProject({
       tracks: [{
         id: 'track-text',
@@ -152,7 +204,12 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const result = buildProject(bp);
     const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
-    expect(element.background).toMatchObject({ enabled: false });
+    expect(element.background).toMatchObject({
+      enabled: true,
+      color: '#111827b8',
+      paddingX: 12,
+      paddingY: 6,
+    });
   });
 
   it('keeps default 1080p subtitles within a professional lower-third size', () => {
@@ -466,6 +523,107 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       const overlay = project.scenes[0].tracks[1].elements[0];
       expect(overlay.startTime).toBe(9);
       expect(overlay.duration).toBe(1);
+    });
+  });
+
+  describe('split support presentation', () => {
+    it('applies one deterministic split and preserves every support-card line', () => {
+      const support = {
+        headline: '从对话直接进入分镜编辑',
+        items: ['保留可编辑结构', '同步视频预览', '按分镜继续调整'],
+      };
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ui', type: 'image', file_path: '/test/ui.png', name: 'ui.png' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              {
+                id: 'ui-main',
+                type: 'image',
+                startTime: 0,
+                duration: 5,
+                mediaId: 'media-ui',
+                segmentId: 'scene-1',
+                editDecision: { layout: 'split', presentation_support: support },
+              },
+            ],
+          },
+          {
+            id: 'track-support',
+            type: 'text',
+            name: '支撑信息',
+            elements: [
+              {
+                id: 'support-1',
+                type: 'text',
+                content: '从对话直接进入分镜编辑\n• 保留可编辑结构\n• 同步视频预览\n• 按分镜继续调整',
+                startTime: 0,
+                duration: 5,
+                segmentId: 'scene-1',
+                textRole: 'presentation_support',
+              },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const video = project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+      const card = project.scenes[0].tracks[1].elements[0] as Record<string, unknown>;
+
+      expect(video.transform).toEqual({
+        scaleX: 0.62,
+        scaleY: 0.62,
+        position: { x: -346, y: 0 },
+        rotate: 0,
+      });
+      expect(editDecisionByElementId['ui-main']).toEqual({
+        layout: 'split',
+        presentation_support: support,
+      });
+      expect(String(card.content).split('\n')).toHaveLength(4);
+      expect(card.textAlign).toBe('left');
+      expect(card.background).toMatchObject({
+        enabled: true,
+        color: '#171b26',
+        paddingX: 29,
+        paddingY: 86,
+      });
+      expect(card.transform).toMatchObject({ position: { x: 326, y: 0 } });
+    });
+
+    it('does not create an empty split when validated support is absent', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ui', type: 'image' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              {
+                id: 'ui-main',
+                type: 'image',
+                startTime: 0,
+                duration: 5,
+                mediaId: 'media-ui',
+                editDecision: { layout: 'split' },
+              },
+            ],
+          },
+        ],
+      });
+
+      const video = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+      expect(video.transform).toEqual({
+        scaleX: 1,
+        scaleY: 1,
+        position: { x: 0, y: 0 },
+        rotate: 0,
+      });
     });
   });
 });

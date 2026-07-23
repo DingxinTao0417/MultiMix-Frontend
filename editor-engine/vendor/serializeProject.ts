@@ -7,11 +7,13 @@ import type { EditorCore } from "@editor/core";
 import type { ElementAnimations } from "@editor/lib/animation/types";
 import {
   displayTextByElementId,
+  editDecisionByElementId,
   filePathByMediaId,
   focusTextByElementId,
   safeRegionByElementId,
   segmentIdByElementId,
   segmentTextByElementId,
+  textRoleByElementId,
 } from "./buildProject";
 
 type RawProject = Record<string, unknown>;
@@ -63,6 +65,10 @@ function serializeElement(el: {
   if (displayText) out.displayText = displayText;
   const focusText = focusTextByElementId[el.id];
   if (focusText) out.focusText = focusText;
+  const editDecision = editDecisionByElementId[el.id];
+  if (editDecision) out.editDecision = editDecision;
+  const textRole = textRoleByElementId[el.id];
+  if (textRole) out.textRole = textRole;
   return out;
 }
 
