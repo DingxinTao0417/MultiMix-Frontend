@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
@@ -26,6 +26,61 @@ const UPLOAD_LABEL: Record<Exclude<ActiveView, "conversation">, string> = {
   image: "上传",
   video: "上传"
 };
+
+const LIBRARY_PAGE_SIZE = 48;
+const LIBRARY_REQUEST_TIMEOUT_MS = 20_000;
+const LIBRARY_CACHE_TTL_MS = 30_000;
+const LIBRARY_CACHE_MAX_ENTRIES = 12;
+
+type CachedLibraryPage = {
+  rows: LibraryRow[];
+  nextOffset: number | null;
+  expiresAt: number;
+};
+
+let libraryCacheToken: string | null = null;
+const libraryPageCache = new Map<string, CachedLibraryPage>();
+
+function libraryCacheKey(
+  view: Exclude<ActiveView, "conversation">,
+  query: string,
+  localRefreshKey: number,
+  refreshRevision: number,
+) {
+  return `${view}:${query}:${localRefreshKey}:${refreshRevision}`;
+}
+
+function readCachedLibraryPage(token: string, key: string): CachedLibraryPage | null {
+  if (libraryCacheToken !== token) {
+    libraryPageCache.clear();
+    libraryCacheToken = token;
+  }
+  const cached = libraryPageCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    libraryPageCache.delete(key);
+    return null;
+  }
+  return cached;
+}
+
+function writeCachedLibraryPage(token: string, key: string, rows: LibraryRow[], nextOffset: number | null) {
+  if (libraryCacheToken !== token) {
+    libraryPageCache.clear();
+    libraryCacheToken = token;
+  }
+  libraryPageCache.delete(key);
+  libraryPageCache.set(key, {
+    rows,
+    nextOffset,
+    expiresAt: Date.now() + LIBRARY_CACHE_TTL_MS,
+  });
+  while (libraryPageCache.size > LIBRARY_CACHE_MAX_ENTRIES) {
+    const oldestKey = libraryPageCache.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    libraryPageCache.delete(oldestKey);
+  }
+}
 
 // Demo-final status classification (library.html st: ok/wait) shared by the
 // on-card pill and the image-library status filter chips.
@@ -127,8 +182,10 @@ function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conve
       {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : renderLibraryMediaPlaceholder(row, "image")}
     </span>
   ) : mediaKind === "video" ? (
-    <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb video${viewClass}` : "shadcn-prototype-library-media-thumb empty video"} aria-hidden="true">
-      {row.previewUrl ? <video src={row.previewUrl} muted playsInline preload="metadata" /> : renderLibraryMediaPlaceholder(row, "video")}
+    <span className={row.thumbnailUrl ? `shadcn-prototype-library-media-thumb video${viewClass}` : "shadcn-prototype-library-media-thumb empty video"} aria-hidden="true">
+      {/* List cards use still thumbnails only; the playable URL is mounted once in the detail modal. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt="" loading="lazy" /> : renderLibraryMediaPlaceholder(row, "video")}
     </span>
   ) : null;
 }
@@ -152,6 +209,14 @@ function downloadFilename(row: LibraryRow, label = "asset") {
   if (row.kind === "image") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.png`;
   if (row.kind === "video") return /\.[A-Za-z0-9]{2,8}$/.test(title) ? title : `${title}.mp4`;
   return title;
+}
+
+function mergeLibraryRows(current: LibraryRow[], incoming: LibraryRow[]): LibraryRow[] {
+  const rows = new Map<string, LibraryRow>();
+  for (const row of [...current, ...incoming]) {
+    rows.set(row.assetId == null ? `${row.kind}:${row.title}:${row.updatedAtIso ?? ""}` : String(row.assetId), row);
+  }
+  return [...rows.values()].sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
 }
 
 // Demo-final detail: understanding is "ready" when the status reads 已理解/
@@ -205,13 +270,14 @@ function VoiceoverAudioBar() {
 
 export type LibraryActionIntent = "create" | "video" | "regenerate-image";
 
-export default function LibraryWorkshop({
+function LibraryWorkshop({
   view,
   token = null,
   onUploadClick,
   uploading = false,
   onUseAsset,
-  onAddAssetToConversation
+  onAddAssetToConversation,
+  refreshRevision = 0,
 }: {
   view: Exclude<ActiveView, "conversation">;
   token?: string | null;
@@ -219,6 +285,7 @@ export default function LibraryWorkshop({
   uploading?: boolean;
   onUseAsset?: (row: LibraryRow, intent: LibraryActionIntent) => Promise<void>;
   onAddAssetToConversation?: (row: LibraryRow) => void;
+  refreshRevision?: number;
 }) {
   const workshop = assetWorkspaceAdapter.getWorkshop(view);
   const [backendRows, setBackendRows] = useState<LibraryRow[]>([]);
@@ -230,8 +297,11 @@ export default function LibraryWorkshop({
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [loadingRows, setLoadingRows] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [assetModal, setAssetModal] = useState<"web" | null>(null);
@@ -258,33 +328,104 @@ export default function LibraryWorkshop({
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
       setBackendRows([]);
+      setNextOffset(null);
       setLibraryState(assetWorkspaceAdapter.isBackendEnabled() ? "loading" : "unconfigured");
       return;
     }
+    const cacheKey = libraryCacheKey(view, debouncedQuery, localRefreshKey, refreshRevision);
+    const cached = readCachedLibraryPage(token, cacheKey);
+    if (cached) {
+      setBackendRows(cached.rows);
+      setNextOffset(cached.nextOffset);
+      setLoadingRows(false);
+      setLoadingMore(false);
+      setLibraryState("ready");
+      return;
+    }
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), LIBRARY_REQUEST_TIMEOUT_MS);
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = null;
     setLoadingRows(true);
+    setLoadingMore(false);
+    setNextOffset(null);
     setLibraryState("loading");
-    void assetWorkspaceAdapter
-      .listLibrary(token, view, debouncedQuery)
-      .then((rows) => {
-        if (!cancelled) {
-          setBackendRows(rows);
-          setLibraryState("ready");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBackendRows([]);
-          setLibraryState("error");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingRows(false);
-      });
+    // React development Strict Mode mounts, cleans up, and remounts effects
+    // synchronously. Deferring the request one task lets that probe cancel
+    // before any network work starts, while real view changes still abort an
+    // already-started request through the controller below.
+    const requestStart = window.setTimeout(() => {
+      if (cancelled || controller.signal.aborted) return;
+      void assetWorkspaceAdapter
+        .listLibrary(token, view, debouncedQuery, {
+          offset: 0,
+          limit: LIBRARY_PAGE_SIZE,
+          signal: controller.signal,
+        })
+        .then((page) => {
+          if (!cancelled) {
+            setBackendRows(page.rows);
+            setNextOffset(page.nextOffset);
+            writeCachedLibraryPage(token, cacheKey, page.rows, page.nextOffset);
+            setLibraryState("ready");
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBackendRows([]);
+            setLibraryState("error");
+          }
+        })
+        .finally(() => {
+          window.clearTimeout(timeout);
+          if (!cancelled) setLoadingRows(false);
+        });
+    }, 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(requestStart);
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, [token, view, debouncedQuery, refreshKey]);
+  }, [token, view, debouncedQuery, localRefreshKey, refreshRevision]);
+
+  useEffect(() => () => {
+    loadMoreAbortRef.current?.abort();
+  }, []);
+
+  const handleLoadMore = async () => {
+    if (!token || nextOffset === null || loadingMore) return;
+    const controller = new AbortController();
+    loadMoreAbortRef.current?.abort();
+    loadMoreAbortRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), LIBRARY_REQUEST_TIMEOUT_MS);
+    setLoadingMore(true);
+    setActionMessage(null);
+    try {
+      const cacheKey = libraryCacheKey(view, debouncedQuery, localRefreshKey, refreshRevision);
+      const page = await assetWorkspaceAdapter.listLibrary(token, view, debouncedQuery, {
+        offset: nextOffset,
+        limit: LIBRARY_PAGE_SIZE,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setBackendRows((current) => {
+        const merged = mergeLibraryRows(current, page.rows);
+        writeCachedLibraryPage(token, cacheKey, merged, page.nextOffset);
+        return merged;
+      });
+      setNextOffset(page.nextOffset);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setActionMessage(error instanceof Error ? error.message : "加载更多失败，请重试。");
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (loadMoreAbortRef.current === controller) loadMoreAbortRef.current = null;
+      if (!controller.signal.aborted) setLoadingMore(false);
+    }
+  };
 
   const rows = backendRows;
   const filteredRows = useMemo(() => {
@@ -359,7 +500,7 @@ export default function LibraryWorkshop({
       setWebUrl("");
       setWebTitle("");
       setWebBody("");
-      setRefreshKey((value) => value + 1);
+      setLocalRefreshKey((value) => value + 1);
       setActionMessage("网页资料已导入。");
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "读取网页失败。");
@@ -400,7 +541,7 @@ export default function LibraryWorkshop({
     try {
       await assetWorkspaceAdapter.deleteAsset(token, row.assetId);
       setSelectedIndex(null);
-      setRefreshKey((value) => value + 1);
+      setLocalRefreshKey((value) => value + 1);
       setActionMessage("已删除。");
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "删除失败。");
@@ -412,7 +553,7 @@ export default function LibraryWorkshop({
     setActionMessage(null);
     try {
       const job = await assetWorkspaceAdapter.retryAssetIngest(token, row.assetId);
-      setRefreshKey((value) => value + 1);
+      setLocalRefreshKey((value) => value + 1);
       setActionMessage(`处理完成：${job.status} / ${job.stage}`);
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "重试处理失败。");
@@ -424,7 +565,7 @@ export default function LibraryWorkshop({
     setActionMessage(null);
     try {
       await assetWorkspaceAdapter.reparseAsset(token, row.assetId);
-      setRefreshKey((value) => value + 1);
+      setLocalRefreshKey((value) => value + 1);
       setActionMessage("素材已重新解析。");
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "素材重新解析失败。");
@@ -457,7 +598,7 @@ export default function LibraryWorkshop({
     setPublicMessage(null);
     try {
       await assetWorkspaceAdapter.importPublicMaterial(token, candidate);
-      setRefreshKey((value) => value + 1);
+      setLocalRefreshKey((value) => value + 1);
       setPublicMessage("公开素材已保存入库。");
     } catch (error) {
       setPublicMessage(error instanceof Error ? error.message : "公开素材保存失败。");
@@ -558,7 +699,7 @@ export default function LibraryWorkshop({
         {libraryState === "unconfigured" ? (
           <article className="shadcn-prototype-workshop-empty"><div><strong>未连接后端</strong><p>请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端。</p></div></article>
         ) : libraryState === "error" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={() => setRefreshKey((value) => value + 1)}>重新加载</button></div></article>
+          <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={() => setLocalRefreshKey((value) => value + 1)}>重新加载</button></div></article>
         ) : libraryState === "loading" ? (
           <article className="shadcn-prototype-workshop-empty" role="status"><div><strong>正在加载{workshop.title}…</strong></div></article>
         ) : filteredRows.length === 0 ? (
@@ -569,8 +710,9 @@ export default function LibraryWorkshop({
             </div>
           </article>
         ) : (
-          <div className={`shadcn-prototype-library-grid view-${view}`} aria-label={`${workshop.title}列表`}>
-            {filteredRows.map((row, index) => {
+          <>
+            <div className={`shadcn-prototype-library-grid view-${view}`} aria-label={`${workshop.title}列表`}>
+              {filteredRows.map((row, index) => {
               const statusKind = rowStatusKind(row);
               const statusPill = row.statusLabel && statusKind ? (
                 <i className={`shadcn-prototype-library-status ${statusKind === "fail" ? "is-failed" : statusKind === "ok" ? "is-done" : "is-pending"}`}>
@@ -640,8 +782,16 @@ export default function LibraryWorkshop({
                   ) : null}
                 </button>
               );
-            })}
-          </div>
+              })}
+            </div>
+            {nextOffset !== null ? (
+              <div className="shadcn-prototype-library-load-more">
+                <button type="button" disabled={loadingMore} onClick={() => void handleLoadMore()}>
+                  {loadingMore ? "正在加载…" : "加载更多"}
+                </button>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
       {selectedRow ? (
@@ -1041,3 +1191,5 @@ export default function LibraryWorkshop({
     </section>
   );
 }
+
+export default memo(LibraryWorkshop);

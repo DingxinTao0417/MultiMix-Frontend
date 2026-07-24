@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSanitize from "rehype-sanitize";
 import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
+import MarkdownProductDocument from "./markdown-product-document";
 import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
@@ -179,11 +177,13 @@ export default function ProductPreview({
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
+  const [projectPreviewRequested, setProjectPreviewRequested] = useState(false);
   const [projectPreviewFailed, setProjectPreviewFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
+    setProjectPreviewRequested(false);
     setProjectPreviewFailed(false);
   }, [exportedVideoUrl, product.id]);
 
@@ -192,11 +192,7 @@ export default function ProductPreview({
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
       <>
-        <article className="shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-            {markdown}
-          </ReactMarkdown>
-        </article>
+        <MarkdownProductDocument markdown={markdown} />
         {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </>
     );
@@ -369,7 +365,7 @@ export default function ProductPreview({
               }}
               onError={() => setFullVideoFailed(true)}
             />
-          ) : product.backendAssetId && !projectPreviewFailed ? (
+          ) : product.backendAssetId && projectPreviewRequested && !projectPreviewFailed ? (
             <VideoProjectPreview
               ref={projectPreviewRef}
               assetId={product.backendAssetId}
@@ -378,11 +374,6 @@ export default function ProductPreview({
               onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
               onError={() => setProjectPreviewFailed(true)}
             />
-          ) : projectPreviewFailed ? (
-            <StoryboardPreview
-              product={product}
-              activeSegmentId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
-            />
           ) : (
             <StoryboardPreview
               product={product}
@@ -390,6 +381,28 @@ export default function ProductPreview({
             />
           )}
         </div>
+        {!showFullVideo && product.backendAssetId ? (
+          <div className="shadcn-prototype-video-preview-fallback">
+            <span>
+              {projectPreviewFailed
+                ? "完整工程预览加载失败，当前保留轻量分镜预览。"
+                : projectPreviewRequested
+                  ? "完整工程预览加载中…"
+                  : "当前为轻量分镜预览，加载完整工程后可播放转场与动效。"}
+            </span>
+            {!projectPreviewRequested || projectPreviewFailed ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectPreviewFailed(false);
+                  setProjectPreviewRequested(true);
+                }}
+              >
+                {projectPreviewFailed ? "重新加载完整工程预览" : "加载完整工程预览"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {bgmSummary ? <p className="shadcn-prototype-video-bgm-summary" role="status" aria-label="背景音乐">背景音乐：{bgmSummary}</p> : null}
         {fullVideoFailed ? (
           <div className="shadcn-prototype-video-preview-fallback" role="alert">
@@ -408,7 +421,7 @@ export default function ProductPreview({
               if (showFullVideo && player && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
-              } else if (!showFullVideo && segment.startSeconds != null) {
+              } else if (!showFullVideo && projectPreviewRequested && !projectPreviewFailed && segment.startSeconds != null) {
                 projectPreviewRef.current?.seekAndPlay(segment.startSeconds);
               }
             }}

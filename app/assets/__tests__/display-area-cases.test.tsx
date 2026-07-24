@@ -53,15 +53,28 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it("renders the ready no-MP4 project as a playable engineering preview", () => {
+  it("loads the engineering preview only after an explicit request", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.queryByTitle("视频工程预播")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
+
     expect(screen.getByLabelText("视频工程播放器")).toBeInTheDocument();
     expect(screen.getByTitle("视频工程预播").getAttribute("src")).toMatch(
       /^\/editor\?asset=9100&embed=1&mode=preview&previewChannel=.+/,
     );
     expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
+  });
+
+  it("does not mount either editor iframe during passive workspace browsing", () => {
+    renderWorkspace("case-06-project-ready-no-mp4");
+
+    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.queryByTitle("视频工程预播")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
   });
 
   it("uses the shared player for a playable finished video", () => {
@@ -118,6 +131,7 @@ describe("display-area eight-case matrix", () => {
 
   it("seeks and plays the engineering timeline when a segment is selected", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
     const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
 
@@ -224,7 +238,9 @@ describe("display-area eight-case matrix", () => {
       const { container } = renderWorkspace(caseId);
       expect(screen.getByRole("button", { name: "编辑" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /导出/ })).toBeInTheDocument();
-      expect(container.querySelector("iframe.shadcn-prototype-export-bridge")).toBeInTheDocument();
+      expect(container.querySelector("iframe.shadcn-prototype-export-bridge")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+      expect(container.querySelector("iframe.shadcn-prototype-editor-frame")).toBeInTheDocument();
       expect(container.querySelector("video")).not.toBeInTheDocument();
     },
   );
@@ -287,7 +303,7 @@ describe("display-area eight-case matrix", () => {
       }],
     };
     vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue(warningOnly);
-    const { container } = render(
+    render(
       <ProductWorkspace
         copied={false}
         onCopyProduct={vi.fn(async () => undefined)}
@@ -297,14 +313,17 @@ describe("display-area eight-case matrix", () => {
         token="test-token"
       />,
     );
-    const frame = container.querySelector("iframe") as HTMLIFrameElement;
+    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
+
+    const frame = await screen.findByTitle("视频剪辑器") as HTMLIFrameElement;
     const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
-    window.dispatchEvent(new MessageEvent("message", {
+    const readyEvent = new MessageEvent("message", {
       origin: window.location.origin,
       data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
-    }));
-
-    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+    });
+    Object.defineProperty(readyEvent, "source", { value: frame.contentWindow });
+    window.dispatchEvent(readyEvent);
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
       { source: "multimix-workspace", type: "multimix-editor-export" },

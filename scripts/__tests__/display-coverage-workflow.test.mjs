@@ -23,8 +23,9 @@ test("local display coverage uses and cleans an isolated Next development direct
   const nextConfigSource = fs.readFileSync(nextConfig, "utf8");
 
   assert.match(nextConfigSource, /process\.env\.NEXT_DEV_DIST_DIR/);
-  assert.match(runnerSource, /NEXT_DEV_DIST_DIR:\s*"\.next-display-coverage"/);
-  assert.match(runnerSource, /fs\.rmSync\(path\.join\(frontendRoot, "\.next-display-coverage"\)/);
+  assert.match(runnerSource, /nextDistDirName = `\.next-display-coverage-\$\{runId\}`/);
+  assert.match(runnerSource, /NEXT_DEV_DIST_DIR:\s*nextDistDirName/);
+  assert.match(runnerSource, /fs\.rmSync\(nextDistDir/);
   assert.match(runnerSource, /snapshotWorkspaceFiles/);
   assert.match(runnerSource, /restoreWorkspaceFiles/);
   assert.match(runnerSource, /NEXT_PUBLIC_MULTIMIX_AUTH_MODE:\s*"dev-admin"/);

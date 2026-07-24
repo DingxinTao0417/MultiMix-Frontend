@@ -128,9 +128,34 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
 });
 
-test("CASE-06 plays the ready engineering timeline before an MP4 exists", async ({ page }) => {
+test("CASE-06 loads the ready engineering timeline only after an explicit request", async ({ page }) => {
   test.setTimeout(120_000);
+  const editorMessages: Array<Record<string, unknown>> = [];
+  await page.exposeFunction("__recordEditorBridgeMessage", (message: Record<string, unknown>) => {
+    editorMessages.push(message);
+  });
+  await page.addInitScript(() => {
+    window.addEventListener("message", (event) => {
+      if (event.data?.source === "multimix-editor") {
+        const recorder = (window as typeof window & {
+          __recordEditorBridgeMessage?: (message: Record<string, unknown>) => Promise<void>;
+        }).__recordEditorBridgeMessage;
+        void recorder?.(event.data as Record<string, unknown>);
+      }
+    });
+  });
+  const editorRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/editor") editorRequests.push(request.url());
+  });
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
+  await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
+  await expect(workspace.getByTitle("视频工程预播")).toHaveCount(0);
+  await expect(workspace.getByTitle("视频剪辑器")).toHaveCount(0);
+  expect(editorRequests).toHaveLength(0);
+
+  await workspace.getByRole("button", { name: "加载完整工程预览" }).click();
   const player = workspace.getByLabel("视频工程播放器");
   const screen = player.locator(".shadcn-prototype-preview-player-screen");
   const previewFrame = workspace.getByTitle("视频工程预播");
@@ -140,8 +165,19 @@ test("CASE-06 plays the ready engineering timeline before an MP4 exists", async 
   await expect(player).toBeVisible();
   await expect(previewFrame).toBeVisible();
   await expect(previewFrame).toHaveAttribute("src", /mode=preview/);
+  expect(editorRequests).toHaveLength(1);
+  const readLoadMessage = () => (
+    editorMessages.find((message) => (
+      message.type === "multimix-editor-ready" || message.type === "multimix-editor-error"
+    )) ?? null
+  );
   // A fresh isolated Next instance compiles the large /editor bundle on first
-  // access. Wait for the editor's real ready message, not merely iframe load.
+  // access. Wait for the editor's bridge result, not merely iframe load.
+  await expect.poll(readLoadMessage, { timeout: 75_000 }).not.toBeNull();
+  const loadMessage = await readLoadMessage();
+  expect(loadMessage, `editor bridge failed: ${JSON.stringify(loadMessage)}`).toMatchObject({
+    type: "multimix-editor-ready",
+  });
   await expect(playButton).toBeEnabled({ timeout: 75_000 });
   await expect(progress).toBeEnabled({ timeout: 75_000 });
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
@@ -161,6 +197,50 @@ test("CASE-06 plays the ready engineering timeline before an MP4 exists", async 
 
   await expect(player).toHaveScreenshot("video-preview-storyboard-shell.png", { animations: "disabled" });
   await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
+});
+
+test("video library renders one bounded page without eager video elements", async ({ page }) => {
+  const listRequests: URL[] = [];
+  const mediaRequests: URL[] = [];
+  let captureLibraryMedia = false;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/v1/assets" && url.searchParams.get("library_kind") === "video") {
+      listRequests.push(url);
+    }
+    if (captureLibraryMedia && request.resourceType() === "media") {
+      mediaRequests.push(url);
+    }
+  });
+  await page.goto("/app/assets");
+  captureLibraryMedia = true;
+  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "视频库", exact: true }).click();
+
+  const grid = page.getByLabel("视频库列表");
+  const cards = grid.locator("button.shadcn-prototype-library-media-card");
+  const shell = page.locator("main.shadcn-prototype-shell");
+  await expect(grid).toBeVisible();
+  await expect(cards).toHaveCount(48);
+  await expect(grid.locator("video")).toHaveCount(0);
+  expect(mediaRequests).toHaveLength(0);
+  expect(listRequests).toHaveLength(1);
+  expect(listRequests[0].searchParams.get("limit")).toBe("49");
+  expect(listRequests[0].searchParams.get("offset")).toBe("0");
+
+  const collapseStartedAt = Date.now();
+  await page.getByRole("button", { name: "隐藏侧边栏" }).click();
+  await expect(shell).toHaveClass(/sidebar-collapsed/);
+  expect(Date.now() - collapseStartedAt).toBeLessThan(1_500);
+  await page.getByRole("button", { name: "展开侧边栏" }).click();
+  await expect(shell).not.toHaveClass(/sidebar-collapsed/);
+
+  await page.getByRole("button", { name: "加载更多" }).click();
+  await expect(cards).toHaveCount(60);
+  await expect(grid.locator("video")).toHaveCount(0);
+  expect(mediaRequests).toHaveLength(0);
+  expect(listRequests).toHaveLength(2);
+  expect(listRequests[1].searchParams.get("limit")).toBe("49");
+  expect(listRequests[1].searchParams.get("offset")).toBe("48");
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {

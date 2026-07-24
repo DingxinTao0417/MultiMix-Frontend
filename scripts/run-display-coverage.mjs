@@ -13,6 +13,8 @@ const backendPort = 8299;
 const frontendPort = 3219;
 const runId = process.env.DISPLAY_COVERAGE_RUN_ID ?? crypto.randomUUID();
 if (!/^[a-zA-Z0-9-]+$/.test(runId)) throw new Error("DISPLAY_COVERAGE_RUN_ID must contain only letters, numbers, and hyphens");
+const nextDistDirName = `.next-display-coverage-${runId}`;
+const nextDistDir = path.join(frontendRoot, nextDistDirName);
 const databasePath = path.join(os.tmpdir(), `multimix-display-coverage-${runId}.sqlite3`);
 const artifactDir = path.join(os.tmpdir(), `multimix-display-artifacts-${runId}`);
 const resultDir = path.join(frontendRoot, "test-results", "display-coverage");
@@ -104,7 +106,7 @@ try {
   };
   const frontendEnv = {
     ...process.env,
-    NEXT_DEV_DIST_DIR: ".next-display-coverage",
+    NEXT_DEV_DIST_DIR: nextDistDirName,
     NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}`,
     NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "dev-admin",
     NEXT_PUBLIC_SUPABASE_URL: "",
@@ -135,7 +137,7 @@ try {
     databaseCleanupError = error;
   } finally {
     fs.rmSync(artifactDir, { recursive: true, force: true });
-    fs.rmSync(path.join(frontendRoot, ".next-display-coverage"), { recursive: true, force: true });
+    fs.rmSync(nextDistDir, { recursive: true, force: true });
     restoreWorkspaceFiles(workspaceFileSnapshots);
   }
   if (databaseCleanupError) throw databaseCleanupError;

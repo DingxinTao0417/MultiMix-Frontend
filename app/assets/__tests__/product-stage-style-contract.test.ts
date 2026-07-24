@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const player = readFileSync(new URL("../components/video-preview-player.tsx", import.meta.url), "utf8");
 const preview = readFileSync(new URL("../components/product-preview.tsx", import.meta.url), "utf8");
+const markdownDocument = readFileSync(new URL("../components/markdown-product-document.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
 const conversationStudio = readFileSync(new URL("../components/conversation-studio.tsx", import.meta.url), "utf8");
 const agentRunTimeline = readFileSync(new URL("../components/agent-run-timeline.tsx", import.meta.url), "utf8");
@@ -49,7 +50,7 @@ describe("product stage style contract", () => {
   });
 
   test("uses one shared stage scroll surface across copy and video paths", () => {
-    expect(preview).toContain("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface");
+    expect(markdownDocument).toContain("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface");
     expect(preview).toContain("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface");
     expect(workspace).toContain('product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : ""');
     expect(workspace).toContain("!showEditorEmbed && previewShowsBrowse ? (");
@@ -107,5 +108,20 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-preview-player \.shadcn-prototype-project-preview-controls\s*\{[^}]*padding:\s*8px 6px 4px;/s);
     expect(css).toMatch(/\.shadcn-prototype-project-preview-controls input\[type="range"\]\s*\{[^}]*appearance:\s*none;[^}]*height:\s*3px;[^}]*min-height:\s*3px;[^}]*padding:\s*0;[^}]*border-radius:\s*3px;[^}]*background:\s*linear-gradient\([^}]*var\(--preview-progress\)/s);
     expect(css).toMatch(/input\[type="range"\]::-webkit-slider-thumb\s*\{[^}]*appearance:\s*none;[^}]*width:\s*0;[^}]*height:\s*0;/s);
+  });
+
+  test("does not retain retired preview and authentication shells", () => {
+    for (const retiredClass of [
+      "shadcn-prototype-video-poster",
+      "shadcn-prototype-image-preview",
+      "shadcn-prototype-video-frame",
+      "shadcn-prototype-video-project-card",
+      "auth-shell",
+      "auth-story",
+      "auth-panel",
+      "auth-modal",
+    ]) {
+      expect(css).not.toContain(`.${retiredClass}`);
+    }
   });
 });

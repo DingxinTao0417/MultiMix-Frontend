@@ -43,6 +43,7 @@ import {
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
 import { assetGenerationJobsFromConversations, assetGenerationPollLifecycleKey } from "../lib/asset-generation-poller";
+import { useStableCallback } from "../lib/use-stable-callback";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -52,10 +53,7 @@ const EmptyProductWorkspace = dynamic(
   () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
   { ssr: false, loading: () => null }
 );
-const AssetLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="资产库" /> });
-const CopyLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="文案库" /> });
-const ImageLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="图片库" /> });
-const VideoLibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="视频库" /> });
+const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="素材库" /> });
 
 type SidebarState = "auto" | "collapsed" | "expanded";
 type ConversationLoadState = "unconfigured" | "loading" | "ready" | "error";
@@ -1715,6 +1713,10 @@ export default function AssetsWorkspaceClient({
     }
   };
 
+  const stableHandleUploadClick = useStableCallback(handleUploadClick);
+  const stableHandleUseLibraryAsset = useStableCallback(handleUseLibraryAsset);
+  const stableHandleAddAssetToConversation = useStableCallback(handleAddAssetToConversation);
+
   const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
 
   const shellClassName = [
@@ -1777,14 +1779,6 @@ export default function AssetsWorkspaceClient({
       ) : null}
     </div>
   ) : null;
-
-  const LibraryWorkshopForActiveView = activeView === "assets"
-    ? AssetLibraryWorkshop
-    : activeView === "copy"
-      ? CopyLibraryWorkshop
-      : activeView === "image"
-        ? ImageLibraryWorkshop
-        : VideoLibraryWorkshop;
 
   return (
     <main className={shellClassName}>
@@ -2172,14 +2166,14 @@ export default function AssetsWorkspaceClient({
             </>
           ) : (
             <LibraryWorkspaceErrorBoundary key={activeView}>
-              <LibraryWorkshopForActiveView
+              <LibraryWorkshop
                 view={activeView}
                 token={token}
-                key={`${activeView}-${libraryRefreshKey}`}
-                onUploadClick={handleUploadClick}
+                refreshRevision={libraryRefreshKey}
+                onUploadClick={stableHandleUploadClick}
                 uploading={uploading}
-                onUseAsset={handleUseLibraryAsset}
-                onAddAssetToConversation={handleAddAssetToConversation}
+                onUseAsset={stableHandleUseLibraryAsset}
+                onAddAssetToConversation={stableHandleAddAssetToConversation}
               />
             </LibraryWorkspaceErrorBoundary>
           )}

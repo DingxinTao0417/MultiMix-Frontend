@@ -3,13 +3,14 @@ import { readFileSync } from "node:fs";
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const preview = readFileSync(new URL("../app/assets/components/product-preview.tsx", import.meta.url), "utf8");
+const markdownDocument = readFileSync(new URL("../app/assets/components/markdown-product-document.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../app/assets/components/product-workspace.tsx", import.meta.url), "utf8");
 
-assert.ok(preview.includes("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface"), "copy documents must use the shared product-stage scroll surface");
+assert.ok(markdownDocument.includes("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface"), "copy documents must use the shared product-stage scroll surface");
 assert.ok(preview.includes("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface"), "video browse must use the shared product-stage scroll surface");
 assert.ok(workspace.includes('product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : ""'), "plain video previews must use the shared product-stage scroll surface without nesting it around video browse");
 assert.ok(workspace.includes('!showEditorEmbed && previewShowsBrowse ? ('), "all video-project browse paths must render without the generic video scroll wrapper");
-assert.ok(workspace.includes('shadcn-prototype-export-bridge'), "video browse must keep a hidden export bridge without replacing the browse surface");
+assert.ok(workspace.includes('{!isTextEditing && hasVideoProject && editorRequested ? ('), "video browse must mount the editor bridge only after explicit edit or export intent");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-stage-scroll-surface\s*\{[^}]*width:\s*calc\(100% \+ 24px\);[^}]*margin-right:\s*-24px;[^}]*padding-right:\s*var\(--shadcn-prototype-stage-scroll-right-padding, 24px\);/s, "the product stage must expand into the product pane's right inset");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-artifact \.shadcn-prototype-product-main\s*\{[^}]*overflow:\s*visible;/s, "the product main must not clip the expanded stage scrollbar");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-product-preview\.copy\s*\{[^}]*overflow:\s*visible;/s, "the copy preview wrapper must not clip its inner scroll surface");

@@ -5056,6 +5056,35 @@ button:disabled {
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
+.shadcn-prototype-library-load-more {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  padding: 8px 0 2px;
+}
+
+.shadcn-prototype-library-load-more button {
+  min-width: 112px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--sp-subtle);
+  padding: 7px 16px;
+  font-size: 12px;
+  font-weight: 650;
+  box-shadow: 0 2px 6px rgba(32, 31, 30, 0.05);
+}
+
+.shadcn-prototype-library-load-more button:hover:not(:disabled) {
+  color: var(--sp-text);
+  box-shadow: 0 6px 16px rgba(32, 31, 30, 0.08);
+}
+
+.shadcn-prototype-library-load-more button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
 .shadcn-prototype-workshop-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

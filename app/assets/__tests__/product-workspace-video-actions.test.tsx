@@ -38,6 +38,8 @@ describe("video browse actions", () => {
     );
 
     expect(screen.getByRole("button", { name: "编辑" })).toBeEnabled();
+    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
     expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
   });
 

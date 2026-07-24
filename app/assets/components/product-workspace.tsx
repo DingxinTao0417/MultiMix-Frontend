@@ -74,8 +74,9 @@ export default function ProductWorkspace({
 }) {
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "checking" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "preparing" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [exportError, setExportError] = useState("");
@@ -98,6 +99,7 @@ export default function ProductWorkspace({
     enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
   });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const pendingExportRef = useRef(false);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const editableTextArtifact = Boolean(
@@ -137,7 +139,7 @@ export default function ProductWorkspace({
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject;
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
-  const showEditorEmbed = hasVideoProject && videoSurface === "edit";
+  const showEditorEmbed = hasVideoProject && editorRequested && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
   // for any generated project — with or without an exported MP4, and even
   // without a backendAssetId (mock / externally-hosted). Mirror that here so the
@@ -214,12 +216,14 @@ export default function ProductWorkspace({
   };
 
   useEffect(() => {
+    setEditorRequested(false);
     setEditorReady(false);
     setExportState("idle");
     setExportProgress(null);
     setQualityReport(null);
     setExportError("");
     setExportDownloaded(false);
+    pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
   }, [currentAssetId, hasVideoProject]);
 
@@ -246,6 +250,23 @@ export default function ProductWorkspace({
     }
   }, [onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
 
+  const startEditorExport = useCallback((): boolean => {
+    const frameWindow = editorFrameRef.current?.contentWindow;
+    if (!frameWindow) return false;
+    pendingExportRef.current = false;
+    setExportState("exporting");
+    setExportProgress(null);
+    setExportError("");
+    frameWindow.postMessage(
+      {
+        source: "multimix-workspace",
+        type: "multimix-editor-export",
+      },
+      window.location.origin,
+    );
+    return true;
+  }, []);
+
   useEffect(() => {
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
     const onMessage = (event: MessageEvent) => {
@@ -256,15 +277,19 @@ export default function ProductWorkspace({
       switch (data.type) {
         case "multimix-editor-ready":
           setEditorReady(true);
-          setExportState((previous) => previous === "exporting" ? previous : "idle");
-          setExportProgress(null);
+          if (!pendingExportRef.current || !startEditorExport()) {
+            setExportState((previous) => previous === "exporting" ? previous : "idle");
+            setExportProgress(null);
+          }
           break;
         case "multimix-editor-error":
+          pendingExportRef.current = false;
           setEditorReady(false);
           setExportState("error");
           setExportProgress(null);
           break;
         case "multimix-editor-export-start":
+          pendingExportRef.current = false;
           setEditorReady(true);
           setExportState("exporting");
           setExportProgress(null);
@@ -318,6 +343,7 @@ export default function ProductWorkspace({
           setExportProgress(null);
           setExportError("");
           setExportDownloaded(false);
+          pendingExportRef.current = false;
           verifiedExportBlobRef.current = null;
           break;
         case "multimix-editor-project-updated":
@@ -329,7 +355,7 @@ export default function ProductWorkspace({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [currentAssetId, hasVideoProject, refreshPersistedVideoProject]);
+  }, [currentAssetId, hasVideoProject, refreshPersistedVideoProject, startEditorExport]);
 
   const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
     if (!token || !product.backendAssetId) {
@@ -353,7 +379,7 @@ export default function ProductWorkspace({
   };
 
   const handleExportVideo = async () => {
-    if (!currentAssetId || !editorReady || ["exporting", "checking", "verifying"].includes(exportState)) return;
+    if (!currentAssetId || ["exporting", "checking", "preparing", "verifying"].includes(exportState)) return;
     if (exportState === "done" && verifiedExportBlobRef.current) {
       const url = URL.createObjectURL(verifiedExportBlobRef.current);
       const anchor = document.createElement("a");
@@ -366,23 +392,18 @@ export default function ProductWorkspace({
       setExportDownloaded(true);
       return;
     }
-    const frameWindow = editorFrameRef.current?.contentWindow;
-    if (!frameWindow) return;
     const report = await requestExportQuality();
     if (!report || hasBlockingVideoIssues(report)) return;
-    setExportState("exporting");
+    if (editorReady && startEditorExport()) return;
+    pendingExportRef.current = true;
+    setExportState("preparing");
     setExportProgress(null);
     setExportError("");
-    frameWindow.postMessage(
-      {
-        source: "multimix-workspace",
-        type: "multimix-editor-export",
-      },
-      window.location.origin
-    );
+    setEditorRequested(true);
   };
 
   const locateQualityIssue = (segmentId: string, objectType: string) => {
+    setEditorRequested(true);
     setVideoSurface("edit");
     window.requestAnimationFrame(() => {
       editorFrameRef.current?.contentWindow?.postMessage(
@@ -397,10 +418,10 @@ export default function ProductWorkspace({
     });
   };
 
-  const exportButtonLabel = !editorReady
-    ? "导出准备中…"
-    : exportState === "checking"
+  const exportButtonLabel = exportState === "checking"
       ? "正在检查…"
+    : exportState === "preparing"
+      ? "正在准备编辑器…"
     : exportState === "verifying"
       ? "正在检查成片…"
     : exportState === "exporting"
@@ -691,7 +712,10 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="primary"
-                onClick={() => setVideoSurface("edit")}
+                onClick={() => {
+                  setEditorRequested(true);
+                  setVideoSurface("edit");
+                }}
               >
                 <Pencil size={12} aria-hidden="true" />
                 编辑
@@ -706,7 +730,7 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={!editorReady || ["exporting", "checking", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
+                disabled={["exporting", "checking", "preparing", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
                 onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
@@ -788,7 +812,7 @@ export default function ProductWorkspace({
           </div>
         ) : null}
 
-        {!isTextEditing && hasVideoProject ? (
+        {!isTextEditing && hasVideoProject && editorRequested ? (
           <div className={showEditorEmbed ? "shadcn-prototype-product-main shadcn-prototype-editor-host" : "shadcn-prototype-export-bridge-host"}>
             <iframe
               ref={editorFrameRef}

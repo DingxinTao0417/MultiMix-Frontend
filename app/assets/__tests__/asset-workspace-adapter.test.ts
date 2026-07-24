@@ -55,6 +55,64 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("loads one bounded library page by library kind", async () => {
+    const backendRows = Array.from({ length: 49 }, (_, index) => asset({
+      id: index + 1,
+      library_kind: "video",
+      asset_kind: index % 2 === 0 ? "video" : "video_render",
+      content_type: index % 2 === 0 ? "uploaded_video" : "video_render",
+      title: `视频条目 ${index + 1}`,
+      updated_at: new Date(Date.UTC(2026, 6, 24, 2, 0, 49 - index)).toISOString(),
+    }));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(backendRows), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary(
+      "token",
+      "video",
+      "",
+      { offset: 0, limit: 48 },
+    );
+    vi.unstubAllGlobals();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestUrl.pathname).toBe("/v1/assets");
+    expect(requestUrl.searchParams.get("library_kind")).toBe("video");
+    expect(requestUrl.searchParams.get("kind")).toBeNull();
+    expect(requestUrl.searchParams.get("limit")).toBe("49");
+    expect(requestUrl.searchParams.get("offset")).toBe("0");
+    expect(page.rows).toHaveLength(48);
+    expect(page.nextOffset).toBe(48);
+  });
+
+  it("maps a video thumbnail separately from its playable preview", async () => {
+    const video = asset({
+      id: 72,
+      library_kind: "video",
+      asset_kind: "video",
+      content_type: "uploaded_video",
+      metadata: {
+        preview_url: "https://cdn.example/video.mp4",
+        thumbnail_url: "https://cdn.example/video-poster.jpg",
+      },
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([video]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "video");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]).toMatchObject({
+      previewUrl: "https://cdn.example/video.mp4",
+      thumbnailUrl: "https://cdn.example/video-poster.jpg",
+    });
+  });
+
   it("reports actual multipart upload progress and returns the uploaded asset", async () => {
     class FakeUploadRequest {
       static instance: FakeUploadRequest | null = null;
@@ -406,6 +464,16 @@ describe("runtime data boundary", () => {
     expect(source).not.toContain("mockAssetWorkspaceData");
     expect(source).not.toContain("Local mock revision");
     expect(source).not.toContain("Local mock restore");
+  });
+
+  it("shares asset title normalization instead of maintaining two copies", () => {
+    const shared = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-shared.ts"), "utf8");
+    const adapter = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
+    const mappers = readFileSync(resolve(process.cwd(), "lib/asset-mappers.ts"), "utf8");
+
+    expect(shared).toContain("export function normalizeAssetTitle");
+    expect(adapter).not.toContain("function normalizeAssetTitle");
+    expect(mappers).not.toContain("function normalizeProductTitle");
   });
 
   it("keeps product starter prompts without restoring demo conversations", () => {

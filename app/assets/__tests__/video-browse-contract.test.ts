@@ -13,12 +13,14 @@ const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
 
 describe("video project browse-player contract", () => {
-  test("uses the existing editor timeline renderer when a ready project has no MP4", () => {
+  test("uses the existing editor timeline renderer after an explicit full-preview request", () => {
     expect(preview).toContain("<VideoProjectPreview");
     expect(preview).toContain("<VideoPreviewPlayer");
     expect(preview).not.toContain("<VideoPreviewResizer");
     expect(preview).not.toContain("previewHeight");
     expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
+    expect(preview).toContain("projectPreviewRequested && !projectPreviewFailed");
+    expect(preview).toContain("加载完整工程预览");
     expect(preview).toContain("hint={showFullVideo");
     expect(projectPreview).toContain("mode=preview");
     expect(projectPreview).toContain("shadcn-prototype-project-preview-frame");
@@ -36,13 +38,14 @@ describe("video project browse-player contract", () => {
     expect(editorView).toContain("editor-preview-only");
   });
 
-  test("keeps the static storyboard as the load/error fallback only", () => {
+  test("keeps the static storyboard as the default and load/error fallback", () => {
     expect(storyboardPreview).toContain("findMediaForSegment");
     expect(storyboardPreview).toContain("mediaUrlForRef");
     expect(storyboardPreview).not.toContain("initEditorWithProject");
     expect(storyboardPreview).not.toContain("Promise.all");
     expect(preview).toContain("onError={() => setProjectPreviewFailed(true)}");
-    expect(preview).toContain("projectPreviewFailed ? (");
+    expect(preview).toContain("setProjectPreviewRequested(false)");
+    expect(preview).toContain("重新加载完整工程预览");
   });
 
   test("renders segment videos as a complete player inside the shared shell", () => {
@@ -80,11 +83,13 @@ describe("video project browse-player contract", () => {
     expect(editorView).toContain("initialSegmentId={initialSegmentId}");
   });
 
-  test("keeps one editor iframe mounted as a hidden export bridge while browsing", () => {
+  test("mounts the editor export bridge only after explicit edit or export intent", () => {
     expect(workspace).toContain("shadcn-prototype-export-bridge");
     expect(workspace).toContain("{exportButtonLabel}");
     expect(workspace).toContain("canBrowseVideo ? (");
-    expect(workspace).toContain("{!isTextEditing && hasVideoProject ? (");
+    expect(workspace).toContain("{!isTextEditing && hasVideoProject && editorRequested ? (");
+    expect(workspace).toContain("pendingExportRef.current = true");
+    expect(workspace).toContain('setExportState("preparing")');
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 

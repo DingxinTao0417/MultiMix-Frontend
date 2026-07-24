@@ -24,7 +24,7 @@ import {
   type SegmentMaterialCandidatesResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
-import { isRecord } from "./asset-workspace-shared";
+import { isRecord, normalizeAssetTitle } from "./asset-workspace-shared";
 import type { VideoQualityReport } from "./video-quality";
 
 export type LibraryRow = {
@@ -45,6 +45,7 @@ export type LibraryRow = {
   sourceLabel?: string;
   sourceUrl?: string;
   previewUrl?: string;
+  thumbnailUrl?: string;
   detailLabel?: string;
   sourceRefs?: string[];
   versions?: string[];
@@ -58,6 +59,17 @@ export type LibraryRow = {
   understandingRoles?: string[];
   licenseLabel?: string;
   variant?: "digital-human" | "standard";
+};
+
+export type LibraryPage = {
+  rows: LibraryRow[];
+  nextOffset: number | null;
+};
+
+export type LibraryListOptions = {
+  offset?: number;
+  limit?: number;
+  signal?: AbortSignal;
 };
 
 type UploadProgressCallback = (percent: number | null) => void;
@@ -307,7 +319,12 @@ export type AssetWorkspaceAdapter = {
     | { kind: "confirm_overwrite"; message: string }
     | { kind: "started"; job: VideoJobResult }
   >;
-  listLibrary(token: string, view: Exclude<AssetWorkspaceView, "conversation">, query?: string): Promise<LibraryRow[]>;
+  listLibrary(
+    token: string,
+    view: Exclude<AssetWorkspaceView, "conversation">,
+    query?: string,
+    options?: LibraryListOptions,
+  ): Promise<LibraryPage>;
   uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">, onProgress?: UploadProgressCallback): Promise<ContentAsset>;
   createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
@@ -532,6 +549,15 @@ function previewUrlForAsset(asset: ContentAsset): string | undefined {
     .find((item) => /^https?:\/\//i.test(item));
 }
 
+function thumbnailUrlForAsset(asset: ContentAsset): string | undefined {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const thumbnailRef = typeof metadata.thumbnail_ref === "string" ? metadata.thumbnail_ref.trim() : "";
+  if (thumbnailRef) return mediaProxyUrl(thumbnailRef);
+  return [metadata.thumbnail_url, metadata.poster_url]
+    .map((item) => typeof item === "string" ? item.trim() : "")
+    .find((item) => /^https?:\/\//i.test(item));
+}
+
 function statusLabel(status: string): string {
   const normalized = status.toLowerCase();
   if (normalized === "ready") return "已入库";
@@ -565,18 +591,6 @@ function artifactCategory(asset: ContentAsset): string {
   if (asset.content_type === "social_post") return "文案稿";
   if (asset.content_type === "video_render") return "视频工程";
   return "";
-}
-
-function normalizeAssetTitle(title: string): string {
-  let clean = title.replace(/\s+/g, " ").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
-  if (!clean) return "MultiMix";
-  const suffixPattern = /\s*(?:-|—|–|·|｜|\|)\s*(?:MP4\s*成片(?:\s*v\d+)?|视频工程|编导文稿|编导稿|视频脚本|视频文案草稿|文案草稿|内容草稿|准备稿|草稿)\s*$/i;
-  for (let index = 0; index < 4; index += 1) {
-    const next = clean.replace(suffixPattern, "").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
-    if (next === clean) break;
-    clean = next;
-  }
-  return clean || title;
 }
 
 function inferLibraryCategory(asset: ContentAsset): string {
@@ -662,6 +676,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     sourceLabel: asset.source_filename ?? sourceUrl ?? asset.original_ref ?? asset.markdown_ref ?? "对话或系统沉淀",
     sourceUrl,
     previewUrl: previewUrlForAsset(asset),
+    thumbnailUrl: thumbnailUrlForAsset(asset),
     sourceRefs: (asset.source_mapping ?? [])
       .filter((item) => item && typeof item === "object")
       .map((item) => {
@@ -1069,38 +1084,40 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       }
       return { kind: "started" as const, job: mapVideoJob(payload as unknown as RawVideoJob) };
     },
-    async listLibrary(token, view, query) {
+    async listLibrary(token, view, query, options = {}) {
       const kinds = libraryKindsForView(view);
       const trimmedQuery = query?.trim() ?? "";
+      const offset = Math.max(0, Math.floor(options.offset ?? 0));
+      const limit = Math.max(1, Math.min(100, Math.floor(options.limit ?? 48)));
       if (trimmedQuery) {
         const params = new URLSearchParams({ q: trimmedQuery, library_kind: libraryKindParam(view), limit: "50" });
         const [keywordResult, semanticResult] = await Promise.allSettled([
-          api<ContentAssetSearchResult[]>(`/assets/search?${params.toString()}`, token),
-          api<ContentAssetSearchResult[]>(`/assets/semantic-search?${params.toString()}`, token)
+          api<ContentAssetSearchResult[]>(`/assets/search?${params.toString()}`, token, { signal: options.signal }),
+          api<ContentAssetSearchResult[]>(`/assets/semantic-search?${params.toString()}`, token, { signal: options.signal })
         ]);
         const keywordRows = keywordResult.status === "fulfilled" ? keywordResult.value : [];
         const semanticRows = semanticResult.status === "fulfilled" ? semanticResult.value : [];
         const mergedRows = mergeSearchResults(keywordRows, semanticRows)
           .filter((row) => row.assetId == null || kinds.includes(row.kind === "file" ? "asset" : row.kind));
-        if (mergedRows.length || keywordResult.status === "fulfilled" || semanticResult.status === "fulfilled") return mergedRows;
+        if (mergedRows.length || keywordResult.status === "fulfilled" || semanticResult.status === "fulfilled") {
+          return { rows: mergedRows, nextOffset: null };
+        }
       }
-      // Fetch per kind instead of the full /assets list. The full list pulls
-      // every asset kind (hundreds of rows + selectinload versions) over the
-      // remote Supabase link and can take 45s+ or time out, which made the UI
-      // fall back to mock rows (no updatedLabel/status). Scoping to the view's
-      // kind(s) keeps each request small and fast.
-      const kindResults = await Promise.allSettled(
-        kinds.map((kind) =>
-          api<ContentAsset[]>(`/assets?kind=${encodeURIComponent(kind)}&limit=200`, token)
-        )
-      );
-      // Settle each kind independently: the video library pulls both "video" and
-      // "video_render"; if one kind is slow or fails it must not blank out the
-      // other. Rows sort by updated_at so mixed kinds interleave correctly.
-      return kindResults
-        .flatMap((result) => (result.status === "fulfilled" ? result.value : []))
+      const params = new URLSearchParams({
+        library_kind: libraryKindParam(view),
+        limit: String(limit + 1),
+        offset: String(offset),
+      });
+      const assets = await api<ContentAsset[]>(`/assets?${params.toString()}`, token, { signal: options.signal });
+      const hasMore = assets.length > limit;
+      const rows = assets
+        .slice(0, limit)
         .map((asset) => contentAssetToLibraryRow(asset))
         .sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
+      return {
+        rows,
+        nextOffset: hasMore ? offset + limit : null,
+      };
     },
     async uploadAsset(token, file, view, onProgress) {
       const formData = new FormData();
