@@ -17,11 +17,19 @@ const comparisonRunnerPath = path.join(
   "scripts",
   "run-video-pipeline-on-off-comparison.mjs",
 );
-const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+const packageJson = JSON.parse(
+  fs.readFileSync(path.join(root, "package.json"), "utf8"),
+);
 
 test("production pipeline runner resolves workspace files from the frontend parent", () => {
-  assert.match(runner, /const workspaceRoot = path\.resolve\(frontendRoot, "\.\."\);/);
-  assert.doesNotMatch(runner, /const workspaceRoot = path\.resolve\(frontendRoot, "\.\.", "\.\."\);/);
+  assert.match(
+    runner,
+    /const workspaceRoot = path\.resolve\(frontendRoot, "\.\."\);/,
+  );
+  assert.doesNotMatch(
+    runner,
+    /const workspaceRoot = path\.resolve\(frontendRoot, "\.\.", "\.\."\);/,
+  );
   assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-Backend"\)/);
   assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-商业计划\.md"\)/);
 });
@@ -34,7 +42,10 @@ test("production pipeline restores tracked Next config before removing its tempo
   assert.notEqual(restoreIndex, -1);
   assert.notEqual(nextBuildCleanupIndex, -1);
   assert.ok(restoreIndex < nextBuildCleanupIndex);
-  assert.ok(runner.lastIndexOf("restoreFiles(workspaceSnapshots);") > nextBuildCleanupIndex);
+  assert.ok(
+    runner.lastIndexOf("restoreFiles(workspaceSnapshots);") >
+      nextBuildCleanupIndex,
+  );
 });
 
 test("production pipeline QA stages reviewed BGM and approved product captures", () => {
@@ -47,7 +58,10 @@ test("production pipeline QA stages reviewed BGM and approved product captures",
 });
 
 test("production pipeline E2E proves product media and BGM enter the project", () => {
-  assert.match(spec, /getByRole\("button", \{ name: "上传 PDF 或文档" \}\)\.click\(\)/);
+  assert.match(
+    spec,
+    /getByRole\("button", \{ name: "上传 PDF 或文档" \}\)\.click\(\)/,
+  );
   assert.match(spec, /source_type\?\:\s*string/);
   assert.match(spec, /product_asset/);
   assert.match(spec, /track-bgm/);
@@ -58,6 +72,12 @@ test("production pipeline E2E proves product media and BGM enter the project", (
   assert.match(spec, /net::ERR_ABORTED/);
   assert.match(spec, /actionableRequestFailures/);
   assert.match(runner, /可行动失败请求/);
+});
+
+test("production pipeline requests a readable adaptive product-evidence split", () => {
+  assert.match(spec, /把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现/);
+  assert.match(spec, /优先保证截图清晰可读/);
+  assert.doesNotMatch(spec, /截图作为左侧证据，右侧/);
 });
 
 test("production pipeline E2E can verify intentional no-BGM degradation", () => {
@@ -100,7 +120,30 @@ test("production pipeline E2E separates two-stage evidence from the shared expor
   assert.match(spec, /recomposeTested = true/);
   assert.match(spec, /twoStageEnabled: expectTwoStage/);
   assert.match(spec, /recomposeTested,/);
-  assert.match(spec, /Shared quality and export contract for both pipeline modes/);
+  assert.match(
+    spec,
+    /Shared quality and export contract for both pipeline modes/,
+  );
+});
+
+test("production pipeline E2E separates rendered MG evidence from generated-primary recompose", () => {
+  assert.match(
+    spec,
+    /selectProductionGeneratedRecomposeTarget\(beforeScenes\)/,
+  );
+  assert.match(spec, /PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION/);
+  assert.match(spec, /visual_mode_policy: "preserve"/);
+  assert.match(
+    spec,
+    /requires a persisted generated primary for deterministic recompose/,
+  );
+  assert.match(spec, /primary_visual_strategy\?\.mode\)\.toBe\(targetMode\)/);
+  assert.match(spec, /mg_decision\?\.status === "rendered"/);
+  assert.doesNotMatch(
+    spec,
+    /find\(\(scene\) => scene\.primary_visual\?\.source_type === "generated_scene"\) \?\? beforeScenes\[0\]/,
+  );
+  assert.doesNotMatch(spec, /产品界面更突出/);
 });
 
 test("on-off comparison runner uses isolated sequential runs and validates identical inputs", () => {
@@ -169,7 +212,10 @@ test("production pipeline E2E requires real public material adoption for animate
 
 test("production pipeline E2E uses an explicit allowlisted proxy for sandbox provider DNS", () => {
   assert.match(runner, /startProviderEgressProxy/);
-  assert.match(runner, /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED:\s*"true"/);
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED:\s*"true"/,
+  );
   assert.match(runner, /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS/);
   assert.match(runner, /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY/);
   assert.match(runner, /videos\.pexels\.com/);
@@ -186,7 +232,10 @@ test("production pipeline E2E can crash and recover the worker after manifest pu
   assert.match(spec, /VIDEO_PIPELINE_EXPECT_RESUME/);
   assert.match(spec, /resumeReuse/);
   assert.match(runner, /time\.sleep\(0\.05\)/);
-  assert.match(runner, /run\(pythonCommand, \["-c", probeScript, databasePath, String\(timeoutMs\)\]/);
+  assert.match(
+    runner,
+    /run\(pythonCommand, \["-c", probeScript, databasePath, String\(timeoutMs\)\]/,
+  );
   assert.match(runner, /signal,/);
   assert.match(runner, /select metadata from content_assets/);
   assert.doesNotMatch(runner, /select metadata_json from content_assets/);
@@ -202,7 +251,10 @@ test("production pipeline E2E stops manifest polling when Playwright finishes ea
 
 test("production pipeline E2E waits for the exact confirmed video job before project assertions", () => {
   assert.match(spec, /latest_job_public_id/);
-  assert.match(spec, /confirmationPayload\.conversation\?\.metadata\?\.latest_job_public_id/);
+  assert.match(
+    spec,
+    /confirmationPayload\.conversation\?\.metadata\?\.latest_job_public_id/,
+  );
   assert.match(spec, /\/v1\/video\/jobs\/\$\{videoJobId\}/);
   assert.match(spec, /video project generation failed/);
   assert.match(spec, /timeout:\s*20 \* 60_000/);

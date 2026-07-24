@@ -106,8 +106,8 @@ export const defaultSubtitleStyle: SubtitleStyle = {
   bgEnabled: true,
   bgColor: "#111827b8",
   maxLineChars: 24,
-  sizeScale: 0.8,
-  bottomOffset: 0.34,
+  sizeScale: 0.7,
+  bottomOffset: 0.29,
 };
 
 // Module-level current style (mutated by the style panel before re-building).
@@ -128,6 +128,17 @@ export interface CaptionLayoutOptions {
 export interface CaptionLayout {
   text: string;
   lines: 0 | 1 | 2;
+  fontPx: number;
+}
+
+export interface SupportCardLayoutOptions extends CaptionLayoutOptions {
+  availableHeight: number;
+  lineHeight?: number;
+}
+
+export interface SupportCardLayout {
+  text: string;
+  lines: number;
   fontPx: number;
 }
 
@@ -201,6 +212,69 @@ export function layoutCaption(text: string, options: CaptionLayoutOptions): Capt
   return { text: split ?? compact, lines: split ? 2 : 1, fontPx: minimum };
 }
 
+function wrapMeasuredLine(
+  text: string,
+  fontPx: number,
+  availableWidth: number,
+  measure: CaptionMeasure,
+): string[] {
+  const result: string[] = [];
+  let current = "";
+  for (const character of Array.from(text)) {
+    const candidate = `${current}${character}`;
+    if (current && measure(candidate, fontPx) > availableWidth) {
+      result.push(current);
+      current = character;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) result.push(current);
+  return result;
+}
+
+export function layoutSupportCardText(
+  text: string,
+  options: SupportCardLayoutOptions,
+): SupportCardLayout {
+  const sourceLines = (text || "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!sourceLines.length) {
+    return { text: "", lines: 0, fontPx: options.preferredFontPx };
+  }
+  const preferred = Math.max(options.minimumFontPx, options.preferredFontPx);
+  const minimum = Math.min(preferred, options.minimumFontPx);
+  const measure = options.measureText
+    ?? browserTextWidth(options.fontFamily ?? "sans-serif");
+  const lineHeight = options.lineHeight ?? 1.45;
+  let fallback: SupportCardLayout | null = null;
+  for (
+    let fontPx = Math.floor(preferred);
+    fontPx >= Math.ceil(minimum);
+    fontPx -= 1
+  ) {
+    const visualLines = sourceLines.flatMap((line) =>
+      wrapMeasuredLine(line, fontPx, options.availableWidth, measure)
+    );
+    const candidate = {
+      text: visualLines.join("\n"),
+      lines: visualLines.length,
+      fontPx,
+    };
+    fallback = candidate;
+    if (visualLines.length * fontPx * lineHeight <= options.availableHeight) {
+      return candidate;
+    }
+  }
+  return fallback ?? {
+    text: sourceLines.join("\n"),
+    lines: sourceLines.length,
+    fontPx: minimum,
+  };
+}
+
 // Side map: element id -> segment text (OpenCut element type has no such field).
 // Used by the replace-material panel to re-search by the segment's script text.
 export const segmentTextByElementId: Record<string, string> = {};
@@ -267,6 +341,12 @@ function mediaTransformForDecision(
   canvasWidth: number,
 ) {
   if (!validatedSplitSupport(decision)) return { ...IDENTITY_TRANSFORM };
+  if (
+    decision?.presentation_canvas_version === "split_native_v1"
+    || decision?.presentation_canvas_version === "split_native_v2"
+  ) {
+    return { ...IDENTITY_TRANSFORM };
+  }
   return {
     scaleX: 0.62,
     scaleY: 0.62,
@@ -275,42 +355,111 @@ function mediaTransformForDecision(
   };
 }
 
+export interface SupportCardPanelGeometry {
+  availableWidth: number;
+  availableHeight: number;
+  paddingX: number;
+  paddingY: number;
+  position: { x: number; y: number };
+}
+
+const SPLIT_NATIVE_V2_SUPPORT_Y_OFFSET = 0.19;
+const SPLIT_NATIVE_V2_SUBTITLE_Y_OFFSET = 0.4;
+
+export function supportCardPanelGeometry(
+  settings: BackendProject["settings"],
+  canvasVersion: string | undefined,
+): SupportCardPanelGeometry {
+  const landscape = settings.width > settings.height;
+  const nativePaddingX = Math.round(
+    settings.width * (landscape ? 0.015 : 0.035),
+  );
+  const nativePaddingY = Math.round(
+    settings.height * (landscape ? 0.045 : 0.025),
+  );
+  if (canvasVersion === "split_native_v2") {
+    return {
+      availableWidth: Math.round(settings.width * (landscape ? 0.82 : 0.78)),
+      availableHeight: Math.round(settings.height * (landscape ? 0.18 : 0.25)),
+      paddingX: nativePaddingX,
+      paddingY: nativePaddingY,
+      position: landscape
+        ? {
+            x: -Math.round(settings.width * 0.4),
+            y: Math.round(
+              settings.height * SPLIT_NATIVE_V2_SUPPORT_Y_OFFSET,
+            ),
+          }
+        : {
+            x: -Math.round(settings.width * 0.39),
+            y: Math.round(
+              settings.height * SPLIT_NATIVE_V2_SUPPORT_Y_OFFSET,
+            ),
+          },
+    };
+  }
+  if (canvasVersion === "split_native_v1") {
+    return {
+      availableWidth: Math.round(settings.width * (landscape ? 0.27 : 0.78)),
+      availableHeight: Math.round(settings.height * (landscape ? 0.54 : 0.3)),
+      paddingX: nativePaddingX,
+      paddingY: nativePaddingY,
+      position: landscape
+        ? { x: Math.round(settings.width * 0.15), y: 0 }
+        : {
+            x: -Math.round(settings.width * 0.39),
+            y: Math.round(settings.height * 0.27),
+          },
+    };
+  }
+  return {
+    availableWidth: Math.round(settings.width * 0.27),
+    availableHeight: Math.round(settings.height * 0.54),
+    paddingX: Math.round(settings.width * 0.015),
+    paddingY: Math.round(settings.height * 0.08),
+    position: { x: Math.round(settings.width * 0.17), y: 0 },
+  };
+}
+
 function supportCardTextElement(
   element: BackendElement,
   settings: BackendProject["settings"],
 ): TextElement {
   const content = (element.content || "").trim();
-  const lines = content.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   const preferredFontPx = Math.min(42, Math.max(30, settings.height * 0.038));
   const minimumFontPx = Math.min(preferredFontPx, Math.max(24, preferredFontPx * 0.72));
-  const measure = browserTextWidth(subtitleStyle.fontFamily);
-  const widest = Math.max(
-    1,
-    ...lines.map((line) => measure(line, preferredFontPx)),
+  const canvasVersion = (
+    typeof element.editDecision?.presentation_canvas_version === "string"
+      ? element.editDecision.presentation_canvas_version
+      : undefined
   );
-  const availableWidth = settings.width * 0.27;
-  const fontPx = Math.max(
+  const geometry = supportCardPanelGeometry(settings, canvasVersion);
+  const layout = layoutSupportCardText(content, {
+    availableWidth: geometry.availableWidth,
+    availableHeight: geometry.availableHeight,
+    preferredFontPx,
     minimumFontPx,
-    Math.min(preferredFontPx, preferredFontPx * availableWidth / widest),
-  );
+    fontFamily: subtitleStyle.fontFamily,
+    lineHeight: 1.45,
+  });
   return {
     id: element.id,
     name: element.name || "支撑信息",
     type: "text",
-    content: lines.join("\n"),
+    content: layout.text,
     duration: element.duration,
     startTime: element.startTime,
     trimStart: element.trimStart ?? 0,
     trimEnd: element.trimEnd ?? 0,
-    fontSize: Math.max(2, (fontPx * 90) / settings.height),
+    fontSize: Math.max(2, (layout.fontPx * 90) / settings.height),
     fontFamily: subtitleStyle.fontFamily,
     color: "#f8fafc",
     background: {
       enabled: true,
       color: "#171b26",
       cornerRadius: 18,
-      paddingX: Math.round(settings.width * 0.015),
-      paddingY: Math.round(settings.height * 0.08),
+      paddingX: geometry.paddingX,
+      paddingY: geometry.paddingY,
     },
     textAlign: "left",
     fontWeight: "bold",
@@ -319,7 +468,7 @@ function supportCardTextElement(
     lineHeight: 1.45,
     transform: {
       ...IDENTITY_TRANSFORM,
-      position: { x: Math.round(settings.width * 0.17), y: 0 },
+      position: geometry.position,
     },
     opacity: 1,
   };
@@ -389,6 +538,17 @@ function clampOverlayElementToSegment(
 function buildTracks(bp: BackendProject): TimelineTrack[] {
   const tracks: TimelineTrack[] = [];
   const segmentWindows = buildSegmentWindows(bp.tracks);
+  const splitNativeV2SupportSegmentIds = new Set(
+    bp.tracks
+      .flatMap((track) => track.elements)
+      .filter(
+        (element) =>
+          element.segmentId
+          && element.editDecision?.presentation_canvas_version === "split_native_v2"
+          && validatedSplitSupport(element.editDecision),
+      )
+      .map((element) => element.segmentId as string),
+  );
 
   for (const t of bp.tracks) {
     const sourceElements = t.overlay
@@ -465,6 +625,11 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           minimumFontPx,
           fontFamily: style.fontFamily,
         });
+        const bottomOffset = (
+          e.segmentId && splitNativeV2SupportSegmentIds.has(e.segmentId)
+            ? SPLIT_NATIVE_V2_SUBTITLE_Y_OFFSET
+            : style.bottomOffset
+        );
         return ({
         id: e.id,
         name: e.name || "text",
@@ -484,7 +649,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         fontWeight: "bold",
         fontStyle: "normal",
         textDecoration: "none",
-        transform: { ...IDENTITY_TRANSFORM, position: { x: 0, y: Math.round(bp.settings.height * style.bottomOffset) } },
+        transform: { ...IDENTITY_TRANSFORM, position: { x: 0, y: Math.round(bp.settings.height * bottomOffset) } },
         opacity: 1,
       });
       });

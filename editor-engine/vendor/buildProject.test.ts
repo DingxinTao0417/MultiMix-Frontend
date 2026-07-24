@@ -15,8 +15,10 @@ vi.mock('./api', () => ({
 import {
   buildProject,
   buildMediaAssets,
+  displayTextByElementId,
   editDecisionByElementId,
   layoutCaption,
+  supportCardPanelGeometry,
 } from './buildProject';
 import type { BackendProject } from './buildProject';
 
@@ -230,7 +232,12 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
     const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
-    expect(renderedFontSize).toBeLessThanOrEqual(64);
+    expect(renderedFontSize).toBeGreaterThanOrEqual(34);
+    expect(renderedFontSize).toBeLessThanOrEqual(38);
+    expect(element.content).toBe('上传实拍，选方向，自动编导');
+    expect(element.transform).toMatchObject({
+      position: { x: 0, y: Math.round(bp.settings.height * 0.29) },
+    });
   });
 
   it('never splits an English product token across subtitle lines', () => {
@@ -593,6 +600,194 @@ describe('buildProject - overlay/hasAlpha logic', () => {
         paddingY: 86,
       });
       expect(card.transform).toMatchObject({ position: { x: 326, y: 0 } });
+    });
+
+    it('keeps a split-native canvas at full size and wraps every support line inside the right panel', () => {
+      const support = {
+        headline: '从对话直接进入分镜编辑',
+        items: [
+          '完整保留工作台上下文并继续生成可以逐镜修改的视频工程',
+          '同步视频预览',
+        ],
+      };
+      const decision = {
+        layout: 'split',
+        presentation_support: support,
+        presentation_canvas_version: 'split_native_v1',
+      };
+      const originalText = [
+        support.headline,
+        ...support.items.map((item) => `• ${item}`),
+      ].join('\n');
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ui', type: 'image' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              {
+                id: 'ui-native',
+                type: 'image',
+                startTime: 0,
+                duration: 5,
+                mediaId: 'media-ui',
+                editDecision: decision,
+              },
+            ],
+          },
+          {
+            id: 'track-support',
+            type: 'text',
+            name: '支撑信息',
+            elements: [
+              {
+                id: 'support-native',
+                type: 'text',
+                content: originalText,
+                displayText: originalText,
+                startTime: 0,
+                duration: 5,
+                textRole: 'presentation_support',
+                editDecision: decision,
+              },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const video = project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+      const card = project.scenes[0].tracks[1].elements[0] as Record<string, any>;
+      const visualLines = String(card.content).split('\n');
+
+      expect(video.transform).toEqual({
+        scaleX: 1,
+        scaleY: 1,
+        position: { x: 0, y: 0 },
+        rotate: 0,
+      });
+      expect(visualLines.length).toBeGreaterThan(3);
+      expect(visualLines.every((line) => Array.from(line).length <= 18)).toBe(true);
+      expect(visualLines.join('')).toBe(originalText.replace(/\n/g, ''));
+      expect(displayTextByElementId['support-native']).toBe(originalText);
+      expect(card.transform).toMatchObject({ position: { x: 288, y: 0 } });
+    });
+
+    it('keeps v1 side support and v2 lower support fully inside their safe panels', () => {
+      const settings = { fps: 30, width: 1920, height: 1080 };
+      const side = supportCardPanelGeometry(settings, 'split_native_v1');
+      const lower = supportCardPanelGeometry(settings, 'split_native_v2');
+
+      expect(side.position).toEqual({ x: 288, y: 0 });
+      expect(lower.position).toEqual({ x: -768, y: 205 });
+      expect(lower.availableWidth).toBe(1574);
+      expect(lower.availableHeight).toBe(194);
+
+      for (const geometry of [side, lower]) {
+        const contentLeft = settings.width / 2 + geometry.position.x;
+        const backgroundLeft = contentLeft - geometry.paddingX;
+        const backgroundRight = contentLeft + geometry.availableWidth + geometry.paddingX;
+        expect(backgroundLeft).toBeGreaterThanOrEqual(settings.width * 0.04);
+        expect(backgroundRight).toBeLessThanOrEqual(settings.width * 0.96);
+      }
+    });
+
+    it('separates v2 lower support from its subtitle without moving ordinary subtitles', () => {
+      const support = {
+        headline: '从对话直接进入分镜编辑',
+        items: ['保留可编辑结构', '同步视频预览'],
+      };
+      const splitDecision = {
+        layout: 'split',
+        presentation_support: support,
+        presentation_canvas_version: 'split_native_v2',
+      };
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-ui', type: 'image' })],
+        tracks: [
+          {
+            id: 'track-video',
+            type: 'video',
+            name: '素材',
+            elements: [
+              {
+                id: 'ui-native-v2',
+                type: 'image',
+                startTime: 0,
+                duration: 5,
+                mediaId: 'media-ui',
+                segmentId: 'scene-split',
+                editDecision: splitDecision,
+              },
+            ],
+          },
+          {
+            id: 'track-support',
+            type: 'text',
+            name: '支撑信息',
+            elements: [
+              {
+                id: 'support-native-v2',
+                type: 'text',
+                content: '从对话直接进入分镜编辑\n• 保留可编辑结构\n• 同步视频预览',
+                startTime: 0,
+                duration: 5,
+                segmentId: 'scene-split',
+                textRole: 'presentation_support',
+                editDecision: splitDecision,
+              },
+            ],
+          },
+          {
+            id: 'track-subtitle',
+            type: 'text',
+            name: '字幕',
+            elements: [
+              {
+                id: 'subtitle-split',
+                type: 'text',
+                content: '在工作台里直接完成。',
+                startTime: 0,
+                duration: 5,
+                segmentId: 'scene-split',
+                textRole: 'subtitle',
+              },
+              {
+                id: 'subtitle-ordinary',
+                type: 'text',
+                content: '普通分镜字幕。',
+                startTime: 5,
+                duration: 5,
+                segmentId: 'scene-ordinary',
+                textRole: 'subtitle',
+              },
+            ],
+          },
+        ],
+      });
+
+      const { project } = buildProject(bp);
+      const supportCard = project.scenes[0].tracks[1].elements[0] as {
+        transform: { position: { y: number } };
+      };
+      const subtitles = project.scenes[0].tracks[2].elements as Array<{
+        transform: { position: { y: number } };
+      }>;
+
+      expect(supportCard.transform.position.y).toBe(205);
+      expect(subtitles[0].transform.position.y).toBe(432);
+      expect(subtitles[1].transform.position.y).toBe(313);
+    });
+
+    it('keeps portrait v2 support and subtitle lanes proportional and separated', () => {
+      const portrait = { fps: 30, width: 1080, height: 1920 };
+      const supportGeometry = supportCardPanelGeometry(portrait, 'split_native_v2');
+
+      expect(supportGeometry.position).toEqual({ x: -421, y: 365 });
+      expect(Math.round(portrait.height * 0.4) - supportGeometry.position.y)
+        .toBeGreaterThanOrEqual(Math.round(portrait.height * 0.2));
     });
 
     it('does not create an empty split when validated support is absent', () => {
