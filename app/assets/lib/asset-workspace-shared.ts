@@ -31,13 +31,16 @@ export function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export function numberValue(value: unknown, fallback = 0): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) return parsed;
+export function normalizeAssetTitle(title: string): string {
+  let clean = title.replace(/\s+/g, " ").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+  if (!clean) return "MultiMix";
+  const suffixPattern = /\s*(?:-|—|–|·|｜|\|)\s*(?:MP4\s*成片(?:\s*v\d+)?|视频工程|编导文稿|编导稿|视频脚本|视频文案草稿|文案草稿|内容草稿|准备稿|草稿)\s*$/i;
+  for (let index = 0; index < 4; index += 1) {
+    const next = clean.replace(suffixPattern, "").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
+    if (next === clean) break;
+    clean = next;
   }
-  return fallback;
+  return clean || title;
 }
 
 export function getConversationProducts(conversation: Conversation) {

@@ -12,9 +12,6 @@ function flagEnabled(value: string | undefined, defaultOn = true): boolean {
 // Structured confirmation card (ConfirmCard). Off → plain message + chips.
 export const UI_V3_CONFIRM_CARD = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_CONFIRM_CARD);
 
-// Agent execution timeline (AgentRunTimeline). Off → bare "生成中" shimmer.
-export const UI_V3_AGENT_TIMELINE = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_AGENT_TIMELINE);
-
 // Sidebar AI background-status capsule (AiBackgroundStatus). Off → hidden.
 export const UI_V3_BG_STATUS = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_BG_STATUS);
 
@@ -28,9 +25,3 @@ export const UI_V3_FILMSTRIP = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V
 // Product generating visuals (aurora / typing caret / live source highlight).
 // Off → shimmer-only wait, one-shot full text (spec §12).
 export const UI_V3_GENERATING_VISUALS = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_GENERATING_VISUALS);
-
-// Streaming out-typing capability probe (spec §12 硬约定③ / backlog). The
-// backend does not stream partial output yet, so the typing caret and live
-// source-highlight stay off and the panel falls back to shimmer + one-shot
-// full text. Flip to true only once a streaming generation endpoint exists.
-export const UI_V3_STREAMING_ENABLED = flagEnabled(process.env.NEXT_PUBLIC_MULTIMIX_UI_V3_STREAMING, false);

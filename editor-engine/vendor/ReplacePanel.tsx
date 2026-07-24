@@ -19,7 +19,6 @@ import {
 } from "@editor/components/ui/sheet";
 
 export function ReplacePanel({ assetId, token }: { assetId?: string | null; token?: string | null }) {
-  const editor = useEditor();
   const selected = useEditor((e) => e.selection.getSelectedElements());
   const tracks = useEditor((e) => e.timeline.getTracks());
   const canvasSize = useEditor((e) => e.project.getActiveOrNull()?.settings.canvasSize);

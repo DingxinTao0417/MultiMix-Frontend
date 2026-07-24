@@ -1,6 +1,6 @@
 # MultiMix 功能缺口与待完善清单
 
-> 最后更新: 2026-07-17
+> 最后更新: 2026-07-24
 > 基于全仓库代码审查生成，覆盖 frontend + backend。
 
 ---
@@ -79,19 +79,9 @@ MG 动效渲染（Remotion on Modal）的客户端和 Modal 应用均无测试�
 
 ### 7. 流式响应 (Streaming) 未接入
 
-**位置:** `app/assets/lib/ui-flags.ts:37`
-
-```typescript
-UI_V3_STREAMING_ENABLED (默认 OFF) — "capability probe, 等待后端 streaming 支持"
-```
+**位置:** 前端对话任务轮询链路
 
 当前对话消息采用**轮询模式**——AI 生成完整回复后一次性返回，用户无逐字输出体验，长文案场景下等待无反馈。
-
-### 8. Agent 执行时间线降级模式未实现
-
-**位置:** `app/assets/lib/ui-flags.ts:16`
-
-`UI_V3_AGENT_TIMELINE` 开关已定义但**在任何组件中都未被检查**。`AgentRunTimeline` 总是无条件渲染，不存在注释中描述的 "bare '生成中' shimmer" 降级模式。
 
 ### 9. 前端 E2E 测试覆盖严重不足
 
@@ -214,7 +204,7 @@ editor-engine/vendor/editor/lib/actions/registry.ts:62
 | 优先级 | 数量 | 关键项 |
 |--------|------|--------|
 | 🔴 P0 | 6 | 编辑器三大功能缺失、素材替换、Undo、后端核心模块无测试 |
-| 🟠 P1 | 5 | 流式响应、E2E 覆盖、静默异常、降级模式、辅助模块测试 |
+| 🟠 P1 | 4 | 流式响应、E2E 覆盖、静默异常、辅助模块测试 |
 | 🟡 P2 | 4 | API Key 泄露、遥测未清理、SQLite 误提交、幽灵文档 |
 | 🟢 P3 | 3 | 模板过滤、自定义辅助线、上游 TODO |
-| **合计** | **18** | |
+| **合计** | **17** | |

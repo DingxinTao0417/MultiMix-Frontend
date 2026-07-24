@@ -25,8 +25,8 @@ export default function MaterialsReadyStrip({
     let cancelled = false;
     assetWorkspaceAdapter
       .listLibrary(token, "image")
-      .then((rows) => {
-        if (!cancelled) setBackendRows(rows);
+      .then((page) => {
+        if (!cancelled) setBackendRows(page.rows);
       })
       .catch(() => {
         if (!cancelled) setBackendRows([]);

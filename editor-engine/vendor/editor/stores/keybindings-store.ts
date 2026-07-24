@@ -56,7 +56,7 @@ export const useKeybindingsStore = create<KeybindingsState>()(
 			isLoadingProject: false,
 			isRecording: false,
 
-			openOverlay: (overlayId, source) =>
+			openOverlay: (overlayId) =>
 				set((s) => {
 					const openOverlayIds = s.openOverlayIds.includes(overlayId)
 						? s.openOverlayIds
@@ -67,7 +67,7 @@ export const useKeybindingsStore = create<KeybindingsState>()(
 						overlayDepth: nextOverlayDepth,
 					};
 				}),
-			closeOverlay: (overlayId, source) =>
+			closeOverlay: (overlayId) =>
 				set((s) => {
 					const openOverlayIds = s.openOverlayIds.filter(
 						(id) => id !== overlayId,

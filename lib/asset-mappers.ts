@@ -3,6 +3,7 @@
 // frontend assets-workspace-client.tsx helpers.
 
 import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";
+import { normalizeAssetTitle } from "../app/assets/lib/asset-workspace-shared";
 import type { AgentRunStep, AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRatioOption, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
@@ -447,9 +448,6 @@ export function videoJobStageLabel(stage: string): string {
   return labels[stage] ?? "正在生成";
 }
 
-// Ordered pipeline steps shown by the progress UI; maps render_stage → index.
-export const VIDEO_JOB_STEPS = ["生成脚本", "匹配素材与配音", "组装时间线"] as const;
-
 export function videoJobStepIndex(stage: string): number {
   if (stage === "queued" || stage === "script") return 0;
   if (stage === "segment" || stage === "render") return 1;
@@ -606,18 +604,6 @@ function artifactCategory(asset: ContentAsset): string {
   if (asset.content_type === "social_post") return "文案稿";
   if (asset.content_type === "video_render") return "视频工程";
   return stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
-}
-
-function normalizeProductTitle(title: string): string {
-  let clean = title.replace(/\s+/g, " ").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
-  if (!clean) return "MultiMix";
-  const suffixPattern = /\s*(?:-|—|–|·|｜|\|)\s*(?:MP4\s*成片(?:\s*v\d+)?|视频工程|编导文稿|编导稿|视频脚本|视频文案草稿|文案草稿|内容草稿|准备稿|草稿)\s*$/i;
-  for (let index = 0; index < 4; index += 1) {
-    const next = clean.replace(suffixPattern, "").trim().replace(/^[\-—–·｜|]+|[\-—–·｜|]+$/g, "");
-    if (next === clean) break;
-    clean = next;
-  }
-  return clean || title;
 }
 
 export function statusLabelFromProduct(asset: ContentAsset): string {
@@ -809,7 +795,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     videoProjectReady: Boolean(videoProject),
     metadata,
     mode,
-    title: normalizeProductTitle(asset.title),
+    title: normalizeAssetTitle(asset.title),
     status,
     summary: firstMeaningfulLine(asset.body) || asset.title,
     ratio,
@@ -835,7 +821,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
           : "初始版本"
     })),
     preview: {
-      title: normalizeProductTitle(asset.title),
+      title: normalizeAssetTitle(asset.title),
     subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }

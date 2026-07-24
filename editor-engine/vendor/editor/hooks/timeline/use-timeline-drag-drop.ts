@@ -1,7 +1,6 @@
 import { useState, useCallback, type RefObject } from "react";
 import { useEditor } from "@editor/hooks/use-editor";
 import { processMediaAssets } from "@editor/lib/media/processing";
-import { toast } from "sonner";
 import { showMediaUploadToast } from "@editor/lib/media/upload-toast";
 import { TIMELINE_CONSTANTS } from "@editor/constants/timeline-constants";
 import { snapTimeToFrame } from "@editor/lib/time";
