@@ -9,6 +9,7 @@ import {
   type BGMChoice,
   type BGMCatalogResponse,
   type BGMCatalogTrack,
+  type BGMUpdateResponse,
 } from "../../editor-engine/vendor/api";
 
 const CATEGORIES = [
@@ -31,7 +32,7 @@ export default function BgmPanel({
   assetId: string;
   token: string | null;
   onPrepareChange: () => Promise<void>;
-  onProjectChanged: (project: Record<string, unknown>) => Promise<void>;
+  onProjectChanged: (result: BGMUpdateResponse) => Promise<void>;
 }) {
   const [catalog, setCatalog] = useState<BGMCatalogResponse | null>(null);
   const [available, setAvailable] = useState(true);
@@ -109,7 +110,7 @@ export default function BgmPanel({
         ...(catalogId ? { catalog_id: catalogId } : {}),
         catalog_version: catalog.catalog_version,
       });
-      await onProjectChanged(result.project);
+      await onProjectChanged(result);
       setChoice(result.choice);
       setCatalog((current) => current ? { ...current, current_choice: result.choice } : current);
       setMessage(action === "disable" ? "已关闭背景音乐。" : "背景音乐已更新。");

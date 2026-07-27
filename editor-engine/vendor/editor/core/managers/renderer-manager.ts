@@ -8,9 +8,11 @@ import { createTimelineAudioBuffer } from "@editor/lib/media/audio";
 import { formatTimeCode } from "@editor/lib/time";
 import { downloadBlob } from "@editor/utils/browser";
 
-type SnapshotResult =
+export type SnapshotResult =
 	| { success: true; blob: Blob; filename: string }
 	| { success: false; error: string };
+
+type SnapshotMimeType = "image/png" | "image/jpeg";
 
 export class RendererManager {
 	private renderTree: RootNode | null = null;
@@ -66,7 +68,41 @@ export class RendererManager {
 		}
 	}
 
-	private async createSnapshot(): Promise<SnapshotResult> {
+	/**
+	 * Render a read-only snapshot of the final editor composition at an exact
+	 * timeline time. This deliberately does not seek or pause playback, so an
+	 * automated quality review cannot disturb the user's preview state.
+	 */
+	async captureFrame({
+		time,
+		mimeType = "image/png",
+		quality,
+	}: {
+		time: number;
+		mimeType?: SnapshotMimeType;
+		quality?: number;
+	}): Promise<SnapshotResult> {
+		if (!Number.isFinite(time) || time < 0) {
+			return { success: false, error: "Snapshot time must be non-negative" };
+		}
+		if (
+			quality !== undefined &&
+			(!Number.isFinite(quality) || quality < 0 || quality > 1)
+		) {
+			return { success: false, error: "Snapshot quality must be between 0 and 1" };
+		}
+		return this.createSnapshot({ time, mimeType, quality });
+	}
+
+	private async createSnapshot({
+		time,
+		mimeType = "image/png",
+		quality,
+	}: {
+		time?: number;
+		mimeType?: SnapshotMimeType;
+		quality?: number;
+	} = {}): Promise<SnapshotResult> {
 		try {
 			const renderTree = this.getRenderTree();
 			const activeProject = this.editor.project.getActive();
@@ -81,7 +117,7 @@ export class RendererManager {
 			}
 
 			const { canvasSize, fps } = activeProject.settings;
-			const renderTime = this.editor.playback.getCurrentTime();
+			const renderTime = time ?? this.editor.playback.getCurrentTime();
 
 			const renderer = new CanvasRenderer({
 				width: canvasSize.width,
@@ -100,7 +136,7 @@ export class RendererManager {
 			});
 
 			const blob = await new Promise<Blob | null>((resolve) => {
-				tempCanvas.toBlob((result) => resolve(result), "image/png");
+				tempCanvas.toBlob((result) => resolve(result), mimeType, quality);
 			});
 
 			if (!blob) {
@@ -114,7 +150,8 @@ export class RendererManager {
 			const safeName =
 				activeProject.metadata.name.replace(/[<>:"/\\|?*]/g, "-").trim() ||
 				"snapshot";
-			const filename = `${safeName}-${timecode}.png`;
+			const extension = mimeType === "image/jpeg" ? "jpg" : "png";
+			const filename = `${safeName}-${timecode}.${extension}`;
 
 			return { success: true, blob, filename };
 		} catch (error) {

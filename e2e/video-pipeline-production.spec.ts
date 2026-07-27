@@ -10,7 +10,26 @@ import {
 
 const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
+const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
+const expectedSceneCount = Number(
+  process.env.VIDEO_PIPELINE_EXPECTED_SCENE_COUNT
+    ?? (targetSeconds >= 45 ? 8 : 6),
+);
+const videoJobTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
+);
+if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) {
+  throw new Error("VIDEO_PIPELINE_TARGET_SECONDS must be a positive number");
+}
+if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
+  throw new Error("VIDEO_PIPELINE_EXPECTED_SCENE_COUNT must be a positive integer");
+}
+if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
+}
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
+const expectedPipelineCode =
+  scenario === "hybrid" ? "real_material_hybrid" : "designed_explainer";
 const requirePublicAsset =
   process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true" ||
   scenario === "animated_public";
@@ -18,6 +37,8 @@ const hybridMediaFilesRaw = process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
+const expectRenderedReview =
+  process.env.VIDEO_PIPELINE_EXPECT_RENDERED_REVIEW !== "false";
 const audioMixRatioTolerance = Number(
   process.env.VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE ?? "0.15",
 );
@@ -31,7 +52,12 @@ type AssetRow = {
 type VideoProject = {
   metadata?: {
     duration?: number;
-    bgm_choice?: { enabled?: boolean; catalog_id?: string };
+    closing_hold_seconds?: number;
+    bgm_choice?: {
+      enabled?: boolean;
+      catalog_id?: string;
+      music_intent?: string;
+    };
     audio_mix?: {
       voice_to_music_ratio?: number;
       predicted_voice_to_music_ratio?: number;
@@ -39,6 +65,14 @@ type VideoProject = {
       music_lufs?: number;
     };
     audio_mix_measurement_status?: string;
+  };
+  orchestration?: {
+    tts_sample_gate?: {
+      status?: string;
+      duration_seconds?: number;
+      true_peak_dbfs?: number;
+      provider?: string;
+    };
   };
   tracks?: Array<{
     id?: string;
@@ -107,6 +141,7 @@ type SceneRow = {
   primary_scene_spec?: {
     exactText?: string[];
     content?: { headline?: string };
+    surfacePreset?: string;
   };
   primary_visual?: {
     status?: string;
@@ -161,6 +196,17 @@ type QualityReport = {
       voice_true_peak_dbfs?: number;
     };
   };
+};
+
+type RenderedReview = {
+  status?: string;
+  project_fingerprint?: string;
+  attempt?: number;
+  issues?: Array<{
+    code?: string;
+    scene_id?: string;
+    severity?: string;
+  }>;
 };
 
 async function enterWorkspace(page: Page) {
@@ -225,11 +271,68 @@ async function waitForProjectReady(page: Page) {
     const summary = page.getByLabel("分镜摘要");
     if (await summary.isVisible().catch(() => false)) {
       const cards = summary.locator("li");
-      if ((await cards.count()) === 6) return summary;
+      if ((await cards.count()) === expectedSceneCount) return summary;
     }
     await page.waitForTimeout(2500);
   }
-  throw new Error("timed out waiting for the six-scene video project");
+  throw new Error(
+    `timed out waiting for the ${expectedSceneCount}-scene video project`,
+  );
+}
+
+async function waitForRenderedReviewPassed(
+  page: Page,
+  apiBase: string,
+  assetId: number,
+  headers: Record<string, string>,
+): Promise<RenderedReview> {
+  let latest: RenderedReview | undefined;
+  await expect
+    .poll(
+      async () => {
+        let response: APIResponse;
+        try {
+          response = await page.request.get(
+            `${apiBase}/v1/video/projects/${assetId}/rendered-reviews/latest`,
+            { headers },
+          );
+        } catch (error) {
+          return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+        }
+        if (!response.ok()) return `http-${response.status()}`;
+        const renderedReview = (await response.json()) as RenderedReview;
+        latest = renderedReview;
+        if (
+          ["unavailable", "blocked", "blocked_requires_user_choice"].includes(
+            renderedReview.status ?? "",
+          )
+        ) {
+          throw new Error(
+            `rendered review stopped at ${renderedReview.status}: `
+            + JSON.stringify(renderedReview.issues ?? []),
+          );
+        }
+        return renderedReview.status ?? "missing";
+      },
+      { timeout: 20 * 60_000, intervals: [2500, 5000, 10_000] },
+    )
+    .toBe("passed");
+  expect(latest).toBeTruthy();
+  expect(Number(latest?.attempt)).toBeLessThanOrEqual(3);
+
+  const projectResponse = await page.request.get(
+    `${apiBase}/v1/video/projects/${assetId}`,
+    { headers },
+  );
+  expect(projectResponse.ok()).toBe(true);
+  const projectPayload = (await projectResponse.json()) as {
+    result?: { project_fingerprint?: string };
+  };
+  const renderedReview = latest!;
+  expect(renderedReview.project_fingerprint).toBe(
+    projectPayload.result?.project_fingerprint,
+  );
+  return renderedReview;
 }
 
 function scenesFromAsset(asset: AssetRow): SceneRow[] {
@@ -262,19 +365,20 @@ function normalizedVisibleText(value: string | undefined) {
     .toLocaleLowerCase();
 }
 
-function generatedPrimaryRepeatsNarration(scene: SceneRow) {
+function generatedPrimaryRepeatsVisibleSubtitle(scene: SceneRow) {
   if (scene.primary_visual?.source_type !== "generated_scene") return false;
   const headline =
     scene.primary_scene_spec?.content?.headline ??
     scene.primary_scene_spec?.exactText?.[0] ??
     "";
+  const visibleSubtitle = scene.subtitle_focus?.trim() || scene.narration;
   return Boolean(
     headline.trim() &&
-    normalizedVisibleText(headline) === normalizedVisibleText(scene.narration),
+    normalizedVisibleText(headline) === normalizedVisibleText(visibleSubtitle),
   );
 }
 
-test("produces six persisted visuals and recomposes only one scene", async ({
+test("produces persisted visuals and recomposes only one scene", async ({
   page,
 }) => {
   test.setTimeout(60 * 60_000);
@@ -380,10 +484,10 @@ test("produces six persisted visuals and recomposes only one scene", async ({
   const generationResponse = await postConversation(
     page,
     scenario === "hybrid"
-      ? "严格基于刚上传的资料以及真实展厅、空间规划和施工改造视频，制作一条30秒、16:9横屏的商家内容示范片。让真实门店与服务过程素材主导叙事。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成6个可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和6个分镜，不要展示内部制作方式。"
+      ? `严格基于刚上传的资料以及真实展厅、空间规划和施工改造视频，制作一条${targetSeconds}秒、16:9横屏的商家内容示范片。让真实门店与服务过程素材主导叙事。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
       : scenario === "animated_public"
-        ? "严格基于刚上传的 MultiMix 产品资料，制作一条30秒、16:9横屏的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和6个分镜；信息不足按合理默认值处理，不要展示内部制作方式。"
-        : "严格基于刚上传的 MultiMix 产品资料，制作一条30秒、16:9横屏的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和6个分镜；信息不足按合理默认值处理，不要展示内部制作方式。",
+        ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、16:9横屏的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
+        : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、16:9横屏的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`,
   );
   const generationPayload = (await generationResponse.json()) as {
     generation_job?: { id?: string };
@@ -485,13 +589,13 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     }
     return job.status;
       },
-      { timeout: 20 * 60_000, intervals: [1000, 2500, 5000] },
+      { timeout: videoJobTimeoutMs, intervals: [1000, 2500, 5000] },
     )
     .toBe("completed");
 
   const summary = await waitForProjectReady(page);
   const cards = summary.locator("li");
-  await expect(cards).toHaveCount(6);
+  await expect(cards).toHaveCount(expectedSceneCount);
   await expect(summary.getByText("待补素材")).toHaveCount(0);
   const visibleText = await page.locator("body").innerText();
   expect(visibleText).not.toMatch(
@@ -524,6 +628,11 @@ test("produces six persisted visuals and recomposes only one scene", async ({
   let pipelineCode: string | undefined = expectTwoStage ? undefined : "legacy";
   let beforeScenes = scenesFromAsset(projectAsset!);
   let incrementMgScenes: SceneRow[] = [];
+  let artDirectionSummary: {
+    schemaVersion?: string;
+    surfacePresets: string[];
+    distinctSurfaceCount: number;
+  } | null = null;
   if (expectTwoStage) {
     const persistedPipelineDecision = (
       projectAsset!.metadata!.video_plan as {
@@ -563,9 +672,14 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     await expect
       .poll(
         async () => {
-          const response = await page.request.get(`${apiBase}/v1/assets`, {
-            headers,
-          });
+          let response: APIResponse;
+          try {
+            response = await page.request.get(`${apiBase}/v1/assets`, {
+              headers,
+            });
+          } catch (error) {
+            return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+          }
     if (!response.ok()) return `http-${response.status()}`;
           const current = ((await response.json()) as AssetRow[]).find(
       (asset) => asset.id === projectAsset!.id,
@@ -603,16 +717,59 @@ test("produces six persisted visuals and recomposes only one scene", async ({
       )
       .toBe("ready");
     const persistedVideoPlan = projectAsset!.metadata?.video_plan as {
-    mg_plan?: { layout?: string };
-    internal_production?: { skill_package?: { code?: string } };
-  };
-  expect(persistedVideoPlan.mg_plan?.layout).toBe("landscape");
-    pipelineCode = persistedVideoPlan.internal_production?.skill_package?.code;
-    expect(pipelineCode).toBe(
-      scenario === "animated_public" ? "animated_explainer" : scenario,
+      duration_contract?: { target_seconds?: number };
+      mg_plan?: { layout?: string };
+      internal_production?: {
+        skill_package?: { code?: string };
+        art_direction?: {
+          schema_version?: string;
+          scene_surface_by_id?: Record<string, string>;
+        };
+      };
+    };
+    expect(persistedVideoPlan.mg_plan?.layout).toBe("landscape");
+    expect(Number(persistedVideoPlan.duration_contract?.target_seconds)).toBe(
+      targetSeconds,
     );
+    pipelineCode = persistedVideoPlan.internal_production?.skill_package?.code;
+    expect(pipelineCode).toBe(expectedPipelineCode);
     beforeScenes = scenesFromAsset(projectAsset!);
-  expect(beforeScenes).toHaveLength(6);
+    const artDirection =
+      persistedVideoPlan.internal_production?.art_direction;
+    expect(artDirection?.schema_version).toBe("video_art_direction_v1");
+    expect(Object.keys(artDirection?.scene_surface_by_id ?? {})).toHaveLength(
+      expectedSceneCount,
+    );
+    const distinctSurfacePresets = new Set(
+      Object.values(artDirection?.scene_surface_by_id ?? {}),
+    );
+    expect(distinctSurfacePresets.size).toBeGreaterThanOrEqual(4);
+    artDirectionSummary = {
+      schemaVersion: artDirection?.schema_version,
+      surfacePresets: [
+        ...Object.values(artDirection?.scene_surface_by_id ?? {}),
+      ],
+      distinctSurfaceCount: distinctSurfacePresets.size,
+    };
+    const orderedSurfacePresets = beforeScenes.map(
+      (scene) => artDirection?.scene_surface_by_id?.[scene.id],
+    );
+    for (let index = 2; index < orderedSurfacePresets.length; index += 1) {
+      expect(
+        new Set(orderedSurfacePresets.slice(index - 2, index + 1)).size,
+        `three adjacent scenes must not repeat one surface at ${index + 1}`,
+      ).toBeGreaterThan(1);
+    }
+    const compiledSurfaceScenes = beforeScenes.filter(
+      (scene) => scene.primary_scene_spec?.surfacePreset,
+    );
+    expect(compiledSurfaceScenes.length).toBeGreaterThan(0);
+    for (const scene of compiledSurfaceScenes) {
+      expect(scene.primary_scene_spec?.surfacePreset).toBe(
+        artDirection?.scene_surface_by_id?.[scene.id],
+      );
+    }
+  expect(beforeScenes).toHaveLength(expectedSceneCount);
   const informationRoleKeys = [
     "narration",
     "subtitle",
@@ -782,7 +939,25 @@ test("produces six persisted visuals and recomposes only one scene", async ({
       );
   }
   }
-  expect(beforeScenes).toHaveLength(6);
+  let initialRenderedReview: RenderedReview | undefined;
+  if (expectRenderedReview) {
+    initialRenderedReview = await waitForRenderedReviewPassed(
+      page,
+      apiBase,
+      projectAsset!.id,
+      headers,
+    );
+    const refreshedList = await page.request.get(`${apiBase}/v1/assets`, {
+      headers,
+    });
+    expect(refreshedList.ok()).toBe(true);
+    projectAsset = ((await refreshedList.json()) as AssetRow[]).find(
+      (asset) => asset.id === projectAsset!.id,
+    );
+    expect(projectAsset).toBeTruthy();
+    beforeScenes = scenesFromAsset(projectAsset!);
+  }
+  expect(beforeScenes).toHaveLength(expectedSceneCount);
   const videoProject = projectAsset!.metadata?.video_project as
     VideoProject | undefined;
   const assetManifest = projectAsset!.metadata?.asset_manifest as
@@ -793,8 +968,8 @@ test("produces six persisted visuals and recomposes only one scene", async ({
       }
     | undefined;
   if (expectTwoStage) {
-    expect(assetManifest?.scenes).toHaveLength(6);
-    expect(editDecisions?.scenes).toHaveLength(6);
+    expect(assetManifest?.scenes).toHaveLength(expectedSceneCount);
+    expect(editDecisions?.scenes).toHaveLength(expectedSceneCount);
   }
   const manifestAssets = Object.fromEntries(
     (assetManifest?.scenes ?? []).map((scene) => [
@@ -833,7 +1008,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
   const sortedMainElements = [...(mainTrack?.elements ?? [])].sort(
     (left, right) => Number(left.startTime ?? 0) - Number(right.startTime ?? 0),
   );
-  expect(sortedMainElements.length).toBeGreaterThanOrEqual(6);
+  expect(sortedMainElements.length).toBeGreaterThanOrEqual(expectedSceneCount);
   expect(Number(sortedMainElements[0]?.startTime ?? -1)).toBeCloseTo(0, 2);
   for (let index = 1; index < sortedMainElements.length; index += 1) {
     const previousEnd =
@@ -906,7 +1081,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     new Set(
       (narrationTrack?.elements ?? []).map((element) => element.segmentId),
     ).size,
-  ).toBe(6);
+  ).toBe(expectedSceneCount);
   const subtitleTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-text",
   );
@@ -914,12 +1089,13 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     (subtitleTrack?.elements ?? []).map((element) => element.segmentId),
   );
   for (const scene of beforeScenes) {
-    const repeatedGeneratedHeadline = generatedPrimaryRepeatsNarration(scene);
+    const repeatedGeneratedHeadline =
+      generatedPrimaryRepeatsVisibleSubtitle(scene);
     expect(
       subtitleSegmentIds.has(scene.id),
       repeatedGeneratedHeadline
-        ? `generated headline already carries the full narration for ${scene.id}`
-        : `non-duplicated narration still requires subtitles for ${scene.id}`,
+        ? `generated headline already carries the visible subtitle for ${scene.id}`
+        : `non-duplicated visible subtitle is still required for ${scene.id}`,
     ).toBe(!repeatedGeneratedHeadline);
   }
   const mgOverlayTrack = videoProject?.tracks?.find(
@@ -965,6 +1141,18 @@ test("produces six persisted visuals and recomposes only one scene", async ({
   const bgmTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-bgm",
   );
+  if (targetSeconds >= 45) {
+    expect(Number(videoProject?.metadata?.closing_hold_seconds)).toBeGreaterThanOrEqual(
+      1.5,
+    );
+    expect(Number(videoProject?.metadata?.closing_hold_seconds)).toBeLessThanOrEqual(
+      2.5,
+    );
+    expect(videoProject?.orchestration?.tts_sample_gate?.status).toBe("passed");
+    expect(
+      Number(videoProject?.orchestration?.tts_sample_gate?.true_peak_dbfs),
+    ).toBeLessThan(-0.1);
+  }
   if (expectBgm) {
     expect(videoProject?.metadata?.bgm_choice?.enabled).toBe(true);
     expect(videoProject?.metadata?.bgm_choice?.catalog_id).toBeTruthy();
@@ -972,6 +1160,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     expect(bgmTrack?.elements?.length).toBeGreaterThan(0);
   } else {
     expect(videoProject?.metadata?.bgm_choice?.enabled).toBe(false);
+    expect(videoProject?.metadata?.bgm_choice?.music_intent).toBe("none");
     expect(
       bgmTrack,
       "intentional no-BGM degradation must not create a music track",
@@ -1026,10 +1215,15 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     await expect
       .poll(
         async () => {
-          const response = await page.request.get(
-            `${apiBase}/v1/video/jobs/${jobId}`,
-            { headers },
-          );
+          let response: APIResponse;
+          try {
+            response = await page.request.get(
+              `${apiBase}/v1/video/jobs/${jobId}`,
+              { headers },
+            );
+          } catch (error) {
+            return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+          }
     if (!response.ok()) return `http-${response.status()}`;
           const job = (await response.json()) as {
             status?: string;
@@ -1058,7 +1252,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
       "recomposed video_render asset should remain in the library",
     ).toBeTruthy();
     afterScenes = scenesFromAsset(refreshed!);
-  expect(afterScenes).toHaveLength(6);
+  expect(afterScenes).toHaveLength(expectedSceneCount);
   for (const before of beforeScenes) {
     const after = afterScenes.find((scene) => scene.id === before.id)!;
     if (before.id === target.id) {
@@ -1120,12 +1314,20 @@ test("produces six persisted visuals and recomposes only one scene", async ({
   }
 
   await page.reload();
-  await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(6, {
+  await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
     timeout: 120_000,
   });
   await expect(page.getByLabel("分镜摘要").getByText("待补素材")).toHaveCount(
     0,
   );
+  const finalRenderedReview = expectRenderedReview
+    ? await waitForRenderedReviewPassed(
+        page,
+        apiBase,
+        projectAsset!.id,
+        headers,
+      )
+    : initialRenderedReview;
   // Shared quality and export contract for both pipeline modes.
   let finalQualityReport: QualityReport | undefined;
   await expect
@@ -1192,7 +1394,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
     );
   }
   await page.reload();
-  await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(6, {
+  await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
     timeout: 120_000,
   });
   const exportButton = page
@@ -1273,7 +1475,7 @@ test("produces six persisted visuals and recomposes only one scene", async ({
           (assetManifest?.scenes?.length ?? 0) / beforeScenes.length,
       publicCandidateOnlyCount,
       manifestProjectReferenceMatch,
-      sceneWindows: sortedMainElements.slice(0, 6).map((element) => ({
+      sceneWindows: sortedMainElements.slice(0, expectedSceneCount).map((element) => ({
         sceneId: element.segmentId,
         startTime: element.startTime,
         duration: element.duration,
@@ -1347,6 +1549,13 @@ test("produces six persisted visuals and recomposes only one scene", async ({
           ),
       qualityMetrics: qualityReport.metrics,
       qualityWarnings: qualityReport.warnings ?? [],
+      artDirection: artDirectionSummary,
+      renderedReview: finalRenderedReview ?? null,
+      audioFinishing: {
+        closingHoldSeconds: videoProject?.metadata?.closing_hold_seconds,
+        ttsSampleGate: videoProject?.orchestration?.tts_sample_gate ?? null,
+        musicIntent: videoProject?.metadata?.bgm_choice?.music_intent,
+      },
       resumeReuse,
       consoleErrors,
       requestFailures,

@@ -7,6 +7,7 @@ import {
 } from "mediabunny";
 
 interface VideoSinkData {
+	input: Input;
 	sink: CanvasSink;
 	iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null;
 	currentFrame: WrappedCanvas | null;
@@ -20,6 +21,8 @@ export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
 	private failedSignatures = new Map<string, string>();
+	private frameRequestTails = new Map<string, Promise<void>>();
+	private frameRequestGenerations = new Map<string, number>();
 
 	async getFrameAt({
 		mediaId,
@@ -34,13 +37,39 @@ export class VideoCache {
 	}): Promise<WrappedCanvas | null> {
 		if (file.size === 0) return null;
 
-		const signature = this.fileSignature({ file });
-		if (this.failedSignatures.get(mediaId) === signature) return null;
+		const generation = this.frameRequestGenerations.get(mediaId) ?? 0;
+		const previousRequest = this.frameRequestTails.get(mediaId)
+			?? Promise.resolve();
+		let releaseRequest = () => {};
+		const currentRequest = new Promise<void>((resolve) => {
+			releaseRequest = resolve;
+		});
+		const requestTail = previousRequest
+			.catch(() => undefined)
+			.then(() => currentRequest);
+		this.frameRequestTails.set(mediaId, requestTail);
 
 		try {
+			await previousRequest.catch(() => undefined);
+			if ((this.frameRequestGenerations.get(mediaId) ?? 0) !== generation) {
+				return null;
+			}
+
+			const signature = this.fileSignature({ file });
+			if (this.failedSignatures.get(mediaId) === signature) return null;
+
 			await this.ensureSink({ mediaId, file, alpha });
+			if ((this.frameRequestGenerations.get(mediaId) ?? 0) !== generation) {
+				this.disposeSink({ mediaId });
+				return null;
+			}
+			const frame = await this.getFrameFromSink({ mediaId, time });
+			if ((this.frameRequestGenerations.get(mediaId) ?? 0) !== generation) {
+				return null;
+			}
+			return frame;
 		} catch (error) {
-			this.failedSignatures.set(mediaId, signature);
+			this.failedSignatures.set(mediaId, this.fileSignature({ file }));
 			console.warn("Skipping undecodable video media", {
 				mediaId,
 				name: file.name,
@@ -49,8 +78,21 @@ export class VideoCache {
 				error,
 			});
 			return null;
+		} finally {
+			releaseRequest();
+			if (this.frameRequestTails.get(mediaId) === requestTail) {
+				this.frameRequestTails.delete(mediaId);
+			}
 		}
+	}
 
+	private async getFrameFromSink({
+		mediaId,
+		time,
+	}: {
+		mediaId: string;
+		time: number;
+	}): Promise<WrappedCanvas | null> {
 		const sinkData = this.sinks.get(mediaId);
 		if (!sinkData) return null;
 
@@ -275,8 +317,9 @@ export class VideoCache {
 		file: File;
 		alpha?: boolean;
 	}): Promise<void> {
+		let input: Input | null = null;
 		try {
-			const input = new Input({
+			input = new Input({
 				source: new BlobSource(file),
 				formats: ALL_FORMATS,
 			});
@@ -301,6 +344,7 @@ export class VideoCache {
 			});
 
 			this.sinks.set(mediaId, {
+				input,
 				sink,
 				iterator: null,
 				currentFrame: null,
@@ -310,27 +354,43 @@ export class VideoCache {
 				prefetchPromise: null,
 			});
 		} catch (error) {
+			input?.dispose();
 			console.error(`Failed to initialize video sink for ${mediaId}:`, error);
 			throw error;
 		}
 	}
 
-	clearVideo({ mediaId }: { mediaId: string }): void {
+	private disposeSink({ mediaId }: { mediaId: string }): void {
 		const sinkData = this.sinks.get(mediaId);
-		if (sinkData) {
-			if (sinkData.iterator) {
-				void sinkData.iterator.return();
-			}
+		if (!sinkData) return;
 
-			this.sinks.delete(mediaId);
+		if (sinkData.iterator) {
+			void sinkData.iterator.return();
+			sinkData.iterator = null;
 		}
+		sinkData.input.dispose();
+		sinkData.currentFrame = null;
+		sinkData.nextFrame = null;
+		this.sinks.delete(mediaId);
+	}
 
+	clearVideo({ mediaId }: { mediaId: string }): void {
+		this.frameRequestGenerations.set(
+			mediaId,
+			(this.frameRequestGenerations.get(mediaId) ?? 0) + 1,
+		);
+		this.disposeSink({ mediaId });
 		this.initPromises.delete(mediaId);
 		this.failedSignatures.delete(mediaId);
 	}
 
 	clearAll(): void {
-		for (const [mediaId] of this.sinks) {
+		const mediaIds = new Set([
+			...this.sinks.keys(),
+			...this.initPromises.keys(),
+			...this.frameRequestTails.keys(),
+		]);
+		for (const mediaId of mediaIds) {
 			this.clearVideo({ mediaId });
 		}
 	}

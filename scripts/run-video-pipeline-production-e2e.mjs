@@ -16,15 +16,39 @@ import {
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
-const canonicalBackendRoot = path.join(workspaceRoot, "MultiMix-Backend");
+const canonicalBackendRoot = process.env.MULTIMIX_CANONICAL_BACKEND_ROOT
+  ? path.resolve(process.env.MULTIMIX_CANONICAL_BACKEND_ROOT)
+  : path.join(workspaceRoot, "MultiMix-Backend");
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
   ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
   : canonicalBackendRoot;
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
-if (!Number.isInteger(backendPort) || !Number.isInteger(frontendPort)) {
-  throw new Error("VIDEO_PIPELINE_BACKEND_PORT and VIDEO_PIPELINE_FRONTEND_PORT must be integers");
+const visionPort = Number(process.env.VIDEO_PIPELINE_VISION_PORT ?? 8428);
+const configuredVisionServiceUrl = (
+  process.env.VIDEO_PIPELINE_VISION_SERVICE_URL ?? ""
+).trim().replace(/\/+$/, "");
+const usesExternalVisionService = configuredVisionServiceUrl.length > 0;
+const requiredPorts = usesExternalVisionService
+  ? [backendPort, frontendPort]
+  : [backendPort, frontendPort, visionPort];
+if (
+  !requiredPorts.every(Number.isInteger)
+  || new Set(requiredPorts).size !== requiredPorts.length
+) {
+  throw new Error(
+    "VIDEO_PIPELINE_BACKEND_PORT, VIDEO_PIPELINE_FRONTEND_PORT, and any local "
+    + "VIDEO_PIPELINE_VISION_PORT must be distinct integers",
+  );
 }
+if (
+  usesExternalVisionService
+  && !/^https?:\/\//i.test(configuredVisionServiceUrl)
+) {
+  throw new Error("VIDEO_PIPELINE_VISION_SERVICE_URL must use http or https");
+}
+const visionServiceUrl = configuredVisionServiceUrl
+  || `http://127.0.0.1:${visionPort}`;
 const runId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
 const databasePath = path.join(os.tmpdir(), `multimix-video-pipeline-e2e-${runId}.sqlite3`);
 const artifactDir = path.join(os.tmpdir(), `multimix-video-pipeline-artifacts-${runId}`);
@@ -36,6 +60,38 @@ const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
 );
+const referenceVideo = process.env.VIDEO_PIPELINE_REFERENCE_VIDEO
+  ? path.resolve(process.env.VIDEO_PIPELINE_REFERENCE_VIDEO)
+  : null;
+const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
+const durationToleranceRatio = Number(
+  process.env.VIDEO_PIPELINE_DURATION_TOLERANCE ?? 0.1,
+);
+const expectedSceneCount = Number(
+  process.env.VIDEO_PIPELINE_EXPECTED_SCENE_COUNT
+    ?? (targetSeconds >= 45 ? 8 : 6),
+);
+const videoJobTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
+);
+if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) {
+  throw new Error("VIDEO_PIPELINE_TARGET_SECONDS must be a positive number");
+}
+if (
+  !Number.isFinite(durationToleranceRatio)
+  || durationToleranceRatio < 0
+  || durationToleranceRatio >= 1
+) {
+  throw new Error("VIDEO_PIPELINE_DURATION_TOLERANCE must be between 0 and 1");
+}
+if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
+  throw new Error("VIDEO_PIPELINE_EXPECTED_SCENE_COUNT must be a positive integer");
+}
+if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
+}
+const minimumDurationSeconds = targetSeconds * (1 - durationToleranceRatio);
+const maximumDurationSeconds = targetSeconds * (1 + durationToleranceRatio);
 const pythonCommand = process.env.PYTHON
   ?? path.join(canonicalBackendRoot, ".venv", "Scripts", "python.exe");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -45,6 +101,7 @@ const ffmpegCommand = process.env.FFMPEG ?? "ffmpeg";
 const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? "-0.1");
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
+const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const rawTwoStageEnabled = process.env.VIDEO_PIPELINE_TWO_STAGE_ENABLED ?? "true";
 if (!new Set(["true", "false"]).has(rawTwoStageEnabled)) {
   throw new Error("VIDEO_PIPELINE_TWO_STAGE_ENABLED must be true or false");
@@ -347,8 +404,15 @@ async function verifyCandidateVideo() {
   if (video?.width !== 1920) failures.push(`width=${video?.width ?? "missing"}, expected 1920`);
   if (video?.height !== 1080) failures.push(`height=${video?.height ?? "missing"}, expected 1080`);
   if (audio?.codec_name !== "aac") failures.push(`audio codec_name=${audio?.codec_name ?? "missing"}, expected aac`);
-  if (!Number.isFinite(duration) || duration < 27 || duration > 33) {
-    failures.push(`duration=${Number.isFinite(duration) ? duration : "missing"}, expected 27-33`);
+  if (
+    !Number.isFinite(duration)
+    || duration < minimumDurationSeconds
+    || duration > maximumDurationSeconds
+  ) {
+    failures.push(
+      `duration=${Number.isFinite(duration) ? duration : "missing"}, `
+      + `expected ${minimumDurationSeconds}-${maximumDurationSeconds}`,
+    );
   }
   const { stderr: loudnessStderr } = await run(ffmpegCommand, [
     "-hide_banner",
@@ -508,16 +572,50 @@ async function writeQaReport() {
   const recomposeResult = result.recomposeTested === true
     ? (otherRefsStable ? "通过" : "失败")
     : "不适用（当前模式不支持两阶段单镜重做证据）";
+  const closingHoldSeconds = Number(
+    result.audioFinishing?.closingHoldSeconds ?? 0,
+  );
+  const structuralHardFailures = [];
+  if (
+    twoStageEnabled
+    && Number(result.artDirection?.distinctSurfaceCount ?? 0) < 4
+  ) {
+    structuralHardFailures.push("art_direction_surface_diversity");
+  }
+  if (
+    result.renderedReview?.status !== "passed"
+    || !result.renderedReview?.project_fingerprint
+  ) {
+    structuralHardFailures.push("rendered_review_not_passed");
+  }
+  if (
+    targetSeconds >= 45
+    && (closingHoldSeconds < 1.5 || closingHoldSeconds > 2.5)
+  ) {
+    structuralHardFailures.push("closing_hold_out_of_range");
+  }
+  if (
+    targetSeconds >= 45
+    && result.audioFinishing?.ttsSampleGate?.status !== "passed"
+  ) {
+    structuralHardFailures.push("tts_sample_gate_not_passed");
+  }
+  if (!expectBgm && result.audioFinishing?.musicIntent !== "none") {
+    structuralHardFailures.push("no_music_intent_missing");
+  }
   const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
-    + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- 六镜主轨：通过\n- 待补素材：未出现\n`
+    + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- ${expectedSceneCount} 镜主轨：通过\n- 待补素材：未出现\n`
     + `- 信息增量分镜：${Number(result.informationIncrement?.sceneCount ?? 0)} 个；MG 已渲染 ${Number(result.informationIncrement?.mgRenderedCount ?? 0)} 个\n`
     + `- 审核截图分镜：${Number(result.productPresentation?.productSceneCount ?? 0)} 个；单次分屏 ${Number(result.productPresentation?.splitSceneCount ?? 0)} 个\n`
+    + `- 美术表面：${Number(result.artDirection?.distinctSurfaceCount ?? 0)} 种\n`
+    + `- 成片画面审查：${String(result.renderedReview?.status ?? "missing")}；第 ${Number(result.renderedReview?.attempt ?? 0)} 轮\n`
+    + `- 片尾稳定停留：${closingHoldSeconds.toFixed(3)} 秒；样音门：${String(result.audioFinishing?.ttsSampleGate?.status ?? "missing")}\n`
     + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
     + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
-    + `- 六个分镜关键帧：keyframes/keyframe-01…06-*.png\n\n`
-    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、六镜落库和正式导出链路；视觉专业感仍需把开关两轮真实成片匿名并排评分。\n`;
+    + `- 分镜关键帧：keyframes/keyframe-*.png\n\n`
+    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、${expectedSceneCount} 镜落库和正式导出链路；视觉专业感仍需把候选与参考成片匿名并排评分。\n`;
   fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
   const evaluationReport = {
     twoStageEnabled: result.twoStageEnabled === true,
@@ -527,6 +625,9 @@ async function writeQaReport() {
     sourceMix: result.sourceMix,
     informationIncrement: result.informationIncrement,
     productPresentation: result.productPresentation,
+    artDirection: result.artDirection,
+    renderedReview: result.renderedReview,
+    audioFinishing: result.audioFinishing,
     sendBacks: result.sendBacks ?? 0,
     resumeReuse,
     internalTermsVisible: result.internalTermsVisible,
@@ -543,6 +644,55 @@ async function writeQaReport() {
       JSON.stringify(evaluationReport, null, 2),
     );
   }
+  const mediaProbePath = path.join(resultDir, "media-probe.json");
+  const mediaProbe = fs.existsSync(mediaProbePath)
+    ? JSON.parse(fs.readFileSync(mediaProbePath, "utf8"))
+    : {};
+  const hardFailures = [
+    ...(Array.isArray(mediaProbe.failures) ? mediaProbe.failures : []),
+    ...structuralHardFailures,
+  ];
+  fs.writeFileSync(
+    path.join(resultDir, "benchmark-report.json"),
+    JSON.stringify({
+      caseId: "video_pipeline_multimix_pdf_promo_60s_v1",
+      targetSeconds,
+      durationContract: {
+        toleranceRatio: durationToleranceRatio,
+        minimumSeconds: minimumDurationSeconds,
+        maximumSeconds: maximumDurationSeconds,
+      },
+      sourceDocument: fingerprintFile(sourceDocument),
+      referenceVideo: referenceVideo ? fingerprintFile(referenceVideo) : null,
+      candidateVideo: fingerprintFile(path.join(resultDir, "multimix-candidate.mp4")),
+      hardFailures,
+      automationPassed:
+        mediaProbe.passed === true
+        && actionableRequestFailures.length === 0
+        && hardFailures.length === 0,
+      humanReviewStatus: "pending",
+    }, null, 2),
+  );
+  fs.writeFileSync(path.join(resultDir, "human-review.md"), [
+    "# OpenMontage PDF 宣传视频人工盲评",
+    "",
+    "> Status: qa",
+    "> Owner: workspace",
+    `> Last verified: ${new Date().toISOString().slice(0, 10)}`,
+    "",
+    "| 维度 | 权重 | MultiMix（1–5） | 参考视频（1–5） | 证据/问题 |",
+    "| --- | ---: | ---: | ---: | --- |",
+    "| 内容可信与产品定位 | 20 | | | |",
+    "| 叙事结构与节奏 | 15 | | | |",
+    "| 素材相关性与可信感 | 20 | | | |",
+    "| 美术指导与场景差异 | 20 | | | |",
+    "| 信息分层与可读性 | 10 | | | |",
+    "| 动效与镜头语言 | 10 | | | |",
+    "| 声音与技术完成度 | 5 | | | |",
+    "",
+    "- 晋级：总分至少 85/100；前六项均不低于 4/5；与参考视频任一维度平均差距不超过 0.5。",
+    "- P0/P1：待两名评审独立填写。",
+  ].join("\n"));
   fs.writeFileSync(path.join(resultDir, "openmontage-comparison.md"), [
     "# OpenMontage 对照验收",
     "",
@@ -578,15 +728,26 @@ try {
     fs.rmSync(path.join(resultDir, generatedName), { force: true });
   }
   fs.mkdirSync(artifactDir, { recursive: true });
-  const stagedBgm = stageReviewedBgmCatalog();
+  const stagedBgm = expectBgm
+    ? stageReviewedBgmCatalog()
+    : {
+        manifestRef: "local://bgm/catalog/v1/manifest.json",
+        defaultCatalogId: "",
+      };
   const productMediaManifestRef = stageApprovedProductMediaCatalog();
   console.log(`Video pipeline E2E temp database: ${databasePath}`);
   console.log(`Video pipeline E2E temp artifacts: ${artifactDir}`);
-  console.log(`Video pipeline E2E ports: backend ${backendPort}, frontend ${frontendPort}`);
+  console.log(
+    `Video pipeline E2E ports: backend ${backendPort}, `
+    + `frontend ${frontendPort}, vision ${
+      usesExternalVisionService ? visionServiceUrl : visionPort
+    }`,
+  );
   console.log(`Video pipeline E2E results: ${resultDir}`);
   console.log("Cleanup: child processes, SQLite sidecars, temp artifacts, and isolated Next build are removed in finally.");
   await assertPortFree(backendPort);
   await assertPortFree(frontendPort);
+  if (!usesExternalVisionService) await assertPortFree(visionPort);
 
   const providerProxyHosts = ["www.pexels.com", "videos.pexels.com", "images.pexels.com"];
   providerProxy = await startProviderEgressProxy(providerProxyHosts);
@@ -595,16 +756,54 @@ try {
     ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
     ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
   };
+  const llmOverride = {
+    baseUrl: process.env.CHANGEIN_LLM_BASE_URL?.trim() || null,
+    apiKey: process.env.CHANGEIN_LLM_API_KEY?.trim() || null,
+    model: process.env.CHANGEIN_LLM_MODEL?.trim() || null,
+  };
+  const llmOverrideCount = Object.values(llmOverride).filter(Boolean).length;
+  if (llmOverrideCount !== 0 && llmOverrideCount !== 3) {
+    throw new Error(
+      "CHANGEIN_LLM_BASE_URL, CHANGEIN_LLM_API_KEY, and CHANGEIN_LLM_MODEL "
+      + "must be supplied together for a production E2E provider override",
+    );
+  }
+  const effectiveLlmConfig = llmOverrideCount === 3
+    ? llmOverride
+    : {
+        baseUrl: canonicalEnv.CHANGEIN_LLM_BASE_URL
+          ?? canonicalEnv.CHANGEIN_DEEPSEEK_BASE_URL
+          ?? (canonicalEnv.CHANGEIN_DEEPSEEK_API_KEY
+            ? "https://api.deepseek.com/v1"
+            : null),
+        apiKey: canonicalEnv.CHANGEIN_LLM_API_KEY
+          ?? canonicalEnv.CHANGEIN_DEEPSEEK_API_KEY
+          ?? null,
+        model: canonicalEnv.CHANGEIN_LLM_MODEL
+          ?? canonicalEnv.CHANGEIN_DEEPSEEK_MODEL
+          ?? null,
+      };
   fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
     runId,
     scenario,
     twoStageEnabled,
+    targetSeconds,
+    expectedSceneCount,
+    videoJobTimeoutMs,
+    durationToleranceRatio,
+    durationContract: {
+      minimumSeconds: minimumDurationSeconds,
+      maximumSeconds: maximumDurationSeconds,
+    },
     sourceDocument: fingerprintFile(sourceDocument),
+    referenceVideo: referenceVideo ? fingerprintFile(referenceVideo) : null,
+    visionServiceUrl,
     productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
     hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
     llm: {
-      baseUrl: canonicalEnv.CHANGEIN_LLM_BASE_URL ?? canonicalEnv.CHANGEIN_DEEPSEEK_BASE_URL ?? null,
-      model: canonicalEnv.CHANGEIN_LLM_MODEL ?? canonicalEnv.CHANGEIN_DEEPSEEK_MODEL ?? null,
+      baseUrl: effectiveLlmConfig.baseUrl,
+      model: effectiveLlmConfig.model,
+      processOverride: llmOverrideCount === 3,
     },
   }, null, 2));
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
@@ -630,14 +829,23 @@ try {
     CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_ASSET_GENERATION_QUEUE_ENABLED: "true",
     CHANGEIN_REDIS_URL: "redis://127.0.0.1:6398/15",
+    CHANGEIN_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
+    CHANGEIN_LLM_API_KEY: effectiveLlmConfig.apiKey ?? "",
+    CHANGEIN_LLM_MODEL: effectiveLlmConfig.model ?? "",
     CHANGEIN_LLM_TIMEOUT_SECONDS: "120",
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
     CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED: twoStageEnabled ? "true" : "false",
+    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ROUTE_AUDIT_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_INFORMATION_INCREMENT_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PRODUCT_MEDIA_PRESENTATIONS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_STRUCTURED_REUSE_INTENT_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_ART_DIRECTION_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_AUTO_REPAIR_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_AUDIO_FINISHING_ENABLED: "true",
+    CHANGEIN_MULTIMIX_VIDEO_TTS_SAMPLE_GATE_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PUBLIC_VLM_REQUIRED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
@@ -645,6 +853,8 @@ try {
     CHANGEIN_VIDEO_BGM_ENABLED: "true",
     CHANGEIN_VIDEO_BGM_MANIFEST_REF: stagedBgm.manifestRef,
     CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID: stagedBgm.defaultCatalogId,
+    CHANGEIN_VISION_SERVICE_URL: visionServiceUrl,
+    CHANGEIN_VISION_TIMEOUT_SECONDS: "120",
     CHANGEIN_VIDEO_VOICE_TO_MUSIC_RATIO: "4.0",
     CHANGEIN_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
     CHANGEIN_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
@@ -667,6 +877,30 @@ try {
     stdout: process.stdout,
     stderr: process.stderr,
   });
+  let vision;
+  if (!usesExternalVisionService) {
+    vision = startProcess(
+      pythonCommand,
+      [
+        "-m",
+        "uvicorn",
+        "vision_service.app:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(visionPort),
+      ],
+      backendRoot,
+      {
+        ...process.env,
+        ...canonicalEnv,
+        VISION_PROVIDER: "qwen",
+        VISION_QWEN_TIMEOUT_SECONDS: "120",
+      },
+      "vision.log",
+    );
+  }
+  await waitFor(`${visionServiceUrl}/health`, vision, 120_000);
   let backend = startProcess(
     pythonCommand,
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
@@ -690,12 +924,19 @@ try {
       PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
       PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
       VIDEO_PIPELINE_SOURCE_DOCUMENT: sourceDocument,
+      VIDEO_PIPELINE_REFERENCE_VIDEO: referenceVideo ?? "",
       VIDEO_PIPELINE_RESULT_DIR: resultDir,
+      VIDEO_PIPELINE_TARGET_SECONDS: String(targetSeconds),
+      VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
+      VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
+      VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
       VIDEO_PIPELINE_SCENARIO: scenario,
       VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
       VIDEO_PIPELINE_HYBRID_MEDIA_FILES: process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES ?? "[]",
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
+      VIDEO_PIPELINE_EXPECT_BGM: expectBgm ? "true" : "false",
+      VIDEO_PIPELINE_EXPECT_RENDERED_REVIEW: "true",
     },
     stdout: process.stdout,
     stderr: process.stderr,
@@ -754,6 +995,11 @@ try {
     }
     restoreFiles(workspaceSnapshots);
   }
-  console.log(`Cleanup complete: ports ${backendPort}/${frontendPort} stopped; temp database and artifacts removed.`);
+  console.log(
+    `Cleanup complete: ports ${backendPort}/${frontendPort}${
+      usesExternalVisionService ? "" : `/${visionPort}`
+    } stopped; `
+    + "temp database and artifacts removed.",
+  );
   if (cleanupError) throw cleanupError;
 }

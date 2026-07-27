@@ -9,10 +9,11 @@ import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
+import type { RenderedReviewState } from "@/editor-engine/vendor/renderedReview";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
-import VideoQualityPanel from "./video-quality-panel";
+import VideoQualityPanel, { RenderedReviewStatusPanel } from "./video-quality-panel";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -21,6 +22,7 @@ type EditorBridgeMessage = {
   progress?: number;
   message?: string;
   report?: VideoQualityReport;
+  renderedReview?: RenderedReviewState;
   blob?: Blob;
 };
 
@@ -79,6 +81,8 @@ export default function ProductWorkspace({
   const [exportState, setExportState] = useState<"idle" | "checking" | "preparing" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [renderedReview, setRenderedReview] = useState<RenderedReviewState | null>(null);
+  const [renderedReviewRetryNonce, setRenderedReviewRetryNonce] = useState(0);
   const [exportError, setExportError] = useState("");
   const [projectSyncError, setProjectSyncError] = useState("");
   const [exportDownloaded, setExportDownloaded] = useState(false);
@@ -133,6 +137,19 @@ export default function ProductWorkspace({
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
+  const persistedRenderedReview = (
+    productMetadata.rendered_review
+    && typeof productMetadata.rendered_review === "object"
+    && !Array.isArray(productMetadata.rendered_review)
+  )
+    ? productMetadata.rendered_review as RenderedReviewState
+    : null;
+  const persistedRenderedReviewFingerprint = persistedRenderedReview?.project_fingerprint ?? "";
+  const persistedRenderedReviewSnapshot = persistedRenderedReview
+    ? JSON.stringify(persistedRenderedReview)
+    : "";
+  const persistedRenderedReviewRef = useRef(persistedRenderedReview);
+  persistedRenderedReviewRef.current = persistedRenderedReview;
   // Demo-final video surfaces (workspace-video.html): "browse" (player when an
   // MP4 exists, otherwise segment cards from video_project) is the default;
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
@@ -221,11 +238,16 @@ export default function ProductWorkspace({
     setExportState("idle");
     setExportProgress(null);
     setQualityReport(null);
+    setRenderedReviewRetryNonce(0);
     setExportError("");
     setExportDownloaded(false);
     pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
-  }, [currentAssetId, hasVideoProject]);
+  }, [currentAssetId, hasVideoProject, persistedRenderedReviewFingerprint]);
+
+  useEffect(() => {
+    setRenderedReview(persistedRenderedReviewRef.current);
+  }, [persistedRenderedReviewSnapshot]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
@@ -349,6 +371,9 @@ export default function ProductWorkspace({
         case "multimix-editor-project-updated":
           void refreshPersistedVideoProject();
           break;
+        case "multimix-editor-rendered-review":
+          if (data.renderedReview) setRenderedReview(data.renderedReview);
+          break;
         default:
           break;
       }
@@ -432,7 +457,12 @@ export default function ProductWorkspace({
           ? "导出失败，重试"
           : exportState === "blocked"
             ? "修复后重新检查"
+          : renderedReview && renderedReview.status !== "passed"
+            ? "等待画面检查"
           : "导出视频";
+  const renderedReviewBlocksExport = Boolean(
+    renderedReview && renderedReview.status !== "passed",
+  );
 
   const openBrowseMaterialPicker = useCallback((segment: AssetProductSegment) => {
     setMaterialError("");
@@ -730,7 +760,11 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="shadcn-prototype-open-editor"
-                disabled={["exporting", "checking", "preparing", "verifying"].includes(exportState) || hasBlockingVideoIssues(qualityReport)}
+                disabled={
+                  ["exporting", "checking", "preparing", "verifying"].includes(exportState)
+                  || hasBlockingVideoIssues(qualityReport)
+                  || renderedReviewBlocksExport
+                }
                 onClick={() => void handleExportVideo()}
               >
                 {exportButtonLabel}
@@ -798,6 +832,15 @@ export default function ProductWorkspace({
           />
         ) : null}
 
+        {renderedReview ? (
+          <RenderedReviewStatusPanel
+            review={renderedReview}
+            onRetry={renderedReview.status === "unavailable"
+              ? () => setRenderedReviewRetryNonce((value) => value + 1)
+              : undefined}
+          />
+        ) : null}
+
         {exportState === "error" && exportError ? (
           <div className="shadcn-prototype-video-failed" role="alert">
             <strong>导出失败</strong>
@@ -830,6 +873,7 @@ export default function ProductWorkspace({
             <ProductPreview
               product={product}
               onReplaceMaterial={openBrowseMaterialPicker}
+              renderedReviewRetryNonce={renderedReviewRetryNonce}
             />
           </div>
         ) : !isTextEditing && !showEditorEmbed && orchestrationPending ? (

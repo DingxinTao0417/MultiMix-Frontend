@@ -331,6 +331,141 @@ describe("display-area eight-case matrix", () => {
     ));
   });
 
+  it("keeps a pending export alive when the same rendered review arrives as a new object", async () => {
+    const baseProduct = displayProducts["case-06-project-ready-no-mp4"];
+    const renderedReview = {
+      status: "passed" as const,
+      project_fingerprint: "project-fingerprint-1",
+      attempt: 1,
+      issues: [],
+    };
+    const product = {
+      ...baseProduct,
+      metadata: {
+        ...baseProduct.metadata,
+        rendered_review: renderedReview,
+      },
+    };
+    const callbacks = {
+      onCopyProduct: vi.fn(async () => undefined),
+      onSaveProduct: vi.fn(async () => undefined),
+    };
+    vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue({
+      stage: "export_preflight",
+      status: "pass",
+      blockers: [],
+      warnings: [],
+    });
+    const view = render(
+      <ProductWorkspace
+        copied={false}
+        {...callbacks}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+    const frame = await screen.findByTitle("视频剪辑器") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+
+    const refreshedProduct = {
+      ...product,
+      metadata: {
+        ...product.metadata,
+        rendered_review: { ...renderedReview },
+      },
+    };
+    view.rerender(
+      <ProductWorkspace
+        copied={false}
+        {...callbacks}
+        product={refreshedProduct}
+        selectedConversation={conversationForDisplayProduct(refreshedProduct)}
+        token="test-token"
+      />,
+    );
+
+    expect(screen.getByTitle("视频剪辑器")).toBe(frame);
+    expect(screen.getByRole("button", { name: "正在准备编辑器…" })).toBeDisabled();
+
+    const readyEvent = new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-ready",
+      },
+    });
+    Object.defineProperty(readyEvent, "source", { value: frame.contentWindow });
+    window.dispatchEvent(readyEvent);
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-export" },
+      window.location.origin,
+    ));
+  });
+
+  it("resets a pending export when the rendered project fingerprint changes", async () => {
+    const baseProduct = displayProducts["case-06-project-ready-no-mp4"];
+    const review = {
+      status: "passed" as const,
+      project_fingerprint: "project-fingerprint-1",
+      attempt: 1,
+      issues: [],
+    };
+    const product = {
+      ...baseProduct,
+      metadata: { ...baseProduct.metadata, rendered_review: review },
+    };
+    const callbacks = {
+      onCopyProduct: vi.fn(async () => undefined),
+      onSaveProduct: vi.fn(async () => undefined),
+    };
+    vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue({
+      stage: "export_preflight",
+      status: "pass",
+      blockers: [],
+      warnings: [],
+    });
+    const view = render(
+      <ProductWorkspace
+        copied={false}
+        {...callbacks}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+    expect(await screen.findByTitle("视频剪辑器")).toBeInTheDocument();
+
+    const changedProduct = {
+      ...product,
+      metadata: {
+        ...product.metadata,
+        rendered_review: {
+          ...review,
+          project_fingerprint: "project-fingerprint-2",
+        },
+      },
+    };
+    view.rerender(
+      <ProductWorkspace
+        copied={false}
+        {...callbacks}
+        product={changedProduct}
+        selectedConversation={conversationForDisplayProduct(changedProduct)}
+        token="test-token"
+      />,
+    );
+
+    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+  });
+
   it("surfaces the exact editor export error instead of a generic retry label", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     render(

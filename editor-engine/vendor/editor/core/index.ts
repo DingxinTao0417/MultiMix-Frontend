@@ -8,6 +8,7 @@ import { CommandManager } from "./managers/commands";
 import { SaveManager } from "./managers/save-manager";
 import { AudioManager } from "./managers/audio-manager";
 import { SelectionManager } from "./managers/selection-manager";
+import { disposeEditorResources } from "./lifecycle";
 import { registerDefaultEffects } from "@editor/lib/effects";
 import { registerDefaultMasks } from "@editor/lib/masks";
 
@@ -48,6 +49,9 @@ export class EditorCore {
 	}
 
 	static reset(): void {
+		const instance = EditorCore.instance;
+		if (!instance) return;
+		disposeEditorResources(instance);
 		EditorCore.instance = null;
 	}
 }

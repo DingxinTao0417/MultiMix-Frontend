@@ -21,6 +21,62 @@ const packageJson = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8"),
 );
 
+test("production runner accepts an explicit 60 second benchmark contract", () => {
+  assert.match(runner, /VIDEO_PIPELINE_TARGET_SECONDS/);
+  assert.match(runner, /VIDEO_PIPELINE_REFERENCE_VIDEO/);
+  assert.doesNotMatch(runner, /duration < 27 \|\| duration > 33/);
+  assert.match(spec, /VIDEO_PIPELINE_TARGET_SECONDS/);
+  assert.match(spec, /expectedPipelineCode/);
+  assert.match(spec, /duration_contract\?\.target_seconds/);
+});
+
+test("production gold path runs the new visual, review, and audio quality gates", () => {
+  assert.match(runner, /VIDEO_PIPELINE_VISION_PORT/);
+  assert.match(runner, /VIDEO_PIPELINE_VISION_SERVICE_URL/);
+  assert.match(runner, /configuredVisionServiceUrl/);
+  assert.match(runner, /vision_service\.app:app/);
+  assert.match(runner, /CHANGEIN_VISION_SERVICE_URL/);
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_ART_DIRECTION_ENABLED:\s*"true"/,
+  );
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ROUTE_AUDIT_ENABLED:\s*"true"/,
+  );
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_ENABLED:\s*"true"/,
+  );
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_AUTO_REPAIR_ENABLED:\s*"true"/,
+  );
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_AUDIO_FINISHING_ENABLED:\s*"true"/,
+  );
+  assert.match(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_TTS_SAMPLE_GATE_ENABLED:\s*"true"/,
+  );
+  assert.match(spec, /scene_surface_by_id/);
+  assert.match(spec, /distinctSurfacePresets/);
+  assert.match(spec, /rendered-reviews\/latest/);
+  assert.match(spec, /renderedReview\.project_fingerprint/);
+  assert.match(spec, /closing_hold_seconds/);
+});
+
+test("production gold path uses the configured scene count end to end", () => {
+  assert.doesNotMatch(
+    spec,
+    /toHaveCount\(6\)|toHaveLength\(6\)|toBe\(6\)|slice\(0,\s*6\)/,
+  );
+  assert.match(spec, /toHaveCount\(expectedSceneCount/);
+  assert.match(spec, /toHaveLength\(expectedSceneCount/);
+  assert.match(spec, /slice\(0,\s*expectedSceneCount\)/);
+});
+
 test("production pipeline runner resolves workspace files from the frontend parent", () => {
   assert.match(
     runner,
@@ -32,6 +88,7 @@ test("production pipeline runner resolves workspace files from the frontend pare
   );
   assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-Backend"\)/);
   assert.match(runner, /path\.join\(workspaceRoot, "MultiMix-商业计划\.md"\)/);
+  assert.match(runner, /MULTIMIX_CANONICAL_BACKEND_ROOT/);
 });
 
 test("production pipeline restores tracked Next config before removing its temporary build", () => {
@@ -113,6 +170,26 @@ test("production pipeline E2E explicitly parameterizes the two-stage runtime and
   assert.match(spec, /transport-error/);
 });
 
+test("production pipeline run manifest records the effective test-only LLM override without a credential", () => {
+  assert.match(runner, /effectiveLlmConfig/);
+  assert.match(runner, /process\.env\.CHANGEIN_LLM_BASE_URL/);
+  assert.match(runner, /process\.env\.CHANGEIN_LLM_MODEL/);
+  assert.match(runner, /llm:\s*\{\s*baseUrl:\s*effectiveLlmConfig\.baseUrl,\s*model:\s*effectiveLlmConfig\.model/s);
+  assert.doesNotMatch(
+    runner,
+    /llm:\s*\{[^}]*apiKey/s,
+    "the persisted run manifest must never contain the LLM credential",
+  );
+});
+
+test("production pipeline polling tolerates isolated transport resets", () => {
+  const guardedPollRequests = spec.match(/transport-error:/g) ?? [];
+  assert.ok(
+    guardedPollRequests.length >= 6,
+    "every long-running API poll must retry a one-off transport error",
+  );
+});
+
 test("production pipeline E2E separates two-stage evidence from the shared export contract", () => {
   assert.match(spec, /if \(expectTwoStage\) \{/);
   assert.match(spec, /if \(expectTwoStage && requirePublicAsset\) \{/);
@@ -172,8 +249,8 @@ test("production pipeline E2E verifies the formal MP4 media contract", () => {
   assert.match(runner, /codec_name.*aac/s);
   assert.match(runner, /width.*1920/s);
   assert.match(runner, /height.*1080/s);
-  assert.match(runner, /duration.*27/s);
-  assert.match(runner, /duration.*33/s);
+  assert.match(runner, /minimumDurationSeconds/);
+  assert.match(runner, /maximumDurationSeconds/);
   assert.match(runner, /loudnorm/);
   assert.match(runner, /integratedLufs/);
   assert.match(runner, /truePeakDbfs/);
@@ -257,5 +334,8 @@ test("production pipeline E2E waits for the exact confirmed video job before pro
   );
   assert.match(spec, /\/v1\/video\/jobs\/\$\{videoJobId\}/);
   assert.match(spec, /video project generation failed/);
-  assert.match(spec, /timeout:\s*20 \* 60_000/);
+  assert.match(runner, /VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS/);
+  assert.match(runner, /videoJobTimeoutMs/);
+  assert.match(spec, /VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS/);
+  assert.match(spec, /timeout:\s*videoJobTimeoutMs/);
 });

@@ -1,3 +1,5 @@
+import type { RenderedReviewState } from "./renderedReview";
+
 // Timeline data contract — mirrors backend timeline.py output.
 
 export interface TimelineElement {
@@ -116,6 +118,7 @@ export interface BGMChoice {
   catalog_version: string;
   selected_by: "auto" | "user";
   locked_by_user: boolean;
+  music_intent?: "none" | "subtle" | "energetic";
 }
 
 export interface BGMCatalogTrack {
@@ -142,6 +145,8 @@ export interface BGMUpdateResponse {
   catalog_version: string;
   choice: BGMChoice;
   project: Record<string, unknown>;
+  project_fingerprint?: string;
+  rendered_review?: RenderedReviewState;
 }
 
 async function bgmJson<T>(url: string, token: string | null, init?: RequestInit): Promise<T> {

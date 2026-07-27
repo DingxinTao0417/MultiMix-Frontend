@@ -7,6 +7,10 @@ const storyboardPreview = existsSync(storyboardPreviewUrl) ? readFileSync(storyb
 const projectPreviewUrl = new URL("../components/video-project-preview.tsx", import.meta.url);
 const projectPreview = existsSync(projectPreviewUrl) ? readFileSync(projectPreviewUrl, "utf8") : "";
 const editorView = readFileSync(new URL("../../editor/EditorView.tsx", import.meta.url), "utf8");
+const editorBootstrap = readFileSync(
+  new URL("../../../editor-engine/vendor/bootstrap.ts", import.meta.url),
+  "utf8",
+);
 const filmStrip = readFileSync(new URL("../../editor/FilmStrip.tsx", import.meta.url), "utf8");
 const editorPage = readFileSync(new URL("../../editor/page.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
@@ -44,7 +48,9 @@ describe("video project browse-player contract", () => {
     expect(storyboardPreview).not.toContain("initEditorWithProject");
     expect(storyboardPreview).not.toContain("Promise.all");
     expect(preview).toContain("onError={() => setProjectPreviewFailed(true)}");
-    expect(preview).toContain("setProjectPreviewRequested(false)");
+    expect(preview).toContain(
+      "setProjectPreviewRequested(shouldOwnRenderedReview)",
+    );
     expect(preview).toContain("重新加载完整工程预览");
   });
 
@@ -93,6 +99,17 @@ describe("video project browse-player contract", () => {
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 
+  test("does not reset an active export for a referentially new review snapshot", () => {
+    expect(workspace).toContain("persistedRenderedReviewFingerprint");
+    expect(workspace).toContain("persistedRenderedReviewSnapshot");
+    expect(workspace).toContain(
+      "[currentAssetId, hasVideoProject, persistedRenderedReviewFingerprint]",
+    );
+    expect(workspace).not.toContain(
+      "[currentAssetId, hasVideoProject, persistedRenderedReview]",
+    );
+  });
+
   test("notifies the workbench only after embedded edits persist a new project", () => {
     expect(editorView).toContain('type: "multimix-editor-project-updated"');
     expect(editorView).toContain("handleBgmProjectChanged");
@@ -100,5 +117,25 @@ describe("video project browse-player contract", () => {
     expect(filmStrip).toContain("job.status === \"completed\"");
     expect(workspace).toContain('case "multimix-editor-project-updated"');
     expect(workspace).toContain("refreshPersistedVideoProject");
+  });
+
+  test("waits for current MG jobs to settle before reviewing rendered pixels", () => {
+    expect(editorView).toContain("rendered_review_capture_ready");
+    expect(editorView).toContain("renderedReviewCaptureReady");
+    expect(editorView).toMatch(
+      /shouldCaptureRenderedReview\(\s*renderedReview,\s*renderedReviewCaptureReady,\s*\)/,
+    );
+    expect(editorView).toContain("pollCaptureReadiness");
+  });
+
+  test("keeps mounted preview and rendered-review capture on the same editor instance", () => {
+    expect(editorView.match(/await initEditorWithProject\(/g)).toHaveLength(1);
+    expect(editorView.match(/await refreshMountedEditorProject\(/g)).toHaveLength(3);
+    expect(editorView).toMatch(
+      /async function refreshMountedEditorProject[\s\S]*?setRenderTree\(\{\s*renderTree:\s*null\s*\}\)[\s\S]*?await updateEditorProject\(project\)/,
+    );
+    expect(editorBootstrap).toMatch(
+      /updateEditorProject[\s\S]*?editor\.media\.clearAllAssets\(\)[\s\S]*?applyProject\(editor,\s*bp\)/,
+    );
   });
 });

@@ -35,6 +35,7 @@ export type VideoProjectPreviewProps = {
   ratioClassName: string;
   durationSeconds?: number;
   channelId?: string;
+  renderedReviewRetryNonce?: number;
   onTimeUpdate?: (time: number) => void;
   onError?: () => void;
 };
@@ -45,6 +46,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     ratioClassName,
     durationSeconds = 0,
     channelId,
+    renderedReviewRetryNonce = 0,
     onTimeUpdate,
     onError,
   }, forwardedRef) {
@@ -86,6 +88,11 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       onTimeUpdate?.(next);
       postCommand("multimix-editor-preview-seek", next);
     }, [onTimeUpdate, postCommand, safeDuration]);
+
+    useEffect(() => {
+      if (!ready || renderedReviewRetryNonce <= 0) return;
+      postCommand("multimix-editor-rendered-review-retry");
+    }, [postCommand, ready, renderedReviewRetryNonce]);
 
     useImperativeHandle(forwardedRef, () => ({
       seekAndPlay(time: number) {

@@ -168,24 +168,40 @@ function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number
 export default function ProductPreview({
   product,
   onReplaceMaterial,
+  renderedReviewRetryNonce = 0,
 }: {
   product: ProductArtifact;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
+  renderedReviewRetryNonce?: number;
 }) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
-  const [projectPreviewRequested, setProjectPreviewRequested] = useState(false);
+  const renderedReview = isRecord(product.metadata?.rendered_review)
+    ? product.metadata.rendered_review
+    : null;
+  const shouldOwnRenderedReview = ["pending", "reviewing", "stale", "repairing"].includes(
+    stringValue(renderedReview?.status),
+  );
+  const [projectPreviewRequested, setProjectPreviewRequested] = useState(
+    shouldOwnRenderedReview,
+  );
   const [projectPreviewFailed, setProjectPreviewFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
-    setProjectPreviewRequested(false);
+    setProjectPreviewRequested(shouldOwnRenderedReview);
     setProjectPreviewFailed(false);
-  }, [exportedVideoUrl, product.id]);
+  }, [exportedVideoUrl, product.id, shouldOwnRenderedReview]);
+
+  useEffect(() => {
+    if (renderedReviewRetryNonce <= 0) return;
+    setProjectPreviewFailed(false);
+    setProjectPreviewRequested(true);
+  }, [renderedReviewRetryNonce]);
 
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
@@ -371,6 +387,7 @@ export default function ProductPreview({
               assetId={product.backendAssetId}
               ratioClassName={getProductRatioClass(product.ratio)}
               durationSeconds={durationSeconds}
+              renderedReviewRetryNonce={renderedReviewRetryNonce}
               onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
               onError={() => setProjectPreviewFailed(true)}
             />

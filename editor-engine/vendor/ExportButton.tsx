@@ -3,7 +3,17 @@ import { useEditor } from "@editor/hooks/use-editor";
 import { getExportMimeType } from "@editor/lib/export";
 import { API_BASE } from "./api";
 
-export function ExportButton({ assetId, token }: { assetId?: string | null; token?: string | null }) {
+export function ExportButton({
+  assetId,
+  token,
+  disabled = false,
+  disabledReason = "",
+}: {
+  assetId?: string | null;
+  token?: string | null;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
   const editor = useEditor();
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -68,7 +78,12 @@ export function ExportButton({ assetId, token }: { assetId?: string | null; toke
 
   return (
     <span className="inline-flex items-center gap-2">
-      <button onClick={handleExport} disabled={exporting} className="editor-action-pill primary">
+      <button
+        onClick={handleExport}
+        disabled={exporting || disabled}
+        title={disabled ? disabledReason : undefined}
+        className="editor-action-pill primary"
+      >
         {exporting ? `导出中 ${Math.round(progress * 100)}%` : "导出视频"}
       </button>
       {lastBlob && assetId && token && !uploaded ? (

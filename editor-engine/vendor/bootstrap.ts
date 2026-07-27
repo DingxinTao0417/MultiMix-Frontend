@@ -8,6 +8,14 @@ import type { MediaAsset } from "@editor/lib/media/types";
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
 
+export function disposeEditor(): void {
+  EditorCore.reset();
+  if (typeof window !== "undefined") {
+    const editorWindow = window as Window & { __editor?: EditorCore };
+    delete editorWindow.__editor;
+  }
+}
+
 // Download media files into real Blob/File objects. The canvas renderer uses
 // WebCodecs over File objects for video frames, so preview needs these blobs.
 async function hydrateAssetFiles(
@@ -54,7 +62,7 @@ async function hydrateAssetFiles(
 }
 
 export async function initEditorWithProject(bp: BackendProject, onProgress?: HydrateProgress): Promise<EditorCore> {
-  EditorCore.reset();
+  disposeEditor();
   const editor = EditorCore.getInstance();
   await applyProject(editor, bp, onProgress);
   return editor;
@@ -65,6 +73,7 @@ export async function initEditorWithProject(bp: BackendProject, onProgress?: Hyd
 // re-render via manager notify() as new segments arrive.
 export async function updateEditorProject(bp: BackendProject): Promise<EditorCore> {
   const editor = EditorCore.getInstance();
+  editor.media.clearAllAssets();
   await applyProject(editor, bp);
   return editor;
 }
