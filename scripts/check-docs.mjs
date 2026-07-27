@@ -9,7 +9,19 @@ const GOVERNED_MARKDOWN_DIRS = [
   "docs/authority",
   "docs/qa",
   "docs/plans/active",
-  "docs/specs/ui",
+  "docs/specs",
+  "MultiMix-Frontend/docs",
+  "MultiMix-Backend/docs",
+];
+
+const ARCHIVE_DIRS = [
+  "docs/archive",
+  "MultiMix-Backend/docs/archive",
+];
+
+const ACTIVE_PLAN_DIRS = [
+  "docs/plans/active",
+  "MultiMix-Backend/docs/plans/active",
 ];
 
 const STALE_LOCATIONS = [
@@ -182,7 +194,7 @@ function checkMarkdownHeaders(workspaceRoot, files, issues) {
     }
 
     const governed = GOVERNED_MARKDOWN_DIRS.some((dir) => isInside(relativeFile, dir));
-    const archived = isInside(relativeFile, "docs/archive");
+    const archived = ARCHIVE_DIRS.some((dir) => isInside(relativeFile, dir));
     if (!governed || archived) {
       continue;
     }
@@ -208,7 +220,7 @@ function checkMarkdownHeaders(workspaceRoot, files, issues) {
 function checkStaleReferences(workspaceRoot, files, issues) {
   for (const file of files) {
     const relativeFile = relativePath(workspaceRoot, file);
-    if (isInside(relativeFile, "docs/archive")) {
+    if (ARCHIVE_DIRS.some((dir) => isInside(relativeFile, dir))) {
       continue;
     }
 
@@ -231,12 +243,19 @@ function checkStaleReferences(workspaceRoot, files, issues) {
 function checkActivePlans(workspaceRoot, files, issues) {
   for (const file of files) {
     const relativeFile = relativePath(workspaceRoot, file);
-    if (!isInside(relativeFile, "docs/plans/active") || !isMarkdown(relativeFile) || isReadme(relativeFile)) {
+    const activePlan = ACTIVE_PLAN_DIRS.some((dir) => isInside(relativeFile, dir));
+    if (!activePlan || !isMarkdown(relativeFile) || isReadme(relativeFile)) {
       continue;
     }
 
     const content = readText(file);
-    if (COMPLETED_PLAN_PATTERNS.some((pattern) => pattern.test(content))) {
+    const hasCheckedItem = /^\s*-\s*\[[xX]\]/m.test(content);
+    const hasUncheckedItem = /^\s*-\s*\[ \]/m.test(content);
+    const completedChecklist = hasCheckedItem && !hasUncheckedItem;
+    if (
+      completedChecklist ||
+      COMPLETED_PLAN_PATTERNS.some((pattern) => pattern.test(content))
+    ) {
       issues.push(
         issue(
           "active-plan",
@@ -285,7 +304,11 @@ export function checkDocs(workspaceRoot) {
   const root = path.resolve(workspaceRoot);
   const docsRoot = path.join(root, "docs");
   const issues = [];
-  const files = listFiles(docsRoot);
+  const files = [
+    ...listFiles(docsRoot),
+    ...listFiles(path.join(root, "MultiMix-Frontend", "docs")),
+    ...listFiles(path.join(root, "MultiMix-Backend", "docs")),
+  ];
 
   checkDocsRoot(root, issues);
   checkStaleLocations(root, issues);

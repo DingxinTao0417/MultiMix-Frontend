@@ -84,3 +84,45 @@ test("flags completed plans that remain in docs/plans/active", () => {
 
   assert.equal(issues.some((issue) => issue.code === "active-plan"), true);
 });
+
+test("flags an all-checked plan that remains active", () => {
+  const root = makeWorkspace();
+  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+> Owner: docs
+> Last verified: 2026-07-10
+
+# Done
+
+- [x] Implemented
+- [x] Verified
+`);
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "active-plan"), true);
+});
+
+test("flags current frontend and backend docs without status metadata", () => {
+  const root = makeWorkspace();
+  writeFile(root, "MultiMix-Frontend/docs/API.md", "# Frontend API\n");
+  writeFile(root, "MultiMix-Backend/docs/CHANGEIN_SYNC.md", "# Backend sync\n");
+
+  const issues = checkDocs(root);
+
+  assert.equal(
+    issues.some(
+      (issue) =>
+        issue.code === "doc-header" &&
+        issue.file === "MultiMix-Frontend/docs/API.md",
+    ),
+    true,
+  );
+  assert.equal(
+    issues.some(
+      (issue) =>
+        issue.code === "doc-header" &&
+        issue.file === "MultiMix-Backend/docs/CHANGEIN_SYNC.md",
+    ),
+    true,
+  );
+});

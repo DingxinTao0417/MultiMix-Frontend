@@ -15,9 +15,9 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 剪辑器是 video-studio 的 OpenCut 引擎（`editor-engine/vendor/`），作为 `/editor` 路由嵌入，也能以 `?embed=1` 模式内嵌进对话工作台。
 
-前端保留 adapter 层 + mock：未配 `NEXT_PUBLIC_API_BASE_URL` 时离线跑 mock，配了则走后端。不应为后端实现重写工作台 UI。
+前端保留 adapter 边界，但生产运行时不回退 mock：未配置 `NEXT_PUBLIC_API_BASE_URL` 时显示明确的未连接状态，真实后端为空时保持空态；mock 只允许存在于自动化测试 fixture。后端接入方式变化时不应重写工作台 UI。
 
-完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`；功能缺口与待完善清单见 `docs/GAPS.md`。工作区文档地图见 `../docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/authority/asset-understanding-and-segment-referencing.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。当前整改项统一记录在工作区 `../docs/plans/active/`，历史审查和完成计划只在 `../docs/archive/` 追溯，不另维护容易失真的长期 GAPS 清单。工作区文档地图见 `../docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/authority/asset-understanding-and-segment-referencing.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
 ## 技术栈
 
