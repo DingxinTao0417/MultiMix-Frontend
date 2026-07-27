@@ -12,15 +12,6 @@ const spec = fs.readFileSync(
   path.join(root, "e2e", "video-pipeline-production.spec.ts"),
   "utf8",
 );
-const comparisonRunnerPath = path.join(
-  root,
-  "scripts",
-  "run-video-pipeline-on-off-comparison.mjs",
-);
-const packageJson = JSON.parse(
-  fs.readFileSync(path.join(root, "package.json"), "utf8"),
-);
-
 test("production runner accepts an explicit 60 second benchmark contract", () => {
   assert.match(runner, /VIDEO_PIPELINE_TARGET_SECONDS/);
   assert.match(runner, /VIDEO_PIPELINE_REFERENCE_VIDEO/);
@@ -30,40 +21,29 @@ test("production runner accepts an explicit 60 second benchmark contract", () =>
   assert.match(spec, /duration_contract\?\.target_seconds/);
 });
 
-test("production gold path runs the new visual, review, and audio quality gates", () => {
+test("production gold path keeps final-frame approval for human review", () => {
   assert.match(runner, /VIDEO_PIPELINE_VISION_PORT/);
   assert.match(runner, /VIDEO_PIPELINE_VISION_SERVICE_URL/);
   assert.match(runner, /configuredVisionServiceUrl/);
   assert.match(runner, /vision_service\.app:app/);
   assert.match(runner, /CHANGEIN_VISION_SERVICE_URL/);
+  assert.doesNotMatch(
+    runner,
+    /CHANGEIN_MULTIMIX_VIDEO_ART_DIRECTION_ENABLED/,
+  );
+  assert.doesNotMatch(runner, /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ROUTE_AUDIT_ENABLED/);
+  assert.doesNotMatch(runner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
+  assert.doesNotMatch(runner, /CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_ENABLED/);
   assert.match(
     runner,
-    /CHANGEIN_MULTIMIX_VIDEO_ART_DIRECTION_ENABLED:\s*"true"/,
+    /humanReviewStatus:\s*"pending"/,
   );
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ROUTE_AUDIT_ENABLED:\s*"true"/,
-  );
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_ENABLED:\s*"true"/,
-  );
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_AUTO_REPAIR_ENABLED:\s*"true"/,
-  );
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_AUDIO_FINISHING_ENABLED:\s*"true"/,
-  );
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_TTS_SAMPLE_GATE_ENABLED:\s*"true"/,
-  );
+  assert.doesNotMatch(runner, /CHANGEIN_MULTIMIX_VIDEO_AUDIO_FINISHING_ENABLED/);
+  assert.doesNotMatch(runner, /CHANGEIN_MULTIMIX_VIDEO_TTS_SAMPLE_GATE_ENABLED/);
   assert.match(spec, /scene_surface_by_id/);
   assert.match(spec, /distinctSurfacePresets/);
-  assert.match(spec, /rendered-reviews\/latest/);
-  assert.match(spec, /renderedReview\.project_fingerprint/);
+  assert.doesNotMatch(spec, /rendered-reviews\/latest/);
+  assert.doesNotMatch(spec, /finalRenderedReview/);
   assert.match(spec, /closing_hold_seconds/);
 });
 
@@ -108,7 +88,7 @@ test("production pipeline restores tracked Next config before removing its tempo
 test("production pipeline QA stages reviewed BGM and approved product captures", () => {
   assert.match(runner, /stageReviewedBgmCatalog/);
   assert.match(runner, /bgm-review-decisions\.json/);
-  assert.match(runner, /CHANGEIN_VIDEO_BGM_ENABLED:\s*"true"/);
+  assert.doesNotMatch(runner, /CHANGEIN_VIDEO_BGM_ENABLED/);
   assert.match(runner, /stageApprovedProductMediaCatalog/);
   assert.match(runner, /VIDEO_PIPELINE_PRODUCT_MEDIA_FILES/);
   assert.match(runner, /CHANGEIN_VIDEO_PRODUCT_MEDIA_MANIFEST_REF/);
@@ -145,16 +125,12 @@ test("production pipeline E2E can verify intentional no-BGM degradation", () => 
   assert.match(spec, /measurement_status/);
 });
 
-test("production pipeline E2E explicitly parameterizes the two-stage runtime and records the run manifest", () => {
-  assert.match(runner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
-  assert.match(runner, /twoStageEnabled/);
-  assert.match(
-    runner,
-    /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED:\s*twoStageEnabled\s*\?\s*"true"\s*:\s*"false"/,
-  );
+test("production pipeline E2E fixes the two-stage runtime and records the run manifest", () => {
+  assert.doesNotMatch(runner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
+  assert.match(runner, /const twoStageEnabled = true/);
   assert.doesNotMatch(
     runner,
-    /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED:\s*"true"/,
+    /CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED/,
   );
   assert.match(runner, /VIDEO_PIPELINE_EXPECT_TWO_STAGE/);
   assert.match(runner, /run-manifest\.json/);
@@ -185,7 +161,7 @@ test("production pipeline run manifest records the effective test-only LLM overr
 test("production pipeline polling tolerates isolated transport resets", () => {
   const guardedPollRequests = spec.match(/transport-error:/g) ?? [];
   assert.ok(
-    guardedPollRequests.length >= 6,
+    guardedPollRequests.length >= 5,
     "every long-running API poll must retry a one-off transport error",
   );
 });
@@ -221,24 +197,6 @@ test("production pipeline E2E separates rendered MG evidence from generated-prim
     /find\(\(scene\) => scene\.primary_visual\?\.source_type === "generated_scene"\) \?\? beforeScenes\[0\]/,
   );
   assert.doesNotMatch(spec, /产品界面更突出/);
-});
-
-test("on-off comparison runner uses isolated sequential runs and validates identical inputs", () => {
-  assert.equal(fs.existsSync(comparisonRunnerPath), true);
-  const comparisonRunner = fs.readFileSync(comparisonRunnerPath, "utf8");
-  assert.match(comparisonRunner, /for \(const mode of \["off", "on"\]\)/);
-  assert.match(comparisonRunner, /VIDEO_PIPELINE_TWO_STAGE_ENABLED/);
-  assert.match(comparisonRunner, /VIDEO_PIPELINE_RUN_ID/);
-  assert.match(comparisonRunner, /VIDEO_PIPELINE_RESULT_DIR/);
-  assert.match(comparisonRunner, /path\.join\(comparisonRoot, mode\)/);
-  assert.match(comparisonRunner, /assertComparableManifests/);
-  assert.match(comparisonRunner, /comparison-report\.json/);
-  assert.match(comparisonRunner, /blind-scorecard\.md/);
-  assert.match(comparisonRunner, /blind-map\.json/);
-  assert.equal(
-    packageJson.scripts["test:e2e:video-pipeline-compare"],
-    "node scripts/run-video-pipeline-on-off-comparison.mjs",
-  );
 });
 
 test("production pipeline E2E verifies the formal MP4 media contract", () => {

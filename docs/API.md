@@ -2,9 +2,9 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-07-19
+> Last verified: 2026-07-24
 
-本文档描述 MultiMix 内容生成工作台原型阶段的全部「接口」：数据访问层（adapter）、数据类型契约、共享 helper、Mock 数据契约、数据库 schema、seed 脚本、组件 props 契约、路由 / URL 接口、本地认证、环境变量、CSS 类名约定，以及未来接入真实后端的指引。
+本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
 > 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
@@ -61,23 +61,16 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 
 定义在 `app/assets/lib/asset-workspace-adapter.ts`。这是 UI 与数据之间唯一的接口边界。导出单例 `assetWorkspaceAdapter`，生产运行时只请求真实后端。
 
-```ts
-export type AssetWorkspaceAdapter = {
-  getSnapshot(): AssetWorkspaceData;
-  listConversations(): AssetConversation[];
-  getConversation(conversationId: string): AssetConversation | undefined;
-  getNewConversation(): AssetConversation;
-  listConversationProducts(conversation: AssetConversation): AssetProduct[];
-  getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct;
-  getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
-  getProductText(product: AssetProduct): string;
-  saveProduct(product: AssetProduct): Promise<{ version: string; savedAt: string }>;
-};
+当前 adapter 按职责分为四组：
 
-export const assetWorkspaceAdapter: AssetWorkspaceAdapter;
-```
+| 分组 | 当前主要接口 |
+| --- | --- |
+| 工作台展示 | `listConversations`、`getNewConversation`、`getWorkshop`、`getProductText` |
+| 对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、`sendMessage`、`reconcileMessage`、生成任务查询/重试、产物保存和版本恢复 |
+| 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
+| 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
-> 上面是原型阶段的核心读接口。真实后端版 adapter 还包含对话（`sendMessage`/`reviseProduct`/`loadConversations`）、库（`listLibrary`/`uploadAsset` 等）与视频任务方法：`generateVideo`（POST /video/generate）、`getVideoJob`（GET /video/jobs/{id}，工作台用它轮询 `render_stage` 显示分阶段进度）、`retryVideoJob`（POST /video/jobs/{id}/retry，失败任务原地重试）。完整签名以 `asset-workspace-adapter.ts` 的 `AssetWorkspaceAdapter` 类型为准。
+精确参数和返回类型以 `asset-workspace-adapter.ts` 中的 `AssetWorkspaceAdapter` 为准。产品主路径是“编导稿确认 → 对话确认接口创建视频工程 → 查询任务状态”，前端不再通过 adapter 直接调用兼容接口 `POST /v1/video/generate`。
 
 ### 2.1 对话确认一致性
 
@@ -98,9 +91,6 @@ HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 
 ### 2.2 方法详解
 
-#### `getSnapshot(): AssetWorkspaceData`
-返回结构合法的空工作台快照（空 conversations、`newConversation` 壳和空 workshops），供异步真实数据加载前渲染。
-
 #### 对话摘要缓存与按需详情
 
 - `GET /v1/assets/conversations/summaries` 只返回 `id/title/status/metadata/created_at/updated_at`，不返回消息和产物。
@@ -111,22 +101,8 @@ HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 #### `listConversations(): AssetConversation[]`
 同步快照仍不包含演示对话；首屏历史由真实摘要缓存和 `loadConversationSummaries` 提供，不回退样例。
 
-#### `getConversation(conversationId): AssetConversation | undefined`
-按 `id` 精确查找单条对话，找不到返回 `undefined`。
-
 #### `getNewConversation(): AssetConversation`
 返回固定的「新建创作」对话（`id: "new"`）。点击「新建创作」或选中对话不存在时回退到它。
-
-#### `listConversationProducts(conversation): AssetProduct[]`
-取一条对话下的产物列表。**规则**：`conversation.products` 非空则返回它，否则回退为 `[conversation.product]`。即 `products` 是可选的多产物数组，`product` 是必有的单产物兜底。
-
-#### `getConversationProduct(conversation, productId?): AssetProduct`
-取对话下当前选中的产物。**解析优先级**：
-1. `products` 中 `id === productId` 的产物；
-2. 否则取列表最后一个产物（`products[products.length - 1]`）；
-3. 再否则回退 `conversation.product`。
-
-> 注意：`productId` 不带对话前缀，是产物原始 `id`（如 `"market-rule-linkedin-copy"`），与 SQLite 中的 `${conversationId}:${product.id}` 复合主键不同。
 
 #### `getWorkshop(view): AssetWorkshop`
 按视图键（`"assets" | "copy" | "video"`）取对应库视图数据。`view` 不能是 `"conversation"`（类型层已 `Exclude`）。
@@ -134,7 +110,7 @@ HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 #### `getProductText(product): string`
 把产物转为可复制 / 可保存的纯文本。**规则**：`body` 非空则用 `body`，否则用 `[summary]`，再 `join("\n\n")`。供「复制」按钮使用。
 
-#### `saveProduct(product): Promise<{ version: string; savedAt: string }>`
+#### `saveProduct(product, token?): Promise<{ version: string; savedAt: string }>`
 保存产物（异步）。只有真实 token、API 和后端资产 ID 齐全时才请求后端；否则抛出“未连接后端”，不伪造成功。
 
 ### 2.3 真实后端边界
@@ -148,17 +124,17 @@ HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 
 ## 3. 数据类型契约
 
-定义在 `app/assets/lib/asset-workspace-types.ts`。以下为全部导出类型及字段语义。
+定义在 `app/assets/lib/asset-workspace-types.ts`。下列内容说明 UI 最常用的核心类型；完整字段和新增结构以该 TypeScript 文件为编译期权威。
 
 ### 3.1 枚举 / 联合类型
 
 ```ts
 type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
-type AssetProductMode  = "copy" | "image" | "video" | "audio" | "digital-human";
+type AssetProductMode  = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
 ```
 
 - `AssetWorkspaceView`：主区域视图。`conversation` = 对话创作模式；其余四个 = 库模式（资产库 / 文案库 / 图片库 / 视频库）。
-- `AssetProductMode`：产物类型。决定 `ProductPreview` 的渲染分支。`digital-human` 是视频的一种表现形式，不是一级产物类型。
+- `AssetProductMode`：产物类型。决定 `ProductPreview` 的渲染分支。`digital-human` 和 `mg_animation_video` 都是视频表现形式，不是一级资源库。
 
 ### 3.2 `AssetProduct`（产物，核心实体）
 
@@ -176,14 +152,19 @@ type AssetProduct = {
   body?: string[];             // 正文段落数组；copy 预览逐段渲染，video/digital-human 部分用
   sections: AssetProductSection[];   // 「内容与可调整项」列表（详情抽屉）
   timeline: AssetProductTimelineItem[]; // 时间轴；空数组则不渲染时间轴
-  actions: string[];           // 操作建议标签；★ 当前 UI 未渲染（数据已备）
-  sourceIds?: string[];        // 关联来源 id；★ 当前 UI 未渲染
-  versions?: AssetProductVersion[];  // 版本历史；★ 当前 UI 未渲染
+  actions: string[];           // 操作建议标签；部分视图不直接渲染
+  sourceIds?: string[];        // 兼容用来源 id
+  sourceSummary?: AssetProductSourceSummary; // 当前来源摘要和引用
+  segments?: AssetProductSegment[]; // 视频分镜摘要
+  versions?: AssetProductVersion[];  // 版本历史；详情区可查看和恢复
   preview?: AssetProductPreview;     // 预览补充数据
+  backendAssetId?: number;     // 真实后端资产 id
+  videoProjectReady?: boolean; // 共享契约判定的视频工程可编辑状态
+  metadata?: Record<string, unknown>;
 };
 ```
 
-★ 标记的字段为「数据已定义、UI 未渲染」，属设计预留，非 bug。
+字段是否显示取决于产物模式和真实数据是否存在；UI 不得为了填满区域伪造缺失字段。
 
 ### 3.3 `AssetProductSection`（可调整项）
 
@@ -209,7 +190,7 @@ type AssetProductTimelineItem = {
 ```
 渲染规则见 §6.3。`digital-human` 且 `timeline` 中存在 `line` 时，时间轴切换为「音轨和字幕」样式，每项额外显示 `status` 作为 `<em>`。
 
-### 3.5 `AssetProductVersion`（版本，★ UI 未渲染）
+### 3.5 `AssetProductVersion`（版本）
 
 ```ts
 type AssetProductVersion = {
@@ -321,10 +302,10 @@ type Conversation    = AssetConversation;
 ### 4.2 函数
 
 #### `getConversationProducts(conversation): AssetProduct[]`
-与 adapter 的 `listConversationProducts` 同逻辑：`products` 非空返回它，否则 `[conversation.product]`。供组件直接调用（无需经 adapter）。
+`products` 非空返回它，否则 `[conversation.product]`。这是组件读取一条对话下产物列表的唯一共享实现。
 
 #### `resolveConversationProduct(conversation, selectedProductId): AssetProduct`
-与 adapter 的 `getConversationProduct` 同逻辑：按 `selectedProductId` 命中 → 否则最后一个 → 否则 `conversation.product`。`AssetsWorkspaceClient` 用它确定当前展示产物。
+按 `selectedProductId` 命中 → 否则最后一个 → 否则 `conversation.product`。`AssetsWorkspaceClient` 用它确定当前展示产物。
 
 #### `getProductModeLabel(mode): string`
 mode → 中文标签映射：
@@ -335,6 +316,7 @@ mode → 中文标签映射：
 | `image` | 图片 |
 | `audio` | 音频 |
 | `digital-human` | 数字人视频 |
+| `mg_animation_video` | MG 动效 |
 | `video`（默认） | 视频 |
 
 #### `getProductRatioClass(ratio): string`
@@ -347,7 +329,7 @@ mode → 中文标签映射：
 | `"4:5"` | `ratio-cover` |
 | 其他 | `""` |
 
-> adapter 与 shared 中存在两组同义函数（`listConversationProducts`/`getConversationProducts`、`getConversationProduct`/`resolveConversationProduct`）。组件层用 shared 版本，adapter 版本供未来后端对接。逻辑须保持一致。
+> 产物列表和当前产物解析属于纯前端展示逻辑，统一放在 shared helper；adapter 不再保留一套同义方法。
 
 ---
 
@@ -477,21 +459,22 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 | mode | 渲染内容 | 关键字段消费 |
 | --- | --- | --- |
-| `copy` | 可编辑文档（`contentEditable`），标题 + 逐段正文 | `title`，`body ?? [summary]` 逐段 |
-| `image` | 主图卡（固定标注 `4:5`）+ 变体缩略帧 | `preview.title/subtitle ?? title/summary`；`preview.frames` 缺省给 3 帧兜底 |
+| `copy` | Markdown 文档 + 可选来源引用 | `markdownBody`，缺失时用 `body/summary` |
+| `image` | 真实图片或明确比例占位 + 可选变体 + 来源引用 | `metadata.preview_url/thumbnail_url`、`preview`、`sourceSummary` |
 | `audio` | 时长 + 标题副标 + 34 根波形条 | `duration`；`preview.title/subtitle`（副标缺省「口播 / 字幕 / 时间轴已匹配」） |
-| `digital-human` | 数字人舞台（头像 + caption + 播放按钮） | `preview.title ?? title`；`ratio · duration` |
-| `video`（默认分支） | 视频工程卡（取 `timeline` 前 3 项）+ 可选视觉缩略帧条 | `preview.title ?? title`；`timeline.slice(0,3)`；`preview.frames`（仅有值时渲染） |
+| `digital-human` | 有媒体时播放真实视频；否则显示明确的待渲染状态 | 媒体 URL、`preview`、`ratio`、`duration` |
+| `mg_animation_video` | MG scene 规格卡与明确的预览/待渲染状态 | `metadata.mg_scene/mg_scenes` |
+| `video`（默认分支） | 编导稿摘要，或白色播放器外壳中的成片/分镜预览、分镜卡和来源信息 | `videoProjectReady`、媒体 URL、`segments`、`metadata.video_project/video_plan` |
 
 ### 7.2 `preview.frames` 兜底差异
 
-- **image**：`frames` 缺省时用兜底 3 帧（主封面 / 信息图 / 客户场景），保证总有变体展示。
-- **video**：`frames` 缺省为 `[]`，**不渲染**缩略帧条。
+- **image**：只渲染后端实际返回的变体；缺失时不伪造三张示例图。
+- **video**：`frames` 仅作已返回的辅助视觉信息；工程浏览态主要使用真实媒体、分镜和工程状态。
 - `frame.tone`（`neutral`/`blue`/`green`/`dark`）作为 className 直接输出，缺省空串。
 
-### 7.3 未被预览消费的 preview 字段
+### 7.3 `preview` 字段边界
 
-`eyebrow`、`posterText`、`prompt` 在所有 mode 分支中均**未渲染**（数据已备）。
+`posterText` 可用于视频工程没有可播放媒体时的明确预览文案；其余字段只有组件实际读取时才构成用户可见能力。不得仅因类型中存在字段就声称功能已上线。
 
 ---
 
@@ -517,24 +500,15 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ---
 
-## 9. 本地认证接口（`multimix-app.tsx`）
+## 9. 认证接口（`multimix-app.tsx`）
 
-当前为**纯前端本地认证**，用户仅存在浏览器 `localStorage`，无后端校验。
+认证不是单一的“纯前端假登录”，而是按配置选择：
 
-- **存储键**：`multimix_local_user`
-- **存储结构**：`type LocalUser = { email: string }`
-- **默认用户**：`{ email: "demo@multimix.local" }`
+- 配置 Supabase 且认证模式不是 `local`：恢复 Supabase session，使用 Supabase 登录、注册、刷新 token、登出和密码重置。
+- 配置后端但未启用 Supabase：使用后端登录/注册接口；本地开发可按认证模式尝试获取 local-dev admin token。
+- 后端和 Supabase 都未配置：进入离线展示模式，才使用浏览器本地用户；这不会让生产 adapter 回退演示数据。
 
-行为：
-1. 挂载时读 `localStorage`：
-   - 无值 → 写入默认用户并登录。
-   - 有值但 `email` 为空或等于历史值 `"pilot@multimix.local"` → 重置为默认用户。
-   - 解析失败 → 清除并重置为默认用户。
-2. `ready` 前显示 `MultiMixLoading`。
-3. `user` 为空时显示 `MultiMixLocalAuth`（登录 / 注册表单，注册密码 `minLength=8`），提交即以填写邮箱登录（不校验密码）。
-4. 已登录渲染 `AssetsWorkspaceClient`，`accountEmail = user.email`。
-
-> `@supabase/supabase-js` 已装但**未被任何代码 import**，为未来 Auth 预留。
+浏览器存储键是 `multimix_local_user`，结构为 `{ email, token? }`。API 返回 401 时会触发统一登出并清除失效会话；认证初始化有 4 秒超时，失败会显示可重试的登录状态错误。
 
 ---
 
@@ -542,10 +516,10 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 | 变量 | 客户端可见 | 用途 |
 | --- | --- | --- |
-| `NEXT_PUBLIC_MULTIMIX_AUTH_MODE` | 是 | 认证模式，当前 `local` |
-| `NEXT_PUBLIC_SUPABASE_URL` | 是 | Supabase 项目 URL（预留） |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 是 | Supabase 公钥（预留） |
-| `NEXT_PUBLIC_API_BASE_URL` | 是 | 后端 API 基址（预留） |
+| `NEXT_PUBLIC_MULTIMIX_AUTH_MODE` | 是 | 认证模式；`local` 使用后端本地认证，其他值允许启用已配置的 Supabase |
+| `NEXT_PUBLIC_SUPABASE_URL` | 是 | Supabase Auth 项目 URL；与 publishable key 同时配置才启用 |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 是 | Supabase 浏览器公钥；不是 service-role key |
+| `NEXT_PUBLIC_API_BASE_URL` | 是 | 真实后端 API 基址；未配置时工作台显示未连接/空态 |
 | `LLM_API` | **否** | LLM 服务端密钥；**禁止加 `NEXT_PUBLIC_` 前缀**（会暴露到客户端） |
 
 数据边界（严格遵守）：
@@ -561,18 +535,18 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - 当前 UI 仅用 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（认证壳）两组前缀。
 - `app/globals.css` 是单一全局样式表。历史 ChangeIn 样式已清理过，新增样式请沿用上述两组现役前缀，勿盲目复用陌生类名或引入新的顶层前缀。
 
-### 11.2 已知占位 / 未接入项（非 bug）
+### 11.2 当前边界
 
-- 静态占位按钮（无 onClick）：侧边栏搜索、顶栏「上传资产」、对话「发送」。
-- 已定义但 UI 未渲染的数据：产物 `versions`/`actions`/`sourceIds`、`preview.eyebrow/posterText/prompt`；对话 `raw/judgment/action/canvasTitle/canvasMeta/sourceIds`；`workshop.kicker`；整个 `AssetSource`（`listSources` 无人调用）。
-- 重命名 / 删除对话通过真实后端持久化；失败时恢复前端状态。
+- 对话、资源库、生成任务、视频工程和产物版本已经通过真实 adapter 接入后端；重命名/删除失败时恢复前端状态。
+- 部分兼容字段仍保留在类型中，但只有组件实际读取的数据才应视为当前 UI 契约；不能把“类型存在”等同于“用户已能看到”。
+- 未配置 API、真实空数据和请求失败必须分别显示，不得用测试 fixture 冒充成功。
 
-### 11.3 接入真实后端的最小改动面
+### 11.3 扩展后端能力时的边界
 
-1. 重写 `asset-workspace-adapter.ts`，导出符合 `AssetWorkspaceAdapter` 的新单例。
-2. 若后端异步，需在 adapter 内缓存预取或将组件改为异步加载（当前同步读取假设是主要改造点）。
+1. 新接口先进入 `asset-workspace-adapter.ts`，组件不直接拼后端 URL。
+2. 后端异步任务通过明确的任务状态和重试接口呈现，不能在前端伪造完成。
 3. 服务端密钥走服务端代码路径，遵守 §10 数据边界。
-4. **不要因为后端形态改 UI**——类型契约与组件 props 保持稳定。
+4. 后端实现变化不应无理由改变工作台交互；类型契约、错误态和组件 props 要同步验证。
 
 ---
 

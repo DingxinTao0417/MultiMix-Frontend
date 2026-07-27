@@ -53,14 +53,9 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
   });
 
-  it("loads the engineering preview only after an explicit request", () => {
+  it("loads the engineering preview for manual review", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
-    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
-    expect(screen.queryByTitle("视频工程预播")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
-
     expect(screen.getByLabelText("视频工程播放器")).toBeInTheDocument();
     expect(screen.getByTitle("视频工程预播").getAttribute("src")).toMatch(
       /^\/editor\?asset=9100&embed=1&mode=preview&previewChannel=.+/,
@@ -69,11 +64,10 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
   });
 
-  it("does not mount either editor iframe during passive workspace browsing", () => {
+  it("mounts a manual preview but not the editable iframe during passive browsing", () => {
     renderWorkspace("case-06-project-ready-no-mp4");
 
-    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
-    expect(screen.queryByTitle("视频工程预播")).not.toBeInTheDocument();
+    expect(screen.getByTitle("视频工程预播")).toBeInTheDocument();
     expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
   });
 
@@ -131,7 +125,6 @@ describe("display-area eight-case matrix", () => {
 
   it("seeks and plays the engineering timeline when a segment is selected", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
-    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
     const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
 
@@ -407,7 +400,7 @@ describe("display-area eight-case matrix", () => {
     ));
   });
 
-  it("resets a pending export when the rendered project fingerprint changes", async () => {
+  it("keeps a pending export when a legacy rendered-review record changes", async () => {
     const baseProduct = displayProducts["case-06-project-ready-no-mp4"];
     const review = {
       status: "passed" as const,
@@ -462,8 +455,8 @@ describe("display-area eight-case matrix", () => {
       />,
     );
 
-    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "正在准备编辑器…" })).toBeDisabled();
   });
 
   it("surfaces the exact editor export error instead of a generic retry label", async () => {

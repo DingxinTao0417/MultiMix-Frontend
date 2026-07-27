@@ -102,11 +102,7 @@ const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? 
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
-const rawTwoStageEnabled = process.env.VIDEO_PIPELINE_TWO_STAGE_ENABLED ?? "true";
-if (!new Set(["true", "false"]).has(rawTwoStageEnabled)) {
-  throw new Error("VIDEO_PIPELINE_TWO_STAGE_ENABLED must be true or false");
-}
-const twoStageEnabled = rawTwoStageEnabled === "true";
+const twoStageEnabled = true;
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || scenario === "animated_public";
 const children = [];
@@ -583,12 +579,6 @@ async function writeQaReport() {
     structuralHardFailures.push("art_direction_surface_diversity");
   }
   if (
-    result.renderedReview?.status !== "passed"
-    || !result.renderedReview?.project_fingerprint
-  ) {
-    structuralHardFailures.push("rendered_review_not_passed");
-  }
-  if (
     targetSeconds >= 45
     && (closingHoldSeconds < 1.5 || closingHoldSeconds > 2.5)
   ) {
@@ -609,7 +599,7 @@ async function writeQaReport() {
     + `- 信息增量分镜：${Number(result.informationIncrement?.sceneCount ?? 0)} 个；MG 已渲染 ${Number(result.informationIncrement?.mgRenderedCount ?? 0)} 个\n`
     + `- 审核截图分镜：${Number(result.productPresentation?.productSceneCount ?? 0)} 个；单次分屏 ${Number(result.productPresentation?.splitSceneCount ?? 0)} 个\n`
     + `- 美术表面：${Number(result.artDirection?.distinctSurfaceCount ?? 0)} 种\n`
-    + `- 成片画面审查：${String(result.renderedReview?.status ?? "missing")}；第 ${Number(result.renderedReview?.attempt ?? 0)} 轮\n`
+    + `- 成片画面验收：待人工审查（见 human-review.md）\n`
     + `- 片尾稳定停留：${closingHoldSeconds.toFixed(3)} 秒；样音门：${String(result.audioFinishing?.ttsSampleGate?.status ?? "missing")}\n`
     + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
@@ -626,7 +616,7 @@ async function writeQaReport() {
     informationIncrement: result.informationIncrement,
     productPresentation: result.productPresentation,
     artDirection: result.artDirection,
-    renderedReview: result.renderedReview,
+    humanReviewStatus: "pending",
     audioFinishing: result.audioFinishing,
     sendBacks: result.sendBacks ?? 0,
     resumeReuse,
@@ -834,23 +824,10 @@ try {
     CHANGEIN_LLM_MODEL: effectiveLlmConfig.model ?? "",
     CHANGEIN_LLM_TIMEOUT_SECONDS: "120",
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
-    CHANGEIN_MULTIMIX_VIDEO_SEMANTIC_SCENE_FIELDS_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ORCHESTRATION_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_TWO_STAGE_ASSET_PIPELINE_ENABLED: twoStageEnabled ? "true" : "false",
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_ROUTE_AUDIT_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_INFORMATION_INCREMENT_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_PRODUCT_MEDIA_PRESENTATIONS_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_STRUCTURED_REUSE_INTENT_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_ART_DIRECTION_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_RENDERED_REVIEW_AUTO_REPAIR_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_AUDIO_FINISHING_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_TTS_SAMPLE_GATE_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PUBLIC_VLM_REQUIRED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
     CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
-    CHANGEIN_VIDEO_BGM_ENABLED: "true",
     CHANGEIN_VIDEO_BGM_MANIFEST_REF: stagedBgm.manifestRef,
     CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID: stagedBgm.defaultCatalogId,
     CHANGEIN_VISION_SERVICE_URL: visionServiceUrl,
@@ -936,7 +913,6 @@ try {
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_BGM: expectBgm ? "true" : "false",
-      VIDEO_PIPELINE_EXPECT_RENDERED_REVIEW: "true",
     },
     stdout: process.stdout,
     stderr: process.stderr,

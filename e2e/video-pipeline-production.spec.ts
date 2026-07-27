@@ -37,8 +37,6 @@ const hybridMediaFilesRaw = process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
-const expectRenderedReview =
-  process.env.VIDEO_PIPELINE_EXPECT_RENDERED_REVIEW !== "false";
 const audioMixRatioTolerance = Number(
   process.env.VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE ?? "0.15",
 );
@@ -198,17 +196,6 @@ type QualityReport = {
   };
 };
 
-type RenderedReview = {
-  status?: string;
-  project_fingerprint?: string;
-  attempt?: number;
-  issues?: Array<{
-    code?: string;
-    scene_id?: string;
-    severity?: string;
-  }>;
-};
-
 async function enterWorkspace(page: Page) {
   await page.goto("/app/assets");
   const loginHeading = page.getByRole("heading", {
@@ -278,61 +265,6 @@ async function waitForProjectReady(page: Page) {
   throw new Error(
     `timed out waiting for the ${expectedSceneCount}-scene video project`,
   );
-}
-
-async function waitForRenderedReviewPassed(
-  page: Page,
-  apiBase: string,
-  assetId: number,
-  headers: Record<string, string>,
-): Promise<RenderedReview> {
-  let latest: RenderedReview | undefined;
-  await expect
-    .poll(
-      async () => {
-        let response: APIResponse;
-        try {
-          response = await page.request.get(
-            `${apiBase}/v1/video/projects/${assetId}/rendered-reviews/latest`,
-            { headers },
-          );
-        } catch (error) {
-          return `transport-error:${error instanceof Error ? error.message : String(error)}`;
-        }
-        if (!response.ok()) return `http-${response.status()}`;
-        const renderedReview = (await response.json()) as RenderedReview;
-        latest = renderedReview;
-        if (
-          ["unavailable", "blocked", "blocked_requires_user_choice"].includes(
-            renderedReview.status ?? "",
-          )
-        ) {
-          throw new Error(
-            `rendered review stopped at ${renderedReview.status}: `
-            + JSON.stringify(renderedReview.issues ?? []),
-          );
-        }
-        return renderedReview.status ?? "missing";
-      },
-      { timeout: 20 * 60_000, intervals: [2500, 5000, 10_000] },
-    )
-    .toBe("passed");
-  expect(latest).toBeTruthy();
-  expect(Number(latest?.attempt)).toBeLessThanOrEqual(3);
-
-  const projectResponse = await page.request.get(
-    `${apiBase}/v1/video/projects/${assetId}`,
-    { headers },
-  );
-  expect(projectResponse.ok()).toBe(true);
-  const projectPayload = (await projectResponse.json()) as {
-    result?: { project_fingerprint?: string };
-  };
-  const renderedReview = latest!;
-  expect(renderedReview.project_fingerprint).toBe(
-    projectPayload.result?.project_fingerprint,
-  );
-  return renderedReview;
 }
 
 function scenesFromAsset(asset: AssetRow): SceneRow[] {
@@ -939,24 +871,6 @@ test("produces persisted visuals and recomposes only one scene", async ({
       );
   }
   }
-  let initialRenderedReview: RenderedReview | undefined;
-  if (expectRenderedReview) {
-    initialRenderedReview = await waitForRenderedReviewPassed(
-      page,
-      apiBase,
-      projectAsset!.id,
-      headers,
-    );
-    const refreshedList = await page.request.get(`${apiBase}/v1/assets`, {
-      headers,
-    });
-    expect(refreshedList.ok()).toBe(true);
-    projectAsset = ((await refreshedList.json()) as AssetRow[]).find(
-      (asset) => asset.id === projectAsset!.id,
-    );
-    expect(projectAsset).toBeTruthy();
-    beforeScenes = scenesFromAsset(projectAsset!);
-  }
   expect(beforeScenes).toHaveLength(expectedSceneCount);
   const videoProject = projectAsset!.metadata?.video_project as
     VideoProject | undefined;
@@ -1320,14 +1234,6 @@ test("produces persisted visuals and recomposes only one scene", async ({
   await expect(page.getByLabel("分镜摘要").getByText("待补素材")).toHaveCount(
     0,
   );
-  const finalRenderedReview = expectRenderedReview
-    ? await waitForRenderedReviewPassed(
-        page,
-        apiBase,
-        projectAsset!.id,
-        headers,
-      )
-    : initialRenderedReview;
   // Shared quality and export contract for both pipeline modes.
   let finalQualityReport: QualityReport | undefined;
   await expect
@@ -1550,7 +1456,7 @@ test("produces persisted visuals and recomposes only one scene", async ({
       qualityMetrics: qualityReport.metrics,
       qualityWarnings: qualityReport.warnings ?? [],
       artDirection: artDirectionSummary,
-      renderedReview: finalRenderedReview ?? null,
+      humanReviewStatus: "pending",
       audioFinishing: {
         closingHoldSeconds: videoProject?.metadata?.closing_hold_seconds,
         ttsSampleGate: videoProject?.orchestration?.tts_sample_gate ?? null,

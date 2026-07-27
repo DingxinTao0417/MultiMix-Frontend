@@ -186,7 +186,6 @@ try {
     CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
     CHANGEIN_VIDEO_BGM_MANIFEST_REF: "local://bgm/catalog/v1/manifest.json",
   };
-  delete backendEnv.CHANGEIN_VIDEO_BGM_ENABLED;
   const seed = await run(
     pythonCommand,
     ["-m", "tools.seed_video_bgm_e2e", "--database-url", databaseUrl, "--artifact-dir", artifactDir],

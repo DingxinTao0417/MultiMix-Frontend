@@ -42,15 +42,14 @@ describe("video project browse-player contract", () => {
     expect(editorView).toContain("editor-preview-only");
   });
 
-  test("keeps the static storyboard as the default and load/error fallback", () => {
+  test("keeps a playable full-project preview available for manual review", () => {
     expect(storyboardPreview).toContain("findMediaForSegment");
     expect(storyboardPreview).toContain("mediaUrlForRef");
     expect(storyboardPreview).not.toContain("initEditorWithProject");
     expect(storyboardPreview).not.toContain("Promise.all");
     expect(preview).toContain("onError={() => setProjectPreviewFailed(true)}");
-    expect(preview).toContain(
-      "setProjectPreviewRequested(shouldOwnRenderedReview)",
-    );
+    expect(preview).toContain("setProjectPreviewRequested(true)");
+    expect(preview).not.toContain("shouldOwnRenderedReview");
     expect(preview).toContain("重新加载完整工程预览");
   });
 
@@ -99,15 +98,10 @@ describe("video project browse-player contract", () => {
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 
-  test("does not reset an active export for a referentially new review snapshot", () => {
-    expect(workspace).toContain("persistedRenderedReviewFingerprint");
-    expect(workspace).toContain("persistedRenderedReviewSnapshot");
-    expect(workspace).toContain(
-      "[currentAssetId, hasVideoProject, persistedRenderedReviewFingerprint]",
-    );
-    expect(workspace).not.toContain(
-      "[currentAssetId, hasVideoProject, persistedRenderedReview]",
-    );
+  test("does not use a legacy automated review record to reset or block export", () => {
+    expect(workspace).not.toContain("persistedRenderedReviewFingerprint");
+    expect(workspace).not.toContain("renderedReviewBlocksExport");
+    expect(workspace).not.toContain("等待画面检查");
   });
 
   test("notifies the workbench only after embedded edits persist a new project", () => {
@@ -119,18 +113,16 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("refreshPersistedVideoProject");
   });
 
-  test("waits for current MG jobs to settle before reviewing rendered pixels", () => {
-    expect(editorView).toContain("rendered_review_capture_ready");
-    expect(editorView).toContain("renderedReviewCaptureReady");
-    expect(editorView).toMatch(
-      /shouldCaptureRenderedReview\(\s*renderedReview,\s*renderedReviewCaptureReady,\s*\)/,
-    );
-    expect(editorView).toContain("pollCaptureReadiness");
+  test("does not automatically capture, upload, or poll final-frame review", () => {
+    expect(editorView).not.toContain("captureRenderedReviewFrames");
+    expect(editorView).not.toContain("uploadRenderedReviewFrames");
+    expect(editorView).not.toContain("fetchLatestRenderedReview");
+    expect(editorView).not.toContain("画面检查通过后才能导出");
   });
 
-  test("keeps mounted preview and rendered-review capture on the same editor instance", () => {
+  test("keeps the mounted preview on one editor instance without a review sidecar", () => {
     expect(editorView.match(/await initEditorWithProject\(/g)).toHaveLength(1);
-    expect(editorView.match(/await refreshMountedEditorProject\(/g)).toHaveLength(3);
+    expect(editorView.match(/await refreshMountedEditorProject\(/g)).toHaveLength(1);
     expect(editorView).toMatch(
       /async function refreshMountedEditorProject[\s\S]*?setRenderTree\(\{\s*renderTree:\s*null\s*\}\)[\s\S]*?await updateEditorProject\(project\)/,
     );

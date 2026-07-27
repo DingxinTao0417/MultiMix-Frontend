@@ -2,13 +2,13 @@
 
 > Status: current
 > Owner: workspace
-> Last verified: 2026-07-17
+> Last verified: 2026-07-24
 
 MultiMix 是两个并排的独立仓库：
 
 - **前端**：`MultiMix-Frontend`（Next.js 15，本仓库），部署到 **Vercel**。
 - **后端**：`MultiMix-Backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
-- **剪辑器**：video-studio 的 OpenCut 引擎，作为 `/editor` 路由嵌在前端里（浏览器端 WebCodecs 导出，无需服务端渲染）。
+- **剪辑器**：完整 OpenCut 引擎代码仍保留在 `/editor`，供后续完整剪辑模式使用；当前默认产品流程使用工作台内的浏览/轻编辑能力，不把完整编辑器作为主入口。
 
 ## 模块开关
 
@@ -16,9 +16,9 @@ MultiMix 是两个并排的独立仓库：
 
 | 环境变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `CHANGEIN_MODULES_MONITORING_ENABLED` | `true` | 信息采集/监控（Watch/Collection/Reader，需 Playwright）。MultiMix 部署可设 `false`。 |
+| `CHANGEIN_MODULES_MONITORING_ENABLED` | `false` | 退役的 ChangeIn 信息采集/监控表面；MultiMix 默认不加载。只有专门维护旧能力时才显式开启。 |
 | `CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED` | `true` | 视频编排模块（`/v1/video/*`）。 |
-| `CHANGEIN_VIDEO_ORCHESTRATION_INLINE` | `false` | `true` 时 `/video/generate` 在请求内同步执行（本地/无 worker 时用）；生产配 worker 后设 `false`。 |
+| `CHANGEIN_VIDEO_ORCHESTRATION_INLINE` | `false` | `true` 时在本地进程执行视频任务；不同入口可能使用请求后台任务或同步兼容路径。生产必须设 `false` 并使用独立 worker。 |
 
 ## 后端部署到 Railway
 
@@ -63,7 +63,7 @@ MultiMix 是两个并排的独立仓库：
 
 ### 视频编排 worker（异步生成）
 
-`/video/generate` 默认走 RQ 队列。生产要起一个独立 worker 服务（同镜像，不同启动命令）：
+视频工程任务默认走 RQ 队列。`POST /v1/video/generate` 仍是兼容入口，产品主路径是“对话中确认编导稿 → 创建视频工程任务”。生产要起一个独立 worker 服务（同镜像，不同启动命令）：
 
 ```
 CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
@@ -101,7 +101,7 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
 
 1. 后端（在 `MultiMix-Backend` 仓库内）：
    ```
-   python -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+   python -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
    CHANGEIN_ENV=local CHANGEIN_MODULES_MONITORING_ENABLED=false \
      CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true CHANGEIN_DEEPSEEK_API_KEY=<key> \
      .venv/bin/python -m uvicorn app.main:app --port 8199
@@ -110,13 +110,13 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
    ```
    NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8199 npm run dev -- --port 3200
    ```
-3. 流程：注册登录 → 资产库上传 PDF/MD → 对话生成图文/文案（引用上传知识）→ `/v1/video/generate` 生成视频项目 → 视频库出现该项目 → 点「打开剪辑器」→ `/editor` 拖拽编辑 → 浏览器导出 MP4。
+3. 流程：注册登录 → 资产库上传 PDF/MD → 对话生成图文/文案（引用上传知识）→ 生成并确认编导稿 → 后台创建视频工程 → 视频库/展示区出现工程 → 浏览成片或分镜并执行轻量调整。完整 `/editor` 和浏览器导出只作为保留能力单独验证，不是当前默认验收路径。
 
 > 注意：本地反复重启 `next start` 容易留下僵尸进程占用旧端口、提供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 
 ## 已知边界
 
-- 真正的 MP4 出片走**浏览器端 WebCodecs 导出**（剪辑器内「导出视频」），不依赖服务端 ffmpeg。
+- 完整编辑器的 MP4 导出走浏览器端 WebCodecs，不依赖服务端 ffmpeg；但完整编辑器当前不是默认产品入口。
 - 公共素材在进入工程前必须下载、校验并持久化到远程 ArtifactStore；剪辑器通过后端 `/v1/video/media` 读取持久化引用，不把 provider 原片 URL 作为工程权威地址。
 - 监控/采集模块（ChangeIn 原功能）默认关闭；要启用需用全功能 Dockerfile + Redis + 各 worker + Reader 服务，见 ChangeIn 原文档。
 - 知识库语义检索目前是关键词匹配（`asset_conversation.match_assets` + `knowledge_retrieval.match_knowledge_chunks`），向量检索为后续增强。

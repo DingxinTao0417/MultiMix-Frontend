@@ -13,8 +13,7 @@ test("video BGM E2E runner isolates storage, ports, and cleanup", () => {
   assert.match(source, /multimix-video-bgm-.*\.sqlite3/);
   assert.match(source, /multimix-video-bgm-artifacts-/);
   assert.match(source, /CHANGEIN_DATABASE_URL/);
-  assert.doesNotMatch(source, /CHANGEIN_VIDEO_BGM_ENABLED:\s*"true"/);
-  assert.match(source, /delete backendEnv\.CHANGEIN_VIDEO_BGM_ENABLED/);
+  assert.doesNotMatch(source, /CHANGEIN_VIDEO_BGM_ENABLED/);
   assert.doesNotMatch(
     source,
     /backendEnv\.CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID\s*=\s*seedData\.default_track_id/,

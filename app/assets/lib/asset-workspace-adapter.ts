@@ -1,5 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetSuggestionAction, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
   API_CONNECTION_ERROR,
@@ -157,29 +157,6 @@ export function findConversationByClientRequestId(
   )) ?? null;
 }
 
-function normalizeSuggestionActions(value: unknown): AssetSuggestionAction[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const actions = value.flatMap((item): AssetSuggestionAction[] => {
-    if (!isRecord(item)) return [];
-    const label = stringValue(item.label);
-    const utterance = stringValue(item.utterance) || label;
-    if (!label || !utterance) return [];
-    return [{
-      id: stringValue(item.id) || label,
-      label,
-      utterance,
-      actionType: stringValue(item.action_type) || "fill_composer",
-      capability: stringValue(item.capability) || undefined,
-      mode: stringValue(item.mode) || undefined,
-      isAiPrimary: item.is_ai_primary === true,
-      enabled: item.enabled !== false,
-      disabledReason: stringValue(item.disabled_reason) || undefined,
-      requiresConfirmation: item.requires_confirmation !== false
-    }];
-  });
-  return actions.length ? actions : undefined;
-}
-
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -241,12 +218,8 @@ function understandingForAsset(asset: ContentAsset): AssetUnderstanding | null {
 }
 
 export type AssetWorkspaceAdapter = {
-  getSnapshot(): AssetWorkspaceData;
   listConversations(): AssetConversation[];
-  getConversation(conversationId: string): AssetConversation | undefined;
   getNewConversation(): AssetConversation;
-  listConversationProducts(conversation: AssetConversation): AssetProduct[];
-  getConversationProduct(conversation: AssetConversation, productId?: string): AssetProduct | null;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
@@ -266,7 +239,6 @@ export type AssetWorkspaceAdapter = {
   mergeConversationSummaries(summaries: AssetConversationSummaryResponse[], current: AssetConversation[]): AssetConversation[];
   loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
-  createConversation(token: string): Promise<AssetConversation>;
   deleteConversation(token: string, conversationId: string): Promise<void>;
   renameConversation(token: string, conversationId: string, title: string): Promise<void>;
   createMaterialPackage(token: string, payload: { title: string; assetIds: number[]; metadata?: Record<string, unknown> }): Promise<ContentAsset>;
@@ -285,19 +257,11 @@ export type AssetWorkspaceAdapter = {
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null } | null>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
-  reviseProduct(args: {
-    token: string;
-    product: AssetProduct;
-    instruction: string;
-    conversationId?: string;
-    signal?: AbortSignal;
-  }): Promise<{ product: AssetProduct; assistantMessage: string; suggestions: string[]; suggestionActions?: AssetSuggestionAction[]; diffSummary: string }>;
   restoreProductVersion(args: {
     token: string;
     product: AssetProduct;
     versionId: string;
   }): Promise<{ product: AssetProduct; assistantMessage: string; diffSummary: string }>;
-  generateVideo(token: string, topic: string, opts?: { language?: string; layout?: string; targetSeconds?: number }): Promise<VideoJobResult>;
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
@@ -326,9 +290,7 @@ export type AssetWorkspaceAdapter = {
     options?: LibraryListOptions,
   ): Promise<LibraryPage>;
   uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">, onProgress?: UploadProgressCallback): Promise<ContentAsset>;
-  createTextAsset(token: string, payload: { title: string; bodyMarkdown: string; contentType?: string }): Promise<ContentAsset>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
-  getLatestIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
   downloadAsset(token: string, assetId: number): Promise<Blob>;
@@ -771,24 +733,11 @@ function mapSegmentCandidate(row: SegmentMaterialCandidateResponse): SegmentMate
 
 function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAdapter {
   return {
-    getSnapshot() {
-      return data;
-    },
     listConversations() {
       return data.conversations;
     },
-    getConversation(conversationId) {
-      return data.conversations.find((conversation) => conversation.id === conversationId);
-    },
     getNewConversation() {
       return data.newConversation;
-    },
-    listConversationProducts(conversation) {
-      return conversation.products && conversation.products.length > 0 ? conversation.products : [conversation.product];
-    },
-    getConversationProduct(conversation, productId) {
-      const products = this.listConversationProducts(conversation);
-      return products.find((product) => product.id === productId) ?? products[products.length - 1] ?? conversation.product;
     },
     getWorkshop(view) {
       return data.workshops[view];
@@ -883,10 +832,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         detailsLoaded: true,
       }));
     },
-    async createConversation(token) {
-      const row = await api<AssetConversationResponse>("/assets/conversations", token, { method: "POST" });
-      return conversationFromPersisted(row, data.newConversation.product);
-    },
     async deleteConversation(token, conversationId) {
       await api<void>(`/assets/conversations/${encodeURIComponent(conversationId)}`, token, {
         method: "DELETE"
@@ -964,26 +909,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     retryGenerationJob(token, jobId) {
       return retryAssetGenerationJob(token, jobId);
     },
-    async reviseProduct({ token, product, instruction, conversationId, signal }) {
-      if (!isApiConfigured || !token || !product.backendAssetId) {
-        throw new Error("未连接后端，无法修订产物。");
-      }
-      const response = await api<ContentAssetRevisionResponse>(`/assets/${product.backendAssetId}/revisions`, token, {
-          method: "POST",
-          signal,
-          body: JSON.stringify({
-            instruction,
-            conversation_id: conversationId === "new" ? undefined : conversationId
-          })
-        });
-      return {
-          product: contentAssetToProduct(response.asset),
-          assistantMessage: response.assistant_message,
-          suggestions: response.suggestions,
-          suggestionActions: normalizeSuggestionActions(response.suggestion_actions),
-          diffSummary: response.diff_summary
-      };
-    },
     async restoreProductVersion({ token, product, versionId }) {
       if (!isApiConfigured || !token || !product.backendAssetId) {
         throw new Error("未连接后端，无法恢复版本。");
@@ -996,19 +921,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           assistantMessage: response.assistant_message,
           diffSummary: response.diff_summary
       };
-    },
-    async generateVideo(token, topic, opts) {
-      const body = {
-        topic,
-        language: opts?.language ?? "zh-CN",
-        layout: opts?.layout ?? "portrait",
-        target_seconds: opts?.targetSeconds ?? 60,
-      };
-      const raw = await api<RawVideoJob>("/video/generate", token, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      return mapVideoJob(raw);
     },
     async getVideoJob(token, jobId) {
       const raw = await api<RawVideoJob>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
@@ -1126,17 +1038,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
     },
-    async createTextAsset(token, payload) {
-      return api<ContentAsset>("/assets/text", token, {
-        method: "POST",
-        body: JSON.stringify({
-          title: payload.title,
-          body_markdown: payload.bodyMarkdown,
-          library_kind: "assets",
-          content_type: payload.contentType ?? "manual_text"
-        })
-      });
-    },
     async createWebCapture(token, payload) {
       return api<ContentAsset>("/assets/web-captures", token, {
         method: "POST",
@@ -1148,11 +1049,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         })
       });
     },
-    async getLatestIngestJob(token, assetId) {
-      return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
-    },
     async retryAssetIngest(token, assetId) {
-      const latest = await this.getLatestIngestJob(token, assetId);
+      const latest = await api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
       await api<AssetIngestJobActionRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/retry`, token, { method: "POST" });
       return api<AssetIngestJobActionRead>(`/assets/ingest-jobs/${encodeURIComponent(latest.id)}/process`, token, { method: "POST" });
     },
