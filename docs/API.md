@@ -2,11 +2,11 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-07-24
+> Last verified: 2026-07-28
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
-> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
+> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
 适用版本：`multimix-web@0.1.0`（Next.js 15 App Router + React 19 + TypeScript strict）。
 
@@ -400,18 +400,45 @@ deleteAsset(token: string, assetId: number): Promise<void>
 ```ts
 function ConversationStudio({
   basePath: string;
+  contextAssets?: Array<{ id: number; title: string }>;
   selectedConversation: Conversation;
-  selectedProduct: ProductArtifact;
+  selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
+  imageAttachments?: ChatImageAttachment[];
+  onUploadImages?: (files: File[]) => void;
+  onRemoveImageAttachment?: (attachmentId: string) => void;
+  onRetryImageAttachment?: (attachmentId: string) => void;
+  pendingExchange?: OptimisticExchange | null;
+  onPendingExchangeChange?: (
+    conversationId: string,
+    exchange: OptimisticExchange | null,
+  ) => void;
+  onSendMessage?: (
+    conversation: Conversation,
+    instruction: string,
+    signal?: AbortSignal,
+    linkedAssets?: Array<{ id: number; title: string }>,
+    clientRequestId?: string,
+  ) => Promise<void>;
+  generationJob?: AssetGenerationJobResponse | null;
+  onRetryGeneration?: (jobId: string) => void;
+  liveRunStateByAssetId?: Record<number, AgentRunState>;
+  onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
+  diagnosticsSlot?: ReactNode;
+  detailLoadError?: boolean;
+  onRetryDetail?: () => void;
+  readonly?: boolean;
 }): JSX.Element
 ```
 
+完整字段和具体嵌套类型以组件中的 TypeScript 签名为编译期权威；上面列出当前对外行为面，避免文档复制内部实现细节后再次漂移。
+
 行为契约：
 - **消息流来源**：`selectedConversation.messages` 非空时直接用；否则合成 `[{user, prompt}, {assistant, response}, {assistant, delivery, suggestions}]`。
-- **布局**：前 2 条消息 → 产物卡列表 → 第 3 条起消息（带 `suggestions` 的加 `delivery` class）。
-- **产物卡**：用 `getConversationProducts` 取列表，每张卡按 `mode` 显示图标（image→ImageIcon / audio→Play / video|digital-human→Video / 其他→FileText），点击同时 `<Link>` 跳转（带 `conversation` + `product` 查询参数）并调 `onSelectProduct`。当前产物加 `active` class。有 `version` 显示在右下。
+- **产物卡**：用 `getConversationProducts` 取列表，再按消息与产物关联关系插入消息流；点击时更新带 `conversation`、`product` 查询参数的路由并调用 `onSelectProduct`。
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
-- **输入框**：`new` 对话默认空，其他默认 `"基于当前素材生成 LinkedIn 发帖文案"`。发送按钮为静态占位，无 onClick。
+- **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
+- **附件**：图片和文档上传、删除、失败重试及上传进度已接入。视频属于产品上传范围，但两个选择器当前存在“可选择、随后被处理器过滤”的已知回归，修复与浏览器验证记录在 `../../docs/plans/active/2026-07-21-chat-attachment-upload-progress.md`。
 
 ### 6.4 `ProductWorkspace`（`product-workspace.tsx`，默认导出）
 

@@ -76,6 +76,9 @@ const COMPLETED_PLAN_PATTERNS = [
   /全部阶段完成/,
 ];
 
+const DOCUMENTATION_MAP_REFERENCE_PATTERN =
+  /`((?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\/[^`\r\n]+\.md)`/g;
+
 function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
@@ -240,6 +243,30 @@ function checkStaleReferences(workspaceRoot, files, issues) {
   }
 }
 
+function checkDocumentationMapReferences(workspaceRoot, issues) {
+  const relativeFile = "docs/README.md";
+  const mapFile = path.join(workspaceRoot, "docs", "README.md");
+  if (!exists(mapFile)) {
+    return;
+  }
+
+  const content = readText(mapFile);
+  for (const match of content.matchAll(DOCUMENTATION_MAP_REFERENCE_PATTERN)) {
+    const reference = match[1];
+    const target = path.join(workspaceRoot, ...reference.split("/"));
+    if (!exists(target)) {
+      issues.push(
+        issue(
+          "missing-doc-reference",
+          relativeFile,
+          `References missing current document '${reference}'.`,
+          "Update the documentation map to an existing current document or move the reference into the Archive section.",
+        ),
+      );
+    }
+  }
+}
+
 function checkActivePlans(workspaceRoot, files, issues) {
   for (const file of files) {
     const relativeFile = relativePath(workspaceRoot, file);
@@ -314,6 +341,7 @@ export function checkDocs(workspaceRoot) {
   checkStaleLocations(root, issues);
   checkMarkdownHeaders(root, files, issues);
   checkStaleReferences(root, files, issues);
+  checkDocumentationMapReferences(root, issues);
   checkActivePlans(root, files, issues);
   checkCurrentPrototype(root, issues);
 

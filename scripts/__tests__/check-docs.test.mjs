@@ -71,6 +71,26 @@ test("flags stale paths in current docs while allowing archive references", () =
   assert.equal(issues.some((issue) => issue.code === "stale-reference"), true);
 });
 
+test("flags missing Markdown references in the workspace documentation map", () => {
+  const root = makeWorkspace();
+  writeFile(
+    root,
+    "docs/README.md",
+    "# Docs\n\n- Missing plan: `docs/plans/active/missing-plan.md`\n",
+  );
+
+  const issues = checkDocs(root);
+
+  assert.equal(
+    issues.some(
+      (issue) =>
+        issue.code === "missing-doc-reference" &&
+        issue.file === "docs/README.md",
+    ),
+    true,
+  );
+});
+
 test("flags completed plans that remain in docs/plans/active", () => {
   const root = makeWorkspace();
   writeFile(root, "docs/plans/active/plan.md", `> Status: completed
