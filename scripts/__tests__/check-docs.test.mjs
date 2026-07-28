@@ -122,6 +122,60 @@ test("flags an all-checked plan that remains active", () => {
   assert.equal(issues.some((issue) => issue.code === "active-plan"), true);
 });
 
+test("flags an implementation-complete heading that remains active", () => {
+  const root = makeWorkspace();
+  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+> Owner: docs
+> Last verified: 2026-07-28
+
+# Plan
+
+## 实施状态（2026-07-28 完成）
+
+- Verification passed.
+`);
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "active-plan"), true);
+});
+
+test("does not treat a partially completed execution heading as a completed plan", () => {
+  const root = makeWorkspace();
+  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+> Owner: docs
+> Last verified: 2026-07-28
+
+# Plan
+
+## 执行状态（2026-07-28 完成 A 类删除）
+
+- [x] Phase A
+- [ ] Phase B
+`);
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "active-plan"), false);
+});
+
+test("does not treat completion wording in explanatory prose as a completed plan", () => {
+  const root = makeWorkspace();
+  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+> Owner: docs
+> Last verified: 2026-07-28
+
+# Plan
+
+- The checker recognizes the phrase “全部阶段完成” in a real completion statement.
+- [ ] Implement the remaining work.
+`);
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "active-plan"), false);
+});
+
 test("flags current frontend and backend docs without status metadata", () => {
   const root = makeWorkspace();
   writeFile(root, "MultiMix-Frontend/docs/API.md", "# Frontend API\n");

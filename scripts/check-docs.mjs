@@ -73,7 +73,8 @@ const STALE_REFERENCES = [
 const COMPLETED_PLAN_PATTERNS = [
   /^>\s*Status:\s*(completed|archived|done)\b/im,
   /^>\s*状态：.*(已完成|已归档|完成)/m,
-  /全部阶段完成/,
+  /^##\s+(实施状态|执行状态)（\d{4}-\d{2}-\d{2}\s+完成）\s*$/m,
+  /^\*\*全部阶段完成(?:[，。！!]|[\r\n])/m,
 ];
 
 const DOCUMENTATION_MAP_REFERENCE_PATTERN =
