@@ -23,12 +23,14 @@ export default function SegmentCards({
   activeId,
   onSelect,
   onReplaceMaterial,
+  onEditVoiceover,
 }: {
   segments: AssetProductSegment[];
   hint?: string;
   activeId?: string | null;
   onSelect?: (segment: AssetProductSegment) => void;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
+  onEditVoiceover?: (segment: AssetProductSegment) => void;
 }) {
   if (segments.length === 0) return null;
   return (
@@ -99,17 +101,30 @@ export default function SegmentCards({
                   </span>
                 ) : null}
               </span>
-              {onReplaceMaterial ? (
+              {onReplaceMaterial || onEditVoiceover ? (
                 <span className="shadcn-prototype-segment-actions">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onReplaceMaterial(segment);
-                    }}
-                  >
-                    换素材
-                  </button>
+                  {onEditVoiceover ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEditVoiceover(segment);
+                      }}
+                    >
+                      修改配音
+                    </button>
+                  ) : null}
+                  {onReplaceMaterial ? (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onReplaceMaterial(segment);
+                      }}
+                    >
+                      换素材
+                    </button>
+                  ) : null}
                 </span>
               ) : null}
             </li>

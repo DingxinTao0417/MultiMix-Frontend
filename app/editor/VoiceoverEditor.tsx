@@ -64,6 +64,9 @@ export default function VoiceoverEditor({
   currentVoiceName = "female_warm",
   disabled = false,
   api = defaultApi,
+  initiallyExpanded = false,
+  onBusyChange,
+  onCancel,
   onJobStarted,
   onProjectUpdated,
 }: {
@@ -74,6 +77,9 @@ export default function VoiceoverEditor({
   currentVoiceName?: string;
   disabled?: boolean;
   api?: VoiceoverApi;
+  initiallyExpanded?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onCancel?: () => void;
   onJobStarted?: (jobId: string) => void;
   onProjectUpdated?: () => void;
 }) {
@@ -87,7 +93,7 @@ export default function VoiceoverEditor({
     }),
     [currentVoiceName, narration],
   );
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [draft, setDraft] = useState<VoiceoverDraft>(initialDraft);
   const [previewJob, setPreviewJob] = useState<VideoJob | null>(null);
   const [busy, setBusy] = useState<BusyAction>(null);
@@ -106,6 +112,10 @@ export default function VoiceoverEditor({
     const parsed = stored ? Number(stored) : Number.NaN;
     setUndoVersionId(Number.isInteger(parsed) && parsed > 0 ? parsed : null);
   }, [assetId]);
+
+  useEffect(() => {
+    onBusyChange?.(busy !== null);
+  }, [busy, onBusyChange]);
 
   const finishJob = async (job: VideoJob): Promise<VideoJob> => {
     onJobStarted?.(job.id);
@@ -214,6 +224,11 @@ export default function VoiceoverEditor({
   const currentVoiceLabel =
     VOICES.find(([name]) => name === currentVoiceName)?.[1] ?? "当前声音";
   const actionDisabled = disabled || busy !== null;
+
+  const applyProject = () => {
+    if (!window.confirm("这会把当前声音设置应用到全部分镜，确定继续吗？")) return;
+    void apply("project");
+  };
 
   if (!expanded) {
     return (
@@ -438,7 +453,7 @@ export default function VoiceoverEditor({
           type="button"
           className="shadcn-prototype-voiceover-secondary"
           disabled={actionDisabled || !preview}
-          onClick={() => void apply("project")}
+          onClick={applyProject}
         >
           {busy === "project" ? "正在应用到全片…" : "应用到全部分镜"}
         </button>
@@ -450,7 +465,11 @@ export default function VoiceoverEditor({
             setDraft(initialDraft);
             setPreviewJob(null);
             setError("");
-            setExpanded(false);
+            if (onCancel) {
+              onCancel();
+            } else {
+              setExpanded(false);
+            }
           }}
         >
           取消

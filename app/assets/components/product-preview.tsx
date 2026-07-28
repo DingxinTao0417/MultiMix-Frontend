@@ -168,9 +168,11 @@ function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number
 export default function ProductPreview({
   product,
   onReplaceMaterial,
+  onEditVoiceover,
 }: {
   product: ProductArtifact;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
+  onEditVoiceover?: (segment: AssetProductSegment) => void;
 }) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -426,6 +428,7 @@ export default function ProductPreview({
               }
             }}
             onReplaceMaterial={onReplaceMaterial}
+            onEditVoiceover={onEditVoiceover}
           />
         ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}

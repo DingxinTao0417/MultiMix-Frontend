@@ -256,6 +256,13 @@ describe("asset product mapper", () => {
       content_type: "video_render",
       metadata: {
         capability: "video_render",
+        video_plan: {
+          scenes: [
+            { id: "seg-1", voice: { name: "male_steady" } },
+            { id: "seg-2", voice: { name: "female_bright" } },
+            { id: "seg-3", voice: { name: "female_warm" } },
+          ],
+        },
         video_project: {
           version: "multimix_video_project_v1",
           ratio: "9:16",
@@ -311,6 +318,7 @@ describe("asset product mapper", () => {
     });
     expect(product.segments?.[1]?.mgLabel).toBe("面积利用率 +35%");
     expect(product.segments?.[2]?.isFallback).toBe(true);
+    expect(product.segments?.[0]?.voiceName).toBe("male_steady");
     expect(product.segments?.[0]?.visualStatusLabel).toBeUndefined();
     expect(product.segments?.[0]?.primaryVisualSourceType).toBeUndefined();
     expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 个公共素材生成");

@@ -302,6 +302,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       : isRecord(planScene?.primary_visual_strategy)
         ? planScene.primary_visual_strategy
         : null;
+    const voice = isRecord(segment.voice)
+      ? segment.voice
+      : isRecord(planScene?.voice)
+        ? planScene.voice
+        : null;
     const primarySourceType = primaryVisualSourceType(primaryVisual?.source_type);
     const primaryPersisted = stringValue(primaryVisual?.status) === "persisted";
     const primaryArtifactRef = stringValue(primaryVisual?.preview_ref) || stringValue(primaryVisual?.artifact_ref);
@@ -325,6 +330,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       startSeconds: start,
       endSeconds: end,
       line: stringValue(segment.narration) || stringValue(segment.line) || undefined,
+      voiceName: stringValue(voice?.name) || undefined,
       subLine: decision?.needed === true && stringValue(decision.status) === "failed"
         ? [
             stringValue(segment.subtitle_focus) || stringValue(segment.subtitle),

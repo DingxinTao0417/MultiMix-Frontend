@@ -21,6 +21,21 @@ describe("storyboard segment-card interaction contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-segment-cards li\.active \.shadcn-prototype-segment-actions/s);
   });
 
+  test("exposes a voiceover action without changing the card selection target", () => {
+    expect(component).toContain("onEditVoiceover?: (segment: AssetProductSegment) => void");
+    expect(component).toContain("修改配音");
+    expect(component).toContain("onEditVoiceover(segment)");
+    expect(component.match(/event\.stopPropagation\(\)/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(css).toMatch(/\.shadcn-prototype-segment-actions\s*\{[^}]*gap:\s*6px;/s);
+  });
+
+  test("styles the shared voiceover form inside the browse dialog", () => {
+    expect(css).toContain(".shadcn-prototype-voiceover-dialog-body");
+    expect(css).toMatch(/\.shadcn-prototype-voiceover-dialog-body \.shadcn-prototype-voiceover-editor\s*\{[^}]*display:\s*grid;/s);
+    expect(css).toMatch(/@media \(max-width:\s*760px\)[\s\S]*\.shadcn-prototype-voiceover-dialog/s);
+    expect(css).not.toContain(".shadcn-prototype-preview-player.voiceover");
+  });
+
   test("keeps the MG label compact and only surfaces a failed render state", () => {
     expect(component).toContain('segment.mgStatus === "failed"');
     expect(component).toContain("shadcn-prototype-segment-mg-status");

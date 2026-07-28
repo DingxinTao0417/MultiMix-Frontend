@@ -15,6 +15,51 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("opens the selected segment voiceover editor in a dialog", () => {
+    const product = {
+      ...displayProducts["case-06-project-ready-no-mp4"],
+      segments: displayProducts["case-06-project-ready-no-mp4"].segments?.map((segment, index) => (
+        index === 0
+          ? { ...segment, line: "欢迎来到我们的门店", voiceName: "male_steady" }
+          : segment
+      )),
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "修改配音" })[0]!);
+
+    expect(screen.getByRole("dialog", { name: "修改分镜 #1 配音" })).toBeInTheDocument();
+    expect(screen.getByLabelText("配音文本")).toHaveValue("欢迎来到我们的门店");
+    expect(screen.getByRole("radio", { name: "男声 · 沉稳" })).toBeChecked();
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
+  });
+
+  it("does not show a voiceover action without authentication", () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "修改配音" })).not.toBeInTheDocument();
+  });
+
   it("keeps preview and editing available while planned MG overlays run", () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
 

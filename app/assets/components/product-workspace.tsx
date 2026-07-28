@@ -13,6 +13,7 @@ import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview from "./product-preview";
 import VideoQualityPanel from "./video-quality-panel";
+import VoiceoverDialog from "./voiceover-dialog";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -86,6 +87,7 @@ export default function ProductWorkspace({
   const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
   const [materialJobId, setMaterialJobId] = useState("");
+  const [voiceoverSegment, setVoiceoverSegment] = useState<AssetProductSegment | null>(null);
   const [isTextEditing, setIsTextEditing] = useState(false);
   const [textEditBody, setTextEditBody] = useState(product.markdownBody ?? "");
   const [textEditSaving, setTextEditSaving] = useState(false);
@@ -232,6 +234,7 @@ export default function ProductWorkspace({
     // re-entered explicitly per product (demo 默认态).
     setVideoSurface("browse");
     setMaterialPickerSegment(null);
+    setVoiceoverSegment(null);
     setMaterialJobId("");
     setMaterialError("");
   }, [currentAssetId]);
@@ -833,6 +836,11 @@ export default function ProductWorkspace({
             <ProductPreview
               product={product}
               onReplaceMaterial={openBrowseMaterialPicker}
+              onEditVoiceover={
+                token && product.backendAssetId
+                  ? (segment) => setVoiceoverSegment(segment)
+                  : undefined
+              }
             />
           </div>
         ) : !isTextEditing && !showEditorEmbed && orchestrationPending ? (
@@ -917,6 +925,20 @@ export default function ProductWorkspace({
             setMaterialError("");
           }}
         />
+
+        {product.backendAssetId && token ? (
+          <VoiceoverDialog
+            open={Boolean(voiceoverSegment)}
+            assetId={String(product.backendAssetId)}
+            segment={voiceoverSegment}
+            token={token}
+            onClose={() => setVoiceoverSegment(null)}
+            onProjectUpdated={() => {
+              setVoiceoverSegment(null);
+              void refreshPersistedVideoProject();
+            }}
+          />
+        ) : null}
 
         {!hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section

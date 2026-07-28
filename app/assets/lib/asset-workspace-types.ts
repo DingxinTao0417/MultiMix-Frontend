@@ -68,6 +68,7 @@ export type AssetProductSegment = {
   endSeconds?: number;
   line?: string;
   subLine?: string;
+  voiceName?: string;
   assetTitle?: string;
   assetThumbnailUrl?: string;
   isFallback: boolean;

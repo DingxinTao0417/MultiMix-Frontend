@@ -84,6 +84,7 @@ describe("VoiceoverEditor", () => {
 
   it("can apply the preview to every scene", async () => {
     const api = apiFixture();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<VoiceoverEditor {...baseProps} api={api} />);
     fireEvent.click(screen.getByRole("button", { name: "修改配音" }));
     fireEvent.click(screen.getByRole("button", { name: "生成试听" }));
@@ -97,6 +98,50 @@ describe("VoiceoverEditor", () => {
       ),
     );
     expect(sessionStorage.getItem("multimix:voice-undo:7")).toBe("104");
+  });
+
+  it("does not apply the preview to every scene when confirmation is cancelled", async () => {
+    const api = apiFixture();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<VoiceoverEditor {...baseProps} api={api} initiallyExpanded />);
+    fireEvent.click(screen.getByRole("button", { name: "生成试听" }));
+    await screen.findByRole("button", { name: "播放试听" });
+
+    fireEvent.click(screen.getByRole("button", { name: "应用到全部分镜" }));
+
+    expect(window.confirm).toHaveBeenCalledWith("这会把当前声音设置应用到全部分镜，确定继续吗？");
+    expect(api.applyProjectVoice).not.toHaveBeenCalled();
+  });
+
+  it("reports busy state and uses the external cancel handler in dialog mode", async () => {
+    let finishPreview!: (job: VideoJob) => void;
+    const api = apiFixture();
+    api.submitVoicePreview = vi.fn().mockReturnValue(
+      new Promise<VideoJob>((resolve) => {
+        finishPreview = resolve;
+      }),
+    );
+    const onBusyChange = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <VoiceoverEditor
+        {...baseProps}
+        api={api}
+        initiallyExpanded
+        onBusyChange={onBusyChange}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "生成试听" }));
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+    finishPreview(previewJob);
+    await screen.findByRole("button", { name: "播放试听" });
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("restores with the database version id returned by the job", async () => {
