@@ -649,7 +649,20 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 ```jsonc
 { "operation": "replace_material" | "revoice" | "toggle_mg",
   "candidate_id": "segment-candidate-…", // replace_material 必填（服务端签发）
-  "voiceover": "...",         // revoice 必填
+  "voiceover": "...",         // revoice 可修改文案，也可只修改声音设置
+  "voice_name": "female_warm",
+  "voice_speed": 1.0,
+  "voice_direction": {
+    "pace": "natural",
+    "energy": "warm_clear",
+    "pause_after_ms": 120,
+    "emphasis": ["MultiMix"]
+  },
+  "pronunciations": [
+    { "text": "MultiMix", "spoken_as": "猫提米克斯" }
+  ],
+  "preview_only": false,
+  "preview_job_id": "video-job-…",
   "mg_enabled": true,          // toggle_mg 必填
   "confirm_overwrite": false } // 见 12.5
 ```
@@ -658,6 +671,96 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - 只 patch 目标分镜的权威字段（`asset_reference`+`materials` / `narration` / `mg_decision`），随后复用整条编排重建工程（adapter=`segment_recompose`）。排队/运行/失败期间保留替换前 ready 工程；仅在质量检查通过后原子发布新版本，并追加版本快照（可通过 `POST /assets/{id}/versions/{version_id}/restore` 恢复）。
 - 全屏 `ReplacePanel` 不再直接下载 URL 改浏览器内存时间线；替换走本端点后调用 `reloadProject()` 重新加载权威工程。
 - 返回 `VideoJobRead`（202）；错误：404 工程/分镜不存在、410 候选过期、422 参数或素材不可用。
+- 兼容旧客户端：只发送 `voiceover`、`voice_name`、`voice_speed` 的 `revoice` 请求仍然有效；
+  `voice_direction`、`pronunciations`、试听字段均为可选扩展。
+
+#### 12.4.1 配音试听与应用
+
+试听请求使用同一端点，并设置 `preview_only=true`：
+
+```json
+{
+  "operation": "revoice",
+  "voiceover": "修改后的口播",
+  "voice_name": "male_steady",
+  "voice_speed": 1.1,
+  "voice_direction": { "energy": "steady_authoritative" },
+  "pronunciations": [
+    { "text": "MultiMix", "spoken_as": "猫提米克斯" }
+  ],
+  "preview_only": true
+}
+```
+
+试听 job 允许保存临时音频，但不修改稳定 `video_plan`、`video_segments` 或
+`video_project`。轮询完成后读取：
+
+```json
+{
+  "id": "video-job-123",
+  "asset_id": 7,
+  "status": "completed",
+  "render_stage": "done",
+  "result": {
+    "voice_preview": {
+      "segment_id": "scene-2",
+      "audio_ref": "local://video-orchestration/7/audio-preview/...",
+      "duration_seconds": 3.4,
+      "request_fingerprint": "..."
+    }
+  }
+}
+```
+
+前端必须使用 `VideoJobRead.id` 轮询，不能读取不存在的 `public_id`。试听音频通过
+`GET /v1/video/media?ref={encodeURIComponent(audio_ref)}` 播放。
+
+应用当前分镜时，把完成的 `id` 作为 `preview_job_id` 发回同一端点，并设置
+`preview_only=false`。服务端只接受仍对应当前工程版本、目标分镜和规范化配音请求的试听；
+过期结果返回 `voice_preview_stale`。
+
+成功应用的 job 同时返回：
+
+- `result.undo_version`：供界面展示的版本序号；
+- `result.undo_version_id`：数据库版本 ID，撤销接口必须使用这个值。
+
+撤销调用：
+
+```text
+POST /v1/assets/{asset_id}/versions/{undo_version_id}/restore
+```
+
+#### 12.4.2 全片统一换声
+
+`POST /v1/video/projects/{asset_id}/revoice`
+
+```json
+{
+  "voice_name": "male_steady",
+  "voice_speed": 1.0,
+  "voice_direction": { "energy": "steady_authoritative" },
+  "pronunciations": [],
+  "preview_job_id": "video-job-123",
+  "confirm_overwrite": false
+}
+```
+
+- adapter 为 `project_revoice`；同一工程的全片换声和分镜重合成互斥。
+- 每个通过质量门的分镜先保存到 job 的 `narration_checkpoints`，重试时只补失败或失效结果。
+- 全部必需分镜成功后才一次性发布；中途失败不会暴露半完成工程。
+- voice-only 修改保留当前 `bgm_choice.catalog_id`，按新对白窗口重新生成 ducking。
+
+#### 12.4.3 配音审计与冲突
+
+- 工程 `metadata.narration_profile` 记录实际 provider、默认声音和对齐模式；普通用户界面不显示
+  provider/model ID。
+- 音频元素 `narrationArtifact.timestampSource` 和 job
+  `result.orchestration.tts_outcomes[*].timestamp_source` 记录
+  `provider / whisper / proportional` 等实际时间戳来源。
+- `409 detail.code=timeline_dirty`：重建会覆盖手工裁剪/分割，需要用户显式确认。
+- `409 detail.code=voice_provider_changed`：当前 TTS provider 与工程锁定值不一致，禁止静默切换。
+- `409 detail.code=voice_preview_stale`：试听不再对应当前工程或配音设置，需要重新试听。
+- 失败 job 可在 `result.narration_failure.segment_id` 指出失败分镜；稳定工程继续保持 ready。
 
 ### 12.5 timeline 脏标记（两层数据边界，规范 §5.5）
 

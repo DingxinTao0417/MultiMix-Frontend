@@ -29,11 +29,11 @@ import {
   segmentNumberByElementId,
   visibleDuration,
 } from "./filmstrip-utils";
+import VoiceoverEditor from "./VoiceoverEditor";
 
 type RecomposeBody = {
-  operation: "replace_material" | "revoice" | "toggle_mg";
+  operation: "replace_material" | "toggle_mg";
   candidate_id?: string;
-  voiceover?: string;
   mg_enabled?: boolean;
 };
 
@@ -60,7 +60,6 @@ export default function FilmStrip({
   const core = EditorCore.getInstance();
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [voiceDraft, setVoiceDraft] = useState("");
   const [saveNote, setSaveNote] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recompose, setRecompose] = useState<RecomposeState>({ phase: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -117,8 +116,6 @@ export default function FilmStrip({
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracks, selectedSegmentId, revision]);
-
-  useEffect(() => setVoiceDraft(selectedText), [selectedText]);
 
   useEffect(() => {
     if (initialSelectionAppliedRef.current || !initialSegmentId || !clips.length) return;
@@ -306,8 +303,8 @@ export default function FilmStrip({
           throw new Error(typeof payload?.detail === "string" ? payload.detail : `HTTP ${res.status}`);
         }
         const job = await res.json();
-        postToParent({ type: "multimix-editor-recompose-started", jobId: job?.public_id ?? null });
-        setRecompose({ phase: "running", jobId: String(job?.public_id ?? ""), stageLabel: "已开始重新合成" });
+        postToParent({ type: "multimix-editor-recompose-started", jobId: job?.id ?? null });
+        setRecompose({ phase: "running", jobId: String(job?.id ?? ""), stageLabel: "已开始重新合成" });
       } catch (cause) {
         setRecompose({ phase: "error", message: cause instanceof Error ? cause.message : String(cause) });
       }
@@ -371,12 +368,6 @@ export default function FilmStrip({
     } else {
       setRecompose({ phase: "error", message: "该候选已失效，请刷新候选列表后重试。" });
     }
-  };
-
-  const handleRevoice = () => {
-    const text = voiceDraft.trim();
-    if (!text || text === selectedText.trim()) return;
-    void submitRecompose({ operation: "revoice", voiceover: text });
   };
 
   const handleToggleMg = (checked: boolean) => {
@@ -448,24 +439,29 @@ export default function FilmStrip({
               <button type="button" className="act" onClick={() => void openPicker()}>换素材</button>
             ) : null}
           </div>
-          {selectedText ? (
-            <div className="row">
+          {selectedText && assetId && token ? (
+            <div className="row voiceover">
               <span className="k">配音</span>
-              <input
-                className="input"
-                value={voiceDraft}
-                onChange={(event) => setVoiceDraft(event.target.value)}
-                maxLength={2000}
-                aria-label="配音文本"
+              <VoiceoverEditor
+                assetId={assetId}
+                segmentId={selectedSegmentId}
+                token={token}
+                narration={selectedText}
+                disabled={!canRecompose}
+                onJobStarted={(jobId) =>
+                  postToParent({
+                    type: "multimix-editor-recompose-started",
+                    jobId,
+                  })
+                }
+                onProjectUpdated={() => {
+                  postToParent({
+                    type: "multimix-editor-project-updated",
+                    reason: "recompose",
+                  });
+                  window.location.reload();
+                }}
               />
-              <button
-                type="button"
-                className="act"
-                onClick={handleRevoice}
-                disabled={!canRecompose || !voiceDraft.trim() || voiceDraft.trim() === selectedText.trim()}
-              >
-                重新配音
-              </button>
             </div>
           ) : null}
           <div className="row">
