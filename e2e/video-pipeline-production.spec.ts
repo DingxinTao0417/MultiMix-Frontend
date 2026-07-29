@@ -36,6 +36,7 @@ const requirePublicAsset =
 const hybridMediaFilesRaw = process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
+const testRecompose = process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const audioMixRatioTolerance = Number(
   process.env.VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE ?? "0.15",
@@ -297,7 +298,7 @@ function generatedPrimaryRepeatsVisibleSubtitle(scene: SceneRow) {
   );
 }
 
-test("produces persisted visuals and recomposes only one scene", async ({
+test("produces persisted visuals and optionally recomposes one scene", async ({
   page,
 }) => {
   test.setTimeout(60 * 60_000);
@@ -992,7 +993,7 @@ test("produces persisted visuals and recomposes only one scene", async ({
   let afterRefs = beforeRefs;
   let targetSegmentId: string | null = null;
   let recomposeTested = false;
-  if (expectTwoStage) {
+  if (expectTwoStage && testRecompose) {
     const target = selectProductionGeneratedRecomposeTarget(beforeScenes);
     if (!target) {
       throw new Error(

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Download, type Page } from "@playwright/test";
 
 const pdfPath = process.env.PDF_VIDEO_PATH;
 const resultDir = process.env.PDF_VIDEO_RESULT_DIR;
@@ -157,41 +157,61 @@ async function waitForRenderedMgOverlay(
 
 async function exportVerifiedVideo(page: Page, exportPath: string) {
   const deadline = Date.now() + 12 * 60_000;
-  while (Date.now() < deadline) {
-    const failedButton = page.getByRole("button", { name: "导出失败，重试", exact: true });
-    if (await failedButton.isVisible().catch(() => false)) {
-      const alert = page.getByRole("alert").filter({ hasText: "导出失败" }).last();
-      const detail = await alert.innerText().catch(() => "编辑器未返回错误详情");
-      throw new Error(`Export failed in editor:\n${detail}`);
-    }
+  let exportStarted = false;
+  let automaticDownload: Download | null = null;
+  const captureUnexpectedDownload = (download: Download) => {
+    automaticDownload ??= download;
+  };
+  page.on("download", captureUnexpectedDownload);
 
-    const downloadButton = page.getByRole("button", { name: "下载成片", exact: true });
-    if (await downloadButton.isEnabled({ timeout: 500 }).catch(() => false)) {
-      const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
-      await downloadButton.click();
-      const download = await downloadPromise;
-      await download.saveAs(exportPath);
-      return;
-    }
-
-    const exportButton = page.getByRole("button", { name: "导出视频", exact: true });
-    if (await exportButton.isEnabled({ timeout: 500 }).catch(() => false)) await exportButton.click();
-
-    await page.waitForTimeout(5000);
-
-    const qualityPanel = page.getByLabel("视频质量检查");
-    if (await qualityPanel.isVisible().catch(() => false)) {
-      const text = await qualityPanel.innerText();
-      if (/不阻止导出/.test(text)) continue;
-      if (!/MG 尚未完成|MG 与内容不一致|MG 渲染失败/.test(text)) {
-        throw new Error(`Export blocked by quality gate:\n${text}`);
+  try {
+    while (Date.now() < deadline) {
+      if (automaticDownload) {
+        throw new Error(
+          "Export started a browser download without the required 下载成片 click",
+        );
       }
+
+      const failedButton = page.getByRole("button", { name: "导出失败，重试", exact: true });
+      if (await failedButton.isVisible().catch(() => false)) {
+        const alert = page.getByRole("alert").filter({ hasText: "导出失败" }).last();
+        const detail = await alert.innerText().catch(() => "编辑器未返回错误详情");
+        throw new Error(`Export failed in editor:\n${detail}`);
+      }
+
+      const downloadButton = page.getByRole("button", { name: "下载成片", exact: true });
+      if (await downloadButton.isEnabled({ timeout: 500 }).catch(() => false)) {
+        const downloadPromise = page.waitForEvent("download", { timeout: 60_000 });
+        await downloadButton.click();
+        const download = await downloadPromise;
+        await download.saveAs(exportPath);
+        return;
+      }
+
+      const exportButton = page.getByRole("button", { name: "导出视频", exact: true });
+      if (!exportStarted && await exportButton.isEnabled({ timeout: 500 }).catch(() => false)) {
+        await exportButton.click();
+        exportStarted = true;
+      }
+
       await page.waitForTimeout(5000);
-      const recheck = qualityPanel.getByRole("button", { name: "重新检查" });
-      if (await recheck.isEnabled().catch(() => false)) await recheck.click();
+
+      const qualityPanel = page.getByLabel("视频质量检查");
+      if (await qualityPanel.isVisible().catch(() => false)) {
+        const text = await qualityPanel.innerText();
+        if (/不阻止导出/.test(text)) continue;
+        if (!/MG 尚未完成|MG 与内容不一致|MG 渲染失败/.test(text)) {
+          throw new Error(`Export blocked by quality gate:\n${text}`);
+        }
+        await page.waitForTimeout(5000);
+        const recheck = qualityPanel.getByRole("button", { name: "重新检查" });
+        if (await recheck.isEnabled().catch(() => false)) await recheck.click();
+      }
     }
+    throw new Error("Timed out waiting for verified MP4 download");
+  } finally {
+    page.off("download", captureUnexpectedDownload);
   }
-  throw new Error("Timed out waiting for verified MP4 download");
 }
 
 test("uploads a real PDF through the UI and downloads only a verified MP4", async ({ page }) => {
