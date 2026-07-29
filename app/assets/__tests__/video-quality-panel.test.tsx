@@ -37,6 +37,7 @@ describe("VideoQualityPanel", () => {
   it.each([
     ["subtitle_too_many_lines", "subtitle", "第 2 段字幕超过两行"],
     ["mg_stale", "mg_overlay", "第 2 段 MG 与内容不一致"],
+    ["mg_primary_blank", "primary_visual", "第 2 段 MG 主画面已保留空白"],
   ])("maps %s to a clear label", (code, objectType, label) => {
     render(
       <VideoQualityPanel

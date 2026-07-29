@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-07-28
+> Last verified: 2026-07-29
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -611,6 +611,13 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - adapter 必须使用穷举映射；遇到未知内部 stage 时显示通用“正在生成视频”，不得把原始字符串
   直接透传给用户。
 - `needs_script_revision` 不是视频工程 ready 状态。前端重新聚焦原编导稿，并使用现有调整与确认入口。
+
+视频工程质量报告中的 MG 问题使用非阻断 warning 契约：
+
+- `mg_failed`、`mg_not_ready`、`mg_stale`：overlay 未成功，保留原主画面并展示对应分镜警告。
+- `mg_primary_blank`：full-frame `mg_scene` 失败，后端已用持久化、无文字的空白主画面保留该镜时长。
+- 上述 warning 不取消 `ready`、不隐藏编辑或导出入口；前端必须显示警告和可用的手动重试入口。
+- 空白占位未持久化、归属不正确或主轨不连续时，后端返回 blocker，前端按主工程失败处理。
 
 ### 12.2 结构化确认卡 `metadata.plan`
 
