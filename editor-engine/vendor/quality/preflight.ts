@@ -12,7 +12,6 @@ function issue(
     segment_id: element?.segmentId ?? null,
     object_type: objectType,
     message,
-    attempted_fallbacks: [],
     suggested_actions: ["定位并修复当前分镜"],
   };
 }

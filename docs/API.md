@@ -579,7 +579,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ## 12. 阶段 4 后端接口契约（V3 智能体工作台）
 
-真实后端（MultiMix-Backend）为 V3 重设计新增/扩展的接口。前端一律经 `lib/api.ts` + `lib/asset-mappers.ts` 消费，且按规范 §12「数据不在就不渲染」降级——字段缺位时组件自身不渲染，禁止假数据。
+真实后端（MultiMix-Backend）为 V3 重设计新增/扩展的接口。前端一律经 `lib/api.ts` + `lib/asset-mappers.ts` 消费，且按规范 §12「数据不在就不渲染」展示——字段缺位时组件自身不渲染，禁止假数据。
 
 ### 12.1 生成步骤事件 `steps[]`（Agent 执行时间线）
 

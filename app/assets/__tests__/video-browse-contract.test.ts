@@ -100,7 +100,6 @@ describe("video project browse-player contract", () => {
 
   test("does not use a legacy automated review record to reset or block export", () => {
     expect(workspace).not.toContain("persistedRenderedReviewFingerprint");
-    expect(workspace).not.toContain("renderedReviewBlocksExport");
     expect(workspace).not.toContain("等待画面检查");
   });
 

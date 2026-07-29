@@ -34,7 +34,6 @@ describe("selectProductionGeneratedRecomposeTarget", () => {
         id: "seg-overlay",
         primary_visual: { source_type: "public_asset" },
         primary_visual_strategy: { mode: "public_broll" },
-        mg_brief: { needed: true },
         mg_decision: { status: "rendered" },
       },
       {
