@@ -18,6 +18,19 @@ test("display coverage workflow runs both repositories and retains safe failure 
   assert.doesNotMatch(source, /\.sqlite\*.*upload|\.env\*.*upload/i);
 });
 
+test("display coverage avoids repeating component tests for push and pull requests", () => {
+  const source = fs.readFileSync(workflow, "utf8");
+
+  assert.match(
+    source,
+    /- name: Run display E2E for code events\s+if: github\.event_name == 'push' \|\| github\.event_name == 'pull_request'\s+working-directory: MultiMix-Frontend\s+run: npm run test:display-e2e/,
+  );
+  assert.match(
+    source,
+    /- name: Run full display coverage for scheduled and manual runs\s+if: github\.event_name == 'schedule' \|\| github\.event_name == 'workflow_dispatch'\s+working-directory: MultiMix-Frontend\s+run: npm run test:display-coverage/,
+  );
+});
+
 test("local display coverage uses and cleans an isolated Next development directory", () => {
   const runnerSource = fs.readFileSync(runner, "utf8");
   const nextConfigSource = fs.readFileSync(nextConfig, "utf8");
