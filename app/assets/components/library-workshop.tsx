@@ -126,7 +126,7 @@ function isReparsableMedia(row: LibraryRow) {
 }
 
 function publicCandidateTags(candidate: PublicMaterialCandidate): string[] {
-  return [...new Set((candidate.visual?.tags ?? []).map((tag) => String(tag).trim()).filter(Boolean))];
+  return [...new Set((candidate.understanding?.tags ?? []).map((tag) => String(tag).trim()).filter(Boolean))];
 }
 
 function publicMediaSource(candidate: PublicMaterialCandidate): string {
@@ -1138,7 +1138,7 @@ function LibraryWorkshop({
               <section className="shadcn-prototype-library-content">
                 <h3>{publicSelected.title}</h3>
                 <div className="shadcn-prototype-library-prose">
-                  <p>{publicSelected.visual.caption || publicSelected.body_text || "无摘要。"}</p>
+                  <p>{publicSelected.understanding.caption || publicSelected.body_text || "无摘要。"}</p>
                   <p>标签：{publicCandidateTags(publicSelected).join("、") || "暂无标签"}</p>
                   <p>来源：{publicSelected.provider}</p>
                   <p>作者：{publicSelected.creator || "未提供"}</p>

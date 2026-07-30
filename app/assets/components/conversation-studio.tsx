@@ -8,7 +8,6 @@ import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRe
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
 import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation } from "../lib/asset-workspace-types";
-import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
@@ -538,7 +537,7 @@ export default function ConversationStudio({
               ) : shouldRenderMessageBody(message) ? (
                 <p>{message.text}</p>
               ) : null}
-              {UI_V3_CONFIRM_CARD && message.plan ? (
+              {message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
                   optimisticallyConfirmed={

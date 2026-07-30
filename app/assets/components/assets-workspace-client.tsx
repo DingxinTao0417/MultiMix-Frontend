@@ -35,7 +35,6 @@ import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
-import { UI_V3_BG_STATUS } from "../lib/ui-flags";
 import type { LibraryActionIntent } from "./library-workshop";
 import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "./library-workspace-state";
 import {
@@ -2005,7 +2004,7 @@ export default function AssetsWorkspaceClient({
           </div>
         </div>
 
-        {UI_V3_BG_STATUS ? <AiBackgroundStatus tasks={backgroundTasks} /> : null}
+        <AiBackgroundStatus tasks={backgroundTasks} />
 
         <div className="shadcn-prototype-user">
           <span className="shadcn-prototype-user-avatar" aria-hidden="true">{getConversationMonogram(accountEmail)}</span>

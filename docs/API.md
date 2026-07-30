@@ -70,7 +70,7 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
 | 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
-精确参数和返回类型以 `asset-workspace-adapter.ts` 中的 `AssetWorkspaceAdapter` 为准。产品主路径是“编导稿确认 → 对话确认接口创建视频工程 → 查询任务状态”，前端不再通过 adapter 直接调用兼容接口 `POST /v1/video/generate`。
+精确参数和返回类型以 `asset-workspace-adapter.ts` 中的 `AssetWorkspaceAdapter` 为准。产品路径是“编导稿确认 → 对话确认接口创建视频工程 → 查询任务状态”。
 
 ### 2.1 对话确认一致性
 

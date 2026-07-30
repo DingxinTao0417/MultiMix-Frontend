@@ -300,9 +300,6 @@ export type AssetWorkshop = {
     sourceRefs?: string[];
     versions?: string[];
     searchReasons?: string[];
-    captionStatus?: string;
-    visualTags?: string[];
-    visualCaption?: string;
     understandingStatus?: string;
     understandingTags?: string[];
     understandingCaption?: string;

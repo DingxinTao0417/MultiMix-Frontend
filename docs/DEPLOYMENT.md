@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: workspace
-> Last verified: 2026-07-24
+> Last verified: 2026-07-30
 
 MultiMix 是两个并排的独立仓库：
 
@@ -10,21 +10,15 @@ MultiMix 是两个并排的独立仓库：
 - **后端**：`MultiMix-Backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
 - **剪辑器**：完整 OpenCut 引擎代码仍保留在 `/editor`，供后续完整剪辑模式使用；当前默认产品流程使用工作台内的浏览/轻编辑能力，不把完整编辑器作为主入口。
 
-## 模块开关
+## 运行配置
 
-后端用 feature flag 控制启用哪些模块（后端仓库 `app/config.py`）：
-
-| 环境变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `CHANGEIN_MODULES_MONITORING_ENABLED` | `false` | 退役的 ChangeIn 信息采集/监控表面；MultiMix 默认不加载。只有专门维护旧能力时才显式开启。 |
-| `CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED` | `true` | 视频编排模块（`/v1/video/*`）。 |
-| `CHANGEIN_VIDEO_ORCHESTRATION_INLINE` | `false` | `true` 时在本地进程执行视频任务；不同入口可能使用请求后台任务或同步兼容路径。生产必须设 `false` 并使用独立 worker。 |
+视频、素材和对话主链始终启用。`CHANGEIN_VIDEO_ORCHESTRATION_INLINE` 只决定本地进程还是独立 worker 执行已经确认的视频工程任务；它不会切换产品功能或旧流程。生产必须设为 `false` 并使用独立 worker。
 
 ## 后端部署到 Railway
 
 后端仓库有两个 Dockerfile：
 
-- `Dockerfile` —— 全功能（含 Playwright/cloakbrowser/ffmpeg），监控模块需要。
+- `Dockerfile` —— 全功能（含 Playwright/cloakbrowser/ffmpeg）。
 - `Dockerfile.lean` —— 精简（只知识库 + 视频编排），构建更快。`railway.json` 默认用它。
 
 步骤：
@@ -40,7 +34,6 @@ MultiMix 是两个并排的独立仓库：
    CHANGEIN_ENV=production
    CHANGEIN_SECRET_KEY=<32+ 随机字符串>
    CHANGEIN_WEB_BASE_URL=https://<你的 vercel 域名>
-   CHANGEIN_MODULES_MONITORING_ENABLED=false
    CHANGEIN_DATABASE_URL=<Railway Postgres 连接串>   # 或留空让它读 POSTGRES_URL
    # LLM（任选）
    CHANGEIN_DEEPSEEK_API_KEY=<key>
@@ -63,7 +56,7 @@ MultiMix 是两个并排的独立仓库：
 
 ### 视频编排 worker（异步生成）
 
-视频工程任务默认走 RQ 队列。`POST /v1/video/generate` 仍是兼容入口，产品主路径是“对话中确认编导稿 → 创建视频工程任务”。生产要起一个独立 worker 服务（同镜像，不同启动命令）：
+视频工程任务默认走 RQ 队列，唯一产品路径是“对话中确认编导稿 → 创建视频工程任务”。生产要起一个独立 worker 服务（同镜像，不同启动命令）：
 
 ```
 CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
@@ -102,7 +95,7 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
 1. 后端（在 `MultiMix-Backend` 仓库内）：
    ```
    python -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
-   CHANGEIN_ENV=local CHANGEIN_MODULES_MONITORING_ENABLED=false \
+   CHANGEIN_ENV=local \
      CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true CHANGEIN_DEEPSEEK_API_KEY=<key> \
      .venv/bin/python -m uvicorn app.main:app --port 8199
    ```
@@ -118,5 +111,4 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
 
 - 完整编辑器的 MP4 导出走浏览器端 WebCodecs，不依赖服务端 ffmpeg；但完整编辑器当前不是默认产品入口。
 - 公共素材在进入工程前必须下载、校验并持久化到远程 ArtifactStore；剪辑器通过后端 `/v1/video/media` 读取持久化引用，不把 provider 原片 URL 作为工程权威地址。
-- 监控/采集模块（ChangeIn 原功能）默认关闭；要启用需用全功能 Dockerfile + Redis + 各 worker + Reader 服务，见 ChangeIn 原文档。
 - 知识库语义检索目前是关键词匹配（`asset_conversation.match_assets` + `knowledge_retrieval.match_knowledge_chunks`），向量检索为后续增强。

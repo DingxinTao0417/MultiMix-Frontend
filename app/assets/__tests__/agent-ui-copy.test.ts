@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
@@ -17,6 +17,19 @@ it("keeps internal production names out of generated-scene user surfaces", () =>
   ].join("\n");
 
   expect(userSurface).not.toMatch(/animated[-_ ]explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b|\bpipeline\b/i);
+});
+
+it("keeps V3 workspace UI as the only render path", () => {
+  const sources = [
+    "app/assets/components/conversation-studio.tsx",
+    "app/assets/components/assets-workspace-client.tsx",
+    "app/assets/components/product-workspace.tsx",
+    "app/editor/EditorView.tsx",
+    "app/editor/FilmStrip.tsx",
+  ].map(readAssetFile).join("\n");
+
+  expect(existsSync(join(root, "app/assets/lib/ui-flags.ts"))).toBe(false);
+  expect(sources).not.toMatch(/UI_V3_|NEXT_PUBLIC_MULTIMIX_UI_V3_|ui-flags/);
 });
 
 it("keeps two-stage runtime terms out of live execution steps", () => {

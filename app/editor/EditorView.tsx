@@ -18,7 +18,6 @@ import { rememberRawProject, serializeBackendProject } from "@/editor-engine/ven
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
 import { getExportMimeType } from "@editor/lib/export";
-import { UI_V3_FILMSTRIP } from "@/app/assets/lib/ui-flags";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
 
@@ -357,7 +356,7 @@ export default function EditorView({
               ) : null}
             </div>
             <div className="editor-timeline-region">
-              {embed && UI_V3_FILMSTRIP ? (
+              {embed ? (
                 // Spec §5.5: the embed edit form is the film strip; the
                 // multi-track timeline stays a full-screen /editor capability.
                 <FilmStrip

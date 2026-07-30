@@ -283,7 +283,7 @@ export type PublicMaterialCandidate = {
   license_label: string;
   creator: string;
   body_text?: string;
-  visual: {
+  understanding: {
     tags?: string[];
     caption?: string;
     analysis_status?: string;

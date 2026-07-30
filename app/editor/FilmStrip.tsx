@@ -2,7 +2,7 @@
 
 // Embed edit surface: film strip + per-segment property card (spec §5.5,
 // interaction baseline final/workspace-video.html). Replaces the multi-track
-// timeline in embed mode behind UI_V3_FILMSTRIP; the full-screen /editor keeps
+// timeline in embed mode; the full-screen /editor keeps
 // the OpenCut timeline for分轨 work.
 //
 // Two-layer boundary (spec §5.5):
@@ -22,7 +22,6 @@ import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject
 import { segmentIdByElementId, segmentTextByElementId } from "@/editor-engine/vendor/buildProject";
 import AssetPicker, { type AssetPickerItem } from "@/app/assets/components/asset-picker";
 import { useSegmentMaterialCandidates } from "@/app/assets/lib/use-segment-material-candidates";
-import { UI_V3_ASSET_PICKER } from "@/app/assets/lib/ui-flags";
 import {
   applyEdgeTrim,
   formatClock,
@@ -435,7 +434,7 @@ export default function FilmStrip({
           <div className="row">
             <span className="k">画面</span>
             <span className="v" title={mediaName}>{mediaName || "当前素材"}</span>
-            {UI_V3_ASSET_PICKER && canRecompose ? (
+            {canRecompose ? (
               <button type="button" className="act" onClick={() => void openPicker()}>换素材</button>
             ) : null}
           </div>

@@ -9,8 +9,14 @@ const frontendRoot = path.resolve(import.meta.dirname, "..");
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
   ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
   : path.resolve(frontendRoot, "..", "MultiMix-Backend");
-const backendPort = 8299;
-const frontendPort = 3219;
+const backendPort = Number(process.env.DISPLAY_COVERAGE_BACKEND_PORT ?? 8299);
+const frontendPort = Number(process.env.DISPLAY_COVERAGE_FRONTEND_PORT ?? 3219);
+if (!Number.isInteger(backendPort) || backendPort < 1024 || backendPort > 65535) {
+  throw new Error("DISPLAY_COVERAGE_BACKEND_PORT must be an integer between 1024 and 65535");
+}
+if (!Number.isInteger(frontendPort) || frontendPort < 1024 || frontendPort > 65535) {
+  throw new Error("DISPLAY_COVERAGE_FRONTEND_PORT must be an integer between 1024 and 65535");
+}
 const runId = process.env.DISPLAY_COVERAGE_RUN_ID ?? crypto.randomUUID();
 if (!/^[a-zA-Z0-9-]+$/.test(runId)) throw new Error("DISPLAY_COVERAGE_RUN_ID must contain only letters, numbers, and hyphens");
 const nextDistDirName = `.next-display-coverage-${runId}`;
@@ -100,8 +106,6 @@ try {
     CHANGEIN_DATABASE_URL: databaseUrl,
     CHANGEIN_ARTIFACT_DIR: artifactDir,
     CHANGEIN_DEFAULT_ADMIN_EMAIL: seedJson.user_email,
-    CHANGEIN_MODULES_MONITORING_ENABLED: "false",
-    CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
     CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
   const frontendEnv = {
@@ -123,7 +127,11 @@ try {
   if (updateSnapshots) playwrightArgs.push("--update-snapshots");
   await run(npxCommand, playwrightArgs, {
     cwd: frontendRoot,
-    env: { ...frontendEnv, DISPLAY_COVERAGE_SEED_JSON: JSON.stringify(seedJson) },
+    env: {
+      ...frontendEnv,
+      DISPLAY_COVERAGE_SEED_JSON: JSON.stringify(seedJson),
+      PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+    },
     stdout: process.stdout,
     stderr: process.stderr,
   });

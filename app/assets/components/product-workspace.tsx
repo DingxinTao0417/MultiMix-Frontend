@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
-import { UI_V3_GENERATING_VISUALS } from "../lib/ui-flags";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
@@ -554,7 +553,7 @@ export default function ProductWorkspace({
 
   // Aurora + "生成中" badge only during the real generating state (spec §5.3 /
   // §12): while orchestration runs. Gated by flag; no fake progress.
-  const showGeneratingVisuals = UI_V3_GENERATING_VISUALS && orchestrationPending;
+  const showGeneratingVisuals = orchestrationPending;
   const artifactClassName = [
     "shadcn-prototype-card",
     "shadcn-prototype-artifact",

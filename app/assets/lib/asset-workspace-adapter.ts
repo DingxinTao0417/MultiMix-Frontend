@@ -50,9 +50,6 @@ export type LibraryRow = {
   sourceRefs?: string[];
   versions?: string[];
   searchReasons?: string[];
-  captionStatus?: string;
-  visualTags?: string[];
-  visualCaption?: string;
   understandingStatus?: string;
   understandingTags?: string[];
   understandingCaption?: string;
@@ -206,15 +203,7 @@ function understandingForAsset(asset: ContentAsset): AssetUnderstanding | null {
       sceneTypes: scoredItems(understanding.scene_types)
     };
   }
-  const visual = metadata.visual && typeof metadata.visual === "object" ? metadata.visual as Record<string, unknown> : {};
-  const tags = Array.isArray(metadata.visual_tags)
-    ? metadata.visual_tags.map((item) => String(item).trim()).filter(Boolean)
-    : Array.isArray(visual.tags)
-      ? visual.tags.map((item) => String(item).trim()).filter(Boolean)
-      : [];
-  const caption = stringValue(visual.caption) || stringValue(metadata.caption) || stringValue(metadata.caption_text) || undefined;
-  if (!tags.length && !caption) return null;
-  return { status: undefined, caption, tags, roles: [], sceneTypes: [] };
+  return null;
 }
 
 export type AssetWorkspaceAdapter = {
@@ -433,17 +422,8 @@ function inferKeywords(asset: ContentAsset): string[] {
   const text = `${asset.title} ${asset.body ?? ""}`.toLowerCase();
   const seeds = ["产品种草", "小红书", "抖音", "LinkedIn", "封面", "数字人", "口播", "产品图", "视频脚本", "规则变化", "品牌约束"];
   const matched = seeds.filter((keyword) => text.includes(keyword.toLowerCase()));
-  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   const understanding = understandingForAsset(asset);
-  const visual = metadata.visual && typeof metadata.visual === "object" ? metadata.visual as Record<string, unknown> : {};
-  const visualTags = understanding?.tags.length
-    ? understanding.tags
-    : Array.isArray(metadata.visual_tags)
-      ? metadata.visual_tags
-      : Array.isArray(visual.tags)
-        ? visual.tags
-        : [];
-  const captionKeywords = Array.isArray(metadata.caption_keywords) ? metadata.caption_keywords : [];
+  const understandingTags = understanding?.tags ?? [];
   const roleLabels = understanding?.roles.map((item) => item.label) ?? [];
   const roleCodes = understanding?.roles.map((item) => item.code) ?? [];
   const sceneLabels = understanding?.sceneTypes.map((item) => item.label) ?? [];
@@ -454,7 +434,7 @@ function inferKeywords(asset: ContentAsset): string[] {
     video: ["视频", "口播", "可复用"],
     file: ["资料", "来源", "可检索"]
   };
-  return [...visualTags, ...captionKeywords, ...roleLabels, ...roleCodes, ...sceneLabels, ...sceneCodes, ...matched, ...fallback[libraryRowKind(asset)]]
+  return [...understandingTags, ...roleLabels, ...roleCodes, ...sceneLabels, ...sceneCodes, ...matched, ...fallback[libraryRowKind(asset)]]
     .map((keyword) => String(keyword).trim())
     .filter((keyword, index, array) => Boolean(keyword) && array.indexOf(keyword) === index)
     .slice(0, 8);
@@ -609,21 +589,13 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
         ? understandingStatusLabel(understanding?.status) ?? statusLabel(asset.status)
         : statusLabel(asset.status)));
   const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;
-  const visual = asset.metadata?.visual && typeof asset.metadata.visual === "object" ? asset.metadata.visual as Record<string, unknown> : {};
-  const visualTags = understanding?.tags.length
-    ? understanding.tags
-    : Array.isArray(asset.metadata?.visual_tags)
-      ? asset.metadata.visual_tags.map((item) => String(item))
-      : Array.isArray(visual.tags)
-        ? visual.tags.map((item) => String(item))
-        : [];
-  const visualCaption = understanding?.caption || (typeof visual.caption === "string" ? visual.caption : undefined);
+  const understandingCaption = understanding?.caption;
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
     title: normalizeAssetTitle(asset.title),
     meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
-    note: visualCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
+    note: understandingCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
     kind: libraryRowKind(asset),
     category,
     keywords: inferKeywords(asset),
@@ -649,9 +621,6 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
       .slice(0, 5),
     versions: (asset.versions ?? []).map((version) => `v${version.version}${version.instruction ? ` · ${version.instruction}` : ""}`).slice(-5),
     searchReasons,
-    captionStatus: typeof asset.metadata?.caption_status === "string" ? asset.metadata.caption_status : undefined,
-    visualTags,
-    visualCaption,
     understandingStatus: understanding?.status,
     understandingTags: understanding?.tags ?? [],
     understandingCaption: understanding?.caption,
