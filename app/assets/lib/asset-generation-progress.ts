@@ -1,4 +1,5 @@
 import type { AssetGenerationJobResponse } from "../../../lib/api";
+import type { AgentRunStep } from "./asset-workspace-types";
 
 export type GenerationProgressEvent = NonNullable<AssetGenerationJobResponse["progress_events"]>[number];
 
@@ -35,4 +36,45 @@ export function generationTerminalSummary(job: AssetGenerationJobResponse): stri
   if (job.status === "completed") return "内容生成已完成 · 查看过程";
   if (job.status === "cancelled") return "内容生成已停止 · 查看过程";
   return "内容生成失败";
+}
+
+function timestamp(value: string | undefined): number | null {
+  const parsed = Date.parse(value ?? "");
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function elapsedSeconds(from: string, to: string | undefined): number | undefined {
+  const startedAt = timestamp(from);
+  const endedAt = timestamp(to);
+  if (startedAt === null || endedAt === null || endedAt <= startedAt) return undefined;
+  return Math.floor((endedAt - startedAt) / 1000);
+}
+
+export function generationTimelineTitle(job: AssetGenerationJobResponse): string {
+  return generationProgressEvents(job).some((event) => event.key === "structuring_director_script")
+    ? "编导稿生成进度"
+    : "内容生成进度";
+}
+
+export function generationTimelineSteps(
+  job: AssetGenerationJobResponse,
+  now = Date.now(),
+): AgentRunStep[] {
+  const events = generationProgressEvents(job);
+  const terminal = job.status === "completed" || job.status === "cancelled";
+  return events.map((event, index) => {
+    const isLast = index === events.length - 1;
+    const failed = job.status === "failed" && (event.key === "failed" || isLast);
+    const running = !terminal && !failed && event.status === "active";
+    const nextTimestamp = events[index + 1]?.occurred_at
+      ?? (running ? new Date(now).toISOString() : undefined);
+    return {
+      key: event.key,
+      label: event.label,
+      status: failed ? "fail" : running ? "run" : "done",
+      elapsedSeconds: elapsedSeconds(event.occurred_at, nextTimestamp),
+      elapsedLabel: running ? generationElapsedLabel(job, now) ?? undefined : undefined,
+      retryJobId: failed ? job.id : undefined,
+    };
+  });
 }

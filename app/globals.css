@@ -1437,56 +1437,6 @@ button:disabled {
   padding: 24px clamp(18px, 4vw, 30px);
 }
 
-.shadcn-prototype-generation-job-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: min(680px, 92%);
-  border: 1px solid #eae7e1;
-  border-radius: 14px;
-  background: #faf9f7;
-  padding: 12px 14px;
-  color: #35312d;
-  font-size: 13px;
-}
-
-.shadcn-prototype-generation-job-copy { display: grid; gap: 8px; min-width: 0; flex: 1; }
-.shadcn-prototype-generation-job-copy > small { color: #827a70; font-size: 11px; }
-.shadcn-prototype-generation-job-actions { display: flex; align-items: flex-start; gap: 8px; }
-.shadcn-prototype-generation-job-summary { display: flex; justify-content: space-between; gap: 12px; width: 100%; border: 0; padding: 0; background: transparent; color: #35312d; font-weight: 650; text-align: left; cursor: pointer; }
-.shadcn-prototype-generation-job-summary span { color: #756bd1; font-size: 12px; font-weight: 500; }
-.shadcn-prototype-generation-job-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.shadcn-prototype-generation-job-steps li { display: flex; gap: 8px; color: #857d73; font-size: 12px; }
-.shadcn-prototype-generation-job-steps li i { width: 8px; height: 8px; margin-top: 4px; border: 1px solid #d9d2ca; border-radius: 50%; flex: none; }
-.shadcn-prototype-generation-job-steps li.active { color: #4938b2; font-weight: 600; }
-.shadcn-prototype-generation-job-steps li.active i { border-color: #624be2; background: #624be2; box-shadow: 0 0 0 3px rgba(98,75,226,.12); }
-.shadcn-prototype-generation-job-steps li.completed i { border-color: #624be2; background: #624be2; }
-.shadcn-prototype-generation-job-steps b, .shadcn-prototype-generation-job-steps em { display: block; }
-.shadcn-prototype-generation-job-steps em { margin-top: 2px; color: #857d73; font-size: 11px; font-style: normal; font-weight: 400; }
-
-.shadcn-prototype-generation-job-card.status-failed {
-  align-items: flex-start;
-  border-color: #f2c8c2;
-  background: #fff7f5;
-}
-
-.shadcn-prototype-generation-job-card p {
-  flex: 1;
-  margin: 0;
-  color: #8f3e35;
-}
-
-.shadcn-prototype-generation-job-card button {
-  flex: 0 0 auto;
-  border: 1px solid #ded9d2;
-  border-radius: 999px;
-  background: #ffffff;
-  padding: 6px 12px;
-  color: #35312d;
-  cursor: pointer;
-}
-
 .shadcn-prototype-thread article {
   max-width: min(680px, 92%);
   border: 0;
@@ -7511,6 +7461,10 @@ label {
   color: var(--sp-danger);
 }
 
+.shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.cancelled {
+  color: var(--sp-faint);
+}
+
 .shadcn-prototype-thread .assistant .shadcn-prototype-agent-run-title-status.running {
   color: var(--sp-warn);
 }
@@ -7534,6 +7488,10 @@ label {
 
 .shadcn-prototype-agent-run-title-status.fail .shadcn-prototype-agent-run-title-dot {
   background: var(--sp-danger);
+}
+
+.shadcn-prototype-agent-run-title-status.cancelled .shadcn-prototype-agent-run-title-dot {
+  background: var(--sp-faint);
 }
 
 .shadcn-prototype-segment-actions {
@@ -7810,6 +7768,31 @@ label {
 .shadcn-prototype-agent-run-retry:focus-visible {
   outline: 2px solid var(--sp-accent);
   outline-offset: 2px;
+}
+
+.shadcn-prototype-agent-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 17px 14px;
+  border-top: 1px solid var(--sp-border);
+}
+
+.shadcn-prototype-agent-run-stop {
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.shadcn-prototype-agent-run-stop:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 @keyframes shadcn-prototype-agent-run-sweep {

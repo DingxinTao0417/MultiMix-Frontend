@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronDown, Sparkles, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   dispatchAgentRunRetry,
   executionErrorPresentation,
@@ -43,14 +43,20 @@ function visibleStepLabel(step: AgentRunStep) {
 // (spec §12 降级规则: 无事件不渲染). No fake progress.
 export default function AgentRunTimeline({
   steps,
+  title = "视频生成进度",
+  statusTone: statusToneOverride,
   errorMessage,
   onRetry,
   completionConfirmed,
+  footer,
 }: {
   steps: AgentRunStep[];
+  title?: string;
+  statusTone?: "success" | "fail" | "running" | "cancelled";
   errorMessage?: string | null;
   onRetry?: (jobId: string) => void;
   completionConfirmed?: boolean;
+  footer?: ReactNode;
 }) {
   const summary = summarizeAgentRunSteps(steps);
   const [expansionState, setExpansionState] = useState(() => (
@@ -86,12 +92,11 @@ export default function AgentRunTimeline({
   const errorPresentation = summary.hasFailure
     ? executionErrorPresentation(errorMessage ?? "")
     : null;
-  const title = "视频生成进度";
-  const statusTone = summary.allDone
+  const statusTone = statusToneOverride ?? (summary.allDone
     ? "success"
     : summary.hasFailure
       ? "fail"
-      : "running";
+      : "running");
   const countLabel = summary.projectReady && summary.mgActive
     ? `视频已生成，可立即编辑 · 第 ${currentStep} 步 / 共 ${summary.total} 步`
     : summary.allDone
@@ -162,6 +167,7 @@ export default function AgentRunTimeline({
               ) : null}
             </div>
           ) : null}
+          {footer ? <div className="shadcn-prototype-agent-run-actions">{footer}</div> : null}
         </>
       ) : null}
     </div>
