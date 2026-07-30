@@ -179,13 +179,13 @@ export default function ProductPreview({
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
-  const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
+  const [projectPreviewRequested, setProjectPreviewRequested] = useState(false);
   const [projectPreviewFailed, setProjectPreviewFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
-    setProjectPreviewRequested(true);
+    setProjectPreviewRequested(false);
     setProjectPreviewFailed(false);
   }, [exportedVideoUrl, product.id]);
 

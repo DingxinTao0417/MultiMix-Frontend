@@ -128,7 +128,7 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
 });
 
-test("CASE-06 loads the ready engineering timeline only after an explicit request", async ({ page }) => {
+test("CASE-06 keeps ready projects lightweight until 编辑 enters the film strip", async ({ page }) => {
   test.setTimeout(120_000);
   const editorMessages: Array<Record<string, unknown>> = [];
   await page.exposeFunction("__recordEditorBridgeMessage", (message: Record<string, unknown>) => {
@@ -155,6 +155,18 @@ test("CASE-06 loads the ready engineering timeline only after an explicit reques
   await expect(workspace.getByTitle("视频剪辑器")).toHaveCount(0);
   expect(editorRequests).toHaveLength(0);
 
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editorFrame = workspace.getByTitle("视频剪辑器");
+  await expect(editorFrame).toBeVisible();
+  await expect(editorFrame).toHaveAttribute("src", /^\/editor\?asset=\d+&embed=1$/);
+  expect(editorRequests).toHaveLength(1);
+  await expect(page.frameLocator('iframe[title="视频剪辑器"]').getByTestId("filmstrip")).toBeVisible({ timeout: 75_000 });
+
+  await workspace.getByRole("button", { name: "完成编辑", exact: true }).click();
+  await expect(workspace.getByLabel("轻量分镜预览")).toBeVisible();
+  await expect(workspace.getByTitle("视频工程预播")).toHaveCount(0);
+
+  const priorBridgeMessageCount = editorMessages.length;
   await workspace.getByRole("button", { name: "加载完整工程预览" }).click();
   const player = workspace.getByLabel("视频工程播放器");
   const screen = player.locator(".shadcn-prototype-preview-player-screen");
@@ -165,9 +177,9 @@ test("CASE-06 loads the ready engineering timeline only after an explicit reques
   await expect(player).toBeVisible();
   await expect(previewFrame).toBeVisible();
   await expect(previewFrame).toHaveAttribute("src", /mode=preview/);
-  expect(editorRequests).toHaveLength(1);
+  expect(editorRequests).toHaveLength(2);
   const readLoadMessage = () => (
-    editorMessages.find((message) => (
+    editorMessages.slice(priorBridgeMessageCount).find((message) => (
       message.type === "multimix-editor-ready" || message.type === "multimix-editor-error"
     )) ?? null
   );

@@ -56,6 +56,9 @@ describe("display-area eight-case matrix", () => {
   it("loads the engineering preview for manual review", () => {
     render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
+    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.queryByLabelText("视频工程播放器")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
     expect(screen.getByLabelText("视频工程播放器")).toBeInTheDocument();
     expect(screen.getByTitle("视频工程预播").getAttribute("src")).toMatch(
       /^\/editor\?asset=9100&embed=1&mode=preview&previewChannel=.+/,
@@ -64,10 +67,11 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
   });
 
-  it("mounts a manual preview but not the editable iframe during passive browsing", () => {
+  it("keeps passive browsing lightweight without mounting a project iframe", () => {
     renderWorkspace("case-06-project-ready-no-mp4");
 
-    expect(screen.getByTitle("视频工程预播")).toBeInTheDocument();
+    expect(screen.getByLabelText("轻量分镜预览")).toBeInTheDocument();
+    expect(screen.queryByTitle("视频工程预播")).not.toBeInTheDocument();
     expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
   });
 
@@ -125,6 +129,7 @@ describe("display-area eight-case matrix", () => {
 
   it("seeks and plays the engineering timeline when a segment is selected", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-06-project-ready-no-mp4"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "加载完整工程预览" }));
     const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
 

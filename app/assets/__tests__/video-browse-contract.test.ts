@@ -17,13 +17,15 @@ const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
 
 describe("video project browse-player contract", () => {
-  test("uses the existing editor timeline renderer after an explicit full-preview request", () => {
+  test("keeps the lightweight storyboard as the initial browse surface and loads full preview only on request", () => {
     expect(preview).toContain("<VideoProjectPreview");
     expect(preview).toContain("<VideoPreviewPlayer");
     expect(preview).not.toContain("<VideoPreviewResizer");
     expect(preview).not.toContain("previewHeight");
     expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
     expect(preview).toContain("projectPreviewRequested && !projectPreviewFailed");
+    expect(preview).toContain('useState(false)');
+    expect(preview).toMatch(/setFullVideoFailed\(false\);\s*setProjectPreviewRequested\(false\);\s*setProjectPreviewFailed\(false\);/s);
     expect(preview).toContain("加载完整工程预览");
     expect(preview).toContain("hint={showFullVideo");
     expect(projectPreview).toContain("mode=preview");
