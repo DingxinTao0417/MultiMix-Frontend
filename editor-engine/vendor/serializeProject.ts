@@ -37,6 +37,13 @@ function serializeElement(el: {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  fontSize?: number;
+  transform?: {
+    scaleX: number;
+    scaleY: number;
+    position: { x: number; y: number };
+    rotate: number;
+  };
   volume?: number;
   animations?: ElementAnimations;
   transition?: {
@@ -54,7 +61,13 @@ function serializeElement(el: {
     trimEnd: el.trimEnd ?? 0,
   };
   if (el.mediaId) out.mediaId = el.mediaId;
-  if (el.type === "text") out.content = el.content || "";
+  if (el.type === "text") {
+    out.content = el.content || "";
+    if (typeof el.fontSize === "number" && Number.isFinite(el.fontSize)) {
+      out.fontSize = el.fontSize;
+    }
+    if (el.transform) out.transform = el.transform;
+  }
   if (el.type === "audio") {
     out.volume = el.volume ?? 1;
     if (el.animations) out.animations = el.animations;

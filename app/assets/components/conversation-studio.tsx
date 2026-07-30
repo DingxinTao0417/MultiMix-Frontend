@@ -7,7 +7,7 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationPr
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
-import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation } from "../lib/asset-workspace-types";
+import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation, AssetPlanConfirmationValues, AssetVideoParameterConfirmation } from "../lib/asset-workspace-types";
 import { UI_V3_CONFIRM_CARD } from "../lib/ui-flags";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
@@ -175,7 +175,7 @@ export default function ConversationStudio({
   onRetryImageAttachment?: (attachmentId: string) => void;
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
-  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string) => Promise<void>;
+  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string, videoParameterConfirmation?: AssetVideoParameterConfirmation) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
@@ -269,6 +269,7 @@ export default function ConversationStudio({
     instruction: string,
     optimisticFeedback?: OptimisticFeedback,
     clientRequestId?: string,
+    videoParameterConfirmation?: AssetVideoParameterConfirmation,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -301,7 +302,14 @@ export default function ConversationStudio({
     } satisfies OptimisticExchange;
     onPendingExchangeChange?.(selectedConversation.id, exchange);
     try {
-      await onSendMessage(selectedConversation, instruction, controller.signal, contextAssets, clientRequestId);
+      await onSendMessage(
+        selectedConversation,
+        instruction,
+        controller.signal,
+        contextAssets,
+        clientRequestId,
+        videoParameterConfirmation,
+      );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
     } catch (error) {
@@ -335,22 +343,42 @@ export default function ConversationStudio({
     await sendInstruction(instruction);
   };
 
-  const handleConfirmPlan = async (plan: AssetMessagePlan, ratio?: string) => {
+  const handleConfirmPlan = async (
+    plan: AssetMessagePlan,
+    values?: AssetPlanConfirmationValues,
+  ) => {
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
-    // Weave the chosen size into the confirm instruction so the backend honors
-    // it (parsed from the instruction text). The label ("横屏 16:9") is more
-    // natural in the sentence than the raw ratio.
+    const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+    const ratio = values?.ratio;
     const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
-    const instruction = ratioLabel ? `${base}（${ratioLabel}）` : base;
+    const instruction = !isVideoParameterConfirmation && ratioLabel ? `${base}（${ratioLabel}）` : base;
+    const videoParameterConfirmation = (
+      isVideoParameterConfirmation
+      && plan.pendingIntentId
+      && plan.pendingIntentVersion
+      && ratio
+      && values?.targetSeconds
+    ) ? {
+        pendingIntentId: plan.pendingIntentId,
+        version: plan.pendingIntentVersion,
+        ratio,
+        targetSeconds: values.targetSeconds,
+      } : undefined;
+    if (isVideoParameterConfirmation && !videoParameterConfirmation) {
+      setSendError("视频参数确认信息不完整，请刷新后重试。");
+      return;
+    }
     const planKey = confirmationPlanKey(plan);
     setConfirmingPlanKey(planKey);
     try {
       await sendInstruction(instruction, {
-        assistantText: "已确认，正在创建视频工程任务。",
+        assistantText: isVideoParameterConfirmation
+          ? "参数已确认，正在生成编导稿。"
+          : "已确认，正在创建视频工程任务。",
         presentation: "execution_anchor",
         runSteps: optimisticVideoProjectSteps(),
         confirmationPlanKey: planKey,
-      }, globalThis.crypto.randomUUID());
+      }, globalThis.crypto.randomUUID(), videoParameterConfirmation);
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
     }
@@ -549,7 +577,7 @@ export default function ConversationStudio({
                     )
                   }
                   disabled={sending || !canSend}
-                  onConfirm={(plan, ratio) => void handleConfirmPlan(plan, ratio)}
+                  onConfirm={(plan, values) => void handleConfirmPlan(plan, values)}
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />
               ) : null}

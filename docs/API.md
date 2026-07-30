@@ -621,7 +621,53 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ### 12.2 结构化确认卡 `metadata.plan`
 
-编导稿草稿（`video_workflow_stage == "director_script_draft"`）的 assistant 消息 `metadata` 挂载 `plan` 对象：
+视频链路有两道不同的结构化确认门。
+
+第一道位于生成编导稿前。视频请求的 assistant 消息使用：
+
+```json
+{
+  "kind": "video_parameter_confirmation",
+  "title": "确认视频参数",
+  "status": "pending",
+  "fields": [
+    { "key": "ratio", "label": "视频比例", "value": "横屏 16:9（默认）" },
+    { "key": "duration", "label": "目标时长", "value": "30 秒（默认）" }
+  ],
+  "confirm_label": "确认参数并生成编导稿",
+  "adjust_label": "调整参数",
+  "ratio_options": [
+    { "value": "16:9", "label": "横屏 16:9" },
+    { "value": "9:16", "label": "竖屏 9:16" },
+    { "value": "1:1", "label": "方形 1:1" }
+  ],
+  "ratio_default": "16:9",
+  "duration_seconds": 30,
+  "duration_min": 5,
+  "duration_max": 120,
+  "pending_intent_id": "pending-...",
+  "pending_intent_version": 1
+}
+```
+
+确认请求在普通消息字段之外提交：
+
+```json
+{
+  "instruction": "确认参数并生成编导稿",
+  "conversation_id": "asset-conversation-...",
+  "video_parameter_confirmation": {
+    "pending_intent_id": "pending-...",
+    "version": 1,
+    "ratio": "16:9",
+    "target_seconds": 30
+  }
+}
+```
+
+后端只接受当前 pending intent 的 ID 和版本。普通自然语言“确认”不会生成编导稿；缺省比例与时长分别为横屏 `16:9` 和 `30 秒`。
+
+第二道位于编导稿生成后。编导稿草稿（`video_workflow_stage == "director_script_draft"`）的 assistant 消息 `metadata` 挂载原有 `plan` 对象：
 
 ```jsonc
 {
@@ -635,7 +681,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 - `refs` 只列 `asset_reference.status == "matched"` 的已保存素材（stock 兜底不当「你的素材」）。
 - 无 scenes → 后端不挂 `plan` → 前端退回建议芯片（现状行为）。
-- 确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中后端确认门。
+- 第二道确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中“生成视频工程”确认门。
 - 已持久化的确认结果可能是 `processing / video_project_queued`，此时展示排队状态，不能因有占位 metadata 就显示编辑器。
 
 ### 12.3 统一分镜素材候选端点（三入口共用）

@@ -808,6 +808,59 @@ describe("message plan mapping", () => {
     expect(plan?.confirmUtterance).toBe("确认，开始生成");
   });
 
+  it("maps video parameter confirmation transport fields", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-video-parameters",
+        title: "视频参数",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-07-29T00:00:00Z",
+        updated_at: "2026-07-29T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请确认视频参数",
+          asset_id: null,
+          created_at: "2026-07-29T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "video_parameter_confirmation",
+              title: "确认视频参数",
+              status: "pending",
+              fields: [
+                { key: "ratio", label: "视频比例", value: "横屏 16:9（默认）" },
+                { key: "duration", label: "目标时长", value: "30 秒（默认）" },
+              ],
+              ratio_options: [
+                { value: "16:9", label: "横屏 16:9" },
+                { value: "9:16", label: "竖屏 9:16" },
+              ],
+              ratio_default: "16:9",
+              duration_seconds: 30,
+              duration_min: 5,
+              duration_max: 120,
+              pending_intent_id: "pending-1",
+              pending_intent_version: 2,
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      kind: "video_parameter_confirmation",
+      ratioDefault: "16:9",
+      durationSeconds: 30,
+      durationMin: 5,
+      durationMax: 120,
+      pendingIntentId: "pending-1",
+      pendingIntentVersion: 2,
+    });
+  });
+
   it("keeps private content-asset plan refs as provenance without a thumbnail request", () => {
     const conversation = conversationFromPersisted(
       {

@@ -166,6 +166,44 @@ describe('BGM editor round-trip', () => {
     expect(editorMock.media.setAssets).toHaveBeenCalled();
   });
 
+  it('preserves subtitle size and lower-safe-area position across save and reload', () => {
+    const backend: BackendProject = {
+      metadata: { title: 'Subtitle round trip', duration: 5 },
+      settings: { fps: 30, width: 1080, height: 1920 },
+      media: [],
+      tracks: [{
+        id: 'track-subtitle',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'subtitle-1',
+          type: 'text',
+          content: '字幕应留在画面下方安全区',
+          startTime: 0,
+          duration: 5,
+          textRole: 'subtitle',
+          safeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
+        }],
+      }],
+    };
+    const { project, assets } = buildProject(backend);
+    const original = project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    rememberRawProject(backend as unknown as Record<string, unknown>);
+    editorMock.project.getActive.mockReturnValue(project);
+    editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+    editorMock.media.getAssets.mockReturnValue(assets);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[0] as Record<string, any>;
+    expect(saved.fontSize).toBe(original.fontSize);
+    expect(saved.transform).toEqual(original.transform);
+    expect(saved.safeRegion).toEqual({ x: 0.08, y: 0.74, width: 0.84, height: 0.22 });
+
+    const rebuilt = buildProject(serialized).project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    expect(rebuilt.fontSize).toBe(original.fontSize);
+    expect(rebuilt.transform).toEqual(original.transform);
+  });
+
   it('preserves split decisions and support text roles across save and reload', () => {
     const support = {
       headline: '从对话直接进入分镜编辑',
