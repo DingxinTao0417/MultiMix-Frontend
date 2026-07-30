@@ -68,6 +68,29 @@ const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
 
+function generationJobFromMessage(message: AssetConversationMessage): AssetGenerationJobResponse | null {
+  const metadata = message.metadata ?? {};
+  const id = typeof metadata.asset_generation_job_id === "string" ? metadata.asset_generation_job_id : "";
+  const status = metadata.asset_generation_status;
+  if (!id || !["queued", "running", "completed", "failed", "cancelled"].includes(String(status))) return null;
+  const progress = Array.isArray(metadata.asset_generation_progress)
+    ? metadata.asset_generation_progress.filter((event): event is NonNullable<AssetGenerationJobResponse["progress_events"]>[number] => Boolean(event && typeof event === "object" && typeof (event as Record<string, unknown>).key === "string" && typeof (event as Record<string, unknown>).label === "string" && typeof (event as Record<string, unknown>).status === "string" && typeof (event as Record<string, unknown>).occurred_at === "string")).map((event) => ({ ...event, detail: typeof event.detail === "string" ? event.detail : "" }))
+    : [];
+  return {
+    id,
+    status: status as AssetGenerationJobResponse["status"],
+    stage: typeof metadata.asset_generation_stage === "string" ? metadata.asset_generation_stage : String(status),
+    attempts: 0,
+    result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
+    error_code: typeof metadata.asset_generation_error_code === "string" ? metadata.asset_generation_error_code : null,
+    error_message: status === "failed" || status === "cancelled" ? message.text : null,
+    created_at: "",
+    updated_at: "",
+    started_at: typeof metadata.asset_generation_started_at === "string" ? metadata.asset_generation_started_at : null,
+    progress_events: progress,
+  };
+}
+
 function confirmationPlanKey(plan: AssetMessagePlan): string {
   return [
     plan.confirmationId ?? "",
@@ -580,6 +603,9 @@ export default function ConversationStudio({
     imageAttachments.length ? "shadcn-prototype-composer-control has-attachments" : "shadcn-prototype-composer-control",
     isDraggingUpload ? "drag-active" : ""
   ].filter(Boolean).join(" ");
+  const liveGenerationJobMessagePresent = Boolean(
+    generationJob && visibleConversationMessages.some((message) => generationJobFromMessage(message)?.id === generationJob.id),
+  );
 
   return (
     <section
@@ -635,6 +661,10 @@ export default function ConversationStudio({
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(message.plan || timelineSteps.length);
+          const messageGenerationJob = generationJobFromMessage(message);
+          const renderedGenerationJob = messageGenerationJob && generationJob?.id === messageGenerationJob.id
+            ? generationJob
+            : messageGenerationJob;
           const showsAssistantWaiting = message.role === "assistant"
             && message.pending === true
             && !ownsWorkflowCard
@@ -688,6 +718,13 @@ export default function ConversationStudio({
                           }
                         : undefined
                   }
+                />
+              ) : null}
+              {renderedGenerationJob ? (
+                <AssetGenerationJobCard
+                  job={renderedGenerationJob}
+                  onRetry={onRetryGeneration}
+                  onCancel={onCancelGeneration}
                 />
               ) : null}
               {(() => {
@@ -745,7 +782,7 @@ export default function ConversationStudio({
             </div>
           );
         })}
-        {generationJob ? (
+        {generationJob && !liveGenerationJobMessagePresent ? (
           <AssetGenerationJobCard
             job={generationJob}
             onRetry={onRetryGeneration}

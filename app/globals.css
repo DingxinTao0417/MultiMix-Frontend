@@ -1451,6 +1451,20 @@ button:disabled {
   font-size: 13px;
 }
 
+.shadcn-prototype-generation-job-copy { display: grid; gap: 8px; min-width: 0; flex: 1; }
+.shadcn-prototype-generation-job-copy > small { color: #827a70; font-size: 11px; }
+.shadcn-prototype-generation-job-actions { display: flex; align-items: flex-start; gap: 8px; }
+.shadcn-prototype-generation-job-summary { display: flex; justify-content: space-between; gap: 12px; width: 100%; border: 0; padding: 0; background: transparent; color: #35312d; font-weight: 650; text-align: left; cursor: pointer; }
+.shadcn-prototype-generation-job-summary span { color: #756bd1; font-size: 12px; font-weight: 500; }
+.shadcn-prototype-generation-job-steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.shadcn-prototype-generation-job-steps li { display: flex; gap: 8px; color: #857d73; font-size: 12px; }
+.shadcn-prototype-generation-job-steps li i { width: 8px; height: 8px; margin-top: 4px; border: 1px solid #d9d2ca; border-radius: 50%; flex: none; }
+.shadcn-prototype-generation-job-steps li.active { color: #4938b2; font-weight: 600; }
+.shadcn-prototype-generation-job-steps li.active i { border-color: #624be2; background: #624be2; box-shadow: 0 0 0 3px rgba(98,75,226,.12); }
+.shadcn-prototype-generation-job-steps li.completed i { border-color: #624be2; background: #624be2; }
+.shadcn-prototype-generation-job-steps b, .shadcn-prototype-generation-job-steps em { display: block; }
+.shadcn-prototype-generation-job-steps em { margin-top: 2px; color: #857d73; font-size: 11px; font-style: normal; font-weight: 400; }
+
 .shadcn-prototype-generation-job-card.status-failed {
   align-items: flex-start;
   border-color: #f2c8c2;

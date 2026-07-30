@@ -280,6 +280,14 @@ export type AssetGenerationJobResponse = {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  started_at?: string | null;
+  progress_events?: Array<{
+    key: string;
+    label: string;
+    detail: string;
+    status: "active" | "completed";
+    occurred_at: string;
+  }>;
 };
 
 export type ContentAssetSearchResult = {
