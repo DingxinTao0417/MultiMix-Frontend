@@ -7,6 +7,14 @@ const pdfPath = process.env.PDF_VIDEO_PATH;
 const resultDir = process.env.PDF_VIDEO_RESULT_DIR;
 const videoLayout = process.env.PDF_VIDEO_LAYOUT === "landscape" ? "landscape" : "portrait";
 const ratioLabel = videoLayout === "landscape" ? "16:9横屏" : "9:16竖屏";
+const testEmailDomain = process.env.PDF_VIDEO_TEST_EMAIL_DOMAIN ?? "example.com";
+const testEmail = process.env.PDF_VIDEO_TEST_EMAIL;
+const testPassword = process.env.PDF_VIDEO_TEST_PASSWORD;
+const pollGenerationJob = process.env.PDF_VIDEO_POLL_GENERATION_JOB === "true";
+const existingConversationId = process.env.PDF_VIDEO_EXISTING_CONVERSATION_ID;
+const existingProductId = process.env.PDF_VIDEO_EXISTING_PRODUCT_ID;
+const textOnlyPrompt = process.env.PDF_VIDEO_TEXT_PROMPT
+  ?? "帮一家社区咖啡馆做一条30秒、9:16的短视频，面向周边上班族，目标是吸引他们工作日来买手冲咖啡和早餐，突出出品快和环境安静适合办公。先给我编导稿和分镜方案，信息不足按合理默认值处理，直接开始。";
 
 type E2EAsset = {
   id: number;
@@ -58,6 +66,47 @@ async function sendComposerMessage(page: Page, text: string) {
   const response = await responsePromise;
   expect(response.ok(), `conversation POST failed: ${response.status()}`).toBe(true);
   await expect(page.locator("article.user").filter({ hasText: text.slice(0, 18) }).last()).toBeVisible();
+  return response;
+}
+
+async function refreshAfterQueuedGeneration(page: Page, response: Awaited<ReturnType<typeof waitForConversationPost>>) {
+  if (!pollGenerationJob || response.status() !== 202) return;
+  const payload = await response.json() as {
+    conversation_id?: string;
+    generation_job?: { id?: string };
+  };
+  const conversationId = payload.conversation_id;
+  const jobId = payload.generation_job?.id;
+  const authorization = response.request().headers().authorization;
+  if (!conversationId || !jobId || !authorization) return;
+  const apiBaseUrl = new URL(response.url()).origin;
+  const deadline = Date.now() + 6 * 60_000;
+  while (Date.now() < deadline) {
+    const jobResponse = await page.request.get(
+      `${apiBaseUrl}/v1/assets/generation-jobs/${encodeURIComponent(jobId)}`,
+      { headers: { authorization } },
+    );
+    expect(jobResponse.ok(), `generation job fetch failed: ${jobResponse.status()}`).toBe(true);
+    const job = await jobResponse.json() as {
+      status?: string;
+      error_code?: string | null;
+      error_message?: string | null;
+    };
+    if (job.status === "completed") {
+      await page.goto(`/app/assets?conversation=${encodeURIComponent(conversationId)}`);
+      await expect(
+        page.getByRole("region", { name: "Content generation conversation" }),
+      ).toBeVisible();
+      return;
+    }
+    if (job.status === "failed") {
+      throw new Error(
+        `Asset generation failed (${job.error_code ?? "unknown"}): ${job.error_message ?? "no detail"}`,
+      );
+    }
+    await page.waitForTimeout(2500);
+  }
+  throw new Error(`Timed out waiting for asset generation job ${jobId}`);
 }
 
 async function enterLocalWorkspace(page: Page) {
@@ -69,21 +118,29 @@ async function enterLocalWorkspace(page: Page) {
     workspaceHeading.waitFor({ state: "visible", timeout: 30_000 }).then(() => "workspace" as const),
   ]);
   if (entry === "login") {
-    await page.locator(".multimix-auth-switch").getByRole("button", { name: "注册" }).click();
-    await page.getByLabel("邮箱或手机号").fill(`pdf-video-${Date.now()}@example.com`);
-    await page.getByLabel("密码").fill("local-pdf-video-2026");
-    await page.locator("form").getByRole("button", { name: "注册" }).click();
+    if (testEmail && testPassword) {
+      await page.getByLabel("邮箱或手机号").fill(testEmail);
+      await page.getByLabel("密码").fill(testPassword);
+      await page.locator("form").getByRole("button", { name: "登录" }).click();
+    } else {
+      await page.locator(".multimix-auth-switch").getByRole("button", { name: "注册" }).click();
+      await page.getByLabel("邮箱或手机号").fill(`pdf-video-${Date.now()}@${testEmailDomain}`);
+      await page.getByLabel("密码").fill("local-pdf-video-2026");
+      await page.locator("form").getByRole("button", { name: "注册" }).click();
+    }
   }
   await expect(workspaceHeading).toBeVisible({ timeout: 30_000 });
 }
 
 async function waitForVideoProject(page: Page) {
-  const deadline = Date.now() + 15 * 60_000;
+  const deadline = Date.now() + (existingConversationId ? 45_000 : 15 * 60_000);
   let lastHandledAssistant = "";
   let fallbackConfirmCount = 0;
   while (Date.now() < deadline) {
     const exportButton = page.getByRole("button", { name: /导出/ }).last();
     if (await exportButton.isVisible().catch(() => false)) return exportButton;
+    const editButton = page.getByRole("button", { name: "编辑", exact: true });
+    if (await editButton.isVisible().catch(() => false)) return editButton;
 
     const failedState = page.getByText(/视频(?:工程)?生成失败|生成失败 · 可重试/).last();
     if (await failedState.isVisible().catch(() => false)) {
@@ -340,7 +397,7 @@ test("uploads a real PDF through the UI and downloads only a verified MP4", asyn
   await exportVerifiedVideo(page, exportPath);
   mark("export_verified");
   expect(fs.statSync(exportPath).size).toBeGreaterThan(1000);
-  await expect(page.getByRole("button", { name: "再次下载" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /再次下载|再次导出/ })).toBeVisible();
   await page.screenshot({ path: path.join(resultDir, "export-verified.png"), fullPage: true });
 
   const timing = elapsedTable();
@@ -399,12 +456,25 @@ test("generates a verified MP4 from a text-only prompt (no PDF) with the flag on
 
   mark("test_start");
   await enterLocalWorkspace(page);
-  // Specific enough (product + audience + goal + duration + ratio) to skip the
-  // clarification gate and go straight to brief + storyboard generation.
-  await sendComposerMessage(
-    page,
-    "帮一家社区咖啡馆做一条30秒、9:16的短视频，面向周边上班族，目标是吸引他们工作日来买手冲咖啡和早餐，突出出品快和环境安静适合办公。先给我编导稿和分镜方案，信息不足按合理默认值处理，直接开始。",
-  );
+  if (existingConversationId) {
+    const productQuery = existingProductId
+      ? `&product=${encodeURIComponent(existingProductId)}`
+      : "";
+    await page.goto(
+      `/app/assets?conversation=${encodeURIComponent(existingConversationId)}${productQuery}`,
+    );
+    await expect(
+      page.getByRole("region", { name: "Content generation conversation" }),
+    ).toBeVisible();
+  } else {
+    // Specific enough (product + audience + goal + duration + ratio) to skip the
+    // clarification gate and go straight to brief + storyboard generation.
+    const initialResponse = await sendComposerMessage(
+      page,
+      textOnlyPrompt,
+    );
+    await refreshAfterQueuedGeneration(page, initialResponse);
+  }
 
   const exportButton = await waitForVideoProject(page);
   await expect(exportButton).toBeVisible();
@@ -421,12 +491,14 @@ test("generates a verified MP4 from a text-only prompt (no PDF) with the flag on
   await exportVerifiedVideo(page, exportPath);
   mark("export_verified");
   expect(fs.statSync(exportPath).size).toBeGreaterThan(1000);
-  await expect(page.getByRole("button", { name: "再次下载" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /再次下载|再次导出/ })).toBeVisible();
 
   // Flag-on marker: the LLM should have emitted brief_positioning. Soft so a
   // wording/omission variance records rather than aborts the export proof.
   const meta = (captured.lastMessages as { product?: { metadata?: Record<string, unknown> } } | undefined)?.product?.metadata;
-  expect.soft(meta?.brief_positioning, "flag-on run should carry LLM brief_positioning").toBeTruthy();
+  if (!existingConversationId) {
+    expect.soft(meta?.brief_positioning, "flag-on run should carry LLM brief_positioning").toBeTruthy();
+  }
 
   const timing = elapsedTable();
   if (captured.videoProject) {
@@ -437,6 +509,6 @@ test("generates a verified MP4 from a text-only prompt (no PDF) with the flag on
   }
   fs.writeFileSync(
     path.join(outDir, "browser-result.json"),
-    JSON.stringify({ exportPath, storyboardText, timing, consoleErrors }, null, 2),
+    JSON.stringify({ exportPath, prompt: textOnlyPrompt, storyboardText, timing, consoleErrors }, null, 2),
   );
 });
