@@ -22,7 +22,7 @@ import {
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
-import type { AgentRunStep } from "../lib/asset-workspace-types";
+import type { AgentRunStep, AssetVideoParameterConfirmation } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
   runExclusiveConversationDelete,
@@ -1501,6 +1501,7 @@ export default function AssetsWorkspaceClient({
     signal?: AbortSignal,
     linkedAssets: ConversationContextAsset[] = [],
     clientRequestId?: string,
+    videoParameterConfirmation?: AssetVideoParameterConfirmation,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1564,6 +1565,7 @@ export default function AssetsWorkspaceClient({
         selectedProductId: selectedBackendAssetId,
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
+        videoParameterConfirmation,
         signal
       });
     } catch (error) {

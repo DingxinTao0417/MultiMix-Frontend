@@ -13,6 +13,7 @@ const TRANSITION_PRESETS = [
 	{ type: "dissolve", label: "Dissolve", duration: 0.5 },
 	{ type: "slide_left", label: "Slide Left", duration: 0.5 },
 	{ type: "slide_right", label: "Slide Right", duration: 0.5 },
+	{ type: "wipe_left", label: "Wipe", duration: 0.5 },
 ];
 
 export function TransitionsView() {

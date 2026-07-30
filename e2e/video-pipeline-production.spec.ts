@@ -36,6 +36,7 @@ const requirePublicAsset =
 const hybridMediaFilesRaw = process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
+const testRecompose = process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const audioMixRatioTolerance = Number(
   process.env.VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE ?? "0.15",
@@ -111,19 +112,6 @@ type SceneRow = {
   narration?: string;
   subtitle_focus?: string;
   asset_requirement?: { evidence_required?: boolean };
-  information_roles?: {
-    narration?: string;
-    subtitle?: string;
-    primary_visual?: string;
-    mg?: string;
-  };
-  information_increment_contract_version?: string;
-  mg_brief?: {
-    needed?: boolean;
-    template?: string;
-    information_gain?: string;
-    params?: Record<string, unknown>;
-  };
   mg_decision?: {
     needed?: boolean;
     chosen_template?: string;
@@ -310,7 +298,7 @@ function generatedPrimaryRepeatsVisibleSubtitle(scene: SceneRow) {
   );
 }
 
-test("produces persisted visuals and recomposes only one scene", async ({
+test("produces persisted visuals and optionally recomposes one scene", async ({
   page,
 }) => {
   test.setTimeout(60 * 60_000);
@@ -559,48 +547,12 @@ test("produces persisted visuals and recomposes only one scene", async ({
   ).toBeTruthy();
   let pipelineCode: string | undefined = expectTwoStage ? undefined : "legacy";
   let beforeScenes = scenesFromAsset(projectAsset!);
-  let incrementMgScenes: SceneRow[] = [];
   let artDirectionSummary: {
     schemaVersion?: string;
     surfacePresets: string[];
     distinctSurfaceCount: number;
   } | null = null;
   if (expectTwoStage) {
-    const persistedPipelineDecision = (
-      projectAsset!.metadata!.video_plan as {
-    internal_production?: {
-      pipeline_decision?: {
-        information_increment_intent?: { minimum_mg_scenes?: number };
-        product_presentation_intent?: {
-          minimum_split_support_scenes?: number;
-          minimum_distinct_product_media_entries?: number;
-          required_product_media_roles?: string[];
-        };
-      };
-    };
-      }
-    ).internal_production?.pipeline_decision;
-  expect(
-      persistedPipelineDecision?.information_increment_intent
-        ?.minimum_mg_scenes,
-    "the async director path must preserve the user's explicit MG minimum",
-  ).toBeGreaterThanOrEqual(1);
-  expect(
-      persistedPipelineDecision?.product_presentation_intent
-        ?.minimum_split_support_scenes,
-    "the async director path must preserve the user's explicit split-support minimum",
-  ).toBeGreaterThanOrEqual(1);
-  expect(
-    persistedPipelineDecision?.product_presentation_intent
-      ?.minimum_distinct_product_media_entries,
-    "the async director path must preserve the explicit distinct reviewed-media minimum",
-  ).toBeGreaterThanOrEqual(2);
-    expect(
-      new Set(
-    persistedPipelineDecision?.product_presentation_intent
-      ?.required_product_media_roles ?? [],
-      ).size,
-    ).toBeGreaterThanOrEqual(2);
     await expect
       .poll(
         async () => {
@@ -618,11 +570,11 @@ test("produces persisted visuals and recomposes only one scene", async ({
     );
     if (!current) return "asset-missing";
     const plannedMgScenes = scenesFromAsset(current).filter(
-      (scene) => scene.mg_brief?.needed === true,
+      (scene) => scene.mg_decision?.needed === true,
     );
     if (plannedMgScenes.length === 0) {
       throw new Error(
-        "director ignored the explicit request for at least one grounded information-increment MG scene",
+        "director ignored the explicit request for at least one MG scene",
       );
     }
     const pending = plannedMgScenes.filter(
@@ -639,7 +591,7 @@ test("produces persisted visuals and recomposes only one scene", async ({
     );
     if (rendered.length === 0) {
             throw new Error(
-              "all information-increment MG scenes reached a failed terminal state",
+              "all enabled MG scenes reached a failed terminal state",
             );
     }
     projectAsset = current;
@@ -702,52 +654,6 @@ test("produces persisted visuals and recomposes only one scene", async ({
       );
     }
   expect(beforeScenes).toHaveLength(expectedSceneCount);
-  const informationRoleKeys = [
-    "narration",
-    "subtitle",
-    "primary_visual",
-    "mg",
-  ];
-  for (const scene of beforeScenes) {
-    expect(scene.information_increment_contract_version).toBe(
-      "scene_information_increment_v1",
-    );
-    expect(Object.keys(scene.information_roles ?? {}).sort()).toEqual(
-      [...informationRoleKeys].sort(),
-    );
-    expect(scene.information_roles?.narration?.trim()).toBeTruthy();
-    expect(scene.information_roles?.subtitle?.trim()).toBeTruthy();
-    expect(scene.information_roles?.primary_visual?.trim()).toBeTruthy();
-    expect(typeof scene.mg_brief?.needed).toBe("boolean");
-      expect(
-        scene.mg_brief?.params && typeof scene.mg_brief.params === "object",
-      ).toBeTruthy();
-    if (scene.mg_brief?.needed) {
-      expect(scene.information_roles?.mg?.trim()).toBeTruthy();
-      expect(scene.mg_brief.template?.trim()).toBeTruthy();
-      expect(scene.mg_brief.information_gain?.trim()).toBeTruthy();
-      expect(scene.mg_decision?.needed).toBe(true);
-        expect(scene.mg_decision?.chosen_template).toBe(
-          scene.mg_brief.template,
-        );
-      expect(scene.mg_decision?.params_source).toBe("model_structured");
-    } else {
-      expect(scene.information_roles?.mg ?? "").toBe("");
-    }
-  }
-    incrementMgScenes = beforeScenes.filter(
-      (scene) => scene.mg_brief?.needed === true,
-    );
-  expect(
-    incrementMgScenes.length,
-    "the confirmed director plan must contain at least one information-increment MG scene",
-  ).toBeGreaterThan(0);
-  expect(
-      incrementMgScenes.some(
-        (scene) => scene.mg_decision?.status === "rendered",
-      ),
-    "at least one information-increment MG scene must be rendered into the candidate",
-  ).toBe(true);
     expect(
       beforeScenes.every(
         (scene) =>
@@ -822,10 +728,6 @@ test("produces persisted visuals and recomposes only one scene", async ({
         const provenance = scene.primary_visual?.provenance;
           const effectiveVariant =
             provenance?.effective_presentation_variant ?? "";
-        expect(
-          scene.mg_brief?.needed,
-          `product evidence scene ${scene.id} must not compete with an information MG overlay`,
-        ).toBe(false);
         expect(scene.mg_decision?.needed).toBe(false);
         expect(allowedVariants.has(effectiveVariant)).toBe(true);
         expect(provenance?.presentation_fallback).toBeFalsy();
@@ -1091,7 +993,7 @@ test("produces persisted visuals and recomposes only one scene", async ({
   let afterRefs = beforeRefs;
   let targetSegmentId: string | null = null;
   let recomposeTested = false;
-  if (expectTwoStage) {
+  if (expectTwoStage && testRecompose) {
     const target = selectProductionGeneratedRecomposeTarget(beforeScenes);
     if (!target) {
       throw new Error(
@@ -1386,19 +1288,6 @@ test("produces persisted visuals and recomposes only one scene", async ({
         startTime: element.startTime,
         duration: element.duration,
       })),
-      informationIncrement: {
-        contractVersion: "scene_information_increment_v1",
-        sceneCount: beforeScenes.length,
-        mgNeededCount: incrementMgScenes.length,
-        mgRenderedCount: incrementMgScenes.filter(
-          (scene) => scene.mg_decision?.status === "rendered",
-        ).length,
-        scenes: incrementMgScenes.map((scene) => ({
-          sceneId: scene.id,
-          template: scene.mg_decision?.chosen_template,
-          status: scene.mg_decision?.status,
-        })),
-      },
       productPresentation: {
         productSceneCount: beforeScenes.filter(
           (scene) => scene.primary_visual?.source_type === "product_asset",

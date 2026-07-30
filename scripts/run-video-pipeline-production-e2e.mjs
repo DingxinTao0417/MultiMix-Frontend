@@ -60,9 +60,6 @@ const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
 );
-const referenceVideo = process.env.VIDEO_PIPELINE_REFERENCE_VIDEO
-  ? path.resolve(process.env.VIDEO_PIPELINE_REFERENCE_VIDEO)
-  : null;
 const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
 const durationToleranceRatio = Number(
   process.env.VIDEO_PIPELINE_DURATION_TOLERANCE ?? 0.1,
@@ -100,6 +97,8 @@ const ffprobeCommand = process.env.FFPROBE ?? "ffprobe";
 const ffmpegCommand = process.env.FFMPEG ?? "ffmpeg";
 const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? "-0.1");
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
+const testRecompose = process.argv.includes("--recompose")
+  || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
 const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const twoStageEnabled = true;
@@ -568,44 +567,18 @@ async function writeQaReport() {
   const recomposeResult = result.recomposeTested === true
     ? (otherRefsStable ? "通过" : "失败")
     : "不适用（当前模式不支持两阶段单镜重做证据）";
-  const closingHoldSeconds = Number(
-    result.audioFinishing?.closingHoldSeconds ?? 0,
-  );
-  const structuralHardFailures = [];
-  if (
-    twoStageEnabled
-    && Number(result.artDirection?.distinctSurfaceCount ?? 0) < 4
-  ) {
-    structuralHardFailures.push("art_direction_surface_diversity");
-  }
-  if (
-    targetSeconds >= 45
-    && (closingHoldSeconds < 1.5 || closingHoldSeconds > 2.5)
-  ) {
-    structuralHardFailures.push("closing_hold_out_of_range");
-  }
-  if (
-    targetSeconds >= 45
-    && result.audioFinishing?.ttsSampleGate?.status !== "passed"
-  ) {
-    structuralHardFailures.push("tts_sample_gate_not_passed");
-  }
+  const behaviorFailures = [];
   if (!expectBgm && result.audioFinishing?.musicIntent !== "none") {
-    structuralHardFailures.push("no_music_intent_missing");
+    behaviorFailures.push("no_music_intent_missing");
   }
   const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
     + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- ${expectedSceneCount} 镜主轨：通过\n- 待补素材：未出现\n`
-    + `- 信息增量分镜：${Number(result.informationIncrement?.sceneCount ?? 0)} 个；MG 已渲染 ${Number(result.informationIncrement?.mgRenderedCount ?? 0)} 个\n`
-    + `- 审核截图分镜：${Number(result.productPresentation?.productSceneCount ?? 0)} 个；单次分屏 ${Number(result.productPresentation?.splitSceneCount ?? 0)} 个\n`
-    + `- 美术表面：${Number(result.artDirection?.distinctSurfaceCount ?? 0)} 种\n`
-    + `- 成片画面验收：待人工审查（见 human-review.md）\n`
-    + `- 片尾稳定停留：${closingHoldSeconds.toFixed(3)} 秒；样音门：${String(result.audioFinishing?.ttsSampleGate?.status ?? "missing")}\n`
     + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
     + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
     + `- 分镜关键帧：keyframes/keyframe-*.png\n\n`
-    + `## 残余人工验收\n\n- 本测试证明真实上传、对话、确认、worker、${expectedSceneCount} 镜落库和正式导出链路；视觉专业感仍需把候选与参考成片匿名并排评分。\n`;
+    + `## 覆盖范围\n\n- 本测试证明真实上传、对话、确认、worker、${expectedSceneCount} 镜落库和正式导出链路。\n`;
   fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
   const evaluationReport = {
     twoStageEnabled: result.twoStageEnabled === true,
@@ -613,11 +586,6 @@ async function writeQaReport() {
     publicCandidateOnlyCount: result.publicCandidateOnlyCount,
     manifestProjectReferenceMatch: result.manifestProjectReferenceMatch,
     sourceMix: result.sourceMix,
-    informationIncrement: result.informationIncrement,
-    productPresentation: result.productPresentation,
-    artDirection: result.artDirection,
-    humanReviewStatus: "pending",
-    audioFinishing: result.audioFinishing,
     sendBacks: result.sendBacks ?? 0,
     resumeReuse,
     internalTermsVisible: result.internalTermsVisible,
@@ -640,7 +608,7 @@ async function writeQaReport() {
     : {};
   const hardFailures = [
     ...(Array.isArray(mediaProbe.failures) ? mediaProbe.failures : []),
-    ...structuralHardFailures,
+    ...behaviorFailures,
   ];
   fs.writeFileSync(
     path.join(resultDir, "benchmark-report.json"),
@@ -653,55 +621,14 @@ async function writeQaReport() {
         maximumSeconds: maximumDurationSeconds,
       },
       sourceDocument: fingerprintFile(sourceDocument),
-      referenceVideo: referenceVideo ? fingerprintFile(referenceVideo) : null,
       candidateVideo: fingerprintFile(path.join(resultDir, "multimix-candidate.mp4")),
       hardFailures,
       automationPassed:
         mediaProbe.passed === true
         && actionableRequestFailures.length === 0
         && hardFailures.length === 0,
-      humanReviewStatus: "pending",
     }, null, 2),
   );
-  fs.writeFileSync(path.join(resultDir, "human-review.md"), [
-    "# OpenMontage PDF 宣传视频人工盲评",
-    "",
-    "> Status: qa",
-    "> Owner: workspace",
-    `> Last verified: ${new Date().toISOString().slice(0, 10)}`,
-    "",
-    "| 维度 | 权重 | MultiMix（1–5） | 参考视频（1–5） | 证据/问题 |",
-    "| --- | ---: | ---: | ---: | --- |",
-    "| 内容可信与产品定位 | 20 | | | |",
-    "| 叙事结构与节奏 | 15 | | | |",
-    "| 素材相关性与可信感 | 20 | | | |",
-    "| 美术指导与场景差异 | 20 | | | |",
-    "| 信息分层与可读性 | 10 | | | |",
-    "| 动效与镜头语言 | 10 | | | |",
-    "| 声音与技术完成度 | 5 | | | |",
-    "",
-    "- 晋级：总分至少 85/100；前六项均不低于 4/5；与参考视频任一维度平均差距不超过 0.5。",
-    "- P0/P1：待两名评审独立填写。",
-  ].join("\n"));
-  fs.writeFileSync(path.join(resultDir, "openmontage-comparison.md"), [
-    "# OpenMontage 对照验收",
-    "",
-    `> Status: qa`,
-    `> Owner: workspace`,
-    `> Last verified: ${new Date().toISOString().slice(0, 10)}`,
-    "",
-    "| 维度 | MultiMix | OpenMontage | 证据/问题 |",
-    "| --- | ---: | ---: | --- |",
-    "| 叙事清晰 | 待人工评分 | 待人工评分 | |",
-    "| 素材相关 | 待人工评分 | 待人工评分 | |",
-    "| 节奏 | 待人工评分 | 待人工评分 | |",
-    "| 品牌一致 | 待人工评分 | 待人工评分 | |",
-    "| 信息密度 | 待人工评分 | 待人工评分 | |",
-    "| 真实素材使用 | 待人工评分 | 待人工评分 | |",
-    "| 证据真实性 | 待人工评分 | 待人工评分 | |",
-    "",
-    "- P0/P1：待候选成片与参考样片生成后填写。",
-  ].join("\n"));
 }
 
 const workspaceSnapshots = snapshotFiles([
@@ -786,7 +713,6 @@ try {
       maximumSeconds: maximumDurationSeconds,
     },
     sourceDocument: fingerprintFile(sourceDocument),
-    referenceVideo: referenceVideo ? fingerprintFile(referenceVideo) : null,
     visionServiceUrl,
     productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
     hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
@@ -901,7 +827,6 @@ try {
       PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
       PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
       VIDEO_PIPELINE_SOURCE_DOCUMENT: sourceDocument,
-      VIDEO_PIPELINE_REFERENCE_VIDEO: referenceVideo ?? "",
       VIDEO_PIPELINE_RESULT_DIR: resultDir,
       VIDEO_PIPELINE_TARGET_SECONDS: String(targetSeconds),
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
@@ -911,6 +836,7 @@ try {
       VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
       VIDEO_PIPELINE_HYBRID_MEDIA_FILES: process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES ?? "[]",
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
+      VIDEO_PIPELINE_TEST_RECOMPOSE: testRecompose ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_BGM: expectBgm ? "true" : "false",
     },

@@ -18,6 +18,8 @@ import {
   displayTextByElementId,
   editDecisionByElementId,
   layoutCaption,
+  subtitlePositionOffset,
+  subtitleTypographyForCanvas,
   supportCardPanelGeometry,
 } from './buildProject';
 import type { BackendProject } from './buildProject';
@@ -236,8 +238,54 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(renderedFontSize).toBeLessThanOrEqual(38);
     expect(element.content).toBe('上传实拍，选方向，自动编导');
     expect(element.transform).toMatchObject({
-      position: { x: 0, y: Math.round(bp.settings.height * 0.29) },
+      position: { x: 0, y: Math.round(bp.settings.height * 0.35) },
     });
+  });
+
+  it('uses ratio-aware compact subtitle typography', () => {
+    const landscape = subtitleTypographyForCanvas(1920, 1080, 0.7);
+    const portrait = subtitleTypographyForCanvas(1080, 1920, 0.7);
+
+    expect(landscape.preferredFontPx).toBeGreaterThanOrEqual(32);
+    expect(landscape.preferredFontPx).toBeLessThanOrEqual(38);
+    expect(portrait.preferredFontPx).toBeGreaterThanOrEqual(34);
+    expect(portrait.preferredFontPx).toBeLessThanOrEqual(40);
+  });
+
+  it('centres subtitles in the backend safe region and clamps manual movement', () => {
+    const landscapeRegion = { x: 0.08, y: 0.76, width: 0.84, height: 0.18 };
+    const portraitRegion = { x: 0.08, y: 0.74, width: 0.84, height: 0.22 };
+
+    expect(subtitlePositionOffset(1080, landscapeRegion, 0.35)).toBe(378);
+    expect(subtitlePositionOffset(1920, portraitRegion, 0.35)).toBe(672);
+    expect(subtitlePositionOffset(1080, landscapeRegion, 0)).toBe(281);
+    expect(subtitlePositionOffset(1080, landscapeRegion, 0.42)).toBe(454);
+  });
+
+  it('keeps portrait subtitles compact and inside their lower safe region', () => {
+    const bp = makeProject({
+      settings: { fps: 30, width: 1080, height: 1920 },
+      tracks: [{
+        id: 'track-text-portrait',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-portrait',
+          type: 'text',
+          content: '上传实拍，选方向，自动编导',
+          startTime: 0,
+          duration: 5,
+          textRole: 'subtitle',
+          safeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
+        }],
+      }],
+    });
+
+    const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
+    expect(renderedFontSize).toBeGreaterThanOrEqual(34);
+    expect(renderedFontSize).toBeLessThanOrEqual(40);
+    expect(element.transform.position.y).toBe(672);
   });
 
   it('never splits an English product token across subtitle lines', () => {
@@ -777,8 +825,8 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       }>;
 
       expect(supportCard.transform.position.y).toBe(205);
-      expect(subtitles[0].transform.position.y).toBe(432);
-      expect(subtitles[1].transform.position.y).toBe(313);
+      expect(subtitles[0].transform.position.y).toBe(378);
+      expect(subtitles[1].transform.position.y).toBe(378);
     });
 
     it('keeps portrait v2 support and subtitle lanes proportional and separated', () => {
@@ -786,8 +834,8 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       const supportGeometry = supportCardPanelGeometry(portrait, 'split_native_v2');
 
       expect(supportGeometry.position).toEqual({ x: -421, y: 365 });
-      expect(Math.round(portrait.height * 0.4) - supportGeometry.position.y)
-        .toBeGreaterThanOrEqual(Math.round(portrait.height * 0.2));
+      expect(Math.round(portrait.height * 0.35) - supportGeometry.position.y)
+        .toBeGreaterThanOrEqual(Math.round(portrait.height * 0.15));
     });
 
     it('does not create an empty split when validated support is absent', () => {
@@ -819,6 +867,140 @@ describe('buildProject - overlay/hasAlpha logic', () => {
         position: { x: 0, y: 0 },
         rotate: 0,
       });
+    });
+  });
+
+  describe('semantic scene transitions', () => {
+    it.each([
+      ['cut', undefined],
+      ['dissolve', { type: 'dissolve', duration: 0.5 }],
+      ['push', { type: 'slide_right', duration: 0.5 }],
+      ['wipe', { type: 'wipe_left', duration: 0.5 }],
+    ])('maps backend %s decisions onto visual elements', (semantic, expected) => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-transition', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: `scene-${semantic}`,
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-transition',
+            editDecision: { transition: semantic },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual(expected);
+    });
+
+    it('clamps an automatic transition to half of a short scene', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-short', type: 'video' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-short',
+            type: 'video',
+            startTime: 0,
+            duration: 0.6,
+            mediaId: 'media-short',
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual({ type: 'dissolve', duration: 0.3 });
+    });
+
+    it('fails closed when a persisted decision contains an unknown transition', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-unknown', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-unknown',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-unknown',
+            editDecision: { transition: 'spin_away' },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toBeUndefined();
+    });
+
+    it('prefers a valid saved editor transition over the original semantic decision', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-saved', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-saved',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-saved',
+            transition: { type: 'slide_left', duration: 0.25 },
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      } as BackendProject);
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual({ type: 'slide_left', duration: 0.25 });
+    });
+
+    it('fails closed instead of reviving the semantic decision behind an invalid saved transition', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-invalid-saved', type: 'video' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-invalid-saved',
+            type: 'video',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-invalid-saved',
+            transition: { type: 'spin_away', duration: 0.5 },
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      } as BackendProject);
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toBeUndefined();
     });
   });
 });

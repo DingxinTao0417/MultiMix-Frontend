@@ -3,7 +3,6 @@ export type VideoQualityIssue = {
   segment_id: string | null;
   object_type: string;
   message: string;
-  attempted_fallbacks: string[];
   suggested_actions: string[];
 };
 
@@ -32,6 +31,7 @@ export function videoQualityIssueTitle(issue: VideoQualityIssue): string {
     mg_stale: " MG 与内容不一致",
     mg_failed: " MG 渲染失败",
     mg_not_ready: " MG 尚未完成",
+    mg_primary_blank: " MG 主画面已保留空白",
     duration_out_of_range: "时长超出允许范围",
     naked_black_interval: "成片存在裸黑场",
     invalid_dimensions: "成片尺寸不正确",
@@ -39,10 +39,6 @@ export function videoQualityIssueTitle(issue: VideoQualityIssue): string {
     invalid_audio_codec: "音频编码不正确",
     decode_failed: "成片无法完整解码",
     verifier_unavailable: "成片检查工具不可用",
-    rendered_review_pending: "画面检查尚未完成",
-    rendered_review_stale: "画面检查结果已过期",
-    rendered_review_unavailable: "画面检查暂不可用",
-    rendered_review_blocked: "实际画面需要调整",
   };
   return `${prefix}${labels[issue.code] ?? "存在质量问题"}`;
 }

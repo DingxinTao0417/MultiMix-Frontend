@@ -176,7 +176,20 @@ export type AssetPlanField = {
   refs?: AssetPlanRef[];
 };
 
+export type AssetVideoParameterConfirmation = {
+  pendingIntentId: string;
+  version: number;
+  ratio: string;
+  targetSeconds: number;
+};
+
+export type AssetPlanConfirmationValues = {
+  ratio?: string;
+  targetSeconds?: number;
+};
+
 export type AssetMessagePlan = {
+  kind?: "video_parameter_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.
@@ -194,6 +207,11 @@ export type AssetMessagePlan = {
   // ratio is woven into the confirm instruction so the backend can honor it.
   ratioOptions?: AssetPlanRatioOption[];
   ratioDefault?: string;
+  durationSeconds?: number;
+  durationMin?: number;
+  durationMax?: number;
+  pendingIntentId?: string;
+  pendingIntentVersion?: number;
 };
 
 export type AssetPlanRatioOption = {

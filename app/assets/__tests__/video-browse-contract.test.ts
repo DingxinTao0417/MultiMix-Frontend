@@ -17,13 +17,15 @@ const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../components/product-workspace.tsx", import.meta.url), "utf8");
 
 describe("video project browse-player contract", () => {
-  test("uses the existing editor timeline renderer after an explicit full-preview request", () => {
+  test("mounts the read-only engineering preview for a ready project", () => {
     expect(preview).toContain("<VideoProjectPreview");
     expect(preview).toContain("<VideoPreviewPlayer");
     expect(preview).not.toContain("<VideoPreviewResizer");
     expect(preview).not.toContain("previewHeight");
     expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
     expect(preview).toContain("projectPreviewRequested && !projectPreviewFailed");
+    expect(preview).toContain('useState(true)');
+    expect(preview).toMatch(/setFullVideoFailed\(false\);\s*setProjectPreviewRequested\(true\);\s*setProjectPreviewFailed\(false\);/s);
     expect(preview).toContain("加载完整工程预览");
     expect(preview).toContain("hint={showFullVideo");
     expect(projectPreview).toContain("mode=preview");
@@ -100,7 +102,6 @@ describe("video project browse-player contract", () => {
 
   test("does not use a legacy automated review record to reset or block export", () => {
     expect(workspace).not.toContain("persistedRenderedReviewFingerprint");
-    expect(workspace).not.toContain("renderedReviewBlocksExport");
     expect(workspace).not.toContain("等待画面检查");
   });
 

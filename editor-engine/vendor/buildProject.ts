@@ -26,14 +26,25 @@ export interface BackendMedia {
   hasAlpha?: boolean;   // MG overlay WebM carries a transparency channel
 }
 export type SafeRegion = { x: number; y: number; width: number; height: number };
+export type BackendTransform = {
+  scaleX: number;
+  scaleY: number;
+  position: { x: number; y: number };
+  rotate: number;
+};
 export interface BackendPresentationSupport {
   headline: string;
   items: string[];
 }
 export interface BackendEditDecision {
   layout?: string;
+  transition?: string;
   presentation_support?: BackendPresentationSupport;
   [key: string]: unknown;
+}
+export interface BackendTransition {
+  type: string;
+  duration: number;
 }
 
 export interface BackendElement {
@@ -46,6 +57,8 @@ export interface BackendElement {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  fontSize?: number;
+  transform?: BackendTransform;
   segmentId?: string;
   segmentText?: string;
   displayText?: string;
@@ -55,6 +68,7 @@ export interface BackendElement {
   volume?: number;
   volumeUnit?: "db" | "linear";
   animations?: ElementAnimations;
+  transition?: BackendTransition;
   editDecision?: BackendEditDecision;
   textRole?: "subtitle" | "presentation_support";
 }
@@ -84,7 +98,63 @@ export interface BackendProject {
 }
 
 const IDENTITY_TRANSFORM = { scaleX: 1, scaleY: 1, position: { x: 0, y: 0 }, rotate: 0 };
+const DEFAULT_SCENE_TRANSITION_SECONDS = 0.5;
+const EDITOR_TRANSITION_BY_SEMANTIC: Record<string, string> = {
+  dissolve: "dissolve",
+  push: "slide_right",
+  wipe: "wipe_left",
+};
+const SUPPORTED_EDITOR_TRANSITIONS = new Set([
+  "fade",
+  "dissolve",
+  "slide_left",
+  "slide_right",
+  "wipe_left",
+]);
 type SegmentWindow = { startTime: number; duration: number };
+
+function normalizedTransitionDuration(
+  requestedDuration: number,
+  elementDuration: number,
+): number | undefined {
+  if (
+    !Number.isFinite(requestedDuration)
+    || requestedDuration <= 0
+    || !Number.isFinite(elementDuration)
+    || elementDuration <= 0
+  ) return undefined;
+  return Math.min(requestedDuration, DEFAULT_SCENE_TRANSITION_SECONDS, elementDuration / 2);
+}
+
+function transitionForDecision(
+  decision: BackendEditDecision | undefined,
+  elementDuration: number,
+): { type: string; duration: number } | undefined {
+  const semantic = decision?.transition;
+  if (!semantic || semantic === "cut") return undefined;
+  const type = EDITOR_TRANSITION_BY_SEMANTIC[semantic];
+  const duration = normalizedTransitionDuration(
+    DEFAULT_SCENE_TRANSITION_SECONDS,
+    elementDuration,
+  );
+  if (!type || duration === undefined) return undefined;
+  return {
+    type,
+    duration,
+  };
+}
+
+function transitionForElement(
+  element: BackendElement,
+): { type: string; duration: number } | undefined {
+  if (Object.prototype.hasOwnProperty.call(element, "transition")) {
+    const saved = element.transition;
+    if (!saved || !SUPPORTED_EDITOR_TRANSITIONS.has(saved.type)) return undefined;
+    const duration = normalizedTransitionDuration(saved.duration, element.duration);
+    return duration === undefined ? undefined : { type: saved.type, duration };
+  }
+  return transitionForDecision(element.editDecision, element.duration);
+}
 
 // Subtitle style — adjustable from the style panel; buildProject reads the
 // current value each time it rebuilds the project.
@@ -107,8 +177,66 @@ export const defaultSubtitleStyle: SubtitleStyle = {
   bgColor: "#111827b8",
   maxLineChars: 24,
   sizeScale: 0.7,
-  bottomOffset: 0.29,
+  bottomOffset: 0.35,
 };
+
+const DEFAULT_SUBTITLE_SIZE_SCALE = defaultSubtitleStyle.sizeScale;
+const LANDSCAPE_SUBTITLE_REGION: SafeRegion = {
+  x: 0.08,
+  y: 0.76,
+  width: 0.84,
+  height: 0.18,
+};
+const PORTRAIT_SUBTITLE_REGION: SafeRegion = {
+  x: 0.08,
+  y: 0.74,
+  width: 0.84,
+  height: 0.22,
+};
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+export function subtitleTypographyForCanvas(
+  width: number,
+  height: number,
+  sizeScale: number,
+): { preferredFontPx: number; minimumFontPx: number } {
+  const portrait = height > width;
+  const shortSide = Math.max(1, Math.min(width, height));
+  const baseFontPx = portrait
+    ? clamp(shortSide * 0.034, 34, 40)
+    : clamp(shortSide * 0.033, 32, 38);
+  const scale = Math.max(0.1, sizeScale) / DEFAULT_SUBTITLE_SIZE_SCALE;
+  const preferredFontPx = baseFontPx * scale;
+  const minimumFloor = portrait ? 30 : 28;
+  return {
+    preferredFontPx,
+    minimumFontPx: Math.min(
+      preferredFontPx,
+      Math.max(minimumFloor, preferredFontPx * 0.82),
+    ),
+  };
+}
+
+export function subtitlePositionOffset(
+  canvasHeight: number,
+  safeRegion: SafeRegion,
+  requestedBottomOffset: number,
+): number {
+  const requestedCenter = 0.5 + requestedBottomOffset;
+  const safeTop = clamp(safeRegion.y, 0, 1);
+  const safeBottom = clamp(safeRegion.y + safeRegion.height, safeTop, 1);
+  const centre = clamp(requestedCenter, safeTop, safeBottom);
+  return Math.round(canvasHeight * (centre - 0.5));
+}
+
+function defaultSubtitleRegion(width: number, height: number): SafeRegion {
+  return height > width
+    ? PORTRAIT_SUBTITLE_REGION
+    : LANDSCAPE_SUBTITLE_REGION;
+}
 
 // Module-level current style (mutated by the style panel before re-building).
 let subtitleStyle: SubtitleStyle = { ...defaultSubtitleStyle };
@@ -364,7 +492,6 @@ export interface SupportCardPanelGeometry {
 }
 
 const SPLIT_NATIVE_V2_SUPPORT_Y_OFFSET = 0.19;
-const SPLIT_NATIVE_V2_SUBTITLE_Y_OFFSET = 0.4;
 
 export function supportCardPanelGeometry(
   settings: BackendProject["settings"],
@@ -538,17 +665,6 @@ function clampOverlayElementToSegment(
 function buildTracks(bp: BackendProject): TimelineTrack[] {
   const tracks: TimelineTrack[] = [];
   const segmentWindows = buildSegmentWindows(bp.tracks);
-  const splitNativeV2SupportSegmentIds = new Set(
-    bp.tracks
-      .flatMap((track) => track.elements)
-      .filter(
-        (element) =>
-          element.segmentId
-          && element.editDecision?.presentation_canvas_version === "split_native_v2"
-          && validatedSplitSupport(element.editDecision),
-      )
-      .map((element) => element.segmentId as string),
-  );
 
   for (const t of bp.tracks) {
     const sourceElements = t.overlay
@@ -566,6 +682,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
         if (e.segmentText) segmentTextByElementId[e.id] = e.segmentText;
+        const transition = transitionForElement(e);
         const base = {
           id: e.id,
           name: e.name || e.segmentText?.slice(0, 20) || "clip",
@@ -575,6 +692,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           trimEnd: e.trimEnd ?? 0,
           transform: mediaTransformForDecision(e.editDecision, bp.settings.width),
           opacity: 1,
+          ...(transition ? { transition } : {}),
         };
         if (e.type === "image") {
           return { ...base, type: "image", mediaId: e.mediaId || "" } as ImageElement;
@@ -612,8 +730,11 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       // breaks lines on "\n" (no auto-wrap). So we pick a per-line char budget,
       // hard-wrap the sentence into lines, and size the font to that budget.
       const style = subtitleStyle;
-      const preferredFontPx = Math.min(56, Math.max(42, bp.settings.height * 0.05)) * style.sizeScale;
-      const minimumFontPx = Math.min(preferredFontPx, Math.max(34, preferredFontPx * 0.78));
+      const { preferredFontPx, minimumFontPx } = subtitleTypographyForCanvas(
+        bp.settings.width,
+        bp.settings.height,
+        style.sizeScale,
+      );
       const elements = sourceElements.map((e): TextElement => {
         if (e.textRole === "presentation_support") {
           return supportCardTextElement(e, bp.settings);
@@ -625,10 +746,12 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           minimumFontPx,
           fontFamily: style.fontFamily,
         });
-        const bottomOffset = (
-          e.segmentId && splitNativeV2SupportSegmentIds.has(e.segmentId)
-            ? SPLIT_NATIVE_V2_SUBTITLE_Y_OFFSET
-            : style.bottomOffset
+        const positionY = subtitlePositionOffset(
+          bp.settings.height,
+          e.safeRegion ?? defaultSubtitleRegion(bp.settings.width, bp.settings.height),
+          e.transform
+            ? e.transform.position.y / bp.settings.height
+            : style.bottomOffset,
         );
         return ({
         id: e.id,
@@ -639,7 +762,11 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         startTime: e.startTime,
         trimStart: e.trimStart ?? 0,
         trimEnd: e.trimEnd ?? 0,
-        fontSize: Math.max(2, (caption.fontPx * 90) / bp.settings.height),
+        fontSize: (
+          typeof e.fontSize === "number" && Number.isFinite(e.fontSize)
+            ? e.fontSize
+            : Math.max(0.5, (caption.fontPx * 90) / bp.settings.height)
+        ),
         fontFamily: style.fontFamily,
         color: style.color,
         background: style.bgEnabled
@@ -649,7 +776,13 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         fontWeight: "bold",
         fontStyle: "normal",
         textDecoration: "none",
-        transform: { ...IDENTITY_TRANSFORM, position: { x: 0, y: Math.round(bp.settings.height * bottomOffset) } },
+        transform: {
+          ...(e.transform ?? IDENTITY_TRANSFORM),
+          position: {
+            x: e.transform?.position.x ?? 0,
+            y: positionY,
+          },
+        },
         opacity: 1,
       });
       });

@@ -1,5 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
+import type { AssetConversation, AssetProduct, AssetVideoParameterConfirmation, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
 import {
   API_BASE,
   API_CONNECTION_ERROR,
@@ -129,12 +129,14 @@ export function buildConversationMessagePayload({
   selectedProductId,
   linkedAssetIds,
   clientRequestId,
+  videoParameterConfirmation,
 }: {
   conversationId: string;
   instruction: string;
   selectedProductId?: number;
   linkedAssetIds?: number[];
   clientRequestId?: string;
+  videoParameterConfirmation?: AssetVideoParameterConfirmation;
 }) {
   return {
     instruction,
@@ -142,6 +144,14 @@ export function buildConversationMessagePayload({
     selected_product_id: selectedProductId,
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
+    ...(videoParameterConfirmation ? {
+      video_parameter_confirmation: {
+        pending_intent_id: videoParameterConfirmation.pendingIntentId,
+        version: videoParameterConfirmation.version,
+        ratio: videoParameterConfirmation.ratio,
+        target_seconds: videoParameterConfirmation.targetSeconds,
+      },
+    } : {}),
   };
 }
 
@@ -238,6 +248,7 @@ export type AssetWorkspaceAdapter = {
     selectedProductId?: number;
     linkedAssetIds?: number[];
     clientRequestId?: string;
+    videoParameterConfirmation?: AssetVideoParameterConfirmation;
     signal?: AbortSignal;
   }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null }>;
   reconcileMessage(args: {
@@ -822,7 +833,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         })
       });
     },
-    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, clientRequestId, signal }) {
+    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, clientRequestId, videoParameterConfirmation, signal }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
@@ -833,6 +844,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           selectedProductId,
           linkedAssetIds,
           clientRequestId,
+          videoParameterConfirmation,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

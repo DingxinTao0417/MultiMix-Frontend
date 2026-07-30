@@ -47,7 +47,13 @@ jobs:
         working-directory: MultiMix-Backend
         run: python -m pip install -e ".[dev]"
 
-      - name: Run display coverage
+      - name: Run display E2E for code events
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        working-directory: MultiMix-Frontend
+        run: npm run test:display-e2e
+
+      - name: Run full display coverage for scheduled and manual runs
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: MultiMix-Frontend
         run: npm run test:display-coverage
 

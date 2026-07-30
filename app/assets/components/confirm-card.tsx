@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Check } from "lucide-react";
-import type { AssetMessagePlan, AssetPlanField } from "../lib/asset-workspace-types";
+import type { AssetMessagePlan, AssetPlanConfirmationValues, AssetPlanField } from "../lib/asset-workspace-types";
 
 // Two-state confirmation card (spec §5.2 / decision demo final/workspace-copy.html).
 // Pending: gradient-bordered card with two-column fields + confirm/adjust buttons.
@@ -45,15 +45,19 @@ export default function ConfirmCard({
   plan: AssetMessagePlan;
   disabled?: boolean;
   optimisticallyConfirmed?: boolean;
-  // Carries the user-selected ratio (when the ratio toggle is shown) so the
-  // caller can weave it into the confirm instruction; undefined = plan default.
-  onConfirm?: (plan: AssetMessagePlan, ratio?: string) => void;
+  onConfirm?: (plan: AssetMessagePlan, values?: AssetPlanConfirmationValues) => void;
   onAdjust?: (plan: AssetMessagePlan) => void;
 }) {
   const ratioOptions = plan.ratioOptions ?? [];
   const [selectedRatio, setSelectedRatio] = useState(
     () => plan.ratioDefault ?? ratioOptions[0]?.value ?? ""
   );
+  const [targetSeconds, setTargetSeconds] = useState(
+    () => plan.durationSeconds ?? 30
+  );
+  const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+  const durationMin = plan.durationMin ?? 5;
+  const durationMax = plan.durationMax ?? 600;
 
   if (plan.status === "confirmed" || optimisticallyConfirmed) {
     const summary = plan.summaryFields?.length ? plan.summaryFields : plan.fields;
@@ -105,12 +109,36 @@ export default function ConfirmCard({
           </div>
         </div>
       ) : null}
+      {isVideoParameterConfirmation ? (
+        <label className="shadcn-prototype-confirm-duration">
+          <span className="shadcn-prototype-confirm-ratio-label">目标时长（秒）</span>
+          <input
+            type="number"
+            aria-label="目标时长（秒）"
+            min={durationMin}
+            max={durationMax}
+            value={targetSeconds}
+            disabled={disabled}
+            onChange={(event) => setTargetSeconds(Number(event.currentTarget.value))}
+          />
+        </label>
+      ) : null}
       <div className="shadcn-prototype-confirm-foot">
         <button
           type="button"
           className="shadcn-prototype-confirm-primary"
           disabled={disabled || !onConfirm}
-          onClick={() => onConfirm?.(plan, ratioOptions.length ? selectedRatio : undefined)}
+          onClick={() => onConfirm?.(
+            plan,
+            isVideoParameterConfirmation
+              ? {
+                  ratio: selectedRatio,
+                  targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
+                }
+              : ratioOptions.length
+                ? { ratio: selectedRatio }
+                : undefined,
+          )}
         >
           <Check size={14} aria-hidden="true" />
           {plan.confirmLabel ?? "确认"}

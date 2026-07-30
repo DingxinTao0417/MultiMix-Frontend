@@ -74,6 +74,59 @@ function makeBgmProject(): BackendProject {
   } as BackendProject;
 }
 
+function makeTransitionProject(): BackendProject {
+  return {
+    metadata: { title: 'Transition Project', duration: 8 },
+    settings: { fps: 30, width: 1920, height: 1080 },
+    media: [
+      {
+        id: 'media-a',
+        type: 'image',
+        file_path: 'local://transition/a.png',
+        name: 'a.png',
+      },
+      {
+        id: 'media-b',
+        type: 'image',
+        file_path: 'local://transition/b.png',
+        name: 'b.png',
+      },
+    ],
+    tracks: [{
+      id: 'track-video',
+      type: 'video',
+      name: '素材',
+      elements: [
+        {
+          id: 'scene-a',
+          type: 'image',
+          startTime: 0,
+          duration: 4,
+          mediaId: 'media-a',
+          editDecision: { transition: 'cut' },
+        },
+        {
+          id: 'scene-b',
+          type: 'image',
+          startTime: 4,
+          duration: 4,
+          mediaId: 'media-b',
+          editDecision: { transition: 'dissolve' },
+        },
+      ],
+    }],
+  };
+}
+
+function prepareEditorRoundTrip(backend: BackendProject) {
+  const { project, assets } = buildProject(backend);
+  rememberRawProject(backend as unknown as Record<string, unknown>);
+  editorMock.project.getActive.mockReturnValue(project);
+  editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+  editorMock.media.getAssets.mockReturnValue(assets);
+  return project;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -111,6 +164,44 @@ describe('BGM editor round-trip', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('https://signed.example.test/bgm-tech-01');
     expect(editorMock.media.setAssets).toHaveBeenCalled();
+  });
+
+  it('preserves subtitle size and lower-safe-area position across save and reload', () => {
+    const backend: BackendProject = {
+      metadata: { title: 'Subtitle round trip', duration: 5 },
+      settings: { fps: 30, width: 1080, height: 1920 },
+      media: [],
+      tracks: [{
+        id: 'track-subtitle',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'subtitle-1',
+          type: 'text',
+          content: '字幕应留在画面下方安全区',
+          startTime: 0,
+          duration: 5,
+          textRole: 'subtitle',
+          safeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
+        }],
+      }],
+    };
+    const { project, assets } = buildProject(backend);
+    const original = project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    rememberRawProject(backend as unknown as Record<string, unknown>);
+    editorMock.project.getActive.mockReturnValue(project);
+    editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+    editorMock.media.getAssets.mockReturnValue(assets);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[0] as Record<string, any>;
+    expect(saved.fontSize).toBe(original.fontSize);
+    expect(saved.transform).toEqual(original.transform);
+    expect(saved.safeRegion).toEqual({ x: 0.08, y: 0.74, width: 0.84, height: 0.22 });
+
+    const rebuilt = buildProject(serialized).project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    expect(rebuilt.fontSize).toBe(original.fontSize);
+    expect(rebuilt.transform).toEqual(original.transform);
   });
 
   it('preserves split decisions and support text roles across save and reload', () => {
@@ -180,5 +271,54 @@ describe('BGM editor round-trip', () => {
       background: { enabled: true, color: '#171b26' },
       textAlign: 'left',
     });
+  });
+});
+
+describe('scene transition editor round-trip', () => {
+  it('persists an automatic dissolve as both exact editor state and semantic intent', () => {
+    const backend = makeTransitionProject();
+    prepareEditorRoundTrip(backend);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const transitionElement = serialized.tracks[0].elements[1];
+
+    expect(transitionElement.transition).toEqual({ type: 'dissolve', duration: 0.5 });
+    expect(transitionElement.editDecision?.transition).toBe('dissolve');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .toMatchObject({ transition: { type: 'dissolve', duration: 0.5 } });
+  });
+
+  it('keeps a manual wipe override exact and updates the semantic decision', () => {
+    const backend = makeTransitionProject();
+    const project = prepareEditorRoundTrip(backend);
+    const transitionElement = project.scenes[0].tracks[0].elements[1] as {
+      transition?: { type: string; duration: number };
+    };
+    transitionElement.transition = { type: 'wipe_left', duration: 0.4 };
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[1];
+
+    expect(saved.transition).toEqual({ type: 'wipe_left', duration: 0.4 });
+    expect(saved.editDecision?.transition).toBe('wipe');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .toMatchObject({ transition: { type: 'wipe_left', duration: 0.4 } });
+  });
+
+  it('persists removal as cut so the old automatic decision does not revive', () => {
+    const backend = makeTransitionProject();
+    const project = prepareEditorRoundTrip(backend);
+    const transitionElement = project.scenes[0].tracks[0].elements[1] as {
+      transition?: { type: string; duration: number };
+    };
+    delete transitionElement.transition;
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[1];
+
+    expect(saved).not.toHaveProperty('transition');
+    expect(saved.editDecision?.transition).toBe('cut');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .not.toHaveProperty('transition');
   });
 });

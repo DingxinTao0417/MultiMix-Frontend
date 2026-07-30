@@ -37,8 +37,19 @@ function serializeElement(el: {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  fontSize?: number;
+  transform?: {
+    scaleX: number;
+    scaleY: number;
+    position: { x: number; y: number };
+    rotate: number;
+  };
   volume?: number;
   animations?: ElementAnimations;
+  transition?: {
+    type: string;
+    duration: number;
+  };
 }): Record<string, unknown> {
   const out: Record<string, unknown> = {
     id: el.id,
@@ -50,11 +61,20 @@ function serializeElement(el: {
     trimEnd: el.trimEnd ?? 0,
   };
   if (el.mediaId) out.mediaId = el.mediaId;
-  if (el.type === "text") out.content = el.content || "";
+  if (el.type === "text") {
+    out.content = el.content || "";
+    if (typeof el.fontSize === "number" && Number.isFinite(el.fontSize)) {
+      out.fontSize = el.fontSize;
+    }
+    if (el.transform) out.transform = el.transform;
+  }
   if (el.type === "audio") {
     out.volume = el.volume ?? 1;
     if (el.animations) out.animations = el.animations;
   }
+  const visual = el.type === "video" || el.type === "image";
+  const transition = visual ? normalizedEditorTransition(el.transition) : undefined;
+  if (transition) out.transition = transition;
   const segmentId = segmentIdByElementId[el.id];
   if (segmentId) out.segmentId = segmentId;
   const segmentText = segmentTextByElementId[el.id];
@@ -66,10 +86,46 @@ function serializeElement(el: {
   const focusText = focusTextByElementId[el.id];
   if (focusText) out.focusText = focusText;
   const editDecision = editDecisionByElementId[el.id];
-  if (editDecision) out.editDecision = editDecision;
+  if (editDecision) {
+    const hasTransitionDecision = Object.prototype.hasOwnProperty.call(
+      editDecision,
+      "transition",
+    );
+    out.editDecision = visual && (transition || hasTransitionDecision)
+      ? {
+          ...editDecision,
+          transition: semanticTransitionForEditor(transition),
+        }
+      : editDecision;
+  }
   const textRole = textRoleByElementId[el.id];
   if (textRole) out.textRole = textRole;
   return out;
+}
+
+function normalizedEditorTransition(
+  transition: { type: string; duration: number } | undefined,
+): { type: string; duration: number } | undefined {
+  if (
+    !transition
+    || !["fade", "dissolve", "slide_left", "slide_right", "wipe_left"]
+      .includes(transition.type)
+    || !Number.isFinite(transition.duration)
+    || transition.duration <= 0
+  ) {
+    return undefined;
+  }
+  return { type: transition.type, duration: transition.duration };
+}
+
+function semanticTransitionForEditor(
+  transition: { type: string; duration: number } | undefined,
+): "cut" | "dissolve" | "push" | "wipe" {
+  if (!transition) return "cut";
+  if (transition.type === "fade" || transition.type === "dissolve") return "dissolve";
+  if (transition.type === "slide_left" || transition.type === "slide_right") return "push";
+  if (transition.type === "wipe_left") return "wipe";
+  return "cut";
 }
 
 export function serializeBackendProject(editor: EditorCore): RawProject {
