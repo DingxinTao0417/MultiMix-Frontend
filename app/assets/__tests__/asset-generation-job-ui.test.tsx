@@ -30,6 +30,19 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.getByText("正在生成内容…")).not.toBeNull();
   });
 
+  it("lets the user stop a queued or running generation", () => {
+    const onCancel = vi.fn();
+    render(
+      <AssetGenerationJobCard
+        job={job({ status: "running", stage: "generating" })}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "停止生成" }));
+    expect(onCancel).toHaveBeenCalledWith("asset-generation-job-1");
+  });
+
   it("renders a controlled timeout and retries the same job", () => {
     const onRetry = vi.fn();
     render(

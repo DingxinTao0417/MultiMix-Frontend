@@ -19,7 +19,7 @@ import {
   Trash2,
   Video
 } from "lucide-react";
-import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse, type AssetLlmDiagnosticsRead } from "../../../lib/api";
+import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
 import type {
@@ -45,7 +45,6 @@ import {
   readConversationSummaryCache,
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
-import { assetGenerationJobsFromConversations, assetGenerationPollLifecycleKey } from "../lib/asset-generation-poller";
 import {
   agentActionPollLifecycleKey,
   agentActionPollOutcome,
@@ -53,6 +52,7 @@ import {
   persistedAgentActions,
   type AgentActionLive,
 } from "../lib/agent-action-poller";
+import { useAssetGenerationJobs } from "../lib/use-asset-generation-jobs";
 import { useStableCallback } from "../lib/use-stable-callback";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
@@ -99,12 +99,6 @@ type PendingConversationExchange = {
 
 type ChatImageUpload = ChatImageAttachment & {
   file: File;
-};
-
-type AssetGenerationJobLive = {
-  conversationId: string;
-  job: AssetGenerationJobResponse;
-  run: number;
 };
 
 function agentActionLiveKey(conversationId: string, actionRunId: string): string {
@@ -528,10 +522,23 @@ export default function AssetsWorkspaceClient({
   const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
-  const [assetGenerationJobs, setAssetGenerationJobs] = useState<Record<string, AssetGenerationJobLive>>({});
-  const assetGenerationJobsRef = useRef(assetGenerationJobs);
-  const inFlightAssetGenerationJobRunsRef = useRef(new Set<string>());
-  const refreshedAssetGenerationJobRunsRef = useRef(new Set<string>());
+  const onAssetGenerationConversationRefreshed = useStableCallback((detail: Conversation) => {
+    setConversations((items) => items.map((item) => item.id === detail.id ? detail : item));
+  });
+  const onAssetGenerationConversationRefreshError = useStableCallback(() => {
+    toast.error("内容已生成，但对话刷新失败，请重新打开这条对话。");
+  });
+  const {
+    jobsByConversation: assetGenerationJobs,
+    registerJob: registerAssetGenerationJob,
+    retryJob: retryAssetGenerationJob,
+    cancelJob: cancelAssetGenerationJob,
+  } = useAssetGenerationJobs({
+    token,
+    conversations,
+    onConversationRefreshed: onAssetGenerationConversationRefreshed,
+    onConversationRefreshError: onAssetGenerationConversationRefreshError,
+  });
   const [agentActions, setAgentActions] = useState<Record<string, AgentActionLive>>({});
   const agentActionsRef = useRef(agentActions);
   const inFlightAgentActionsRef = useRef(new Set<string>());
@@ -596,10 +603,6 @@ export default function AssetsWorkspaceClient({
   }, [conversations]);
 
   useEffect(() => {
-    assetGenerationJobsRef.current = assetGenerationJobs;
-  }, [assetGenerationJobs]);
-
-  useEffect(() => {
     agentActionsRef.current = agentActions;
   }, [agentActions]);
 
@@ -621,33 +624,6 @@ export default function AssetsWorkspaceClient({
         changed = true;
       }
       if (changed) agentActionsRef.current = next;
-      return changed ? next : current;
-    });
-  }, [conversations]);
-
-  useEffect(() => {
-    const persisted = assetGenerationJobsFromConversations(conversations);
-    if (!persisted.length) return;
-    setAssetGenerationJobs((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const entry of persisted) {
-        const live = next[entry.conversationId];
-        if (!live) {
-          next[entry.conversationId] = { ...entry, run: 0 };
-          changed = true;
-          continue;
-        }
-        if (live.job.id !== entry.job.id) {
-          next[entry.conversationId] = { ...entry, run: live.run + 1 };
-          changed = true;
-          continue;
-        }
-        if (live.run === 0 && live.job.status !== entry.job.status) {
-          next[entry.conversationId] = { ...live, job: entry.job };
-          changed = true;
-        }
-      }
       return changed ? next : current;
     });
   }, [conversations]);
@@ -772,92 +748,6 @@ export default function AssetsWorkspaceClient({
       }
     };
   }, [conversationDetailRetryRevision, selectedConversationId, selectedConversationNeedsDetail, token]);
-
-  const assetGenerationPollKey = assetGenerationPollLifecycleKey(
-    Object.values(assetGenerationJobs),
-  );
-  useEffect(() => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled() || !assetGenerationPollKey) return;
-    const authToken = token;
-    let cancelled = false;
-    const timers = new Set<ReturnType<typeof setTimeout>>();
-
-    function schedule(live: AssetGenerationJobLive, delay: number) {
-      const timer = setTimeout(() => {
-        timers.delete(timer);
-        void poll(live);
-      }, delay);
-      timers.add(timer);
-    }
-
-    async function poll(live: AssetGenerationJobLive) {
-      const identity = `${live.job.id}::${live.run}`;
-      const current = assetGenerationJobsRef.current[live.conversationId];
-      if (
-        cancelled
-        || current?.job.id !== live.job.id
-        || current.run !== live.run
-        || inFlightAssetGenerationJobRunsRef.current.has(identity)
-      ) return;
-      inFlightAssetGenerationJobRunsRef.current.add(identity);
-      try {
-        const remote = await assetWorkspaceAdapter.getGenerationJob(authToken, live.job.id);
-        if (cancelled) return;
-        const latest = assetGenerationJobsRef.current[live.conversationId];
-        if (latest?.job.id !== live.job.id || latest.run !== live.run) return;
-        const remoteLive = { ...latest, job: remote };
-        assetGenerationJobsRef.current = {
-          ...assetGenerationJobsRef.current,
-          [live.conversationId]: remoteLive,
-        };
-        setAssetGenerationJobs((jobs) => ({
-          ...jobs,
-          [live.conversationId]: remoteLive,
-        }));
-        if (remote.status === "completed") {
-          if (refreshedAssetGenerationJobRunsRef.current.has(identity)) return;
-          refreshedAssetGenerationJobRunsRef.current.add(identity);
-          try {
-            const detail = await assetWorkspaceAdapter.loadConversationDetail(authToken, live.conversationId);
-            if (cancelled) return;
-            setConversations((items) => items.map((item) => item.id === detail.id ? detail : item));
-            const nextRef = { ...assetGenerationJobsRef.current };
-            const currentRef = nextRef[live.conversationId];
-            if (currentRef?.job.id === live.job.id && currentRef.run === live.run) {
-              delete nextRef[live.conversationId];
-              assetGenerationJobsRef.current = nextRef;
-            }
-            setAssetGenerationJobs((jobs) => {
-              const latest = jobs[live.conversationId];
-              if (latest?.job.id !== live.job.id || latest.run !== live.run) return jobs;
-              const next = { ...jobs };
-              delete next[live.conversationId];
-              return next;
-            });
-          } catch {
-            refreshedAssetGenerationJobRunsRef.current.delete(identity);
-            toast.error("内容已生成，但对话刷新失败，请重新打开这条对话。");
-          }
-          return;
-        }
-        if (remote.status === "queued" || remote.status === "running") {
-          schedule({ ...live, job: remote }, 2500);
-        }
-      } catch {
-        if (!cancelled) schedule(live, 4000);
-      } finally {
-        inFlightAssetGenerationJobRunsRef.current.delete(identity);
-      }
-    }
-
-    for (const live of Object.values(assetGenerationJobsRef.current)) {
-      if (live.job.status === "queued" || live.job.status === "running") schedule(live, 200);
-    }
-    return () => {
-      cancelled = true;
-      for (const timer of timers) clearTimeout(timer);
-    };
-  }, [assetGenerationPollKey, token]);
 
   const agentActionPollKey = agentActionPollLifecycleKey(
     Object.values(agentActions),
@@ -1163,19 +1053,17 @@ export default function AssetsWorkspaceClient({
 
   const handleRetryGeneration = async (jobId: string) => {
     if (!token) return;
-    const entry = Object.values(assetGenerationJobsRef.current).find((live) => live.job.id === jobId);
-    if (!entry) return;
     try {
-      const remote = await assetWorkspaceAdapter.retryGenerationJob(token, jobId);
-      const nextEntry = { ...entry, job: remote, run: entry.run + 1 };
-      assetGenerationJobsRef.current = {
-        ...assetGenerationJobsRef.current,
-        [entry.conversationId]: nextEntry,
-      };
-      setAssetGenerationJobs((jobs) => ({
-        ...jobs,
-        [entry.conversationId]: nextEntry,
-      }));
+      await retryAssetGenerationJob(jobId);
+    } catch (error) {
+      toast.error(formatComposerError(error));
+    }
+  };
+
+  const handleCancelGeneration = async (jobId: string) => {
+    if (!token) return;
+    try {
+      await cancelAssetGenerationJob(jobId);
     } catch (error) {
       toast.error(formatComposerError(error));
     }
@@ -1834,15 +1722,7 @@ export default function AssetsWorkspaceClient({
       setSelectedConversationId(targetConversationId);
     }
     if (generationJob && generationJob.status !== "completed") {
-      const live = { conversationId: targetConversationId, job: generationJob, run: 0 };
-      assetGenerationJobsRef.current = {
-        ...assetGenerationJobsRef.current,
-        [targetConversationId]: live,
-      };
-      setAssetGenerationJobs((jobs) => ({
-        ...jobs,
-        [targetConversationId]: live,
-      }));
+      registerAssetGenerationJob(targetConversationId, generationJob);
     }
     if (agentAction) {
       const key = agentActionLiveKey(targetConversationId, agentAction.id);
@@ -2327,6 +2207,7 @@ export default function AssetsWorkspaceClient({
                 onSendMessage={handleSendConversationMessage}
                 generationJob={selectedAssetGenerationJob}
                 onRetryGeneration={handleRetryGeneration}
+                onCancelGeneration={handleCancelGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}
                 onRetryExecution={handleRetryExecution}
                 liveAgentActionsById={liveAgentActionsById}

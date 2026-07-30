@@ -272,7 +272,7 @@ export type AgentActionRunResponse = {
 
 export type AssetGenerationJobResponse = {
   id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   stage: string;
   attempts: number;
   result_asset_id: number | null;
@@ -464,7 +464,12 @@ export function formatComposerError(error: unknown): string {
   if (message === API_CONNECTION_ERROR) return "无法连接后端服务，请稍后重试。";
   if (message === MESSAGE_NOT_SUBMITTED_ERROR) return "未提交：后端没有记录这次操作，可以重试。";
   const lower = message.toLowerCase();
-  if (lower.includes("timed out") || lower.includes("timeout") || lower.includes("provider_timeout")) {
+  if (
+    lower.includes("timed out")
+    || lower.includes("timeout")
+    || lower.includes("provider_timeout")
+    || lower.includes("provider_stalled")
+  ) {
     return "内容生成超时，本轮没有创建产物，可以直接重试。";
   }
   if (/[一-鿿]/.test(message)) return message;
@@ -501,6 +506,17 @@ export async function retryAssetGenerationJob(
 ): Promise<AssetGenerationJobResponse> {
   return api<AssetGenerationJobResponse>(
     `/assets/generation-jobs/${encodeURIComponent(jobId)}/retry`,
+    token,
+    { method: "POST" },
+  );
+}
+
+export async function cancelAssetGenerationJob(
+  token: string,
+  jobId: string,
+): Promise<AssetGenerationJobResponse> {
+  return api<AssetGenerationJobResponse>(
+    `/assets/generation-jobs/${encodeURIComponent(jobId)}/cancel`,
     token,
     { method: "POST" },
   );

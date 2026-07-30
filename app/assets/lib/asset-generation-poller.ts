@@ -46,6 +46,7 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
         || rawStatus === "running"
         || rawStatus === "completed"
         || rawStatus === "failed"
+        || rawStatus === "cancelled"
         ? rawStatus
         : null;
       if (!id || !status || status === "completed") continue;
@@ -66,7 +67,7 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
           error_code: typeof metadata.asset_generation_error_code === "string"
             ? metadata.asset_generation_error_code
             : null,
-          error_message: status === "failed" ? message.text : null,
+          error_message: status === "failed" || status === "cancelled" ? message.text : null,
           created_at: "",
           updated_at: "",
         },
@@ -97,6 +98,15 @@ export function nextAssetGenerationPollState(
       stage: remote.stage,
       refreshConversation: false,
       errorMessage: remote.error_message ?? "内容生成失败，本轮没有创建产物，可以直接重试。",
+    };
+  }
+  if (remote.status === "cancelled") {
+    return {
+      ...current,
+      status: "cancelled",
+      stage: remote.stage,
+      refreshConversation: false,
+      errorMessage: null,
     };
   }
   return {

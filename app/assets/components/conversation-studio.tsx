@@ -191,6 +191,7 @@ export default function ConversationStudio({
   onSendMessage,
   generationJob = null,
   onRetryGeneration,
+  onCancelGeneration,
   liveRunStateByAssetId,
   onRetryExecution,
   liveAgentActionsById,
@@ -222,6 +223,7 @@ export default function ConversationStudio({
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
+  onCancelGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
   // to the same card while exact failed main/MG child jobs are retried.
   liveRunStateByAssetId?: Record<number, {
@@ -740,7 +742,11 @@ export default function ConversationStudio({
           );
         })}
         {generationJob ? (
-          <AssetGenerationJobCard job={generationJob} onRetry={onRetryGeneration} />
+          <AssetGenerationJobCard
+            job={generationJob}
+            onRetry={onRetryGeneration}
+            onCancel={onCancelGeneration}
+          />
         ) : null}
       </div>
 

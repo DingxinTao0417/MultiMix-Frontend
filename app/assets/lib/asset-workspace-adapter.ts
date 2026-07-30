@@ -16,6 +16,7 @@ import {
   api,
   apiBlob,
   apiForm,
+  cancelAssetGenerationJob,
   getAssetGenerationJob,
   getConversationAgentAction,
   isApiConfigured,
@@ -305,6 +306,7 @@ export type AssetWorkspaceAdapter = {
   } | null>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
+  cancelGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   getAgentAction(
     token: string,
     conversationId: string,
@@ -982,6 +984,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     retryGenerationJob(token, jobId) {
       return retryAssetGenerationJob(token, jobId);
+    },
+    cancelGenerationJob(token, jobId) {
+      return cancelAssetGenerationJob(token, jobId);
     },
     async getAgentAction(token, conversationId, actionRunId, signal) {
       return mapAgentAction(await getConversationAgentAction(
