@@ -115,7 +115,9 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
   const summaryFields = planFieldsValue(value.summary_fields);
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
+  const planKind = stringValue(value.kind);
   return {
+    kind: planKind === "video_parameter_confirmation" ? planKind : undefined,
     title,
     status,
     subtitle: stringValue(value.subtitle) || undefined,
@@ -125,7 +127,12 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     adjustLabel: stringValue(value.adjust_label) || undefined,
     confirmUtterance: stringValue(value.confirm_utterance) || undefined,
     ratioOptions: ratioOptions.length ? ratioOptions : undefined,
-    ratioDefault: stringValue(value.ratio_default) || undefined
+    ratioDefault: stringValue(value.ratio_default) || undefined,
+    durationSeconds: positiveIntegerValue(value.duration_seconds),
+    durationMin: positiveIntegerValue(value.duration_min),
+    durationMax: positiveIntegerValue(value.duration_max),
+    pendingIntentId: stringValue(value.pending_intent_id) || undefined,
+    pendingIntentVersion: positiveIntegerValue(value.pending_intent_version)
   };
 }
 

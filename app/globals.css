@@ -7912,6 +7912,31 @@ label {
   font-weight: 650;
 }
 
+.shadcn-prototype-confirm-duration {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 0 18px 15px;
+}
+
+.shadcn-prototype-confirm-duration input {
+  width: 112px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--sp-border);
+  border-radius: 9px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.shadcn-prototype-confirm-duration input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sp-accent) 30%, transparent);
+  outline-offset: 1px;
+}
+
 .shadcn-prototype-voiceover-dialog {
   width: min(620px, 100%);
 }

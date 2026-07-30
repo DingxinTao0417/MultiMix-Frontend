@@ -26,6 +26,26 @@ describe("video confirmation transport reconciliation", () => {
     });
   });
 
+  it("sends video parameter confirmation as structured payload", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-451",
+      instruction: "确认参数并生成编导稿",
+      videoParameterConfirmation: {
+        pendingIntentId: "pending-1",
+        version: 1,
+        ratio: "9:16",
+        targetSeconds: 45,
+      },
+    });
+
+    expect(payload.video_parameter_confirmation).toEqual({
+      pending_intent_id: "pending-1",
+      version: 1,
+      ratio: "9:16",
+      target_seconds: 45,
+    });
+  });
+
   it("finds a server-committed conversation by client request id", () => {
     const rows = [{
       id: "asset-conversation-450",
