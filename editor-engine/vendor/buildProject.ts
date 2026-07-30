@@ -32,8 +32,13 @@ export interface BackendPresentationSupport {
 }
 export interface BackendEditDecision {
   layout?: string;
+  transition?: string;
   presentation_support?: BackendPresentationSupport;
   [key: string]: unknown;
+}
+export interface BackendTransition {
+  type: string;
+  duration: number;
 }
 
 export interface BackendElement {
@@ -55,6 +60,7 @@ export interface BackendElement {
   volume?: number;
   volumeUnit?: "db" | "linear";
   animations?: ElementAnimations;
+  transition?: BackendTransition;
   editDecision?: BackendEditDecision;
   textRole?: "subtitle" | "presentation_support";
 }
@@ -84,7 +90,63 @@ export interface BackendProject {
 }
 
 const IDENTITY_TRANSFORM = { scaleX: 1, scaleY: 1, position: { x: 0, y: 0 }, rotate: 0 };
+const DEFAULT_SCENE_TRANSITION_SECONDS = 0.5;
+const EDITOR_TRANSITION_BY_SEMANTIC: Record<string, string> = {
+  dissolve: "dissolve",
+  push: "slide_right",
+  wipe: "wipe_left",
+};
+const SUPPORTED_EDITOR_TRANSITIONS = new Set([
+  "fade",
+  "dissolve",
+  "slide_left",
+  "slide_right",
+  "wipe_left",
+]);
 type SegmentWindow = { startTime: number; duration: number };
+
+function normalizedTransitionDuration(
+  requestedDuration: number,
+  elementDuration: number,
+): number | undefined {
+  if (
+    !Number.isFinite(requestedDuration)
+    || requestedDuration <= 0
+    || !Number.isFinite(elementDuration)
+    || elementDuration <= 0
+  ) return undefined;
+  return Math.min(requestedDuration, DEFAULT_SCENE_TRANSITION_SECONDS, elementDuration / 2);
+}
+
+function transitionForDecision(
+  decision: BackendEditDecision | undefined,
+  elementDuration: number,
+): { type: string; duration: number } | undefined {
+  const semantic = decision?.transition;
+  if (!semantic || semantic === "cut") return undefined;
+  const type = EDITOR_TRANSITION_BY_SEMANTIC[semantic];
+  const duration = normalizedTransitionDuration(
+    DEFAULT_SCENE_TRANSITION_SECONDS,
+    elementDuration,
+  );
+  if (!type || duration === undefined) return undefined;
+  return {
+    type,
+    duration,
+  };
+}
+
+function transitionForElement(
+  element: BackendElement,
+): { type: string; duration: number } | undefined {
+  if (Object.prototype.hasOwnProperty.call(element, "transition")) {
+    const saved = element.transition;
+    if (!saved || !SUPPORTED_EDITOR_TRANSITIONS.has(saved.type)) return undefined;
+    const duration = normalizedTransitionDuration(saved.duration, element.duration);
+    return duration === undefined ? undefined : { type: saved.type, duration };
+  }
+  return transitionForDecision(element.editDecision, element.duration);
+}
 
 // Subtitle style — adjustable from the style panel; buildProject reads the
 // current value each time it rebuilds the project.
@@ -566,6 +628,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
         if (e.segmentText) segmentTextByElementId[e.id] = e.segmentText;
+        const transition = transitionForElement(e);
         const base = {
           id: e.id,
           name: e.name || e.segmentText?.slice(0, 20) || "clip",
@@ -575,6 +638,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           trimEnd: e.trimEnd ?? 0,
           transform: mediaTransformForDecision(e.editDecision, bp.settings.width),
           opacity: 1,
+          ...(transition ? { transition } : {}),
         };
         if (e.type === "image") {
           return { ...base, type: "image", mediaId: e.mediaId || "" } as ImageElement;

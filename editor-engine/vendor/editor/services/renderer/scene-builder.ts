@@ -13,6 +13,10 @@ import type { BaseNode } from "./nodes/base-node";
 import type { TBackground, TCanvasSize } from "@editor/lib/project/types";
 import { DEFAULT_BLUR_INTENSITY } from "@editor/constants/project-constants";
 import { isMainTrack } from "@editor/lib/timeline";
+import {
+	resolveIncomingBoundaryTransition,
+	resolveOutgoingBoundaryTransition,
+} from "./transition-state";
 
 const PREVIEW_MAX_IMAGE_SIZE = 2048;
 
@@ -41,11 +45,12 @@ function buildTrackNodes({
 
 	for (const track of tracks) {
 		const elements = getVisibleSortedElements({ track });
+		const mainTrack = isMainTrack(track);
 		// Main-track visuals fill the canvas (cover) so mixed-ratio source clips
 		// no longer look like different aspect ratios; overlays keep contain.
 		const fitMode: "cover" | "contain" = isMainTrack(track) ? "cover" : "contain";
 
-		for (const element of elements) {
+		for (const [elementIndex, element] of elements.entries()) {
 			if (element.type === "effect") {
 				nodes.push(
 					new EffectLayerNode({
@@ -59,6 +64,16 @@ function buildTrackNodes({
 			}
 
 			if (element.type === "video" || element.type === "image") {
+				const transition = resolveIncomingBoundaryTransition(
+					elements,
+					elementIndex,
+					mainTrack,
+				);
+				const outgoingTransition = resolveOutgoingBoundaryTransition(
+					elements,
+					elementIndex,
+					mainTrack,
+				);
 				const mediaAsset = mediaMap.get(element.mediaId);
 				if (!mediaAsset?.file || !mediaAsset?.url) {
 					continue;
@@ -85,7 +100,8 @@ function buildTrackNodes({
 							fitMode,
 							filter: element.filter,
 							adjustment: element.adjustment,
-							transition: element.transition,
+							transition,
+							outgoingTransition,
 						}),
 					);
 				}
@@ -106,7 +122,8 @@ function buildTrackNodes({
 							fitMode,
 							filter: element.filter,
 							adjustment: element.adjustment,
-							transition: element.transition,
+							transition,
+							outgoingTransition,
 							...(isPreview && {
 								maxSourceSize: PREVIEW_MAX_IMAGE_SIZE,
 							}),

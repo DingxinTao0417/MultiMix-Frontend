@@ -821,4 +821,138 @@ describe('buildProject - overlay/hasAlpha logic', () => {
       });
     });
   });
+
+  describe('semantic scene transitions', () => {
+    it.each([
+      ['cut', undefined],
+      ['dissolve', { type: 'dissolve', duration: 0.5 }],
+      ['push', { type: 'slide_right', duration: 0.5 }],
+      ['wipe', { type: 'wipe_left', duration: 0.5 }],
+    ])('maps backend %s decisions onto visual elements', (semantic, expected) => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-transition', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: `scene-${semantic}`,
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-transition',
+            editDecision: { transition: semantic },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual(expected);
+    });
+
+    it('clamps an automatic transition to half of a short scene', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-short', type: 'video' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-short',
+            type: 'video',
+            startTime: 0,
+            duration: 0.6,
+            mediaId: 'media-short',
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual({ type: 'dissolve', duration: 0.3 });
+    });
+
+    it('fails closed when a persisted decision contains an unknown transition', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-unknown', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-unknown',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-unknown',
+            editDecision: { transition: 'spin_away' },
+          }],
+        }],
+      });
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toBeUndefined();
+    });
+
+    it('prefers a valid saved editor transition over the original semantic decision', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-saved', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-saved',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-saved',
+            transition: { type: 'slide_left', duration: 0.25 },
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      } as BackendProject);
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toEqual({ type: 'slide_left', duration: 0.25 });
+    });
+
+    it('fails closed instead of reviving the semantic decision behind an invalid saved transition', () => {
+      const bp = makeProject({
+        media: [makeMedia({ id: 'media-invalid-saved', type: 'video' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'scene-invalid-saved',
+            type: 'video',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'media-invalid-saved',
+            transition: { type: 'spin_away', duration: 0.5 },
+            editDecision: { transition: 'dissolve' },
+          }],
+        }],
+      } as BackendProject);
+
+      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
+        transition?: { type: string; duration: number };
+      };
+
+      expect(element.transition).toBeUndefined();
+    });
+  });
 });

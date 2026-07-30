@@ -19,6 +19,11 @@ import { masksRegistry } from "@editor/lib/masks";
 import { getSourceTimeAtClipTime } from "@editor/lib/retime";
 import { webglEffectRenderer } from "../webgl/webgl-effect-renderer";
 import { applyMaskFeather } from "../mask-feather";
+import {
+	normalizeVisualTransition,
+	resolveTransitionFrame,
+	type VisualTransition,
+} from "../transition-state";
 
 export interface VisualNodeParams {
 	duration: number;
@@ -40,17 +45,18 @@ export interface VisualNodeParams {
 		saturate: number;
 		blur: number;
 	};
-	transition?: {
-		type: string;
-		duration: number;
-	};
+	transition?: VisualTransition;
+	outgoingTransition?: VisualTransition;
 }
 
 export abstract class VisualNode<
 	Params extends VisualNodeParams = VisualNodeParams,
 > extends BaseNode<Params> {
 	protected getSourceLocalTime({ time }: { time: number }): number {
-		const clipTime = time - this.params.timeOffset;
+		const clipTime = Math.min(
+			time - this.params.timeOffset,
+			Math.max(0, this.params.duration - TIME_EPSILON_SECONDS),
+		);
 		return (
 			this.params.trimStart +
 			getSourceTimeAtClipTime({
@@ -70,9 +76,13 @@ export abstract class VisualNode<
 
 	protected isInRange({ time }: { time: number }): boolean {
 		const localTime = time - this.params.timeOffset;
+		const outgoingDuration = normalizeVisualTransition(
+			this.params.outgoingTransition,
+			this.params.duration / 2,
+		)?.duration ?? 0;
 		return (
 			localTime >= -TIME_EPSILON_SECONDS &&
-			localTime < this.params.duration
+			localTime < this.params.duration + outgoingDuration
 		);
 	}
 
@@ -96,35 +106,21 @@ export abstract class VisualNode<
 		});
 		const baseTransform = this.params.transform;
 		const baseOpacity = this.params.opacity;
-		const transition = this.params.transition;
 		const localTime = timelineTime - this.params.timeOffset;
-		const transitionDuration = transition?.duration ?? 0;
-		const hasTransition = transition && transition.type !== "none" && transitionDuration > 0;
-		const transitionProgress = hasTransition
-			? Math.min(1, Math.max(0, localTime / transitionDuration))
-			: 1;
-
-		let transitionOpacityMultiplier = 1;
-		let transitionOffsetX = 0;
-		if (hasTransition && transitionProgress < 1) {
-			if (transition.type === "fade" || transition.type === "dissolve") {
-				transitionOpacityMultiplier = transitionProgress;
-			}
-			if (transition.type === "slide_left") {
-				transitionOpacityMultiplier = transitionProgress;
-				transitionOffsetX = -renderer.width * (1 - transitionProgress);
-			}
-			if (transition.type === "slide_right") {
-				transitionOpacityMultiplier = transitionProgress;
-				transitionOffsetX = renderer.width * (1 - transitionProgress);
-			}
-		}
+		const transitionFrame = resolveTransitionFrame({
+			incoming: this.params.transition,
+			outgoing: this.params.outgoingTransition,
+			localTime,
+			duration: this.params.duration,
+			canvasWidth: renderer.width,
+			canvasHeight: renderer.height,
+		});
 
 		const transform = resolveTransformAtTime({
 			baseTransform: {
 				...baseTransform,
 				position: {
-					x: baseTransform.position.x + transitionOffsetX,
+					x: baseTransform.position.x + transitionFrame.offsetX,
 					y: baseTransform.position.y,
 				},
 			},
@@ -155,8 +151,18 @@ export abstract class VisualNode<
 				? this.params.blendMode
 				: "source-over"
 		) as GlobalCompositeOperation;
-		renderer.context.globalAlpha = animatedOpacity * transitionOpacityMultiplier;
+		renderer.context.globalAlpha = animatedOpacity * transitionFrame.opacityMultiplier;
 		renderer.context.filter = this.buildCanvasFilter();
+		if (transitionFrame.clipRect) {
+			renderer.context.beginPath();
+			renderer.context.rect(
+				transitionFrame.clipRect.x,
+				transitionFrame.clipRect.y,
+				transitionFrame.clipRect.width,
+				transitionFrame.clipRect.height,
+			);
+			renderer.context.clip();
+		}
 
 		const flipX = scaledWidth < 0 ? -1 : 1;
 		const flipY = scaledHeight < 0 ? -1 : 1;

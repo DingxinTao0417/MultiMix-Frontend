@@ -74,6 +74,59 @@ function makeBgmProject(): BackendProject {
   } as BackendProject;
 }
 
+function makeTransitionProject(): BackendProject {
+  return {
+    metadata: { title: 'Transition Project', duration: 8 },
+    settings: { fps: 30, width: 1920, height: 1080 },
+    media: [
+      {
+        id: 'media-a',
+        type: 'image',
+        file_path: 'local://transition/a.png',
+        name: 'a.png',
+      },
+      {
+        id: 'media-b',
+        type: 'image',
+        file_path: 'local://transition/b.png',
+        name: 'b.png',
+      },
+    ],
+    tracks: [{
+      id: 'track-video',
+      type: 'video',
+      name: '素材',
+      elements: [
+        {
+          id: 'scene-a',
+          type: 'image',
+          startTime: 0,
+          duration: 4,
+          mediaId: 'media-a',
+          editDecision: { transition: 'cut' },
+        },
+        {
+          id: 'scene-b',
+          type: 'image',
+          startTime: 4,
+          duration: 4,
+          mediaId: 'media-b',
+          editDecision: { transition: 'dissolve' },
+        },
+      ],
+    }],
+  };
+}
+
+function prepareEditorRoundTrip(backend: BackendProject) {
+  const { project, assets } = buildProject(backend);
+  rememberRawProject(backend as unknown as Record<string, unknown>);
+  editorMock.project.getActive.mockReturnValue(project);
+  editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+  editorMock.media.getAssets.mockReturnValue(assets);
+  return project;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -180,5 +233,54 @@ describe('BGM editor round-trip', () => {
       background: { enabled: true, color: '#171b26' },
       textAlign: 'left',
     });
+  });
+});
+
+describe('scene transition editor round-trip', () => {
+  it('persists an automatic dissolve as both exact editor state and semantic intent', () => {
+    const backend = makeTransitionProject();
+    prepareEditorRoundTrip(backend);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const transitionElement = serialized.tracks[0].elements[1];
+
+    expect(transitionElement.transition).toEqual({ type: 'dissolve', duration: 0.5 });
+    expect(transitionElement.editDecision?.transition).toBe('dissolve');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .toMatchObject({ transition: { type: 'dissolve', duration: 0.5 } });
+  });
+
+  it('keeps a manual wipe override exact and updates the semantic decision', () => {
+    const backend = makeTransitionProject();
+    const project = prepareEditorRoundTrip(backend);
+    const transitionElement = project.scenes[0].tracks[0].elements[1] as {
+      transition?: { type: string; duration: number };
+    };
+    transitionElement.transition = { type: 'wipe_left', duration: 0.4 };
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[1];
+
+    expect(saved.transition).toEqual({ type: 'wipe_left', duration: 0.4 });
+    expect(saved.editDecision?.transition).toBe('wipe');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .toMatchObject({ transition: { type: 'wipe_left', duration: 0.4 } });
+  });
+
+  it('persists removal as cut so the old automatic decision does not revive', () => {
+    const backend = makeTransitionProject();
+    const project = prepareEditorRoundTrip(backend);
+    const transitionElement = project.scenes[0].tracks[0].elements[1] as {
+      transition?: { type: string; duration: number };
+    };
+    delete transitionElement.transition;
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[1];
+
+    expect(saved).not.toHaveProperty('transition');
+    expect(saved.editDecision?.transition).toBe('cut');
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
+      .not.toHaveProperty('transition');
   });
 });
