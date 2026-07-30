@@ -30,6 +30,21 @@ function videoRow(index: number): LibraryRow {
   };
 }
 
+function imageRow(): LibraryRow {
+  return {
+    assetId: 91,
+    title: "已保存场景图",
+    meta: "图片素材 · 已理解",
+    note: "产品使用场景",
+    kind: "image",
+    category: "分镜图",
+    statusLabel: "已理解",
+    updatedLabel: "刚刚",
+    updatedAtIso: new Date(Date.UTC(2026, 6, 24, 3, 0, 0)).toISOString(),
+    previewUrl: "https://cdn.example/scene.png",
+  };
+}
+
 describe("library workshop performance boundaries", () => {
   it("starts only one first-page request under development Strict Mode", async () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
@@ -114,5 +129,30 @@ describe("library workshop performance boundaries", () => {
       <LibraryWorkshop view="video" token="token-cache" refreshRevision={1} />,
     );
     await waitFor(() => expect(listLibrary).toHaveBeenCalledTimes(2));
+  });
+
+  it("can add a saved image to the current conversation", async () => {
+    const row = imageRow();
+    const onAddAssetToConversation = vi.fn();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({
+      rows: [row],
+      nextOffset: null,
+    });
+
+    render(
+      <LibraryWorkshop
+        view="image"
+        token="token-image-reference"
+        onAddAssetToConversation={onAddAssetToConversation}
+      />,
+    );
+
+    const grid = await screen.findByLabelText("图片库列表");
+    fireEvent.click(within(grid).getByRole("button"));
+    const dialog = await screen.findByRole("dialog", { name: "已保存场景图详情" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "加入对话" }));
+
+    expect(onAddAssetToConversation).toHaveBeenCalledWith(row);
   });
 });

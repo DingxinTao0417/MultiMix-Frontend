@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { assetWorkspaceAdapter, conversationFromSummary, libraryCategoryForAsset, retryConversationDetailLoad } from "../lib/asset-workspace-adapter";
+import {
+  assetWorkspaceAdapter,
+  buildConversationMessagePayload,
+  conversationFromSummary,
+  libraryCategoryForAsset,
+  retryConversationDetailLoad,
+} from "../lib/asset-workspace-adapter";
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
@@ -55,6 +61,22 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("serializes the exact Agent confirmation binding only when provided", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认修改",
+      agentConfirmationId: "agent-confirm-exact",
+    })).toMatchObject({
+      conversation_id: "asset-conversation-1",
+      agent_confirmation_id: "agent-confirm-exact",
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "这个音色偏温暖吗？",
+    })).not.toHaveProperty("agent_confirmation_id");
+  });
+
   it("loads one bounded library page by library kind", async () => {
     const backendRows = Array.from({ length: 49 }, (_, index) => asset({
       id: index + 1,

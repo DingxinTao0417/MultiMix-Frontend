@@ -24,6 +24,7 @@
     "test:e2e:demo": "node scripts/run-demo-material-packs.mjs --mode stable --all",
     "test:e2e:demo:live": "node scripts/run-demo-material-packs.mjs --mode live",
     "test:e2e:pdf-video-quality": "node scripts/run-pdf-video-quality.mjs",
+    "test:e2e:agent-video-atomic": "node scripts/run-agent-video-atomic-e2e.mjs",
     "test:e2e:video-bgm": "node scripts/run-video-bgm-e2e.mjs",
     "test:e2e:video-pipeline-production": "node scripts/run-video-pipeline-production-e2e.mjs",
     "test:e2e:video-pipeline-recompose": "node scripts/run-video-pipeline-production-e2e.mjs --recompose",

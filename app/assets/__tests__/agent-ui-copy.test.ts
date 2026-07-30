@@ -1523,7 +1523,9 @@ describe("agent conversation UI copy", () => {
     // Studio reuses the same execution card for live steps, errors, and exact retries.
     expect(conversationStudio).toContain("liveRunStateByAssetId?.[message.assetId]");
     expect(conversationStudio).toContain("resolveExecutionTimelineSteps(liveRunState, message.runSteps)");
-    expect(conversationStudio).toContain("errorMessage={liveRunState?.errorMessage}");
+    expect(conversationStudio).toContain("agentActionFailed");
+    expect(conversationStudio).toContain("? liveAgentAction.message");
+    expect(conversationStudio).toContain(": liveRunState?.errorMessage}");
     expect(conversationStudio).toContain("onRetryExecution(retryJobId, liveRunState.jobId)");
     expect((conversationStudio.match(/<AgentRunTimeline/g) ?? []).length).toBe(1);
   });
@@ -1571,7 +1573,9 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("confirmationPlanKey: planKey");
     expect(conversationStudio).toContain("persistOnConversationSwitch: Boolean(");
     expect(conversationStudio).toContain('presentation: "execution_anchor"');
-    expect(conversationStudio).toContain("runSteps: optimisticVideoProjectSteps()");
+    expect(conversationStudio).toContain("runSteps: isAgentActionConfirmation");
+    expect(conversationStudio).toContain(": optimisticVideoProjectSteps()");
+    expect(conversationStudio).toContain('label: "执行视频修改"');
     expect(conversationStudio).toContain("mergeVisibleConversationMessages");
     expect(conversationStudio).toContain("shouldRenderMessageBody(message)");
     expect(conversationStudio).not.toContain('{ role: "user" as const, text: optimisticExchange.userText }');

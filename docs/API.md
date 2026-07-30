@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-07-29
+> Last verified: 2026-07-30
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -47,12 +47,14 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | `app/multimix-app.tsx` | 壳 | 本地认证 + searchParams 注入 |
 | `app/assets/components/assets-workspace-client.tsx` | UI | 主壳：全局状态、侧边栏、顶栏、拖拽分栏、布局编排 |
 | `app/assets/components/conversation-studio.tsx` | UI | 对话区：消息流、产物卡列表、输入框 |
+| `app/assets/components/agent-task-strip.tsx` | UI | 当前 Agent 任务、暂停任务数和返回入口 |
 | `app/assets/components/product-workspace.tsx` | UI | 展示区容器：标题、详情抽屉、操作按钮、时间轴 |
 | `app/assets/components/product-preview.tsx` | UI | 按 `product.mode` 分发的预览 |
 | `app/assets/components/library-workshop.tsx` | UI | 资产库 / 文案库 / 视频库视图 |
 | `app/assets/lib/asset-workspace-types.ts` | 数据 | 所有数据类型定义 |
 | `app/assets/lib/asset-workspace-empty-data.ts` | 数据 | 未配置或加载前使用的空结构，不含演示内容 |
 | `app/assets/lib/asset-workspace-adapter.ts` | 数据 | 数据访问接口（后端接入点） |
+| `app/assets/lib/agent-action-poller.ts` | 数据 | 按 conversation/action 隔离的动作轮询与终态对账 |
 | `app/assets/lib/asset-workspace-shared.ts` | 数据 | 跨组件类型别名 + 纯 helper |
 
 ---
@@ -66,7 +68,7 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | 分组 | 当前主要接口 |
 | --- | --- |
 | 工作台展示 | `listConversations`、`getNewConversation`、`getWorkshop`、`getProductText` |
-| 对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、`sendMessage`、`reconcileMessage`、生成任务查询/重试、产物保存和版本恢复 |
+| 对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、`sendMessage`、`reconcileMessage`、生成任务查询/重试、Agent 动作查询/重试、产物保存和版本恢复 |
 | 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
 | 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
@@ -88,6 +90,9 @@ request ID；同一乐观轮次和重试必须复用它。
 HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 `Retry-After` / `X-Request-ID` 响应头；adapter 必须把该契约映射为可对账的连接错误，
 继续执行上述 reconciliation，而不是直接显示正式失败消息。
+
+Agent 原子修改确认使用同一消息接口的可选 `agent_confirmation_id`。该 ID 必须来自当前
+assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不发送此字段。
 
 ### 2.2 方法详解
 
@@ -229,6 +234,9 @@ type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
   suggestions?: string[];  // 推荐调整指令；有值则渲染为可点击按钮，点击填入输入框
+  plan?: AssetMessagePlan;  // 视频参数、编导稿或 Agent 动作确认卡
+  runSteps?: AgentRunStep[];
+  agentAction?: AgentActionRunResponse;
 };
 ```
 
@@ -252,6 +260,8 @@ type AssetConversation = {
   delivery: string;      // 交付说明；无 messages 时作为第三条 assistant 消息
   suggestions: string[]; // 对话级推荐指令；无 messages 时挂在 delivery 消息上
   messages?: AssetConversationMessage[];  // 完整消息流；有值优先用它
+  agentTasks?: AgentTaskCollection;        // 当前任务 + 暂停任务，仅映射 agent_v2
+  activeAgentAction?: AgentActionRunResponse;
   product: AssetProduct;          // 必有的单产物（兜底）
   products?: AssetProduct[];      // 可选多产物；非空优先
   sourceIds?: string[];           // 关联来源 id；★ UI 未渲染
@@ -259,6 +269,36 @@ type AssetConversation = {
 ```
 
 > `messages` 与 `prompt/response/delivery/suggestions` 是两套表达同一对话的方式。`ConversationStudio` 优先用 `messages`，缺省时由后三者合成（见 §6.1）。
+
+#### 3.8.1 Agent 任务与动作
+
+```ts
+type AgentTaskCollection = {
+  active?: { id: string; goal: string; status: string; assetId?: number;
+            versionId?: number; sceneId?: string };
+  paused: Array<{ id: string; goal: string; status: string }>;
+};
+
+type AgentActionRunResponse = {
+  id: string;
+  taskId: string;
+  actionId: string;
+  status: "planned" | "waiting_confirmation" | "queued" | "running"
+        | "succeeded" | "failed" | "blocked" | "canceled";
+  target: Record<string, unknown>;
+  requiresConfirmation: boolean;
+  confirmationId: string | null;
+  jobId: string | null;
+  assetId: number | null;
+  versionId: number | null;
+  message: string;
+  errorCode: string | null;
+  retryable: boolean;
+};
+```
+
+- mapper 只读取 `metadata.agent_mission.version === "agent_v2"`；损坏或历史结构不渲染任务条。
+- 动作状态来自服务端持久化 mission/assistant metadata，不根据消息文案猜测。
 
 ### 3.9 `AssetWorkshop`（库视图）
 
@@ -419,11 +459,15 @@ function ConversationStudio({
     signal?: AbortSignal,
     linkedAssets?: Array<{ id: number; title: string }>,
     clientRequestId?: string,
+    videoParameterConfirmation?: AssetVideoParameterConfirmation,
+    agentConfirmationId?: string,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
   liveRunStateByAssetId?: Record<number, AgentRunState>;
   onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
+  liveAgentActionsById?: Record<string, AgentActionRunResponse>;
+  onRetryAgentAction?: (actionRunId: string) => void;
   diagnosticsSlot?: ReactNode;
   detailLoadError?: boolean;
   onRetryDetail?: () => void;
@@ -439,6 +483,9 @@ function ConversationStudio({
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
 - **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
 - **附件**：图片和文档上传、删除、失败重试及上传进度已接入。视频属于产品上传范围，但两个选择器当前存在“可选择、随后被处理器过滤”的已知回归，修复与浏览器验证记录在 `../../docs/plans/active/2026-07-21-chat-attachment-upload-progress.md`。
+- **任务与动作**：有效 `agentTasks` 在消息头下显示轻量任务条；Agent 动作确认复用
+  `ConfirmCard`，执行状态复用唯一的 `AgentRunTimeline`。只有服务端
+  `status === "succeeded"` 才显示完成，只有 `retryable === true` 才显示动作重试。
 
 ### 6.4 `ProductWorkspace`（`product-workspace.tsx`，默认导出）
 
@@ -831,6 +878,59 @@ POST /v1/assets/{asset_id}/versions/{undo_version_id}/restore
 
 前端配合：播放器 `key={url}`（同 URL 不重建，换 URL 才重挂）+ 模块级 `videoPlaybackPositions` 记录每个 URL 的播放位置，重开产物时 `onLoadedMetadata` 恢复进度而非从 0 重播。**结论：无需为播放器缓存新增后端工作，现有响应头已覆盖。**
 
+### 12.7 Conversation Agent 原子动作
+
+消息请求扩展：
+
+```json
+{
+  "instruction": "确认修改",
+  "conversation_id": "asset-conversation-...",
+  "selected_product_id": 42,
+  "linked_asset_ids": [],
+  "client_request_id": "uuid",
+  "agent_confirmation_id": "agent-confirm-..."
+}
+```
+
+消息响应可带：
+
+```json
+{
+  "agent_action": {
+    "id": "agent-action-...",
+    "task_id": "task-...",
+    "action_id": "video.scene.replace_material",
+    "status": "queued",
+    "target": {"scope": "scene", "asset_id": 42, "scene_id": "scene-2"},
+    "requires_confirmation": false,
+    "confirmation_id": null,
+    "job_id": "video-job-...",
+    "asset_id": 42,
+    "version_id": 7,
+    "message": "视频修改任务已提交。",
+    "error_code": null,
+    "retryable": false
+  }
+}
+```
+
+动作状态接口：
+
+```text
+GET  /v1/assets/conversations/{conversation_id}/agent-actions/{action_run_id}
+POST /v1/assets/conversations/{conversation_id}/agent-actions/{action_run_id}/retry
+```
+
+- GET 同时执行一次服务端观察，并返回最新持久化状态。
+- POST 只接受 `failed + retryable`、manifest 允许安全重试且免费的一次原动作；否则返回 409。
+- 前端以 `conversationId + actionRunId` 为轮询键，queued/running 每 4 秒观察一次；切换对话不取消
+  服务端动作，终态后重新加载同一 conversation 和同一 backend asset。
+- assistant 消息 metadata 中的 `agent_action_run_id`、`agent_action`、`run_steps` 和
+  `plan.confirmation_id` 用于刷新/断线恢复；实时 mission 观察覆盖旧消息里的 queued 快照。
+- 图片库已保存图片的详情提供“加入对话”，其资产 ID 随下一条消息进入 `linked_asset_ids`，供
+  服务端绑定分镜素材；前端不把任意 URL 当作素材引用。
+
 ---
 
 ## 附：验证命令
@@ -854,4 +954,4 @@ npm run test:display-e2e
 npm run test:display-coverage
 ```
 
-`test:display-components` 验证真实 React 组件；`test:display-e2e` 启动隔离前后端并运行八个浏览器案例；`test:display-coverage` 依次执行两层覆盖。
+`test:display-components` 验证真实 React 组件；`test:display-e2e` 启动隔离前后端并运行九个浏览器案例；`test:display-coverage` 依次执行两层覆盖。

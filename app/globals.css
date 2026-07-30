@@ -2769,6 +2769,58 @@ button:disabled {
   gap: 8px;
 }
 
+.shadcn-prototype-agent-task-strip {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--sp-border);
+  background: var(--sp-ai-soft);
+  padding: 7px clamp(18px, 4vw, 30px);
+}
+
+.shadcn-prototype-agent-task-strip > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shadcn-prototype-agent-task-strip strong {
+  overflow: hidden;
+  color: var(--sp-text);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadcn-prototype-agent-task-strip span {
+  color: var(--sp-subtle);
+  font-size: 10.5px;
+}
+
+.shadcn-prototype-agent-task-strip button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  cursor: pointer;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.shadcn-prototype-agent-task-strip button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .shadcn-prototype-card .shadcn-prototype-chat-head .shadcn-prototype-diagnostics > button {
   min-height: 28px;
   padding: 0 11px;

@@ -1015,6 +1015,7 @@ function LibraryWorkshop({
               ) : view === "image" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation} onClick={() => { if (selectedRow) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
                   {isReparsableMedia(selectedRow) ? (
                     <button type="button" disabled={!selectedRow.assetId} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}

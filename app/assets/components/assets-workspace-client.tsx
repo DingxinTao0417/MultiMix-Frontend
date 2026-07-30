@@ -22,7 +22,11 @@ import {
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
-import type { AgentRunStep, AssetVideoParameterConfirmation } from "../lib/asset-workspace-types";
+import type {
+  AgentActionRunResponse,
+  AgentRunStep,
+  AssetVideoParameterConfirmation,
+} from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
   runExclusiveConversationDelete,
@@ -42,6 +46,13 @@ import {
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
 import { assetGenerationJobsFromConversations, assetGenerationPollLifecycleKey } from "../lib/asset-generation-poller";
+import {
+  agentActionPollLifecycleKey,
+  agentActionPollOutcome,
+  isPendingAgentAction,
+  persistedAgentActions,
+  type AgentActionLive,
+} from "../lib/agent-action-poller";
 import { useStableCallback } from "../lib/use-stable-callback";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
@@ -95,6 +106,10 @@ type AssetGenerationJobLive = {
   job: AssetGenerationJobResponse;
   run: number;
 };
+
+function agentActionLiveKey(conversationId: string, actionRunId: string): string {
+  return `${conversationId}::${actionRunId}`;
+}
 
 export type VideoJobLiveStatus = {
   jobId: string;
@@ -517,6 +532,10 @@ export default function AssetsWorkspaceClient({
   const assetGenerationJobsRef = useRef(assetGenerationJobs);
   const inFlightAssetGenerationJobRunsRef = useRef(new Set<string>());
   const refreshedAssetGenerationJobRunsRef = useRef(new Set<string>());
+  const [agentActions, setAgentActions] = useState<Record<string, AgentActionLive>>({});
+  const agentActionsRef = useRef(agentActions);
+  const inFlightAgentActionsRef = useRef(new Set<string>());
+  const refreshedAgentActionsRef = useRef(new Set<string>());
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
@@ -579,6 +598,32 @@ export default function AssetsWorkspaceClient({
   useEffect(() => {
     assetGenerationJobsRef.current = assetGenerationJobs;
   }, [assetGenerationJobs]);
+
+  useEffect(() => {
+    agentActionsRef.current = agentActions;
+  }, [agentActions]);
+
+  useEffect(() => {
+    const persisted = persistedAgentActions(conversations);
+    if (!persisted.length) return;
+    setAgentActions((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const entry of persisted) {
+        const key = agentActionLiveKey(entry.conversationId, entry.action.id);
+        const existing = next[key];
+        if (existing && !isPendingAgentAction(existing.action)) continue;
+        if (
+          existing?.action.status === entry.action.status
+          && existing.action.jobId === entry.action.jobId
+        ) continue;
+        next[key] = entry;
+        changed = true;
+      }
+      if (changed) agentActionsRef.current = next;
+      return changed ? next : current;
+    });
+  }, [conversations]);
 
   useEffect(() => {
     const persisted = assetGenerationJobsFromConversations(conversations);
@@ -814,6 +859,116 @@ export default function AssetsWorkspaceClient({
     };
   }, [assetGenerationPollKey, token]);
 
+  const agentActionPollKey = agentActionPollLifecycleKey(
+    Object.values(agentActions),
+  );
+  useEffect(() => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled() || !agentActionPollKey) return;
+    const authToken = token;
+    let cancelled = false;
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+
+    function publish(live: AgentActionLive, action: AgentActionRunResponse) {
+      const key = agentActionLiveKey(live.conversationId, action.id);
+      const nextLive = { conversationId: live.conversationId, action };
+      agentActionsRef.current = {
+        ...agentActionsRef.current,
+        [key]: nextLive,
+      };
+      setAgentActions((current) => ({
+        ...current,
+        [key]: nextLive,
+      }));
+    }
+
+    function schedule(live: AgentActionLive, delay: number) {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        void poll(live);
+      }, delay);
+      timers.add(timer);
+    }
+
+    async function poll(live: AgentActionLive) {
+      const key = agentActionLiveKey(live.conversationId, live.action.id);
+      const current = agentActionsRef.current[key];
+      if (
+        cancelled
+        || current?.action.id !== live.action.id
+        || inFlightAgentActionsRef.current.has(key)
+      ) return;
+      inFlightAgentActionsRef.current.add(key);
+      try {
+        const remote = await assetWorkspaceAdapter.getAgentAction(
+          authToken,
+          live.conversationId,
+          live.action.id,
+        );
+        if (cancelled) return;
+        const outcome = agentActionPollOutcome(remote);
+        if (!outcome.terminal) {
+          publish(live, remote);
+          if (isPendingAgentAction(remote)) {
+            schedule({ conversationId: live.conversationId, action: remote }, 4000);
+          }
+          return;
+        }
+
+        if (
+          outcome.refreshConversation
+          && !refreshedAgentActionsRef.current.has(key)
+        ) {
+          try {
+            const detail = await assetWorkspaceAdapter.loadConversationDetail(
+              authToken,
+              live.conversationId,
+            );
+            if (cancelled) return;
+            setConversations((items) => items.map((item) => (
+              item.id === detail.id ? detail : item
+            )));
+            setSelectedProductIds((currentIds) => {
+              if (
+                currentIds[live.conversationId]
+                || !outcome.assetId
+                || !(detail.products ?? []).some(
+                  (product) => product.backendAssetId === outcome.assetId,
+                )
+              ) return currentIds;
+              return {
+                ...currentIds,
+                [live.conversationId]: `asset-${outcome.assetId}`,
+              };
+            });
+            refreshedAgentActionsRef.current.add(key);
+          } catch {
+            if (!cancelled) {
+              schedule({ conversationId: live.conversationId, action: remote }, 4000);
+            }
+            return;
+          }
+        }
+
+        publish(live, remote);
+        if (remote.status === "failed" || remote.status === "blocked") {
+          toast.error(remote.message || "视频修改失败，请检查后重试。");
+        }
+      } catch {
+        if (!cancelled) schedule(live, 4000);
+      } finally {
+        inFlightAgentActionsRef.current.delete(key);
+      }
+    }
+
+    for (const live of Object.values(agentActionsRef.current)) {
+      if (isPendingAgentAction(live.action)) schedule(live, 200);
+    }
+    return () => {
+      cancelled = true;
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [agentActionPollKey, token]);
+
   // Poll every pending background execution plus the selected conversation's
   // latest job. The selected job restores its persisted card once after refresh.
   const executionVideoJobKey = [
@@ -996,6 +1151,16 @@ export default function AssetsWorkspaceClient({
     return map;
   }, [videoJobLive]);
 
+  const liveAgentActionsById = useMemo(() => {
+    const map: Record<string, AgentActionRunResponse> = {};
+    for (const live of Object.values(agentActions)) {
+      if (live.conversationId === selectedConversation.id) {
+        map[live.action.id] = live.action;
+      }
+    }
+    return map;
+  }, [agentActions, selectedConversation.id]);
+
   const handleRetryGeneration = async (jobId: string) => {
     if (!token) return;
     const entry = Object.values(assetGenerationJobsRef.current).find((live) => live.job.id === jobId);
@@ -1011,6 +1176,42 @@ export default function AssetsWorkspaceClient({
         ...jobs,
         [entry.conversationId]: nextEntry,
       }));
+    } catch (error) {
+      toast.error(formatComposerError(error));
+    }
+  };
+
+  const handleRetryAgentAction = async (actionRunId: string) => {
+    if (!token) {
+      toast.error("登录状态已失效，请重新登录后重试。");
+      return;
+    }
+    const live = Object.values(agentActionsRef.current).find(
+      (item) => item.conversationId === selectedConversation.id
+        && item.action.id === actionRunId,
+    );
+    if (!live?.action.retryable) {
+      toast.error("这个修改任务不能安全重试。");
+      return;
+    }
+    const key = agentActionLiveKey(live.conversationId, actionRunId);
+    try {
+      const action = await assetWorkspaceAdapter.retryAgentAction(
+        token,
+        live.conversationId,
+        actionRunId,
+      );
+      const nextLive = { conversationId: live.conversationId, action };
+      refreshedAgentActionsRef.current.delete(key);
+      agentActionsRef.current = {
+        ...agentActionsRef.current,
+        [key]: nextLive,
+      };
+      setAgentActions((current) => ({
+        ...current,
+        [key]: nextLive,
+      }));
+      toast.success("已重新开始这个修改步骤。");
     } catch (error) {
       toast.error(formatComposerError(error));
     }
@@ -1502,6 +1703,7 @@ export default function AssetsWorkspaceClient({
     linkedAssets: ConversationContextAsset[] = [],
     clientRequestId?: string,
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
+    agentConfirmationId?: string,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1566,6 +1768,7 @@ export default function AssetsWorkspaceClient({
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
+        agentConfirmationId,
         signal
       });
     } catch (error) {
@@ -1611,7 +1814,13 @@ export default function AssetsWorkspaceClient({
       }
     }
     if (signal?.aborted) return;
-    const { conversationId: targetConversationId, conversation: persistedConversation, product, generationJob } = result;
+    const {
+      conversationId: targetConversationId,
+      conversation: persistedConversation,
+      product,
+      generationJob,
+      agentAction,
+    } = result;
     setConversations((current) => {
       const existingIndex = current.findIndex((item) => item.id === (optimisticConversationId ?? conversation.id) || item.id === conversation.id || item.id === targetConversationId);
       if (existingIndex >= 0) {
@@ -1633,6 +1842,18 @@ export default function AssetsWorkspaceClient({
       setAssetGenerationJobs((jobs) => ({
         ...jobs,
         [targetConversationId]: live,
+      }));
+    }
+    if (agentAction) {
+      const key = agentActionLiveKey(targetConversationId, agentAction.id);
+      const live = { conversationId: targetConversationId, action: agentAction };
+      agentActionsRef.current = {
+        ...agentActionsRef.current,
+        [key]: live,
+      };
+      setAgentActions((current) => ({
+        ...current,
+        [key]: live,
       }));
     }
     if (targetConversationId !== conversation.id && combinedLinkedAssetIds.length > 0) {
@@ -1659,9 +1880,7 @@ export default function AssetsWorkspaceClient({
           [targetConversationId]: product.id
         };
       }
-      const next = { ...current };
-      delete next[targetConversationId];
-      return next;
+      return current;
     });
     if (shouldKeepFocusOnResult) {
       setActiveView("conversation");
@@ -2110,6 +2329,8 @@ export default function AssetsWorkspaceClient({
                 onRetryGeneration={handleRetryGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}
                 onRetryExecution={handleRetryExecution}
+                liveAgentActionsById={liveAgentActionsById}
+                onRetryAgentAction={handleRetryAgentAction}
                 diagnosticsSlot={renderDiagnostics()}
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}

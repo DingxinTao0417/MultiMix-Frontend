@@ -7,9 +7,18 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationPr
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
-import type { AgentRunStep, AssetConversationMessage, AssetMessagePlan, AssetMessagePresentation, AssetPlanConfirmationValues, AssetVideoParameterConfirmation } from "../lib/asset-workspace-types";
+import type {
+  AgentActionRunResponse,
+  AgentRunStep,
+  AssetConversationMessage,
+  AssetMessagePlan,
+  AssetMessagePresentation,
+  AssetPlanConfirmationValues,
+  AssetVideoParameterConfirmation,
+} from "../lib/asset-workspace-types";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
+import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
 
@@ -57,6 +66,7 @@ const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、�
 
 function confirmationPlanKey(plan: AssetMessagePlan): string {
   return [
+    plan.confirmationId ?? "",
     plan.title,
     plan.confirmUtterance ?? plan.confirmLabel ?? "",
     plan.fields.map((field) => field.key + ":" + field.value).join("|"),
@@ -141,6 +151,31 @@ export function resolveExecutionTimelineSteps(
   return fallbackSteps ?? [];
 }
 
+function agentActionTimelineStatus(
+  status: AgentActionRunResponse["status"],
+): AgentRunStep["status"] {
+  if (status === "queued" || status === "running") return "run";
+  if (status === "succeeded") return "done";
+  if (status === "failed" || status === "blocked" || status === "canceled") return "fail";
+  return "wait";
+}
+
+export function resolveAgentActionTimelineSteps(
+  action: AgentActionRunResponse | undefined,
+  fallbackSteps: AgentRunStep[] | undefined,
+): AgentRunStep[] {
+  if (!action) return fallbackSteps ?? [];
+  const status = agentActionTimelineStatus(action.status);
+  const steps = fallbackSteps?.length
+    ? fallbackSteps
+    : [{ key: action.id, label: "执行视频修改", status }];
+  return steps.map((step) => ({
+    ...step,
+    status,
+    retryJobId: status === "fail" && action.retryable ? action.id : undefined,
+  }));
+}
+
 export default function ConversationStudio({
   basePath,
   contextAssets = [],
@@ -158,6 +193,8 @@ export default function ConversationStudio({
   onRetryGeneration,
   liveRunStateByAssetId,
   onRetryExecution,
+  liveAgentActionsById,
+  onRetryAgentAction,
   diagnosticsSlot = null,
   detailLoadError = false,
   onRetryDetail,
@@ -174,7 +211,15 @@ export default function ConversationStudio({
   onRetryImageAttachment?: (attachmentId: string) => void;
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
-  onSendMessage?: (conversation: Conversation, instruction: string, signal?: AbortSignal, linkedAssets?: Array<{ id: number; title: string }>, clientRequestId?: string, videoParameterConfirmation?: AssetVideoParameterConfirmation) => Promise<void>;
+  onSendMessage?: (
+    conversation: Conversation,
+    instruction: string,
+    signal?: AbortSignal,
+    linkedAssets?: Array<{ id: number; title: string }>,
+    clientRequestId?: string,
+    videoParameterConfirmation?: AssetVideoParameterConfirmation,
+    agentConfirmationId?: string,
+  ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
@@ -187,6 +232,8 @@ export default function ConversationStudio({
     completionConfirmed: boolean;
   }>;
   onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
+  liveAgentActionsById?: Record<string, AgentActionRunResponse>;
+  onRetryAgentAction?: (actionRunId: string) => void;
   diagnosticsSlot?: ReactNode;
   detailLoadError?: boolean;
   onRetryDetail?: () => void;
@@ -269,6 +316,7 @@ export default function ConversationStudio({
     optimisticFeedback?: OptimisticFeedback,
     clientRequestId?: string,
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
+    agentConfirmationId?: string,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -277,12 +325,18 @@ export default function ConversationStudio({
     }
     if (readonly || !onSendMessage || (!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || sending) return;
     const controller = new AbortController();
+    const durableRequestId = clientRequestId
+      ?? (selectedProduct?.videoProjectReady ? globalThis.crypto.randomUUID() : undefined);
     const requestConversationId = selectedConversation.id;
     activeRequestRef.current = {
       controller,
       conversationId: requestConversationId,
       persistOnConversationSwitch: Boolean(
-        clientRequestId && optimisticFeedback?.presentation === "execution_anchor"
+        durableRequestId
+        && (
+          optimisticFeedback?.presentation === "execution_anchor"
+          || selectedProduct?.videoProjectReady
+        )
       ),
     };
     setSending(true);
@@ -294,7 +348,7 @@ export default function ConversationStudio({
       userText: instruction,
       assistantText: optimisticFeedback?.assistantText ?? "",
       status: "pending",
-      clientRequestId,
+      clientRequestId: durableRequestId,
       presentation: optimisticFeedback?.presentation,
       runSteps: optimisticFeedback?.runSteps,
       confirmationPlanKey: optimisticFeedback?.confirmationPlanKey,
@@ -306,8 +360,9 @@ export default function ConversationStudio({
         instruction,
         controller.signal,
         contextAssets,
-        clientRequestId,
+        durableRequestId,
         videoParameterConfirmation,
+        agentConfirmationId,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -348,6 +403,7 @@ export default function ConversationStudio({
   ) => {
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+    const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
     const ratio = values?.ratio;
     const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
     const instruction = !isVideoParameterConfirmation && ratioLabel ? `${base}（${ratioLabel}）` : base;
@@ -367,17 +423,29 @@ export default function ConversationStudio({
       setSendError("视频参数确认信息不完整，请刷新后重试。");
       return;
     }
+    if (isAgentActionConfirmation && !plan.confirmationId) {
+      setSendError("视频修改确认信息已失效，请刷新后重试。");
+      return;
+    }
     const planKey = confirmationPlanKey(plan);
     setConfirmingPlanKey(planKey);
     try {
       await sendInstruction(instruction, {
         assistantText: isVideoParameterConfirmation
           ? "参数已确认，正在生成编导稿。"
-          : "已确认，正在创建视频工程任务。",
+          : isAgentActionConfirmation
+            ? "已确认，正在执行视频修改。"
+            : "已确认，正在创建视频工程任务。",
         presentation: "execution_anchor",
-        runSteps: optimisticVideoProjectSteps(),
+        runSteps: isAgentActionConfirmation
+          ? [{
+              key: plan.confirmationId ?? "agent-action-confirmation",
+              label: "执行视频修改",
+              status: "run",
+            }]
+          : optimisticVideoProjectSteps(),
         confirmationPlanKey: planKey,
-      }, globalThis.crypto.randomUUID(), videoParameterConfirmation);
+      }, globalThis.crypto.randomUUID(), videoParameterConfirmation, plan.confirmationId);
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
     }
@@ -524,6 +592,13 @@ export default function ConversationStudio({
         <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
         {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
       </header>
+      {selectedConversation.agentTasks ? (
+        <AgentTaskStrip
+          tasks={selectedConversation.agentTasks}
+          disabled={!canSend || sending}
+          onResume={(goal) => void sendInstruction(`继续“${goal}”`)}
+        />
+      ) : null}
       <div className="shadcn-prototype-thread">
         {selectedConversation.detailsLoaded === false ? (
           detailLoadError ? (
@@ -543,7 +618,16 @@ export default function ConversationStudio({
           const liveRunState = message.assetId
             ? liveRunStateByAssetId?.[message.assetId]
             : undefined;
-          const timelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
+          const liveAgentAction = message.agentAction
+            ? liveAgentActionsById?.[message.agentAction.id] ?? message.agentAction
+            : undefined;
+          const executionTimelineSteps = resolveExecutionTimelineSteps(liveRunState, message.runSteps);
+          const timelineSteps = resolveAgentActionTimelineSteps(
+            liveAgentAction,
+            executionTimelineSteps,
+          );
+          const agentActionFailed = liveAgentAction
+            && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(message.plan || timelineSteps.length);
           const showsAssistantWaiting = message.role === "assistant"
             && message.pending === true
@@ -583,13 +667,21 @@ export default function ConversationStudio({
               {timelineSteps.length ? (
                 <AgentRunTimeline
                   steps={timelineSteps}
-                  errorMessage={liveRunState?.errorMessage}
-                  completionConfirmed={liveRunState?.completionConfirmed}
-                  onRetry={liveRunState && onRetryExecution
-                    ? (retryJobId) => {
-                        void onRetryExecution(retryJobId, liveRunState.jobId);
-                      }
-                    : undefined}
+                  errorMessage={agentActionFailed
+                    ? liveAgentAction.message
+                    : liveRunState?.errorMessage}
+                  completionConfirmed={liveAgentAction
+                    ? ["succeeded", "failed", "blocked", "canceled"].includes(liveAgentAction.status)
+                    : liveRunState?.completionConfirmed}
+                  onRetry={
+                    liveAgentAction?.retryable && onRetryAgentAction
+                      ? (actionRunId) => void onRetryAgentAction(actionRunId)
+                      : liveRunState && onRetryExecution
+                        ? (retryJobId) => {
+                            void onRetryExecution(retryJobId, liveRunState.jobId);
+                          }
+                        : undefined
+                  }
                 />
               ) : null}
               {(() => {

@@ -4,7 +4,25 @@
 
 import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";
 import { normalizeAssetTitle } from "../app/assets/lib/asset-workspace-shared";
-import type { AgentRunStep, AssetConversation, AssetConversationMessage, AssetMessagePlan, AssetPlanField, AssetPlanRatioOption, AssetPlanRef, AssetProduct, AssetProductMode, AssetProductSegment, AssetProductSourceRef, AssetProductSourceSummary, AssetSuggestionAction } from "../app/assets/lib/asset-workspace-types";
+import type {
+  AgentActionRunResponse,
+  AgentActionStatus,
+  AgentRunStep,
+  AgentTaskCollection,
+  AgentTaskSummary,
+  AssetConversation,
+  AssetConversationMessage,
+  AssetMessagePlan,
+  AssetPlanField,
+  AssetPlanRatioOption,
+  AssetPlanRef,
+  AssetProduct,
+  AssetProductMode,
+  AssetProductSegment,
+  AssetProductSourceRef,
+  AssetProductSourceSummary,
+  AssetSuggestionAction,
+} from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,6 +37,81 @@ function positiveIntegerValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
     : undefined;
+}
+
+function optionalPositiveIntegerValue(value: unknown): number | null {
+  return positiveIntegerValue(value) ?? null;
+}
+
+const AGENT_ACTION_STATUSES = new Set<AgentActionStatus>([
+  "planned",
+  "waiting_confirmation",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "blocked",
+  "canceled",
+]);
+
+function agentActionStatusValue(value: unknown): AgentActionStatus | undefined {
+  return typeof value === "string" && AGENT_ACTION_STATUSES.has(value as AgentActionStatus)
+    ? value as AgentActionStatus
+    : undefined;
+}
+
+function agentActionFromValue(value: unknown): AgentActionRunResponse | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = stringValue(value.id);
+  const taskId = stringValue(value.task_id);
+  const actionId = stringValue(value.action_id);
+  const status = agentActionStatusValue(value.status);
+  if (!id || !taskId || !actionId || !status || !isRecord(value.target)) return undefined;
+  return {
+    id,
+    taskId,
+    actionId,
+    status,
+    target: value.target,
+    requiresConfirmation: value.requires_confirmation === true,
+    confirmationId: stringValue(value.confirmation_id) || null,
+    confirmationReason: stringValue(value.confirmation_reason) || null,
+    jobId: stringValue(value.job_id) || null,
+    assetId: optionalPositiveIntegerValue(value.asset_id),
+    versionId: optionalPositiveIntegerValue(value.version_id),
+    message: stringValue(value.message),
+    errorCode: stringValue(value.error_code) || null,
+    retryable: value.retryable === true,
+  };
+}
+
+function agentRunStepsValue(value: unknown): AgentRunStep[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const steps = value.flatMap((item): AgentRunStep[] => {
+    if (!isRecord(item)) return [];
+    const key = stringValue(item.key);
+    const label = stringValue(item.label);
+    const status = stringValue(item.status);
+    if (
+      !key
+      || !label
+      || !["done", "run", "wait", "fail"].includes(status)
+    ) return [];
+    const elapsedSeconds = typeof item.elapsed_seconds === "number"
+      && Number.isFinite(item.elapsed_seconds)
+      && item.elapsed_seconds >= 0
+      ? item.elapsed_seconds
+      : undefined;
+    return [{
+      key,
+      label,
+      status: status as AgentRunStep["status"],
+      elapsedSeconds,
+      elapsedLabel: stringValue(item.elapsed_label) || undefined,
+      retryJobId: stringValue(item.retry_job_id) || undefined,
+    }];
+  });
+  return steps.length ? steps : undefined;
 }
 
 function normalizeRatioLabel(value: string): string {
@@ -117,7 +210,9 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
   const planKind = stringValue(value.kind);
   return {
-    kind: planKind === "video_parameter_confirmation" ? planKind : undefined,
+    kind: planKind === "video_parameter_confirmation" || planKind === "agent_action_confirmation"
+      ? planKind
+      : undefined,
     title,
     status,
     subtitle: stringValue(value.subtitle) || undefined,
@@ -132,7 +227,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     durationMin: positiveIntegerValue(value.duration_min),
     durationMax: positiveIntegerValue(value.duration_max),
     pendingIntentId: stringValue(value.pending_intent_id) || undefined,
-    pendingIntentVersion: positiveIntegerValue(value.pending_intent_version)
+    pendingIntentVersion: positiveIntegerValue(value.pending_intent_version),
+    confirmationId: stringValue(value.confirmation_id) || undefined,
   };
 }
 
@@ -841,6 +937,120 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   };
 }
 
+function agentTaskSummaryFromValue(
+  taskId: string,
+  value: unknown,
+): AgentTaskSummary | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = stringValue(value.id) || taskId;
+  const goal = stringValue(value.goal);
+  const status = stringValue(value.status);
+  if (!id || !goal || !status) return undefined;
+  const focus = isRecord(value.focus) ? value.focus : {};
+  return {
+    id,
+    goal,
+    status,
+    assetId: positiveIntegerValue(focus.asset_id),
+    versionId: positiveIntegerValue(focus.version_id),
+    sceneId: stringValue(focus.scene_id) || undefined,
+  };
+}
+
+function agentTasksFromMission(value: unknown): AgentTaskCollection | undefined {
+  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
+    return undefined;
+  }
+  const tasks = value.tasks;
+  const activeTaskId = stringValue(value.active_task_id);
+  const active = activeTaskId
+    ? agentTaskSummaryFromValue(activeTaskId, tasks[activeTaskId])
+    : undefined;
+  const paused = Array.isArray(value.task_stack)
+    ? value.task_stack.flatMap((taskId): AgentTaskSummary[] => {
+        if (typeof taskId !== "string") return [];
+        const summary = agentTaskSummaryFromValue(taskId, tasks[taskId]);
+        return summary ? [summary] : [];
+      })
+    : [];
+  return active || paused.length ? { active, paused } : undefined;
+}
+
+function agentActionFromMissionRun(
+  runValue: unknown,
+  taskValue: Record<string, unknown>,
+): AgentActionRunResponse | undefined {
+  if (!isRecord(runValue) || !isRecord(runValue.request)) return undefined;
+  const request = runValue.request;
+  const observation = isRecord(runValue.last_observation)
+    ? runValue.last_observation
+    : {};
+  const confirmationId = stringValue(runValue.confirmation_id);
+  const workingContext = isRecord(taskValue.working_context)
+    ? taskValue.working_context
+    : {};
+  const confirmationBindings = isRecord(workingContext.agent_confirmations)
+    ? workingContext.agent_confirmations
+    : {};
+  const binding = confirmationId && isRecord(confirmationBindings[confirmationId])
+    ? confirmationBindings[confirmationId] as Record<string, unknown>
+    : {};
+  return agentActionFromValue({
+    id: runValue.id,
+    task_id: request.task_id,
+    action_id: request.action_id,
+    status: runValue.status,
+    target: request.target,
+    requires_confirmation: runValue.status === "waiting_confirmation",
+    confirmation_id: confirmationId,
+    confirmation_reason: binding.confirmation_reason,
+    job_id: stringValue(runValue.job_id) || stringValue(observation.job_id),
+    asset_id: positiveIntegerValue(observation.asset_id)
+      ?? (isRecord(request.target) ? positiveIntegerValue(request.target.asset_id) : undefined),
+    version_id: positiveIntegerValue(observation.version_id)
+      ?? (isRecord(request.target) ? positiveIntegerValue(request.target.version_id) : undefined),
+    message: observation.message,
+    error_code: observation.error_code,
+    retryable: runValue.status === "failed" && observation.retryable === true,
+  });
+}
+
+function activeAgentActionFromMission(value: unknown): AgentActionRunResponse | undefined {
+  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
+    return undefined;
+  }
+  const activeTaskId = stringValue(value.active_task_id);
+  const task = activeTaskId && isRecord(value.tasks[activeTaskId])
+    ? value.tasks[activeTaskId] as Record<string, unknown>
+    : undefined;
+  if (!task || !Array.isArray(task.plan) || !task.plan.length) return undefined;
+  const preferredRunId = stringValue(task.running_action_id)
+    || stringValue(task.pending_action_id);
+  const run = (
+    preferredRunId
+      ? task.plan.find((item) => isRecord(item) && stringValue(item.id) === preferredRunId)
+      : undefined
+  ) ?? [...task.plan].reverse().find((item) => isRecord(item));
+  return agentActionFromMissionRun(run, task);
+}
+
+function agentActionsByIdFromMission(
+  value: unknown,
+): Map<string, AgentActionRunResponse> {
+  const actions = new Map<string, AgentActionRunResponse>();
+  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
+    return actions;
+  }
+  for (const taskValue of Object.values(value.tasks)) {
+    if (!isRecord(taskValue) || !Array.isArray(taskValue.plan)) continue;
+    for (const run of taskValue.plan) {
+      const action = agentActionFromMissionRun(run, taskValue);
+      if (action) actions.set(action.id, action);
+    }
+  }
+  return actions;
+}
+
 // Convert a persisted backend conversation row into the frontend Conversation
 // shape. A fallbackProduct (newly created) may be passed to keep selection stable.
 export function conversationFromPersisted(
@@ -848,6 +1058,8 @@ export function conversationFromPersisted(
   newConversationProduct: AssetProduct,
   fallbackProduct?: AssetProduct
 ): AssetConversation {
+  const mission = row.metadata.agent_mission;
+  const missionActions = agentActionsByIdFromMission(mission);
   const products = row.products.map(contentAssetToProduct);
   let defaultProductIndex = row.products.length - 1;
   while (defaultProductIndex >= 0 && isMalformedDirectorDraft(row.products[defaultProductIndex])) {
@@ -856,16 +1068,29 @@ export function conversationFromPersisted(
   const product = fallbackProduct
     ? products.find((item) => item.id === fallbackProduct.id) ?? fallbackProduct
     : products[defaultProductIndex] ?? newConversationProduct;
-  const messages: AssetConversationMessage[] = row.messages.map((message) => ({
-    role: message.role,
-    text: message.text,
-    presentation: confirmationMessagePresentation(message.role, message.metadata),
-    assetId: message.asset_id ?? positiveIntegerValue(message.metadata.product_id),
-    metadata: message.metadata,
-    suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
-    suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined,
-    plan: message.role === "assistant" ? planFromMetadata(message.metadata.plan) : undefined
-  }));
+  const messages: AssetConversationMessage[] = row.messages.map((message) => {
+    const persistedAgentAction = message.role === "assistant"
+      ? agentActionFromValue(message.metadata.agent_action)
+      : undefined;
+    const actionRunId = stringValue(message.metadata.agent_action_run_id)
+      || persistedAgentAction?.id
+      || "";
+    const agentAction = missionActions.get(actionRunId) ?? persistedAgentAction;
+    return {
+      role: message.role,
+      text: message.text,
+      presentation: confirmationMessagePresentation(message.role, message.metadata),
+      assetId: message.asset_id
+        ?? positiveIntegerValue(message.metadata.product_id)
+        ?? agentAction?.assetId,
+      metadata: message.metadata,
+      suggestions: message.role === "assistant" ? stringListValue(message.metadata.suggestions) : undefined,
+      suggestionActions: message.role === "assistant" ? suggestionActionsValue(message.metadata.suggestion_actions) : undefined,
+      plan: message.role === "assistant" ? planFromMetadata(message.metadata.plan) : undefined,
+      runSteps: message.role === "assistant" ? agentRunStepsValue(message.metadata.run_steps) : undefined,
+      agentAction,
+    };
+  });
   for (const asset of row.products) {
     const metadata = asset.metadata ?? {};
     const isPendingVideoProject = Boolean(
@@ -912,6 +1137,8 @@ export function conversationFromPersisted(
     delivery: lastAssistantMessage,
     suggestions: product.actions ?? [],
     messages,
+    agentTasks: agentTasksFromMission(mission),
+    activeAgentAction: activeAgentActionFromMission(mission),
     product,
     products: fallbackProduct && !products.some((item) => item.id === fallbackProduct.id) ? [...products, fallbackProduct] : products,
     sourceIds: Array.from(new Set(row.products.flatMap((asset) => asset.linked_asset_ids.map((id) => String(id)))))

@@ -189,7 +189,7 @@ export type AssetPlanConfirmationValues = {
 };
 
 export type AssetMessagePlan = {
-  kind?: "video_parameter_confirmation";
+  kind?: "video_parameter_confirmation" | "agent_action_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.
@@ -212,6 +212,7 @@ export type AssetMessagePlan = {
   durationMax?: number;
   pendingIntentId?: string;
   pendingIntentVersion?: number;
+  confirmationId?: string;
 };
 
 export type AssetPlanRatioOption = {
@@ -234,6 +235,47 @@ export type AgentRunStep = {
   retryJobId?: string;
 };
 
+export type AgentActionStatus =
+  | "planned"
+  | "waiting_confirmation"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "canceled";
+
+export type AgentActionRunResponse = {
+  id: string;
+  taskId: string;
+  actionId: string;
+  status: AgentActionStatus;
+  target: Record<string, unknown>;
+  requiresConfirmation: boolean;
+  confirmationId: string | null;
+  confirmationReason: string | null;
+  jobId: string | null;
+  assetId: number | null;
+  versionId: number | null;
+  message: string;
+  errorCode: string | null;
+  retryable: boolean;
+};
+
+export type AgentTaskSummary = {
+  id: string;
+  goal: string;
+  status: string;
+  assetId?: number;
+  versionId?: number;
+  sceneId?: string;
+};
+
+export type AgentTaskCollection = {
+  active?: AgentTaskSummary;
+  paused: AgentTaskSummary[];
+};
+
 export type AssetConversationMessage = {
   role: "user" | "assistant";
   text: string;
@@ -245,6 +287,7 @@ export type AssetConversationMessage = {
   // Agent execution timeline attached to an assistant message (demo
   // workspace-video「MultiMix 已完成执行」). Absent → not rendered (spec §12).
   runSteps?: AgentRunStep[];
+  agentAction?: AgentActionRunResponse;
   // Backend-backed message fields (optional for mock data).
   assetId?: number | null;
   metadata?: Record<string, unknown>;
@@ -287,6 +330,8 @@ export type AssetConversation = {
   delivery: string;
   suggestions: string[];
   messages?: AssetConversationMessage[];
+  agentTasks?: AgentTaskCollection;
+  activeAgentAction?: AgentActionRunResponse;
   product: AssetProduct;
   products?: AssetProduct[];
   sourceIds?: string[];

@@ -1,5 +1,15 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
-import type { AssetConversation, AssetProduct, AssetVideoParameterConfirmation, AssetWorkspaceData, AssetWorkspaceView, AssetWorkshop, SegmentMaterialOption, SegmentMaterialOptions } from "./asset-workspace-types";
+import type {
+  AgentActionRunResponse,
+  AssetConversation,
+  AssetProduct,
+  AssetVideoParameterConfirmation,
+  AssetWorkspaceData,
+  AssetWorkspaceView,
+  AssetWorkshop,
+  SegmentMaterialOption,
+  SegmentMaterialOptions,
+} from "./asset-workspace-types";
 import {
   API_BASE,
   API_CONNECTION_ERROR,
@@ -7,8 +17,11 @@ import {
   apiBlob,
   apiForm,
   getAssetGenerationJob,
+  getConversationAgentAction,
   isApiConfigured,
+  retryConversationAgentAction,
   retryAssetGenerationJob,
+  type AgentActionRunResponse as ApiAgentActionRunResponse,
   type AssetIngestJobActionRead,
   type AssetIngestJobRead,
   type AssetConversationMessageResponse,
@@ -130,6 +143,7 @@ export function buildConversationMessagePayload({
   linkedAssetIds,
   clientRequestId,
   videoParameterConfirmation,
+  agentConfirmationId,
 }: {
   conversationId: string;
   instruction: string;
@@ -137,6 +151,7 @@ export function buildConversationMessagePayload({
   linkedAssetIds?: number[];
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
+  agentConfirmationId?: string;
 }) {
   return {
     instruction,
@@ -144,6 +159,7 @@ export function buildConversationMessagePayload({
     selected_product_id: selectedProductId,
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
+    ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
     ...(videoParameterConfirmation ? {
       video_parameter_confirmation: {
         pending_intent_id: videoParameterConfirmation.pendingIntentId,
@@ -152,6 +168,25 @@ export function buildConversationMessagePayload({
         target_seconds: videoParameterConfirmation.targetSeconds,
       },
     } : {}),
+  };
+}
+
+function mapAgentAction(response: ApiAgentActionRunResponse): AgentActionRunResponse {
+  return {
+    id: response.id,
+    taskId: response.task_id,
+    actionId: response.action_id,
+    status: response.status,
+    target: response.target,
+    requiresConfirmation: response.requires_confirmation,
+    confirmationId: response.confirmation_id,
+    confirmationReason: response.confirmation_reason,
+    jobId: response.job_id,
+    assetId: response.asset_id,
+    versionId: response.version_id,
+    message: response.message,
+    errorCode: response.error_code,
+    retryable: response.retryable,
   };
 }
 
@@ -249,14 +284,38 @@ export type AssetWorkspaceAdapter = {
     linkedAssetIds?: number[];
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
+    agentConfirmationId?: string;
     signal?: AbortSignal;
-  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null }>;
+  }): Promise<{
+    conversationId: string;
+    conversation: AssetConversation;
+    product: AssetProduct | null;
+    generationJob: AssetGenerationJobResponse | null;
+    agentAction: AgentActionRunResponse | null;
+  }>;
   reconcileMessage(args: {
     token: string;
     clientRequestId: string;
-  }): Promise<{ conversationId: string; conversation: AssetConversation; product: AssetProduct | null; generationJob: AssetGenerationJobResponse | null } | null>;
+  }): Promise<{
+    conversationId: string;
+    conversation: AssetConversation;
+    product: AssetProduct | null;
+    generationJob: AssetGenerationJobResponse | null;
+    agentAction: AgentActionRunResponse | null;
+  } | null>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
+  getAgentAction(
+    token: string,
+    conversationId: string,
+    actionRunId: string,
+    signal?: AbortSignal,
+  ): Promise<AgentActionRunResponse>;
+  retryAgentAction(
+    token: string,
+    conversationId: string,
+    actionRunId: string,
+  ): Promise<AgentActionRunResponse>;
   restoreProductVersion(args: {
     token: string;
     product: AssetProduct;
@@ -833,7 +892,17 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         })
       });
     },
-    async sendMessage({ token, conversationId, instruction, selectedProductId, linkedAssetIds, clientRequestId, videoParameterConfirmation, signal }) {
+    async sendMessage({
+      token,
+      conversationId,
+      instruction,
+      selectedProductId,
+      linkedAssetIds,
+      clientRequestId,
+      videoParameterConfirmation,
+      agentConfirmationId,
+      signal,
+    }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
@@ -845,6 +914,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           linkedAssetIds,
           clientRequestId,
           videoParameterConfirmation,
+          agentConfirmationId,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
@@ -855,6 +925,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         conversation,
         product,
         generationJob: response.generation_job ?? null,
+        agentAction: response.agent_action
+          ? mapAgentAction(response.agent_action)
+          : null,
       };
     },
     async reconcileMessage({ token, clientRequestId }) {
@@ -872,16 +945,36 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const generationJob = generationJobId
         ? await getAssetGenerationJob(token, generationJobId)
         : null;
+      const conversation = conversationFromPersisted(row, data.newConversation.product);
+      const rawActionMessage = row.messages.find(
+        (message) => stringValue(message.metadata?.client_request_id) === clientRequestId
+          && stringValue(message.metadata?.agent_action_run_id),
+      );
+      const actionRunId = stringValue(rawActionMessage?.metadata?.agent_action_run_id);
+      const mappedActionMessage = conversation.messages?.find(
+        (message) => stringValue(message.metadata?.client_request_id) === clientRequestId
+          && message.agentAction,
+      );
+      const agentAction = actionRunId
+        ? mapAgentAction(await getConversationAgentAction(token, row.id, actionRunId))
+        : mappedActionMessage?.agentAction ?? null;
       const matchedAsset = matchedMessage?.asset_id
         ? row.products.find((asset) => asset.id === matchedMessage.asset_id)
+        : agentAction?.assetId
+          ? row.products.find((asset) => asset.id === agentAction.assetId)
         : row.products[row.products.length - 1];
       const generatedProduct = matchedAsset ? contentAssetToProduct(matchedAsset) : undefined;
-      const conversation = conversationFromPersisted(row, data.newConversation.product, generatedProduct);
+      const mappedConversation = conversationFromPersisted(
+        row,
+        data.newConversation.product,
+        generatedProduct,
+      );
       return {
         conversationId: row.id,
-        conversation,
+        conversation: mappedConversation,
         product: generatedProduct ?? null,
         generationJob,
+        agentAction,
       };
     },
     getGenerationJob(token, jobId, signal) {
@@ -889,6 +982,21 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     retryGenerationJob(token, jobId) {
       return retryAssetGenerationJob(token, jobId);
+    },
+    async getAgentAction(token, conversationId, actionRunId, signal) {
+      return mapAgentAction(await getConversationAgentAction(
+        token,
+        conversationId,
+        actionRunId,
+        signal,
+      ));
+    },
+    async retryAgentAction(token, conversationId, actionRunId) {
+      return mapAgentAction(await retryConversationAgentAction(
+        token,
+        conversationId,
+        actionRunId,
+      ));
     },
     async restoreProductVersion({ token, product, versionId }) {
       if (!isApiConfigured || !token || !product.backendAssetId) {

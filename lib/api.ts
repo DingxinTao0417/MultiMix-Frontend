@@ -240,6 +240,34 @@ export type AssetConversationMessageResponse = {
   suggestion_actions?: Array<Record<string, unknown>>;
   product: ContentAsset | null;
   generation_job?: AssetGenerationJobResponse | null;
+  agent_action?: AgentActionRunResponse | null;
+};
+
+export type AgentActionStatus =
+  | "planned"
+  | "waiting_confirmation"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "canceled";
+
+export type AgentActionRunResponse = {
+  id: string;
+  task_id: string;
+  action_id: string;
+  status: AgentActionStatus;
+  target: Record<string, unknown>;
+  requires_confirmation: boolean;
+  confirmation_id: string | null;
+  confirmation_reason: string | null;
+  job_id: string | null;
+  asset_id: number | null;
+  version_id: number | null;
+  message: string;
+  error_code: string | null;
+  retryable: boolean;
 };
 
 export type AssetGenerationJobResponse = {
@@ -473,6 +501,31 @@ export async function retryAssetGenerationJob(
 ): Promise<AssetGenerationJobResponse> {
   return api<AssetGenerationJobResponse>(
     `/assets/generation-jobs/${encodeURIComponent(jobId)}/retry`,
+    token,
+    { method: "POST" },
+  );
+}
+
+export async function getConversationAgentAction(
+  token: string,
+  conversationId: string,
+  actionRunId: string,
+  signal?: AbortSignal,
+): Promise<AgentActionRunResponse> {
+  return api<AgentActionRunResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/agent-actions/${encodeURIComponent(actionRunId)}`,
+    token,
+    { signal },
+  );
+}
+
+export async function retryConversationAgentAction(
+  token: string,
+  conversationId: string,
+  actionRunId: string,
+): Promise<AgentActionRunResponse> {
+  return api<AgentActionRunResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/agent-actions/${encodeURIComponent(actionRunId)}/retry`,
     token,
     { method: "POST" },
   );
