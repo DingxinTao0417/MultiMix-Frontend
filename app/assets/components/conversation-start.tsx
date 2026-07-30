@@ -3,12 +3,16 @@
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { ArrowUp, ExternalLink, FileText, Image as ImageIcon, Sparkles, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, type Conversation } from "../lib/asset-workspace-shared";
+import {
+  CHAT_IMAGE_UPLOAD_ACCEPT,
+  CHAT_SOURCE_UPLOAD_ACCEPT,
+  chatAttachmentRejectionMessage,
+  partitionChatAttachmentFiles,
+} from "../lib/chat-attachment-policy";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
 
-const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,.mp4,.mov,.webm,.mkv";
-const SOURCE_UPLOAD_ACCEPT = ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
@@ -115,11 +119,11 @@ export default function ConversationStart({
   };
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
-    const acceptedFiles = Array.from(files).filter((file) => {
-      if (file.type.startsWith("image/")) return true;
-      return /\.(pdf|txt|md|markdown|html|htm|xlsx|xlsm)$/i.test(file.name);
-    });
-    if (acceptedFiles.length) onUploadImages?.(acceptedFiles);
+    const partition = partitionChatAttachmentFiles(files);
+    setError(chatAttachmentRejectionMessage(partition));
+    if (partition.acceptedFiles.length) {
+      onUploadImages?.(partition.acceptedFiles);
+    }
   };
 
   const handleImageInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -222,7 +226,7 @@ export default function ConversationStart({
             <input
               ref={imageInputRef}
               type="file"
-              accept={IMAGE_UPLOAD_ACCEPT}
+              accept={CHAT_IMAGE_UPLOAD_ACCEPT}
               multiple
               hidden
               onChange={handleImageInputChange}
@@ -230,8 +234,8 @@ export default function ConversationStart({
             <button
               className="shadcn-prototype-start-dock-attach"
               type="button"
-              aria-label="上传图片或视频素材"
-              title="上传图片或视频素材"
+              aria-label="上传图片素材"
+              title="上传图片素材"
               disabled={!onSend || !onUploadImages}
               onClick={() => imageInputRef.current?.click()}
             >
@@ -240,7 +244,7 @@ export default function ConversationStart({
             <input
               ref={sourceInputRef}
               type="file"
-              accept={SOURCE_UPLOAD_ACCEPT}
+              accept={CHAT_SOURCE_UPLOAD_ACCEPT}
               multiple
               hidden
               onChange={handleSourceInputChange}

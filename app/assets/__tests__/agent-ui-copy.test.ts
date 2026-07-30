@@ -1419,22 +1419,29 @@ describe("agent conversation UI copy", () => {
   it("supports chat source attachments inside the composer", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
     const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const attachmentPolicy = readAssetFile("app/assets/lib/chat-attachment-policy.ts");
     const globals = readAssetFile("app/globals.css");
 
     expect(conversationStudio).toContain("shadcn-prototype-chat-image-attachment-button");
     expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
-    expect(conversationStudio).toContain("IMAGE_UPLOAD_ACCEPT");
-    expect(conversationStudio).toContain("SOURCE_UPLOAD_ACCEPT");
-    expect(conversationStudio).toContain(".mp4,.mov,.webm,.mkv");
+    for (const composer of [conversationStudio, conversationStart]) {
+      expect(composer).toContain("CHAT_IMAGE_UPLOAD_ACCEPT");
+      expect(composer).toContain("CHAT_SOURCE_UPLOAD_ACCEPT");
+      expect(composer).toContain("partitionChatAttachmentFiles");
+      expect(composer).toContain('aria-label="上传图片素材"');
+      expect(composer).not.toContain(".mp4,.mov,.webm,.mkv");
+      expect(composer).not.toContain("上传图片或视频素材");
+    }
+    expect(workspaceClient).toContain(
+      'if (view === "video") return ".mp4,.mov,.webm,.mkv"',
+    );
     expect(conversationStudio).toContain("chatAttachmentStatusLabel(attachment)");
     expect(conversationStudio).toContain('role="progressbar"');
     expect(conversationStart).toContain("shadcn-prototype-start-dock-attach");
-    expect(conversationStart).toContain("IMAGE_UPLOAD_ACCEPT");
-    expect(conversationStart).toContain("SOURCE_UPLOAD_ACCEPT");
-    expect(conversationStart).toContain(".mp4,.mov,.webm,.mkv");
     expect(conversationStart).toContain("chatAttachmentStatusLabel(attachment)");
     expect(conversationStart).toContain('role="progressbar"');
-    expect(conversationStudio).toContain(".pdf");
+    expect(attachmentPolicy).toContain(".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm");
     expect(conversationStudio).toContain("DOC_ONLY_INSTRUCTION");
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");

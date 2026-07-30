@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import {
+  CHAT_IMAGE_UPLOAD_ACCEPT,
+  CHAT_SOURCE_UPLOAD_ACCEPT,
+  chatAttachmentRejectionMessage,
+  partitionChatAttachmentFiles,
+} from "../lib/chat-attachment-policy";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
@@ -55,8 +61,6 @@ export type ChatImageAttachment = {
   error?: string;
 };
 
-const IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp,.mp4,.mov,.webm,.mkv";
-const SOURCE_UPLOAD_ACCEPT = ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
@@ -488,11 +492,11 @@ export default function ConversationStudio({
   }, [selectedConversation.id, sending, readonly]);
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
-    const acceptedFiles = Array.from(files).filter((file) => {
-      if (file.type.startsWith("image/")) return true;
-      return /\.(pdf|txt|md|markdown|html|htm|xlsx|xlsm)$/i.test(file.name);
-    });
-    if (acceptedFiles.length) onUploadImages?.(acceptedFiles);
+    const partition = partitionChatAttachmentFiles(files);
+    setSendError(chatAttachmentRejectionMessage(partition));
+    if (partition.acceptedFiles.length) {
+      onUploadImages?.(partition.acceptedFiles);
+    }
   };
 
   const handleImageInputChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -786,7 +790,7 @@ export default function ConversationStudio({
           <input
             ref={imageInputRef}
             type="file"
-            accept={IMAGE_UPLOAD_ACCEPT}
+            accept={CHAT_IMAGE_UPLOAD_ACCEPT}
             multiple
             hidden
             onChange={handleImageInputChange}
@@ -794,8 +798,8 @@ export default function ConversationStudio({
           <button
             className="shadcn-prototype-chat-attachment-button shadcn-prototype-chat-image-attachment-button"
             type="button"
-            aria-label="上传图片或视频素材"
-            title="上传图片或视频素材"
+            aria-label="上传图片素材"
+            title="上传图片素材"
             disabled={!canSend || !onUploadImages}
             onClick={() => imageInputRef.current?.click()}
           >
@@ -804,7 +808,7 @@ export default function ConversationStudio({
           <input
             ref={sourceInputRef}
             type="file"
-            accept={SOURCE_UPLOAD_ACCEPT}
+            accept={CHAT_SOURCE_UPLOAD_ACCEPT}
             multiple
             hidden
             onChange={handleSourceInputChange}
