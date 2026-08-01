@@ -79,7 +79,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByRole("separator", { name: "调整视频预览高度" })).not.toBeInTheDocument();
   });
 
-  it("shows the persisted BGM choice in browse mode without loading the music catalog", () => {
+  it("keeps the persisted BGM choice out of the default browse view", () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     render(<ProductPreview product={{
       ...product,
@@ -98,7 +98,37 @@ describe("display-area eight-case matrix", () => {
       },
     }} />);
 
-    expect(screen.getByRole("status", { name: "背景音乐" })).toHaveTextContent("科技向前 · AI 匹配");
+    expect(screen.queryByRole("status", { name: "背景音乐" })).not.toBeInTheDocument();
+  });
+
+  it("shows background music in details instead of the default browse view", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={vi.fn(async () => undefined)}
+        product={{
+          ...product,
+          metadata: {
+            ...product.metadata,
+            video_project: {
+              ...(product.metadata?.video_project as Record<string, unknown>),
+              media: [{ id: "media-bgm-tech", type: "audio", file_path: "bgm://bgm-tech-01", name: "科技向前" }],
+              metadata: {
+                bgm_choice: { enabled: true, catalog_id: "bgm-tech-01", selected_by: "auto" },
+              },
+            },
+          },
+        }}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("详情", { exact: true }));
+    expect(screen.getByText("本片素材", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("背景音乐：科技向前 · AI 匹配", { exact: true })).toBeInTheDocument();
   });
 
   it("seeks the finished video when a storyboard card is selected", () => {
@@ -147,7 +177,7 @@ describe("display-area eight-case matrix", () => {
 
     fireEvent.error(container.querySelector("video")!);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("成片加载失败");
+    expect(screen.getByRole("alert")).toHaveTextContent("成片暂时无法播放");
     fireEvent.click(screen.getByRole("button", { name: "重试成片" }));
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
   });

@@ -349,7 +349,6 @@ export default function ProductPreview({
   if (hasVideoProject) {
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
     const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
-    const bgmSummary = browseBgmSummary(product);
     return (
       <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
         <div className="shadcn-prototype-product-video">
@@ -375,6 +374,11 @@ export default function ProductPreview({
               durationSeconds={durationSeconds}
               onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
               onError={() => setProjectPreviewFailed(true)}
+              recoveryNotice={fullVideoFailed ? {
+                message: "成片暂时无法播放，已切换到分镜预览",
+                actionLabel: "重试成片",
+                onAction: () => setFullVideoFailed(false),
+              } : undefined}
             />
           ) : (
             <StoryboardPreview
@@ -383,35 +387,6 @@ export default function ProductPreview({
             />
           )}
         </div>
-        {!showFullVideo && product.backendAssetId ? (
-          <div className="shadcn-prototype-video-preview-fallback">
-            <span>
-              {projectPreviewFailed
-                ? "完整工程预览加载失败，当前保留轻量分镜预览。"
-                : projectPreviewRequested
-                  ? "完整工程预览加载中…"
-                  : "当前为轻量分镜预览，加载完整工程后可播放转场与动效。"}
-            </span>
-            {!projectPreviewRequested || projectPreviewFailed ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setProjectPreviewFailed(false);
-                  setProjectPreviewRequested(true);
-                }}
-              >
-                {projectPreviewFailed ? "重新加载完整工程预览" : "加载完整工程预览"}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {bgmSummary ? <p className="shadcn-prototype-video-bgm-summary" role="status" aria-label="背景音乐">背景音乐：{bgmSummary}</p> : null}
-        {fullVideoFailed ? (
-          <div className="shadcn-prototype-video-preview-fallback" role="alert">
-            <span>成片加载失败，已切换到分镜预览。</span>
-            <button type="button" onClick={() => setFullVideoFailed(false)}>重试成片</button>
-          </div>
-        ) : null}
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}

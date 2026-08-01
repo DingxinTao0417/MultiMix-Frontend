@@ -397,6 +397,13 @@
     min-width: 0;
   }
 
+  /* The workspace embeds this mode only for watching. Playback is controlled
+     by the surrounding player, so editor-only zoom, grid, and fullscreen
+     controls must stay out of the ordinary video preview. */
+  .editor-root.preview-only .preview-canvas-controls {
+    display: none;
+  }
+
   .preview-video-surface:hover ~ .preview-canvas-controls .preview-play-button,
   .preview-canvas-controls:focus-within .preview-play-button,
   .preview-canvas-controls .preview-play-button:hover {

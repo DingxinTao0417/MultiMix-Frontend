@@ -37,6 +37,11 @@ export type VideoProjectPreviewProps = {
   channelId?: string;
   onTimeUpdate?: (time: number) => void;
   onError?: () => void;
+  recoveryNotice?: {
+    message: string;
+    actionLabel: string;
+    onAction: () => void;
+  };
 };
 
 const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPreviewProps>(
@@ -47,6 +52,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     channelId,
     onTimeUpdate,
     onError,
+    recoveryNotice,
   }, forwardedRef) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
     const generatedChannelId = useId();
@@ -147,8 +153,13 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
             title="视频工程预播"
             allow="autoplay"
           />
-          {!ready && !failed ? <span className="shadcn-prototype-project-preview-loading">正在准备工程预览…</span> : null}
-          {failed ? <span className="shadcn-prototype-project-preview-loading" role="alert">工程预览暂不可用</span> : null}
+          {recoveryNotice ? (
+            <div className="shadcn-prototype-project-preview-notice" role="alert">
+              <span>{recoveryNotice.message}</span>
+              <button type="button" onClick={recoveryNotice.onAction}>{recoveryNotice.actionLabel}</button>
+            </div>
+          ) : !ready && !failed ? <span className="shadcn-prototype-project-preview-loading">正在准备预览</span> : null}
+          {!recoveryNotice && failed ? <span className="shadcn-prototype-project-preview-loading" role="alert">暂时无法播放预览，可先查看分镜</span> : null}
           {!failed ? (
             <button
               type="button"

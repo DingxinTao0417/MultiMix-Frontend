@@ -10,7 +10,8 @@ import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-wo
 import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
-import ProductPreview from "./product-preview";
+import ProductPreview, { browseBgmSummary } from "./product-preview";
+import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VoiceoverDialog from "./voiceover-dialog";
 
@@ -139,6 +140,7 @@ export default function ProductWorkspace({
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject;
+  const videoBgmSummary = canBrowseVideo ? browseBgmSummary(product) : "";
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = hasVideoProject && editorRequested && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
@@ -635,6 +637,14 @@ export default function ProductWorkspace({
                 </section>
 
                 {product.versions && product.versions.length > 0 ? (
+                {canBrowseVideo && (videoBgmSummary || product.sourceSummary) ? (
+                  <section className="shadcn-prototype-detail-section">
+                    <h4>本片素材</h4>
+                    {videoBgmSummary ? <p className="shadcn-prototype-detail-bgm">背景音乐：{videoBgmSummary}</p> : null}
+                    {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
+                  </section>
+                ) : null}
+
                   <section className="shadcn-prototype-detail-section">
                     <h4>版本历史</h4>
                     <div className="shadcn-prototype-version-list">

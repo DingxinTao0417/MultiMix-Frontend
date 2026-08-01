@@ -32,6 +32,20 @@ function publishPreviewState(iframe: HTMLIFrameElement, overrides: Record<string
 }
 
 describe("video project preview", () => {
+  it("uses a short user-facing loading message inside the player", () => {
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    expect(screen.getByText("正在准备预览")).toBeInTheDocument();
+    expect(screen.queryByText("正在准备工程预览…")).not.toBeInTheDocument();
+  });
+
   it("renders the preview editor and mirrors its playback state", () => {
     render(
       <VideoProjectPreview

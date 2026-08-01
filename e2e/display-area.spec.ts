@@ -175,6 +175,8 @@ test("CASE-06 renders the ready engineering preview without opening the editable
   });
   await expect(playButton).toBeEnabled({ timeout: 75_000 });
   await expect(progress).toBeEnabled({ timeout: 75_000 });
+  const previewDocument = previewFrame.contentFrame();
+  await expect(previewDocument.locator(".preview-canvas-controls")).toHaveCSS("display", "none");
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
   await expect(workspace.locator("video")).toHaveCount(0);
   await expect(player).toHaveCSS("border-top", "1px solid rgb(234, 231, 225)");
