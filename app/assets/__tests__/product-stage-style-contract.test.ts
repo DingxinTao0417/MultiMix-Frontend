@@ -12,6 +12,7 @@ const agentRunTimeline = readFileSync(new URL("../components/agent-run-timeline.
 describe("product stage style contract", () => {
   test("keeps confirmation and execution cards on one shared responsive width", () => {
     expect(conversationStudio).toContain("shadcn-prototype-workflow-card-message");
+    expect(conversationStudio).toContain("message.plan || timelineSteps.length || renderedGenerationJob");
     expect(css).toMatch(/\.shadcn-prototype-thread article\.shadcn-prototype-workflow-card-message\s*\{[^}]*width:\s*min\(560px, 92%\);/s);
     expect(css).toMatch(/\.shadcn-prototype-workflow-card-message > :is\(\s*\.shadcn-prototype-confirm-card,\s*\.shadcn-prototype-agent-run\s*\)\s*\{[^}]*width:\s*100%;/s);
   });

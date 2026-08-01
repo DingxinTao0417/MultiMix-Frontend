@@ -58,6 +58,19 @@ describe("AssetGenerationJobCard", () => {
     expect(onCancel).toHaveBeenCalledWith("asset-generation-job-1");
   });
 
+  it("keeps the submitted step when a historical stopped job has lost its progress events", () => {
+    render(<AssetGenerationJobCard job={job({
+      status: "cancelled",
+      stage: "cancelled",
+      updated_at: "2026-07-17T06:00:04Z",
+    })} />);
+
+    expect(screen.getByRole("button", { name: /共 2 步/ })).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /内容生成进度/ }));
+    expect(screen.getByText("内容生成已排队")).not.toBeNull();
+    expect(screen.getByText("本次生成已停止")).not.toBeNull();
+  });
+
   it("renders a controlled timeout and retries the same job", () => {
     const onRetry = vi.fn();
     render(

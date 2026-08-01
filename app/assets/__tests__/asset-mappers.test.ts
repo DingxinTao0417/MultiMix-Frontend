@@ -177,6 +177,30 @@ describe("asset product mapper", () => {
     expect(product.actions).toContain("调整分镜");
   });
 
+  it("presents legacy video projects as video projects instead of inherited director drafts", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        artifact_category: "编导稿",
+        capability: "video_render",
+        video_workflow_stage: "video_project_ready",
+        orchestration_pending: false,
+        video_project: {
+          version: "multimix_video_project_v1",
+          ratio: "16:9",
+          duration_seconds: 30,
+          tracks: [],
+          media: [],
+        },
+      },
+    }));
+
+    expect(product.phase).toBe("视频工程");
+    expect(product.status).toBe("可编辑");
+  });
+
   it("does not expose a false-ready project without the editor timeline shape", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video_render",

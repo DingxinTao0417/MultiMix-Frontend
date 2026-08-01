@@ -658,13 +658,15 @@ export default function ConversationStudio({
             liveAgentAction,
             executionTimelineSteps,
           );
-          const agentActionFailed = liveAgentAction
-            && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
-          const ownsWorkflowCard = Boolean(message.plan || timelineSteps.length);
           const messageGenerationJob = generationJobFromMessage(message);
           const renderedGenerationJob = messageGenerationJob && generationJob?.id === messageGenerationJob.id
             ? generationJob
             : messageGenerationJob;
+          const agentActionFailed = liveAgentAction
+            && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
+          const ownsWorkflowCard = Boolean(
+            message.plan || timelineSteps.length || renderedGenerationJob,
+          );
           const showsAssistantWaiting = message.role === "assistant"
             && message.pending === true
             && !ownsWorkflowCard

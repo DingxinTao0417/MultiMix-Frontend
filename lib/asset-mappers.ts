@@ -525,10 +525,10 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
 }
 
 function videoProjectStatusLabel(mp4State: string): string {
-  if (mp4State === "ready") return "视频工程 · 已有导出文件";
-  if (mp4State === "running") return "视频工程 · 处理中";
-  if (mp4State === "failed") return "视频工程 · 处理失败";
-  return "视频工程 · 可编辑";
+  if (mp4State === "ready") return "已有导出文件";
+  if (mp4State === "running") return "成片生成中";
+  if (mp4State === "failed") return "成片失败";
+  return "可编辑";
 }
 
 // Human-readable label for a video job's render_stage (backend enum).
@@ -706,6 +706,7 @@ function assetLabelFromProduct(asset: ContentAsset): string {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
+  if (asset.content_type === "video_render") return "视频工程";
   const explicit = stringValue(metadata.artifact_category);
   if (explicit) return explicit;
   if (asset.content_type === "content_plan") return "选题方案";

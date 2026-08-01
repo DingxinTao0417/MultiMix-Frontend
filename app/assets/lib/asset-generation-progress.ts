@@ -29,7 +29,29 @@ export function generationProgressEvents(job: AssetGenerationJobResponse): Gener
   });
   if (events.length) return events;
   const label = job.status === "queued" ? "内容生成已排队" : job.status === "running" ? "正在生成内容" : job.status === "completed" ? "内容生成已完成" : job.status === "cancelled" ? "本次生成已停止" : "内容生成失败";
-  return [{ key: job.status, label, detail: "", status: job.status === "running" || job.status === "queued" ? "active" : "completed", occurred_at: job.updated_at }];
+  const terminalStatus: "active" | "completed" = job.status === "running" || job.status === "queued"
+    ? "active"
+    : "completed";
+  const terminalEvent = {
+    key: job.status,
+    label,
+    detail: "",
+    status: terminalStatus,
+    occurred_at: job.updated_at,
+  };
+  if (job.status === "completed" || job.status === "cancelled" || job.status === "failed") {
+    return [
+      {
+        key: "queued",
+        label: "内容生成已排队",
+        detail: "",
+        status: "completed",
+        occurred_at: job.created_at,
+      },
+      terminalEvent,
+    ];
+  }
+  return [terminalEvent];
 }
 
 export function generationTerminalSummary(job: AssetGenerationJobResponse): string {
