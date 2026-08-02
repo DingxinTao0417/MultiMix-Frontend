@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   FileText,
   Gauge,
@@ -31,6 +32,8 @@ import {
   resolveConversationProduct,
   runExclusiveConversationDelete,
   chatAttachmentFileKind,
+  pendingAttachmentReconciliationKeys,
+  shouldImmediatelyReconcileAcceptedUpload,
   type ActiveView,
   type Conversation,
   type ProductArtifact
@@ -63,6 +66,7 @@ const EmptyProductWorkspace = dynamic(
   () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
   { ssr: false, loading: () => null }
 );
+
 const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="素材库" /> });
 
 type SidebarState = "auto" | "collapsed" | "expanded";
@@ -99,7 +103,17 @@ type PendingConversationExchange = {
 
 type ChatImageUpload = ChatImageAttachment & {
   file: File;
+  idempotencyKey: string;
 };
+
+const CHAT_UPLOAD_BATCH_CONCURRENCY = 3;
+
+function createUploadIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function agentActionLiveKey(conversationId: string, actionRunId: string): string {
   return `${conversationId}::${actionRunId}`;
@@ -445,6 +459,13 @@ function resolveInitialConversationId(initialConversationId: string | undefined,
     : conversations[0]?.id ?? "new";
 }
 
+export function newConversationUrl(currentUrl: URL): URL {
+  const url = new URL(currentUrl.toString());
+  url.searchParams.set("conversation", "new");
+  url.searchParams.delete("product");
+  return url;
+}
+
 function resolveInitialView(initialView: ActiveView | undefined): ActiveView {
   return initialView && initialView !== "conversation" ? initialView : "conversation";
 }
@@ -482,6 +503,7 @@ export default function AssetsWorkspaceClient({
   token = null,
   onLogout
 }: AssetsWorkspaceClientProps) {
+  const router = useRouter();
   const initialConversationSummariesRef = useRef(cachedConversationSummaries(accountEmail));
   const [conversations, setConversations] = useState<Conversation[]>(() => (
     assetWorkspaceAdapter.mergeConversationSummaries(initialConversationSummariesRef.current, [])
@@ -502,8 +524,10 @@ export default function AssetsWorkspaceClient({
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
   const selectedConversationIdRef = useRef(selectedConversationId);
+  const pendingConversationNavigationRef = useRef<string | null>(null);
   const conversationsRef = useRef(conversations);
   const conversationDetailGenerationRef = useRef(0);
+  const conversationDetailRequestKeyRef = useRef<string | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
@@ -548,6 +572,8 @@ export default function AssetsWorkspaceClient({
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
+  const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
+  const inFlightSourceAttachmentReconciliationsRef = useRef(new Set<string>());
   // Live per-asset video job status (stage + error) fed by the poller so the
   // workspace can show stage-level progress instead of a bare "生成中".
   const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
@@ -573,10 +599,12 @@ export default function AssetsWorkspaceClient({
   // updates its title in place, both persisted to the backend, so there is no
   // client-only overlay to reconcile on reload.
   const visibleConversationRows = conversations;
-  const selectedConversation =
-    visibleConversationRows.find((conversation) => conversation.id === selectedConversationId) ?? assetWorkspaceAdapter.getNewConversation();
-  const selectedConversationNeedsDetail = selectedConversation.detailsLoaded === false;
-  const selectedProduct = selectedConversation.detailsLoaded === false
+  const selectedPersistedConversation = visibleConversationRows.find(
+    (conversation) => conversation.id === selectedConversationId,
+  );
+  const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
+  const selectedConversationHasDetail = selectedConversation.detailsLoaded === true;
+  const selectedProduct = !selectedConversationHasDetail
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const selectedAssetGenerationJob = assetGenerationJobs[selectedConversation.id]?.job ?? null;
@@ -593,6 +621,10 @@ export default function AssetsWorkspaceClient({
       workspaceMountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    chatImageUploadsRef.current = chatImageUploads;
+  }, [chatImageUploads]);
 
   useEffect(() => {
     selectedConversationIdRef.current = selectedConversationId;
@@ -653,7 +685,15 @@ export default function AssetsWorkspaceClient({
       setConversationMenuId(null);
       return;
     }
+    const routeConversationId = new URL(window.location.href).searchParams.get("conversation");
+    if (routeConversationId !== initialConversationId) return;
+    const pendingConversationId = pendingConversationNavigationRef.current;
+    if (pendingConversationId && pendingConversationId !== initialConversationId) return;
+    if (pendingConversationId === initialConversationId) {
+      pendingConversationNavigationRef.current = null;
+    }
     const conversationId = resolveInitialConversationId(initialConversationId, conversations);
+    selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
     if (initialProductId) {
       setSelectedProductIds((current) => ({
@@ -689,12 +729,30 @@ export default function AssetsWorkspaceClient({
         } catch {
           // Storage can be unavailable in private browsing; network data still wins.
         }
-        setConversations((current) => assetWorkspaceAdapter.mergeConversationSummaries(
-          summaries,
-          current,
-        ));
+        setConversations((current) => {
+          const merged = assetWorkspaceAdapter.mergeConversationSummaries(summaries, current);
+          const selectedDetail = current.find((conversation) => (
+            conversation.id === selectedConversationIdRef.current
+            && conversation.detailsLoaded === true
+          ));
+          // A direct link can target an older conversation outside the compact
+          // recent-summary page. Keep its fully loaded detail when that page
+          // arrives after the detail request, rather than replacing it with an
+          // unrelated first summary row.
+          if (selectedDetail && !merged.some((conversation) => conversation.id === selectedDetail.id)) {
+            return [selectedDetail, ...merged];
+          }
+          return merged;
+        });
         setConversationLoadState("ready");
-        if (initialConversationId && summaries.some((conversation) => conversation.id === initialConversationId)) {
+        const currentRouteConversationId = new URL(window.location.href).searchParams.get("conversation");
+        if (
+          !pendingConversationNavigationRef.current &&
+          currentRouteConversationId === initialConversationId &&
+          selectedConversationIdRef.current !== "new"
+          && initialConversationId
+          && summaries.some((conversation) => conversation.id === initialConversationId)
+        ) {
           setSelectedConversationId(initialConversationId);
           setActiveView("conversation");
           if (initialProductId) {
@@ -723,8 +781,11 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     if (!token || selectedConversationId === "new") return;
-    const summary = conversationsRef.current.find((conversation) => conversation.id === selectedConversationId);
-    if (!summary || summary.detailsLoaded !== false) return;
+    const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;
+    if (selectedDetailLoaded) return;
+    const requestKey = `${selectedConversationId}:${conversationDetailRetryRevision}`;
+    if (conversationDetailRequestKeyRef.current === requestKey) return;
+    conversationDetailRequestKeyRef.current = requestKey;
     const generation = conversationDetailGenerationRef.current + 1;
     conversationDetailGenerationRef.current = generation;
     setConversationDetailErrorId(null);
@@ -732,9 +793,14 @@ export default function AssetsWorkspaceClient({
       .loadConversationDetail(token, selectedConversationId)
       .then((detail) => {
         if (conversationDetailGenerationRef.current !== generation) return;
-        setConversations((current) => current.map((conversation) => (
-          conversation.id === detail.id ? detail : conversation
-        )));
+        setConversations((current) => {
+          if (current.some((conversation) => conversation.id === detail.id)) {
+            return current.map((conversation) => (
+              conversation.id === detail.id ? detail : conversation
+            ));
+          }
+          return [detail, ...current];
+        });
       })
       .catch(() => {
         if (conversationDetailGenerationRef.current === generation) {
@@ -742,12 +808,7 @@ export default function AssetsWorkspaceClient({
           toast.error("无法加载这条对话的完整内容，请重试。");
         }
       });
-    return () => {
-      if (conversationDetailGenerationRef.current === generation) {
-        conversationDetailGenerationRef.current += 1;
-      }
-    };
-  }, [conversationDetailRetryRevision, selectedConversationId, selectedConversationNeedsDetail, token]);
+  }, [conversationDetailRetryRevision, selectedConversationId, selectedPersistedConversation, token]);
 
   const agentActionPollKey = agentActionPollLifecycleKey(
     Object.values(agentActions),
@@ -1331,13 +1392,15 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleSelectConversation = (conversationId: string) => {
+    pendingConversationNavigationRef.current = conversationId;
+    selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
     setActiveView("conversation");
     setConversationMenuId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("conversation", conversationId);
     url.searchParams.delete("product");
-    window.history.replaceState(window.history.state, "", url);
+    router.replace(`${url.pathname}${url.search}${url.hash}`);
   };
 
   const handleSelectProduct = (conversationId: string, productId: string) => {
@@ -1419,9 +1482,13 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleStartConversation = () => {
+    pendingConversationNavigationRef.current = "new";
+    selectedConversationIdRef.current = "new";
     setActiveView("conversation");
     setConversationMenuId(null);
     setSelectedConversationId("new");
+    const url = newConversationUrl(new URL(window.location.href));
+    router.replace(`${url.pathname}${url.search}${url.hash}`);
   };
 
   const handleAddAssetToConversation = (row: LibraryRow) => {
@@ -1484,6 +1551,7 @@ export default function AssetsWorkspaceClient({
     }
     const uploads = files.map((file): ChatImageUpload => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      idempotencyKey: createUploadIdempotencyKey(),
       file,
       fileName: file.name,
       fileKind: chatAttachmentFileKind(file),
@@ -1498,10 +1566,57 @@ export default function AssetsWorkspaceClient({
     }));
     setSelectedConversationId(targetConversationId);
     setActiveView("conversation");
-    for (const upload of uploads) {
-      void uploadChatImage(targetConversationId, upload);
-    }
+    void (async () => {
+      for (let start = 0; start < uploads.length; start += CHAT_UPLOAD_BATCH_CONCURRENCY) {
+        await Promise.all(
+          uploads
+            .slice(start, start + CHAT_UPLOAD_BATCH_CONCURRENCY)
+            .map((upload) => uploadChatImage(targetConversationId, upload)),
+        );
+      }
+    })();
   };
+
+  const waitForUploadedSourceReady = useCallback(async (
+    conversationId: string,
+    uploadId: string,
+    assetId: number,
+    allowInitialUntracked = false,
+  ) => {
+    if (!token) return;
+    let firstPoll = true;
+    while (workspaceMountedRef.current) {
+      const stillTracked = (chatImageUploadsRef.current[conversationId] ?? []).some((item) => (
+        item.id === uploadId && item.assetId === assetId && item.status === "processing"
+      ));
+      if (!stillTracked && !(allowInitialUntracked && firstPoll)) return;
+      try {
+        const job = await assetWorkspaceAdapter.getLatestAssetIngestJob(token, assetId);
+        if (job.status === "completed") {
+          setChatImageUploads((current) => ({
+            ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) =>
+              item.id === uploadId ? { ...item, status: "ready", uploadProgress: 100, error: undefined } : item
+            )
+          }));
+          return;
+        }
+        if (job.status === "failed") {
+          setChatImageUploads((current) => ({
+            ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) =>
+              item.id === uploadId ? { ...item, status: "failed", error: job.error_message || "资料解析失败。" } : item
+            )
+          }));
+          return;
+        }
+      } catch {
+        // A transient status-read failure must not invalidate an accepted upload.
+      }
+      firstPoll = false;
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    }
+  }, [token]);
 
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
@@ -1518,7 +1633,13 @@ export default function AssetsWorkspaceClient({
             ))
           }));
         },
+        upload.idempotencyKey,
       );
+      const acceptedUpload: Pick<ChatImageAttachment, "assetId" | "fileKind" | "status"> = {
+        assetId: asset.id,
+        fileKind: upload.fileKind,
+        status: asset.status === "ready" ? "ready" : "processing",
+      };
       setChatImageUploads((current) => ({
         ...current,
         [conversationId]: (current[conversationId] ?? []).map((item) =>
@@ -1534,6 +1655,9 @@ export default function AssetsWorkspaceClient({
             : item
         )
       }));
+      if (shouldImmediatelyReconcileAcceptedUpload(acceptedUpload)) {
+        void waitForUploadedSourceReady(conversationId, upload.id, asset.id, true);
+      }
       setLibraryRefreshKey((value) => value + 1);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "资料上传失败。";
@@ -1545,6 +1669,16 @@ export default function AssetsWorkspaceClient({
       }));
     }
   };
+
+  useEffect(() => {
+    if (!token) return;
+    for (const candidate of pendingAttachmentReconciliationKeys(chatImageUploads)) {
+      if (inFlightSourceAttachmentReconciliationsRef.current.has(candidate.key)) continue;
+      inFlightSourceAttachmentReconciliationsRef.current.add(candidate.key);
+      void waitForUploadedSourceReady(candidate.conversationId, candidate.uploadId, candidate.assetId)
+        .finally(() => inFlightSourceAttachmentReconciliationsRef.current.delete(candidate.key));
+    }
+  }, [chatImageUploads, token, waitForUploadedSourceReady]);
 
   const handleRemoveChatImage = (attachmentId: string) => {
     setChatImageUploads((current) => ({
@@ -1719,7 +1853,7 @@ export default function AssetsWorkspaceClient({
     const shouldKeepFocusOnResult = selectedConversationIdRef.current === (optimisticConversationId ?? conversation.id);
     if (shouldKeepFocusOnResult) {
       selectedConversationIdRef.current = targetConversationId;
-      setSelectedConversationId(targetConversationId);
+      handleSelectConversation(targetConversationId);
     }
     if (generationJob && generationJob.status !== "completed") {
       registerAssetGenerationJob(targetConversationId, generationJob);

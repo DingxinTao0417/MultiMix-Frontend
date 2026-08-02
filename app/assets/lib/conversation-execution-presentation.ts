@@ -42,7 +42,22 @@ export function mergeVisibleConversationMessages(
   messages: AssetConversationMessage[],
   exchange: ExecutionOptimisticExchange | null,
 ): AssetConversationMessage[] {
-  const visible = messages.filter((message) => message.presentation !== "hidden_confirmation");
+  const unhiddenMessages = messages.filter((message) => message.presentation !== "hidden_confirmation");
+  const latestPendingVideoParameterIndex = unhiddenMessages.reduce(
+    (latestIndex, message, index) => (
+      message.plan?.kind === "video_parameter_confirmation" && message.plan.status === "pending"
+        ? index
+        : latestIndex
+    ),
+    -1,
+  );
+  const visible = unhiddenMessages.map((message, index) => (
+    index !== latestPendingVideoParameterIndex
+      && message.plan?.kind === "video_parameter_confirmation"
+      && message.plan.status === "pending"
+      ? { ...message, plan: undefined }
+      : message
+  ));
   if (!exchange) return visible;
   const assistant: AssetConversationMessage = {
     role: "assistant",

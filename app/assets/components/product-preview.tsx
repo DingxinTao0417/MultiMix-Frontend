@@ -147,6 +147,21 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
   );
 }
 
+function VideoProjectRecoveryCard({ product }: { product: ProductArtifact }) {
+  return (
+    <div className="shadcn-prototype-video-failed" role="alert">
+      <strong>视频工程暂不可用</strong>
+      <p>工程状态不完整，已停止展示旧预览和分镜时间轴，等待恢复后再打开。</p>
+      <button
+        type="button"
+        onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
+      >
+        回对话查看
+      </button>
+    </div>
+  );
+}
+
 // Remembers where each finished-video URL was last watched so reopening a
 // product resumes instead of restarting from 0. Paired with backend media
 // Cache-Control (backlog B), reopening the same clip is instant. Module scope
@@ -188,6 +203,10 @@ export default function ProductPreview({
     setProjectPreviewRequested(true);
     setProjectPreviewFailed(false);
   }, [exportedVideoUrl, product.id]);
+
+  if (product.status.startsWith("工程异常")) {
+    return <VideoProjectRecoveryCard product={product} />;
+  }
 
   if (product.mode === "copy") {
     if (isFailedProduct(product)) return <ProductFailureCard product={product} />;

@@ -28,6 +28,8 @@ type LoadedProject = {
   project: BackendProject;
 };
 
+const EMBED_READY_RETRY_MS = 1000;
+
 async function refreshMountedEditorProject(project: BackendProject): Promise<void> {
   const editor = EditorCore.getInstance();
   editor.renderer.setRenderTree({ renderTree: null });
@@ -88,6 +90,7 @@ export default function EditorView({
   const [loadingDetail, setLoadingDetail] = useState("");
   const startedRef = useRef(false);
   const exportBusyRef = useRef(false);
+  const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
   const previewOnly = mode === "preview";
 
@@ -110,6 +113,28 @@ export default function EditorView({
     );
   }, [assetId, embed, previewChannel]);
 
+  const publishPreviewState = useCallback(() => {
+    if (!embed || !previewOnly || state !== "ready") return;
+    const editor = EditorCore.getInstance();
+    postToParent({
+      type: "multimix-editor-preview-state",
+      time: editor.playback.getCurrentTime(),
+      playing: editor.playback.getIsPlaying(),
+      duration: editor.timeline.getTotalDuration(),
+    });
+  }, [embed, postToParent, previewOnly, state]);
+
+  useEffect(() => {
+    if (!embed || state !== "ready") return;
+    readyAcknowledgedRef.current = false;
+    const announceReady = () => {
+      if (!readyAcknowledgedRef.current) postToParent({ type: "multimix-editor-ready" });
+    };
+    announceReady();
+    const timer = window.setInterval(announceReady, EMBED_READY_RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [embed, postToParent, state]);
+
   const handleEmbeddedExport = useCallback(async () => {
     if (exportBusyRef.current) return;
     exportBusyRef.current = true;
@@ -124,8 +149,7 @@ export default function EditorView({
       ) as unknown as BackendProject;
       const localReport = inspectEditorProject(currentProject);
       if (localReport.blockers.length) {
-        postToParent({ type: "multimix-editor-export-blocked", report: localReport });
-        return;
+        postToParent({ type: "multimix-editor-export-quality-report", report: localReport });
       }
       if (!assetId || !token) throw new Error("缺少成片验证所需的项目身份信息");
       postToParent({ type: "multimix-editor-export-start" });
@@ -159,12 +183,29 @@ export default function EditorView({
       }
       const verifiedReport = verifyPayload as VideoQualityReport;
       if (verifiedReport.blockers?.length) {
-        postToParent({ type: "multimix-editor-export-blocked", report: verifiedReport });
-        return;
+        postToParent({ type: "multimix-editor-export-quality-report", report: verifiedReport });
+      }
+      const saveResponse = await fetch(
+        `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/mp4`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": mime,
+          },
+          body: blob,
+        },
+      );
+      if (!saveResponse.ok) {
+        const savePayload = await saveResponse.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(
+          savePayload?.detail || `成片保存失败（HTTP ${saveResponse.status}）`,
+        );
       }
       // Rendering and remote verification take long enough that the original
-      // click's browser user activation has expired. Hand the verified Blob to
-      // the parent and let a fresh, explicit download click consume it.
+      // click's browser user activation has expired. Hand the verified and
+      // persisted Blob to the parent and let a fresh, explicit download click
+      // consume it.
       postToParent({ type: "multimix-editor-export-success", report: verifiedReport, blob });
     } catch (cause) {
       postToParent({
@@ -262,6 +303,19 @@ export default function EditorView({
       if (!data || typeof data !== "object") return;
       if ((data as { source?: string }).source !== "multimix-workspace") return;
       const message = data as { type?: string; time?: number };
+      if (message.type === "multimix-editor-ready-ack") {
+        readyAcknowledgedRef.current = true;
+        return;
+      }
+      const syncRequested = message.type === "multimix-editor-sync"
+        || (previewOnly && message.type === "multimix-editor-preview-sync");
+      if (syncRequested) {
+        if (state === "ready") {
+          postToParent({ type: "multimix-editor-ready" });
+          if (previewOnly) publishPreviewState();
+        }
+        return;
+      }
       if (state !== "ready") {
         if (message.type === "multimix-editor-export") {
           postToParent({ type: "multimix-editor-export-error", message: "剪辑器尚未准备完成" });
@@ -288,22 +342,17 @@ export default function EditorView({
     state,
     handleEmbeddedExport,
     postToParent,
+    publishPreviewState,
     previewOnly,
   ]);
 
   useEffect(() => {
     if (!embed || !previewOnly || state !== "ready") return;
     const editor = EditorCore.getInstance();
-    const publish = () => postToParent({
-      type: "multimix-editor-preview-state",
-      time: editor.playback.getCurrentTime(),
-      playing: editor.playback.getIsPlaying(),
-      duration: editor.timeline.getTotalDuration(),
-    });
-    const unsubscribe = editor.playback.subscribe(publish);
-    publish();
+    const unsubscribe = editor.playback.subscribe(publishPreviewState);
+    publishPreviewState();
     return unsubscribe;
-  }, [embed, postToParent, previewOnly, state]);
+  }, [embed, previewOnly, publishPreviewState, state]);
 
   return (
     <div className={`editor-root${previewOnly ? " preview-only" : ""}`}>

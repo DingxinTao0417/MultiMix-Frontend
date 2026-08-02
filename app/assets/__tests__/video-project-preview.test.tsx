@@ -69,6 +69,53 @@ describe("video project preview", () => {
     expect(screen.getByRole("slider", { name: "播放进度" })).toHaveValue("1.5");
   });
 
+  it("requests the current preview state after the iframe finishes loading", () => {
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+    fireEvent.load(iframe);
+
+    expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-preview-sync" },
+      window.location.origin,
+    );
+  });
+
+  it("retries preview-state synchronization only until the editor reports ready", () => {
+    vi.useFakeTimers();
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(iframe.contentWindow!, "postMessage");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-preview-sync" },
+      window.location.origin,
+    );
+
+    postMessage.mockClear();
+    publishPreviewState(iframe);
+    act(() => vi.advanceTimersByTime(2000));
+    expect(postMessage.mock.calls.filter(([payload]) => (
+      (payload as { type?: string }).type === "multimix-editor-preview-sync"
+    ))).toHaveLength(0);
+  });
+
   it("sends toggle, seek, and segment jump commands only to its own iframe", () => {
     const ref = createRef<VideoProjectPreviewHandle>();
     render(

@@ -14,8 +14,10 @@ describe("display-area project readiness", () => {
   it("does not expose the video browse surface for a false-ready project", () => {
     render(<ProductPreview product={falseReadyProduct} />);
 
+    expect(screen.getByRole("alert")).toHaveTextContent("视频工程暂不可用");
     expect(screen.queryByLabelText("成片预览")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("视频工程预览")).not.toBeInTheDocument();
+    expect(screen.queryByText("编导稿草稿", { exact: true })).not.toBeInTheDocument();
   });
 
   it("does not expose edit or export controls for a false-ready project", () => {

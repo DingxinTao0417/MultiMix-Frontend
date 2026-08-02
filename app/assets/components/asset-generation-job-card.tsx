@@ -55,6 +55,9 @@ export function AssetGenerationJobCard({
     setStopping(true);
     try { await onCancel(job.id); } catch { setStopping(false); }
   };
+  const retryStopped = () => {
+    if (job.status === "cancelled") void onRetry?.(job.id);
+  };
 
   return (
     <div
@@ -77,6 +80,14 @@ export function AssetGenerationJobCard({
             onClick={() => void stop()}
           >
             {stopping ? "正在停止…" : "停止生成"}
+          </button>
+        ) : job.status === "cancelled" && onRetry ? (
+          <button
+            type="button"
+            className="shadcn-prototype-agent-run-retry"
+            onClick={retryStopped}
+          >
+            重新生成
           </button>
         ) : null}
       />

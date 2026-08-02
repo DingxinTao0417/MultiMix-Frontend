@@ -19,16 +19,16 @@ export default function VideoQualityPanel({
 
   return (
     <section
-      className={`shadcn-prototype-video-quality ${report.blockers.length ? "blocked" : "warning"}`}
+      className="shadcn-prototype-video-quality warning"
       aria-label="视频质量检查"
-      role={report.blockers.length ? "alert" : "status"}
+      role="status"
     >
       <header>
         <div>
-          <strong>{report.blockers.length ? "导出前需要修复" : "导出提醒"}</strong>
+          <strong>导出提醒</strong>
           <span>
             {report.blockers.length
-              ? `${report.blockers.length} 个问题会影响成片，修复并重新检查后才能导出。`
+              ? `${report.blockers.length} 个问题可能影响成片；本次测试仍可继续导出。`
               : `${report.warnings.length} 个提醒不阻止导出。`}
           </span>
         </div>

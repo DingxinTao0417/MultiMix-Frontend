@@ -45,6 +45,38 @@ describe("AssetPicker confirmation flow", () => {
     expect(onSelect).toHaveBeenCalledWith(recommended[0]);
   });
 
+  it("keeps a selected candidate when asynchronous data refreshes change the close callback", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(
+      <AssetPicker
+        open
+        title="为分镜 #2 换素材"
+        recommended={recommended}
+        library={[]}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /施工过程记录/ }));
+    expect(screen.getByRole("button", { name: "确认替换" })).toBeEnabled();
+
+    rerender(
+      <AssetPicker
+        open
+        title="为分镜 #2 换素材"
+        recommended={recommended}
+        library={[]}
+        publicItems={[{ id: "pub-1", title: "公共素材", candidateId: "pub-1" }]}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认替换" }));
+    expect(onSelect).toHaveBeenCalledWith(recommended[0]);
+  });
+
   it("closes without replacing when the user cancels", () => {
     const onSelect = vi.fn();
     const onClose = vi.fn();

@@ -97,6 +97,11 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("{!isTextEditing && hasVideoProject && editorRequested ? (");
     expect(workspace).toContain("pendingExportRef.current = true");
     expect(workspace).toContain('setExportState("preparing")');
+    expect(workspace).toContain('type: "multimix-editor-sync"');
+    expect(workspace).toContain('type: "multimix-editor-ready-ack"');
+    expect(editorView).toContain('message.type === "multimix-editor-sync"');
+    expect(editorView).toContain('message.type === "multimix-editor-ready-ack"');
+    expect(editorView).toContain('/mp4');
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 

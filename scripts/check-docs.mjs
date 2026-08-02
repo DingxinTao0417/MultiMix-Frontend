@@ -62,7 +62,7 @@ const STALE_REFERENCES = [
   },
   {
     token: "docs/MULTIMIX_TIER1_UPGRADE_DESIGN",
-    replacement: "docs/plans/active/tier1-upgrade-design.md",
+    replacement: "docs/archive/plans/tier1-upgrade-design.md",
   },
   {
     token: "docs/superpowers",

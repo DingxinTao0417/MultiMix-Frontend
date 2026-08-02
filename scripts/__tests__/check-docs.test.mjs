@@ -71,6 +71,27 @@ test("flags stale paths in current docs while allowing archive references", () =
   assert.equal(issues.some((issue) => issue.code === "stale-reference"), true);
 });
 
+test("points retired Tier 1 references to the archived plan", () => {
+  const root = makeWorkspace();
+  writeFile(
+    root,
+    "docs/qa/conversation.md",
+    `${HEADER}\nSee docs/MULTIMIX_TIER1_UPGRADE_DESIGN.md\n`,
+  );
+
+  const issues = checkDocs(root);
+  const tier1Issue = issues.find(
+    (issue) =>
+      issue.code === "stale-reference" &&
+      issue.message.includes("MULTIMIX_TIER1_UPGRADE_DESIGN"),
+  );
+
+  assert.match(
+    tier1Issue?.fix ?? "",
+    /docs\/archive\/plans\/tier1-upgrade-design\.md/,
+  );
+});
+
 test("flags missing Markdown references in the workspace documentation map", () => {
   const root = makeWorkspace();
   writeFile(

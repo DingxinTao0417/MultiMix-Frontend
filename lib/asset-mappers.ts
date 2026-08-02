@@ -330,9 +330,16 @@ function thumbnailUrlFromRef(ref: string): string | undefined {
 type SegmentTiming = { start: number; end: number };
 
 type PrimaryVisualSourceType = "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
+type MaterialFillStatus = "saved_hit" | "public_candidate" | "unfilled";
 
 function primaryVisualSourceType(value: unknown): PrimaryVisualSourceType | undefined {
   return value === "saved_asset" || value === "public_asset" || value === "product_asset" || value === "generated_scene"
+    ? value
+    : undefined;
+}
+
+function materialFillStatus(value: unknown): MaterialFillStatus | undefined {
+  return value === "saved_hit" || value === "public_candidate" || value === "unfilled"
     ? value
     : undefined;
 }
@@ -405,6 +412,12 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       : isRecord(planScene?.primary_visual_strategy)
         ? planScene.primary_visual_strategy
         : null;
+    const materialResolution = isRecord(segment.material_resolution)
+      ? segment.material_resolution
+      : isRecord(planScene?.material_resolution)
+        ? planScene.material_resolution
+        : null;
+    const fillStatus = materialFillStatus(materialResolution?.fill_status);
     const voice = isRecord(segment.voice)
       ? segment.voice
       : isRecord(planScene?.voice)
@@ -444,10 +457,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       assetThumbnailUrl: primaryThumbnailUrl || thumbnailUrlFromRef(
         stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
       ),
-      isFallback: generatedPrimaryAvailable || productPrimaryAvailable
-        ? false
-        : Boolean(reference) && stringValue(reference?.status) !== "matched",
+      isFallback: primarySourceType === "public_asset"
+        || fillStatus === "public_candidate",
+      materialFillStatus: fillStatus,
       primaryVisualSourceType: primarySourceType,
+      primaryVisualPersisted: primaryPersisted || undefined,
       primaryVisualMediaType: primaryPersisted && Boolean(primaryThumbnailUrl)
         ? primaryVisualMediaType(primaryArtifactRef, primarySourceType)
         : undefined,
@@ -493,9 +507,19 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
     }];
   });
   if (segments?.length) {
-    const matched = segments.filter((segment) => segment.assetTitle && !segment.isFallback).length;
-    const fallback = segments.filter((segment) => segment.isFallback).length;
-    if (matched || fallback) {
+    const saved = segments.filter((segment) => (
+      segment.materialFillStatus === "saved_hit"
+      || (segment.assetTitle && !segment.isFallback)
+    )).length;
+    const publicUsed = segments.filter((segment) => (
+      segment.primaryVisualPersisted === true
+      && segment.primaryVisualSourceType === "public_asset"
+    )).length;
+    const publicCandidates = segments.filter((segment) => (
+      segment.materialFillStatus === "public_candidate"
+      && !(segment.primaryVisualPersisted === true && segment.primaryVisualSourceType === "public_asset")
+    )).length;
+    if (saved || publicUsed || publicCandidates) {
       if (!refs.length) {
         const seen = new Set<string>();
         for (const segment of segments) {
@@ -509,13 +533,20 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
           });
         }
       }
-      const parts = [
-        matched ? `${matched} 个已保存素材` : "",
-        fallback ? `${fallback} 个公共素材` : ""
+      const usedParts = [
+        saved ? `${saved} 个已保存素材` : "",
+        publicUsed ? `${publicUsed} 个公共素材` : ""
       ].filter(Boolean);
+      const headline = usedParts.length
+        ? `基于 ${usedParts.join(" + ")}生成${publicCandidates ? ` · ${publicCandidates} 个公共素材候选` : ""}`
+        : `已找到 ${publicCandidates} 个公共素材候选`;
       return {
-        headline: `基于 ${parts.join(" + ")}生成`,
-        note: `已保存素材命中 ${matched}/${segments.length} · 公共素材仅在未命中已保存素材时使用`,
+        headline,
+        note: [
+          saved ? `已保存素材命中 ${saved}/${segments.length}` : "",
+          publicUsed ? "公共素材已验证并用于工程" : "",
+          publicCandidates ? "公共素材候选待验证" : "",
+        ].filter(Boolean).join(" · "),
         refs
       };
     }
@@ -779,7 +810,6 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
-  const invalidVideoProject = Boolean(rawVideoProject && !videoProject);
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const stageResults = isRecord(videoProject?.stage_results) ? videoProject.stage_results : undefined;
@@ -801,6 +831,13 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const orchestrationPending = Boolean(
     metadata.orchestration_pending
     && !videoProject
+    && !orchestrationFailed
+  );
+  const invalidVideoProject = Boolean(rawVideoProject && !videoProject) || Boolean(
+    asset.content_type === "video_render"
+    && !rawVideoProject
+    && !mp4Artifact
+    && !orchestrationPending
     && !orchestrationFailed
   );
   const status = videoProject

@@ -72,9 +72,13 @@ export type AssetProductSegment = {
   assetTitle?: string;
   assetThumbnailUrl?: string;
   isFallback: boolean;
+  // Mirrors the authoritative draft-stage material_resolution.fill_status.
+  // A public candidate is not yet the material ultimately used by the project.
+  materialFillStatus?: "saved_hit" | "public_candidate" | "unfilled";
   visualStatusLabel?: "已生成画面" | "产品界面";
   businessHint?: "建议补充真实案例素材";
   primaryVisualSourceType?: "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
+  primaryVisualPersisted?: boolean;
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
   mgStatus?: string;

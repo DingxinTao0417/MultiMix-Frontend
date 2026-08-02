@@ -15,6 +15,76 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("restores download for an already persisted MP4 without exporting again", async () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const getVideoQuality = vi.spyOn(assetWorkspaceAdapter, "getVideoQuality");
+    let downloadedHref = "";
+    const downloadFetch = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(["mp4"]), { status: 200 }));
+    vi.stubGlobal("fetch", downloadFetch);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:restored-export"),
+      revokeObjectURL: vi.fn(),
+    });
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function captureDownloadHref(this: HTMLAnchorElement) {
+      downloadedHref = this.href;
+    });
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    const downloadButton = screen.getByRole("button", { name: "下载成片" });
+    expect(downloadButton).toBeEnabled();
+
+    fireEvent.click(downloadButton);
+
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(getVideoQuality).not.toHaveBeenCalled();
+    expect(downloadFetch).toHaveBeenCalledWith(expect.stringContaining("/v1/video/media?ref=display-sample.mp4"));
+    expect(downloadedHref).toBe("blob:restored-export");
+  });
+
+  it("reveals retry when a live failed job overrides stale pending metadata", () => {
+    const product = {
+      ...displayProducts["case-05-project-failed"],
+      metadata: {
+        ...displayProducts["case-05-project-failed"].metadata,
+        orchestration_pending: true,
+      },
+    };
+    const retry = vi.fn(async () => undefined);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={retry}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        videoJobLive={{
+          jobId: "job-failed",
+          status: "failed",
+          renderStage: "failed",
+          steps: [],
+          errorMessage: "素材合成步骤失败，请重试。",
+          completionConfirmed: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("视频生成失败");
+    expect(screen.getByRole("button", { name: /重试生成/ })).toBeEnabled();
+    expect(screen.queryByText("视频工程生成中")).not.toBeInTheDocument();
+  });
+
   it("opens the selected segment voiceover editor in a dialog", () => {
     const product = {
       ...displayProducts["case-06-project-ready-no-mp4"],

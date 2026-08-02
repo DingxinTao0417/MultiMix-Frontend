@@ -64,6 +64,31 @@ describe("confirmation message presentation", () => {
     expect(result.map((message) => message.role)).toEqual(["assistant"]);
   });
 
+  it("keeps only the latest pending video-parameter confirmation card", () => {
+    const firstPlan = {
+      kind: "video_parameter_confirmation" as const,
+      title: "确认视频参数",
+      status: "pending" as const,
+      fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+      pendingIntentId: "intent-1",
+      pendingIntentVersion: 1,
+    };
+    const latestPlan = {
+      ...firstPlan,
+      pendingIntentVersion: 2,
+    };
+
+    const result = mergeVisibleConversationMessages([
+      { role: "assistant", text: "请确认参数。", plan: firstPlan },
+      { role: "user", text: "确认，生成编导稿。" },
+      { role: "assistant", text: "请先确认视频比例和目标时长。", plan: latestPlan },
+    ], null);
+
+    expect(result.filter((message) => message.plan?.kind === "video_parameter_confirmation"))
+      .toEqual([expect.objectContaining({ text: "请先确认视频比例和目标时长。", plan: latestPlan })]);
+    expect(result[0]).toMatchObject({ text: "请确认参数。", plan: undefined });
+  });
+
   it("keeps user and assistant messages for ordinary optimistic instructions", () => {
     const result = mergeVisibleConversationMessages([], {
       userText: "把第二段改短一点",

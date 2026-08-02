@@ -56,8 +56,11 @@ export default function AssetPicker({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (open) setSelectedId(null);
+  }, [open, title]);
+
+  useEffect(() => {
     if (!open) return;
-    setSelectedId(null);
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };

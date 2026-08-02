@@ -273,7 +273,7 @@ describe("display-area eight-case matrix", () => {
     expect(container.querySelector("video")).toHaveAttribute("src", expect.stringContaining("display-sample.mp4"));
   });
 
-  it("disables export when the backend preflight returns a blocker", async () => {
+  it("keeps export available when the backend preflight reports issues", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     const blocked: VideoQualityReport = {
       stage: "export_preflight",
@@ -298,15 +298,29 @@ describe("display-area eight-case matrix", () => {
         token="test-token"
       />,
     );
-    window.dispatchEvent(new MessageEvent("message", {
-      origin: window.location.origin,
-      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
-    }));
-
     fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
 
     expect(await screen.findByText("第 1 段主画面缺失")).toBeVisible();
-    expect(screen.getByRole("button", { name: "导出视频" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在准备编辑器…" })).toBeDisabled();
+
+    const frame = await screen.findByTitle("视频剪辑器") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    fireEvent.load(frame);
+    expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-sync" },
+      window.location.origin,
+    );
+    const readyEvent = new MessageEvent("message", {
+      origin: window.location.origin,
+      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
+    });
+    Object.defineProperty(readyEvent, "source", { value: frame.contentWindow });
+    window.dispatchEvent(readyEvent);
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-export" },
+      window.location.origin,
+    ));
   });
 
   it("allows warning-only preflight to reach the editor export bridge", async () => {

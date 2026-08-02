@@ -159,12 +159,13 @@ describe("runtime data boundary", () => {
     const progress = vi.fn();
 
     await expect(
-      assetWorkspaceAdapter.uploadAsset("token", new File(["image"], "cover.png", { type: "image/png" }), "image", progress),
+      assetWorkspaceAdapter.uploadAsset("token", new File(["image"], "cover.png", { type: "image/png" }), "image", progress, "upload-key-42"),
     ).resolves.toMatchObject({ id: 42 });
 
     expect(progress).toHaveBeenCalledWith(25);
     expect(FakeUploadRequest.instance?.open).toHaveBeenCalledWith("POST", expect.stringContaining("/v1/assets/upload"));
     expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith("Authorization", "Bearer token");
+    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-key-42");
     vi.unstubAllGlobals();
   });
 
@@ -477,6 +478,31 @@ describe("runtime data boundary", () => {
     expect(conversation.detailsLoaded).toBe(false);
     expect(conversation.messages).toEqual([]);
     expect(conversation.products).toEqual([]);
+  });
+
+  it("reloads a legacy row that has no explicit detail-loaded flag", () => {
+    const summary: AssetConversationSummaryResponse = {
+      id: "asset-conversation-legacy",
+      title: "旧版缓存对话",
+      status: "active",
+      metadata: {},
+      created_at: "2026-07-12T08:00:00Z",
+      updated_at: "2026-07-12T09:00:00Z",
+    };
+    const legacyRow = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: summary.id,
+      title: "旧标题",
+    };
+    delete legacyRow.detailsLoaded;
+
+    const [merged] = assetWorkspaceAdapter.mergeConversationSummaries(
+      [summary],
+      [legacyRow],
+    );
+
+    expect(merged.detailsLoaded).toBe(false);
+    expect(merged.messages).toEqual([]);
   });
 
   it("keeps bundled demo data out of the production adapter", () => {

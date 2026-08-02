@@ -7,10 +7,10 @@ import { getProductModeLabel, getProductRatioClass, stringValue, type Conversati
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
-import { hasBlockingVideoIssues, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
+import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
-import ProductPreview, { browseBgmSummary } from "./product-preview";
+import ProductPreview, { browseBgmSummary, playableVideoUrl } from "./product-preview";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VoiceoverDialog from "./voiceover-dialog";
@@ -77,7 +77,7 @@ export default function ProductWorkspace({
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "checking" | "preparing" | "exporting" | "verifying" | "blocked" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "checking" | "preparing" | "exporting" | "verifying" | "downloading" | "blocked" | "done" | "error">("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [exportError, setExportError] = useState("");
@@ -115,17 +115,33 @@ export default function ProductWorkspace({
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
     : {}) as Record<string, unknown>;
+  const videoProjectMetadata = productMetadata.video_project && typeof productMetadata.video_project === "object" && !Array.isArray(productMetadata.video_project)
+    ? productMetadata.video_project as Record<string, unknown>
+    : null;
+  const mp4ArtifactMetadata = productMetadata.mp4_artifact && typeof productMetadata.mp4_artifact === "object" && !Array.isArray(productMetadata.mp4_artifact)
+    ? productMetadata.mp4_artifact as Record<string, unknown>
+    : null;
+  const hasPersistedExport = Boolean(
+    stringValue(videoProjectMetadata?.mp4_ref)
+    || stringValue(mp4ArtifactMetadata?.mp4_ref)
+    || stringValue(mp4ArtifactMetadata?.ref),
+  );
+  const persistedExportUrl = hasPersistedExport ? playableVideoUrl(product) : "";
   // Video products backed by a real orchestration project can open the editor.
   const hasVideoProject = Boolean(product.backendAssetId && product.videoProjectReady);
   // While the orchestration job runs (TTS + material search), there is no
   // editable project yet; surface stage-level progress instead of the editor.
-  const orchestrationPending = Boolean(
+  // The live job is more recent than the product projection. A worker may
+  // terminalize before its conversation refresh clears orchestration_pending,
+  // so a durable failed job must reveal recovery rather than a false spinner.
+  const liveVideoJobFailed = !hasVideoProject && videoJobLive?.status === "failed";
+  const orchestrationPending = !liveVideoJobFailed && (Boolean(
     product.backendAssetId && !hasVideoProject && productMetadata.orchestration_pending
-  ) || (!hasVideoProject && videoJobLive?.status === "running") || (!hasVideoProject && videoJobLive?.status === "queued");
+  ) || (!hasVideoProject && videoJobLive?.status === "running") || (!hasVideoProject && videoJobLive?.status === "queued"));
   // Failed jobs keep latest_job_public_id in metadata; the poller/mapper marks
   // the asset failed. Show a persistent error card with a retry action.
   const orchestrationFailed = !hasVideoProject && !orchestrationPending && Boolean(
-    (videoJobLive?.status === "failed")
+    liveVideoJobFailed
     || (typeof productMetadata.latest_job_public_id === "string" && product.status.includes("失败"))
   );
   // The pending pill still surfaces the coarse stage label; the step-by-step
@@ -221,14 +237,14 @@ export default function ProductWorkspace({
   useEffect(() => {
     setEditorRequested(false);
     setEditorReady(false);
-    setExportState("idle");
+    setExportState(hasPersistedExport ? "done" : "idle");
     setExportProgress(null);
     setQualityReport(null);
     setExportError("");
     setExportDownloaded(false);
     pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
-  }, [currentAssetId, hasVideoProject]);
+  }, [currentAssetId, hasPersistedExport, hasVideoProject]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
@@ -271,6 +287,22 @@ export default function ProductWorkspace({
     return true;
   }, []);
 
+  const requestEditorReadiness = useCallback(() => {
+    const frameWindow = editorFrameRef.current?.contentWindow;
+    if (!frameWindow || typeof window === "undefined") return;
+    frameWindow.postMessage(
+      { source: "multimix-workspace", type: "multimix-editor-sync" },
+      window.location.origin,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!editorRequested || editorReady || typeof window === "undefined") return;
+    requestEditorReadiness();
+    const timer = window.setInterval(requestEditorReadiness, 1000);
+    return () => window.clearInterval(timer);
+  }, [editorReady, editorRequested, requestEditorReadiness]);
+
   useEffect(() => {
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
     const onMessage = (event: MessageEvent) => {
@@ -280,6 +312,10 @@ export default function ProductWorkspace({
       if (String(data.assetId ?? "") !== currentAssetId) return;
       switch (data.type) {
         case "multimix-editor-ready":
+          editorFrameRef.current?.contentWindow?.postMessage(
+            { source: "multimix-workspace", type: "multimix-editor-ready-ack" },
+            window.location.origin,
+          );
           setEditorReady(true);
           if (!pendingExportRef.current || !startEditorExport()) {
             setExportState((previous) => previous === "exporting" ? previous : "idle");
@@ -327,9 +363,12 @@ export default function ProductWorkspace({
           setExportState("verifying");
           setExportProgress(100);
           break;
+        case "multimix-editor-export-quality-report":
+          if (data.report) setQualityReport(data.report);
+          break;
         case "multimix-editor-export-blocked":
           if (data.report) setQualityReport(data.report);
-          setExportState("blocked");
+          setExportState("idle");
           setExportProgress(null);
           setExportError("");
           break;
@@ -382,22 +421,43 @@ export default function ProductWorkspace({
     }
   };
 
+  const downloadExportBlob = (blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `video-${Date.now()}.mp4`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setExportDownloaded(true);
+  };
+
   const handleExportVideo = async () => {
-    if (!currentAssetId || ["exporting", "checking", "preparing", "verifying"].includes(exportState)) return;
+    if (!currentAssetId || ["exporting", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
     if (exportState === "done" && verifiedExportBlobRef.current) {
-      const url = URL.createObjectURL(verifiedExportBlobRef.current);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `video-${Date.now()}.mp4`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setExportDownloaded(true);
+      downloadExportBlob(verifiedExportBlobRef.current);
+      return;
+    }
+    if (hasPersistedExport && persistedExportUrl) {
+      setExportState("downloading");
+      setExportError("");
+      try {
+        const response = await fetch(persistedExportUrl);
+        if (!response.ok) throw new Error(`media download failed with ${response.status}`);
+        const blob = await response.blob();
+        if (blob.size <= 0) throw new Error("media download returned an empty body");
+        verifiedExportBlobRef.current = blob;
+        downloadExportBlob(blob);
+        setExportState("done");
+      } catch {
+        setExportState("error");
+        setExportError("成片已生成，但下载文件暂时不可用，请重试。");
+      }
       return;
     }
     const report = await requestExportQuality();
-    if (!report || hasBlockingVideoIssues(report)) return;
+    if (!report) return;
     if (editorReady && startEditorExport()) return;
     pendingExportRef.current = true;
     setExportState("preparing");
@@ -428,12 +488,14 @@ export default function ProductWorkspace({
       ? "正在准备编辑器…"
     : exportState === "verifying"
       ? "正在检查成片…"
+    : exportState === "downloading"
+      ? "正在准备下载…"
     : exportState === "exporting"
       ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
         ? exportDownloaded ? "再次下载" : "下载成片"
-        : exportState === "error"
-          ? "导出失败，重试"
+    : exportState === "error"
+          ? hasPersistedExport ? "下载失败，重试" : "导出失败，重试"
           : exportState === "blocked"
             ? "修复后重新检查"
           : "导出视频";
@@ -636,7 +698,6 @@ export default function ProductWorkspace({
                   </div>
                 </section>
 
-                {product.versions && product.versions.length > 0 ? (
                 {canBrowseVideo && (videoBgmSummary || product.sourceSummary) ? (
                   <section className="shadcn-prototype-detail-section">
                     <h4>本片素材</h4>
@@ -645,6 +706,7 @@ export default function ProductWorkspace({
                   </section>
                 ) : null}
 
+                {product.versions && product.versions.length > 0 ? (
                   <section className="shadcn-prototype-detail-section">
                     <h4>版本历史</h4>
                     <div className="shadcn-prototype-version-list">
@@ -743,8 +805,7 @@ export default function ProductWorkspace({
                 type="button"
                 className="shadcn-prototype-open-editor"
                 disabled={
-                  ["exporting", "checking", "preparing", "verifying"].includes(exportState)
-                  || hasBlockingVideoIssues(qualityReport)
+                  ["exporting", "checking", "preparing", "verifying", "downloading"].includes(exportState)
                 }
                 onClick={() => void handleExportVideo()}
               >
@@ -836,6 +897,7 @@ export default function ProductWorkspace({
               src={`/editor?asset=${encodeURIComponent(String(product.backendAssetId))}&embed=1`}
               title="视频剪辑器"
               allow="autoplay; clipboard-write"
+              onLoad={requestEditorReadiness}
             />
           </div>
         ) : null}

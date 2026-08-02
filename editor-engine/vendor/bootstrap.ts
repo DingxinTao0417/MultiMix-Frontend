@@ -8,6 +8,22 @@ import type { MediaAsset } from "@editor/lib/media/types";
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
 
+// A playable project must not wait forever for one remote media connection.
+// This is a no-response bound per resource, not a cap on project playback.
+const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 90_000;
+
+async function fetchMediaBlob(url: string): Promise<Blob> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), MEDIA_HYDRATION_IDLE_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.blob();
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 export function disposeEditor(): void {
   EditorCore.reset();
   if (typeof window !== "undefined") {
@@ -18,7 +34,7 @@ export function disposeEditor(): void {
 
 // Download media files into real Blob/File objects. The canvas renderer uses
 // WebCodecs over File objects for video frames, so preview needs these blobs.
-async function hydrateAssetFiles(
+export async function hydrateAssetFiles(
   assets: MediaAsset[],
   bp: BackendProject,
   onProgress?: HydrateProgress,
@@ -37,11 +53,10 @@ async function hydrateAssetFiles(
     const batch = assets.slice(i, i + BATCH);
     const batchResults = await Promise.all(
       batch.map(async (asset) => {
+        const url = playbackUrlById[asset.id];
         try {
-          const url = playbackUrlById[asset.id];
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const blob = await res.blob();
+          if (!url) throw new Error("Missing media playback URL");
+          const blob = await fetchMediaBlob(url);
           if (!blob.type.startsWith(`${asset.type}/`)) {
             throw new Error(`Unexpected media type ${blob.type || "unknown"}`);
           }
@@ -49,7 +64,7 @@ async function hydrateAssetFiles(
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
           console.warn("hydrate media failed", asset.id, e);
-          return asset;
+          return url ? { ...asset, url } : asset;
         } finally {
           loaded += 1;
           onProgress?.(loaded, assets.length);

@@ -109,7 +109,7 @@ test("CASE-02 shows the saved asset reference", async ({ page }) => {
 test("CASE-03 tells public fallback apart from saved assets", async ({ page }) => {
   const workspace = await openCase(page, "case-03-no-asset-hit");
   await expect(workspace.getByText("未命中素材", { exact: false }).first()).toBeVisible();
-  await expect(workspace.getByText("基于 3 个公共素材生成", { exact: false })).toBeVisible();
+  await expect(workspace.getByText("已找到 3 个公共素材候选", { exact: false })).toBeVisible();
   await expect(workspace.getByText("测试门店素材", { exact: false })).toHaveCount(0);
 });
 
@@ -126,6 +126,16 @@ test("CASE-05 shows its stable failure and retry", async ({ page }) => {
   const failure = workspace.getByRole("alert");
   await expect(failure.getByText("素材合成步骤失败", { exact: false })).toBeVisible();
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+});
+
+test("CASE-09 keeps an invalid video-render record out of the legacy preview", async ({ page }) => {
+  const workspace = await openCase(page, "case-09-invalid-video-render");
+  const recovery = workspace.getByRole("alert");
+
+  await expect(recovery.getByText("视频工程暂不可用", { exact: false })).toBeVisible();
+  await expect(workspace.getByLabel("编导稿草稿预览")).toHaveCount(0);
+  await expect(workspace.getByText("当前是可编辑编导稿", { exact: false })).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });
 
 test("CASE-06 renders the ready engineering preview without opening the editable editor", async ({ page }) => {
@@ -232,7 +242,7 @@ test("video library renders one bounded page without eager video elements", asyn
   await expect(shell).not.toHaveClass(/sidebar-collapsed/);
 
   await page.getByRole("button", { name: "加载更多" }).click();
-  await expect(cards).toHaveCount(60);
+  await expect(cards).toHaveCount(61);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);

@@ -103,6 +103,33 @@ type AttachmentState = {
   status: ChatAttachmentStatus;
 };
 
+type ReconciliationAttachmentState = {
+  id: string;
+  assetId?: number;
+  fileKind?: ChatAttachmentFileKind;
+  status: ChatAttachmentStatus;
+};
+
+export function pendingAttachmentReconciliationKeys(
+  uploadsByConversation: Record<string, ReconciliationAttachmentState[]>,
+): Array<{ key: string; conversationId: string; uploadId: string; assetId: number }> {
+  return Object.entries(uploadsByConversation).flatMap(([conversationId, uploads]) => uploads.flatMap((upload) => {
+    if (upload.status !== "processing" || typeof upload.assetId !== "number") return [];
+    return [{
+      key: `${conversationId}:${upload.id}:${upload.assetId}`,
+      conversationId,
+      uploadId: upload.id,
+      assetId: upload.assetId,
+    }];
+  }));
+}
+
+export function shouldImmediatelyReconcileAcceptedUpload(
+  upload: Pick<ReconciliationAttachmentState, "assetId" | "fileKind" | "status">,
+): boolean {
+  return upload.status === "processing" && typeof upload.assetId === "number";
+}
+
 export function chatAttachmentFileKind(file: Pick<File, "name" | "type">): ChatAttachmentFileKind {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/") || /\.(mp4|mov|webm|mkv)$/i.test(file.name)) return "video";

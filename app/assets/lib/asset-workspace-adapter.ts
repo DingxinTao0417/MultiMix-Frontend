@@ -95,6 +95,7 @@ function uploadAssetWithProgress<T>(
   token: string | null,
   formData: FormData,
   onProgress: UploadProgressCallback,
+  idempotencyKey?: string,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     let attempt = 0;
@@ -102,6 +103,7 @@ function uploadAssetWithProgress<T>(
       const request = new XMLHttpRequest();
       request.open("POST", `${API_BASE}/v1${path}`);
       if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
+      if (idempotencyKey) request.setRequestHeader("Idempotency-Key", idempotencyKey);
       request.upload.onprogress = (event) => {
         onProgress(event.lengthComputable && event.total > 0
           ? Math.min(99, Math.round((event.loaded / event.total) * 100))
@@ -119,7 +121,10 @@ function uploadAssetWithProgress<T>(
           resolve(payload as T);
           return;
         }
-        if ([502, 503, 504].includes(request.status) && attempt === 0) {
+        const retryableDatabaseFailure = request.status === 500
+          && isRecord(payload)
+          && payload.detail === "Database request failed.";
+        if (idempotencyKey && (retryableDatabaseFailure || [502, 503, 504].includes(request.status)) && attempt === 0) {
           attempt += 1;
           setTimeout(send, 300);
           return;
@@ -350,7 +355,14 @@ export type AssetWorkspaceAdapter = {
     query?: string,
     options?: LibraryListOptions,
   ): Promise<LibraryPage>;
-  uploadAsset(token: string, file: File, view: Exclude<AssetWorkspaceView, "conversation">, onProgress?: UploadProgressCallback): Promise<ContentAsset>;
+  uploadAsset(
+    token: string,
+    file: File,
+    view: Exclude<AssetWorkspaceView, "conversation">,
+    onProgress?: UploadProgressCallback,
+    idempotencyKey?: string,
+  ): Promise<ContentAsset>;
+  getLatestAssetIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
@@ -843,7 +855,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const currentById = new Map(current.map((conversation) => [conversation.id, conversation]));
       return summaries.map((summary) => {
         const existing = currentById.get(summary.id);
-        if (existing && existing.detailsLoaded !== false) {
+        if (existing?.detailsLoaded === true) {
           return {
             ...existing,
             title: summary.title,
@@ -1125,12 +1137,15 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         nextOffset: hasMore ? offset + limit : null,
       };
     },
-    async uploadAsset(token, file, view, onProgress) {
+    async uploadAsset(token, file, view, onProgress, idempotencyKey) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("target_kind", view === "assets" ? "asset" : view);
-      if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress);
+      if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress, idempotencyKey);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
+    },
+    async getLatestAssetIngestJob(token, assetId) {
+      return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
     },
     async createWebCapture(token, payload) {
       return api<ContentAsset>("/assets/web-captures", token, {

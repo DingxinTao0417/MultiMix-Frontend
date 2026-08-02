@@ -4,6 +4,8 @@ import {
   attachmentSendBlockReason,
   chatAttachmentFileKind,
   chatAttachmentStatusLabel,
+  pendingAttachmentReconciliationKeys,
+  shouldImmediatelyReconcileAcceptedUpload,
 } from "../lib/asset-workspace-shared";
 
 describe("chat attachment upload state", () => {
@@ -23,5 +25,39 @@ describe("chat attachment upload state", () => {
     expect(chatAttachmentStatusLabel({ status: "processing", uploadProgress: 100 })).toBe("上传完成");
     expect(chatAttachmentStatusLabel({ status: "ready", uploadProgress: 100 })).toBe("上传完成");
     expect(attachmentSendBlockReason([{ status: "processing" }])).toBe("资料正在准备，暂不可发送。");
+  });
+
+  it("reconciles every accepted processing attachment exactly once by stable key", () => {
+    expect(pendingAttachmentReconciliationKeys({
+      new: [
+        { id: "pdf", assetId: 668, status: "processing" },
+        { id: "done", assetId: 669, status: "ready" },
+      ],
+      "asset-conversation-a": [
+        { id: "image", assetId: 670, status: "processing" },
+        { id: "unaccepted", status: "processing" },
+      ],
+    })).toEqual([
+      { key: "new:pdf:668", conversationId: "new", uploadId: "pdf", assetId: 668 },
+      { key: "asset-conversation-a:image:670", conversationId: "asset-conversation-a", uploadId: "image", assetId: 670 },
+    ]);
+  });
+
+  it("immediately reconciles every accepted processing attachment that can race its state subscription", () => {
+    expect(shouldImmediatelyReconcileAcceptedUpload({
+      assetId: 823,
+      fileKind: "source",
+      status: "processing",
+    })).toBe(true);
+    expect(shouldImmediatelyReconcileAcceptedUpload({
+      assetId: 824,
+      fileKind: "image",
+      status: "processing",
+    })).toBe(true);
+    expect(shouldImmediatelyReconcileAcceptedUpload({
+      assetId: 823,
+      fileKind: "source",
+      status: "ready",
+    })).toBe(false);
   });
 });

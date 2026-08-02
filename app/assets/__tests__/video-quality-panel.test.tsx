@@ -24,11 +24,13 @@ const blockedReport: VideoQualityReport = {
 };
 
 describe("VideoQualityPanel", () => {
-  it("shows the blocker and locates its segment", () => {
+  it("shows quality findings as export reminders and locates its segment", () => {
     const onLocate = vi.fn();
 
     render(<VideoQualityPanel report={blockedReport} onLocate={onLocate} />);
 
+    expect(screen.getByRole("status", { name: "视频质量检查" })).toHaveTextContent("导出提醒");
+    expect(screen.queryByRole("alert", { name: "视频质量检查" })).not.toBeInTheDocument();
     expect(screen.getByText("第 1 段主画面缺失")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "定位到第 1 段" }));
     expect(onLocate).toHaveBeenCalledWith("scene-1", "main_track");

@@ -71,6 +71,20 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.getByText("本次生成已停止")).not.toBeNull();
   });
 
+  it("lets the user explicitly restart a stopped generation", () => {
+    const onRetry = vi.fn();
+    render(
+      <AssetGenerationJobCard
+        job={job({ status: "cancelled", stage: "cancelled" })}
+        onRetry={onRetry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /内容生成进度/ }));
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
+  });
+
   it("renders a controlled timeout and retries the same job", () => {
     const onRetry = vi.fn();
     render(

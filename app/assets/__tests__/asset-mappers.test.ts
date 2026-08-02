@@ -218,6 +218,22 @@ describe("asset product mapper", () => {
     expect(product.preview?.subtitle).not.toContain("视频工程已生成");
   });
 
+  it("marks an orphaned video-render draft as a project that needs recovery", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "draft",
+      metadata: {
+        capability: "video_render",
+        video_workflow_stage: "draft",
+      },
+    }));
+
+    expect(product.status).toBe("工程异常 · 待恢复");
+    expect(product.preview?.subtitle).toContain("工程状态不完整");
+    expect(product.videoProjectReady).toBe(false);
+  });
+
   it("marks orchestration-pending video assets as generating", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
@@ -324,7 +340,8 @@ describe("asset product mapper", () => {
               startTime: 14,
               duration: 6,
               narration: "评论区扣 1，送你一份避坑报价单",
-              asset_reference: { status: "no_asset_hit" }
+              asset_reference: { status: "no_asset_hit" },
+              material_resolution: { fill_status: "public_candidate" }
             }
           ]
         }
@@ -342,13 +359,78 @@ describe("asset product mapper", () => {
     });
     expect(product.segments?.[1]?.mgLabel).toBe("面积利用率 +35%");
     expect(product.segments?.[2]?.isFallback).toBe(true);
+    expect(product.segments?.[2]?.materialFillStatus).toBe("public_candidate");
     expect(product.segments?.[0]?.voiceName).toBe("male_steady");
     expect(product.segments?.[0]?.visualStatusLabel).toBeUndefined();
     expect(product.segments?.[0]?.primaryVisualSourceType).toBeUndefined();
-    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材 + 1 个公共素材生成");
+    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材生成 · 1 个公共素材候选");
     expect(product.sourceSummary?.note).toContain("已保存素材命中 2/3");
     expect(product.sourceSummary?.note).not.toContain("兜底素材");
     expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
+  });
+
+  it("reports a persisted public primary visual as material used by the video", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_project: {
+          segments: [{
+            id: "seg-public",
+            title: "公共场景",
+            asset_reference: { status: "no_asset_hit" },
+            material_resolution: { fill_status: "public_candidate", final_source_type: "public_asset" },
+            primary_visual: {
+              status: "persisted",
+              source_type: "public_asset",
+              artifact_ref: "local://public-scene.mp4",
+            },
+          }],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      isFallback: true,
+      materialFillStatus: "public_candidate",
+      primaryVisualSourceType: "public_asset",
+      primaryVisualPersisted: true,
+    });
+    expect(product.sourceSummary?.headline).toBe("基于 1 个公共素材生成");
+  });
+
+  it("does not report unfilled generated scenes as public material", () => {
+    const product = contentAssetToProduct(asset({
+      metadata: {
+        capability: "video_script",
+        video_workflow_stage: "director_script_draft",
+        video_plan: {
+          scenes: [
+            {
+              id: "seg-saved",
+              title: "产品界面",
+              asset_reference: {
+                status: "matched",
+                source_snapshot: { title: "PDF 产品界面" },
+              },
+              material_resolution: { fill_status: "saved_hit" },
+            },
+            {
+              id: "seg-generated",
+              title: "流程动画",
+              asset_reference: { status: "no_asset_hit" },
+              material_resolution: { fill_status: "unfilled" },
+              primary_visual_strategy: { mode: "mg_scene" },
+            },
+          ],
+        },
+      },
+    }));
+
+    expect(product.segments?.[1]?.isFallback).toBe(false);
+    expect(product.sourceSummary?.headline).toBe("基于 1 个已保存素材生成");
   });
 
   it("maps a persisted generated primary visual as available scene media", () => {

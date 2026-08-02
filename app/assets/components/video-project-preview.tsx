@@ -85,6 +85,14 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       }, window.location.origin);
     }, []);
 
+    useEffect(() => {
+      if (ready || failed || typeof window === "undefined") return;
+      const timer = window.setInterval(() => {
+        postCommand("multimix-editor-preview-sync");
+      }, 1000);
+      return () => window.clearInterval(timer);
+    }, [failed, postCommand, ready]);
+
     const seek = useCallback((time: number) => {
       if (!Number.isFinite(time)) return;
       const next = Math.max(0, safeDuration > 0 ? Math.min(time, safeDuration) : time);
@@ -110,6 +118,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         if (data.previewChannel !== previewChannel) return;
 
         if (data.type === "multimix-editor-ready") {
+          postCommand("multimix-editor-ready-ack");
           setReady(true);
           setFailed(false);
           return;
@@ -123,6 +132,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         }
         if (data.type !== "multimix-editor-preview-state") return;
 
+        postCommand("multimix-editor-ready-ack");
         setReady(true);
         setFailed(false);
         if (typeof data.time === "number" && Number.isFinite(data.time)) {
@@ -152,6 +162,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
             src={`/editor?asset=${encodeURIComponent(String(assetId))}&embed=1&mode=preview&previewChannel=${encodeURIComponent(previewChannel)}`}
             title="视频工程预播"
             allow="autoplay"
+            onLoad={() => postCommand("multimix-editor-preview-sync")}
           />
           {recoveryNotice ? (
             <div className="shadcn-prototype-project-preview-notice" role="alert">
