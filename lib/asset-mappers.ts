@@ -716,6 +716,12 @@ function suggestionsForCapability(capability: string): string[] {
   return ["生成LinkedIn文案", "拆成短视频方案", "改得更具体"];
 }
 
+const VIDEO_PROJECT_CONFIRMATION_SUGGESTION = "确认，生成视频工程";
+
+function isVideoProjectConfirmationSuggestion(value: string): boolean {
+  return value.trim() === VIDEO_PROJECT_CONFIRMATION_SUGGESTION;
+}
+
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
   return asset.content_type === "video_script" || asset.content_type === "short_video_narration";
 }
@@ -1099,14 +1105,18 @@ export function conversationFromPersisted(
   const mission = row.metadata.agent_mission;
   const missionActions = agentActionsByIdFromMission(mission);
   const products = row.products.map(contentAssetToProduct);
+  const readyVideoProject = [...row.products].reverse().find((asset) => isEditorReadyVideoProject(asset));
+  const hasReadyVideoProject = Boolean(readyVideoProject);
   let defaultProductIndex = row.products.length - 1;
   while (defaultProductIndex >= 0 && isMalformedDirectorDraft(row.products[defaultProductIndex])) {
     defaultProductIndex -= 1;
   }
   const product = fallbackProduct
     ? products.find((item) => item.id === fallbackProduct.id) ?? fallbackProduct
-    : products[defaultProductIndex] ?? newConversationProduct;
-  const messages: AssetConversationMessage[] = row.messages.map((message) => {
+    : readyVideoProject
+      ? products.find((item) => item.backendAssetId === readyVideoProject.id) ?? newConversationProduct
+      : products[defaultProductIndex] ?? newConversationProduct;
+  let messages: AssetConversationMessage[] = row.messages.map((message) => {
     const persistedAgentAction = message.role === "assistant"
       ? agentActionFromValue(message.metadata.agent_action)
       : undefined;
@@ -1129,6 +1139,17 @@ export function conversationFromPersisted(
       agentAction,
     };
   });
+  if (hasReadyVideoProject) {
+    messages = messages.map((message) => ({
+      ...message,
+      suggestions: message.suggestions?.filter((suggestion) => !isVideoProjectConfirmationSuggestion(suggestion)),
+      suggestionActions: message.suggestionActions?.filter((action) => (
+        !isVideoProjectConfirmationSuggestion(action.label)
+        && !isVideoProjectConfirmationSuggestion(action.utterance)
+      )),
+      agentAction: undefined,
+    }));
+  }
   for (const asset of row.products) {
     const metadata = asset.metadata ?? {};
     const isPendingVideoProject = Boolean(
@@ -1175,8 +1196,8 @@ export function conversationFromPersisted(
     delivery: lastAssistantMessage,
     suggestions: product.actions ?? [],
     messages,
-    agentTasks: agentTasksFromMission(mission),
-    activeAgentAction: activeAgentActionFromMission(mission),
+    agentTasks: hasReadyVideoProject ? undefined : agentTasksFromMission(mission),
+    activeAgentAction: hasReadyVideoProject ? undefined : activeAgentActionFromMission(mission),
     product,
     products: fallbackProduct && !products.some((item) => item.id === fallbackProduct.id) ? [...products, fallbackProduct] : products,
     sourceIds: Array.from(new Set(row.products.flatMap((asset) => asset.linked_asset_ids.map((id) => String(id)))))

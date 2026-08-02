@@ -277,6 +277,7 @@ export type AssetWorkspaceAdapter = {
   isBackendEnabled(): boolean;
   loadConversationSummaries(token: string): Promise<AssetConversationSummaryResponse[]>;
   mergeConversationSummaries(summaries: AssetConversationSummaryResponse[], current: AssetConversation[]): AssetConversation[];
+  loadConversationSnapshot(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   deleteConversation(token: string, conversationId: string): Promise<void>;
@@ -876,6 +877,16 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       return {
         ...conversationFromPersisted(row, data.newConversation.product),
         detailsLoaded: true,
+      };
+    },
+    async loadConversationSnapshot(token, conversationId) {
+      const row = await api<AssetConversationResponse>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/snapshot`,
+        token,
+      );
+      return {
+        ...conversationFromPersisted(row, data.newConversation.product),
+        detailsLoaded: false,
       };
     },
     async loadConversations(token, current) {

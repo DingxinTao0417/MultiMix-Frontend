@@ -61,6 +61,45 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("loads a lightweight conversation snapshot before the full history", async () => {
+    const project = asset({
+      id: 72,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: { timeline: { tracks: [], media: [] } },
+      },
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      id: "asset-conversation-snapshot",
+      title: "厨房动线与收纳规划",
+      status: "active",
+      metadata: { video_workflow_stage: "video_project_ready" },
+      messages: [],
+      products: [project],
+      created_at: "2026-08-02T00:00:00Z",
+      updated_at: "2026-08-02T00:01:00Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = await assetWorkspaceAdapter.loadConversationSnapshot(
+      "token",
+      "asset-conversation-snapshot",
+    );
+    vi.unstubAllGlobals();
+
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe(
+      "/v1/assets/conversations/asset-conversation-snapshot/snapshot",
+    );
+    expect(snapshot.detailsLoaded).toBe(false);
+    expect(snapshot.product.backendAssetId).toBe(72);
+  });
+
   it("serializes the exact Agent confirmation binding only when provided", () => {
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

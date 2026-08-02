@@ -54,6 +54,61 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("prefers a ready video project over legacy video-script task state", () => {
+    const readyProject = asset({
+      id: 2,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: { timeline: { tracks: [], media: [] } },
+      },
+    });
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-ready-wins",
+      title: "厨房动线与收纳规划",
+      status: "active",
+      metadata: {
+        agent_mission: {
+          version: "agent_v2",
+          active_task_id: "task-video",
+          task_stack: [],
+          tasks: {
+            "task-video": {
+              id: "task-video",
+              task_type: "generation",
+              goal: "video_script",
+              status: "waiting_user",
+              plan: [],
+              created_at: "2026-08-02T00:00:00Z",
+              updated_at: "2026-08-02T00:00:00Z",
+            },
+          },
+        },
+      },
+      created_at: "2026-08-02T00:00:00Z",
+      updated_at: "2026-08-02T00:01:00Z",
+      products: [asset({ id: 1 }), readyProject],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "编导稿已生成。",
+        asset_id: 1,
+        metadata: { suggestions: ["确认，生成视频工程", "调整分镜"] },
+        created_at: "2026-08-02T00:00:00Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.product.backendAssetId).toBe(2);
+    expect(conversation.agentTasks).toBeUndefined();
+    expect(conversation.activeAgentAction).toBeUndefined();
+    expect(conversation.messages?.[0]?.suggestions).toEqual(["调整分镜"]);
+  });
+
   it("does not let a malformed non-script artifact replace the current director script", () => {
     const director = asset({ id: 488, generation_state: "draft", metadata: { capability: "video_script", video_workflow_stage: "draft" } });
     const malformed = asset({

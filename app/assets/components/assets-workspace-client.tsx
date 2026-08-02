@@ -602,7 +602,24 @@ export default function AssetsWorkspaceClient({
   const selectedPersistedConversation = visibleConversationRows.find(
     (conversation) => conversation.id === selectedConversationId,
   );
-  const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
+  const isConversationSnapshot = selectedPersistedConversation?.detailsLoaded === false;
+  // A snapshot can contain a ready project, but older non-conforming projects
+  // may only have a safe title while their full history is restored.  Either
+  // way, replace the empty skeleton with an explicit read-only recovery state
+  // and keep the persisted row incomplete so the detail effect continues.
+  const selectedConversation = isConversationSnapshot && selectedPersistedConversation
+    ? {
+      ...selectedPersistedConversation,
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: selectedPersistedConversation.products?.length
+          ? "视频工程已恢复，正在读取完整对话记录。"
+          : "正在恢复完整对话记录。",
+        assetId: selectedPersistedConversation.product.backendAssetId,
+      }],
+    }
+    : selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
   const selectedConversationHasDetail = selectedConversation.detailsLoaded === true;
   const selectedProduct = !selectedConversationHasDetail
     ? null
@@ -789,6 +806,25 @@ export default function AssetsWorkspaceClient({
     const generation = conversationDetailGenerationRef.current + 1;
     conversationDetailGenerationRef.current = generation;
     setConversationDetailErrorId(null);
+    void assetWorkspaceAdapter
+      .loadConversationSnapshot(token, selectedConversationId)
+      .then((snapshot) => {
+        if (conversationDetailGenerationRef.current !== generation) return;
+        setConversations((current) => {
+          const existing = current.find((conversation) => conversation.id === snapshot.id);
+          if (existing?.detailsLoaded === true) return current;
+          if (existing) {
+            return current.map((conversation) => (
+              conversation.id === snapshot.id ? snapshot : conversation
+            ));
+          }
+          return [snapshot, ...current];
+        });
+      })
+      .catch(() => {
+        // The full detail request remains authoritative.  A failed snapshot
+        // must not turn a recoverable historical conversation into an error.
+      });
     void assetWorkspaceAdapter
       .loadConversationDetail(token, selectedConversationId)
       .then((detail) => {
@@ -2349,7 +2385,7 @@ export default function AssetsWorkspaceClient({
                 diagnosticsSlot={renderDiagnostics()}
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
-                readonly={selectedConversation.readonly ?? false}
+                readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
               />
               <div
                 className="shadcn-prototype-resize-handle"
@@ -2370,8 +2406,12 @@ export default function AssetsWorkspaceClient({
                 <ProductWorkspace
                   copied={copiedProductId === selectedProduct.id}
                   onCopyProduct={handleCopyProduct}
-                  onSaveProduct={handleSaveProduct}
-                  onRestoreVersion={handleRestoreProductVersion}
+                  onSaveProduct={isConversationSnapshot
+                    ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
+                    : handleSaveProduct}
+                  onRestoreVersion={isConversationSnapshot
+                    ? async () => { toast.info("完整对话仍在加载，请稍后再恢复版本。"); }
+                    : handleRestoreProductVersion}
                   onProductUpdated={(updatedProduct) => {
                     setConversations((current) => current.map((conversation) => {
                       if (conversation.id !== selectedConversation.id) return conversation;
@@ -2390,7 +2430,9 @@ export default function AssetsWorkspaceClient({
                       };
                     }));
                   }}
-                  onRetryVideoJob={handleRetryVideoJob}
+                  onRetryVideoJob={isConversationSnapshot
+                    ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
+                    : handleRetryVideoJob}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
