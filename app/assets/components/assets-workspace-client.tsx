@@ -21,7 +21,7 @@ import {
   Video
 } from "lucide-react";
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
-import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
 import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
 import type {
   AgentActionRunResponse,
@@ -137,18 +137,16 @@ export function nextExecutionRunGeneration(generation: number): number {
 }
 
 export function resolveLiveExecutionTimelineSteps(
-  live: Pick<VideoJobLiveStatus, "jobId" | "status" | "renderStage" | "steps">,
+  live: Pick<VideoJobLiveStatus, "steps">,
   mapBackendSteps: (steps: VideoJobStepResult[]) => AgentRunStep[] = agentTimelineStepsFromBackend,
-  mapLegacySteps: (stage: string, status: string) => AgentRunStep[] = videoJobTimelineSteps,
 ): AgentRunStep[] {
   const backendSteps = mapBackendSteps(live.steps);
   if (backendSteps.length) return backendSteps;
-
-  return mapLegacySteps(live.renderStage, live.status).map((step) => (
-    step.status === "fail"
-      ? { ...step, retryJobId: live.jobId }
-      : step
-  ));
+  return [{
+    key: "status_unavailable",
+    label: "正在获取执行状态",
+    status: "run",
+  }];
 }
 
 export function executionVideoJobIds(

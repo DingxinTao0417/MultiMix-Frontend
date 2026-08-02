@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
 import type { ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
@@ -819,28 +819,6 @@ describe("video job stage helpers", () => {
 });
 
 describe("agent timeline steps", () => {
-  it("marks the active stage as running and earlier stages as done", () => {
-    const steps = videoJobTimelineSteps("segment", "running");
-    expect(steps.map((step) => step.status)).toEqual(["done", "done", "run", "wait"]);
-    expect(steps).toHaveLength(4);
-    expect(steps.map((step) => step.label)).toEqual([
-      "创建视频工程任务",
-      "读取已确认方案并准备分镜",
-      "匹配分镜素材并准备配音、字幕",
-      "组装可编辑视频工程",
-    ]);
-  });
-
-  it("marks all steps done once the job completes", () => {
-    const steps = videoJobTimelineSteps("done", "completed");
-    expect(steps.every((step) => step.status === "done")).toBe(true);
-  });
-
-  it("marks the current stage failed when the job fails", () => {
-    const steps = videoJobTimelineSteps("segment", "failed");
-    expect(steps.map((step) => step.status)).toEqual(["done", "done", "fail", "wait"]);
-  });
-
   it("maps backend steps[] with real elapsed labels", () => {
     const steps = agentTimelineStepsFromBackend([
       { key: "understand", label: "理解素材并写脚本", status: "done", elapsedSeconds: 8 },

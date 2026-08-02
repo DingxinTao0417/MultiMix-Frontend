@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
-import { agentTimelineStepsFromBackend, videoJobTimelineSteps } from "../../../lib/asset-mappers";
+import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
 
 const root = process.cwd();
 
@@ -264,17 +264,7 @@ describe("video execution polling decisions", () => {
     expect(resolveObservation(true, true)).toEqual({ observed: true, shouldFinalize: true });
   });
 
-  it.each([
-    ["queued", "queued", "queued", ["run", "wait", "wait", "wait"]],
-    ["running", "running", "segment", ["done", "done", "run", "wait"]],
-    ["completed", "completed", "done", ["done", "done", "done", "done"]],
-    ["failed", "failed", "render", ["done", "done", "done", "fail"]],
-  ])("maps legacy %s jobs with empty backend steps into the real four-step skeleton", (
-    _label,
-    status,
-    renderStage,
-    expectedStatuses,
-  ) => {
+  it("does not synthesize progress when the backend omits steps", () => {
     const resolveLiveExecutionTimelineSteps = loadWorkspaceDecision<(
       live: {
         jobId: string;
@@ -283,20 +273,18 @@ describe("video execution polling decisions", () => {
         steps: TestFullVideoJob["steps"];
       },
       mapBackendSteps: typeof agentTimelineStepsFromBackend,
-      mapLegacySteps: typeof videoJobTimelineSteps,
-    ) => ReturnType<typeof videoJobTimelineSteps>>("resolveLiveExecutionTimelineSteps");
+    ) => ReturnType<typeof agentTimelineStepsFromBackend>>("resolveLiveExecutionTimelineSteps");
 
     const steps = resolveLiveExecutionTimelineSteps(
-      { jobId: "main-1", status, renderStage, steps: [] },
+      { jobId: "main-1", status: "running", renderStage: "segment", steps: [] },
       agentTimelineStepsFromBackend,
-      videoJobTimelineSteps,
     );
 
-    expect(steps.map((step) => step.status)).toEqual(expectedStatuses);
-    expect(steps).toHaveLength(4);
-    if (status === "failed") {
-      expect(steps.find((step) => step.status === "fail")?.retryJobId).toBe("main-1");
-    }
+    expect(steps).toEqual([{
+      key: "status_unavailable",
+      label: "正在获取执行状态",
+      status: "run",
+    }]);
   });
 
   it("processes one resolved job while another job GET remains pending", async () => {

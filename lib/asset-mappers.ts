@@ -611,16 +611,6 @@ export function videoJobStepIndex(stage: string): number {
   return 2;
 }
 
-// Merchant-facing timeline labels for the video pipeline (spec §5.2 ★). The
-// backend only exposes a coarse render_stage today, so this maps that single
-// signal onto the ≥3 semantic steps the timeline requires (§12 硬约定①).
-export const VIDEO_JOB_TIMELINE_STEPS = [
-  { key: "create_job", label: "创建视频工程任务" },
-  { key: "prepare_scenes", label: "读取已确认方案并准备分镜" },
-  { key: "prepare_media", label: "匹配分镜素材并准备配音、字幕" },
-  { key: "build_project", label: "组装可编辑视频工程" }
-] as const;
-
 export type AgentTimelineStep = AgentRunStep;
 
 // Backend semantic step (spec §5.2 ★): key/label/status + real elapsed seconds.
@@ -666,9 +656,8 @@ function formatStepElapsed(seconds: number): string | undefined {
   return rest ? `${minutes}分${rest}秒` : `${minutes}分`;
 }
 
-// Prefer the backend's real steps[] when present. The status enum and elapsed
-// times come straight from the job (no fake progress); an empty/missing array
-// makes the caller fall back to videoJobTimelineSteps (spec §12 降级规则).
+// Steps and elapsed times come directly from the job; callers must not infer
+// progress from the historical render_stage when the backend omits them.
 export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | undefined | null): AgentTimelineStep[] {
   if (!Array.isArray(steps)) return [];
   return steps.flatMap((step): AgentTimelineStep[] => {
@@ -695,34 +684,6 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
   });
 }
 
-function videoJobTimelineStepIndex(stage: string): number {
-  if (stage === "queued") return 0;
-  if (stage === "script" || stage === "asset_driven_planning") return 1;
-  if (stage === "segment" || stage === "planning_assets" || stage === "asset_manifest_ready") return 2;
-  if (["render", "composing", "voice", "project", "rendering", "reviewing", "quality"].includes(stage)) return 3;
-  if (stage === "needs_script_revision") return 1;
-  if (stage === "done") return 4;
-  return 3;
-}
-
-// Build agent-timeline steps from a live video job's render_stage + status.
-// Returns [] when there is no running/queued job so the caller keeps the plain
-// shimmer fallback (spec §12: 无事件不渲染, 视频链路事件已有先上视频).
-export function videoJobTimelineSteps(stage: string, status: string): AgentTimelineStep[] {
-  const failed = status === "failed" || stage === "failed" || stage === "missing_asset" || stage === "invalid_spec" || stage === "stale";
-  const activeIndex = videoJobTimelineStepIndex(stage);
-  return VIDEO_JOB_TIMELINE_STEPS.map((step, index): AgentTimelineStep => {
-    if (failed) {
-      if (index < activeIndex) return { ...step, status: "done" };
-      if (index === activeIndex) return { ...step, status: "fail" };
-      return { ...step, status: "wait" };
-    }
-    if (activeIndex >= VIDEO_JOB_TIMELINE_STEPS.length) return { ...step, status: "done" };
-    if (index < activeIndex) return { ...step, status: "done" };
-    if (index === activeIndex) return { ...step, status: "run" };
-    return { ...step, status: "wait" };
-  });
-}
 
 function suggestionsForCapability(capability: string): string[] {
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
