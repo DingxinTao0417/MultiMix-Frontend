@@ -152,10 +152,26 @@ export interface TextBackground {
 	offsetY?: number;
 }
 
+export type SubtitlePresentationMode = "static_phrase" | "word_highlight" | "karaoke";
+
+export interface SubtitleToken {
+	text: string;
+	startOffset: number;
+	endOffset: number;
+}
+
+export interface SubtitlePresentation {
+	mode: SubtitlePresentationMode;
+	tokens: SubtitleToken[];
+	accentColor?: string;
+	karaokeScale?: number;
+}
+
 export interface TextElement extends BaseVisualElement {
 	type: "text";
 	content: string;
 	textRole?: "subtitle" | "presentation_support";
+	subtitlePresentation?: SubtitlePresentation;
 	fontSize: number;
 	fontFamily: string;
 	color: string;

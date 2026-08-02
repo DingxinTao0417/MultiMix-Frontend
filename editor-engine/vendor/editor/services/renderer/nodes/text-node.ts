@@ -14,6 +14,10 @@ import {
 } from "@editor/lib/text/layout";
 import { measureTextElement } from "@editor/lib/text/measure-element";
 import {
+	locateSubtitleTokenInLines,
+	resolveSubtitleTokenStates,
+} from "@editor/lib/text/subtitle-presentation";
+import {
 	getElementLocalTime,
 	resolveColorAtTime,
 	resolveOpacityAtTime,
@@ -207,6 +211,66 @@ export class TextNode extends BaseNode<TextNodeParams> {
 					scaledFontSize,
 					textAlign: this.params.textAlign,
 				});
+			}
+
+			const presentation = this.params.subtitlePresentation;
+			if (
+				presentation
+				&& presentation.mode !== "static_phrase"
+				&& presentation.tokens.length > 0
+			) {
+				const states = resolveSubtitleTokenStates({
+					mode: presentation.mode,
+					tokens: presentation.tokens,
+					localTime,
+				});
+				const activeTokenIndex = states.findIndex((token) => token.state === "active");
+				if (activeTokenIndex >= 0) {
+					const active = states[activeTokenIndex];
+					const location = locateSubtitleTokenInLines({
+						content: this.params.content,
+						lines,
+						tokens: presentation.tokens,
+						activeTokenIndex,
+					});
+					if (location) {
+						const line = lines[location.lineIndex];
+						const fullWidth = lineMetrics[location.lineIndex].width;
+						const prefixWidth = ctx.measureText(
+							line.slice(0, location.charOffset),
+						).width;
+						const xStart = this.params.textAlign === "center"
+							? -fullWidth / 2
+							: this.params.textAlign === "right"
+								? -fullWidth
+								: 0;
+						ctx.save();
+						const accentColor = presentation.accentColor || "#f59e0b";
+						ctx.fillStyle = accentColor;
+						if (presentation.mode === "karaoke") {
+							ctx.shadowColor = accentColor;
+							ctx.shadowBlur = Math.max(4, scaledFontSize * 0.18);
+							const activeWidth = ctx.measureText(active.text).width;
+							const activeX = xStart + prefixWidth;
+							const activeY = location.lineIndex * lineHeightPx - block.visualCenterOffset;
+							ctx.translate(activeX + activeWidth / 2, activeY);
+							const karaokeScale = Math.min(
+								1.16,
+								Math.max(1, presentation.karaokeScale ?? 1.08),
+							);
+							ctx.scale(karaokeScale, karaokeScale);
+							ctx.fillText(active.text, -activeWidth / 2, 0);
+							ctx.restore();
+							return;
+						}
+						ctx.fillText(
+							active.text,
+							xStart + prefixWidth,
+							location.lineIndex * lineHeightPx - block.visualCenterOffset,
+						);
+						ctx.restore();
+					}
+				}
 			}
 		};
 

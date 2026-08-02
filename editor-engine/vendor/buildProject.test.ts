@@ -190,7 +190,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(audio.animations).toEqual(animations);
   });
 
-  it('keeps subtitles readable on light and moving media with a compact dark carrier', () => {
+  it('defaults subtitles to no background while preserving readable text styling', () => {
     const bp = makeProject({
       tracks: [{
         id: 'track-text',
@@ -208,12 +208,114 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const result = buildProject(bp);
     const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
-    expect(element.background).toMatchObject({
-      enabled: true,
-      color: '#111827b8',
-      paddingX: 12,
-      paddingY: 6,
+    expect(element.background).toEqual({
+      enabled: false,
+      color: '#000000',
     });
+  });
+
+  it('preserves backend word-highlight tokens for the subtitle renderer', () => {
+    const result = buildProject(makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-word-highlight',
+          type: 'text',
+          content: '上传资料',
+          startTime: 0,
+          duration: 2,
+          textRole: 'subtitle',
+          subtitlePresentation: 'word_highlight',
+          subtitleTokens: [
+            { text: '上传', startOffset: 0, endOffset: 0.8 },
+            { text: '资料', startOffset: 0.8, endOffset: 2 },
+          ],
+        }],
+      }],
+    } as BackendProject));
+
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(element.subtitlePresentation).toEqual({
+      mode: 'word_highlight',
+      tokens: [
+        { text: '上传', startOffset: 0, endOffset: 0.8 },
+        { text: '资料', startOffset: 0.8, endOffset: 2 },
+      ],
+    });
+  });
+
+  it('uses a persisted user subtitle background instead of the default', () => {
+    const result = buildProject(makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        elements: [{
+          id: 'subtitle-background',
+          type: 'text',
+          content: '用户明确要求背景',
+          startTime: 0,
+          duration: 2,
+          textRole: 'subtitle',
+          subtitlePresentation: 'static_phrase',
+          subtitleBackground: { enabled: true, color: '#123456aa' },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    expect(element.background).toMatchObject({ enabled: true, color: '#123456aa' });
+  });
+
+  it('uses a persisted brand profile for a portrait subtitle without adding a background', () => {
+    const result = buildProject(makeProject({
+      settings: { fps: 30, width: 1080, height: 1920 },
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        elements: [{
+          id: 'premium-subtitle',
+          type: 'text',
+          content: '全片字幕保持一致的品牌感',
+          startTime: 0,
+          duration: 2,
+          textRole: 'subtitle',
+          subtitlePresentation: 'karaoke',
+          subtitleStyle: {
+            fontFamily: 'Inter, sans-serif',
+            color: '#F9FAFB',
+            accentColor: '#2563EB',
+            fontWeight: 'bold',
+            maxLineChars: 14,
+            sizeScale: 0.8,
+            karaokeScale: 1.04,
+          },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = result.project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    expect(element.fontFamily).toBe('Inter, sans-serif');
+    expect(element.color).toBe('#F9FAFB');
+    expect(element.background).toEqual({ enabled: false, color: '#000000' });
+    expect(element.subtitlePresentation).toMatchObject({
+      accentColor: '#2563EB',
+      karaokeScale: 1.04,
+    });
+  });
+
+  it('uses a profile line budget before shrinking a portrait subtitle to one long line', () => {
+    const result = layoutCaption('上传资料自动生成可编辑视频工程', {
+      availableWidth: 1200,
+      preferredFontPx: 40,
+      minimumFontPx: 32,
+      maxLineChars: 10,
+      measureText: (text, fontPx) => text.length * fontPx,
+    });
+
+    expect(result.text).toContain('\n');
+    expect(result.lines).toBe(2);
   });
 
   it('keeps default 1080p subtitles within a professional lower-third size', () => {

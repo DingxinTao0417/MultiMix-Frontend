@@ -71,6 +71,18 @@ export interface BackendElement {
   transition?: BackendTransition;
   editDecision?: BackendEditDecision;
   textRole?: "subtitle" | "presentation_support";
+  subtitlePresentation?: "static_phrase" | "word_highlight" | "karaoke";
+  subtitleTokens?: Array<{ text: string; startOffset: number; endOffset: number }>;
+  subtitleBackground?: { enabled: boolean; color: string };
+  subtitleStyle?: {
+    fontFamily: string;
+    color: string;
+    accentColor: string;
+    fontWeight: "normal" | "bold";
+    maxLineChars: number;
+    sizeScale: number;
+    karaokeScale: number;
+  };
 }
 export interface BackendTrack {
   id: string;
@@ -171,9 +183,7 @@ export interface SubtitleStyle {
 export const defaultSubtitleStyle: SubtitleStyle = {
   fontFamily: "sans-serif",
   color: "#ffffff",
-  // A compact carrier keeps the caption readable over light UI, dark footage,
-  // and moving media without occupying a full-width subtitle band.
-  bgEnabled: true,
+  bgEnabled: false,
   bgColor: "#111827b8",
   maxLineChars: 24,
   sizeScale: 0.7,
@@ -192,6 +202,12 @@ const PORTRAIT_SUBTITLE_REGION: SafeRegion = {
   y: 0.74,
   width: 0.84,
   height: 0.22,
+};
+const SQUARE_SUBTITLE_REGION: SafeRegion = {
+  x: 0.08,
+  y: 0.74,
+  width: 0.84,
+  height: 0.20,
 };
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -233,6 +249,7 @@ export function subtitlePositionOffset(
 }
 
 function defaultSubtitleRegion(width: number, height: number): SafeRegion {
+  if (width === height) return SQUARE_SUBTITLE_REGION;
   return height > width
     ? PORTRAIT_SUBTITLE_REGION
     : LANDSCAPE_SUBTITLE_REGION;
@@ -250,6 +267,7 @@ export interface CaptionLayoutOptions {
   preferredFontPx: number;
   minimumFontPx: number;
   fontFamily?: string;
+  maxLineChars?: number;
   measureText?: CaptionMeasure;
 }
 
@@ -300,7 +318,12 @@ function captionTokens(text: string): string[] {
   return text.match(/[A-Za-z0-9]+(?:[-_./][A-Za-z0-9]+)*|./gu) ?? [];
 }
 
-function bestTwoLineSplit(text: string, fontPx: number, measure: CaptionMeasure): string | null {
+function bestTwoLineSplit(
+  text: string,
+  fontPx: number,
+  measure: CaptionMeasure,
+  maxLineChars?: number,
+): string | null {
   const tokens = captionTokens(text);
   if (tokens.length < 2) return null;
   let best: { text: string; widest: number } | null = null;
@@ -308,6 +331,10 @@ function bestTwoLineSplit(text: string, fontPx: number, measure: CaptionMeasure)
     const left = tokens.slice(0, index).join("").trim();
     const right = tokens.slice(index).join("").trim();
     if (!left || !right) continue;
+    if (
+      maxLineChars
+      && (Array.from(left).length > maxLineChars || Array.from(right).length > maxLineChars)
+    ) continue;
     const widest = Math.max(measure(left, fontPx), measure(right, fontPx));
     if (!best || widest < best.widest) best = { text: `${left}\n${right}`, widest };
   }
@@ -328,15 +355,18 @@ export function layoutCaption(text: string, options: CaptionLayoutOptions): Capt
     return { text: preserved, lines: Math.min(2, hardLines.length) as 1 | 2, fontPx: fitted };
   }
 
+  const exceedsLineBudget = Boolean(
+    options.maxLineChars && Array.from(compact).length > options.maxLineChars,
+  );
   const preferredWidth = measure(compact, preferred);
-  if (preferredWidth <= options.availableWidth) {
+  if (!exceedsLineBudget && preferredWidth <= options.availableWidth) {
     return { text: compact, lines: 1, fontPx: preferred };
   }
   const fitted = Math.max(minimum, preferred * options.availableWidth / preferredWidth);
-  if (measure(compact, fitted) <= options.availableWidth) {
+  if (!exceedsLineBudget && measure(compact, fitted) <= options.availableWidth) {
     return { text: compact, lines: 1, fontPx: fitted };
   }
-  const split = bestTwoLineSplit(compact, minimum, measure);
+  const split = bestTwoLineSplit(compact, minimum, measure, options.maxLineChars);
   return { text: split ?? compact, lines: split ? 2 : 1, fontPx: minimum };
 }
 
@@ -730,22 +760,32 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       // OpenCut renders text as scaledPx = fontSize * (canvasHeight / 90) and only
       // breaks lines on "\n" (no auto-wrap). So we pick a per-line char budget,
       // hard-wrap the sentence into lines, and size the font to that budget.
-      const style = subtitleStyle;
-      const { preferredFontPx, minimumFontPx } = subtitleTypographyForCanvas(
-        bp.settings.width,
-        bp.settings.height,
-        style.sizeScale,
-      );
       const elements = sourceElements.map((e): TextElement => {
         if (e.textRole === "presentation_support") {
           return supportCardTextElement(e, bp.settings);
         }
+        const profile = e.textRole === "subtitle" ? e.subtitleStyle : undefined;
+        const style: SubtitleStyle = profile
+          ? {
+              ...subtitleStyle,
+              fontFamily: profile.fontFamily || subtitleStyle.fontFamily,
+              color: profile.color || subtitleStyle.color,
+              sizeScale: profile.sizeScale || subtitleStyle.sizeScale,
+              maxLineChars: profile.maxLineChars || subtitleStyle.maxLineChars,
+            }
+          : subtitleStyle;
+        const { preferredFontPx, minimumFontPx } = subtitleTypographyForCanvas(
+          bp.settings.width,
+          bp.settings.height,
+          style.sizeScale,
+        );
         const availableWidth = bp.settings.width * (e.safeRegion?.width ?? 0.84);
         const caption = layoutCaption(e.content || "", {
           availableWidth,
           preferredFontPx,
           minimumFontPx,
           fontFamily: style.fontFamily,
+          maxLineChars: style.maxLineChars,
         });
         const positionY = subtitlePositionOffset(
           bp.settings.height,
@@ -770,11 +810,13 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         ),
         fontFamily: style.fontFamily,
         color: style.color,
-        background: style.bgEnabled
+        background: e.textRole === "subtitle" && e.subtitleBackground
+          ? { enabled: e.subtitleBackground.enabled, color: e.subtitleBackground.color, cornerRadius: 6, paddingX: 12, paddingY: 6 }
+          : style.bgEnabled
           ? { enabled: true, color: style.bgColor, cornerRadius: 6, paddingX: 12, paddingY: 6 }
           : { enabled: false, color: "#000000" },
         textAlign: "center",
-        fontWeight: "bold",
+        fontWeight: profile?.fontWeight ?? "bold",
         fontStyle: "normal",
         textDecoration: "none",
         transform: {
@@ -786,6 +828,20 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         },
         opacity: 1,
         textRole: e.textRole,
+        ...(
+          e.textRole === "subtitle" && e.subtitlePresentation
+            ? {
+                subtitlePresentation: {
+                  mode: e.subtitlePresentation,
+                  tokens: e.subtitleTokens ?? [],
+                  ...(profile?.accentColor ? { accentColor: profile.accentColor } : {}),
+                  ...(typeof profile?.karaokeScale === "number"
+                    ? { karaokeScale: profile.karaokeScale }
+                    : {}),
+                },
+              }
+            : {}
+        ),
       });
       });
       tracks.push({ id: t.id, name: t.name, type: "text", elements, hidden: false });
