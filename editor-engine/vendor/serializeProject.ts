@@ -37,6 +37,7 @@ function serializeElement(el: {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
+  textRole?: "subtitle" | "presentation_support";
   fontSize?: number;
   transform?: {
     scaleX: number;
@@ -98,7 +99,7 @@ function serializeElement(el: {
         }
       : editDecision;
   }
-  const textRole = textRoleByElementId[el.id];
+  const textRole = el.textRole ?? textRoleByElementId[el.id];
   if (textRole) out.textRole = textRole;
   return out;
 }

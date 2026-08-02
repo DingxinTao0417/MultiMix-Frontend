@@ -598,6 +598,7 @@ function supportCardTextElement(
       position: geometry.position,
     },
     opacity: 1,
+    textRole: element.textRole,
   };
 }
 
@@ -784,6 +785,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           },
         },
         opacity: 1,
+        textRole: e.textRole,
       });
       });
       tracks.push({ id: t.id, name: t.name, type: "text", elements, hidden: false });

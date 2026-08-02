@@ -155,6 +155,7 @@ export interface TextBackground {
 export interface TextElement extends BaseVisualElement {
 	type: "text";
 	content: string;
+	textRole?: "subtitle" | "presentation_support";
 	fontSize: number;
 	fontFamily: string;
 	color: string;

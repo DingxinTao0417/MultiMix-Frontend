@@ -204,6 +204,38 @@ describe('BGM editor round-trip', () => {
     expect(rebuilt.transform).toEqual(original.transform);
   });
 
+  it('serializes the role of a caption created inside the editor', () => {
+    const backend: BackendProject = {
+      metadata: { title: 'Generated caption', duration: 5 },
+      settings: { fps: 30, width: 1080, height: 1920 },
+      media: [],
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'caption-template',
+          type: 'text',
+          content: '新识别字幕',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    };
+    const { project, assets } = buildProject(backend);
+    const liveCaption = project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    liveCaption.id = 'caption-created-in-editor';
+    liveCaption.textRole = 'subtitle';
+    rememberRawProject(backend as unknown as Record<string, unknown>);
+    editorMock.project.getActive.mockReturnValue(project);
+    editorMock.timeline.getTracks.mockReturnValue(project.scenes[0].tracks);
+    editorMock.media.getAssets.mockReturnValue(assets);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+
+    expect(serialized.tracks[0].elements[0].textRole).toBe('subtitle');
+  });
+
   it('preserves split decisions and support text roles across save and reload', () => {
     const support = {
       headline: '从对话直接进入分镜编辑',

@@ -286,6 +286,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(renderedFontSize).toBeGreaterThanOrEqual(34);
     expect(renderedFontSize).toBeLessThanOrEqual(40);
     expect(element.transform.position.y).toBe(672);
+    expect(element.textRole).toBe('subtitle');
   });
 
   it('never splits an English product token across subtitle lines', () => {

@@ -11,9 +11,7 @@ import { useState, useRef } from "react";
 import { extractTimelineAudio } from "@editor/lib/media/mediabunny";
 import { useEditor } from "@editor/hooks/use-editor";
 import {
-	BatchCommand,
-	AddTrackCommand,
-	InsertElementCommand,
+	TracksSnapshotCommand,
 } from "@editor/lib/commands";
 import { TRANSCRIPTION_LANGUAGES } from "@editor/constants/transcription-constants";
 import type {
@@ -23,6 +21,12 @@ import type {
 import { transcriptionService } from "@editor/services/transcription/service";
 import { decodeAudioToFloat32 } from "@editor/lib/media/audio";
 import { buildCaptionChunks } from "@editor/lib/transcription/caption";
+import {
+	buildCaptionElements,
+	hasSubtitleTrack,
+	replaceCaptionTrackElements,
+	shouldStartCaptionGeneration,
+} from "@editor/lib/transcription/caption-track";
 import { Spinner } from "@editor/components/ui/spinner";
 import {
 	Section,
@@ -30,7 +34,9 @@ import {
 	SectionField,
 	SectionFields,
 } from "@editor/components/section";
+import { generateUUID } from "@editor/utils/id";
 import { DEFAULTS } from "@editor/lib/timeline/defaults";
+import { getDefaultInsertIndexForTrack } from "@editor/lib/timeline/track-utils";
 
 export function Captions() {
 	const [selectedLanguage, setSelectedLanguage] =
@@ -50,6 +56,16 @@ export function Captions() {
 	};
 
 	const handleGenerateTranscript = async () => {
+		const tracksAtStart = editor.timeline.getTracks();
+		if (
+			!shouldStartCaptionGeneration({
+				tracks: tracksAtStart,
+				confirmReplacement: () =>
+					window.confirm("当前工程已有字幕。重新识别会替换现有字幕，是否继续？"),
+			})
+		) {
+			return;
+		}
 		try {
 			setIsProcessing(true);
 			setError(null);
@@ -72,29 +88,25 @@ export function Captions() {
 
 			setProcessingStep("Generating captions...");
 			const captionChunks = buildCaptionChunks({ segments: result.segments });
-
-			const addTrackCommand = new AddTrackCommand("text", 0);
-			const insertCommands = captionChunks.map(
-				(caption, i) =>
-					new InsertElementCommand({
-						placement: {
-							mode: "explicit",
-							trackId: addTrackCommand.getTrackId(),
-						},
-						element: {
-							...DEFAULTS.text.element,
-							name: `Caption ${i + 1}`,
-							content: caption.text,
-							duration: caption.duration,
-							startTime: caption.startTime,
-							fontSize: 65,
-							fontWeight: "bold",
-						},
-					}),
-			);
-
+			if (captionChunks.length === 0) {
+				throw new Error("No speech was detected. Existing captions were not changed.");
+			}
+			const before = editor.timeline.getTracks();
+			const elements = buildCaptionElements({
+				captions: captionChunks,
+				baseElement: DEFAULTS.text.element,
+				createId: generateUUID,
+			});
+			const after = replaceCaptionTrackElements({
+				tracks: before,
+				elements,
+				insertIndex: getDefaultInsertIndexForTrack({
+					tracks: before,
+					trackType: "text",
+				}),
+			});
 			editor.command.execute({
-				command: new BatchCommand([addTrackCommand, ...insertCommands]),
+				command: new TracksSnapshotCommand(before, after),
 			});
 		} catch (error) {
 			console.error("Transcription failed:", error);
@@ -164,7 +176,11 @@ export function Captions() {
 						disabled={isProcessing}
 					>
 						{isProcessing && <Spinner className="mr-1" />}
-						{isProcessing ? processingStep : "Generate transcript"}
+						{isProcessing
+							? processingStep
+							: hasSubtitleTrack(editor.timeline.getTracks())
+								? "Regenerate captions"
+								: "Generate transcript"}
 					</Button>
 				</SectionContent>
 			</Section>
