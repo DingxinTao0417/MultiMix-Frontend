@@ -13,6 +13,7 @@ import {
 
 export type VideoPreviewPlayerProps = {
   src: string;
+  posterSrc?: string;
   label: string;
   ratioClassName: string;
   initialTime?: number;
@@ -30,6 +31,7 @@ export function formatPreviewTime(seconds: number): string {
 const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>(
   function VideoPreviewPlayer({
     src,
+    posterSrc,
     label,
     ratioClassName,
     initialTime = 0,
@@ -102,6 +104,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             key={`${src}::${reloadRevision}`}
             ref={assignRef}
             src={src}
+            poster={posterSrc || undefined}
             preload="metadata"
             playsInline
             onLoadedMetadata={(event) => {

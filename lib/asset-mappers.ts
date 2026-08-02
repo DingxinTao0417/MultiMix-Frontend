@@ -121,6 +121,22 @@ function normalizeRatioLabel(value: string): string {
   return normalized.replace(/(?:横屏|竖屏|横版|竖版|横向|竖向|landscape|portrait)/gi, "").trim();
 }
 
+function ratioFromVideoProjectGeometry(project: Record<string, unknown> | null | undefined): string {
+  if (!project) return "";
+  const orchestration = isRecord(project.orchestration) ? project.orchestration : null;
+  const layout = stringValue(orchestration?.layout).toLowerCase();
+  if (layout === "landscape") return "16:9";
+  if (layout === "portrait") return "9:16";
+  if (layout === "square") return "1:1";
+
+  const settings = isRecord(project.settings) ? project.settings : null;
+  const width = numberOrUndefined(settings?.width);
+  const height = numberOrUndefined(settings?.height);
+  if (width == null || height == null || width <= 0 || height <= 0) return "";
+  if (width === height) return "1:1";
+  return width > height ? "16:9" : "9:16";
+}
+
 function stringListValue(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value.map((item) => String(item).trim()).filter(Boolean);
@@ -867,7 +883,10 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     : noAssetHit
       ? "未命中素材"
       : "有来源";
-  const rawRatio = stringValue(videoProject?.ratio) || stringValue(mp4Artifact?.ratio) || stringValue(intent.ratio);
+  const rawRatio = stringValue(videoProject?.ratio)
+    || stringValue(mp4Artifact?.ratio)
+    || stringValue(intent.ratio)
+    || ratioFromVideoProjectGeometry(videoProject);
   const ratio = normalizeRatioLabel(rawRatio) || (mode === "copy" ? "Markdown" : "按指令");
   const duration = videoProject?.duration_seconds
     ? `${videoProject.duration_seconds}秒`

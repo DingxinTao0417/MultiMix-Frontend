@@ -147,7 +147,7 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
   );
 }
 
-function VideoProjectRecoveryCard({ product }: { product: ProductArtifact }) {
+function VideoProjectRecoveryCard() {
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
       <strong>视频工程暂不可用</strong>
@@ -168,6 +168,12 @@ function VideoProjectRecoveryCard({ product }: { product: ProductArtifact }) {
 // = survives ProductPreview unmount/remount across product switches; bounded
 // (one number per URL) so it cannot grow unbounded in a session.
 const videoPlaybackPositions = new Map<string, number>();
+
+export function finishedVideoPosterUrl(product: ProductArtifact): string {
+  return product.segments?.find((segment) => (
+    Boolean(segment.assetThumbnailUrl) && segment.primaryVisualMediaType !== "video"
+  ))?.assetThumbnailUrl ?? "";
+}
 
 function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number): string | null {
   if (!segments?.length) return null;
@@ -205,7 +211,7 @@ export default function ProductPreview({
   }, [exportedVideoUrl, product.id]);
 
   if (product.status.startsWith("工程异常")) {
-    return <VideoProjectRecoveryCard product={product} />;
+    return <VideoProjectRecoveryCard />;
   }
 
   if (product.mode === "copy") {
@@ -376,6 +382,7 @@ export default function ProductPreview({
               key={exportedVideoUrl}
               ref={browsePlayerRef}
               src={exportedVideoUrl}
+              posterSrc={finishedVideoPosterUrl(product)}
               label="成片播放器"
               ratioClassName={getProductRatioClass(product.ratio)}
               initialTime={videoPlaybackPositions.get(exportedVideoUrl) ?? 0}

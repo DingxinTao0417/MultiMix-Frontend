@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import VideoPreviewPlayer, { formatPreviewTime } from "../components/video-preview-player";
+import { finishedVideoPosterUrl } from "../components/product-preview";
 
 afterEach(() => {
   cleanup();
@@ -47,6 +48,39 @@ describe("video preview player", () => {
     expect(screen.queryByRole("button", { name: "暂停视频" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "点击画面暂停视频" }));
     expect(pause).toHaveBeenCalledOnce();
+  });
+
+  it("shows a poster while the finished video first frame is still loading", () => {
+    const { container } = render(
+      <VideoPreviewPlayer
+        src="/demo.mp4"
+        posterSrc="/first-scene.jpg"
+        label="成片播放器"
+        ratioClassName="ratio-landscape"
+      />,
+    );
+
+    expect(container.querySelector("video")).toHaveAttribute("poster", "/first-scene.jpg");
+  });
+
+  it("selects the first non-video scene thumbnail for the finished-video poster", () => {
+    expect(finishedVideoPosterUrl({
+      id: "video-1",
+      mode: "video",
+      title: "视频",
+      status: "已完成",
+      summary: "",
+      ratio: "16:9",
+      duration: "30秒",
+      phase: "视频工程",
+      sections: [],
+      timeline: [],
+      actions: [],
+      segments: [
+        { id: "scene-1", index: 1, assetThumbnailUrl: "/motion.mp4", primaryVisualMediaType: "video", isFallback: false },
+        { id: "scene-2", index: 2, assetThumbnailUrl: "/first-scene.jpg", primaryVisualMediaType: "image", isFallback: false },
+      ],
+    })).toBe("/first-scene.jpg");
   });
 
   it("shows a recoverable error instead of an unexplained black screen", () => {

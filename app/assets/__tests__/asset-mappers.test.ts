@@ -345,6 +345,42 @@ describe("asset product mapper", () => {
     expect(landscape.ratio).toBe("16:9");
   });
 
+  it("restores a missing product ratio from deterministic video project geometry", () => {
+    const fromLayout = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_workflow_stage: "video_project_ready",
+        orchestration_pending: false,
+        video_project: {
+          tracks: [],
+          media: [],
+          orchestration: { layout: "landscape" },
+        },
+      },
+    }));
+    const fromCanvas = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_workflow_stage: "video_project_ready",
+        orchestration_pending: false,
+        video_project: {
+          tracks: [],
+          media: [],
+          settings: { width: 1080, height: 1920 },
+        },
+      },
+    }));
+
+    expect(fromLayout.ratio).toBe("16:9");
+    expect(fromCanvas.ratio).toBe("9:16");
+  });
+
   it("maps video project segments with asset references, fallback and MG decisions", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video_render",
