@@ -46,6 +46,24 @@ describe("new conversation routing", () => {
     expect(client).toContain('conversationDetailRequestKeyRef.current === requestKey');
   });
 
+  it("keeps a restored snapshot pending so the conversation loading skeleton can render", () => {
+    const client = readWorkspaceClient();
+
+    expect(client).toContain(
+      "const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();",
+    );
+    expect(client).not.toContain("detailsLoaded: true,");
+    expect(client).not.toContain("正在恢复完整对话记录。");
+  });
+
+  it("keeps the restored product visible while snapshot conversation details are pending", () => {
+    const client = readWorkspaceClient();
+
+    expect(client).toContain(
+      "const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot",
+    );
+  });
+
   it("loads a deep-linked historical conversation even when it is outside the recent summary page", () => {
     const client = readWorkspaceClient();
 

@@ -603,25 +603,11 @@ export default function AssetsWorkspaceClient({
     (conversation) => conversation.id === selectedConversationId,
   );
   const isConversationSnapshot = selectedPersistedConversation?.detailsLoaded === false;
-  // A snapshot can contain a ready project, but older non-conforming projects
-  // may only have a safe title while their full history is restored.  Either
-  // way, replace the empty skeleton with an explicit read-only recovery state
-  // and keep the persisted row incomplete so the detail effect continues.
-  const selectedConversation = isConversationSnapshot && selectedPersistedConversation
-    ? {
-      ...selectedPersistedConversation,
-      detailsLoaded: true,
-      messages: [{
-        role: "assistant" as const,
-        text: selectedPersistedConversation.products?.length
-          ? "视频工程已恢复，正在读取完整对话记录。"
-          : "正在恢复完整对话记录。",
-        assetId: selectedPersistedConversation.product.backendAssetId,
-      }],
-    }
-    : selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
+  // Keep snapshot detail pending so the conversation pane shows its loading
+  // skeleton. Its recovered product can still render read-only on the right.
+  const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
   const selectedConversationHasDetail = selectedConversation.detailsLoaded === true;
-  const selectedProduct = !selectedConversationHasDetail
+  const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const selectedAssetGenerationJob = assetGenerationJobs[selectedConversation.id]?.job ?? null;
