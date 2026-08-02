@@ -12,13 +12,13 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).toContain('role={selectable ? "button" : undefined}');
   });
 
-  test("shows a replace-material action on hover, focus and active cards", () => {
+  test("shows a replace-material action only on hover or keyboard focus", () => {
     expect(component).toContain("onReplaceMaterial?: (segment: AssetProductSegment) => void");
     expect(component).toContain("shadcn-prototype-segment-actions");
     expect(component).toContain("换素材");
     expect(component).toContain("event.stopPropagation()");
     expect(css).toMatch(/\.shadcn-prototype-segment-cards li:(?:hover|focus-within)[^{]*\.shadcn-prototype-segment-actions/s);
-    expect(css).toMatch(/\.shadcn-prototype-segment-cards li\.active \.shadcn-prototype-segment-actions/s);
+    expect(css).not.toMatch(/\.shadcn-prototype-segment-cards li\.active \.shadcn-prototype-segment-actions/s);
   });
 
   test("exposes a voiceover action without changing the card selection target", () => {
@@ -60,5 +60,9 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).not.toContain("segments.slice(");
     expect(component).not.toContain("展开更多");
     expect(css).toMatch(/\.shadcn-prototype-segment-actions\s*\{[^}]*flex-shrink:\s*0;/s);
+  });
+
+  test("keeps scrollable-card shadows inside a padded paint area", () => {
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*padding:\s*4px 12px 24px;[^}]*margin:\s*-4px -12px 0;/s);
   });
 });

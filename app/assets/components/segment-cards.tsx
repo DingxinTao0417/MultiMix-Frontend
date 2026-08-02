@@ -19,14 +19,12 @@ export function segmentNeedsMaterial(segment: AssetProductSegment): boolean {
 // onSelect is wired (成片浏览态) the cards double as jump-to-preview targets.
 export default function SegmentCards({
   segments,
-  hint,
   activeId,
   onSelect,
   onReplaceMaterial,
   onEditVoiceover,
 }: {
   segments: AssetProductSegment[];
-  hint?: string;
   activeId?: string | null;
   onSelect?: (segment: AssetProductSegment) => void;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
@@ -37,7 +35,6 @@ export default function SegmentCards({
     <section className="shadcn-prototype-segment-cards" aria-label="分镜摘要">
       <header>
         <span>分镜 · {segments.length} 段</span>
-        {hint ? <em>{hint}</em> : null}
       </header>
       <ol>
         {segments.map((segment) => {

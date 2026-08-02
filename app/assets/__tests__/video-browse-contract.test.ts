@@ -27,7 +27,8 @@ describe("video project browse-player contract", () => {
     expect(preview).toContain('useState(true)');
     expect(preview).toMatch(/setFullVideoFailed\(false\);\s*setProjectPreviewRequested\(true\);\s*setProjectPreviewFailed\(false\);/s);
     expect(preview).toContain("加载完整工程预览");
-    expect(preview).toContain("hint={showFullVideo");
+    expect(preview).not.toContain("点击任意分镜可跳转成片");
+    expect(preview).not.toContain("点击任意分镜可切换预览");
     expect(projectPreview).toContain("mode=preview");
     expect(projectPreview).toContain("shadcn-prototype-project-preview-frame");
     expect(projectPreview).toContain("multimix-editor-preview-state");
@@ -36,7 +37,7 @@ describe("video project browse-player contract", () => {
     expect(projectPreview).toContain("data.previewChannel !== previewChannel");
     expect(projectPreview).toContain("previewChannel=");
     expect(preview).toContain("activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}");
-    expect(preview).not.toContain('hint={exportedVideoUrl ?');
+    expect(preview).not.toContain("hint=");
     expect(editorPage).toContain('searchParams.get("mode") === "preview"');
     expect(editorView).toContain('mode?: "edit" | "preview"');
     expect(editorPage).toContain('searchParams.get("previewChannel")');

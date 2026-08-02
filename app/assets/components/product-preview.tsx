@@ -416,7 +416,6 @@ export default function ProductPreview({
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}
-            hint={showFullVideo ? "点击任意分镜可跳转成片" : "点击任意分镜可切换预览"}
             activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);

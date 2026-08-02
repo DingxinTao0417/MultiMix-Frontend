@@ -73,6 +73,7 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*padding:\s*4px 12px 24px;[^}]*margin:\s*-4px -12px 0;/s);
   });
 
   test("preserves source ratio without a detached preview resize region", () => {

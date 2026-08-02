@@ -6869,15 +6869,13 @@ label {
 
 /* Source-ref block: product-level source references (spec §5.3 完成态来源块) */
 .shadcn-prototype-source-block {
-  display: grid;
-  gap: 10px;
   border: 1px solid var(--sp-border);
   border-radius: 12px;
   background: var(--sp-ai-soft);
   padding: 13px 15px;
 }
 
-.shadcn-prototype-source-block header {
+.shadcn-prototype-source-block summary {
   display: flex;
   min-height: 0;
   align-items: center;
@@ -6888,6 +6886,33 @@ label {
   color: var(--sp-text);
   font-size: 12.5px;
   font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.shadcn-prototype-source-block summary::-webkit-details-marker {
+  display: none;
+}
+
+.shadcn-prototype-source-block summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-right: 1.5px solid var(--sp-subtle);
+  border-bottom: 1.5px solid var(--sp-subtle);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 150ms ease;
+}
+
+.shadcn-prototype-source-block[open] summary::after {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.shadcn-prototype-source-content {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
 }
 
 .shadcn-prototype-source-dot {
@@ -6964,7 +6989,7 @@ label {
   white-space: nowrap;
 }
 
-.shadcn-prototype-source-block > p {
+.shadcn-prototype-source-content > p {
   margin: 0;
   color: var(--sp-subtle);
   font-size: 12px;
@@ -7016,6 +7041,8 @@ label {
 .shadcn-prototype-video-browse > .shadcn-prototype-segment-cards > ol {
   min-height: 0;
   overflow-y: auto;
+  padding: 4px 12px 24px;
+  margin: -4px -12px 0;
 }
 
 .shadcn-prototype-segment-cards li {
@@ -7532,8 +7559,7 @@ label {
 }
 
 .shadcn-prototype-segment-cards li:hover .shadcn-prototype-segment-actions,
-.shadcn-prototype-segment-cards li:focus-within .shadcn-prototype-segment-actions,
-.shadcn-prototype-segment-cards li.active .shadcn-prototype-segment-actions {
+.shadcn-prototype-segment-cards li:focus-within .shadcn-prototype-segment-actions {
   display: inline-flex;
 }
 

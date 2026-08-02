@@ -103,6 +103,7 @@ test("CASE-01 shows a director draft without project controls", async ({ page })
 
 test("CASE-02 shows the saved asset reference", async ({ page }) => {
   const workspace = await openCase(page, "case-02-saved-asset-match");
+  await workspace.getByLabel("来源引用").first().locator("summary").click();
   await expect(workspace.getByText("测试门店素材", { exact: false }).first()).toBeVisible();
 });
 
