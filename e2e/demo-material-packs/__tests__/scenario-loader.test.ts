@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { loadScenario } from "../scenario-loader";
 
-const packsRoot = path.resolve(process.cwd(), "..", "..", "..", "demo_material_packs");
+const packsRoot = path.resolve(process.cwd(), "..", "demo_material_packs");
 
 describe("loadScenario", () => {
   it("loads scenario 04 with its material-gap thresholds", () => {

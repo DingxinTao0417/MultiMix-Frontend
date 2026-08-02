@@ -2,13 +2,22 @@ import fs from "node:fs";
 import type { APIRequestContext } from "@playwright/test";
 
 export class DemoApiClient {
-  constructor(private readonly request: APIRequestContext, private readonly baseUrl: string, private readonly token?: string) {}
+  constructor(
+    private readonly request: APIRequestContext,
+    private readonly baseUrl: string,
+    private readonly token?: string,
+    private readonly email = "local@admin",
+  ) {}
   static async create(request: APIRequestContext, baseUrl: string) {
     const response = await request.get(`${baseUrl}/v1/auth/local-dev-admin`);
     if (!response.ok()) throw new Error(`Local authentication failed ${response.status()}`);
-    const payload = await response.json() as { access_token?: string };
+    const payload = await response.json() as { access_token?: string; email?: string };
     if (!payload.access_token) throw new Error("Local authentication returned no access token");
-    return new DemoApiClient(request, baseUrl, payload.access_token);
+    return new DemoApiClient(request, baseUrl, payload.access_token, payload.email ?? "local@admin");
+  }
+  browserSession(): { email: string; token: string } {
+    if (!this.token) throw new Error("Local authentication token is unavailable");
+    return { email: this.email, token: this.token };
   }
   private headers(): Record<string, string> { return this.token ? { Authorization: `Bearer ${this.token}` } : {}; }
   async uploadAsset(filePath: string, targetKind = "image") {

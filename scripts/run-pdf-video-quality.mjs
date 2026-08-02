@@ -21,8 +21,8 @@ const backendRoot = inWorktree
   ? path.join(workspaceRoot, "MultiMix-Backend", ".worktrees", path.basename(frontendRoot))
   : path.join(workspaceRoot, "MultiMix-Backend");
 const canonicalBackendRoot = path.join(workspaceRoot, "MultiMix-Backend");
-const backendPort = 8299;
-const frontendPort = 3317;
+const backendPort = configuredPort("PDF_VIDEO_BACKEND_PORT", 8299);
+const frontendPort = configuredPort("PDF_VIDEO_FRONTEND_PORT", 3317);
 const runId = (process.env.PDF_VIDEO_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
 const timestamp = (process.env.PDF_VIDEO_TIMESTAMP ?? new Date().toISOString().replace(/[:.]/g, "-"))
   .replace(/[^a-zA-Z0-9-]/g, "-");
@@ -40,6 +40,17 @@ const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "py" : "python");
 const pythonPrefix = process.platform === "win32" && !process.env.PYTHON ? ["-3.13"] : [];
+
+function configuredPort(name, fallback) {
+  const value = Number(process.env[name] ?? fallback);
+  if (!Number.isInteger(value) || value < 1024 || value > 65535) {
+    throw new Error(`${name} must be a TCP port between 1024 and 65535`);
+  }
+  if ([8199, 3117, 3200].includes(value)) {
+    throw new Error(`${name} cannot use a protected developer port`);
+  }
+  return value;
+}
 
 function parseEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};

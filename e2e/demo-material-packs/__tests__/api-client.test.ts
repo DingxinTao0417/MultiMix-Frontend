@@ -9,12 +9,13 @@ describe("DemoApiClient local authentication", () => {
       get: async (url: string, options?: { headers?: Record<string, string> }) => {
         calls.push({ url, headers: options?.headers });
         return url.endsWith("/auth/local-dev-admin")
-          ? { ok: () => true, json: async () => ({ access_token: "signed-local-token" }) }
+          ? { ok: () => true, json: async () => ({ access_token: "signed-local-token", email: "demo@multimix.local" }) }
           : { ok: () => true, json: async () => ({ asset: { id: 7, metadata: {} }, inbound_relations: [], outbound_relations: [] }) };
       },
     };
 
     const client = await DemoApiClient.create(request as never, "http://backend");
+    expect(client.browserSession()).toEqual({ email: "demo@multimix.local", token: "signed-local-token" });
     const asset = await client.getAsset(7);
 
     expect(asset.id).toBe(7);
