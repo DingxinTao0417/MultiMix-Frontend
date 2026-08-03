@@ -693,7 +693,12 @@ export default function AssetsWorkspaceClient({
     if (pendingConversationId === initialConversationId) {
       pendingConversationNavigationRef.current = null;
     }
-    const conversationId = resolveInitialConversationId(initialConversationId, conversations);
+    // A direct URL may arrive before the compact conversation list. Keep its
+    // target long enough for the independent detail request below to hydrate
+    // it; resolving against an empty list would otherwise replace it with new.
+    const conversationId = initialConversationId && initialConversationId !== "new"
+      ? initialConversationId
+      : resolveInitialConversationId(initialConversationId, conversations);
     selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
     if (initialProductId) {
@@ -740,8 +745,15 @@ export default function AssetsWorkspaceClient({
           // recent-summary page. Keep its fully loaded detail when that page
           // arrives after the detail request, rather than replacing it with an
           // unrelated first summary row.
-          if (selectedDetail && !merged.some((conversation) => conversation.id === selectedDetail.id)) {
-            return [selectedDetail, ...merged];
+          if (selectedDetail) {
+            const detailExistsInSummaries = merged.some((conversation) => (
+              conversation.id === selectedDetail.id
+            ));
+            return detailExistsInSummaries
+              ? merged.map((conversation) => (
+                conversation.id === selectedDetail.id ? selectedDetail : conversation
+              ))
+              : [selectedDetail, ...merged];
           }
           return merged;
         });

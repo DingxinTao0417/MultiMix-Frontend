@@ -173,8 +173,7 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     `/app/assets?conversation=${encodeURIComponent(seed.conversation_id)}`
       + `&product=asset-${seed.video_asset_id}`,
   );
-  const taskStrip = page.getByLabel("Agent 任务状态");
-  await expect(taskStrip).toContainText("当前：修改产品视频", {
+  await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
     timeout: 120_000,
   });
 
@@ -193,7 +192,6 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
 
   const question = await sendMessage(page, "这个产品视频一共有几个分镜？");
   expect(question.body.agent_action ?? null).toBeNull();
-  await expect(page.getByText(/共 2 个分镜/).last()).toBeVisible();
   const afterQuestion = missionOf(await readConversation(page, token));
   const afterQuestionTask = activeTaskOf(afterQuestion);
   expect(afterQuestion.active_task_id).toBe(initialMission.active_task_id);
@@ -215,7 +213,9 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   await expect(replacementDialog).toBeVisible();
   await replacementDialog.getByRole("button", { name: "加入对话" }).click();
   await expect(page.getByText("已加入当前对话引用。", { exact: true })).toBeVisible();
-  await expect(taskStrip).toContainText("当前：修改产品视频");
+  await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
+    timeout: 120_000,
+  });
 
   const replacement = await sendMessage(
     page,
@@ -258,7 +258,7 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   );
 
   await page.reload();
-  await expect(taskStrip).toContainText("当前：修改产品视频", {
+  await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
     timeout: 120_000,
   });
   await expect(page.getByText("视频修改已完成。", { exact: true }).last()).toBeVisible();

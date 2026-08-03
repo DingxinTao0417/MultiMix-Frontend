@@ -250,6 +250,36 @@ function extractTurnContext(requestBody) {
 
 function fakeInterpretation(requestBody) {
   const { context, instruction } = extractTurnContext(requestBody);
+  if (instruction.includes("第1个分镜") && instruction.includes("逐词高亮")) {
+    scheduleWorkerStart();
+    return {
+      turn_kind: "act", task_relation: "continue_active", control_action: null,
+      goal: "调整第一分镜字幕效果", task_id_hint: null,
+      proposed_actions: [{
+        action_id: "video.scene.set_subtitle_presentation",
+        target_hint: { scope: "scene", scene_id: "scene-1" },
+        parameters: { mode: "word_highlight", background_enabled: false },
+        reference_asset_ids: [], missing_fields: [],
+        reason: "用户指定逐词高亮并保持无背景。",
+      }],
+      confidence: 0.99, reason: "explicit_subtitle_word_highlight",
+    };
+  }
+  if (instruction.includes("第2个分镜") && instruction.includes("卡拉 OK")) {
+    scheduleWorkerStart();
+    return {
+      turn_kind: "act", task_relation: "continue_active", control_action: null,
+      goal: "调整第二分镜字幕效果", task_id_hint: null,
+      proposed_actions: [{
+        action_id: "video.scene.set_subtitle_presentation",
+        target_hint: { scope: "scene", scene_id: "scene-2" },
+        parameters: { mode: "karaoke", background_enabled: true, background_color: "#101010cc" },
+        reference_asset_ids: [], missing_fields: [],
+        reason: "用户指定卡拉 OK 和深色背景。",
+      }],
+      confidence: 0.99, reason: "explicit_subtitle_karaoke",
+    };
+  }
   if (instruction.includes("第2个分镜") && instruction.includes("图片")) {
     const references = Array.isArray(context.reference_assets)
       ? context.reference_assets
@@ -599,7 +629,7 @@ try {
     [
       "playwright",
       "test",
-      "e2e/agent-video-atomic-edit.spec.ts",
+      process.env.AGENT_ATOMIC_E2E_SPEC ?? "e2e/agent-video-atomic-edit.spec.ts",
       "--workers=1",
     ],
     {
