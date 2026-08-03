@@ -22,6 +22,7 @@ import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject
 import { segmentIdByElementId, segmentTextByElementId } from "@/editor-engine/vendor/buildProject";
 import AssetPicker, { type AssetPickerItem } from "@/app/assets/components/asset-picker";
 import { useSegmentMaterialCandidates } from "@/app/assets/lib/use-segment-material-candidates";
+import { getVideoProjectJob, submitSegmentRecompose } from "@/lib/video-project-client";
 import {
   applyEdgeTrim,
   formatClock,
@@ -278,37 +279,25 @@ export default function FilmStrip({
       if (!assetId || !token || !selectedSegmentId) return;
       setRecompose({ phase: "submitting" });
       try {
-        const res = await fetch(
-          `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(selectedSegmentId)}/recompose`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...authHeaders },
-            body: JSON.stringify({ ...body, confirm_overwrite: confirmOverwrite }),
-          },
-        );
-        if (res.status === 409) {
-          const payload = await res.json().catch(() => null);
-          const detail = payload?.detail;
-          if (detail && typeof detail === "object" && detail.code === "timeline_dirty") {
-            const message = typeof detail.message === "string" && detail.message ? detail.message : OVERWRITE_FALLBACK_MESSAGE;
-            setRecompose({ phase: "idle" });
-            if (window.confirm(message)) await submitRecompose(body, true);
-            return;
-          }
-          throw new Error(typeof detail === "string" ? detail : "当前无法重新合成。");
+        const result = await submitSegmentRecompose({
+          token,
+          projectAssetId: assetId,
+          segmentId: selectedSegmentId,
+          body: { ...body, confirm_overwrite: confirmOverwrite },
+        });
+        if (result.kind === "confirm_overwrite") {
+          const message = result.message || OVERWRITE_FALLBACK_MESSAGE;
+          setRecompose({ phase: "idle" });
+          if (window.confirm(message)) await submitRecompose(body, true);
+          return;
         }
-        if (!res.ok) {
-          const payload = await res.json().catch(() => null);
-          throw new Error(typeof payload?.detail === "string" ? payload.detail : `HTTP ${res.status}`);
-        }
-        const job = await res.json();
-        postToParent({ type: "multimix-editor-recompose-started", jobId: job?.id ?? null });
-        setRecompose({ phase: "running", jobId: String(job?.id ?? ""), stageLabel: "已开始重新合成" });
+        postToParent({ type: "multimix-editor-recompose-started", jobId: result.job.id });
+        setRecompose({ phase: "running", jobId: result.job.id, stageLabel: "已开始重新合成" });
       } catch (cause) {
         setRecompose({ phase: "error", message: cause instanceof Error ? cause.message : String(cause) });
       }
     },
-    [assetId, token, selectedSegmentId, authHeaders, postToParent],
+    [assetId, token, selectedSegmentId, postToParent],
   );
 
   // While a recompose job runs, poll its real status; reload the editor with
@@ -319,9 +308,7 @@ export default function FilmStrip({
     if (!runningJobId) return;
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`${API_BASE}/v1/video/jobs/${encodeURIComponent(runningJobId)}`, { headers: authHeaders });
-        if (!res.ok) return;
-        const job = await res.json();
+        const job = await getVideoProjectJob({ token, jobId: runningJobId });
         if (job.status === "completed") {
           clearInterval(timer);
           postToParent({ type: "multimix-editor-project-updated", reason: "recompose" });
@@ -339,7 +326,7 @@ export default function FilmStrip({
       }
     }, 5000);
     return () => clearInterval(timer);
-  }, [runningJobId, authHeaders, postToParent]);
+  }, [runningJobId, token, postToParent]);
 
   const openPicker = useCallback(() => {
     if (!assetId || !token || !selectedSegmentId) return;

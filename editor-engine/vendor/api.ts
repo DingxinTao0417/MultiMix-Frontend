@@ -1,5 +1,10 @@
 // Timeline data contract — mirrors backend timeline.py output.
 
+import {
+  getSegmentMaterialCandidates as getSharedSegmentMaterialCandidates,
+  recomposeSegmentMaterial as recomposeSharedSegmentMaterial,
+} from "@/lib/video-project-client";
+
 export interface TimelineElement {
   id: string;
   type: "video" | "image" | "audio" | "text";
@@ -203,17 +208,17 @@ export async function segmentMaterialCandidates(
   token: string | null | undefined,
   cursor?: string | null,
 ): Promise<SegmentMaterialCandidatesResult> {
-  const params = new URLSearchParams({ scope });
-  if (cursor) params.set("cursor", cursor);
-  const res = await fetch(
-    `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
-    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-  );
-  if (!res.ok) throw new Error(`material candidates failed: HTTP ${res.status}`);
-  return res.json();
+  return getSharedSegmentMaterialCandidates({
+    token,
+    projectAssetId: assetId,
+    segmentId,
+    scope,
+    cursor,
+  });
 }
 
 export interface RecomposeResult {
+  id?: string;
   public_id?: string;
   status?: string;
   render_stage?: string;
@@ -230,31 +235,17 @@ export async function recomposeSegmentMaterial(
   token: string | null | undefined,
   confirmOverwrite = false,
 ): Promise<{ kind: "confirm_overwrite"; message: string } | { kind: "started"; job: RecomposeResult }> {
-  const body: Record<string, unknown> = {
-    operation: "replace_material",
-    candidate_id: candidateId,
-    confirm_overwrite: confirmOverwrite,
-  };
-  const res = await fetch(
-    `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    },
-  );
-  const payload = await res.json().catch(() => null);
-  if (res.status === 409 && payload?.detail && typeof payload.detail === "object" && payload.detail.code === "timeline_dirty") {
-    return { kind: "confirm_overwrite", message: typeof payload.detail.message === "string" ? payload.detail.message : "重新合成会覆盖手工剪辑，是否继续？" };
-  }
-  if (!res.ok) {
-    const detail = payload?.detail;
-    throw new Error(typeof detail === "string" ? detail : `HTTP ${res.status}`);
-  }
-  return { kind: "started", job: payload as RecomposeResult };
+  return recomposeSharedSegmentMaterial({
+    token,
+    projectAssetId: assetId,
+    segmentId,
+    candidateId,
+    confirmOverwrite,
+  });
 }
 
 export interface MGResult {
+  id?: string;
   status: string;
   result?: { mg_overlay_ref?: string; duration?: number };
   error_message?: string | null;

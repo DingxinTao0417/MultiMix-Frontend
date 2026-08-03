@@ -7,6 +7,7 @@ import {
   segmentMaterialCandidates,
   type SegmentMaterialCandidate,
 } from "./api";
+import { getVideoProjectJob } from "@/lib/video-project-client";
 import { updateEditorProject } from "./bootstrap";
 import { segmentIdByElementId, segmentTextByElementId, type BackendProject } from "./buildProject";
 import {
@@ -113,13 +114,25 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     setOpen(false);
   }
 
+  async function waitForVideoJob(jobId: string) {
+    for (;;) {
+      const job = await getVideoProjectJob({ token, jobId });
+      if (job.status === "completed") return;
+      if (job.status === "failed") {
+        throw new Error(job.error_message || "视频修改失败，请重试。");
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1500));
+    }
+  }
+
   async function makeMG() {
     if (!selEl || !segText || !assetId) return;
     setMgLoading(true);
     setMgUrl(null);
     try {
       const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token, selEl.startTime);
-      if (res.status === "completed") {
+      if (res.id) await waitForVideoJob(res.id);
+      if (res.status === "completed" || res.id) {
         await reloadProject();
         alert("MG 动效已添加到时间轴底部的“动效”轨道。");
       } else if (res.status === "failed" && res.error_message) {
@@ -155,9 +168,10 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
         result = await recomposeSegmentMaterial(assetId, segmentId, candidate.candidate_id, token, true);
       }
       if (result.kind === "started") {
-        // Recompose runs server-side; reload the rebuilt project once it lands.
-        // The job publishes atomically, so a short reload reflects the new
-        // material (the workbench poll path shares the same job contract).
+        // Recompose publishes atomically. Wait for its real terminal job state
+        // before reading the project; a 202 response still contains the old one.
+        if (!result.job.id) throw new Error("重合成任务未返回任务 ID，请重试。");
+        await waitForVideoJob(result.job.id);
         await reloadAndClose();
       }
     } catch (e) {

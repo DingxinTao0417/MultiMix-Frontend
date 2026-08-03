@@ -34,12 +34,16 @@ import {
   type ContentAssetRevisionResponse,
   type PublicMaterialCandidate,
   type PublicSourceRead,
-  type SegmentMaterialCandidateResponse,
-  type SegmentMaterialCandidatesResponse
+  type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord, normalizeAssetTitle } from "./asset-workspace-shared";
 import type { VideoQualityReport } from "./video-quality";
+import {
+  getSegmentMaterialCandidates,
+  getVideoProjectJob,
+  recomposeSegmentMaterial,
+} from "../../../lib/video-project-client";
 
 export type LibraryRow = {
   assetId?: number;
@@ -1040,7 +1044,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       };
     },
     async getVideoJob(token, jobId) {
-      const raw = await api<RawVideoJob>(`/video/jobs/${encodeURIComponent(jobId)}`, token);
+      const raw = await getVideoProjectJob({ token, jobId });
       return mapVideoJob(raw);
     },
     async retryVideoJob(token, jobId) {
@@ -1056,19 +1060,14 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       );
     },
     async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {
-      const params = new URLSearchParams({ scope });
-      if (cursor) params.set("cursor", cursor);
-      if (limit) params.set("limit", String(limit));
-      const response = await fetch(
-        `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/material-candidates?${params.toString()}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-      );
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !isRecord(payload)) {
-        const detail = isRecord(payload) ? payload.detail : null;
-        throw new Error(typeof detail === "string" ? detail : `HTTP ${response.status}`);
-      }
-      const data = payload as unknown as SegmentMaterialCandidatesResponse;
+      const data = await getSegmentMaterialCandidates({
+        token,
+        projectAssetId,
+        segmentId,
+        scope,
+        cursor,
+        limit,
+      });
       const groups = data.groups ?? { current: [], recommended: [], library: [], public: [] };
       return {
         current: (groups.current ?? []).map(mapSegmentCandidate),
@@ -1084,34 +1083,15 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       };
     },
     async replaceSegmentMaterial(token, projectAssetId, segmentId, selection, confirmOverwrite = false) {
-      const body: Record<string, unknown> = {
-        operation: "replace_material",
-        confirm_overwrite: confirmOverwrite,
-      };
-      body.candidate_id = selection.candidateId;
-      const response = await fetch(
-        `${API_BASE}/v1/video/projects/${encodeURIComponent(projectAssetId)}/segments/${encodeURIComponent(segmentId)}/recompose`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(body),
-        },
-      );
-      const payload = await response.json().catch(() => null);
-      if (response.status === 409 && isRecord(payload) && isRecord(payload.detail) && payload.detail.code === "timeline_dirty") {
-        return {
-          kind: "confirm_overwrite" as const,
-          message: stringValue(payload.detail.message) || "重新合成会覆盖现有手工剪辑，是否继续？",
-        };
-      }
-      if (!response.ok || !isRecord(payload)) {
-        const detail = isRecord(payload) ? payload.detail : null;
-        throw new Error(typeof detail === "string" ? detail : `HTTP ${response.status}`);
-      }
-      return { kind: "started" as const, job: mapVideoJob(payload as unknown as RawVideoJob) };
+      const result = await recomposeSegmentMaterial({
+        token,
+        projectAssetId,
+        segmentId,
+        candidateId: selection.candidateId,
+        confirmOverwrite,
+      });
+      if (result.kind === "confirm_overwrite") return result;
+      return { kind: "started" as const, job: mapVideoJob(result.job) };
     },
     async listLibrary(token, view, query, options = {}) {
       const kinds = libraryKindsForView(view);

@@ -82,4 +82,18 @@ describe("editor layout constraints", () => {
 		expect(verifiedBlobHandoff).toBeGreaterThan(remoteVerification);
 		expect(view).not.toContain("anchor.click()");
 	});
+
+	it("waits for real jobs before the full-screen editor reloads material or manual MG changes", () => {
+		const panel = readProjectFile("editor-engine/vendor/ReplacePanel.tsx");
+		const api = readProjectFile("editor-engine/vendor/api.ts");
+
+		expect(api).toContain('from "@/lib/video-project-client"');
+		expect(api).not.toContain("/segments/${encodeURIComponent(segmentId)}/recompose");
+		expect(panel).toContain("async function waitForVideoJob(jobId: string)");
+		expect(panel).toContain("await waitForVideoJob(result.job.id)");
+		expect(panel).toContain("if (res.id) await waitForVideoJob(res.id)");
+		expect(panel.indexOf("await waitForVideoJob(result.job.id)")).toBeLessThan(
+			panel.indexOf("await reloadAndClose()"),
+		);
+	});
 });
