@@ -9,6 +9,7 @@ import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
+import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
@@ -217,6 +218,20 @@ export default function ProductPreview({
 
   if (product.status.startsWith("工程异常")) {
     return <VideoProjectRecoveryCard />;
+  }
+
+  if (product.contentType === "long_form_candidate_set") {
+    const metadata = isRecord(product.metadata) ? product.metadata : {};
+    const analysis = longFormAnalysisFromMetadata(metadata);
+    if (!analysis || !product.backendAssetId) return <ProductFailureCard product={product} />;
+    return (
+      <LongFormCandidateSet
+        analysisAssetId={product.backendAssetId}
+        analysis={analysis}
+        sourcePlaybackUrl={stringValue(metadata.source_playback_url) || undefined}
+        chapterCount={typeof metadata.chapter_count === "number" ? metadata.chapter_count : undefined}
+      />
+    );
   }
 
   if (product.mode === "copy") {

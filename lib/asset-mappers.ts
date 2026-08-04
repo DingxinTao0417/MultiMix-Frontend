@@ -688,6 +688,7 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 
 
 function suggestionsForCapability(capability: string): string[] {
+  if (capability === "long_form_candidate_set") return ["再给我更多候选", "只看指定主题", "调整时长或比例"];
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
   if (capability.includes("video")) return ["调整分镜", "补充产品素材", "缩短到30秒", "换成9:16"];
   if (capability.includes("image") || capability === "cover_image" || capability === "storyboard_image") return ["换成9:16", "标题更醒目", "减少画面元素"];
@@ -723,6 +724,7 @@ function assetLabelFromProduct(asset: ContentAsset): string {
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
   if (asset.content_type === "video_render") return "视频工程";
+  if (asset.content_type === "long_form_candidate_set") return "拆条候选";
   const explicit = stringValue(metadata.artifact_category);
   if (explicit) return explicit;
   if (asset.content_type === "content_plan") return "选题方案";
@@ -755,7 +757,8 @@ function contentAssetTypeLabel(contentType: string): string {
     real_scene_video: "实景视频准备",
     generated_video: "生成视频准备",
     image_generation: "图片方案",
-    image_edit: "图片调整方案"
+    image_edit: "图片调整方案",
+    long_form_candidate_set: "拆条候选"
   };
   return labels[contentType] ?? "内容产物";
 }
@@ -835,6 +838,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       ? "视频生成中 · 后台任务"
     : invalidVideoProject
       ? "工程异常 · 待恢复"
+    : asset.content_type === "long_form_candidate_set"
+      ? `${Array.isArray(metadata.top_candidate_ids) ? metadata.top_candidate_ids.length : 0} 条优先候选`
     : unsupported
     ? "可执行方案 · 待生成"
     : templateMode

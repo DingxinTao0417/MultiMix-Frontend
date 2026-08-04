@@ -26,6 +26,7 @@ import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type Video
 import type {
   AgentActionRunResponse,
   AgentRunStep,
+  AssetLongFormAction,
   AssetVideoParameterConfirmation,
 } from "../lib/asset-workspace-types";
 import {
@@ -58,6 +59,13 @@ import {
 } from "../lib/agent-action-poller";
 import { useAssetGenerationJobs } from "../lib/use-asset-generation-jobs";
 import { useStableCallback } from "../lib/use-stable-callback";
+import {
+  getLongFormCandidateContext,
+  longFormAnalysisFromMetadata,
+  parseLongFormActionEvent,
+  type LongFormSelectAction,
+  type LongFormSourceReady,
+} from "../lib/long-form-client";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -573,6 +581,7 @@ export default function AssetsWorkspaceClient({
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
   const inFlightSourceAttachmentReconciliationsRef = useRef(new Set<string>());
+  const inFlightLongFormCandidateContextsRef = useRef(new Set<number>());
   // Live per-asset video job status (stage + error) fed by the poller so the
   // workspace can show stage-level progress instead of a bare "生成中".
   const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
@@ -616,6 +625,52 @@ export default function AssetsWorkspaceClient({
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
+
+  useEffect(() => {
+    const analysisAssetId = selectedProduct?.backendAssetId;
+    const metadata = selectedProduct?.metadata ?? {};
+    if (
+      !token
+      || selectedProduct?.contentType !== "long_form_candidate_set"
+      || !analysisAssetId
+      || (metadata.long_form_analysis && metadata.source_playback_url)
+      || inFlightLongFormCandidateContextsRef.current.has(analysisAssetId)
+    ) return;
+
+    let cancelled = false;
+    inFlightLongFormCandidateContextsRef.current.add(analysisAssetId);
+    void getLongFormCandidateContext(token, analysisAssetId)
+      .then((context) => {
+        if (cancelled) return;
+        setConversations((current) => current.map((conversation) => {
+          const products = conversation.products?.length ? conversation.products : [conversation.product];
+          if (!products.some((product) => product.backendAssetId === analysisAssetId)) return conversation;
+          const hydratedProducts = products.map((product) => product.backendAssetId === analysisAssetId
+            ? {
+                ...product,
+                metadata: {
+                  ...(product.metadata ?? {}),
+                  long_form_analysis: context.analysis,
+                  source_playback_url: context.sourcePlaybackUrl,
+                  chapter_count: context.analysis.chapters.length,
+                },
+              }
+            : product);
+          const primaryProduct = hydratedProducts.find((product) => product.id === conversation.product.id)
+            ?? conversation.product;
+          return { ...conversation, product: primaryProduct, products: hydratedProducts };
+        }));
+      })
+      .catch((error) => {
+        if (!cancelled) toast.error(formatComposerError(error));
+      })
+      .finally(() => {
+        inFlightLongFormCandidateContextsRef.current.delete(analysisAssetId);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProduct?.backendAssetId, selectedProduct?.contentType, selectedProduct?.metadata, token]);
 
   useEffect(() => {
     workspaceMountedRef.current = true;
@@ -1549,6 +1604,26 @@ export default function AssetsWorkspaceClient({
     }
     const linkedAsset = { id: row.assetId, title: row.title };
     const targetConversation = assetWorkspaceAdapter.getNewConversation();
+    if (intent === "long-form") {
+      setSelectedConversationId(targetConversation.id);
+      setActiveView("conversation");
+      try {
+        await handleSendConversationMessage(
+          targetConversation,
+          `分析《${row.title}》，整理完整章节并给我最值得发布的 Top 5`,
+          undefined,
+          [],
+          undefined,
+          undefined,
+          undefined,
+          { kind: "analyze", sourceAssetId: row.assetId },
+        );
+        toast.success("已开始理解原片并整理拆条候选。");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "发起长视频分析失败。");
+      }
+      return;
+    }
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
       : intent === "regenerate-image"
@@ -1762,6 +1837,7 @@ export default function AssetsWorkspaceClient({
     clientRequestId?: string,
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
+    longFormAction?: AssetLongFormAction,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1769,7 +1845,9 @@ export default function AssetsWorkspaceClient({
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
-    const selectedBackendAssetId = selectedProduct?.backendAssetId;
+    const selectedBackendAssetId = longFormAction?.kind === "analyze"
+      ? undefined
+      : selectedProduct?.backendAssetId;
     let assetsForSend = linkedAssets;
     if (assetsForSend.length === 0) {
       const sourceAssets = sourceAttachmentAssets(conversation.id);
@@ -1827,6 +1905,7 @@ export default function AssetsWorkspaceClient({
         clientRequestId,
         videoParameterConfirmation,
         agentConfirmationId,
+        longFormAction,
         signal
       });
     } catch (error) {
@@ -1937,6 +2016,58 @@ export default function AssetsWorkspaceClient({
     }
     setConversationLoadRevision((value) => value + 1);
   };
+
+  const handleLongFormSelect = useStableCallback(async (action: LongFormSelectAction) => {
+    const conversation = conversationsRef.current.find(
+      (item) => item.id === selectedConversationIdRef.current,
+    );
+    if (!conversation || selectedProduct?.backendAssetId !== action.analysisAssetId) {
+      toast.error("候选已切换，请在当前拆条结果中重新选择。");
+      return;
+    }
+    const metadata = selectedProduct.metadata ?? {};
+    const analysis = longFormAnalysisFromMetadata(metadata);
+    const candidate = analysis?.candidates.find((item) => item.id === action.candidateId);
+    const instruction = candidate?.title
+      ? `把候选「${candidate.title}」做成短视频`
+      : "把选中的候选做成短视频";
+    try {
+      await handleSendConversationMessage(
+        conversation,
+        instruction,
+        undefined,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        action,
+      );
+    } catch (error) {
+      toast.error(formatComposerError(error));
+    }
+  });
+
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const action = parseLongFormActionEvent(event);
+      if (action) void handleLongFormSelect(action);
+    };
+    window.addEventListener("multimix:long-form-action", listener);
+    return () => window.removeEventListener("multimix:long-form-action", listener);
+  }, [handleLongFormSelect]);
+
+  const handleLongFormSourceReady = useStableCallback(async (source: LongFormSourceReady) => {
+    await handleSendConversationMessage(
+      selectedConversation,
+      `分析《${source.title}》，整理完整章节并给我最值得发布的 Top 5`,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      { kind: "analyze", sourceAssetId: source.id },
+    );
+  });
 
   const handleUploadClick = () => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
@@ -2349,6 +2480,7 @@ export default function AssetsWorkspaceClient({
               onSend={handleSendConversationMessage}
               token={token}
               onOpenImageLibrary={() => setActiveView("image")}
+              onLongFormSourceReady={handleLongFormSourceReady}
             />
           ) : activeView === "conversation" ? (
             <>

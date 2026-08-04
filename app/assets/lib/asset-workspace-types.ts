@@ -187,6 +187,11 @@ export type AssetVideoParameterConfirmation = {
   targetSeconds: number;
 };
 
+export type AssetLongFormAction =
+  | { kind: "analyze"; sourceAssetId: number }
+  | { kind: "revise"; analysisAssetId: number }
+  | { kind: "select"; analysisAssetId: number; candidateId: string };
+
 export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;

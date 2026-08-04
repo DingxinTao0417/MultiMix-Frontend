@@ -2,6 +2,7 @@ import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
 import type {
   AgentActionRunResponse,
   AssetConversation,
+  AssetLongFormAction,
   AssetProduct,
   AssetVideoParameterConfirmation,
   AssetWorkspaceData,
@@ -56,6 +57,7 @@ export type LibraryRow = {
   body?: string[];
   format?: string;
   contentType?: string;
+  contentTypeCode?: string;
   statusLabel?: string;
   updatedLabel?: string;
   updatedAtIso?: string;
@@ -154,6 +156,7 @@ export function buildConversationMessagePayload({
   clientRequestId,
   videoParameterConfirmation,
   agentConfirmationId,
+  longFormAction,
 }: {
   conversationId: string;
   instruction: string;
@@ -162,7 +165,19 @@ export function buildConversationMessagePayload({
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
   agentConfirmationId?: string;
+  longFormAction?: AssetLongFormAction;
 }) {
+  const serializedLongFormAction = longFormAction
+    ? {
+        kind: longFormAction.kind,
+        ...(longFormAction.kind === "analyze"
+          ? { source_asset_id: longFormAction.sourceAssetId }
+          : { analysis_asset_id: longFormAction.analysisAssetId }),
+        ...(longFormAction.kind === "select"
+          ? { candidate_id: longFormAction.candidateId }
+          : {}),
+      }
+    : undefined;
   return {
     instruction,
     conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
@@ -170,6 +185,7 @@ export function buildConversationMessagePayload({
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
+    ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
     ...(videoParameterConfirmation ? {
       video_parameter_confirmation: {
         pending_intent_id: videoParameterConfirmation.pendingIntentId,
@@ -296,6 +312,7 @@ export type AssetWorkspaceAdapter = {
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
     agentConfirmationId?: string;
+    longFormAction?: AssetLongFormAction;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -690,6 +707,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     keywords: inferKeywords(asset),
     body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
     contentType: contentTypeLabel(asset),
+    contentTypeCode: asset.content_type,
     statusLabel: status,
     updatedLabel: asset.updated_at ? relativeTimeLabel(asset.updated_at) : undefined,
     updatedAtIso: asset.updated_at || undefined,
@@ -930,6 +948,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       clientRequestId,
       videoParameterConfirmation,
       agentConfirmationId,
+      longFormAction,
       signal,
     }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -944,6 +963,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           clientRequestId,
           videoParameterConfirmation,
           agentConfirmationId,
+          longFormAction,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

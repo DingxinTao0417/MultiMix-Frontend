@@ -116,6 +116,39 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes long-form actions as structured data", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "new",
+      instruction: "分析原片",
+      longFormAction: {
+        kind: "analyze",
+        sourceAssetId: 91,
+      },
+    })).toMatchObject({
+      long_form_action: {
+        kind: "analyze",
+        source_asset_id: 91,
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "做成短视频",
+      longFormAction: {
+        kind: "select",
+        analysisAssetId: 92,
+        candidateId: "cand_02",
+      },
+    })).toMatchObject({
+      conversation_id: "asset-conversation-1",
+      long_form_action: {
+        kind: "select",
+        analysis_asset_id: 92,
+        candidate_id: "cand_02",
+      },
+    });
+  });
+
   it("loads one bounded library page by library kind", async () => {
     const backendRows = Array.from({ length: 49 }, (_, index) => asset({
       id: index + 1,
@@ -171,6 +204,30 @@ describe("runtime data boundary", () => {
     expect(page.rows[0]).toMatchObject({
       previewUrl: "https://cdn.example/video.mp4",
       thumbnailUrl: "https://cdn.example/video-poster.jpg",
+    });
+  });
+
+  it("preserves the backend content type needed by long-form library actions", async () => {
+    const source = asset({
+      id: 91,
+      library_kind: "video",
+      asset_kind: "video",
+      content_type: "long_form_video_source",
+      source_filename: "episode-12.mp4",
+      source_content_type: "video/mp4",
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([source]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "video");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]).toMatchObject({
+      assetId: 91,
+      contentType: "视频",
+      contentTypeCode: "long_form_video_source",
     });
   });
 
