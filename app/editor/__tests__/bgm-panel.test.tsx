@@ -152,6 +152,45 @@ describe("BgmPanel", () => {
     expect(changed).toHaveBeenCalledTimes(2);
   });
 
+  it("defers catalog loading for an explicitly disabled BGM choice until restore", async () => {
+    const prepare = vi.fn().mockResolvedValue(undefined);
+    const changed = vi.fn().mockResolvedValue(undefined);
+    render(
+      <BgmPanel
+        assetId="12"
+        token="token"
+        initialChoice={{
+          enabled: false,
+          catalog_id: "",
+          alternate_ids: [],
+          alternate_reasons: {},
+          selection_reason: "本轮不使用背景音乐。",
+          catalog_version: "v1",
+          selected_by: "auto",
+          locked_by_user: false,
+        }}
+        onPrepareChange={prepare}
+        onProjectChanged={changed}
+      />,
+    );
+
+    expect(await screen.findByText("已关闭")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复自动配乐" }));
+
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining("/bgm/catalog"),
+      expect.any(Object),
+    ));
+    await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      expect.stringContaining("/bgm"),
+      expect.objectContaining({ method: "PUT", body: expect.stringContaining('"action":"restore_auto"') }),
+    ));
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
   it("plays only one signed preview at a time and exposes no download link", async () => {
     const instances: Array<{ pause: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> }> = [];
     class PreviewAudio {

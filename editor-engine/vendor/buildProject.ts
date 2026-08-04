@@ -70,7 +70,7 @@ export interface BackendElement {
   animations?: ElementAnimations;
   transition?: BackendTransition;
   editDecision?: BackendEditDecision;
-  textRole?: "subtitle" | "presentation_support";
+  textRole?: "subtitle" | "presentation_support" | "brand_cta";
   subtitlePresentation?: "static_phrase" | "word_highlight" | "karaoke";
   subtitleTokens?: Array<{ text: string; startOffset: number; endOffset: number }>;
   subtitleBackground?: { enabled: boolean; color: string };
@@ -632,6 +632,61 @@ function supportCardTextElement(
   };
 }
 
+function brandCtaTextElement(
+  element: BackendElement,
+  settings: BackendProject["settings"],
+): TextElement {
+  const region = element.safeRegion ?? {
+    x: 0.14,
+    y: 0.18,
+    width: 0.72,
+    height: 0.30,
+  };
+  const preferredFontPx = Math.min(56, Math.max(34, settings.height * 0.052));
+  const minimumFontPx = Math.max(28, preferredFontPx * 0.7);
+  const layout = layoutCaption(element.content || "", {
+    availableWidth: settings.width * region.width,
+    preferredFontPx,
+    minimumFontPx,
+    fontFamily: subtitleStyle.fontFamily,
+    maxLineChars: 16,
+  });
+  return {
+    id: element.id,
+    name: element.name || "品牌引导",
+    type: "text",
+    content: layout.text,
+    duration: element.duration,
+    startTime: element.startTime,
+    trimStart: element.trimStart ?? 0,
+    trimEnd: element.trimEnd ?? 0,
+    fontSize: Math.max(2, (layout.fontPx * 90) / settings.height),
+    fontFamily: subtitleStyle.fontFamily,
+    color: "#ffffff",
+    background: {
+      enabled: true,
+      color: "#101828cc",
+      cornerRadius: 14,
+      paddingX: Math.round(settings.width * 0.018),
+      paddingY: Math.round(settings.height * 0.012),
+    },
+    textAlign: "center",
+    fontWeight: "bold",
+    fontStyle: "normal",
+    textDecoration: "none",
+    lineHeight: 1.28,
+    transform: {
+      ...IDENTITY_TRANSFORM,
+      position: {
+        x: 0,
+        y: subtitlePositionOffset(settings.height, region, 0),
+      },
+    },
+    opacity: 1,
+    textRole: "brand_cta",
+  };
+}
+
 // A placeholder File to satisfy the MediaAsset type; rendering reads `url`, not bytes.
 function placeholderFile(name: string): File {
   return new File([], name);
@@ -763,6 +818,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       const elements = sourceElements.map((e): TextElement => {
         if (e.textRole === "presentation_support") {
           return supportCardTextElement(e, bp.settings);
+        }
+        if (e.textRole === "brand_cta") {
+          return brandCtaTextElement(e, bp.settings);
         }
         const profile = e.textRole === "subtitle" ? e.subtitleStyle : undefined;
         const style: SubtitleStyle = profile

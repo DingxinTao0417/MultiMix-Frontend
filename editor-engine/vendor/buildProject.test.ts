@@ -67,6 +67,35 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('renders controlled brand CTA above the subtitle lane as its own text treatment', () => {
+    const { project } = buildProject(makeProject({
+      tracks: [{
+        id: 'track-brand-cta',
+        type: 'text',
+        name: '品牌引导',
+        elements: [{
+          id: 'brand-cta-0',
+          type: 'text',
+          content: '立即咨询\n获得适合你的方案',
+          startTime: 0,
+          duration: 5,
+          segmentId: 'scene-cta',
+          textRole: 'brand_cta' as never,
+          safeRegion: { x: 0.14, y: 0.18, width: 0.72, height: 0.30 },
+        }],
+      }],
+    }));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      textRole?: string;
+      background: { enabled: boolean };
+      transform: { position: { y: number } };
+    };
+    expect(element.textRole).toBe('brand_cta');
+    expect(element.background.enabled).toBe(true);
+    expect(element.transform.position.y).toBeLessThan(0);
+  });
+
   it('keeps a subtitle on one line when the rendered glyph width fits', () => {
     const result = layoutCaption('上传资料，自动生成可编辑视频', {
       availableWidth: 900,

@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: workspace
-> Last verified: 2026-07-30
+> Last verified: 2026-08-05
 
 MultiMix 是两个并排的独立仓库：
 
@@ -12,7 +12,7 @@ MultiMix 是两个并排的独立仓库：
 
 ## 运行配置
 
-视频、素材和对话主链始终启用。`CHANGEIN_VIDEO_ORCHESTRATION_INLINE` 只决定本地进程还是独立 worker 执行已经确认的视频工程任务；它不会切换产品功能或旧流程。生产必须设为 `false` 并使用独立 worker。
+视频、素材和对话主链始终启用。`MULTIMIX_VIDEO_ORCHESTRATION_INLINE` 只决定本地进程还是独立 worker 执行已经确认的视频工程任务；它不会切换产品功能或旧流程。生产必须设为 `false` 并使用独立 worker。
 
 ## 后端部署到 Railway
 
@@ -24,46 +24,57 @@ MultiMix 是两个并排的独立仓库：
 步骤：
 
 1. 在后端仓库 GitHub Actions 手动运行 `Publish backend image`，从 `main` 用 `Dockerfile.lean` 构建一次并发布私有 GHCR 镜像。记录运行摘要中的完整 `ghcr.io/...@sha256:<digest>`；生产禁止使用可漂移 tag。
-2. Railway 的 API 与 video worker 必须都指向上述完全相同的 digest。私有 GHCR 拉取需在 Railway 配置只读 registry 凭据，并使用支持私有外部镜像的 Railway 套餐；条件不满足时不得切断当前正常运行的源码部署。
+2. Railway 的 API、video worker、素材 worker 与 scheduler 必须都指向上述完全相同的 digest。私有 GHCR 拉取需在 Railway 配置只读 registry 凭据，并使用支持私有外部镜像的 Railway 套餐；条件不满足时不得切断当前正常运行的源码部署。
    API 服务必须在 Railway 服务设置中显式配置启动命令：
    `python -c "import os; os.execvp('python', ['python', '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', os.environ.get('PORT', '8000')])"`。
    `railway.json` 不保存启动命令，因为同仓的 API 与 video worker 需要使用不同命令，config-as-code 会覆盖服务级设置。
-3. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`CHANGEIN_DATABASE_URL`）。
+3. 加 Railway Postgres 插件 → 自动注入 `DATABASE_URL`（后端读 `POSTGRES_URL`/`MULTIMIX_DATABASE_URL`）。
 4. 配环境变量：
    ```
-   CHANGEIN_ENV=production
-   CHANGEIN_SECRET_KEY=<32+ 随机字符串>
-   CHANGEIN_WEB_BASE_URL=https://<你的 vercel 域名>
-   CHANGEIN_DATABASE_URL=<Railway Postgres 连接串>   # 或留空让它读 POSTGRES_URL
+   MULTIMIX_ENV=production
+   MULTIMIX_RUNTIME_ROLE=api
+   MULTIMIX_SECRET_KEY=<32+ 随机字符串>
+   MULTIMIX_WEB_BASE_URL=https://<你的 vercel 域名>
+   MULTIMIX_DATABASE_URL=<Railway Postgres 连接串>   # 或留空让它读 POSTGRES_URL
    # LLM（任选）
-   CHANGEIN_DEEPSEEK_API_KEY=<key>
-   # 或 CHANGEIN_LLM_BASE_URL / CHANGEIN_LLM_API_KEY / CHANGEIN_LLM_MODEL
+   MULTIMIX_DEEPSEEK_API_KEY=<key>
+   # 或 MULTIMIX_LLM_BASE_URL / MULTIMIX_LLM_API_KEY / MULTIMIX_LLM_MODEL
    # 统一公共素材搜索（生产至少配置一个经合规策略允许自动采用的来源）
-   CHANGEIN_PEXELS_API_KEY=<key>
-   CHANGEIN_PIXABAY_API_KEY=<key>
-   CHANGEIN_MATERIAL_SEARCH_PROVIDER_NAMES=pexels,pixabay_video
+   MULTIMIX_PEXELS_API_KEY=<key>
+   MULTIMIX_PIXABAY_API_KEY=<key>
+   MULTIMIX_MATERIAL_SEARCH_PROVIDER_NAMES=pexels,pixabay_video
    # 云 TTS（可选，不配则用估算时长）
-   CHANGEIN_TTS_PROVIDER=openai
-   CHANGEIN_TTS_API_KEY=<key>
-   CHANGEIN_TTS_BASE_URL=https://api.openai.com/v1
+   MULTIMIX_TTS_PROVIDER=openai
+   MULTIMIX_TTS_API_KEY=<key>
+   MULTIMIX_TTS_BASE_URL=https://api.openai.com/v1
    # Redis（API/worker 共用队列、搜索缓存、分页 seen-set 与限流）
-   CHANGEIN_REDIS_URL=<Railway Redis 连接串>
+   MULTIMIX_REDIS_URL=<Railway Redis 连接串>
    # 对象存储（生产必填；S3 或 Supabase Storage 二选一，禁止容器本地 artifacts）
-   CHANGEIN_S3_ENDPOINT_URL / CHANGEIN_S3_BUCKET / CHANGEIN_S3_ACCESS_KEY / CHANGEIN_S3_SECRET_KEY
+   MULTIMIX_S3_ENDPOINT_URL / MULTIMIX_S3_BUCKET / MULTIMIX_S3_ACCESS_KEY / MULTIMIX_S3_SECRET_KEY
    ```
 5. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
-6. API 与 video worker 必须回读到同一镜像 digest。发布前记录两服务原 digest；回滚时两个服务同时改回同一个已验证旧 digest，禁止只回滚一个服务或现场重建旧 commit。
+6. 四项服务必须回读到同一镜像 digest。发布前记录原 digest；回滚时四项服务同时改回同一个已验证旧 digest，禁止只回滚一个服务或现场重建旧 commit。
 
 ### 视频编排 worker（异步生成）
 
 视频工程任务默认走 RQ 队列，唯一产品路径是“对话中确认编导稿 → 创建视频工程任务”。生产要起一个独立 worker 服务（同镜像，不同启动命令）：
 
 ```
-CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
-启动命令: python -m app.services.video_studio.worker
+MULTIMIX_VIDEO_ORCHESTRATION_INLINE=false
+MULTIMIX_RUNTIME_ROLE=video-worker
 ```
 
-需要 Railway Redis 插件并配 `CHANGEIN_REDIS_URL`。生产必须使用独立 worker 且 `INLINE=false`；`INLINE=true` 只用于本地开发，不能作为线上省略 worker 的降级方案。
+需要 Railway Redis 插件并配 `MULTIMIX_REDIS_URL`。生产必须使用独立 worker 且 `INLINE=false`；`INLINE=true` 只用于本地开发，不能作为线上省略 worker 的降级方案。镜像默认 role 是 API，因此 video worker 的 role 变量不能省略。
+
+### 素材生成 worker（异步任务）
+
+素材生成同样需要独立常驻服务（同镜像，不同 role）：
+
+```
+MULTIMIX_RUNTIME_ROLE=asset-generation-worker
+```
+
+该服务必须与 API、video worker 共用生产 Postgres、Redis、ArtifactStore 和 `MULTIMIX_*` 配置。镜像默认 role 是 API，因此此变量不能省略。
 
 ### 视频任务恢复 scheduler（必需）
 
@@ -71,13 +82,13 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 worker 中断后的 durable 视频任务：
 
 ```
-CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
-启动命令: python -m app.worker schedule
+MULTIMIX_VIDEO_ORCHESTRATION_INLINE=false
+MULTIMIX_RUNTIME_ROLE=scheduler
 ```
 
-它与 API、video worker 共用同一个 Postgres、Redis、ArtifactStore 和 image digest。scheduler
+它与 API、video worker、素材 worker 共用同一个 Postgres、Redis、ArtifactStore 和 image digest。scheduler
 只会幂等重派已有 `queued` 任务，worker 仍以原子 `queued -> running` claim 防止重复执行；它
-不会新建工程、覆盖用户内容或把失败伪装为成功。发布前确认三项服务均为同一 digest，发布后从
+不会新建工程、覆盖用户内容或把失败伪装为成功。发布前确认四项服务均为同一 digest，发布后从
 scheduler 日志确认至少完成一轮恢复扫描。
 
 ### 素材 provider 发布前 preflight
@@ -102,7 +113,7 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
    # NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
    ```
    **严禁**给 LLM/TTS/服务端 key 加 `NEXT_PUBLIC_` 前缀（会暴露到浏览器）。
-4. 后端 CORS 已根据 `CHANGEIN_WEB_BASE_URL` + Vercel 域名正则放行（见 `config.py:allowed_origin_regex`）。
+4. 后端 CORS 已根据 `MULTIMIX_WEB_BASE_URL` + Vercel 域名正则放行（见 `config.py:allowed_origin_regex`）。
 5. 前后端必须在同一个维护窗口切换：新前端只调用 `material-candidates + recompose` 并只提交 `candidate_id`，不能与仍依赖旧素材接口的任一后端版本混用。
 
 ## 端到端冒烟（本地）
@@ -110,8 +121,8 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
 1. 后端（在 `MultiMix-Backend` 仓库内）：
    ```
    python -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
-   CHANGEIN_ENV=local \
-     CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true CHANGEIN_DEEPSEEK_API_KEY=<key> \
+   MULTIMIX_ENV=local \
+     MULTIMIX_VIDEO_ORCHESTRATION_INLINE=true MULTIMIX_DEEPSEEK_API_KEY=<key> \
      .venv/bin/python -m uvicorn app.main:app --port 8199
    ```
 2. 前端：

@@ -21,11 +21,44 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function createStageTiming({ record, now = Date.now }) {
+  const completed = [];
+
+  async function measure(stage, operation, details = {}) {
+    const startedAt = now();
+    record(stage, "started", details);
+    try {
+      const result = await operation();
+      const duration_ms = Math.max(0, now() - startedAt);
+      const entry = { stage, status: "passed", duration_ms };
+      completed.push(entry);
+      record(stage, "passed", { ...details, duration_ms });
+      return result;
+    } catch (error) {
+      const duration_ms = Math.max(0, now() - startedAt);
+      const entry = { stage, status: "failed", duration_ms };
+      completed.push(entry);
+      record(stage, "failed", {
+        ...details,
+        duration_ms,
+        errorName: error instanceof Error ? error.name : "Error",
+      });
+      throw error;
+    }
+  }
+
+  function timingSummary() {
+    return [...completed].sort((left, right) => right.duration_ms - left.duration_ms);
+  }
+
+  return { measure, timingSummary };
+}
+
 export function e2eRuntimeRoot() {
   return RUNTIME_ROOT;
 }
 
-export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resultDir }) {
+export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resultDir, now }) {
   assertSegment(suite, SUITE, "suite");
   assertSegment(runId, RUN_ID, "run id");
   const runDir = path.join(RUNTIME_ROOT, suite, runId);
@@ -60,17 +93,37 @@ export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resu
     const event = { at: new Date().toISOString(), stage, status, details };
     fs.appendFileSync(ledgerPath, `${JSON.stringify(event)}\n`, "utf8");
   }
+  const stageTiming = createStageTiming({ record, now });
   function finish(status, details = {}) {
     if (!["failed_retained", "passed_pending_cleanup"].includes(status)) {
       throw new Error(`Invalid E2E terminal status: ${status}`);
     }
-    state = { ...state, status, finishedAt: new Date().toISOString(), ...details };
+    state = {
+      ...state,
+      status,
+      finishedAt: new Date().toISOString(),
+      timingSummary: stageTiming.timingSummary(),
+      ...details,
+    };
     save();
     record("run", status, details);
   }
 
   record("run", "started", { resultDir: state.resultDir });
-  return { suite, runId, runDir, databasePath, artifactDir, manifestPath, ledgerPath, record, finish, readState: () => ({ ...state }) };
+  return {
+    suite,
+    runId,
+    runDir,
+    databasePath,
+    artifactDir,
+    manifestPath,
+    ledgerPath,
+    record,
+    measure: stageTiming.measure,
+    timingSummary: stageTiming.timingSummary,
+    finish,
+    readState: () => ({ ...state }),
+  };
 }
 
 export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
@@ -92,11 +145,18 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
   function record(stage, status, details = {}) {
     fs.appendFileSync(ledgerPath, `${JSON.stringify({ at: new Date().toISOString(), stage, status, details })}\n`, "utf8");
   }
+  const stageTiming = createStageTiming({ record });
   function finish(status, details = {}) {
     if (!["failed_retained", "passed_pending_cleanup"].includes(status)) {
       throw new Error(`Invalid E2E terminal status: ${status}`);
     }
-    const next = { ...state, status, finishedAt: new Date().toISOString(), ...details };
+    const next = {
+      ...state,
+      status,
+      finishedAt: new Date().toISOString(),
+      timingSummary: stageTiming.timingSummary(),
+      ...details,
+    };
     writeJson(manifestPath, next);
     record("run", status, details);
   }
@@ -110,6 +170,8 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
     manifestPath,
     ledgerPath,
     record,
+    measure: stageTiming.measure,
+    timingSummary: stageTiming.timingSummary,
     finish,
     readState: () => ({ ...state }),
   };

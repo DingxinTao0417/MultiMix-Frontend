@@ -9,6 +9,7 @@ const scriptsRoot = path.resolve(
   "..",
 );
 const runnerPath = path.join(scriptsRoot, "run-video-pipeline-production-e2e.mjs");
+const productionSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-production.spec.ts");
 
 test("production video E2E isolates backend settings with the current MULTIMIX prefix", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
@@ -18,6 +19,7 @@ test("production video E2E isolates backend settings with the current MULTIMIX p
     "MULTIMIX_AUTH_PROVIDER",
     "MULTIMIX_DATABASE_URL",
     "MULTIMIX_ARTIFACT_DIR",
+    "MULTIMIX_TEST_LLM_SNAPSHOT_DIR",
     "MULTIMIX_LLM_BASE_URL",
     "MULTIMIX_QWEN_FALLBACK_ENABLED",
     "MULTIMIX_VISION_SERVICE_URL",
@@ -34,4 +36,74 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.doesNotMatch(source, /stagedBgm\.defaultCatalogId/);
   assert.match(source, /MULTIMIX_VIDEO_BGM_MANIFEST_REF:\s*effectiveBgm\.manifestRef/);
   assert.match(source, /MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID:\s*effectiveBgm\.defaultCatalogId/);
+});
+
+test("production video E2E writes a timing ledger for runner and browser stages", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(source, /VIDEO_PIPELINE_TIMING_PATH:/);
+  for (const stage of [
+    "schema_initialization",
+    "vision_service_startup",
+    "backend_startup",
+    "frontend_startup",
+    "playwright",
+    "candidate_video_verification",
+    "qa_report",
+  ]) {
+    assert.match(source, new RegExp(`lifecycle\\.measure\\("${stage}"`));
+  }
+  assert.match(source, /E2E stage timings \(slowest first\)/);
+  assert.match(source, /Browser pipeline timings \(slowest first\)/);
+});
+
+test("production video browser flow records its major user-visible pipeline waits", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /VIDEO_PIPELINE_TIMING_PATH/);
+  for (const stage of [
+    "workspace_entry",
+    "document_upload",
+    "director_generation",
+    "video_project_ready",
+    "video_export",
+  ]) {
+    assert.match(source, new RegExp(`measureE2EStage\\("${stage}"`));
+  }
+});
+
+test("production video E2E reports durable director substage timings separately", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const specSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(specSource, /director_phase_/);
+  assert.match(specSource, /director_scene_/);
+  assert.match(specSource, /timing_events/);
+  assert.match(specSource, /progress_events/);
+  assert.match(runnerSource, /Director substage timings \(slowest first\)/);
+  assert.match(runnerSource, /Director per-scene timings \(slowest first\)/);
+  assert.match(runnerSource, /director_phase_/);
+});
+
+test("production video E2E observes, but does not require, reviewed product media", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /productPresentation/);
+  assert.match(source, /productSceneCount/);
+  assert.doesNotMatch(source, /the two distinct reviewed product captures must both be used/);
+  assert.doesNotMatch(
+    source,
+    /beforeScenes\.some\(\s*\(scene\) => scene\.primary_visual\?\.source_type === "product_asset"/s,
+  );
+});
+
+test("production video E2E retries a transient transport failure while waiting for MG", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const pendingIndex = source.indexOf("const pending = plannedMgScenes.filter");
+  const pollStart = source.lastIndexOf("await expect", pendingIndex);
+  const mgTerminalPoll = source.slice(pollStart, pendingIndex);
+
+  assert.ok(pendingIndex > -1, "MG terminal poll should remain present");
+  assert.match(mgTerminalPoll, /try\s*\{\s*response = await page\.request\.get/s);
+  assert.match(mgTerminalPoll, /return `transport-error:/);
 });

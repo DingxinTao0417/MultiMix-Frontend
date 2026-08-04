@@ -1,6 +1,16 @@
 import { defineConfig } from 'vitest/config';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const workspaceRoot = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': workspaceRoot,
+      '@editor': resolve(workspaceRoot, 'editor-engine/vendor/editor'),
+    },
+  },
   oxc: {
     jsx: {
       runtime: 'automatic',

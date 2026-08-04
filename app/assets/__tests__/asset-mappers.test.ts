@@ -816,8 +816,8 @@ describe("video job stage helpers", () => {
 
   it("projects every two-stage runtime value to a restrained user-facing state", () => {
     expect(videoJobStageLabel("asset_driven_planning")).toBe("正在准备分镜画面");
-    expect(videoJobStageLabel("planning_assets")).toBe("正在准备分镜画面");
-    expect(videoJobStageLabel("asset_manifest_ready")).toBe("正在准备分镜画面");
+    expect(videoJobStageLabel("planning_assets")).toBe("正在准备素材");
+    expect(videoJobStageLabel("asset_manifest_ready")).toBe("正在准备素材");
     expect(videoJobStageLabel("composing")).toBe("正在生成视频");
     expect(videoJobStageLabel("voice")).toBe("正在生成视频");
     expect(videoJobStageLabel("project")).toBe("正在生成视频");
@@ -856,7 +856,7 @@ describe("agent timeline steps", () => {
     const visible = JSON.stringify(steps);
     expect(visible).not.toMatch(/asset_manifest|animated_explainer|pexels|provider|vlm|pipeline|remotion|future_internal/i);
     expect(steps.map((step) => step.label)).toEqual([
-      "正在准备分镜画面",
+      "正在准备素材",
       "正在完成质量检查",
       "正在处理视频",
     ]);

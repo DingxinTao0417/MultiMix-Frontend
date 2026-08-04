@@ -37,3 +37,31 @@ test("a failed retained E2E run can reopen only with its original runtime", asyn
   cleanupRetainedE2ERun({ suite: "lifecycle-test", runId, confirmed: true });
   fs.rmSync(path.join(runtimeRoot, "lifecycle-test"), { recursive: true, force: true });
 });
+
+test("timed E2E stages retain non-negative durations and rank the slowest first", async () => {
+  const { createE2ERunLifecycle, cleanupRetainedE2ERun } = await import(moduleUrl);
+  const runId = `timing-test-${Date.now()}`;
+  let now = 1_000;
+  const lifecycle = createE2ERunLifecycle({
+    suite: "lifecycle-test",
+    runId,
+    resultDir: path.join(os.tmpdir(), runId),
+    now: () => now,
+  });
+
+  await lifecycle.measure("slow_stage", async () => {
+    now += 900;
+    return "slow-result";
+  });
+  await lifecycle.measure("fast_stage", async () => {
+    now += 120;
+  });
+
+  assert.deepEqual(lifecycle.timingSummary(), [
+    { stage: "slow_stage", status: "passed", duration_ms: 900 },
+    { stage: "fast_stage", status: "passed", duration_ms: 120 },
+  ]);
+  lifecycle.finish("passed_pending_cleanup");
+  cleanupRetainedE2ERun({ suite: "lifecycle-test", runId, confirmed: true });
+  fs.rmSync(path.join(runtimeRoot, "lifecycle-test"), { recursive: true, force: true });
+});

@@ -13,7 +13,7 @@ import { PreviewPanel } from "@editor/components/editor/panels/preview";
 import { ExportButton } from "@/editor-engine/vendor/ExportButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
-import type { BGMUpdateResponse } from "@/editor-engine/vendor/api";
+import type { BGMChoice, BGMUpdateResponse } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
@@ -63,6 +63,11 @@ function unwrapProject(raw: Record<string, unknown>): BackendProject {
     return raw.timeline as unknown as BackendProject;
   }
   throw new Error("项目格式不兼容（缺少 tracks）");
+}
+
+function projectBgmChoice(project: BackendProject | null): BGMChoice | null {
+  const choice = project?.metadata?.bgm_choice;
+  return choice && typeof choice === "object" ? choice as BGMChoice : null;
 }
 
 export default function EditorView({
@@ -399,6 +404,7 @@ export default function EditorView({
                 <BgmPanel
                   assetId={assetId}
                   token={token}
+                  initialChoice={projectBgmChoice(loadedProjectRef.current)}
                   onPrepareChange={persistCurrentProject}
                   onProjectChanged={handleBgmProjectChanged}
                 />

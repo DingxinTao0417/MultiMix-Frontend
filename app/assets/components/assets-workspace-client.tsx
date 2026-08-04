@@ -48,6 +48,7 @@ import {
   readConversationSummaryCache,
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
+import { shouldLoadConversationDetail } from "../lib/conversation-detail-load-policy";
 import {
   agentActionPollLifecycleKey,
   agentActionPollOutcome,
@@ -793,9 +794,12 @@ export default function AssetsWorkspaceClient({
   }, [accountEmail, initialConversationId, initialProductId, token, conversationLoadRevision]);
 
   useEffect(() => {
-    if (!token || selectedConversationId === "new") return;
     const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;
-    if (selectedDetailLoaded) return;
+    if (!shouldLoadConversationDetail({
+      hasToken: Boolean(token),
+      conversationId: selectedConversationId,
+      detailsLoaded: selectedDetailLoaded,
+    }) || !token) return;
     const requestKey = `${selectedConversationId}:${conversationDetailRetryRevision}`;
     if (conversationDetailRequestKeyRef.current === requestKey) return;
     conversationDetailRequestKeyRef.current = requestKey;

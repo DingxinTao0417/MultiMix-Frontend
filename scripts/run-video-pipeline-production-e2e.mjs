@@ -2,13 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
 import {
   assertPortFree,
-  safeRemoveRunDatabaseWithRetries,
   startLogged,
   stopChild,
   waitFor,
@@ -67,6 +65,7 @@ const lifecycle = isResume
 const runId = lifecycle.runId;
 const { databasePath, artifactDir } = lifecycle;
 const resultDir = lifecycle.readState().resultDir;
+const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
 const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
@@ -222,6 +221,27 @@ function run(command, args, options = {}) {
         : reject(new Error(`${command} exited ${code}\n${stderr || stdout}`))
     ));
   });
+}
+
+function readTimingSummary(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs.readFileSync(filePath, "utf8")
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      if (!line.trim()) return [];
+      try { return [JSON.parse(line)]; } catch { return []; }
+    })
+    .filter((entry) => (
+      typeof entry?.stage === "string"
+      && typeof entry?.status === "string"
+      && Number.isFinite(entry?.duration_ms)
+    ))
+    .map((entry) => ({
+      stage: entry.stage,
+      status: entry.status,
+      duration_ms: Math.max(0, entry.duration_ms),
+    }))
+    .sort((left, right) => right.duration_ms - left.duration_ms);
 }
 
 function snapshotFiles(filePaths) {
@@ -843,6 +863,7 @@ try {
     MULTIMIX_S3_ACCESS_KEY: "",
     MULTIMIX_S3_SECRET_KEY: "",
     MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
+    MULTIMIX_TEST_LLM_SNAPSHOT_DIR: path.join(artifactDir, "llm-requests"),
     MULTIMIX_ASSET_GENERATION_QUEUE_ENABLED: "true",
     MULTIMIX_REDIS_URL: "redis://127.0.0.1:6398/15",
     MULTIMIX_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
@@ -878,58 +899,69 @@ try {
     VIDEO_PIPELINE_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
   };
 
-  await run(pythonCommand, ["-c", "from app.db import create_schema; create_schema()"], {
-    cwd: backendRoot,
-    env: backendEnv,
-    stdout: process.stdout,
-    stderr: process.stderr,
-  });
-  let vision;
-  if (!usesExternalVisionService) {
-    vision = startProcess(
-      pythonCommand,
-      [
-        "-m",
-        "uvicorn",
-        "vision_service.app:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        String(visionPort),
-      ],
-      backendRoot,
-      {
-        ...process.env,
-        ...canonicalEnv,
-        VISION_PROVIDER: "qwen",
-        VISION_QWEN_TIMEOUT_SECONDS: "120",
-      },
-      "vision.log",
-    );
-  }
-  await waitFor(`${visionServiceUrl}/health`, vision, 120_000);
-  let backend = startProcess(
+  await lifecycle.measure("schema_initialization", () => run(
     pythonCommand,
-    ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
-    backendRoot,
-    backendEnv,
-    "backend.log",
-  );
-  await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    ["-c", "from app.db import create_schema; create_schema()"],
+    {
+      cwd: backendRoot,
+      env: backendEnv,
+      stdout: process.stdout,
+      stderr: process.stderr,
+    },
+  ));
+  let vision;
+  await lifecycle.measure("vision_service_startup", async () => {
+    if (!usesExternalVisionService) {
+      vision = startProcess(
+        pythonCommand,
+        [
+          "-m",
+          "uvicorn",
+          "vision_service.app:app",
+          "--host",
+          "127.0.0.1",
+          "--port",
+          String(visionPort),
+        ],
+        backendRoot,
+        {
+          ...process.env,
+          ...canonicalEnv,
+          VISION_PROVIDER: "qwen",
+          VISION_QWEN_TIMEOUT_SECONDS: "120",
+        },
+        "vision.log",
+      );
+    }
+    await waitFor(`${visionServiceUrl}/health`, vision, 120_000);
+  });
+  let backend;
+  await lifecycle.measure("backend_startup", async () => {
+    backend = startProcess(
+      pythonCommand,
+      ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+      backendRoot,
+      backendEnv,
+      "backend.log",
+    );
+    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+  });
   if (isResume) {
     await recoverInterruptedVideoJob(backendEnv);
     await verifyResumedVideoJob(backendEnv);
     lifecycle.record("worker", "resumed_and_verified");
   } else {
-    const frontend = startProcess(
-      npmCommand,
-      ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
-      frontendRoot,
-      frontendEnv,
-      "frontend.log",
-    );
-    await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
-    const playwrightRun = run(npxCommand, ["playwright", "test", "e2e/video-pipeline-production.spec.ts", "--workers=1"], {
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot,
+        frontendEnv,
+        "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    const playwrightRun = lifecycle.measure("playwright", () => run(npxCommand, ["playwright", "test", "e2e/video-pipeline-production.spec.ts", "--workers=1"], {
     cwd: frontendRoot,
     env: {
       ...frontendEnv,
@@ -949,10 +981,11 @@ try {
       VIDEO_PIPELINE_TEST_RECOMPOSE: testRecompose ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_BGM: expectBgm ? "true" : "false",
+      VIDEO_PIPELINE_TIMING_PATH: playwrightTimingPath,
     },
     stdout: process.stdout,
     stderr: process.stderr,
-    });
+    }));
     playwrightRun.catch(() => undefined);
     if (interruptAfterManifest) {
     const manifestAbort = new AbortController();
@@ -982,8 +1015,8 @@ try {
       await recoverInterruptedVideoJob(backendEnv);
     }
     await playwrightRun;
-    await verifyCandidateVideo();
-    await writeQaReport();
+    await lifecycle.measure("candidate_video_verification", () => verifyCandidateVideo());
+    await lifecycle.measure("qa_report", () => writeQaReport());
     lifecycle.record("playwright", "passed");
   }
 } catch (error) {
@@ -1010,6 +1043,39 @@ try {
     retainedForConfirmation: true,
     resumeSupported: true,
   });
+  const timingSummary = lifecycle.timingSummary();
+  if (timingSummary.length > 0) {
+    console.log("E2E stage timings (slowest first):");
+    for (const item of timingSummary) {
+      console.log(`  ${item.stage}: ${(item.duration_ms / 1000).toFixed(1)}s (${item.status})`);
+    }
+    console.log(`E2E stage timing ledger: ${lifecycle.ledgerPath}`);
+  }
+  const browserTimingSummary = readTimingSummary(playwrightTimingPath);
+  const directorSubstageSummary = browserTimingSummary.filter((item) => item.stage.startsWith("director_phase_"));
+  const directorSceneSummary = browserTimingSummary.filter((item) => item.stage.startsWith("director_scene_"));
+  const browserPipelineSummary = browserTimingSummary.filter((item) => !item.stage.startsWith("director_phase_") && !item.stage.startsWith("director_scene_"));
+  if (browserPipelineSummary.length > 0) {
+    console.log("Browser pipeline timings (slowest first):");
+    for (const item of browserPipelineSummary) {
+      console.log(`  ${item.stage}: ${(item.duration_ms / 1000).toFixed(1)}s (${item.status})`);
+    }
+  }
+  if (directorSubstageSummary.length > 0) {
+    console.log("Director substage timings (slowest first):");
+    for (const item of directorSubstageSummary) {
+      console.log(`  ${item.stage}: ${(item.duration_ms / 1000).toFixed(1)}s (${item.status})`);
+    }
+  }
+  if (directorSceneSummary.length > 0) {
+    console.log("Director per-scene timings (slowest first):");
+    for (const item of directorSceneSummary) {
+      console.log(`  ${item.stage}: ${(item.duration_ms / 1000).toFixed(1)}s (${item.status})`);
+    }
+  }
+  if (browserTimingSummary.length > 0) {
+    console.log(`Browser timing ledger: ${playwrightTimingPath}`);
+  }
   console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- video-pipeline-production/${runId} --confirm`);
   if (cleanupError) throw cleanupError;
 }

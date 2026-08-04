@@ -656,7 +656,8 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 | 内部 `render_stage` | 用户步骤 key | 用户文案 |
 | --- | --- | --- |
-| `script`、`asset_driven_planning`、`planning_assets`、`asset_manifest_ready` | `plan` | `正在准备分镜画面` |
+| `script`、`asset_driven_planning` | `plan` | `正在准备分镜画面` |
+| `planning_assets`、`asset_manifest_ready` | `prepare_media` | `正在准备素材` |
 | `composing`、`voice`、`project`、`rendering` | `generate` | `正在生成视频` |
 | `reviewing`、`quality` | `review` | `正在完成质量检查` |
 | `needs_script_revision` | `review` | `需要先调整编导稿` |
