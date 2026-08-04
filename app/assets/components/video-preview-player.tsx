@@ -43,10 +43,15 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     const [currentTime, setCurrentTime] = useState(0);
     const [playing, setPlaying] = useState(false);
     const [failed, setFailed] = useState(false);
+    const [ready, setReady] = useState(false);
+    const [bufferedPercent, setBufferedPercent] = useState<number | null>(null);
     const [reloadRevision, setReloadRevision] = useState(0);
     const progressPercent = duration > 0
       ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
       : 0;
+    const loadingLabel = bufferedPercent == null
+      ? "正在加载视频"
+      : `正在加载视频 · 已缓冲 ${Math.floor(bufferedPercent)}%`;
 
     const assignRef = useCallback((node: HTMLVideoElement | null) => {
       localRef.current = node;
@@ -59,16 +64,19 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
       setCurrentTime(0);
       setPlaying(false);
       setFailed(false);
+      setReady(false);
+      setBufferedPercent(null);
     }, [src, reloadRevision]);
 
     const togglePlayback = () => {
       const video = localRef.current;
-      if (!video) return;
+      if (!video || !ready) return;
       if (playing) video.pause();
       else void video.play().catch(() => setFailed(true));
     };
 
     const handleSeek = (event: ChangeEvent<HTMLInputElement>) => {
+      if (!ready) return;
       const next = Number(event.currentTarget.value);
       if (!localRef.current || !Number.isFinite(next)) return;
       localRef.current.currentTime = next;
@@ -98,6 +106,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
           type="button"
           className="shadcn-prototype-preview-player-screen"
           aria-label={playing ? "点击画面暂停视频" : "点击画面播放视频"}
+          disabled={!ready}
           onClick={togglePlayback}
         >
           <video
@@ -115,6 +124,14 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
                 setCurrentTime(initialTime);
               }
             }}
+            onProgress={(event) => {
+              const video = event.currentTarget;
+              if (!Number.isFinite(video.duration) || video.duration <= 0 || !video.buffered.length) return;
+              const end = video.buffered.end(video.buffered.length - 1);
+              setBufferedPercent(Math.min(100, Math.max(0, (end / video.duration) * 100)));
+            }}
+            onCanPlay={() => setReady(true)}
+            onWaiting={() => setReady(false)}
             onTimeUpdate={(event) => {
               const time = event.currentTarget.currentTime;
               setCurrentTime(time);
@@ -125,11 +142,19 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             onEnded={() => setPlaying(false)}
             onError={() => {
               setFailed(true);
+              setReady(false);
               setPlaying(false);
               onError?.();
             }}
           />
-          {!playing ? <Play size={16} fill="currentColor" aria-hidden="true" /> : null}
+          {!ready ? (
+            <span className="shadcn-prototype-preview-player-loading" role="status">
+              <strong>{loadingLabel}</strong>
+              <i aria-hidden="true">
+                <b style={bufferedPercent == null ? undefined : { width: `${bufferedPercent}%` }} />
+              </i>
+            </span>
+          ) : !playing ? <Play size={16} fill="currentColor" aria-hidden="true" /> : null}
         </button>
         <div className="shadcn-prototype-project-preview-controls">
           <span>{formatPreviewTime(currentTime)}</span>
@@ -141,7 +166,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             step="0.01"
             value={Math.min(currentTime, duration || currentTime)}
             style={{ "--preview-progress": `${progressPercent}%` } as CSSProperties}
-            disabled={!duration}
+          disabled={!ready || !duration}
             onChange={handleSeek}
           />
           <span>{formatPreviewTime(duration)}</span>

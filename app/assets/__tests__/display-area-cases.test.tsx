@@ -135,6 +135,8 @@ describe("display-area eight-case matrix", () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     const video = container.querySelector("video")!;
+    Object.defineProperty(video, "readyState", { configurable: true, value: HTMLMediaElement.HAVE_FUTURE_DATA });
+    fireEvent.canPlay(video);
 
     fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
 

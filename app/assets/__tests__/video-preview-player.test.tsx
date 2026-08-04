@@ -34,6 +34,7 @@ describe("video preview player", () => {
     const video = container.querySelector("video")!;
     Object.defineProperty(video, "duration", { configurable: true, value: 30 });
     fireEvent.loadedMetadata(video);
+    fireEvent.canPlay(video);
 
     fireEvent.click(screen.getByRole("button", { name: "点击画面播放视频" }));
     expect(play).toHaveBeenCalledOnce();
@@ -61,6 +62,40 @@ describe("video preview player", () => {
     );
 
     expect(container.querySelector("video")).toHaveAttribute("poster", "/first-scene.jpg");
+  });
+
+  it("keeps playback controls disabled until the video has a playable buffer", () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const { container } = render(
+      <VideoPreviewPlayer src="/demo.mp4" label="成片播放器" ratioClassName="ratio-landscape" />,
+    );
+    const video = container.querySelector("video")!;
+    Object.defineProperty(video, "duration", { configurable: true, value: 30 });
+
+    expect(screen.getByRole("status")).toHaveTextContent("正在加载视频");
+    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+
+    fireEvent.canPlay(video);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "点击画面播放视频" }));
+    expect(play).toHaveBeenCalledOnce();
+  });
+
+  it("shows the actual buffered percentage while the video is loading", () => {
+    const { container } = render(
+      <VideoPreviewPlayer src="/demo.mp4" label="成片播放器" ratioClassName="ratio-landscape" />,
+    );
+    const video = container.querySelector("video")!;
+    Object.defineProperty(video, "duration", { configurable: true, value: 30 });
+    Object.defineProperty(video, "buffered", {
+      configurable: true,
+      value: { length: 1, end: () => 12 },
+    });
+
+    fireEvent.progress(video);
+    expect(screen.getByRole("status")).toHaveTextContent("已缓冲 40%");
   });
 
   it("selects the first non-video scene thumbnail for the finished-video poster", () => {

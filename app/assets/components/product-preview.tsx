@@ -425,7 +425,7 @@ export default function ProductPreview({
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);
               const player = browsePlayerRef.current;
-              if (showFullVideo && player && segment.startSeconds != null) {
+              if (showFullVideo && player && player.readyState >= 3 && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
               } else if (!showFullVideo && projectPreviewRequested && !projectPreviewFailed && segment.startSeconds != null) {
