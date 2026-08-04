@@ -54,6 +54,31 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("maps a long-form candidate set to the dedicated product contract", () => {
+    const product = contentAssetToProduct(asset({
+      id: 92,
+      asset_kind: "analysis",
+      content_type: "long_form_candidate_set",
+      status: "ready",
+      generation_state: "long_form_candidates_ready",
+      metadata: {
+        source_asset_id: 91,
+        chapter_count: 8,
+        candidate_count: 12,
+        top_candidate_ids: ["cand_01", "cand_02"],
+        top_candidates: [
+          { id: "cand_01", title: "别只看收入", target_seconds: 45 },
+          { id: "cand_02", title: "利润和回款", target_seconds: 60 },
+        ],
+      },
+    }));
+
+    expect(product.contentType).toBe("long_form_candidate_set");
+    expect(product.phase).toBe("拆条候选");
+    expect(product.status).toBe("2 条优先候选");
+    expect(product.actions).toEqual(["再给我更多候选", "只看指定主题", "调整时长或比例"]);
+  });
+
   it("prefers a ready video project over legacy video-script task state", () => {
     const readyProject = asset({
       id: 2,

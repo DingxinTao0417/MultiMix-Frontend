@@ -1,0 +1,118 @@
+.root {
+  display: grid;
+  gap: 18px;
+  padding-bottom: 24px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.header div,
+.card,
+.chapters {
+  border: 1px solid #eae7e1;
+  background: #fff;
+  border-radius: 16px;
+}
+
+.header div {
+  display: grid;
+  gap: 2px;
+  padding: 13px 15px;
+}
+
+.header span,
+.chapters time,
+.chapters span,
+.card dl,
+.rank {
+  color: #8a857e;
+  font-size: 12px;
+}
+
+.header strong {
+  font-size: 15px;
+}
+
+.chapters {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px;
+}
+
+.chapters li {
+  display: grid;
+  grid-template-columns: 112px minmax(120px, .7fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1efeb;
+}
+
+.chapters li:last-child { border-bottom: 0; }
+.chapters strong { font-size: 13px; }
+.chapters span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.player {
+  display: grid;
+  justify-content: center;
+}
+
+.candidates {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  box-shadow: 0 2px 6px rgba(32, 31, 30, .04);
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cardTitle h3 { margin: 0; font-size: 16px; }
+.cardTitle span { color: #9a6a00; background: #fff3d9; border-radius: 999px; padding: 2px 8px; font-size: 11px; }
+.card p { margin: 0; color: #5f5b55; }
+.card blockquote { margin: 0; padding: 9px 12px; border-left: 3px solid #7c5cff; background: #faf9f7; color: #35322e; }
+
+.card dl {
+  display: flex;
+  gap: 18px;
+  margin: 0;
+}
+
+.card dl div { display: flex; gap: 5px; }
+.card dd { margin: 0; color: #4f4b46; }
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.actions button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid #ddd9d1;
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.actions .primary { background: #201f1e; border-color: #201f1e; color: #fff; }
+
+@media (max-width: 720px) {
+  .chapters li { grid-template-columns: 1fr; gap: 2px; }
+  .card dl { flex-direction: column; gap: 3px; }
+}

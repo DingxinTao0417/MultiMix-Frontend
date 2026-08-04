@@ -12,6 +12,8 @@ import {
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
+import LongFormEntry from "./long-form-entry";
+import type { LongFormSourceReady } from "../lib/long-form-client";
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
@@ -53,7 +55,8 @@ export default function ConversationStart({
   onRemoveImageAttachment,
   onRetryImageAttachment,
   token,
-  onOpenImageLibrary
+  onOpenImageLibrary,
+  onLongFormSourceReady,
 }: {
   suggestions: string[];
   onSend?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
@@ -65,6 +68,7 @@ export default function ConversationStart({
   onRetryImageAttachment?: (attachmentId: string) => void;
   token?: string | null;
   onOpenImageLibrary?: () => void;
+  onLongFormSourceReady?: (source: LongFormSourceReady) => Promise<void>;
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -176,6 +180,9 @@ export default function ConversationStart({
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>今天想做什么内容？</h1>
         <p className="shadcn-prototype-start-sub">从一句话开始，MultiMix 会带着你的素材一起创作</p>
+        {onLongFormSourceReady ? (
+          <LongFormEntry token={token} onSourceReady={onLongFormSourceReady} />
+        ) : null}
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">

@@ -125,6 +125,12 @@ function isReparsableMedia(row: LibraryRow) {
   return row.kind === "image" || row.kind === "video";
 }
 
+function libraryRowIdentity(row: LibraryRow): string {
+  return row.assetId
+    ? `asset:${row.assetId}`
+    : `${row.kind}:${row.title}:${row.updatedAtIso ?? row.meta}`;
+}
+
 function publicCandidateTags(candidate: PublicMaterialCandidate): string[] {
   return [...new Set((candidate.understanding?.tags ?? []).map((tag) => String(tag).trim()).filter(Boolean))];
 }
@@ -268,7 +274,7 @@ function VoiceoverAudioBar() {
   );
 }
 
-export type LibraryActionIntent = "create" | "video" | "regenerate-image";
+export type LibraryActionIntent = "create" | "video" | "regenerate-image" | "long-form";
 
 function LibraryWorkshop({
   view,
@@ -296,7 +302,7 @@ function LibraryWorkshop({
   const [statusFilter, setStatusFilter] = useState<"ok" | "wait" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedRowIdentity, setSelectedRowIdentity] = useState<string | null>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -452,18 +458,20 @@ function LibraryWorkshop({
       return haystack.includes(query);
     });
   }, [activeFilter, statusFilter, view, rows, debouncedQuery]);
-  const selectedRow = selectedIndex === null ? null : filteredRows[selectedIndex];
+  const selectedRow = selectedRowIdentity === null
+    ? null
+    : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
 
   useEffect(() => {
     setActiveFilter("全部");
     setStatusFilter(null);
-    setSelectedIndex(null);
-  }, [view, backendRows]);
+    setSelectedRowIdentity(null);
+  }, [view]);
 
   useEffect(() => {
-    setSelectedIndex(null);
+    setSelectedRowIdentity(null);
     setSourceOpen(false);
   }, [activeFilter, statusFilter, searchQuery]);
 
@@ -540,7 +548,7 @@ function LibraryWorkshop({
     setActionMessage(null);
     try {
       await assetWorkspaceAdapter.deleteAsset(token, row.assetId);
-      setSelectedIndex(null);
+      setSelectedRowIdentity(null);
       setLocalRefreshKey((value) => value + 1);
       setActionMessage("已删除。");
     } catch (error) {
@@ -733,11 +741,11 @@ function LibraryWorkshop({
                     type="button"
                     className={[
                       "shadcn-prototype-library-media-card",
-                      index === selectedIndex ? "selected" : "",
+                      libraryRowIdentity(row) === selectedRowIdentity ? "selected" : "",
                       rowMediaKind === "image" ? "with-image-media" : "",
                       rowMediaKind === "video" ? "with-video-media" : ""
                     ].filter(Boolean).join(" ")}
-                    onClick={() => setSelectedIndex(index)}
+                    onClick={() => setSelectedRowIdentity(libraryRowIdentity(row))}
                   >
                     <span className="shadcn-prototype-library-media-frame">
                       {row.category ? <span className="shadcn-prototype-library-media-cat">{row.category}</span> : null}
@@ -755,8 +763,8 @@ function LibraryWorkshop({
                 <button
                   key={`${row.kind}-${row.title}-${index}`}
                   type="button"
-                  className={index === selectedIndex ? "shadcn-prototype-library-text-card selected" : "shadcn-prototype-library-text-card"}
-                  onClick={() => setSelectedIndex(index)}
+                  className={libraryRowIdentity(row) === selectedRowIdentity ? "shadcn-prototype-library-text-card selected" : "shadcn-prototype-library-text-card"}
+                  onClick={() => setSelectedRowIdentity(libraryRowIdentity(row))}
                 >
                   <span className="shadcn-prototype-library-text-row1">
                     {view === "copy" && row.category ? <i className="cat">{row.category}</i> : null}
@@ -795,7 +803,7 @@ function LibraryWorkshop({
         )}
       </div>
       {selectedRow ? (
-        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedIndex(null)}>
+        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
           <aside
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal"
             aria-label={`${selectedRow.title}详情`}
@@ -810,7 +818,7 @@ function LibraryWorkshop({
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
-                <button type="button" aria-label="关闭详情" onClick={() => setSelectedIndex(null)}>
+                <button type="button" aria-label="关闭详情" onClick={() => setSelectedRowIdentity(null)}>
                   <X size={16} aria-hidden="true" />
                 </button>
               </div>
@@ -1026,6 +1034,16 @@ function LibraryWorkshop({
               ) : view === "video" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset} onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  {selectedRow.contentTypeCode === "long_form_video_source" ? (
+                    <button
+                      type="button"
+                      disabled={!selectedRow.assetId || !onUseAsset || selectedRow.statusLabel !== "已入库"}
+                      title={selectedRow.statusLabel === "已入库" ? "分析原片并推荐可发布的短视频片段" : "原片准备完成后即可拆条"}
+                      onClick={() => { if (selectedRow) void onUseAsset?.(selectedRow, "long-form"); }}
+                    >
+                      <Video size={14} aria-hidden="true" />拆成短视频
+                    </button>
+                  ) : null}
                   {isReparsableMedia(selectedRow) ? (
                     <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
