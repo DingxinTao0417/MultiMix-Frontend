@@ -442,7 +442,7 @@ export type AuthResponse = {
   message: string | null;
 };
 
-// Local auth (CHANGEIN_AUTH_PROVIDER=local). Email verification is off by default.
+// Local auth (MULTIMIX_AUTH_PROVIDER=local). Email verification is off by default.
 export async function authLogin(email: string, password: string): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/login", null, {
     method: "POST",

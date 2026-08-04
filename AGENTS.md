@@ -55,7 +55,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 
 入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`；`&embed=1` 为工作台内嵌模式）、`/admin/public-sources`（公开素材源管理，需真实后端）。
 
-认证两种模式：`NEXT_PUBLIC_MULTIMIX_AUTH_MODE=local` 或未配 Supabase 时，自动以 `demo@multimix.local` 登录（仅存浏览器 `localStorage`）；配置 `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 后走 Supabase Auth（PKCE、自动刷新 token），后端对应 `CHANGEIN_AUTH_PROVIDER`。`lib/supabase.ts` 在未配置时导出 `null`，代码不得假设其非空。
+认证两种模式：`NEXT_PUBLIC_MULTIMIX_AUTH_MODE=local` 或未配 Supabase 时，自动以 `demo@multimix.local` 登录（仅存浏览器 `localStorage`）；配置 `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 后走 Supabase Auth（PKCE、自动刷新 token），后端对应 `MULTIMIX_AUTH_PROVIDER`。`lib/supabase.ts` 在未配置时导出 `null`，代码不得假设其非空。
 
 ## 架构
 
@@ -65,9 +65,9 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 
 - 资产/知识库 + Agent 对话编排：`app/api/assets.py` + `services/asset_conversation.py`、`services/conversation_orchestrator.py`；Agent 运行时必须以后端 `docs/MULTIMIX_AGENT_ARCHITECTURE.md` 为准：LLM 只做结构化理解和规划，后端负责能力校验、工具执行、持久化、来源约束和确认门；启用 Agent 时，新 Agent 是产品对话唯一编排层，旧 `_should_*`/直接生成逻辑只能作为已验证动作的执行器或显式关闭 Agent 后的回滚路径，不能在 Agent 未处理时继续作为第二套意图判断入口
 - 知识检索：`services/knowledge_retrieval.py`、`saved_context_retriever.py`（把已保存资产和网页知识块喂给生成，不自动全网搜索）
-- 视频编排：`app/api/video_orchestration.py` + `services/video_studio/`（topic→脚本→素材→TTS→timeline JSON；RQ worker 异步，或 `CHANGEIN_VIDEO_ORCHESTRATION_INLINE=true` 同步）
+- 视频编排：`app/api/video_orchestration.py` + `services/video_studio/`（topic→脚本→素材→TTS→timeline JSON；RQ worker 异步，或 `MULTIMIX_VIDEO_ORCHESTRATION_INLINE=true` 同步）
 - MG 动效：后端 `remotion/`（Remotion 工程，渲染带 alpha 的 WebM overlay）+ `services/remotion_modal/`（Modal 远程渲染），spec 由 `services/mg_scene_spec.py` 校验，详见后端 `remotion/README.md`
-- 监控/采集（ChangeIn 原功能）：`CHANGEIN_MODULES_MONITORING_ENABLED=false` 可整体关闭
+- 监控/采集（ChangeIn 原功能）：`MULTIMIX_MODULES_MONITORING_ENABLED=false` 可整体关闭
 
 ### 文件结构与职责（前端）
 
@@ -230,7 +230,7 @@ scripts/
 - 前端不创建或读取本地 SQLite；浏览器工作台只消费真实后端数据。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
 - 后端根目录的 `changein.sqlite3` 是本地开发数据库，不入库、不删除。
-- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`CHANGEIN_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
+- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`MULTIMIX_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
 
 ## 文件写入
 

@@ -71,9 +71,9 @@ function startDisplayProcess(command, args, cwd, env, logName) {
 }
 
 const clearedExternalEnv = {
-  CHANGEIN_SUPABASE_URL: "",
-  CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "",
-  CHANGEIN_OPENAI_API_KEY: "",
+  MULTIMIX_SUPABASE_URL: "",
+  MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
+  MULTIMIX_OPENAI_API_KEY: "",
   OPENAI_API_KEY: "",
   ELEVENLABS_API_KEY: "",
   PEXELS_API_KEY: "",
@@ -104,12 +104,12 @@ try {
   const backendEnv = {
     ...process.env,
     ...clearedExternalEnv,
-    CHANGEIN_ENV: "local",
-    CHANGEIN_AUTH_PROVIDER: "local",
-    CHANGEIN_DATABASE_URL: databaseUrl,
-    CHANGEIN_ARTIFACT_DIR: artifactDir,
-    CHANGEIN_DEFAULT_ADMIN_EMAIL: seedJson.user_email,
-    CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
+    MULTIMIX_ENV: "local",
+    MULTIMIX_AUTH_PROVIDER: "local",
+    MULTIMIX_DATABASE_URL: databaseUrl,
+    MULTIMIX_ARTIFACT_DIR: artifactDir,
+    MULTIMIX_DEFAULT_ADMIN_EMAIL: seedJson.user_email,
+    MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
   const frontendEnv = {
     ...process.env,

@@ -81,8 +81,8 @@ export async function main(args = process.argv.slice(2)) {
       const seeded = await runCapture(process.env.PYTHON ?? "python", [path.join(frontendRoot, "scripts", "demo-e2e", "seed_demo_scenarios.py"), "--database-url", databaseUrl], { cwd: backendRoot, env: process.env });
       seedJson = JSON.parse(seeded.trim());
     }
-    const backendEnv = { ...process.env, CHANGEIN_ENV: "local", CHANGEIN_AUTH_PROVIDER: "local", CHANGEIN_DATABASE_URL: databaseUrl, CHANGEIN_ARTIFACT_DIR: artifactDir, CHANGEIN_SUPABASE_URL: "", CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "", CHANGEIN_MODULES_MONITORING_ENABLED: "false", CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true", CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${ports.frontend}` };
-    if (options.mode === "stable") Object.assign(backendEnv, { CHANGEIN_DEFAULT_ADMIN_EMAIL: seedJson.user_email, CHANGEIN_LLM_BASE_URL: "", CHANGEIN_LLM_API_KEY: "", CHANGEIN_LLM_MODEL: "", CHANGEIN_VISION_SERVICE_URL: "" });
+    const backendEnv = { ...process.env, MULTIMIX_ENV: "local", MULTIMIX_AUTH_PROVIDER: "local", MULTIMIX_DATABASE_URL: databaseUrl, MULTIMIX_ARTIFACT_DIR: artifactDir, MULTIMIX_SUPABASE_URL: "", MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "", MULTIMIX_MODULES_MONITORING_ENABLED: "false", MULTIMIX_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true", MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${ports.frontend}` };
+    if (options.mode === "stable") Object.assign(backendEnv, { MULTIMIX_DEFAULT_ADMIN_EMAIL: seedJson.user_email, MULTIMIX_LLM_BASE_URL: "", MULTIMIX_LLM_API_KEY: "", MULTIMIX_LLM_MODEL: "", MULTIMIX_VISION_SERVICE_URL: "" });
     const backend = startLogged(process.env.PYTHON ?? "python", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(ports.backend)], { cwd: backendRoot, env: backendEnv, logPath: path.join(resultDir, "backend.log") });
     children.push(backend); await waitFor(`http://127.0.0.1:${ports.backend}/healthz`, backend.child, 90_000);
     const frontendEnv = { ...process.env, NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${ports.backend}`, NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local", NEXT_PUBLIC_SUPABASE_URL: "", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "" };
