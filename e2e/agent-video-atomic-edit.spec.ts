@@ -20,7 +20,10 @@ type AssetVersion = {
 type VideoScene = {
   id?: string;
   asset_reference?: { chosen_asset_id?: number };
-  primary_visual?: { asset_id?: number };
+  primary_visual?: {
+    asset_id?: number;
+    provenance?: { source_asset_id?: string | number };
+  };
   [key: string]: unknown;
 };
 
@@ -253,9 +256,11 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   expect(changedScenes[1]?.asset_reference?.chosen_asset_id).toBe(
     seed.replacement_asset_id,
   );
-  expect(changedScenes[1]?.primary_visual?.asset_id).toBe(
-    seed.replacement_asset_id,
-  );
+  expect(changedScenes[1]?.primary_visual).toMatchObject({
+    status: "persisted",
+    provenance: { source_asset_id: String(seed.replacement_asset_id) },
+  });
+  expect(changedScenes[1]?.primary_visual?.asset_id).toBeTruthy();
 
   await page.reload();
   await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({

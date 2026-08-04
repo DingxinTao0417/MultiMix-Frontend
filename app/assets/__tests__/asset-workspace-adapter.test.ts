@@ -276,6 +276,7 @@ describe("runtime data boundary", () => {
     expect(result.product).toBeNull();
     expect(result.generationJob?.id).toBe("asset-generation-job-1");
     expect(result.generationJob?.status).toBe("queued");
+    expect(result.conversation.detailsLoaded).toBe(true);
     vi.unstubAllGlobals();
   });
 

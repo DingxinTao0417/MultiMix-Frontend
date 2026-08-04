@@ -226,7 +226,9 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
   const planKind = stringValue(value.kind);
   return {
-    kind: planKind === "video_parameter_confirmation" || planKind === "agent_action_confirmation"
+    kind: planKind === "video_parameter_confirmation"
+      || planKind === "video_project_confirmation"
+      || planKind === "agent_action_confirmation"
       ? planKind
       : undefined,
     title,
@@ -1127,7 +1129,6 @@ export function conversationFromPersisted(
         !isVideoProjectConfirmationSuggestion(action.label)
         && !isVideoProjectConfirmationSuggestion(action.utterance)
       )),
-      agentAction: undefined,
     }));
   }
   for (const asset of row.products) {

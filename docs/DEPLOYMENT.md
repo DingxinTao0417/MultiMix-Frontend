@@ -65,6 +65,21 @@ CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
 
 需要 Railway Redis 插件并配 `CHANGEIN_REDIS_URL`。生产必须使用独立 worker 且 `INLINE=false`；`INLINE=true` 只用于本地开发，不能作为线上省略 worker 的降级方案。
 
+### 视频任务恢复 scheduler（必需）
+
+再部署一个同镜像的常驻 Railway service，用于恢复“数据库已创建、但原始派发丢失”或
+worker 中断后的 durable 视频任务：
+
+```
+CHANGEIN_VIDEO_ORCHESTRATION_INLINE=false
+启动命令: python -m app.worker schedule
+```
+
+它与 API、video worker 共用同一个 Postgres、Redis、ArtifactStore 和 image digest。scheduler
+只会幂等重派已有 `queued` 任务，worker 仍以原子 `queued -> running` claim 防止重复执行；它
+不会新建工程、覆盖用户内容或把失败伪装为成功。发布前确认三项服务均为同一 digest，发布后从
+scheduler 日志确认至少完成一轮恢复扫描。
+
 ### 素材 provider 发布前 preflight
 
 常规健康检查不能调用上游 API。进入维护窗口前，由有 Railway shell/secret 权限的运维人员显式执行：

@@ -69,6 +69,11 @@ function videoPlanSummary(product: ProductArtifact) {
     mgNeededCount: typeof summary.mg_needed_count === "number" ? summary.mg_needed_count : 0,
     mgRenderedCount: typeof summary.mg_rendered_count === "number" ? summary.mg_rendered_count : 0,
     mgFailedCount: typeof summary.mg_failed_count === "number" ? summary.mg_failed_count : 0,
+    animationMode: stringValue(summary.animation_mode_label),
+    animationOverlayCount: typeof summary.animation_overlay_count === "number" ? summary.animation_overlay_count : 0,
+    animationFullSceneCount: typeof summary.animation_full_scene_count === "number" ? summary.animation_full_scene_count : 0,
+    animationProtectedCount: typeof summary.animation_protected_count === "number" ? summary.animation_protected_count : 0,
+    animationEffectCount: typeof summary.animation_effect_count === "number" ? summary.animation_effect_count : 0,
     scenes,
   };
 }
@@ -431,6 +436,17 @@ export default function ProductPreview({
             onEditVoiceover={onEditVoiceover}
           />
         ) : null}
+        {planSummary?.animationMode ? (
+          <section className="shadcn-prototype-video-plan-summary" aria-label="动画编排摘要">
+            <div className="shadcn-prototype-video-plan-metrics">
+              <span>动画编排：{planSummary.animationMode}</span>
+              {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜 MG 增强</span> : null}
+              {planSummary.animationFullSceneCount ? <span>{planSummary.animationFullSceneCount} 个受限全屏动画</span> : null}
+              {planSummary.animationProtectedCount ? <span>{planSummary.animationProtectedCount} 个分镜保护真实素材</span> : null}
+              {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
+            </div>
+          </section>
+        ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
         {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </div>
@@ -503,6 +519,11 @@ export default function ProductPreview({
             {planSummary.mgNeededCount ? <span>{planSummary.mgNeededCount} 个分镜自动加 MG</span> : null}
             {planSummary.mgRenderedCount ? <span>{planSummary.mgRenderedCount} 个 MG 已渲染</span> : null}
             {planSummary.mgFailedCount ? <span>{planSummary.mgFailedCount} 个 MG 渲染失败</span> : null}
+            {planSummary.animationMode ? <span>动画编排：{planSummary.animationMode}</span> : null}
+            {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜 MG 增强</span> : null}
+            {planSummary.animationFullSceneCount ? <span>{planSummary.animationFullSceneCount} 个受限全屏动画</span> : null}
+            {planSummary.animationProtectedCount ? <span>{planSummary.animationProtectedCount} 个分镜保护真实素材</span> : null}
+            {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
           </div>
           {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
           {planSummary.scenes.length && !product.segments?.length ? (

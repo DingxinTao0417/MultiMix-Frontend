@@ -193,7 +193,7 @@ export type AssetPlanConfirmationValues = {
 };
 
 export type AssetMessagePlan = {
-  kind?: "video_parameter_confirmation" | "agent_action_confirmation";
+  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "agent_action_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.

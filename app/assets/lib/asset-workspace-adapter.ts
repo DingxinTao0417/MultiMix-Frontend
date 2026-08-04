@@ -947,7 +947,13 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
-      const conversation = conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct);
+      const conversation = {
+        ...conversationFromPersisted(response.conversation, data.newConversation.product, generatedProduct),
+        // The message endpoint returns the complete conversation.  Preserve
+        // that fact so a concurrent lightweight snapshot cannot temporarily
+        // turn the active composer into a read-only loading state.
+        detailsLoaded: true,
+      };
       const product = generatedProduct ?? null;
       return {
         conversationId: response.conversation_id,

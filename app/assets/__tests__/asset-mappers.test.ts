@@ -83,7 +83,16 @@ describe("asset product mapper", () => {
               task_type: "generation",
               goal: "video_script",
               status: "waiting_user",
-              plan: [],
+              plan: [{
+                id: "action-replace-scene-2",
+                status: "succeeded",
+                request: {
+                  task_id: "task-video",
+                  action_id: "video.scene.replace_material",
+                  target: { asset_id: 2, scene_id: "scene-2" },
+                },
+                last_observation: { asset_id: 2, message: "视频修改已完成。" },
+              }],
               created_at: "2026-08-02T00:00:00Z",
               updated_at: "2026-08-02T00:00:00Z",
             },
@@ -98,7 +107,10 @@ describe("asset product mapper", () => {
         role: "assistant",
         text: "编导稿已生成。",
         asset_id: 1,
-        metadata: { suggestions: ["确认，生成视频工程", "调整分镜"] },
+        metadata: {
+          suggestions: ["确认，生成视频工程", "调整分镜"],
+          agent_action_run_id: "action-replace-scene-2",
+        },
         created_at: "2026-08-02T00:00:00Z",
       }],
     }, newConversationProduct);
@@ -107,6 +119,11 @@ describe("asset product mapper", () => {
     expect(conversation.agentTasks).toBeUndefined();
     expect(conversation.activeAgentAction).toBeUndefined();
     expect(conversation.messages?.[0]?.suggestions).toEqual(["调整分镜"]);
+    expect(conversation.messages?.[0]?.agentAction).toMatchObject({
+      id: "action-replace-scene-2",
+      status: "succeeded",
+      actionId: "video.scene.replace_material",
+    });
   });
 
   it("does not let a malformed non-script artifact replace the current director script", () => {

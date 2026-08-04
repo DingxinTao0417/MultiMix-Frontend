@@ -226,6 +226,34 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByText("字幕/标题卡占位", { exact: false })).not.toBeInTheDocument();
   });
 
+  it("shows the single automatic animation mode and its delivered scene counts", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    const videoPlan = base.metadata?.video_plan as Record<string, unknown>;
+    render(<ProductPreview product={{
+      ...base,
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...videoPlan,
+          summary: {
+            ...((videoPlan.summary as Record<string, unknown>) ?? {}),
+            animation_mode_label: "自动丰富",
+            animation_overlay_count: 2,
+            animation_full_scene_count: 1,
+            animation_protected_count: 3,
+            animation_effect_count: 4,
+          },
+        },
+      },
+    }} />);
+
+    expect(screen.getByText("动画编排：自动丰富")).toBeInTheDocument();
+    expect(screen.getByText("2 个分镜 MG 增强")).toBeInTheDocument();
+    expect(screen.getByText("1 个受限全屏动画")).toBeInTheDocument();
+    expect(screen.getByText("3 个分镜保护真实素材")).toBeInTheDocument();
+    expect(screen.getByText("4 类受控效果")).toBeInTheDocument();
+  });
+
   it("prioritizes material-search failure over the generic material-gap notice", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
     render(<ProductPreview product={{

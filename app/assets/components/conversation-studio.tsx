@@ -93,11 +93,22 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
 
 function confirmationPlanKey(plan: AssetMessagePlan): string {
   return [
+    plan.kind ?? "",
     plan.confirmationId ?? "",
     plan.title,
     plan.confirmUtterance ?? plan.confirmLabel ?? "",
     plan.fields.map((field) => field.key + ":" + field.value).join("|"),
   ].join("::");
+}
+
+function conversationMessageKey(message: VisibleConversationMessage, index: number): string {
+  // A server message can be promoted in place from an execution placeholder to
+  // a different confirmation card. Include the card's semantic identity so
+  // React never keeps the first confirmation's local UI instance for the
+  // independent video-project confirmation.
+  return message.plan
+    ? `${message.role}-${index}-${confirmationPlanKey(message.plan)}`
+    : `${message.role}-${index}`;
 }
 
 function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
@@ -674,7 +685,7 @@ export default function ConversationStudio({
           return (
             <div
               className="shadcn-prototype-message-group"
-              key={`${message.role}-${index}`}
+              key={conversationMessageKey(message, index)}
             >
               <article className={[
                 message.suggestions?.length || message.suggestionActions?.length ? `${message.role} delivery` : message.role,

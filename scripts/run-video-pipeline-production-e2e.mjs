@@ -61,6 +61,16 @@ const sourceDocument = path.resolve(
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
 );
 const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
+const targetRatio = process.env.VIDEO_PIPELINE_RATIO ?? "16:9";
+const outputSizeByRatio = {
+  "16:9": { width: 1920, height: 1080 },
+  "9:16": { width: 1080, height: 1920 },
+  "1:1": { width: 1080, height: 1080 },
+};
+if (!(targetRatio in outputSizeByRatio)) {
+  throw new Error("VIDEO_PIPELINE_RATIO must be one of 16:9, 9:16, or 1:1");
+}
+const expectedOutputSize = outputSizeByRatio[targetRatio];
 const durationToleranceRatio = Number(
   process.env.VIDEO_PIPELINE_DURATION_TOLERANCE ?? 0.1,
 );
@@ -106,6 +116,7 @@ const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "
   || scenario === "animated_public";
 const children = [];
 let providerProxy;
+let decisionAuditEnv;
 
 function startProviderEgressProxy(allowedHosts) {
   const allowed = new Set(allowedHosts.map((host) => host.toLowerCase()));
@@ -396,8 +407,12 @@ async function verifyCandidateVideo() {
   const failures = [];
   if (video?.codec_name !== "h264") failures.push(`codec_name=${video?.codec_name ?? "missing"}, expected h264`);
   if (video?.pix_fmt !== "yuv420p") failures.push(`pix_fmt=${video?.pix_fmt ?? "missing"}, expected yuv420p`);
-  if (video?.width !== 1920) failures.push(`width=${video?.width ?? "missing"}, expected 1920`);
-  if (video?.height !== 1080) failures.push(`height=${video?.height ?? "missing"}, expected 1080`);
+  if (video?.width !== expectedOutputSize.width) {
+    failures.push(`width=${video?.width ?? "missing"}, expected ${expectedOutputSize.width}`);
+  }
+  if (video?.height !== expectedOutputSize.height) {
+    failures.push(`height=${video?.height ?? "missing"}, expected ${expectedOutputSize.height}`);
+  }
   if (audio?.codec_name !== "aac") failures.push(`audio codec_name=${audio?.codec_name ?? "missing"}, expected aac`);
   if (
     !Number.isFinite(duration)
@@ -631,6 +646,30 @@ async function writeQaReport() {
   );
 }
 
+async function exportDecisionEvents() {
+  if (!decisionAuditEnv) return;
+  const outputPath = path.join(resultDir, "decision-events.json");
+  const script = [
+    "import json, os, sqlite3",
+    "database_url = os.environ['CHANGEIN_DATABASE_URL']",
+    "database_path = database_url.removeprefix('sqlite:///')",
+    "connection = sqlite3.connect(database_path)",
+    "connection.row_factory = sqlite3.Row",
+    "try:",
+    "    rows = connection.execute('SELECT * FROM video_decision_events ORDER BY id ASC').fetchall()",
+    "except sqlite3.OperationalError:",
+    "    rows = []",
+    "finally:",
+    "    connection.close()",
+    "print(json.dumps([dict(row) for row in rows], ensure_ascii=False, default=str))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot,
+    env: decisionAuditEnv,
+  });
+  fs.writeFileSync(outputPath, `${stdout.trim() || "[]"}\n`);
+}
+
 const workspaceSnapshots = snapshotFiles([
   path.join(frontendRoot, "next-env.d.ts"),
   path.join(frontendRoot, "tsconfig.json"),
@@ -648,7 +687,7 @@ try {
   const stagedBgm = expectBgm
     ? stageReviewedBgmCatalog()
     : {
-        manifestRef: "local://bgm/catalog/v1/manifest.json",
+        manifestRef: "",
         defaultCatalogId: "",
       };
   const productMediaManifestRef = stageApprovedProductMediaCatalog();
@@ -703,6 +742,8 @@ try {
   fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
     runId,
     scenario,
+    targetRatio,
+    expectedOutputSize,
     twoStageEnabled,
     targetSeconds,
     expectedSceneCount,
@@ -743,6 +784,7 @@ try {
     CHANGEIN_S3_SECRET_KEY: "",
     CHANGEIN_MODULES_MONITORING_ENABLED: "false",
     CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
+    CHANGEIN_VIDEO_DECISION_RUN_KIND: "test",
     CHANGEIN_ASSET_GENERATION_QUEUE_ENABLED: "true",
     CHANGEIN_REDIS_URL: "redis://127.0.0.1:6398/15",
     CHANGEIN_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
@@ -763,6 +805,7 @@ try {
     CHANGEIN_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
     CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
+  decisionAuditEnv = backendEnv;
   const nextDistDir = `.next-video-pipeline-${runId}`;
   const frontendEnv = {
     ...process.env,
@@ -829,6 +872,7 @@ try {
       VIDEO_PIPELINE_SOURCE_DOCUMENT: sourceDocument,
       VIDEO_PIPELINE_RESULT_DIR: resultDir,
       VIDEO_PIPELINE_TARGET_SECONDS: String(targetSeconds),
+      VIDEO_PIPELINE_RATIO: targetRatio,
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
       VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
@@ -880,9 +924,14 @@ try {
   if (providerProxy) await providerProxy.close();
   let cleanupError;
   try {
-    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
+    await exportDecisionEvents();
   } catch (error) {
     cleanupError = error;
+  }
+  try {
+    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
+  } catch (error) {
+    cleanupError ??= error;
   } finally {
     restoreFiles(workspaceSnapshots);
     for (const cleanupPath of [

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, test, type APIResponse, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIResponse,
+  type Page,
+  type Response as PlaywrightResponse,
+} from "@playwright/test";
 
 import {
   PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION,
@@ -11,6 +17,31 @@ import {
 const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
+const targetRatio = process.env.VIDEO_PIPELINE_RATIO ?? "16:9";
+const ratioAcceptance = {
+  "16:9": {
+    confirmationLabel: "横屏 16:9",
+    instructionLabel: "16:9横屏",
+    layout: "landscape",
+    subtitleSafeRegion: { x: 0.08, y: 0.76, width: 0.84, height: 0.18 },
+  },
+  "9:16": {
+    confirmationLabel: "竖屏 9:16",
+    instructionLabel: "9:16竖屏",
+    layout: "portrait",
+    subtitleSafeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
+  },
+  "1:1": {
+    confirmationLabel: "方形 1:1",
+    instructionLabel: "1:1方形",
+    layout: "square",
+    subtitleSafeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.2 },
+  },
+} as const;
+if (!(targetRatio in ratioAcceptance)) {
+  throw new Error("VIDEO_PIPELINE_RATIO must be one of 16:9, 9:16, or 1:1");
+}
+const targetRatioAcceptance = ratioAcceptance[targetRatio as keyof typeof ratioAcceptance];
 const expectedSceneCount = Number(
   process.env.VIDEO_PIPELINE_EXPECTED_SCENE_COUNT
     ?? (targetSeconds >= 45 ? 8 : 6),
@@ -49,6 +80,7 @@ type AssetRow = {
 };
 
 type VideoProject = {
+  ratio?: string;
   metadata?: {
     duration?: number;
     closing_hold_seconds?: number;
@@ -85,6 +117,10 @@ type VideoProject = {
       duration?: number;
       content?: string;
       textRole?: string;
+      subtitlePresentation?: string;
+      subtitleBackground?: { enabled?: boolean };
+      subtitleTokens?: Array<unknown>;
+      safeRegion?: { x?: number; y?: number; width?: number; height?: number };
       metadata?: { sourceAssetId?: number; manifestFingerprint?: string };
       editDecision?: {
         layout?: string;
@@ -118,6 +154,7 @@ type SceneRow = {
     params_source?: string;
     status?: string;
     overlay_ref?: string;
+    last_error?: string;
   };
   primary_visual_strategy?: {
     mode?: string;
@@ -232,8 +269,119 @@ async function postConversation(page: Page, text: string) {
   return response;
 }
 
-async function waitForProjectReady(page: Page) {
-  const deadline = Date.now() + 20 * 60_000;
+async function confirmVideoParametersIfRequired(
+  page: Page,
+  initialResponse: PlaywrightResponse,
+  ratio: keyof typeof ratioAcceptance,
+) {
+  type GenerationPayload = {
+    generation_job?: { id?: string };
+  };
+  let payload = (await initialResponse.json()) as GenerationPayload;
+  if (payload.generation_job?.id) return payload;
+
+  const confirmButton = page.getByRole("button", {
+    name: "确认参数并生成编导稿",
+  });
+  const directDraftButton = page.getByRole("button", {
+    name: "直接起草通用版",
+  });
+
+  for (let step = 0; step < 2 && !payload.generation_job?.id; step += 1) {
+    let action: "direct-draft" | "confirm-parameters" | null = null;
+    await expect
+      .poll(
+        async () => {
+          if (await directDraftButton.isVisible().catch(() => false)) {
+            action = "direct-draft";
+          } else if (await confirmButton.isVisible().catch(() => false)) {
+            action = "confirm-parameters";
+          }
+          return action;
+        },
+        { timeout: 30_000 },
+      )
+      .not.toBeNull();
+    const button = action === "direct-draft" ? directDraftButton : confirmButton;
+    await expect(button).toBeEnabled();
+    if (action === "direct-draft") {
+      if (ratio !== "16:9") {
+        throw new Error(
+          `video parameter confirmation was skipped for non-default ratio ${ratio}`,
+        );
+      }
+      await button.click();
+      const composer = page.getByRole("textbox", { name: "输入对话内容" });
+      await expect(composer).toHaveValue("直接起草通用版");
+    }
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/v1/assets/conversations/messages"),
+      { timeout: 360_000 },
+    );
+    if (action === "direct-draft") {
+      await page.getByRole("button", { name: "发送" }).click();
+    } else {
+      const ratioRadio = page.getByRole("radio", {
+        name: ratioAcceptance[ratio].confirmationLabel,
+      });
+      await expect(ratioRadio).toBeVisible();
+      await ratioRadio.click();
+      await expect(ratioRadio).toHaveAttribute("aria-checked", "true");
+      await button.click();
+    }
+    const response = await responsePromise;
+    const responseText = await response.text();
+    expect(
+      response.ok(),
+      `video generation confirmation failed: ${response.status()} ${responseText}`,
+    ).toBe(true);
+    payload = JSON.parse(responseText) as GenerationPayload;
+  }
+  expect(payload.generation_job?.id, "generation confirmation must queue a job").toBeTruthy();
+  return payload;
+}
+
+async function waitForProjectReady(
+  page: Page,
+  {
+    apiBase,
+    assetId,
+    headers,
+    jobId,
+  }: {
+    apiBase: string;
+    assetId: number;
+    headers: Record<string, string>;
+    jobId: string;
+  },
+) {
+  const projectResponse = await page.request.get(
+    `${apiBase}/v1/video/projects/${assetId}`,
+    { headers },
+  );
+  if (!projectResponse.ok()) {
+    throw new Error(
+      `ready video project could not be read: job=${jobId} asset=${assetId} http=${projectResponse.status()}`,
+    );
+  }
+  const project = (await projectResponse.json()) as {
+    project_ready?: boolean;
+    workflow_stage?: string;
+    project?: unknown;
+  };
+  if (!project.project_ready || project.workflow_stage !== "video_project_ready" || !project.project) {
+    throw new Error(
+      `backend_project_not_ready_after_completed_job: job=${jobId} asset=${assetId} ready=${String(project.project_ready)} stage=${project.workflow_stage ?? "missing"}`,
+    );
+  }
+
+  // Backend readiness is a separate fact from the workspace projection. Reload
+  // once after the durable project exists, then allow a bounded UI convergence
+  // window. This avoids treating an old DOM selector as a 20-minute render job.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const deadline = Date.now() + 2 * 60_000;
   while (Date.now() < deadline) {
     const failed = page
       .getByText(/视频(?:工程)?生成失败|生成失败 · 可重试/)
@@ -251,7 +399,7 @@ async function waitForProjectReady(page: Page) {
     await page.waitForTimeout(2500);
   }
   throw new Error(
-    `timed out waiting for the ${expectedSceneCount}-scene video project`,
+    `ui_not_converged_after_ready: job=${jobId} asset=${assetId} expected_scenes=${expectedSceneCount}`,
   );
 }
 
@@ -264,6 +412,17 @@ function scenesFromAsset(asset: AssetRow): SceneRow[] {
   )
     return [];
   return (plan as { scenes: SceneRow[] }).scenes;
+}
+
+function mgDiagnostic(scenes: SceneRow[]) {
+  return scenes
+    .map((scene) => {
+      const decision = scene.mg_decision;
+      return `${scene.id}:${decision?.status ?? "missing"}${
+        decision?.last_error ? `(${decision.last_error})` : ""
+      }`;
+    })
+    .join(",");
 }
 
 function hasValidPresentationSupport(
@@ -360,7 +519,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }>;
     expect(
       hybridMediaFiles.length,
-      "hybrid scenario requires at least three saved venue/process/case media files",
+      "hybrid scenario requires at least three saved venue/process/context media files",
     ).toBeGreaterThanOrEqual(3);
     for (const [index, entry] of hybridMediaFiles.entries()) {
       const mediaPath = path.resolve(entry.path ?? "");
@@ -401,22 +560,29 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }
   }
 
+  const generationInstruction =
+    scenario === "hybrid"
+      ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的商家内容制作示范片。刚上传的装修图片只作为真实业务环境和服务过程的通用 B-roll，不是 MultiMix 客户项目，也不能证明 MultiMix 产品能力。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
+      : scenario === "animated_public"
+        ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
+        : scenario === "data_process"
+          ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的数据与流程讲解视频。至少三个分镜分别用数据总结、步骤流程和结构关系来解释资料中已经明确的产品闭环；只使用资料里有依据的信息，不虚构数字、案例或产品界面。MG 可以承担结构化解释，但不能替代真实证据或审核产品截图。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
+        : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`;
   const generationResponse = await postConversation(
     page,
-    scenario === "hybrid"
-      ? `严格基于刚上传的资料以及真实展厅、空间规划和施工改造视频，制作一条${targetSeconds}秒、16:9横屏的商家内容示范片。让真实门店与服务过程素材主导叙事。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
-      : scenario === "animated_public"
-        ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、16:9横屏的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
-        : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、16:9横屏的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`,
+    `${generationInstruction}${expectBgm ? "" : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
   );
-  const generationPayload = (await generationResponse.json()) as {
-    generation_job?: { id?: string };
-  };
+  const generationPayload = await confirmVideoParametersIfRequired(
+    page,
+    generationResponse,
+    targetRatio as keyof typeof ratioAcceptance,
+  );
   const generationJobId = generationPayload.generation_job?.id;
   expect(
     generationJobId,
     "queued conversation response must include a generation job",
   ).toBeTruthy();
+  let readyProjectAssetId: number | undefined;
   await expect
     .poll(
       async () => {
@@ -501,19 +667,31 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         const job = (await response.json()) as {
           status?: string;
           error_message?: string;
+          asset_id?: number;
+          project_ready?: boolean;
         };
     if (job.status === "failed") {
           throw new Error(
             `video project generation failed: ${job.error_message ?? "unknown error"}`,
           );
     }
-    return job.status;
+        if (job.status === "completed" && job.project_ready && job.asset_id) {
+          readyProjectAssetId = job.asset_id;
+          return "completed:ready";
+        }
+    return `${job.status ?? "unknown"}:${job.project_ready ? "ready" : "not-ready"}`;
       },
       { timeout: videoJobTimeoutMs, intervals: [1000, 2500, 5000] },
     )
-    .toBe("completed");
+    .toBe("completed:ready");
+  expect(readyProjectAssetId, "completed job must identify its ready project").toBeTruthy();
 
-  const summary = await waitForProjectReady(page);
+  const summary = await waitForProjectReady(page, {
+    apiBase,
+    assetId: readyProjectAssetId!,
+    headers,
+    jobId: videoJobId!,
+  });
   const cards = summary.locator("li");
   await expect(cards).toHaveCount(expectedSceneCount);
   await expect(summary.getByText("待补素材")).toHaveCount(0);
@@ -525,8 +703,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const confirmedPlanCard = page
     .locator(".shadcn-prototype-confirm-card")
     .last();
-  await expect(confirmedPlanCard).toContainText("横屏 16:9");
-  await expect(confirmedPlanCard).not.toContainText("竖屏 9:16");
+  await expect(confirmedPlanCard).toContainText(
+    targetRatioAcceptance.confirmationLabel,
+  );
 
   const listResponse = await page.request.get(`${apiBase}/v1/assets`, {
     headers,
@@ -551,6 +730,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     schemaVersion?: string;
     surfacePresets: string[];
     distinctSurfaceCount: number;
+    treatmentCounts: Record<string, number>;
+    effectCounts: Record<string, number>;
   } | null = null;
   if (expectTwoStage) {
     await expect
@@ -577,25 +758,42 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         "director ignored the explicit request for at least one MG scene",
       );
     }
-    const pending = plannedMgScenes.filter(
-            (scene) =>
-              !new Set(["rendered", "failed"]).has(
-                scene.mg_decision?.status ?? "",
-              ),
+    const notDispatched = plannedMgScenes.filter((scene) =>
+      new Set(["planned", "stale", "missing"]).has(
+        scene.mg_decision?.status ?? "missing",
+      ),
     );
-    if (pending.length > 0) {
-      return `mg-pending:${pending.map((scene) => scene.id).join(",")}`;
-    }
-    const rendered = plannedMgScenes.filter(
-      (scene) => scene.mg_decision?.status === "rendered",
-    );
-    if (rendered.length === 0) {
-            throw new Error(
-              "all enabled MG scenes reached a failed terminal state",
-            );
-    }
-    projectAsset = current;
-    return "ready";
+    return notDispatched.length > 0
+      ? `mg-not-dispatched:${mgDiagnostic(notDispatched)}`
+      : "dispatched";
+        },
+        { timeout: 90_000, intervals: [1000, 2500, 5000] },
+      )
+      .toBe("dispatched");
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`${apiBase}/v1/assets`, { headers });
+          if (!response.ok()) return `http-${response.status()}`;
+          const current = ((await response.json()) as AssetRow[]).find(
+            (asset) => asset.id === projectAsset!.id,
+          );
+          if (!current) return "asset-missing";
+          const plannedMgScenes = scenesFromAsset(current).filter(
+            (scene) => scene.mg_decision?.needed === true,
+          );
+          const pending = plannedMgScenes.filter(
+            (scene) => !new Set(["rendered", "failed"]).has(scene.mg_decision?.status ?? ""),
+          );
+          if (pending.length > 0) return `mg-in-flight:${mgDiagnostic(pending)}`;
+          const rendered = plannedMgScenes.filter(
+            (scene) => scene.mg_decision?.status === "rendered",
+          );
+          if (rendered.length === 0) {
+            throw new Error(`all enabled MG scenes reached a failed terminal state: ${mgDiagnostic(plannedMgScenes)}`);
+          }
+          projectAsset = current;
+          return "ready";
         },
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
@@ -605,13 +803,24 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       mg_plan?: { layout?: string };
       internal_production?: {
         skill_package?: { code?: string };
-        art_direction?: {
+      art_direction?: {
           schema_version?: string;
           scene_surface_by_id?: Record<string, string>;
+          scene_animation_by_id?: Record<
+            string,
+            {
+              treatment?: string;
+              entrance?: { style?: string; portion?: number };
+              emphasis?: { style?: string; portion?: number };
+              hold?: { portion?: number };
+              exit?: { style?: string; portion?: number };
+              effects?: string[];
+            }
+          >;
         };
       };
     };
-    expect(persistedVideoPlan.mg_plan?.layout).toBe("landscape");
+    expect(persistedVideoPlan.mg_plan?.layout).toBe(targetRatioAcceptance.layout);
     expect(Number(persistedVideoPlan.duration_contract?.target_seconds)).toBe(
       targetSeconds,
     );
@@ -620,10 +829,43 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     beforeScenes = scenesFromAsset(projectAsset!);
     const artDirection =
       persistedVideoPlan.internal_production?.art_direction;
-    expect(artDirection?.schema_version).toBe("video_art_direction_v1");
+    expect(artDirection?.schema_version).toBe("video_art_direction_v2");
     expect(Object.keys(artDirection?.scene_surface_by_id ?? {})).toHaveLength(
       expectedSceneCount,
     );
+    expect(Object.keys(artDirection?.scene_animation_by_id ?? {})).toHaveLength(
+      expectedSceneCount,
+    );
+    const allowedTreatments = new Set([
+      "protect_realism",
+      "overlay_enhanced",
+      "generated_primary",
+    ]);
+    const allowedEffects = new Set([
+      "particle_field",
+      "light_sweep",
+      "shape_draw",
+      "path_flow",
+      "mask_reveal",
+      "focus_marker",
+    ]);
+    const animationEntries = Object.values(
+      artDirection?.scene_animation_by_id ?? {},
+    );
+    for (const animation of animationEntries) {
+      expect(allowedTreatments.has(animation.treatment ?? "")).toBe(true);
+      expect(animation.effects?.length ?? 0).toBeLessThanOrEqual(2);
+      expect(
+        (animation.effects ?? []).every((effect) => allowedEffects.has(effect)),
+      ).toBe(true);
+      const totalPortion =
+        Number(animation.entrance?.portion ?? 0) +
+        Number(animation.emphasis?.portion ?? 0) +
+        Number(animation.hold?.portion ?? 0) +
+        Number(animation.exit?.portion ?? 0);
+      expect(totalPortion).toBeCloseTo(1, 6);
+      expect(Number(animation.hold?.portion ?? 0)).toBeGreaterThanOrEqual(0.2);
+    }
     const distinctSurfacePresets = new Set(
       Object.values(artDirection?.scene_surface_by_id ?? {}),
     );
@@ -634,6 +876,22 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         ...Object.values(artDirection?.scene_surface_by_id ?? {}),
       ],
       distinctSurfaceCount: distinctSurfacePresets.size,
+      treatmentCounts: Object.fromEntries(
+        [...allowedTreatments].map((treatment) => [
+          treatment,
+          animationEntries.filter(
+            (animation) => animation.treatment === treatment,
+          ).length,
+        ]),
+      ),
+      effectCounts: Object.fromEntries(
+        [...allowedEffects].map((effect) => [
+          effect,
+          animationEntries.filter((animation) =>
+            animation.effects?.includes(effect),
+          ).length,
+        ]),
+      ),
     };
     const orderedSurfacePresets = beforeScenes.map(
       (scene) => artDirection?.scene_surface_by_id?.[scene.id],
@@ -1266,6 +1524,19 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       resumeReuse,
       "restarted worker must reuse persisted stage artifacts",
     ).toBe(true);
+  expect(videoProject?.ratio).toBe(targetRatio);
+  const subtitleElements = (videoProject?.tracks ?? [])
+    .flatMap((track) => track.elements ?? [])
+    .filter((element) => element.textRole === "subtitle");
+  expect(subtitleElements.length, "rendered project must retain subtitles").toBeGreaterThan(0);
+  for (const subtitle of subtitleElements) {
+    expect(subtitle.subtitleBackground?.enabled ?? false).toBe(false);
+    expect(subtitle.safeRegion).toEqual(targetRatioAcceptance.subtitleSafeRegion);
+    if (["word_highlight", "karaoke"].includes(subtitle.subtitlePresentation ?? "")) {
+      expect(subtitle.subtitleTokens?.length ?? 0).toBeGreaterThan(0);
+    }
+  }
+
   fs.writeFileSync(
     path.join(resultDir, "browser-result.json"),
     JSON.stringify(

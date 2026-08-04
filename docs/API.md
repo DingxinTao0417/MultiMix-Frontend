@@ -640,6 +640,15 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 ]
 ```
 
+完成判断不能只依赖页面元素：`VideoJobRead.project_ready === true` 且
+`workflow_stage === "video_project_ready"` 表示服务端工程已就绪。工作台随后刷新当前会话/工程
+并展示分镜；若后端已就绪但展示未收敛，应呈现可恢复的同步状态和 job ID，而不是继续把素材列表轮询
+当作生成进度。
+
+排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?limit=100`。该接口只返回当前用户工程的
+脱敏、append-only 事件（事件类型、原因码、关联 ID、hash、有限详情和时间），不供普通产品文案展示，
+也不返回原始用户输入、素材内容或模型提示词。
+
 - ≥ 3 个语义步（理解/规划/生成），由 `render_stage` + 真实阶段时间戳（`result_payload.step_marks`）派生，禁止假进度。
 - 旧后端缺字段 → adapter 解析为空数组 → 时间线回退 `render_stage` 映射（`videoJobTimelineSteps`）。
 

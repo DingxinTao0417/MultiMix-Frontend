@@ -141,4 +141,46 @@ describe("Conversation Agent actions", () => {
     await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
     expect(onSendMessage.mock.calls[0]?.[6]).toBe("agent-confirm-exact");
   });
+
+  it("confirms a video project without replaying the earlier video-parameter binding", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "video_project_confirmation",
+      title: "视频方案",
+      status: "pending",
+      fields: [
+        { key: "format", label: "视频形式", value: "横屏" },
+        { key: "duration", label: "时长", value: "约 30 秒 · 4 个分镜" },
+      ],
+      confirmLabel: "确认",
+      confirmUtterance: "确认，生成视频工程",
+      ratioOptions: [
+        { value: "16:9", label: "横屏 16:9" },
+        { value: "9:16", label: "竖屏 9:16" },
+      ],
+      ratioDefault: "16:9",
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-video-project",
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认视频方案。", plan }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
+    expect(onSendMessage.mock.calls[0]?.[1]).toBe("确认，生成视频工程（横屏 16:9）");
+    expect(onSendMessage.mock.calls[0]?.[5]).toBeUndefined();
+  });
 });
