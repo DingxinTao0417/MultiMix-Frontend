@@ -11,6 +11,7 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const inWorktree = path.basename(path.dirname(frontendRoot)).toLowerCase() === ".worktrees";
@@ -26,12 +27,12 @@ const frontendPort = configuredPort("PDF_VIDEO_FRONTEND_PORT", 3317);
 const runId = (process.env.PDF_VIDEO_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
 const timestamp = (process.env.PDF_VIDEO_TIMESTAMP ?? new Date().toISOString().replace(/[:.]/g, "-"))
   .replace(/[^a-zA-Z0-9-]/g, "-");
-const databasePath = path.join(os.tmpdir(), `multimix-pdf-video-quality-${timestamp}-${runId}.sqlite3`);
-const artifactDir = path.join(os.tmpdir(), `multimix-pdf-video-quality-artifacts-${timestamp}-${runId}`);
 const resultDir = path.resolve(
   process.env.PDF_VIDEO_RESULT_DIR
     ?? path.join(workspaceRoot, "..", "multimix-test-results", timestamp),
 );
+const lifecycle = createE2ERunLifecycle({ suite: "pdf-video-quality", runId: `${timestamp}-${runId}`, resultDir });
+const { databasePath, artifactDir } = lifecycle;
 const pdfPath = path.resolve(process.env.PDF_VIDEO_PATH ?? path.join(os.homedir(), "Desktop", "商业计划书v0.pdf"));
 const videoLayout = process.env.PDF_VIDEO_LAYOUT === "landscape" ? "landscape" : "portrait";
 const manualMode = process.argv.includes("--manual");
@@ -179,7 +180,9 @@ const workspaceSnapshots = snapshotFiles([
   path.join(frontendRoot, "tsconfig.json"),
 ]);
 
+let runError;
 try {
+  lifecycle.record("environment", "starting", { backendPort, frontendPort, manualMode });
   if (!fs.existsSync(pdfPath)) throw new Error(`PDF not found: ${pdfPath}`);
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
   fs.mkdirSync(resultDir, { recursive: true });
@@ -280,12 +283,16 @@ try {
     });
     await writeMediaReport();
   }
+  lifecycle.record("playwright", manualMode ? "manual_ready" : "passed");
+} catch (error) {
+  runError = error;
+  lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+  throw error;
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  await removeRunDatabaseWithRetry(databasePath, runId);
-  fs.rmSync(artifactDir, { recursive: true, force: true });
   fs.rmSync(path.join(frontendRoot, `.next-pdf-video-quality-${runId}`), { recursive: true, force: true });
   restoreFiles(workspaceSnapshots);
-  console.log(`Cleanup complete: ports ${backendPort}/${frontendPort} processes stopped; temp database and artifacts removed.`);
+  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- pdf-video-quality/${timestamp}-${runId} --confirm`);
 }

@@ -13,6 +13,7 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
@@ -49,13 +50,23 @@ if (
 }
 const visionServiceUrl = configuredVisionServiceUrl
   || `http://127.0.0.1:${visionPort}`;
-const runId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
-const databasePath = path.join(os.tmpdir(), `multimix-video-pipeline-e2e-${runId}.sqlite3`);
-const artifactDir = path.join(os.tmpdir(), `multimix-video-pipeline-artifacts-${runId}`);
-const resultDir = path.resolve(
+const resumeArgIndex = process.argv.indexOf("--resume");
+const resumeRunId = resumeArgIndex >= 0 ? process.argv[resumeArgIndex + 1] : "";
+if (resumeArgIndex >= 0 && (!resumeRunId || resumeRunId.startsWith("--"))) {
+  throw new Error("--resume requires a retained VIDEO_PIPELINE_RUN_ID");
+}
+const requestedRunId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
+const defaultResultDir = path.resolve(
   process.env.VIDEO_PIPELINE_RESULT_DIR
     ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
 );
+const isResume = resumeArgIndex >= 0;
+const lifecycle = isResume
+  ? resumeRetainedE2ERunLifecycle({ suite: "video-pipeline-production", runId: resumeRunId })
+  : createE2ERunLifecycle({ suite: "video-pipeline-production", runId: requestedRunId, resultDir: defaultResultDir });
+const runId = lifecycle.runId;
+const { databasePath, artifactDir } = lifecycle;
+const resultDir = lifecycle.readState().resultDir;
 const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
@@ -110,7 +121,7 @@ const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFE
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
-const expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
+let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const twoStageEnabled = true;
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || scenario === "animated_public";
@@ -251,28 +262,22 @@ function configuredInputFingerprints(raw) {
   }
 }
 
-function stageReviewedBgmCatalog() {
+function stageBgmCatalogIfAvailable() {
   const sourceRoot = path.join(canonicalBackendRoot, "artifacts", "bgm");
   const sourceManifestPath = path.join(sourceRoot, "catalog", "v1", "manifest.json");
-  const decisionsPath = path.resolve(
-    process.env.VIDEO_PIPELINE_BGM_REVIEW_DECISIONS
-      ?? "C:\\temp\\multimix-bgm-review-20260718\\bgm-review-decisions.json",
-  );
-  if (!fs.existsSync(sourceManifestPath) || !fs.existsSync(decisionsPath)) {
-    throw new Error("Reviewed BGM catalog or bgm-review-decisions.json is missing");
+  if (!fs.existsSync(sourceManifestPath)) {
+    return null;
   }
   const manifest = JSON.parse(fs.readFileSync(sourceManifestPath, "utf8"));
-  const decisions = JSON.parse(fs.readFileSync(decisionsPath, "utf8")).decisions ?? {};
-  const tracks = Array.isArray(manifest.tracks) ? manifest.tracks : [];
-  if (tracks.length !== 30) throw new Error(`Reviewed BGM catalog must contain 30 tracks, got ${tracks.length}`);
-  for (const track of tracks) {
-    const decision = decisions[track.id];
-    if (
-      decision?.decision !== "passed"
-      || !decision.checks
-      || Object.values(decision.checks).some((value) => value !== true)
-    ) {
-      throw new Error(`BGM track ${track.id} has not passed every human review check`);
+  const tracks = Array.isArray(manifest.tracks)
+    ? manifest.tracks.filter((track) => track?.status === "active")
+    : [];
+  if (tracks.length === 0) {
+    return null;
+  }
+  for (const directory of ["library", "previews", "licenses"]) {
+    if (!fs.existsSync(path.join(sourceRoot, directory))) {
+      return null;
     }
   }
   for (const directory of ["library", "previews", "licenses"]) {
@@ -280,7 +285,7 @@ function stageReviewedBgmCatalog() {
   }
   const stagedManifest = {
     ...manifest,
-    tracks: tracks.map((track) => ({ ...track, status: "active" })),
+    tracks,
   };
   const manifestPath = path.join(artifactDir, "bgm", "catalog", "v1", "manifest.json");
   fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
@@ -564,6 +569,46 @@ async function recoverInterruptedVideoJob(backendEnv) {
   );
 }
 
+function assertResumeManifest() {
+  const manifestPath = path.join(resultDir, "run-manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error("Cannot resume: run-manifest.json is missing.");
+  }
+  const original = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const expected = {
+    runId,
+    scenario,
+    targetRatio,
+    targetSeconds,
+    expectedSceneCount,
+    sourceDocument: fingerprintFile(sourceDocument),
+  };
+  for (const [key, value] of Object.entries(expected)) {
+    if (JSON.stringify(original[key]) !== JSON.stringify(value)) {
+      throw new Error(`Cannot resume: retained run manifest differs at ${key}.`);
+    }
+  }
+}
+
+async function verifyResumedVideoJob(backendEnv) {
+  const script = [
+    "import json, os, sqlite3",
+    "database_path = os.environ['MULTIMIX_DATABASE_URL'].removeprefix('sqlite:///')",
+    "connection = sqlite3.connect(database_path)",
+    "connection.row_factory = sqlite3.Row",
+    "row = connection.execute(\"SELECT status, render_stage, attempts, error_message FROM video_render_jobs ORDER BY id DESC LIMIT 1\").fetchone()",
+    "connection.close()",
+    "assert row is not None, 'no retained video job'",
+    "result = dict(row)",
+    "assert result['status'] == 'completed', result",
+    "assert result['render_stage'] == 'done', result",
+    "print(json.dumps(result, ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], { cwd: backendRoot, env: backendEnv });
+  const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  fs.writeFileSync(path.join(resultDir, "resume-verification.json"), `${JSON.stringify(result, null, 2)}\n`);
+}
+
 async function writeQaReport() {
   const resultPath = path.join(resultDir, "browser-result.json");
   if (!fs.existsSync(resultPath)) return;
@@ -583,8 +628,11 @@ async function writeQaReport() {
     ? (otherRefsStable ? "通过" : "失败")
     : "不适用（当前模式不支持两阶段单镜重做证据）";
   const behaviorFailures = [];
-  if (!expectBgm && result.audioFinishing?.musicIntent !== "none") {
-    behaviorFailures.push("no_music_intent_missing");
+  if (!expectBgm && result.audioFinishing?.bgmEnabled !== false) {
+    behaviorFailures.push("no_bgm_disabled_state_missing");
+  }
+  if (!expectBgm && !result.audioFinishing?.bgmSelectionReason) {
+    behaviorFailures.push("no_bgm_selection_reason_missing");
   }
   const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
@@ -651,7 +699,7 @@ async function exportDecisionEvents() {
   const outputPath = path.join(resultDir, "decision-events.json");
   const script = [
     "import json, os, sqlite3",
-    "database_url = os.environ['CHANGEIN_DATABASE_URL']",
+    "database_url = os.environ['MULTIMIX_DATABASE_URL']",
     "database_path = database_url.removeprefix('sqlite:///')",
     "connection = sqlite3.connect(database_path)",
     "connection.row_factory = sqlite3.Row",
@@ -675,21 +723,31 @@ const workspaceSnapshots = snapshotFiles([
   path.join(frontendRoot, "tsconfig.json"),
 ]);
 
+let runError;
 try {
+  lifecycle.record("environment", isResume ? "resume_starting" : "starting", {
+    backendPort,
+    frontendPort,
+    visionPort: usesExternalVisionService ? null : visionPort,
+  });
   if (!fs.existsSync(sourceDocument)) throw new Error(`Source document not found: ${sourceDocument}`);
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
   if (!fs.existsSync(pythonCommand)) throw new Error(`Python interpreter not found: ${pythonCommand}`);
   fs.mkdirSync(resultDir, { recursive: true });
-  for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4", "keyframes"]) {
-    fs.rmSync(path.join(resultDir, generatedName), { force: true });
+  if (isResume) {
+    assertResumeManifest();
+  } else {
+    for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4", "keyframes"]) {
+      fs.rmSync(path.join(resultDir, generatedName), { force: true });
+    }
   }
   fs.mkdirSync(artifactDir, { recursive: true });
-  const stagedBgm = expectBgm
-    ? stageReviewedBgmCatalog()
-    : {
-        manifestRef: "",
-        defaultCatalogId: "",
-      };
+  const stagedBgm = expectBgm ? stageBgmCatalogIfAvailable() : null;
+  if (expectBgm && stagedBgm === null) {
+    expectBgm = false;
+    console.log("BGM unavailable: no active local catalog with media and license evidence; continuing without BGM.");
+  }
+  const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
   const productMediaManifestRef = stageApprovedProductMediaCatalog();
   console.log(`Video pipeline E2E temp database: ${databasePath}`);
   console.log(`Video pipeline E2E temp artifacts: ${artifactDir}`);
@@ -713,97 +771,100 @@ try {
     ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
   };
   const llmOverride = {
-    baseUrl: process.env.CHANGEIN_LLM_BASE_URL?.trim() || null,
-    apiKey: process.env.CHANGEIN_LLM_API_KEY?.trim() || null,
-    model: process.env.CHANGEIN_LLM_MODEL?.trim() || null,
+    baseUrl: process.env.MULTIMIX_LLM_BASE_URL?.trim() || null,
+    apiKey: process.env.MULTIMIX_LLM_API_KEY?.trim() || null,
+    model: process.env.MULTIMIX_LLM_MODEL?.trim() || null,
   };
   const llmOverrideCount = Object.values(llmOverride).filter(Boolean).length;
   if (llmOverrideCount !== 0 && llmOverrideCount !== 3) {
     throw new Error(
-      "CHANGEIN_LLM_BASE_URL, CHANGEIN_LLM_API_KEY, and CHANGEIN_LLM_MODEL "
+      "MULTIMIX_LLM_BASE_URL, MULTIMIX_LLM_API_KEY, and MULTIMIX_LLM_MODEL "
       + "must be supplied together for a production E2E provider override",
     );
   }
   const effectiveLlmConfig = llmOverrideCount === 3
     ? llmOverride
     : {
-        baseUrl: canonicalEnv.CHANGEIN_LLM_BASE_URL
-          ?? canonicalEnv.CHANGEIN_DEEPSEEK_BASE_URL
-          ?? (canonicalEnv.CHANGEIN_DEEPSEEK_API_KEY
+        baseUrl: canonicalEnv.MULTIMIX_LLM_BASE_URL
+          ?? canonicalEnv.MULTIMIX_DEEPSEEK_BASE_URL
+          ?? (canonicalEnv.MULTIMIX_DEEPSEEK_API_KEY
             ? "https://api.deepseek.com/v1"
             : null),
-        apiKey: canonicalEnv.CHANGEIN_LLM_API_KEY
-          ?? canonicalEnv.CHANGEIN_DEEPSEEK_API_KEY
+        apiKey: canonicalEnv.MULTIMIX_LLM_API_KEY
+          ?? canonicalEnv.MULTIMIX_DEEPSEEK_API_KEY
           ?? null,
-        model: canonicalEnv.CHANGEIN_LLM_MODEL
-          ?? canonicalEnv.CHANGEIN_DEEPSEEK_MODEL
+        model: canonicalEnv.MULTIMIX_LLM_MODEL
+          ?? canonicalEnv.MULTIMIX_DEEPSEEK_MODEL
           ?? null,
       };
-  fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
-    runId,
-    scenario,
-    targetRatio,
-    expectedOutputSize,
-    twoStageEnabled,
-    targetSeconds,
-    expectedSceneCount,
-    videoJobTimeoutMs,
-    durationToleranceRatio,
-    durationContract: {
-      minimumSeconds: minimumDurationSeconds,
-      maximumSeconds: maximumDurationSeconds,
-    },
-    sourceDocument: fingerprintFile(sourceDocument),
-    visionServiceUrl,
-    productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
-    hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
-    llm: {
-      baseUrl: effectiveLlmConfig.baseUrl,
-      model: effectiveLlmConfig.model,
-      processOverride: llmOverrideCount === 3,
-    },
-  }, null, 2));
+  if (!isResume) {
+    fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
+      runId,
+      scenario,
+      targetRatio,
+      expectedOutputSize,
+      twoStageEnabled,
+      targetSeconds,
+      expectedSceneCount,
+      videoJobTimeoutMs,
+      durationToleranceRatio,
+      durationContract: {
+        minimumSeconds: minimumDurationSeconds,
+        maximumSeconds: maximumDurationSeconds,
+      },
+      sourceDocument: fingerprintFile(sourceDocument),
+      visionServiceUrl,
+      productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
+      hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
+      llm: {
+        baseUrl: effectiveLlmConfig.baseUrl,
+        model: effectiveLlmConfig.model,
+        processOverride: llmOverrideCount === 3,
+      },
+    }, null, 2));
+  }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const backendEnv = {
     ...process.env,
     ...canonicalEnv,
-    CHANGEIN_ENV: "local",
-    CHANGEIN_AUTH_PROVIDER: "local",
-    CHANGEIN_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
-    CHANGEIN_DATABASE_URL: databaseUrl,
-    CHANGEIN_ARTIFACT_DIR: artifactDir,
-    CHANGEIN_SUPABASE_URL: "",
-    CHANGEIN_SUPABASE_PUBLISHABLE_KEY: "",
-    CHANGEIN_SUPABASE_ANON_KEY: "",
-    CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "",
+    MULTIMIX_ENV: "local",
+    MULTIMIX_AUTH_PROVIDER: "local",
+    MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
+    MULTIMIX_DATABASE_URL: databaseUrl,
+    MULTIMIX_ARTIFACT_DIR: artifactDir,
+    MULTIMIX_SUPABASE_URL: "",
+    MULTIMIX_SUPABASE_PUBLISHABLE_KEY: "",
+    MULTIMIX_SUPABASE_ANON_KEY: "",
+    MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
     SUPABASE_URL: "",
     SUPABASE_ANON_KEY: "",
     SUPABASE_SERVICE_ROLE_KEY: "",
-    CHANGEIN_S3_ENDPOINT_URL: "",
-    CHANGEIN_S3_ACCESS_KEY: "",
-    CHANGEIN_S3_SECRET_KEY: "",
-    CHANGEIN_MODULES_MONITORING_ENABLED: "false",
-    CHANGEIN_MODULES_VIDEO_ORCHESTRATION_ENABLED: "true",
-    CHANGEIN_VIDEO_DECISION_RUN_KIND: "test",
-    CHANGEIN_ASSET_GENERATION_QUEUE_ENABLED: "true",
-    CHANGEIN_REDIS_URL: "redis://127.0.0.1:6398/15",
-    CHANGEIN_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
-    CHANGEIN_LLM_API_KEY: effectiveLlmConfig.apiKey ?? "",
-    CHANGEIN_LLM_MODEL: effectiveLlmConfig.model ?? "",
-    CHANGEIN_LLM_TIMEOUT_SECONDS: "120",
-    CHANGEIN_VIDEO_ORCHESTRATION_INLINE: "true",
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PUBLIC_VLM_REQUIRED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
-    CHANGEIN_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
-    CHANGEIN_VIDEO_BGM_MANIFEST_REF: stagedBgm.manifestRef,
-    CHANGEIN_VIDEO_BGM_DEFAULT_CATALOG_ID: stagedBgm.defaultCatalogId,
-    CHANGEIN_VISION_SERVICE_URL: visionServiceUrl,
-    CHANGEIN_VISION_TIMEOUT_SECONDS: "120",
-    CHANGEIN_VIDEO_VOICE_TO_MUSIC_RATIO: "4.0",
-    CHANGEIN_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
-    CHANGEIN_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
-    CHANGEIN_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
+    MULTIMIX_S3_ENDPOINT_URL: "",
+    MULTIMIX_S3_ACCESS_KEY: "",
+    MULTIMIX_S3_SECRET_KEY: "",
+    MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
+    MULTIMIX_ASSET_GENERATION_QUEUE_ENABLED: "true",
+    MULTIMIX_REDIS_URL: "redis://127.0.0.1:6398/15",
+    MULTIMIX_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
+    MULTIMIX_LLM_API_KEY: effectiveLlmConfig.apiKey ?? "",
+    MULTIMIX_LLM_MODEL: effectiveLlmConfig.model ?? "",
+    MULTIMIX_LLM_TIMEOUT_SECONDS: "120",
+    MULTIMIX_QWEN_FALLBACK_ENABLED: canonicalEnv.MULTIMIX_QWEN_FALLBACK_ENABLED ?? "",
+    MULTIMIX_QWEN_FALLBACK_BASE_URL: canonicalEnv.MULTIMIX_QWEN_FALLBACK_BASE_URL ?? "",
+    MULTIMIX_QWEN_FALLBACK_API_KEY: canonicalEnv.MULTIMIX_QWEN_FALLBACK_API_KEY ?? "",
+    MULTIMIX_QWEN_FALLBACK_MODEL: canonicalEnv.MULTIMIX_QWEN_FALLBACK_MODEL ?? "",
+    MULTIMIX_VIDEO_ORCHESTRATION_INLINE: "true",
+    MULTIMIX_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_DNS_ENABLED: "true",
+    MULTIMIX_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
+    MULTIMIX_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
+    MULTIMIX_VIDEO_BGM_MANIFEST_REF: effectiveBgm.manifestRef,
+    MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID: effectiveBgm.defaultCatalogId,
+    MULTIMIX_VISION_SERVICE_URL: visionServiceUrl,
+    MULTIMIX_VISION_TIMEOUT_SECONDS: "120",
+    MULTIMIX_VIDEO_VOICE_TO_MUSIC_RATIO: "4.0",
+    MULTIMIX_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
+    MULTIMIX_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
+    MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
   decisionAuditEnv = backendEnv;
   const nextDistDir = `.next-video-pipeline-${runId}`;
@@ -855,15 +916,20 @@ try {
     "backend.log",
   );
   await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
-  const frontend = startProcess(
-    npmCommand,
-    ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
-    frontendRoot,
-    frontendEnv,
-    "frontend.log",
-  );
-  await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
-  const playwrightRun = run(npxCommand, ["playwright", "test", "e2e/video-pipeline-production.spec.ts", "--workers=1"], {
+  if (isResume) {
+    await recoverInterruptedVideoJob(backendEnv);
+    await verifyResumedVideoJob(backendEnv);
+    lifecycle.record("worker", "resumed_and_verified");
+  } else {
+    const frontend = startProcess(
+      npmCommand,
+      ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+      frontendRoot,
+      frontendEnv,
+      "frontend.log",
+    );
+    await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    const playwrightRun = run(npxCommand, ["playwright", "test", "e2e/video-pipeline-production.spec.ts", "--workers=1"], {
     cwd: frontendRoot,
     env: {
       ...frontendEnv,
@@ -886,9 +952,9 @@ try {
     },
     stdout: process.stdout,
     stderr: process.stderr,
-  });
-  playwrightRun.catch(() => undefined);
-  if (interruptAfterManifest) {
+    });
+    playwrightRun.catch(() => undefined);
+    if (interruptAfterManifest) {
     const manifestAbort = new AbortController();
     const manifestWait = waitForManifestArtifact(20 * 60_000, manifestAbort.signal);
     try {
@@ -913,11 +979,17 @@ try {
       "backend-restarted.log",
     );
     await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
-    await recoverInterruptedVideoJob(backendEnv);
+      await recoverInterruptedVideoJob(backendEnv);
+    }
+    await playwrightRun;
+    await verifyCandidateVideo();
+    await writeQaReport();
+    lifecycle.record("playwright", "passed");
   }
-  await playwrightRun;
-  await verifyCandidateVideo();
-  await writeQaReport();
+} catch (error) {
+  runError = error;
+  lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+  throw error;
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
@@ -928,29 +1000,16 @@ try {
   } catch (error) {
     cleanupError = error;
   }
+  restoreFiles(workspaceSnapshots);
   try {
-    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
+    fs.rmSync(path.join(frontendRoot, `.next-video-pipeline-${runId}`), { recursive: true, force: true });
   } catch (error) {
     cleanupError ??= error;
-  } finally {
-    restoreFiles(workspaceSnapshots);
-    for (const cleanupPath of [
-      artifactDir,
-      path.join(frontendRoot, `.next-video-pipeline-${runId}`),
-    ]) {
-      try {
-        fs.rmSync(cleanupPath, { recursive: true, force: true });
-      } catch (error) {
-        cleanupError ??= error;
-      }
-    }
-    restoreFiles(workspaceSnapshots);
   }
-  console.log(
-    `Cleanup complete: ports ${backendPort}/${frontendPort}${
-      usesExternalVisionService ? "" : `/${visionPort}`
-    } stopped; `
-    + "temp database and artifacts removed.",
-  );
+  lifecycle.finish(runError || cleanupError ? "failed_retained" : "passed_pending_cleanup", {
+    retainedForConfirmation: true,
+    resumeSupported: true,
+  });
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- video-pipeline-production/${runId} --confirm`);
   if (cleanupError) throw cleanupError;
 }

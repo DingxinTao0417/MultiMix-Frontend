@@ -13,6 +13,7 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = resolveWorkspaceRoot(frontendRoot);
@@ -21,15 +22,12 @@ const backendRoot = resolveBackendRoot(frontendRoot, canonicalBackendRoot);
 const runId = (process.env.AGENT_ATOMIC_E2E_RUN_ID ?? crypto.randomUUID())
   .replace(/[^a-zA-Z0-9-]/g, "-");
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-const databasePath = path.join(os.tmpdir(), `multimix-agent-atomic-${runId}.sqlite3`);
-const artifactDir = path.join(
-  os.tmpdir(),
-  `multimix-agent-atomic-artifacts-${runId}`,
-);
 const resultDir = path.resolve(
   process.env.AGENT_ATOMIC_E2E_RESULT_DIR
     ?? path.join(frontendRoot, "test-results", "agent-video-atomic", timestamp),
 );
+const lifecycle = createE2ERunLifecycle({ suite: "agent-video-atomic", runId, resultDir });
+const { databasePath, artifactDir } = lifecycle;
 const nextDistDir = `.next-agent-video-atomic-${runId}`;
 const backendPort = configuredPort("AGENT_ATOMIC_E2E_BACKEND_PORT", 8299);
 const frontendPort = configuredPort("AGENT_ATOMIC_E2E_FRONTEND_PORT", 3318);
@@ -455,7 +453,9 @@ async function closeServer(server) {
   await new Promise((resolve) => server.close(() => resolve()));
 }
 
+let runError;
 try {
+  lifecycle.record("environment", "starting", { backendPort, frontendPort });
   if (backendPort === frontendPort) {
     throw new Error("Backend and frontend E2E ports must be different");
   }
@@ -645,6 +645,11 @@ try {
       stderr: process.stderr,
     },
   );
+  lifecycle.record("playwright", "passed");
+} catch (error) {
+  runError = error;
+  lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+  throw error;
 } finally {
   if (workerStartTimer) {
     clearTimeout(workerStartTimer);
@@ -654,11 +659,6 @@ try {
   for (const { child } of [...children].reverse()) await stopChild(child);
   for (const { log } of children) log.end();
   if (ownsRunPaths) {
-    await safeRemoveRunDatabaseWithRetries(databasePath, runId, {
-      attempts: 12,
-      retryDelay: 250,
-    });
-    fs.rmSync(artifactDir, { recursive: true, force: true });
     fs.rmSync(path.join(frontendRoot, nextDistDir), {
       recursive: true,
       force: true,
@@ -671,8 +671,6 @@ try {
     ...(redisPort ? [assertPortEventuallyFree(redisPort)] : []),
     ...(fakeProviderPort ? [assertPortEventuallyFree(fakeProviderPort)] : []),
   ]);
-  console.log(
-    "Cleanup complete: isolated Agent E2E processes, SQLite, ArtifactStore, "
-      + "helper listeners, and Next build removed.",
-  );
+  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- agent-video-atomic/${runId} --confirm`);
 }

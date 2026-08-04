@@ -56,12 +56,15 @@
     ".next-video-pipeline-2026-08-03-visible-copy-8438/types/**/*.ts",
     ".next-video-pipeline-2026-08-03-visible-copy-boundary-8468/types/**/*.ts",
     ".next-video-pipeline-20260804-portrait-retry/types/**/*.ts",
+    ".next-video-pipeline-final-adjacent-product-dedup-20260804/types/**/*.ts",
     ".next-video-pipeline-mg-dispatch-data-process-20260803/types/**/*.ts",
+    ".next-video-pipeline-mg-fallback-20260804/types/**/*.ts",
+    ".next-video-pipeline-subtitle-focus-e2e-20260804/types/**/*.ts",
     ".next-video-pipeline-title-repair-20260803/types/**/*.ts",
     ".next-video-pipeline-title-repair-full-20260803/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-video-pipeline-mg-fallback-20260804/types/**/*.ts"
+    ".next-video-pipeline-e2e-bgm-disabled-contract-20260804-03/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

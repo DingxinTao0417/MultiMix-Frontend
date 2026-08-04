@@ -11,18 +11,19 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
 const backendRoot = path.join(workspaceRoot, "MultiMix-Backend");
 const runId = (process.env.BGM_E2E_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
 const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-const databasePath = path.join(os.tmpdir(), `multimix-video-bgm-${runId}.sqlite3`);
-const artifactDir = path.join(os.tmpdir(), `multimix-video-bgm-artifacts-${runId}`);
 const resultDir = path.resolve(
   process.env.BGM_E2E_RESULT_DIR
     ?? path.join(workspaceRoot, "..", "multimix-test-results", "video-bgm", timestamp),
 );
+const lifecycle = createE2ERunLifecycle({ suite: "video-bgm", runId, resultDir });
+const { databasePath, artifactDir } = lifecycle;
 const nextDistDir = `.next-video-bgm-${runId}`;
 const FORBIDDEN_PORTS = new Set([8199, 3117, 3200]);
 const children = [];
@@ -141,7 +142,9 @@ const snapshots = snapshotFiles([
   path.join(frontendRoot, "tsconfig.json"),
 ]);
 
+let runError;
 try {
+  lifecycle.record("environment", "starting", { backendPort, frontendPort });
   const backendPort = configuredPort("BGM_E2E_BACKEND_PORT") ?? await findFreePort();
   const frontendPort = configuredPort("BGM_E2E_FRONTEND_PORT") ?? await findFreePort();
   if (
@@ -233,12 +236,16 @@ try {
     stdout: process.stdout,
     stderr: process.stderr,
   });
+  lifecycle.record("playwright", "passed");
+} catch (error) {
+  runError = error;
+  lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+  throw error;
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  await removeDatabaseWithRetry();
-  fs.rmSync(artifactDir, { recursive: true, force: true });
   fs.rmSync(path.join(frontendRoot, nextDistDir), { recursive: true, force: true });
   restoreFiles(snapshots);
-  console.log("Cleanup complete: isolated BGM E2E processes, SQLite, ArtifactStore, and Next build removed.");
+  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- video-bgm/${runId} --confirm`);
 }

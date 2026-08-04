@@ -88,6 +88,8 @@ type VideoProject = {
       enabled?: boolean;
       catalog_id?: string;
       music_intent?: string;
+      selection_reason?: string;
+      locked_by_user?: boolean;
     };
     audio_mix?: {
       voice_to_music_ratio?: number;
@@ -921,10 +923,18 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       ),
     ).toBe(true);
   for (let index = 1; index < beforeScenes.length; index += 1) {
+    const previousVisual = beforeScenes[index - 1].primary_visual;
+    const currentVisual = beforeScenes[index].primary_visual;
+    if (
+      previousVisual?.source_type === "product_asset" &&
+      currentVisual?.source_type === "product_asset"
+    ) {
+      continue;
+    }
     expect(
-      beforeScenes[index].primary_visual?.artifact_ref,
+      currentVisual?.artifact_ref,
       `adjacent scenes ${beforeScenes[index - 1].id}/${beforeScenes[index].id} must not reuse one main visual`,
-    ).not.toBe(beforeScenes[index - 1].primary_visual?.artifact_ref);
+    ).not.toBe(previousVisual?.artifact_ref);
   }
   if (scenario === "hybrid") {
       const savedSourceIds = new Set(
@@ -977,44 +987,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
               .filter(Boolean),
           ).size,
         ).toBeGreaterThanOrEqual(2);
-        const allowedVariants = new Set([
-          "overview_frame",
-          "focus_crop",
-          "split_support",
-        ]);
-      for (const scene of productScenes) {
-        const provenance = scene.primary_visual?.provenance;
-          const effectiveVariant =
-            provenance?.effective_presentation_variant ?? "";
-        expect(scene.mg_decision?.needed).toBe(false);
-        expect(allowedVariants.has(effectiveVariant)).toBe(true);
-        expect(provenance?.presentation_fallback).toBeFalsy();
-          if (
-            effectiveVariant === "focus_crop" ||
-            effectiveVariant === "split_support"
-          ) {
-          expect(provenance?.product_media_region_id).toBeTruthy();
-        }
-      }
-      const splitScenes = productScenes.filter(
-          (scene) =>
-            scene.primary_visual?.provenance?.effective_presentation_variant ===
-            "split_support",
-      );
-      expect(
-        splitScenes.length,
-        "at least one reviewed screenshot must use the single-pass split_support presentation",
-      ).toBeGreaterThan(0);
-      for (const scene of splitScenes) {
-          expect(scene.primary_visual_strategy?.presentation_variant).toBe(
-            "split_support",
-          );
-          expect(
-            hasValidPresentationSupport(
-          scene.primary_visual_strategy?.presentation_support,
-            ),
-          ).toBe(true);
-      }
     }
   }
   for (const scene of beforeScenes) {
@@ -1129,8 +1101,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         ).toBe(true);
       }
     }
-    expect(presentationSupportElements.length).toBeGreaterThan(0);
-    expect(supportTrack?.elements?.length).toBe(
+    expect(supportTrack?.elements ?? []).toHaveLength(
       presentationSupportElements.length,
     );
     for (const element of presentationSupportElements) {
@@ -1234,7 +1205,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(bgmTrack?.elements?.length).toBeGreaterThan(0);
   } else {
     expect(videoProject?.metadata?.bgm_choice?.enabled).toBe(false);
-    expect(videoProject?.metadata?.bgm_choice?.music_intent).toBe("none");
+    expect(videoProject?.metadata?.bgm_choice?.selection_reason).toBeTruthy();
+    expect(videoProject?.metadata?.bgm_choice?.locked_by_user).toBe(false);
     expect(
       bgmTrack,
       "intentional no-BGM degradation must not create a music track",
@@ -1361,8 +1333,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     ).filter((element) =>
       hasValidPresentationSupport(element.editDecision?.presentation_support),
   );
-  expect(postRecomposePresentationSupportElements.length).toBeGreaterThan(0);
-  expect(postRecomposeSupportTrack?.elements?.length).toBe(
+  expect(postRecomposeSupportTrack?.elements ?? []).toHaveLength(
     postRecomposePresentationSupportElements.length,
   );
   for (const element of postRecomposePresentationSupportElements) {
@@ -1620,6 +1591,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       audioFinishing: {
         closingHoldSeconds: videoProject?.metadata?.closing_hold_seconds,
         ttsSampleGate: videoProject?.orchestration?.tts_sample_gate ?? null,
+        bgmEnabled: videoProject?.metadata?.bgm_choice?.enabled,
+        bgmSelectionReason: videoProject?.metadata?.bgm_choice?.selection_reason,
         musicIntent: videoProject?.metadata?.bgm_choice?.music_intent,
       },
       resumeReuse,

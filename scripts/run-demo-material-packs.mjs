@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-import { assertPortFree, createRunPaths, safeRemoveRunDatabase, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+import { assertPortFree, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const ids = ["01", "02", "03", "04"];
 
@@ -61,15 +62,17 @@ export async function main(args = process.argv.slice(2)) {
   const backendRoot = path.join(workspaceRoot, "MultiMix-Backend");
   const packsRoot = path.join(workspaceRoot, "demo_material_packs");
   const runId = process.env.DEMO_RUN_ID || crypto.randomUUID();
-  const { databasePath, artifactDir } = createRunPaths("multimix-demo", runId);
   const resultDir = path.join(frontendRoot, "test-results", "demo-material-packs", runId);
+  const lifecycle = createE2ERunLifecycle({ suite: "demo-material-packs", runId, resultDir });
+  const { databasePath, artifactDir } = lifecycle;
   const ports = { frontend: 3229, backend: 8298, fixture: 8398 };
   const children = [];
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-  console.log(`Temporary SQLite: ${databasePath}`);
-  console.log("Purpose: isolated demo material browser automation; cleanup: always removed in finally.");
+  console.log(`Temporary SQLite retained until confirmed cleanup: ${databasePath}`);
+  let runError;
   try {
+    lifecycle.record("environment", "starting", { ...ports, mode: options.mode });
     fs.mkdirSync(resultDir, { recursive: true });
     await Promise.all(Object.values(ports).map(assertPortFree));
     const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
@@ -88,11 +91,16 @@ export async function main(args = process.argv.slice(2)) {
     if (options.cleanupProbe) throw new Error("Intentional demo cleanup probe");
     await run(npx, ["playwright", "test", "e2e/demo-material-packs/demo-material-packs.spec.ts"], { cwd: frontendRoot, env: { ...frontendEnv, DEMO_PACKS_ROOT: packsRoot, DEMO_RUN_ID: runId, DEMO_MODE: options.mode, DEMO_SCENARIOS: options.scenarios.join(","), DEMO_SEED_JSON: JSON.stringify(seedJson), DEMO_BACKEND_URL: `http://127.0.0.1:${ports.backend}`, DEMO_RESULT_DIR: resultDir, PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${ports.frontend}`, PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright") } });
     writeRunIndex(resultDir, { runId, mode: options.mode, scenarios: options.scenarios });
+    lifecycle.record("playwright", "passed");
+  } catch (error) {
+    runError = error;
+    lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+    throw error;
   } finally {
     for (const started of children.reverse()) await stopChild(started.child);
     for (const started of children) started.log.end();
-    safeRemoveRunDatabase(databasePath, runId);
-    fs.rmSync(artifactDir, { recursive: true, force: true });
+    lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
+    console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- demo-material-packs/${runId} --confirm`);
   }
 }
 

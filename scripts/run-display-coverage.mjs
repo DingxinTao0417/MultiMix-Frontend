@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { assertPortFree, safeRemoveRunDatabaseWithRetries, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
@@ -21,9 +22,9 @@ const runId = process.env.DISPLAY_COVERAGE_RUN_ID ?? crypto.randomUUID();
 if (!/^[a-zA-Z0-9-]+$/.test(runId)) throw new Error("DISPLAY_COVERAGE_RUN_ID must contain only letters, numbers, and hyphens");
 const nextDistDirName = `.next-display-coverage-${runId}`;
 const nextDistDir = path.join(frontendRoot, nextDistDirName);
-const databasePath = path.join(os.tmpdir(), `multimix-display-coverage-${runId}.sqlite3`);
-const artifactDir = path.join(os.tmpdir(), `multimix-display-artifacts-${runId}`);
 const resultDir = path.join(frontendRoot, "test-results", "display-coverage");
+const lifecycle = createE2ERunLifecycle({ suite: "display-coverage", runId, resultDir });
+const { databasePath, artifactDir } = lifecycle;
 const e2eOnly = process.argv.includes("--e2e-only");
 const cleanupProbe = process.argv.includes("--cleanup-probe");
 const updateSnapshots = process.argv.includes("--update-snapshots");
@@ -79,7 +80,9 @@ const clearedExternalEnv = {
   PIXABAY_API_KEY: "",
 };
 
+let runError;
 try {
+  lifecycle.record("environment", "starting", { backendPort, frontendPort });
   console.log(`Display coverage temp database: ${databasePath}`);
   console.log(`Display coverage temp artifacts: ${artifactDir}`);
   fs.mkdirSync(resultDir, { recursive: true });
@@ -135,18 +138,18 @@ try {
     stdout: process.stdout,
     stderr: process.stderr,
   });
+  lifecycle.record("playwright", "passed");
+} catch (error) {
+  runError = error;
+  lifecycle.record("run", "failed", { errorName: error?.name ?? "Error" });
+  throw error;
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  let databaseCleanupError;
-  try {
-    await safeRemoveRunDatabaseWithRetries(databasePath, runId);
-  } catch (error) {
-    databaseCleanupError = error;
-  } finally {
-    fs.rmSync(artifactDir, { recursive: true, force: true });
-    fs.rmSync(nextDistDir, { recursive: true, force: true });
-    restoreWorkspaceFiles(workspaceFileSnapshots);
-  }
-  if (databaseCleanupError) throw databaseCleanupError;
+  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", {
+    retainedForConfirmation: true,
+  });
+  fs.rmSync(nextDistDir, { recursive: true, force: true });
+  restoreWorkspaceFiles(workspaceFileSnapshots);
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- display-coverage/${runId} --confirm`);
 }
