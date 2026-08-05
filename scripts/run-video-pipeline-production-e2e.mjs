@@ -12,6 +12,7 @@ import {
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
 import { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
+import { repairNextGeneratedTypeReferences } from "./next-generated-types.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
@@ -738,6 +739,7 @@ async function exportDecisionEvents() {
   fs.writeFileSync(outputPath, `${stdout.trim() || "[]"}\n`);
 }
 
+repairNextGeneratedTypeReferences(frontendRoot);
 const workspaceSnapshots = snapshotFiles([
   path.join(frontendRoot, "next-env.d.ts"),
   path.join(frontendRoot, "tsconfig.json"),
