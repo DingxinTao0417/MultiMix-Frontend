@@ -4797,8 +4797,8 @@ button:disabled {
 
 /* 媒体卡（图片库/视频库）：类型标签+状态胶囊压在缩略图上 */
 .shadcn-prototype-library-media-card {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 0;
   min-width: 0;
   overflow: hidden;

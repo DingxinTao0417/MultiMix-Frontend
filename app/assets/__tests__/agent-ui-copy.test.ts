@@ -1402,6 +1402,7 @@ describe("agent conversation UI copy", () => {
     expect(libraryWorkshop).toContain("with-video-media");
     expect(globals).toContain(".shadcn-prototype-library-grid.view-video");
     expect(globals).toContain(".shadcn-prototype-library-media-thumb.video");
+    expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{\s*display: flex;\s*flex-direction: column;/);
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-image-media .shadcn-prototype-library-media-frame");
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-video-media .shadcn-prototype-library-media-frame");
   });
