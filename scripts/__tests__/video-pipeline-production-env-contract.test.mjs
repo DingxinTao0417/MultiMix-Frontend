@@ -66,7 +66,7 @@ test("production video browser flow records its major user-visible pipeline wait
     "document_upload",
     "director_generation",
     "video_project_ready",
-    "video_export",
+    "export_preview_ready",
   ]) {
     assert.match(source, new RegExp(`measureE2EStage\\("${stage}"`));
   }
