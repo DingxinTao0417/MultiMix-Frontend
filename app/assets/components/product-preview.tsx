@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
 import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
@@ -11,6 +11,7 @@ import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
 import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
+import type { VideoQualityReport } from "../lib/video-quality";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -192,15 +193,35 @@ function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number
   return active?.id ?? segments.findLast((segment) => segment.startSeconds != null && time >= segment.startSeconds)?.id ?? null;
 }
 
-export default function ProductPreview({
-  product,
-  onReplaceMaterial,
-  onEditVoiceover,
-}: {
+export type ProductPreviewHandle = {
+  export: () => boolean;
+};
+
+type ProductPreviewProps = {
   product: ProductArtifact;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
-}) {
+  onPreviewReadyChange?: (ready: boolean) => void;
+  onExportStart?: () => void;
+  onExportProgress?: (progress: number | null) => void;
+  onExportVerifying?: () => void;
+  onExportQualityReport?: (report: VideoQualityReport) => void;
+  onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
+  onExportError?: (message: string) => void;
+};
+
+const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
+  product,
+  onReplaceMaterial,
+  onEditVoiceover,
+  onPreviewReadyChange,
+  onExportStart,
+  onExportProgress,
+  onExportVerifying,
+  onExportQualityReport,
+  onExportSuccess,
+  onExportError,
+}, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
@@ -213,6 +234,10 @@ export default function ProductPreview({
     setFullVideoFailed(false);
     setProjectPreviewRequested(true);
   }, [exportedVideoUrl, product.id]);
+
+  useImperativeHandle(forwardedRef, () => ({
+    export: () => projectPreviewRef.current?.export() ?? false,
+  }), []);
 
   if (product.status.startsWith("工程异常")) {
     return <VideoProjectRecoveryCard />;
@@ -417,6 +442,13 @@ export default function ProductPreview({
               ratioClassName={getProductRatioClass(product.ratio)}
               durationSeconds={durationSeconds}
               onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
+              onReadyChange={onPreviewReadyChange}
+              onExportStart={onExportStart}
+              onExportProgress={onExportProgress}
+              onExportVerifying={onExportVerifying}
+              onExportQualityReport={onExportQualityReport}
+              onExportSuccess={onExportSuccess}
+              onExportError={onExportError}
               recoveryNotice={fullVideoFailed ? {
                 message: "成片暂时无法播放，已切换到分镜预览",
                 actionLabel: "重试成片",
@@ -452,7 +484,7 @@ export default function ProductPreview({
           <section className="shadcn-prototype-video-plan-summary" aria-label="动画编排摘要">
             <div className="shadcn-prototype-video-plan-metrics">
               <span>动画编排：{planSummary.animationMode}</span>
-              {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜 MG 增强</span> : null}
+              {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜动态增强</span> : null}
               {planSummary.animationFullSceneCount ? <span>{planSummary.animationFullSceneCount} 个受限全屏动画</span> : null}
               {planSummary.animationProtectedCount ? <span>{planSummary.animationProtectedCount} 个分镜保护真实素材</span> : null}
               {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
@@ -532,7 +564,7 @@ export default function ProductPreview({
             {planSummary.mgRenderedCount ? <span>{planSummary.mgRenderedCount} 个 MG 已渲染</span> : null}
             {planSummary.mgFailedCount ? <span>{planSummary.mgFailedCount} 个 MG 渲染失败</span> : null}
             {planSummary.animationMode ? <span>动画编排：{planSummary.animationMode}</span> : null}
-            {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜 MG 增强</span> : null}
+            {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜动态增强</span> : null}
             {planSummary.animationFullSceneCount ? <span>{planSummary.animationFullSceneCount} 个受限全屏动画</span> : null}
             {planSummary.animationProtectedCount ? <span>{planSummary.animationProtectedCount} 个分镜保护真实素材</span> : null}
             {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
@@ -571,4 +603,6 @@ export default function ProductPreview({
       {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
     </>
   );
-}
+});
+
+export default ProductPreview;

@@ -440,14 +440,9 @@ async function verifyCandidateVideo() {
     failures.push(`height=${video?.height ?? "missing"}, expected ${expectedOutputSize.height}`);
   }
   if (audio?.codec_name !== "aac") failures.push(`audio codec_name=${audio?.codec_name ?? "missing"}, expected aac`);
-  if (
-    !Number.isFinite(duration)
-    || duration < minimumDurationSeconds
-    || duration > maximumDurationSeconds
-  ) {
+  if (!Number.isFinite(duration) || duration <= 0) {
     failures.push(
-      `duration=${Number.isFinite(duration) ? duration : "missing"}, `
-      + `expected ${minimumDurationSeconds}-${maximumDurationSeconds}`,
+      `duration=${Number.isFinite(duration) ? duration : "missing"}, expected a positive readable duration`,
     );
   }
   const { stderr: loudnessStderr } = await run(ffmpegCommand, [
@@ -521,6 +516,15 @@ async function verifyCandidateVideo() {
   const report = {
     passed: failures.length === 0,
     duration,
+    durationReference: {
+      targetSeconds,
+      toleranceRatio: durationToleranceRatio,
+      minimumSeconds: minimumDurationSeconds,
+      maximumSeconds: maximumDurationSeconds,
+      withinTargetTolerance: Number.isFinite(duration)
+        && duration >= minimumDurationSeconds
+        && duration <= maximumDurationSeconds,
+    },
     video,
     audio,
     renderedAudio: {

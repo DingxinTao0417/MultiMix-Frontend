@@ -90,16 +90,16 @@ describe("video project browse-player contract", () => {
     expect(editorView).toContain("initialSegmentId={initialSegmentId}");
   });
 
-  test("mounts the editor export bridge only after explicit edit or export intent", () => {
-    expect(workspace).toContain("shadcn-prototype-export-bridge");
+  test("exports through the already-mounted browse preview without opening an editor bridge", () => {
+    expect(workspace).not.toContain("shadcn-prototype-export-bridge");
     expect(workspace).toContain("{exportButtonLabel}");
     expect(workspace).toContain("canBrowseVideo ? (");
-    expect(workspace).toContain("{!isTextEditing && hasVideoProject && editorRequested ? (");
+    expect(workspace).toContain("{!isTextEditing && showEditorEmbed ? (");
     expect(workspace).toContain("pendingExportRef.current = true");
     expect(workspace).toContain('setExportState("preparing")');
-    expect(workspace).toContain('type: "multimix-editor-sync"');
-    expect(workspace).toContain('type: "multimix-editor-ready-ack"');
-    expect(editorView).toContain('message.type === "multimix-editor-sync"');
+    expect(workspace).toContain("projectPreviewRef.current?.export()");
+    expect(preview).toContain("export: () => boolean");
+    expect(projectPreview).toContain('postCommand("multimix-editor-export")');
     expect(editorView).toContain('message.type === "multimix-editor-ready-ack"');
     expect(editorView).toContain('/mp4');
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");

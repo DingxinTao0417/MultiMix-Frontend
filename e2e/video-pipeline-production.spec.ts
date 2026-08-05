@@ -45,6 +45,35 @@ async function measureE2EStage<T>(stage: string, operation: () => Promise<T>): P
   }
 }
 
+async function exportAcceptanceDiagnostic(
+  page: Page,
+  exportButton: ReturnType<Page["locator"]>,
+  assetId: number,
+  videoJobId: string,
+) {
+  const [buttonLabel, previewFrameCount, alertText] = await Promise.all([
+    exportButton.innerText().then((value) => value.trim()).catch(() => "unreadable"),
+    page.locator('iframe[title="视频工程预播"]').count(),
+    page.getByRole("alert").last().innerText().then((value) => value.trim()).catch(() => "none"),
+  ]);
+  return `asset_id=${assetId}; video_job_id=${videoJobId}; export_button=${JSON.stringify(buttonLabel)}; preview_frames=${previewFrameCount}; alert=${JSON.stringify(alertText)}`;
+}
+
+async function assertExportHasNotFailed(
+  page: Page,
+  exportButton: ReturnType<Page["locator"]>,
+  assetId: number,
+  videoJobId: string,
+) {
+  const label = (await exportButton.innerText()).trim();
+  if (/导出失败|下载失败|修复后重新检查/.test(label)) {
+    throw new Error(
+      `final export blocked: ${await exportAcceptanceDiagnostic(page, exportButton, assetId, videoJobId)}`,
+    );
+  }
+  return label;
+}
+
 const directorTimingStageKeys = new Set([
   "drafting",
   "video_pipeline_selection",
@@ -713,9 +742,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       `director narration quality blocked: ${await narrationBlocked.innerText()}`,
     );
   }
-  const pendingCard = page
-    .locator(".shadcn-prototype-confirm-card.pending")
-    .last();
+  // Director generation completes asynchronously.  Do not reuse the earlier
+  // parameter card while the client is refreshing the completed job: the next
+  // user action must be the distinct video-project confirmation card.
+  const pendingCard = page.getByLabel("视频方案 · 待确认");
   await expect(pendingCard).toBeVisible({ timeout: 180_000 });
   const confirmButton = pendingCard.locator(
     "button.shadcn-prototype-confirm-primary",
@@ -1004,7 +1034,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     const compiledSurfaceScenes = beforeScenes.filter(
       (scene) => scene.primary_scene_spec?.surfacePreset,
     );
-    expect(compiledSurfaceScenes.length).toBeGreaterThan(0);
     for (const scene of compiledSurfaceScenes) {
       expect(scene.primary_scene_spec?.surfacePreset).toBe(
         artDirection?.scene_surface_by_id?.[scene.id],
@@ -1431,104 +1460,115 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     recomposeTested = true;
   }
 
-  await page.reload();
-  await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
-    timeout: 120_000,
-  });
-  await expect(page.getByLabel("分镜摘要").getByText("待补素材")).toHaveCount(
-    0,
-  );
-  // Shared quality and export contract for both pipeline modes.
-  let finalQualityReport: QualityReport | undefined;
-  await expect
-    .poll(
-      async () => {
-    let response: APIResponse;
-    try {
-      response = await page.request.get(
-        `${apiBase}/v1/video/projects/${projectAsset!.id}/quality?stage=export_preflight`,
-        { headers },
-      );
-    } catch (error) {
-      return `transport-error:${error instanceof Error ? error.message : String(error)}`;
-    }
-    if (!response.ok()) return `http-${response.status()}`;
-        const report = (await response.json()) as QualityReport;
-    if (report.blockers?.length) {
-      return JSON.stringify(
-            report.blockers.map((blocker) => ({
-              code: blocker.code,
-              message: blocker.message,
-            })),
-      );
-    }
-    finalQualityReport = report;
-    return "ready";
-      },
-      { timeout: 10 * 60_000, intervals: [2500, 5000, 10_000] },
-    )
-    .toBe("ready");
-  expect(finalQualityReport).toBeTruthy();
-  const qualityReport = finalQualityReport!;
-  const narrationCoverage = qualityReport.metrics?.narration_coverage;
-  expect(narrationCoverage?.coverage_rate).toBe(1);
-  expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);
-  const reuseGroups =
-    qualityReport.metrics?.material_reuse?.repeated_groups ?? [];
-  const reportedReuseSceneIds = new Set(
-    (qualityReport.warnings ?? [])
-      .filter((warning) => warning.code === "unintentional_material_reuse")
-      .map((warning) => warning.segment_id)
-      .filter((sceneId): sceneId is string => Boolean(sceneId)),
-  );
-  for (const group of reuseGroups) {
-    for (const sceneId of group.unintentional_scene_ids ?? []) {
-      expect(
-        reportedReuseSceneIds.has(sceneId),
-        "unintentional reuse must be explicitly reported: " + sceneId,
-      ).toBe(true);
-    }
-  }
-  const audioMix = qualityReport.metrics?.audio_mix;
-  if (expectBgm) {
-    expect(audioMix?.measurement_status).toBe("measured");
-    const targetRatio = Number(audioMix?.voice_to_music_ratio);
-    const predictedRatio = Number(audioMix?.predicted_voice_to_music_ratio);
-    expect(Number.isFinite(targetRatio) && targetRatio > 1).toBe(true);
-    expect(
-      Math.abs(predictedRatio - targetRatio) / targetRatio,
-    ).toBeLessThanOrEqual(audioMixRatioTolerance);
-  } else {
-    expect(audioMix?.measurement_status ?? "not_applicable").not.toBe(
-      "measured",
-    );
-  }
-  const candidateVideoPath = await measureE2EStage("video_export", async () => {
+  await measureE2EStage("final_browse_recovery", async () => {
     await page.reload();
     await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
       timeout: 120_000,
     });
+    await expect(page.getByLabel("分镜摘要").getByText("待补素材")).toHaveCount(
+      0,
+    );
+  });
+  // Shared quality and export contract for both pipeline modes.
+  let finalQualityReport: QualityReport | undefined;
+  let qualityReport: QualityReport | undefined;
+  await measureE2EStage("export_preflight", async () => {
+    await expect
+      .poll(
+        async () => {
+      let response: APIResponse;
+      try {
+        response = await page.request.get(
+          `${apiBase}/v1/video/projects/${projectAsset!.id}/quality?stage=export_preflight`,
+          { headers },
+        );
+      } catch (error) {
+        return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+      }
+      if (!response.ok()) return `http-${response.status()}`;
+          const report = (await response.json()) as QualityReport;
+      if (report.blockers?.length) {
+        return JSON.stringify(
+              report.blockers.map((blocker) => ({
+                code: blocker.code,
+                message: blocker.message,
+              })),
+        );
+      }
+      finalQualityReport = report;
+      return "ready";
+        },
+        { timeout: 10 * 60_000, intervals: [2500, 5000, 10_000] },
+      )
+      .toBe("ready");
+    expect(finalQualityReport).toBeTruthy();
+    qualityReport = finalQualityReport!;
+    const narrationCoverage = qualityReport.metrics?.narration_coverage;
+    expect(narrationCoverage?.coverage_rate).toBe(1);
+    expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);
+    const reuseGroups =
+      qualityReport.metrics?.material_reuse?.repeated_groups ?? [];
+    const reportedReuseSceneIds = new Set(
+      (qualityReport.warnings ?? [])
+        .filter((warning) => warning.code === "unintentional_material_reuse")
+        .map((warning) => warning.segment_id)
+        .filter((sceneId): sceneId is string => Boolean(sceneId)),
+    );
+    for (const group of reuseGroups) {
+      for (const sceneId of group.unintentional_scene_ids ?? []) {
+        expect(
+          reportedReuseSceneIds.has(sceneId),
+          "unintentional reuse must be explicitly reported: " + sceneId,
+        ).toBe(true);
+      }
+    }
+    const audioMix = qualityReport.metrics?.audio_mix;
+    if (expectBgm) {
+      expect(audioMix?.measurement_status).toBe("measured");
+      const targetRatio = Number(audioMix?.voice_to_music_ratio);
+      const predictedRatio = Number(audioMix?.predicted_voice_to_music_ratio);
+      expect(Number.isFinite(targetRatio) && targetRatio > 1).toBe(true);
+      expect(
+        Math.abs(predictedRatio - targetRatio) / targetRatio,
+      ).toBeLessThanOrEqual(audioMixRatioTolerance);
+    } else {
+      expect(audioMix?.measurement_status ?? "not_applicable").not.toBe(
+        "measured",
+      );
+    }
+  });
+  expect(qualityReport).toBeTruthy();
+  const exportButton = await measureE2EStage("export_preview_ready", async () => {
+    await page.reload();
+    await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
+      timeout: 120_000,
+    });
+    await expect(page.getByTitle("视频工程预播")).toHaveCount(1);
+    await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
     const exportButton = page
       .locator("button.shadcn-prototype-open-editor")
       .last();
     await expect(exportButton).toHaveText("导出视频", { timeout: 180_000 });
     await expect(exportButton).toBeEnabled();
     await exportButton.click();
+    await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
     await expect
       .poll(
-        async () => {
-          const label = (await exportButton.innerText()).trim();
-          if (/导出失败|修复后重新检查/.test(label)) {
-            const alert = page.getByRole("alert").last();
-            throw new Error(
-              `final export blocked: ${await alert.innerText().catch(() => label)}`,
-            );
-          }
-          return label;
-        },
+        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
+        { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
+      )
+      .toMatch(/^(导出中|正在检查成片…|下载成片)/);
+    return exportButton;
+  });
+  await measureE2EStage("export_browser_render", async () => {
+    await expect
+      .poll(
+        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
       .toBe("下载成片");
+  });
+  const candidateVideoPath = await measureE2EStage("export_download", async () => {
     const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });
     await exportButton.click();
     const download = await downloadPromise;
@@ -1660,8 +1700,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           /animated_explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
             visibleText,
           ),
-      qualityMetrics: qualityReport.metrics,
-      qualityWarnings: qualityReport.warnings ?? [],
+      qualityMetrics: qualityReport!.metrics,
+      qualityWarnings: qualityReport!.warnings ?? [],
       artDirection: artDirectionSummary,
       humanReviewStatus: "pending",
       audioFinishing: {

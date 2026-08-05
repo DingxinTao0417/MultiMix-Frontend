@@ -14,6 +14,7 @@ import {
 } from "react";
 
 import { formatPreviewTime } from "./video-preview-player";
+import type { VideoQualityReport } from "../lib/video-quality";
 
 type EditorPreviewMessage = {
   source?: string;
@@ -23,11 +24,15 @@ type EditorPreviewMessage = {
   duration?: number;
   playing?: boolean;
   message?: string;
+  progress?: number;
+  report?: VideoQualityReport;
+  blob?: Blob;
   previewChannel?: string;
 };
 
 export type VideoProjectPreviewHandle = {
   seekAndPlay: (time: number) => void;
+  export: () => boolean;
 };
 
 export type VideoProjectPreviewProps = {
@@ -37,6 +42,13 @@ export type VideoProjectPreviewProps = {
   channelId?: string;
   onTimeUpdate?: (time: number) => void;
   onError?: () => void;
+  onReadyChange?: (ready: boolean) => void;
+  onExportStart?: () => void;
+  onExportProgress?: (progress: number | null) => void;
+  onExportVerifying?: () => void;
+  onExportQualityReport?: (report: VideoQualityReport) => void;
+  onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
+  onExportError?: (message: string) => void;
   recoveryNotice?: {
     message: string;
     actionLabel: string;
@@ -52,6 +64,13 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     channelId,
     onTimeUpdate,
     onError,
+    onReadyChange,
+    onExportStart,
+    onExportProgress,
+    onExportVerifying,
+    onExportQualityReport,
+    onExportSuccess,
+    onExportError,
     recoveryNotice,
   }, forwardedRef) {
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -67,6 +86,10 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     const progressPercent = safeDuration > 0
       ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
       : 0;
+
+    useEffect(() => {
+      onReadyChange?.(ready && !failed);
+    }, [failed, onReadyChange, ready]);
 
     useEffect(() => {
       setReady(false);
@@ -116,7 +139,12 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         seek(time);
         postCommand("multimix-editor-preview-play");
       },
-    }), [postCommand, seek]);
+      export() {
+        if (!ready || failed) return false;
+        postCommand("multimix-editor-export");
+        return true;
+      },
+    }), [failed, postCommand, ready, seek]);
 
     useEffect(() => {
       if (typeof window === "undefined") return;
@@ -140,6 +168,34 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
           onError?.();
           return;
         }
+        if (data.type === "multimix-editor-export-start") {
+          onExportStart?.();
+          return;
+        }
+        if (data.type === "multimix-editor-export-progress") {
+          onExportProgress?.(
+            typeof data.progress === "number"
+              ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
+              : null,
+          );
+          return;
+        }
+        if (data.type === "multimix-editor-export-verifying") {
+          onExportVerifying?.();
+          return;
+        }
+        if (data.type === "multimix-editor-export-quality-report" && data.report) {
+          onExportQualityReport?.(data.report);
+          return;
+        }
+        if (data.type === "multimix-editor-export-success") {
+          onExportSuccess?.(data.report, data.blob);
+          return;
+        }
+        if (data.type === "multimix-editor-export-error") {
+          onExportError?.(data.message || "成片合成失败，请重试。");
+          return;
+        }
         if (data.type !== "multimix-editor-preview-state") return;
 
         postCommand("multimix-editor-ready-ack");
@@ -157,7 +213,20 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       };
       window.addEventListener("message", onMessage);
       return () => window.removeEventListener("message", onMessage);
-    }, [assetId, onError, onTimeUpdate, previewChannel]);
+    }, [
+      assetId,
+      onError,
+      onExportError,
+      onExportProgress,
+      onExportQualityReport,
+      onExportStart,
+      onExportSuccess,
+      onExportVerifying,
+      onReadyChange,
+      onTimeUpdate,
+      postCommand,
+      previewChannel,
+    ]);
 
     const handleSeek = (event: ChangeEvent<HTMLInputElement>) => {
       seek(Number(event.currentTarget.value));

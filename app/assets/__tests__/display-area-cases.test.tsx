@@ -30,6 +30,26 @@ function renderWorkspace(caseId: keyof typeof displayProducts) {
   );
 }
 
+function previewChannel(frame: HTMLIFrameElement): string {
+  return new URL(frame.src, window.location.origin).searchParams.get("previewChannel") ?? "";
+}
+
+function dispatchPreviewMessage(
+  frame: HTMLIFrameElement,
+  assetId: string | number | undefined,
+  data: Record<string, unknown>,
+) {
+  window.dispatchEvent(new MessageEvent("message", {
+    origin: window.location.origin,
+    data: {
+      source: "multimix-editor",
+      assetId,
+      previewChannel: previewChannel(frame),
+      ...data,
+    },
+  }));
+}
+
 describe("display-area eight-case matrix", () => {
   it("renders a director script as continuous text without video chrome", () => {
     render(<ProductPreview product={{
@@ -250,7 +270,8 @@ describe("display-area eight-case matrix", () => {
     }} />);
 
     expect(screen.getByText("动画编排：自动丰富")).toBeInTheDocument();
-    expect(screen.getByText("2 个分镜 MG 增强")).toBeInTheDocument();
+    expect(screen.getByText("2 个分镜动态增强")).toBeInTheDocument();
+    expect(screen.queryByText("2 个分镜 MG 增强")).not.toBeInTheDocument();
     expect(screen.getByText("1 个受限全屏动画")).toBeInTheDocument();
     expect(screen.getByText("3 个分镜保护真实素材")).toBeInTheDocument();
     expect(screen.getByText("4 类受控效果")).toBeInTheDocument();
@@ -328,24 +349,19 @@ describe("display-area eight-case matrix", () => {
         token="test-token"
       />,
     );
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
     fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
 
     expect(await screen.findByText("第 1 段主画面缺失")).toBeVisible();
-    expect(screen.getByRole("button", { name: "正在准备编辑器…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在准备预览导出…" })).toBeDisabled();
 
-    const frame = await screen.findByTitle("视频剪辑器") as HTMLIFrameElement;
-    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
     fireEvent.load(frame);
     expect(postMessage).toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-sync" },
+      { source: "multimix-workspace", type: "multimix-editor-preview-sync" },
       window.location.origin,
     );
-    const readyEvent = new MessageEvent("message", {
-      origin: window.location.origin,
-      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
-    });
-    Object.defineProperty(readyEvent, "source", { value: frame.contentWindow });
-    window.dispatchEvent(readyEvent);
+    dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
       { source: "multimix-workspace", type: "multimix-editor-export" },
@@ -353,7 +369,7 @@ describe("display-area eight-case matrix", () => {
     ));
   });
 
-  it("allows warning-only preflight to reach the editor export bridge", async () => {
+  it("allows warning-only preflight to export through the existing preview", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     const warningOnly: VideoQualityReport = {
       stage: "export_preflight",
@@ -379,16 +395,11 @@ describe("display-area eight-case matrix", () => {
       />,
     );
     expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
     fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
 
-    const frame = await screen.findByTitle("视频剪辑器") as HTMLIFrameElement;
-    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
-    const readyEvent = new MessageEvent("message", {
-      origin: window.location.origin,
-      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
-    });
-    Object.defineProperty(readyEvent, "source", { value: frame.contentWindow });
-    window.dispatchEvent(readyEvent);
+    dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
       { source: "multimix-workspace", type: "multimix-editor-export" },
@@ -409,24 +420,13 @@ describe("display-area eight-case matrix", () => {
       />,
     );
 
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     await act(async () => {
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-ready",
-        },
-      }));
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-export-error",
-          message: "VideoFrames can't be created from tainted sources.",
-        },
-      }));
+      dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
+      dispatchPreviewMessage(frame, product.backendAssetId, {
+        type: "multimix-editor-export-error",
+        message: "VideoFrames can't be created from tainted sources.",
+      });
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -447,24 +447,13 @@ describe("display-area eight-case matrix", () => {
       />,
     );
 
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     await act(async () => {
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-ready",
-        },
-      }));
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-export-progress",
-          progress: 0.42,
-        },
-      }));
+      dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
+      dispatchPreviewMessage(frame, product.backendAssetId, {
+        type: "multimix-editor-export-progress",
+        progress: 0.42,
+      });
     });
 
     expect(screen.getByRole("button", { name: "导出中 42%" })).toBeDisabled();
@@ -474,25 +463,14 @@ describe("display-area eight-case matrix", () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     renderWorkspace("case-06-project-ready-no-mp4");
 
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     await act(async () => {
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-ready",
-        },
-      }));
-      window.dispatchEvent(new MessageEvent("message", {
-        origin: window.location.origin,
-        data: {
-          source: "multimix-editor",
-          assetId: product.backendAssetId,
-          type: "multimix-editor-export-success",
-          report: { stage: "export_output", status: "passed", blockers: [], warnings: [] },
-          blob: new Blob(["verified-mp4"], { type: "video/mp4" }),
-        },
-      }));
+      dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
+      dispatchPreviewMessage(frame, product.backendAssetId, {
+        type: "multimix-editor-export-success",
+        report: { stage: "export_output", status: "passed", blockers: [], warnings: [] },
+        blob: new Blob(["verified-mp4"], { type: "video/mp4" }),
+      });
     });
 
     expect(screen.getByRole("button", { name: "下载成片" })).toBeEnabled();

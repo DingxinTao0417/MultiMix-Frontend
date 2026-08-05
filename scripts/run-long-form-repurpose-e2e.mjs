@@ -56,10 +56,10 @@ const frontendSnapshots = ["next-env.d.ts", "tsconfig.json"].map((relativePath) 
 });
 const backendEnv = {
   ...process.env,
-  CHANGEIN_TEST_DATABASE_URL: `sqlite:///file:multimix-long-form-e2e-${runId}?mode=memory&cache=shared&uri=true`,
-  CHANGEIN_SUPABASE_URL: "",
-  CHANGEIN_SUPABASE_SERVICE_ROLE_KEY: "",
-  CHANGEIN_S3_ENDPOINT_URL: "",
+  MULTIMIX_TEST_DATABASE_URL: `sqlite:///file:multimix-long-form-e2e-${runId}?mode=memory&cache=shared&uri=true`,
+  MULTIMIX_SUPABASE_URL: "",
+  MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
+  MULTIMIX_S3_ENDPOINT_URL: "",
 };
 
 function findFreePort() {

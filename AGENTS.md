@@ -19,6 +19,13 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。当前整改项统一记录在工作区 `../docs/plans/active/`，历史审查和完成计划只在 `../docs/archive/` 追溯，不另维护容易失真的长期 GAPS 清单。工作区文档地图见 `../docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/authority/asset-understanding-and-segment-referencing.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
+## 生产部署目标（强制核对）
+
+- **Vercel 当前生产目标唯一为**：team `lywgood96-1172s-projects`、project `multimix-frontend`，生产地址 `https://multimix-frontend.vercel.app`。查询、部署、环境变量、域名或回滚前必须显式核对 team 与 project，不得依赖当前目录的自动解析。
+- **Railway 当前生产目标唯一为**：workspace `woshiliyuewen's Projects`、project `multimix-production`、environment `production`。任何跨仓库后端部署、接口地址或变量核对都必须以此为目标，不得依赖本地 CLI link。
+- `kind-ambition`（Railway）及 `changein`、`changein-api`（Vercel）均为旧项目。除非用户当次明确指定维护旧项目，否则禁止向它们查询生产结论、写入变量、发布、重启或绑定域名。
+- 工具返回的目标与上述任一标识不一致时，立即停止并报告，不得因名称相近或旧 link 继续操作。
+
 ## 技术栈
 
 - 前端：Next.js 15 (App Router) + React 19 + TypeScript strict、lucide-react、react-markdown、Supabase Auth（可选）、ESLint flat config（`next/core-web-vitals` + `next/typescript`）、vitest

@@ -10,7 +10,8 @@ assert.ok(markdownDocument.includes("shadcn-prototype-copy-document shadcn-proto
 assert.ok(preview.includes("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface"), "video browse must use the shared product-stage scroll surface");
 assert.ok(workspace.includes('product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : ""'), "plain video previews must use the shared product-stage scroll surface without nesting it around video browse");
 assert.ok(workspace.includes('!showEditorEmbed && previewShowsBrowse ? ('), "all video-project browse paths must render without the generic video scroll wrapper");
-assert.ok(workspace.includes('{!isTextEditing && hasVideoProject && editorRequested ? ('), "video browse must mount the editor bridge only after explicit edit or export intent");
+assert.ok(workspace.includes('{!isTextEditing && showEditorEmbed ? ('), "video browse must mount the editor only after an explicit edit intent");
+assert.ok(!workspace.includes("shadcn-prototype-export-bridge"), "video export must reuse the visible browse preview instead of mounting a hidden editor bridge");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-stage-scroll-surface\s*\{[^}]*width:\s*calc\(100% \+ 24px\);[^}]*margin-right:\s*-24px;[^}]*padding-right:\s*var\(--shadcn-prototype-stage-scroll-right-padding, 24px\);/s, "the product stage must expand into the product pane's right inset");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-artifact \.shadcn-prototype-product-main\s*\{[^}]*overflow:\s*visible;/s, "the product main must not clip the expanded stage scrollbar");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-product-preview\.copy\s*\{[^}]*overflow:\s*visible;/s, "the copy preview wrapper must not clip its inner scroll surface");

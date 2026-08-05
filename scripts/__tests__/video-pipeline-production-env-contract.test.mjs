@@ -57,6 +57,14 @@ test("production video E2E writes a timing ledger for runner and browser stages"
   assert.match(source, /Browser pipeline timings \(slowest first\)/);
 });
 
+test("production video E2E records target duration as a reference instead of rejecting length drift", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(source, /durationReference/);
+  assert.match(source, /!Number\.isFinite\(duration\)\s*\|\|\s*duration <= 0/s);
+  assert.doesNotMatch(source, /duration < minimumDurationSeconds\s*\|\|\s*duration > maximumDurationSeconds/s);
+});
+
 test("production video browser flow records its major user-visible pipeline waits", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
@@ -66,7 +74,11 @@ test("production video browser flow records its major user-visible pipeline wait
     "document_upload",
     "director_generation",
     "video_project_ready",
+    "final_browse_recovery",
+    "export_preflight",
     "export_preview_ready",
+    "export_browser_render",
+    "export_download",
   ]) {
     assert.match(source, new RegExp(`measureE2EStage\\("${stage}"`));
   }
