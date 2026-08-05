@@ -197,6 +197,23 @@ export function buildConversationMessagePayload({
   };
 }
 
+const VIDEO_PARAMETER_CONFIRMATION_HEADER = "X-MultiMix-Video-Parameter-Confirmation";
+
+export function buildVideoParameterConfirmationHeaders(
+  confirmation?: AssetVideoParameterConfirmation,
+): Record<string, string> {
+  if (!confirmation) return {};
+  const payload = {
+    pending_intent_id: confirmation.pendingIntentId,
+    version: confirmation.version,
+    ratio: confirmation.ratio,
+    target_seconds: confirmation.targetSeconds,
+  };
+  return {
+    [VIDEO_PARAMETER_CONFIRMATION_HEADER]: `v1.${encodeURIComponent(JSON.stringify(payload))}`,
+  };
+}
+
 function mapAgentAction(response: ApiAgentActionRunResponse): AgentActionRunResponse {
   return {
     id: response.id,
@@ -954,7 +971,10 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
-        headers: clientRequestId ? { "X-Request-ID": clientRequestId } : undefined,
+        headers: {
+          ...(clientRequestId ? { "X-Request-ID": clientRequestId } : {}),
+          ...buildVideoParameterConfirmationHeaders(videoParameterConfirmation),
+        },
         body: JSON.stringify(buildConversationMessagePayload({
           conversationId,
           instruction,

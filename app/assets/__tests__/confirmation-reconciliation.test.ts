@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildVideoParameterConfirmationHeaders,
   buildConversationMessagePayload,
   findConversationByClientRequestId,
 } from "../lib/asset-workspace-adapter";
@@ -43,6 +44,22 @@ describe("video confirmation transport reconciliation", () => {
       version: 1,
       ratio: "9:16",
       target_seconds: 45,
+    });
+  });
+
+  it("adds a URL-safe confirmation header without removing the JSON contract", () => {
+    expect(buildVideoParameterConfirmationHeaders({
+      pendingIntentId: "pending-1",
+      version: 1,
+      ratio: "9:16",
+      targetSeconds: 45,
+    })).toEqual({
+      "X-MultiMix-Video-Parameter-Confirmation": `v1.${encodeURIComponent(JSON.stringify({
+        pending_intent_id: "pending-1",
+        version: 1,
+        ratio: "9:16",
+        target_seconds: 45,
+      }))}`,
     });
   });
 
