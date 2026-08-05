@@ -4831,6 +4831,8 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  flex: none;
   min-width: 0;
   padding: 6px 6px 0;
   overflow: hidden;
