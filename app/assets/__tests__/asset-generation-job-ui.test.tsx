@@ -38,6 +38,22 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.getAllByText("正在整理编导稿").length).toBeGreaterThan(0);
   });
 
+  it("shows real byte progress while staging a long-form source", () => {
+    render(<AssetGenerationJobCard job={job({
+      status: "running",
+      stage: "source_staging",
+      progress_events: [{
+        key: "source_staging",
+        label: "正在准备原片",
+        detail: "正在准备原片（18.2 MB / 27.7 MB，66%）。",
+        status: "active",
+        occurred_at: "2026-08-05T06:00:01Z",
+      }],
+    })} />);
+
+    expect(screen.getByText("正在准备原片（18.2 MB / 27.7 MB，66%）。")).not.toBeNull();
+  });
+
   it("collapses a completed task and lets the user review its steps", () => {
     render(<AssetGenerationJobCard job={job({ status: "completed", stage: "completed", progress_events: [{ key: "drafting", label: "正在生成内容", detail: "", status: "completed", occurred_at: "2026-07-17T06:00:01Z" }, { key: "completed", label: "内容生成已完成", detail: "已保存", status: "completed", occurred_at: "2026-07-17T06:00:02Z" } ] })} />);
     expect(screen.queryByText("已保存")).toBeNull();

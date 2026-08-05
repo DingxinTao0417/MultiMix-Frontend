@@ -92,7 +92,7 @@ export function generationTimelineSteps(
       ?? (running ? new Date(now).toISOString() : undefined);
     return {
       key: event.key,
-      label: event.label,
+      label: event.key === "source_staging" && event.detail ? event.detail : event.label,
       status: failed ? "fail" : running ? "run" : "done",
       elapsedSeconds: elapsedSeconds(event.occurred_at, nextTimestamp),
       elapsedLabel: running ? generationElapsedLabel(job, now) ?? undefined : undefined,
