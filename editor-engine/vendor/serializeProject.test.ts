@@ -157,12 +157,18 @@ describe('BGM editor round-trip', () => {
       { status: 200 },
     ));
     vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('window', {});
+    vi.stubGlobal('window', {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:hydrated-bgm');
 
     await initEditorWithProject(backend);
 
-    expect(fetchMock).toHaveBeenCalledWith('https://signed.example.test/bgm-tech-01');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://signed.example.test/bgm-tech-01',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(editorMock.media.setAssets).toHaveBeenCalled();
   });
 

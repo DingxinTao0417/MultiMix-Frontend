@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  preserveSelectedConversationDetail,
+  shouldLoadConversationDetail,
+  shouldRestoreInitialConversationFocus,
+} from "../lib/conversation-detail-load-policy";
 
 function readWorkspaceClient(): string {
   const localPath = resolve(process.cwd(), "app/assets/components/assets-workspace-client.tsx");
@@ -23,18 +28,20 @@ describe("new conversation routing", () => {
   });
 
   it("does not let a delayed summaries refresh replace an intentional new conversation", () => {
-    const client = readWorkspaceClient();
-
-    expect(client).toContain('selectedConversationIdRef.current !== "new"');
-    expect(client).toContain("pendingConversationNavigationRef.current");
-    expect(client).toContain('pendingConversationId !== initialConversationId');
-    expect(client).toContain('routeConversationId !== initialConversationId');
-    expect(client).toContain('currentRouteConversationId === initialConversationId');
-    expect(client).toContain('selectedConversationIdRef.current = conversationId;');
-    expect(client).toContain('selectedConversationIdRef.current = "new";');
-    expect(client).toMatch(
-      /const conversationId = resolveInitialConversationId\(initialConversationId, conversations\);\s+selectedConversationIdRef\.current = conversationId;\s+setSelectedConversationId\(conversationId\);/,
-    );
+    expect(shouldRestoreInitialConversationFocus({
+      pendingConversationId: null,
+      routeConversationId: "historical-1",
+      initialConversationId: "historical-1",
+      selectedConversationId: "new",
+      summaryIds: ["historical-1"],
+    })).toBe(false);
+    expect(shouldRestoreInitialConversationFocus({
+      pendingConversationId: null,
+      routeConversationId: "historical-1",
+      initialConversationId: "historical-1",
+      selectedConversationId: "historical-1",
+      summaryIds: ["historical-1"],
+    })).toBe(true);
   });
 
   it("reloads legacy conversation rows unless their detail flag is explicitly true", () => {
@@ -65,15 +72,18 @@ describe("new conversation routing", () => {
   });
 
   it("loads a deep-linked historical conversation even when it is outside the recent summary page", () => {
-    const client = readWorkspaceClient();
+    const detail = { id: "historical-1", detailsLoaded: true, title: "历史会话" };
+    const recent = { id: "recent-1", detailsLoaded: false, title: "最近会话" };
 
-    expect(client).toContain(
-      "const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;",
-    );
-    expect(client).toContain("if (selectedDetailLoaded) return;");
-    expect(client).toContain("return [detail, ...current];");
-    expect(client).toContain("conversation.id === selectedConversationIdRef.current");
-    expect(client).toContain("selectedDetail && !merged.some");
-    expect(client).not.toContain("if (!summary || summary.detailsLoaded === true) return;");
+    expect(shouldLoadConversationDetail({
+      hasToken: true,
+      conversationId: detail.id,
+      detailsLoaded: false,
+    })).toBe(true);
+    expect(preserveSelectedConversationDetail({
+      merged: [recent],
+      current: [detail],
+      selectedConversationId: detail.id,
+    })).toEqual([detail, recent]);
   });
 });

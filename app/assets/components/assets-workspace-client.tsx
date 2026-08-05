@@ -49,7 +49,11 @@ import {
   readConversationSummaryCache,
   writeConversationSummaryCache,
 } from "../lib/conversation-summary-cache";
-import { shouldLoadConversationDetail } from "../lib/conversation-detail-load-policy";
+import {
+  preserveSelectedConversationDetail,
+  shouldLoadConversationDetail,
+  shouldRestoreInitialConversationFocus,
+} from "../lib/conversation-detail-load-policy";
 import {
   agentActionPollLifecycleKey,
   agentActionPollOutcome,
@@ -793,35 +797,25 @@ export default function AssetsWorkspaceClient({
         }
         setConversations((current) => {
           const merged = assetWorkspaceAdapter.mergeConversationSummaries(summaries, current);
-          const selectedDetail = current.find((conversation) => (
-            conversation.id === selectedConversationIdRef.current
-            && conversation.detailsLoaded === true
-          ));
           // A direct link can target an older conversation outside the compact
           // recent-summary page. Keep its fully loaded detail when that page
           // arrives after the detail request, rather than replacing it with an
           // unrelated first summary row.
-          if (selectedDetail) {
-            const detailExistsInSummaries = merged.some((conversation) => (
-              conversation.id === selectedDetail.id
-            ));
-            return detailExistsInSummaries
-              ? merged.map((conversation) => (
-                conversation.id === selectedDetail.id ? selectedDetail : conversation
-              ))
-              : [selectedDetail, ...merged];
-          }
-          return merged;
+          return preserveSelectedConversationDetail({
+            merged,
+            current,
+            selectedConversationId: selectedConversationIdRef.current,
+          });
         });
         setConversationLoadState("ready");
         const currentRouteConversationId = new URL(window.location.href).searchParams.get("conversation");
-        if (
-          !pendingConversationNavigationRef.current &&
-          currentRouteConversationId === initialConversationId &&
-          selectedConversationIdRef.current !== "new"
-          && initialConversationId
-          && summaries.some((conversation) => conversation.id === initialConversationId)
-        ) {
+        if (initialConversationId && shouldRestoreInitialConversationFocus({
+          pendingConversationId: pendingConversationNavigationRef.current,
+          routeConversationId: currentRouteConversationId,
+          initialConversationId,
+          selectedConversationId: selectedConversationIdRef.current,
+          summaryIds: summaries.map((conversation) => conversation.id),
+        })) {
           setSelectedConversationId(initialConversationId);
           setActiveView("conversation");
           if (initialProductId) {

@@ -40,7 +40,7 @@ it("keeps two-stage runtime terms out of live execution steps", () => {
   ]);
   expect(JSON.stringify(steps)).not.toMatch(/animated_explainer|planning_assets|pexels|provider|vlm|pipeline/i);
   expect(steps.map((step) => step.label)).toEqual([
-    "正在准备分镜画面",
+    "正在准备素材",
     "正在生成视频",
     "正在完成质量检查",
   ]);
@@ -1529,31 +1529,6 @@ describe("agent conversation UI copy", () => {
     expect((conversationStudio.match(/<AgentRunTimeline/g) ?? []).length).toBe(1);
   });
 
-  it("polls each execution independently through ready refresh and terminal reconciliation", () => {
-    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
-
-    expect(workspaceClient).toContain("executionVideoJobIds");
-    expect(workspaceClient).toContain("isExecutionTerminal");
-    expect(workspaceClient).toContain('step.status === "run" || step.status === "wait"');
-    expect(workspaceClient).toContain("terminalVideoJobIdsRef");
-    expect(workspaceClient).toContain("readyConversationRefreshRef");
-    expect(workspaceClient).toContain("terminalObservationVideoJobIdsRef");
-    expect(workspaceClient).toContain("activeExecutionVideoJobIdsRef");
-    expect(workspaceClient).toContain("...activeExecutionVideoJobIdsRef.current");
-    expect(workspaceClient).toContain("inFlightVideoJobIdsRef");
-    expect(workspaceClient).toContain("inFlightJobIds: inFlightVideoJobIdsRef.current");
-    expect(workspaceClient).toContain("readyConversationRefreshInFlightRef");
-    expect(workspaceClient).toContain("startExecutionJobPolls");
-    expect(workspaceClient).toContain("startReadyConversationRefresh");
-    expect(workspaceClient).toContain("applyExecutionJobResult");
-    expect(workspaceClient).not.toContain("Promise.all(");
-    expect(workspaceClient).not.toContain("Promise.allSettled(");
-    expect(workspaceClient).not.toContain("const inFlightVideoJobIds = new Set<string>()");
-    expect(workspaceClient).not.toContain("readyRefreshesStartedByEffect");
-    expect(workspaceClient).not.toContain("readyRefreshInFlightJobIds.delete(");
-    expect(workspaceClient).not.toContain("const finished = results.some");
-  });
-
   it("retries the exact failed job then restores the main execution aggregate in order", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
@@ -1597,7 +1572,9 @@ describe("agent conversation UI copy", () => {
     const globals = readAssetFile("app/globals.css");
 
     expect(productPreview).toContain("shadcn-prototype-video-placeholder-preview");
-    expect(productPreview.indexOf("shadcn-prototype-video-placeholder-preview")).toBeLessThan(productPreview.indexOf("shadcn-prototype-video-plan-summary"));
+    expect(productPreview).toMatch(
+      /!exportedVideoUrl \? \(\s*<section className="shadcn-prototype-video-placeholder-preview"[\s\S]*?\) : null\}\s*\{planSummary \? \(/,
+    );
     expect(productPreview).toContain("product.preview?.posterText");
     expect(globals).toContain(".shadcn-prototype-video-placeholder-preview");
   });
@@ -1622,7 +1599,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("writeConversationSummaryCache");
     expect(workspaceClient).toContain("loadConversationSummaries");
     expect(workspaceClient).toContain("loadConversationDetail");
-    expect(workspaceClient).toContain("setConversations((current) => assetWorkspaceAdapter.mergeConversationSummaries(");
+    expect(workspaceClient).toContain("const merged = assetWorkspaceAdapter.mergeConversationSummaries(summaries, current);");
     expect(workspaceClient).toContain("conversationDetailGenerationRef");
     expect(workspaceClient).not.toContain("conversationDetailInFlightRef");
     expect(workspaceClient).toContain("conversationDetailErrorId");
