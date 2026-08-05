@@ -207,13 +207,11 @@ export default function ProductPreview({
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
   const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
-  const [projectPreviewFailed, setProjectPreviewFailed] = useState(false);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
     setProjectPreviewRequested(true);
-    setProjectPreviewFailed(false);
   }, [exportedVideoUrl, product.id]);
 
   if (product.status.startsWith("工程异常")) {
@@ -412,14 +410,13 @@ export default function ProductPreview({
               }}
               onError={() => setFullVideoFailed(true)}
             />
-          ) : product.backendAssetId && projectPreviewRequested && !projectPreviewFailed ? (
+          ) : product.backendAssetId && projectPreviewRequested ? (
             <VideoProjectPreview
               ref={projectPreviewRef}
               assetId={product.backendAssetId}
               ratioClassName={getProductRatioClass(product.ratio)}
               durationSeconds={durationSeconds}
               onTimeUpdate={(time) => setActiveSegmentId(activeSegmentAtTime(product.segments, time))}
-              onError={() => setProjectPreviewFailed(true)}
               recoveryNotice={fullVideoFailed ? {
                 message: "成片暂时无法播放，已切换到分镜预览",
                 actionLabel: "重试成片",
@@ -443,7 +440,7 @@ export default function ProductPreview({
               if (showFullVideo && player && player.readyState >= 3 && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
                 void player.play().catch(() => {});
-              } else if (!showFullVideo && projectPreviewRequested && !projectPreviewFailed && segment.startSeconds != null) {
+              } else if (!showFullVideo && projectPreviewRequested && segment.startSeconds != null) {
                 projectPreviewRef.current?.seekAndPlay(segment.startSeconds);
               }
             }}

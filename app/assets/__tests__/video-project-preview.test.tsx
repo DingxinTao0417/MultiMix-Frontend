@@ -59,7 +59,7 @@ describe("video project preview", () => {
     const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     expect(iframe).toHaveAttribute(
       "src",
-      "/editor?asset=9100&embed=1&mode=preview&previewChannel=preview-test",
+      "/editor?asset=9100&embed=1&mode=preview&previewChannel=preview-test&previewRetry=0",
     );
 
     publishPreviewState(iframe);
@@ -114,6 +114,31 @@ describe("video project preview", () => {
     expect(postMessage.mock.calls.filter(([payload]) => (
       (payload as { type?: string }).type === "multimix-editor-preview-sync"
     ))).toHaveLength(0);
+  });
+
+  it("keeps a failed engineering preview in the player and reloads it on demand", () => {
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    const firstIframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(firstIframe, { type: "multimix-editor-error" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("预览暂时无法加载，可先查看分镜");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载预览" }));
+
+    const retriedIframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    expect(retriedIframe).not.toBe(firstIframe);
+    expect(retriedIframe).toHaveAttribute(
+      "src",
+      "/editor?asset=9100&embed=1&mode=preview&previewChannel=preview-test&previewRetry=1",
+    );
+    expect(screen.getByText("正在准备预览")).toBeInTheDocument();
   });
 
   it("sends toggle, seek, and segment jump commands only to its own iframe", () => {

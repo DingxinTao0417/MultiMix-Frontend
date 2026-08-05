@@ -23,10 +23,9 @@ describe("video project browse-player contract", () => {
     expect(preview).not.toContain("<VideoPreviewResizer");
     expect(preview).not.toContain("previewHeight");
     expect(preview).toContain("exportedVideoUrl && !fullVideoFailed");
-    expect(preview).toContain("projectPreviewRequested && !projectPreviewFailed");
+    expect(preview).toContain("product.backendAssetId && projectPreviewRequested");
     expect(preview).toContain('useState(true)');
-    expect(preview).toMatch(/setFullVideoFailed\(false\);\s*setProjectPreviewRequested\(true\);\s*setProjectPreviewFailed\(false\);/s);
-    expect(preview).toContain("加载完整工程预览");
+    expect(preview).toMatch(/setFullVideoFailed\(false\);\s*setProjectPreviewRequested\(true\);/s);
     expect(preview).not.toContain("点击任意分镜可跳转成片");
     expect(preview).not.toContain("点击任意分镜可切换预览");
     expect(projectPreview).toContain("mode=preview");
@@ -50,10 +49,10 @@ describe("video project browse-player contract", () => {
     expect(storyboardPreview).toContain("mediaUrlForRef");
     expect(storyboardPreview).not.toContain("initEditorWithProject");
     expect(storyboardPreview).not.toContain("Promise.all");
-    expect(preview).toContain("onError={() => setProjectPreviewFailed(true)}");
     expect(preview).toContain("setProjectPreviewRequested(true)");
     expect(preview).not.toContain("shouldOwnRenderedReview");
-    expect(preview).toContain("重新加载完整工程预览");
+    expect(projectPreview).toContain("重新加载预览");
+    expect(projectPreview).toContain("previewRetry=");
   });
 
   test("renders segment videos as a complete player inside the shared shell", () => {

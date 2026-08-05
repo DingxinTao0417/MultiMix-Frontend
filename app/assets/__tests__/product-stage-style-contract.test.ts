@@ -68,8 +68,8 @@ describe("product stage style contract", () => {
     expect(css).not.toMatch(/video-project-mode[^}]*height:\s*26px/s);
   });
 
-  test("keeps the video preview above an independently scrolling storyboard list", () => {
-    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*hidden;/s);
+  test("keeps the video preview in the current natural-scroll browse layout", () => {
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*visible;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*flex:\s*0 0 auto;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-segment-cards\s*>\s*ol\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s);
@@ -84,7 +84,7 @@ describe("product stage style contract", () => {
   });
 
   test("keeps media canvases frameless while giving both preview paths the approved shell", () => {
-    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*justify-items:\s*center;[^}]*border:\s*0;[^}]*padding:\s*4px 0 0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*justify-items:\s*center;[^}]*border:\s*0;[^}]*padding:\s*0 0 20px;/s);
     expect(css).toMatch(/\.shadcn-prototype-project-preview\s*\{[^}]*height:\s*auto;[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player\s*\{[^}]*border:\s*1px solid #eae7e1;[^}]*border-radius:\s*20px;[^}]*background:\s*#ffffff;[^}]*box-shadow:\s*0 2px 6px rgba\(32, 31, 30, 0\.05\), 0 16px 40px rgba\(32, 31, 30, 0\.07\);[^}]*padding:\s*7px;/s);
     expect(css).toMatch(/\.shadcn-prototype-preview-player-screen\s*\{[^}]*border-radius:\s*14px;/s);

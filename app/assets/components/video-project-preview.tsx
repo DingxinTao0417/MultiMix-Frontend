@@ -62,6 +62,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     const [playing, setPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(durationSeconds);
+    const [iframeRevision, setIframeRevision] = useState(0);
     const safeDuration = duration > 0 ? duration : Math.max(0, durationSeconds);
     const progressPercent = safeDuration > 0
       ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
@@ -73,7 +74,16 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       setPlaying(false);
       setCurrentTime(0);
       setDuration(durationSeconds);
-    }, [assetId, durationSeconds]);
+    }, [assetId, durationSeconds, iframeRevision]);
+
+    const retryPreview = useCallback(() => {
+      setReady(false);
+      setFailed(false);
+      setPlaying(false);
+      setCurrentTime(0);
+      setDuration(durationSeconds);
+      setIframeRevision((revision) => revision + 1);
+    }, [durationSeconds]);
 
     const postCommand = useCallback((type: string, time?: number) => {
       const target = iframeRef.current?.contentWindow;
@@ -153,25 +163,33 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       seek(Number(event.currentTarget.value));
     };
 
+    const notice = failed
+      ? {
+          message: "预览暂时无法加载，可先查看分镜",
+          actionLabel: "重新加载预览",
+          onAction: retryPreview,
+        }
+      : recoveryNotice;
+
     return (
       <div className={`shadcn-prototype-preview-player ${ratioClassName}`} aria-label="视频工程播放器">
         <div className="shadcn-prototype-preview-player-screen">
           <iframe
+            key={iframeRevision}
             ref={iframeRef}
             className="shadcn-prototype-project-preview-frame"
-            src={`/editor?asset=${encodeURIComponent(String(assetId))}&embed=1&mode=preview&previewChannel=${encodeURIComponent(previewChannel)}`}
+            src={`/editor?asset=${encodeURIComponent(String(assetId))}&embed=1&mode=preview&previewChannel=${encodeURIComponent(previewChannel)}&previewRetry=${iframeRevision}`}
             title="视频工程预播"
             allow="autoplay"
             onLoad={() => postCommand("multimix-editor-preview-sync")}
           />
-          {recoveryNotice ? (
+          {notice ? (
             <div className="shadcn-prototype-project-preview-notice" role="alert">
-              <span>{recoveryNotice.message}</span>
-              <button type="button" onClick={recoveryNotice.onAction}>{recoveryNotice.actionLabel}</button>
+              <span>{notice.message}</span>
+              <button type="button" onClick={notice.onAction}>{notice.actionLabel}</button>
             </div>
-          ) : !ready && !failed ? <span className="shadcn-prototype-project-preview-loading">正在准备预览</span> : null}
-          {!recoveryNotice && failed ? <span className="shadcn-prototype-project-preview-loading" role="alert">暂时无法播放预览，可先查看分镜</span> : null}
-          {!failed ? (
+          ) : !ready ? <span className="shadcn-prototype-project-preview-loading">正在准备预览</span> : null}
+          {!notice ? (
             <button
               type="button"
               className="shadcn-prototype-project-preview-toggle"
