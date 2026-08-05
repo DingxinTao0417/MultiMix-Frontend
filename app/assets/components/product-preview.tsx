@@ -199,6 +199,7 @@ export type ProductPreviewHandle = {
 
 type ProductPreviewProps = {
   product: ProductArtifact;
+  onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
   onPreviewReadyChange?: (ready: boolean) => void;
@@ -212,6 +213,7 @@ type ProductPreviewProps = {
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
   product,
+  onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
   onPreviewReadyChange,
@@ -227,11 +229,13 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
+  const [fullVideoRecoveryPending, setFullVideoRecoveryPending] = useState(false);
   const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
   const exportedVideoUrl = playableVideoUrl(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
+    setFullVideoRecoveryPending(false);
     setProjectPreviewRequested(true);
   }, [exportedVideoUrl, product.id]);
 
@@ -451,8 +455,16 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
               onExportError={onExportError}
               recoveryNotice={fullVideoFailed ? {
                 message: "成片暂时无法播放，已切换到分镜预览",
-                actionLabel: "重试成片",
-                onAction: () => setFullVideoFailed(false),
+                actionLabel: fullVideoRecoveryPending ? "正在重新生成…" : "重试成片",
+                onAction: () => {
+                  if (!onRetryVideoJob) {
+                    setFullVideoFailed(false);
+                    return;
+                  }
+                  if (fullVideoRecoveryPending) return;
+                  setFullVideoRecoveryPending(true);
+                  void onRetryVideoJob(product).catch(() => setFullVideoRecoveryPending(false));
+                },
               } : undefined}
             />
           ) : (

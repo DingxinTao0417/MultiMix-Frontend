@@ -194,14 +194,17 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
   });
 
-  it("switches a failed full video to a recoverable storyboard preview", () => {
-    const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
+  it("starts a real recovery for a failed full video", async () => {
+    const retryVideo = vi.fn(async () => undefined);
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const { container } = render(<ProductPreview product={product} onRetryVideoJob={retryVideo} />);
 
     fireEvent.error(container.querySelector("video")!);
     expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("成片暂时无法播放");
     fireEvent.click(screen.getByRole("button", { name: "重试成片" }));
-    expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
+    await waitFor(() => expect(retryVideo).toHaveBeenCalledWith(product));
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
   });
 
   it("shows a real saved-asset thumbnail without calling it fallback material", () => {

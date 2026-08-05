@@ -903,6 +903,7 @@ export default function ProductWorkspace({
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
+              onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
               onEditVoiceover={
                 token && product.backendAssetId
