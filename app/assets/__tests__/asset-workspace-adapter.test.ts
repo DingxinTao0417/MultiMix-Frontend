@@ -207,6 +207,25 @@ describe("runtime data boundary", () => {
     });
   });
 
+  it("maps a stored image reference through the media proxy for a list thumbnail", async () => {
+    const image = asset({
+      id: 73,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "storyboard_image",
+      original_ref: "supabase://assets/user-73/scene.png",
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "image");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]?.previewUrl).toContain("/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png");
+  });
+
   it("preserves the backend content type needed by long-form library actions", async () => {
     const source = asset({
       id: 91,

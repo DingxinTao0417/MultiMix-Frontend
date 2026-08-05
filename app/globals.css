@@ -4829,10 +4829,22 @@ button:disabled {
 
 .shadcn-prototype-library-media-frame {
   position: relative;
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   padding: 6px 6px 0;
   overflow: hidden;
+}
+
+/* Keep the media area visible even when an older asset has no preview image.
+   The prior child-only percentage ratio could collapse this frame to its 6px
+   top padding during grid sizing. */
+.shadcn-prototype-library-media-card.with-image-media .shadcn-prototype-library-media-frame {
+  aspect-ratio: 4 / 3;
+}
+
+.shadcn-prototype-library-media-card.with-video-media .shadcn-prototype-library-media-frame {
+  aspect-ratio: 16 / 9;
 }
 
 .shadcn-prototype-library-media-cat {
@@ -5182,6 +5194,11 @@ button:disabled {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.shadcn-prototype-library-media-frame .shadcn-prototype-library-media-thumb {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 .shadcn-prototype-library-detail {

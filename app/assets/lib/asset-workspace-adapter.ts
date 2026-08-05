@@ -595,6 +595,13 @@ export function mediaProxyUrl(ref: string): string {
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
 }
 
+function browserReadableAssetRef(value: unknown): string | undefined {
+  const ref = stringValue(value);
+  if (!ref) return undefined;
+  if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
+  return mediaProxyUrl(ref);
+}
+
 function previewUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   const videoProject = metadata.video_project && typeof metadata.video_project === "object" && !Array.isArray(metadata.video_project)
@@ -610,8 +617,8 @@ function previewUrlForAsset(asset: ContentAsset): string | undefined {
     asset.original_ref
   ];
   return candidates
-    .map((item) => typeof item === "string" ? item.trim() : "")
-    .find((item) => /^https?:\/\//i.test(item));
+    .map(browserReadableAssetRef)
+    .find((item): item is string => Boolean(item));
 }
 
 function thumbnailUrlForAsset(asset: ContentAsset): string | undefined {
@@ -619,8 +626,8 @@ function thumbnailUrlForAsset(asset: ContentAsset): string | undefined {
   const thumbnailRef = typeof metadata.thumbnail_ref === "string" ? metadata.thumbnail_ref.trim() : "";
   if (thumbnailRef) return mediaProxyUrl(thumbnailRef);
   return [metadata.thumbnail_url, metadata.poster_url]
-    .map((item) => typeof item === "string" ? item.trim() : "")
-    .find((item) => /^https?:\/\//i.test(item));
+    .map(browserReadableAssetRef)
+    .find((item): item is string => Boolean(item));
 }
 
 function statusLabel(status: string): string {
