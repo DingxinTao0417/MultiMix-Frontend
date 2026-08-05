@@ -4801,7 +4801,8 @@ button:disabled {
   flex-direction: column;
   gap: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  clip-path: inset(0 round 16px);
   border: 1px solid var(--sp-border);
   border-radius: 16px;
   background: var(--sp-card);

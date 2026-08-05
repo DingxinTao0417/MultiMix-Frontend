@@ -1403,6 +1403,7 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-library-grid.view-video");
     expect(globals).toContain(".shadcn-prototype-library-media-thumb.video");
     expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{\s*display: flex;\s*flex-direction: column;/);
+    expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{[^}]*overflow: visible;[^}]*clip-path: inset\(0 round 16px\);/);
     expect(globals).toMatch(/\.shadcn-prototype-library-media-frame\s*\{[^}]*width: 100%;[^}]*flex: none;[^}]*overflow: visible;/);
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-image-media .shadcn-prototype-library-media-frame");
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-video-media .shadcn-prototype-library-media-frame");
