@@ -758,7 +758,7 @@ try {
     assertResumeManifest();
   } else {
     for (const generatedName of ["browser-result.json", "qa-report.md", "video-pipeline-ready.png", "multimix-candidate.mp4", "keyframes"]) {
-      fs.rmSync(path.join(resultDir, generatedName), { force: true });
+      fs.rmSync(path.join(resultDir, generatedName), { recursive: true, force: true });
     }
   }
   fs.mkdirSync(artifactDir, { recursive: true });
