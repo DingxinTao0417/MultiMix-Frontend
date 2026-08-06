@@ -31,6 +31,7 @@ describe("editor layout constraints", () => {
 	});
 
 	it("keeps preview controls inside the preview area with hidden centered playback", () => {
+		const view = readProjectFile("app/editor/EditorView.tsx");
 		const previewPanel = readProjectFile(
 			"editor-engine/vendor/editor/components/editor/panels/preview/index.tsx",
 		);
@@ -57,6 +58,8 @@ describe("editor layout constraints", () => {
 		expect(previewToolbar).not.toContain("<TimecodeDisplay />");
 		expect(previewToolbar).not.toContain("formatTimeCode");
 		expect(timelineToolbar).not.toContain("editor-preview-toolbar-slot");
+		expect(view).toContain('message.type === "multimix-editor-bgm-open"');
+		expect(view).toContain("open={isBgmPanelOpen}");
 	});
 
 	it("renders MG animation as normal timeline blocks instead of a collapsed summary overlay", () => {
@@ -95,5 +98,10 @@ describe("editor layout constraints", () => {
 		expect(panel.indexOf("await waitForVideoJob(result.job.id)")).toBeLessThan(
 			panel.indexOf("await reloadAndClose()"),
 		);
+	});
+
+	it("does not expose material replacement before a visual timeline segment is selected", () => {
+		const panel = readProjectFile("editor-engine/vendor/ReplacePanel.tsx");
+		expect(panel).toContain("if (!canReplace) return null;");
 	});
 });

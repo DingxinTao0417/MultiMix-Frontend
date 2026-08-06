@@ -63,6 +63,8 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   const segmentId = selEl ? segmentIdByElementId[selEl.id] || "" : "";
   const canReplace = Boolean(selEl && segmentId && assetId && token);
 
+  if (!canReplace) return null;
+
   async function reloadProject() {
     if (!assetId) return;
     const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
@@ -243,8 +245,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-5 py-5">
-            {selEl ? (
-              <div className="space-y-5">
+            <div className="space-y-5">
                 <div className="rounded-2xl border border-[#eceef0] bg-[#f7f8f5] p-4">
                   <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#627069]">当前片段文案</div>
                   <div className="text-[13px] leading-6 text-[#17211d]">
@@ -291,11 +292,6 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
                   </div>
                 ) : null}
               </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-[#cbd6ce] bg-[#f7f8f5] px-4 py-6 text-[13px] leading-6 text-[#627069]">
-                请先在时间轴中选中一个图片或视频片段，再打开这里替换素材。
-              </div>
-            )}
           </div>
         </div>
       </SheetContent>

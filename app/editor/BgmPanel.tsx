@@ -11,6 +11,7 @@ import {
   type BGMCatalogTrack,
   type BGMUpdateResponse,
 } from "../../editor-engine/vendor/api";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../editor-engine/vendor/editor/components/ui/sheet";
 
 const CATEGORIES = [
   "商务稳重",
@@ -27,12 +28,16 @@ export default function BgmPanel({
   assetId,
   token,
   initialChoice = null,
+  open = true,
+  onOpenChange,
   onPrepareChange,
   onProjectChanged,
 }: {
   assetId: string;
   token: string | null;
   initialChoice?: BGMChoice | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   onPrepareChange: () => Promise<void>;
   onProjectChanged: (result: BGMUpdateResponse) => Promise<void>;
 }) {
@@ -47,6 +52,12 @@ export default function BgmPanel({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
+    if (!open) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setPreviewingId(null);
+      return;
+    }
     setChoice(initialChoice);
     if (initialChoice?.enabled === false) {
       setLoading(false);
@@ -76,7 +87,7 @@ export default function BgmPanel({
       active = false;
       audioRef.current?.pause();
     };
-  }, [assetId, initialChoice, token]);
+  }, [assetId, initialChoice, open, token]);
 
   const tracks = useMemo(() => {
     if (!catalog) return [];
@@ -128,6 +139,15 @@ export default function BgmPanel({
     }
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setPreviewingId(null);
+    }
+    onOpenChange?.(nextOpen);
+  }
+
   async function restoreAutomatic() {
     if (updating) return;
     if (catalog) {
@@ -150,73 +170,78 @@ export default function BgmPanel({
   }
 
   return (
-    <aside className="editor-bgm-panel" aria-label="背景音乐">
-      <div className="editor-bgm-heading">
-        <div>
-          <strong>背景音乐</strong>
-          <span>{choice?.enabled === false ? "已关闭" : choice?.selected_by === "auto" ? "已自动配乐" : "已自选"}</span>
-        </div>
-        <div className="editor-bgm-actions">
-          <button type="button" disabled={updating || loading || choice?.enabled === false} onClick={() => void mutate("disable")}>无配乐</button>
-          <button type="button" disabled={updating || loading} onClick={() => void restoreAutomatic()}>恢复自动配乐</button>
-        </div>
-      </div>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent side="right" className="w-[420px] max-w-[92vw] border-l border-[#ece8e1] bg-[#fffffd] p-0">
+        <aside className="editor-bgm-panel" aria-label="背景音乐">
+          <SheetHeader className="editor-bgm-heading">
+            <div>
+              <SheetTitle>背景音乐</SheetTitle>
+              <span>{choice?.enabled === false ? "已关闭" : choice?.selected_by === "auto" ? "已自动配乐" : "已自选"}</span>
+            </div>
+            <div className="editor-bgm-actions">
+              <button type="button" disabled={updating || loading || choice?.enabled === false} onClick={() => void mutate("disable")}>无配乐</button>
+              <button type="button" disabled={updating || loading} onClick={() => void restoreAutomatic()}>恢复自动配乐</button>
+            </div>
+          </SheetHeader>
+          <SheetDescription className="sr-only">选择、关闭或恢复本视频的背景音乐。</SheetDescription>
 
-      {choice?.enabled === false && !catalog ? (
-        <div className="editor-bgm-list" aria-live="polite">
-          <p className="editor-bgm-empty">本片未使用背景音乐。</p>
-        </div>
-      ) : (
-        <>
-          <div className="editor-bgm-filters" aria-label="音乐分类">
-            {FILTERS.map((item) => (
-              <button
-                type="button"
-                key={item}
-                className={filter === item ? "active" : ""}
-                aria-pressed={filter === item}
-                onClick={() => setFilter(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+          {choice?.enabled === false && !catalog ? (
+            <div className="editor-bgm-list" aria-live="polite">
+              <p className="editor-bgm-empty">本片未使用背景音乐。</p>
+            </div>
+          ) : (
+            <>
+              <div className="editor-bgm-filters" aria-label="音乐分类">
+                {FILTERS.map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={filter === item ? "active" : ""}
+                    aria-pressed={filter === item}
+                    onClick={() => setFilter(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
 
-          <div className="editor-bgm-list" aria-live="polite">
-            {loading ? <p className="editor-bgm-empty">正在加载内置音乐…</p> : null}
-            {!loading && tracks.length === 0 ? <p className="editor-bgm-empty">这个分类暂无可用音乐。</p> : null}
-            {tracks.map((track) => {
-              const current = choice?.enabled !== false && choice?.catalog_id === track.id;
-              const reason = track.match_reason
-                || (choice?.catalog_id === track.id ? choice.selection_reason : choice?.alternate_reasons?.[track.id]);
-              return (
-                <article className={`editor-bgm-card${current ? " current" : ""}`} key={track.id}>
-                  <div className="editor-bgm-card-copy">
-                    <span className="editor-bgm-title" data-current={current ? "true" : "false"}>{track.title}</span>
-                    <span>{track.category} · {track.mood_tags.join(" / ")}</span>
-                    <span>{track.provider || "内置音乐"} · {Math.round(track.duration_seconds)} 秒</span>
-                    {reason ? <small>{reason}</small> : null}
-                  </div>
-                  <div className="editor-bgm-card-actions">
-                    <button type="button" onClick={() => togglePreview(track)}>
-                      {previewingId === track.id ? "停止试听" : "试听"}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={updating || current}
-                      aria-label={`选择 ${track.title}`}
-                      onClick={() => void mutate("select", track.id)}
-                    >
-                      {current ? "当前" : "选择"}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </>
-      )}
-      {message ? <p className={message.startsWith("更换失败") || message.includes("加载失败") ? "editor-bgm-message error" : "editor-bgm-message"}>{message}</p> : null}
-    </aside>
+              <div className="editor-bgm-list" aria-live="polite">
+                {loading ? <p className="editor-bgm-empty">正在加载内置音乐…</p> : null}
+                {!loading && tracks.length === 0 ? <p className="editor-bgm-empty">这个分类暂无可用音乐。</p> : null}
+                {tracks.map((track) => {
+                  const current = choice?.enabled !== false && choice?.catalog_id === track.id;
+                  const reason = track.match_reason
+                    || (choice?.catalog_id === track.id ? choice.selection_reason : choice?.alternate_reasons?.[track.id]);
+                  return (
+                    <article className={`editor-bgm-card${current ? " current" : ""}`} key={track.id}>
+                      <div className="editor-bgm-card-copy">
+                        <span className="editor-bgm-title" data-current={current ? "true" : "false"}>{track.title}</span>
+                        <span>{track.category} · {track.mood_tags.join(" / ")}</span>
+                        <span>{track.provider || "内置音乐"} · {Math.round(track.duration_seconds)} 秒</span>
+                        {reason ? <small>{reason}</small> : null}
+                      </div>
+                      <div className="editor-bgm-card-actions">
+                        <button type="button" onClick={() => togglePreview(track)}>
+                          {previewingId === track.id ? "停止试听" : "试听"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={updating || current}
+                          aria-label={`选择 ${track.title}`}
+                          onClick={() => void mutate("select", track.id)}
+                        >
+                          {current ? "当前" : "选择"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {message ? <p className={message.startsWith("更换失败") || message.includes("加载失败") ? "editor-bgm-message error" : "editor-bgm-message"}>{message}</p> : null}
+        </aside>
+      </SheetContent>
+    </Sheet>
   );
 }

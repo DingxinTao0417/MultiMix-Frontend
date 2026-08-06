@@ -434,21 +434,12 @@
   }
 
   .editor-bgm-panel {
-    position: absolute;
-    z-index: 24;
-    top: 12px;
-    right: 12px;
     display: grid;
-    width: min(360px, calc(100% - 24px));
-    max-height: calc(100% - 24px);
+    height: 100%;
+    min-height: 0;
     gap: 10px;
-    overflow: hidden;
-    border: 1px solid #e5e1da;
-    border-radius: 16px;
-    background: rgba(255, 255, 255, 0.96);
-    padding: 12px;
-    box-shadow: 0 18px 48px rgba(32, 31, 30, 0.14);
-    backdrop-filter: blur(16px);
+    overflow: auto;
+    padding: 20px;
   }
 
   .editor-bgm-heading,
@@ -463,6 +454,10 @@
   .editor-bgm-card {
     justify-content: space-between;
     gap: 10px;
+  }
+
+  .editor-bgm-heading {
+    padding-right: 32px;
   }
 
   .editor-bgm-heading > div:first-child,
@@ -530,6 +525,7 @@
 
   .editor-bgm-list {
     display: grid;
+    flex: 1;
     min-height: 58px;
     gap: 7px;
     overflow-y: auto;

@@ -72,6 +72,50 @@ afterEach(() => {
 });
 
 describe("BgmPanel", () => {
+  it("stays closed until the detail entry opens it, then closes and stops preview audio", async () => {
+    const instances: Array<{ pause: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> }> = [];
+    class PreviewAudio {
+      pause = vi.fn();
+      play = vi.fn().mockResolvedValue(undefined);
+      constructor(_url: string) {
+        void _url;
+        instances.push(this);
+      }
+      addEventListener() {}
+    }
+    vi.stubGlobal("Audio", PreviewAudio);
+    const onOpenChange = vi.fn();
+    const { rerender } = render(
+      <BgmPanel
+        assetId="12"
+        token="token"
+        open={false}
+        onOpenChange={onOpenChange}
+        onPrepareChange={vi.fn()}
+        onProjectChanged={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText("背景音乐")).not.toBeInTheDocument();
+
+    rerender(
+      <BgmPanel
+        assetId="12"
+        token="token"
+        open
+        onOpenChange={onOpenChange}
+        onPrepareChange={vi.fn()}
+        onProjectChanged={vi.fn()}
+      />,
+    );
+    const card = (await screen.findByText("科技脉冲")).closest("article");
+    fireEvent.click(within(card!).getByRole("button", { name: "试听" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(instances[0].pause).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the current automatic choice and all six music categories", async () => {
     render(
       <BgmPanel

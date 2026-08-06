@@ -301,6 +301,15 @@ export default function ProductWorkspace({
     );
   }, []);
 
+  const requestBgmPanelOpen = useCallback(() => {
+    const frameWindow = editorFrameRef.current?.contentWindow;
+    if (!frameWindow || typeof window === "undefined") return;
+    frameWindow.postMessage(
+      { source: "multimix-workspace", type: "multimix-editor-bgm-open" },
+      window.location.origin,
+    );
+  }, []);
+
   useEffect(() => {
     if (!showEditorEmbed || editorReady || typeof window === "undefined") return;
     requestEditorReadiness();
@@ -697,10 +706,20 @@ export default function ProductWorkspace({
                   </div>
                 </section>
 
-                {canBrowseVideo && (videoBgmSummary || product.sourceSummary) ? (
+                {canBrowseVideo ? (
                   <section className="shadcn-prototype-detail-section">
                     <h4>本片素材</h4>
-                    {videoBgmSummary ? <p className="shadcn-prototype-detail-bgm">背景音乐：{videoBgmSummary}</p> : null}
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="shadcn-prototype-detail-bgm">背景音乐：{videoBgmSummary || "未使用"}</p>
+                      <button
+                        type="button"
+                        disabled={!showEditorEmbed || !editorReady}
+                        onClick={requestBgmPanelOpen}
+                        className="shrink-0 rounded-full border border-[#ddd9d1] bg-white px-3 py-1.5 text-xs font-semibold text-[#4d4944] disabled:cursor-default disabled:opacity-50"
+                      >
+                        {showEditorEmbed ? editorReady ? "更换配乐" : "配乐加载中…" : "进入编辑后更换"}
+                      </button>
+                    </div>
                     {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
                   </section>
                 ) : null}

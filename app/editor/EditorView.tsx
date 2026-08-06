@@ -93,6 +93,7 @@ export default function EditorView({
   const [error, setError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [loadingDetail, setLoadingDetail] = useState("");
+  const [isBgmPanelOpen, setIsBgmPanelOpen] = useState(false);
   const startedRef = useRef(false);
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
@@ -312,6 +313,10 @@ export default function EditorView({
         readyAcknowledgedRef.current = true;
         return;
       }
+      if (message.type === "multimix-editor-bgm-open") {
+        if (!previewOnly && state === "ready") setIsBgmPanelOpen(true);
+        return;
+      }
       const syncRequested = message.type === "multimix-editor-sync"
         || (previewOnly && message.type === "multimix-editor-preview-sync");
       if (syncRequested) {
@@ -405,6 +410,8 @@ export default function EditorView({
                   assetId={assetId}
                   token={token}
                   initialChoice={projectBgmChoice(loadedProjectRef.current)}
+                  open={isBgmPanelOpen}
+                  onOpenChange={setIsBgmPanelOpen}
                   onPrepareChange={persistCurrentProject}
                   onProjectChanged={handleBgmProjectChanged}
                 />
