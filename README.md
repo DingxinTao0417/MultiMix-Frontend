@@ -105,7 +105,7 @@ Open:
 
 Local development uses the configured authentication mode. The workspace only displays data returned by `NEXT_PUBLIC_API_BASE_URL`.
 
-Optional local environment variables can be copied from `.env.example` into `.env.local`. `LLM_API` is reserved for a local or server-side generation proxy and must not be exposed through a `NEXT_PUBLIC_` variable.
+Optional local environment variables can be copied from `.env.example` into `.env.local`.
 
 ## Data Boundary
 

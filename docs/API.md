@@ -123,7 +123,7 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 - `loadConversations`、`listLibrary` 和所有写操作只访问真实后端。
 - 同步方法只提供空结构和纯展示 helper；不能提供演示内容。
 - 失败由调用组件显示可重试状态；不能回退 fixture。
-- 服务端密钥（如 `LLM_API`）只能在 adapter 的服务端代码路径使用，**禁止加 `NEXT_PUBLIC_` 前缀**。
+- 服务端密钥只能在服务端代码路径使用，**禁止加 `NEXT_PUBLIC_` 前缀**。
 
 ---
 
@@ -594,7 +594,6 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 | `NEXT_PUBLIC_SUPABASE_URL` | 是 | Supabase Auth 项目 URL；与 publishable key 同时配置才启用 |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | 是 | Supabase 浏览器公钥；不是 service-role key |
 | `NEXT_PUBLIC_API_BASE_URL` | 是 | 真实后端 API 基址；未配置时工作台显示未连接/空态 |
-| `LLM_API` | **否** | LLM 服务端密钥；**禁止加 `NEXT_PUBLIC_` 前缀**（会暴露到客户端） |
 
 数据边界（严格遵守）：
 - **提交**：UI 代码、测试专用最小 fixtures、文档。
