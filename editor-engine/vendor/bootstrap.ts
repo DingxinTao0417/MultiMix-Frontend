@@ -10,15 +10,77 @@ export type HydrateProgress = (loaded: number, total: number) => void;
 
 // A playable project must not wait forever for one remote media connection.
 // This is a no-response bound per resource, not a cap on project playback.
-const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 90_000;
+const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 300_000;
 
-async function fetchMediaBlob(url: string): Promise<Blob> {
+type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "timeout";
+
+type DownloadedMediaBlob = {
+  blob: Blob;
+  bytes: number;
+  contentType: string;
+  durationMs: number;
+  status: number;
+};
+
+class MediaHydrationError extends Error {
+  constructor(
+    readonly reason: MediaHydrationFailureReason,
+    readonly durationMs: number,
+    message: string,
+    readonly metadata: Partial<Omit<DownloadedMediaBlob, "blob" | "durationMs">> = {},
+  ) {
+    super(message);
+    this.name = "MediaHydrationError";
+  }
+}
+
+function elapsedMs(startedAt: number): number {
+  return Math.round(performance.now() - startedAt);
+}
+
+function diagnosticUrl(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return url.split(/[?#]/, 1)[0] || url;
+  }
+}
+
+async function fetchMediaBlob(url: string): Promise<DownloadedMediaBlob> {
+  const startedAt = performance.now();
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), MEDIA_HYDRATION_IDLE_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, MEDIA_HYDRATION_IDLE_TIMEOUT_MS);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return await response.blob();
+    const contentType = response.headers.get("content-type") || "unknown";
+    if (!response.ok) {
+      throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
+        contentType,
+        status: response.status,
+      });
+    }
+    const blob = await response.blob();
+    return {
+      blob,
+      bytes: blob.size,
+      contentType: blob.type || contentType,
+      durationMs: elapsedMs(startedAt),
+      status: response.status,
+    };
+  } catch (error) {
+    if (error instanceof MediaHydrationError) throw error;
+    throw new MediaHydrationError(
+      timedOut ? "timeout" : "network",
+      elapsedMs(startedAt),
+      error instanceof Error ? error.message : String(error),
+    );
   } finally {
     window.clearTimeout(timeout);
   }
@@ -54,16 +116,46 @@ export async function hydrateAssetFiles(
     const batchResults = await Promise.all(
       batch.map(async (asset) => {
         const url = playbackUrlById[asset.id];
+        const startedAt = performance.now();
         try {
-          if (!url) throw new Error("Missing media playback URL");
-          const blob = await fetchMediaBlob(url);
+          if (!url) throw new MediaHydrationError("missing-url", elapsedMs(startedAt), "Missing media playback URL");
+          const downloaded = await fetchMediaBlob(url);
+          const { blob } = downloaded;
           if (!blob.type.startsWith(`${asset.type}/`)) {
-            throw new Error(`Unexpected media type ${blob.type || "unknown"}`);
+            throw new MediaHydrationError("mime", downloaded.durationMs, `Unexpected media type ${blob.type || "unknown"}`, {
+              bytes: downloaded.bytes,
+              contentType: downloaded.contentType,
+              status: downloaded.status,
+            });
           }
           const file = new File([blob], asset.name, { type: blob.type });
+          console.info("media hydration succeeded", {
+            assetId: asset.id,
+            assetName: asset.name,
+            assetType: asset.type,
+            bytes: downloaded.bytes,
+            contentType: downloaded.contentType,
+            durationMs: downloaded.durationMs,
+            status: downloaded.status,
+            url: diagnosticUrl(url),
+          });
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
-          console.warn("hydrate media failed", asset.id, e);
+          const failure = e instanceof MediaHydrationError
+            ? e
+            : new MediaHydrationError("network", elapsedMs(startedAt), e instanceof Error ? e.message : String(e));
+          console.warn("media hydration failed", {
+            assetId: asset.id,
+            assetName: asset.name,
+            assetType: asset.type,
+            bytes: failure.metadata.bytes,
+            contentType: failure.metadata.contentType,
+            durationMs: failure.durationMs,
+            error: failure.message,
+            reason: failure.reason,
+            status: failure.metadata.status,
+            url: url ? diagnosticUrl(url) : undefined,
+          });
           return url ? { ...asset, url } : asset;
         } finally {
           loaded += 1;
