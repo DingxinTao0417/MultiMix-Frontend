@@ -16,6 +16,7 @@ import { ContextMenu, ContextMenuTrigger } from "@editor/components/ui/context-m
 import { usePreviewStore } from "@editor/stores/preview-store";
 import { PreviewContextMenu } from "./context-menu";
 import { PreviewToolbar } from "./toolbar";
+import { settlePreviewRender } from "./preview-render-guard";
 import {
 	PreviewViewportProvider,
 	usePreviewViewportState,
@@ -144,15 +145,19 @@ function PreviewCanvas({
 				renderingRef.current = true;
 				lastSceneRef.current = renderTree;
 				lastFrameRef.current = frame;
-				renderer
-					.renderToCanvas({
+				void settlePreviewRender(
+					renderer.renderToCanvas({
 						node: renderTree,
 						time: renderTime,
 						targetCanvas: canvasRef.current,
-					})
-					.then(() => {
+					}),
+					() => {
 						renderingRef.current = false;
-					});
+					},
+					(error) => {
+						console.warn("Preview frame render failed", error);
+					},
+				);
 			}
 		}
 	}, [renderer, renderTree, editor.playback]);
