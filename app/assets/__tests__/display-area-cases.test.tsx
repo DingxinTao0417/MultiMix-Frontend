@@ -64,10 +64,10 @@ describe("display-area eight-case matrix", () => {
   });
 
   it.each([
-    ["case-01-director-draft", "编导稿草稿"],
+    ["case-01-director-draft", "编导脚本"],
     ["case-02-saved-asset-match", "已引用 测试门店素材"],
     ["case-03-no-asset-hit", "未命中素材"],
-    ["case-08-mg-failed-project-ready", "MG 渲染失败，原分镜仍保留"],
+    ["case-08-mg-failed-project-ready", "第 1 镜动效未能完成"],
   ] as const)("renders %s truthfully", (caseId, expectedText) => {
     render(<ProductPreview product={displayProducts[caseId]} />);
     expect(screen.getAllByText(expectedText, { exact: false }).length).toBeGreaterThan(0);
@@ -297,7 +297,7 @@ describe("display-area eight-case matrix", () => {
 
   it("keeps a running project out of edit and export", () => {
     renderWorkspace("case-04-project-running");
-    expect(screen.getAllByRole("status").some((node) => node.textContent?.includes("视频工程生成中"))).toBe(true);
+    expect(screen.getAllByRole("status").some((node) => node.textContent?.includes("视频生成中"))).toBe(true);
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "导出视频" })).not.toBeInTheDocument();
   });
@@ -309,7 +309,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
   });
 
-  it.each(["case-06-project-ready-no-mp4", "case-08-mg-failed-project-ready"] as const)(
+  it.each(["case-06-project-ready-no-mp4"] as const)(
     "keeps %s editable without pretending an MP4 exists",
     (caseId) => {
       const { container } = renderWorkspace(caseId);

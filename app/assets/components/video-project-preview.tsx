@@ -82,6 +82,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(durationSeconds);
     const [iframeRevision, setIframeRevision] = useState(0);
+    const pendingSeekAndPlayRef = useRef<number | null>(null);
     const safeDuration = duration > 0 ? duration : Math.max(0, durationSeconds);
     const progressPercent = safeDuration > 0
       ? Math.min(100, Math.max(0, (currentTime / safeDuration) * 100))
@@ -134,17 +135,33 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       postCommand("multimix-editor-preview-seek", next);
     }, [onTimeUpdate, postCommand, safeDuration]);
 
+    const seekAndPlay = useCallback((time: number) => {
+      if (!Number.isFinite(time)) return;
+      seek(time);
+      if (!ready || failed) {
+        pendingSeekAndPlayRef.current = time;
+      }
+      postCommand("multimix-editor-preview-play");
+    }, [failed, postCommand, ready, seek]);
+
     useImperativeHandle(forwardedRef, () => ({
       seekAndPlay(time: number) {
-        seek(time);
-        postCommand("multimix-editor-preview-play");
+        seekAndPlay(time);
       },
       export() {
         if (!ready || failed) return false;
         postCommand("multimix-editor-export");
         return true;
       },
-    }), [failed, postCommand, ready, seek]);
+    }), [failed, postCommand, ready, seekAndPlay]);
+
+    useEffect(() => {
+      const pending = pendingSeekAndPlayRef.current;
+      if (!ready || failed || pending == null) return;
+      pendingSeekAndPlayRef.current = null;
+      seek(pending);
+      postCommand("multimix-editor-preview-play");
+    }, [failed, postCommand, ready, seek]);
 
     useEffect(() => {
       if (typeof window === "undefined") return;

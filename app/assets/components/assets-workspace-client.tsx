@@ -139,6 +139,9 @@ export type VideoJobLiveStatus = {
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   completionConfirmed: boolean;
+  productStatus?: "generating" | "completed" | "failed";
+  failureReason?: string | null;
+  failureAction?: "retry" | "modify_script" | null;
 };
 
 export function executionRunKey(jobId: string, generation: number): string {
@@ -195,6 +198,8 @@ export function executionVideoJobIds(
 }
 
 export function isExecutionTerminal(job: VideoJobResult): boolean {
+  if (job.productStatus === "generating") return false;
+  if (job.productStatus === "failed" || job.productStatus === "completed") return true;
   if (job.status === "failed") return true;
   if (job.status !== "completed") return false;
   return !job.steps.some(
@@ -1075,6 +1080,9 @@ export default function AssetsWorkspaceClient({
           renderStage: job.renderStage,
           steps: job.steps,
           errorMessage: job.errorMessage,
+          productStatus: job.productStatus,
+          failureReason: job.failureReason,
+          failureAction: job.failureAction,
           completionConfirmed: false,
         },
       }));
@@ -1283,7 +1291,10 @@ export default function AssetsWorkspaceClient({
             status: refreshed.status,
             renderStage: refreshed.renderStage,
             steps: refreshed.steps,
-            errorMessage: refreshed.errorMessage,
+          errorMessage: refreshed.errorMessage,
+          productStatus: refreshed.productStatus,
+          failureReason: refreshed.failureReason,
+          failureAction: refreshed.failureAction,
             completionConfirmed: false,
           },
         }));

@@ -80,7 +80,7 @@ describe("video browse actions", () => {
       />,
     );
 
-    expect(screen.getByRole("alert")).toHaveTextContent("视频生成失败");
+    expect(screen.getByRole("alert")).toHaveTextContent("视频失败");
     expect(screen.getByRole("button", { name: /重试生成/ })).toBeEnabled();
     expect(screen.queryByText("视频工程生成中")).not.toBeInTheDocument();
   });

@@ -580,6 +580,70 @@ function videoProjectStatusLabel(mp4State: string): string {
   return "可编辑";
 }
 
+type ProductLifecycleStatus = "generating" | "completed" | "failed";
+
+function plannedMgDecisions(metadata: Record<string, unknown>): Record<string, unknown>[] {
+  const plan = isRecord(metadata.video_plan) ? metadata.video_plan : null;
+  const scenes = Array.isArray(plan?.scenes) ? plan.scenes : [];
+  return scenes.flatMap((scene) => {
+    if (!isRecord(scene) || !isRecord(scene.mg_decision) || scene.mg_decision.needed !== true) return [];
+    return [scene.mg_decision];
+  });
+}
+
+function productLifecycleFromAsset(
+  asset: ContentAsset,
+  rawVideoProject: Record<string, unknown> | undefined,
+): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" } | undefined {
+  const metadata = asset.metadata ?? {};
+  const isVideo = asset.content_type === "video_render";
+  const isDirector = isVideoDirectorDraft(asset);
+  if (!isVideo && !isDirector) return undefined;
+
+  const workflowStage = stringValue(metadata.video_workflow_stage);
+  const failed = asset.status === "failed" || workflowStage === "video_project_failed";
+  if (failed) {
+    const needsScriptRevision = workflowStage === "needs_script_revision" || stringValue(metadata.failure_action) === "modify_script";
+    return {
+      status: "failed",
+      failureReason: stringValue(metadata.failure_reason) || asset.error_message || (needsScriptRevision
+        ? "当前编导脚本无法按现有素材和制作条件实现。"
+        : isVideo ? "视频生成未能完成。" : "编导脚本生成未能完成。"),
+      failureAction: needsScriptRevision ? "modify_script" : "retry",
+    };
+  }
+  if (isDirector) return { status: "completed" };
+  if (!rawVideoProject) {
+    if (metadata.orchestration_pending === true || ["video_project_queued", "video_project_building"].includes(workflowStage)) {
+      return { status: "generating" };
+    }
+    return { status: "failed", failureReason: "视频内容不完整，无法正常播放或编辑。", failureAction: "retry" };
+  }
+  if (!hasEditorTimelineShape(rawVideoProject)) {
+    return { status: "failed", failureReason: "视频内容不完整，无法正常播放或编辑。", failureAction: "retry" };
+  }
+  const decisions = plannedMgDecisions(metadata);
+  const failedDecision = decisions.find((decision) => stringValue(decision.status) === "failed");
+  if (failedDecision) {
+    return {
+      status: "failed",
+      failureReason: stringValue(failedDecision.last_error) || "有一个分镜动效未能完成。",
+      failureAction: "retry",
+    };
+  }
+  if (metadata.orchestration_pending !== false || decisions.some((decision) => stringValue(decision.status) !== "rendered")) {
+    return { status: "generating" };
+  }
+  return { status: "completed" };
+}
+
+function productStatusLabel(status: ProductLifecycleStatus | undefined): string | undefined {
+  if (status === "generating") return "生成中";
+  if (status === "completed") return "完成";
+  if (status === "failed") return "失败";
+  return undefined;
+}
+
 // Human-readable label for a video job's render_stage (backend enum).
 export function videoJobStageLabel(stage: string): string {
   const labels: Record<string, string> = {
@@ -601,7 +665,7 @@ export function videoJobStageLabel(stage: string): string {
     rendering: "正在生成视频",
     reviewing: "正在完成质量检查",
     quality: "正在完成质量检查",
-    needs_script_revision: "需要先调整编导稿"
+    needs_script_revision: "需要调整编导脚本"
   };
   return labels[stage] ?? "正在生成";
 }
@@ -642,7 +706,7 @@ const SAFE_BACKEND_STEP_COPY: Record<string, { key: string; label: string }> = {
   rendering: { key: "build_project", label: "正在生成视频" },
   reviewing: { key: "quality_check", label: "正在完成质量检查" },
   quality: { key: "quality_check", label: "正在完成质量检查" },
-  needs_script_revision: { key: "revise_director_script", label: "需要先调整编导稿" },
+  needs_script_revision: { key: "revise_director_script", label: "需要调整编导脚本" },
 };
 
 // Format real elapsed seconds into a merchant-facing label ("8秒" / "1分12秒").
@@ -723,20 +787,20 @@ function assetLabelFromProduct(asset: ContentAsset): string {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
-  if (asset.content_type === "video_render") return "视频工程";
+  if (asset.content_type === "video_render") return "视频";
   if (asset.content_type === "long_form_candidate_set") return "拆条候选";
   const explicit = stringValue(metadata.artifact_category);
   if (explicit) return explicit;
   if (asset.content_type === "content_plan") return "选题方案";
-  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
   if (asset.content_type === "social_post") return "文案稿";
-  if (asset.content_type === "video_render") return "视频工程";
+  if (asset.content_type === "video_render") return "视频";
   return stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
 }
 
 export function statusLabelFromProduct(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
-  if (metadata.video_project) return "视频工程";
+  if (metadata.video_project) return "视频";
   if (metadata.unsupported_adapter) return "可执行方案";
   if (metadata.template_mode === true || metadata.grounding_status === "keyword_template") return "关键词模板";
   if (metadata.no_asset_hit) return "通用能力生成";
@@ -747,11 +811,11 @@ function contentAssetTypeLabel(contentType: string): string {
   const labels: Record<string, string> = {
     content_plan: "内容方案",
     social_post: "发帖文案",
-    short_video_narration: "编导稿",
-    video_script: "编导稿",
+    short_video_narration: "编导脚本",
+    video_script: "编导脚本",
     cover_image: "封面图方案",
     storyboard_image: "分镜图方案",
-    video_render: "成片准备",
+    video_render: "视频",
     digital_human_video: "数字人视频准备",
     mg_animation_video: "MG动画准备",
     real_scene_video: "实景视频准备",
@@ -785,11 +849,13 @@ export function isEditorReadyVideoProject(
     : undefined,
 ): boolean {
   const metadata = asset.metadata ?? {};
+  const lifecycle = productLifecycleFromAsset(asset, project);
   return asset.content_type === "video_render"
     && asset.status === "ready"
     && metadata.orchestration_pending === false
     && metadata.video_workflow_stage === "video_project_ready"
-    && hasEditorTimelineShape(project);
+    && hasEditorTimelineShape(project)
+    && lifecycle?.status === "completed";
 }
 
 export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
@@ -797,6 +863,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
+  const lifecycle = productLifecycleFromAsset(asset, rawVideoProject);
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
@@ -811,24 +878,17 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const directorDraft = isVideoDirectorDraft(asset);
   // Orchestration lifecycle: pending while the async job runs, failed when the
   // job died without producing a project (retryable from the workspace).
-  const orchestrationFailed = Boolean(
-    !videoProject
-    && asset.status === "failed"
-    && typeof metadata.latest_job_public_id === "string"
-  );
-  const orchestrationPending = Boolean(
-    metadata.orchestration_pending
-    && !videoProject
-    && !orchestrationFailed
-  );
-  const invalidVideoProject = Boolean(rawVideoProject && !videoProject) || Boolean(
+  const orchestrationFailed = lifecycle?.status === "failed";
+  const orchestrationPending = lifecycle?.status === "generating";
+  const invalidVideoProject = Boolean(rawVideoProject && lifecycle?.status === "failed" && !videoProject) || Boolean(
     asset.content_type === "video_render"
     && !rawVideoProject
     && !mp4Artifact
     && !orchestrationPending
     && !orchestrationFailed
   );
-  const status = videoProject
+  const status = productStatusLabel(lifecycle?.status)
+    ?? (videoProject
     ? videoProjectStatusLabel(mp4State)
     : mp4Artifact
       ? "MP4 成片 · 已生成"
@@ -850,7 +910,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
         : "有来源"
     : noAssetHit
       ? "未命中素材"
-      : "有来源";
+      : "有来源");
   const rawRatio = stringValue(videoProject?.ratio)
     || stringValue(mp4Artifact?.ratio)
     || stringValue(intent.ratio)
@@ -866,8 +926,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频工程的一次导出结果，原视频工程仍可继续调整。" : videoProject ? "已生成可编辑视频工程，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "先生成可修改的编导稿，包含口播、分镜、画面建议和字幕重点；确认后再生成视频工程。" : "已根据对话生成草稿。",
-      status: mp4Artifact ? "成片已生成" : videoProject ? "工程已生成" : unsupported ? "待生成" : directorDraft ? "待确认" : "已生成"
+      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
+      status: productStatusLabel(lifecycle?.status) ?? (mp4Artifact ? "完成" : videoProject ? "完成" : unsupported ? "生成中" : directorDraft ? "完成" : "完成")
     },
     {
       label: "来源",
@@ -882,8 +942,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "参数",
       title: [stringValue(intent.channel), stringValue(intent.style)].filter(Boolean).join(" / ") || "按自然语言指令",
-      detail: stringValue(videoProject?.render_error) || asset.error_message || "可继续通过对话调整比例、时长、风格、素材或表达方式。",
-      status: mp4State === "failed" ? "成片失败" : "可调整"
+      detail: lifecycle?.failureReason || stringValue(videoProject?.render_error) || asset.error_message || "可继续通过对话调整比例、时长、风格、素材或表达方式。",
+      status: lifecycle?.status === "failed" ? "失败" : "可调整"
     }
   ];
   if (videoProject) {
@@ -937,6 +997,9 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     mode,
     title: normalizeAssetTitle(asset.title),
     status,
+    productStatus: lifecycle?.status,
+    failureReason: lifecycle?.failureReason,
+    failureAction: lifecycle?.failureAction,
     summary: firstMeaningfulLine(asset.body) || asset.title,
     ratio,
     duration,
@@ -962,7 +1025,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeAssetTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频工程已生成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? (asset.error_message ? `生成失败：${asset.error_message}` : "生成失败，可重试或调整指令") : orchestrationPending ? "视频工程正在后台生成，可切换对话，完成后自动展示" : invalidVideoProject ? "工程状态不完整，已停止进入编辑器并等待恢复。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导稿已生成，确认后可继续生成视频工程" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

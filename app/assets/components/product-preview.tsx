@@ -113,12 +113,12 @@ function sceneMgDecisionSummary(scene: Record<string, unknown>): string {
 }
 
 // A product is in a failed generation state when its status carries the failure
-// marker (mapper sets "生成失败 · 可重试" / mock uses "失败"). Real signal only.
 function isFailedProduct(product: ProductArtifact): boolean {
-  return /失败/.test(product.status) || product.phase === "失败";
+  return product.productStatus === "failed" || product.status === "失败" || product.phase === "失败";
 }
 
 function failureDetail(product: ProductArtifact): string {
+  if (product.failureReason) return product.failureReason;
   const metaError = isRecord(product.metadata) ? stringValue(product.metadata.error_message) : "";
   if (metaError) return metaError;
   const reasonSection = product.sections.find((section) => /失败|原因/.test(section.label));
@@ -132,17 +132,23 @@ function failureDetail(product: ProductArtifact): string {
 function ProductFailureCard({ product }: { product: ProductArtifact }) {
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
-      <strong>生成失败</strong>
+      <strong>{product.contentType === "video_render" ? "视频失败" : "生成失败"}</strong>
       <p>{failureDetail(product)}</p>
       <p className="shadcn-prototype-video-failed-note">你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。</p>
       <div className="shadcn-prototype-video-failed-actions">
-        <button
-          type="button"
-          className="primary"
-          onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", { detail: { utterance: "重试生成" } }))}
-        >
-          ↻ 重试生成
-        </button>
+        {product.failureAction === "modify_script" ? (
+          <button type="button" className="primary" onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}>
+            修改编导脚本
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="primary"
+            onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", { detail: { utterance: "重试生成" } }))}
+          >
+            ↻ 重试生成
+          </button>
+        )}
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
@@ -157,8 +163,8 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
 function VideoProjectRecoveryCard() {
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
-      <strong>视频工程暂不可用</strong>
-      <p>工程状态不完整，已停止展示旧预览和分镜时间轴，等待恢复后再打开。</p>
+      <strong>视频暂不可用</strong>
+      <p>视频状态不完整，已停止展示旧预览和分镜时间轴，等待恢复后再打开。</p>
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
@@ -235,8 +241,8 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 
   useEffect(() => {
     setFullVideoFailed(false);
-    setFullVideoRecoveryPending(false);
     setProjectPreviewRequested(true);
+    setFullVideoRecoveryPending(false);
   }, [exportedVideoUrl, product.id]);
 
   useImperativeHandle(forwardedRef, () => ({
@@ -261,8 +267,9 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     );
   }
 
+  if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
+
   if (product.mode === "copy") {
-    if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
     return (
       <>
@@ -273,7 +280,6 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   }
 
   if (product.mode === "image") {
-    if (isFailedProduct(product)) return <ProductFailureCard product={product} />;
     // Hero image card + caption + source block (spec §5.6 / demo workspace-copy
     // 图片产物形态). Variant thumbnails come from preview.frames when present.
     const heroUrl = isRecord(product.metadata) ? stringValue(product.metadata.preview_url) || stringValue(product.metadata.thumbnail_url) : "";
@@ -399,12 +405,12 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const firstTimelineItems = product.timeline.slice(0, 3);
   const visualPreviewFrames = product.preview?.frames ?? [];
   const planSummary = videoPlanSummary(product);
-  const planSummaryLabel = product.metadata?.video_project ? "视频工程摘要" : "编导稿摘要";
+  const planSummaryLabel = product.metadata?.video_project ? "视频摘要" : "编导脚本摘要";
   const hasVideoProject = Boolean(product.videoProjectReady);
-  const previewStageLabel = hasVideoProject ? "视频工程" : "编导稿草稿";
+  const previewStageLabel = hasVideoProject ? "视频" : "编导脚本";
   const previewStageDescription = hasVideoProject
-    ? "当前是可编辑视频工程，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
-    : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频工程。";
+    ? "视频已完成，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
+    : "当前是可编辑编导脚本，包含内容结构、关键段落和分镜方向；确认后可生成视频。";
   const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? product.title;
   const allSegmentsCovered = hasVideoProject
     && Boolean(product.segments?.length)

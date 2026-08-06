@@ -69,18 +69,24 @@ export default function StoryboardPreview({
     setFailed(false);
   }, [currentSegmentMedia?.src]);
 
+  if (showSegmentVideo) {
+    // VideoPreviewPlayer already owns the required player shell. Wrapping it
+    // in the storyboard shell created a visible double frame in fallback
+    // previews, making one scene look like several unrelated components.
+    return (
+      <VideoPreviewPlayer
+        key={currentSegmentMedia.src}
+        src={currentSegmentMedia.src}
+        label={`分镜 #${segment?.index ?? 1} 视频`}
+        ratioClassName={getProductRatioClass(product.ratio)}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
   return (
     <div className={`shadcn-prototype-project-preview ${getProductRatioClass(product.ratio)}`.trim()} aria-label="轻量分镜预览">
-      {showSegmentVideo ? (
-        <VideoPreviewPlayer
-          key={currentSegmentMedia.src}
-          src={currentSegmentMedia.src}
-          label={`分镜 #${segment?.index ?? 1} 视频`}
-          ratioClassName={getProductRatioClass(product.ratio)}
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="shadcn-prototype-project-preview-screen">
+      <div className="shadcn-prototype-project-preview-screen">
           {!failed && currentSegmentMedia?.kind === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote segment media URLs are unsupported by next/image
             <img
@@ -98,8 +104,7 @@ export default function StoryboardPreview({
               <p>{failed ? "该分镜预览暂不可用" : segment?.line || "该分镜暂无可预览素材"}</p>
             </div>
           ) : null}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

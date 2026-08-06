@@ -95,7 +95,7 @@ async function expectApprovedVideoPreviewShell(
 test("CASE-01 shows a director draft without project controls", async ({ page }) => {
   const workspace = await openCase(page, "case-01-director-draft");
   await expect(workspace.locator("article.shadcn-prototype-copy-document")).toBeVisible();
-  await expect(workspace.getByLabel("视频工程预览")).toHaveCount(0);
+  await expect(workspace.getByLabel("视频预览")).toHaveCount(0);
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
@@ -109,16 +109,16 @@ test("CASE-02 shows the saved asset reference", async ({ page }) => {
 
 test("CASE-03 tells public fallback apart from saved assets", async ({ page }) => {
   const workspace = await openCase(page, "case-03-no-asset-hit");
-  await expect(workspace.getByText("未命中素材", { exact: false }).first()).toBeVisible();
   await expect(workspace.getByText("已找到 3 个公共素材候选", { exact: false })).toBeVisible();
   await expect(workspace.getByText("测试门店素材", { exact: false })).toHaveCount(0);
 });
 
 test("CASE-04 stays in progress after reload", async ({ page }) => {
   const workspace = await openCase(page, "case-04-project-running");
-  await expect(workspace.getByText("视频工程生成中", { exact: false }).first()).toBeVisible();
+  const progress = workspace.getByRole("status").filter({ hasText: "视频生成中" });
+  await expect(progress).toBeVisible();
   await page.reload();
-  await expect(workspace.getByText("视频工程生成中", { exact: false }).first()).toBeVisible();
+  await expect(progress).toBeVisible();
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });
 
@@ -133,9 +133,9 @@ test("CASE-09 keeps an invalid video-render record out of the legacy preview", a
   const workspace = await openCase(page, "case-09-invalid-video-render");
   const recovery = workspace.getByRole("alert");
 
-  await expect(recovery.getByText("视频工程暂不可用", { exact: false })).toBeVisible();
-  await expect(workspace.getByLabel("编导稿草稿预览")).toHaveCount(0);
-  await expect(workspace.getByText("当前是可编辑编导稿", { exact: false })).toHaveCount(0);
+  await expect(recovery.getByText("视频失败", { exact: false })).toBeVisible();
+  await expect(workspace.getByLabel("编导脚本预览")).toHaveCount(0);
+  await expect(workspace.getByText("当前是可编辑编导脚本", { exact: false })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });
 
@@ -274,9 +274,10 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   }
 });
 
-test("CASE-08 keeps the project editable when MG fails", async ({ page }) => {
+test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }) => {
   const workspace = await openCase(page, "case-08-mg-failed-project-ready");
-  await expect(workspace.getByText("MG 渲染失败", { exact: false }).first()).toBeVisible();
-  await expect(workspace.getByText("原分镜仍保留", { exact: false }).first()).toBeVisible();
-  await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
+  const failure = workspace.getByRole("alert");
+  await expect(failure.getByText("第 2 镜动效未能完成", { exact: false })).toBeVisible();
+  await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });

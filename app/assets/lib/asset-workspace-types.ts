@@ -134,6 +134,11 @@ export type AssetProduct = {
   mode: AssetProductMode;
   title: string;
   status: string;
+  // The only user-facing lifecycle states for 编导脚本 and 视频. Internal job
+  // stages stay in execution details and must not be rendered as product state.
+  productStatus?: "generating" | "completed" | "failed";
+  failureReason?: string;
+  failureAction?: "retry" | "modify_script";
   summary: string;
   ratio: string;
   duration: string;

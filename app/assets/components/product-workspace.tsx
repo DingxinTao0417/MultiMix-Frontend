@@ -136,20 +136,23 @@ export default function ProductWorkspace({
   // The live job is more recent than the product projection. A worker may
   // terminalize before its conversation refresh clears orchestration_pending,
   // so a durable failed job must reveal recovery rather than a false spinner.
-  const liveVideoJobFailed = !hasVideoProject && videoJobLive?.status === "failed";
-  const orchestrationPending = !liveVideoJobFailed && (Boolean(
+  const effectiveProductStatus = videoJobLive?.productStatus ?? product.productStatus;
+  const liveVideoJobFailed = !hasVideoProject && effectiveProductStatus === "failed";
+  const orchestrationPending = !hasVideoProject && (effectiveProductStatus === "generating" || (!effectiveProductStatus && (Boolean(
     product.backendAssetId && !hasVideoProject && productMetadata.orchestration_pending
-  ) || (!hasVideoProject && videoJobLive?.status === "running") || (!hasVideoProject && videoJobLive?.status === "queued"));
+  ) || videoJobLive?.status === "running" || videoJobLive?.status === "queued")));
   // Failed jobs keep latest_job_public_id in metadata; the poller/mapper marks
   // the asset failed. Show a persistent error card with a retry action.
   const orchestrationFailed = !hasVideoProject && !orchestrationPending && Boolean(
     liveVideoJobFailed
-    || (typeof productMetadata.latest_job_public_id === "string" && product.status.includes("失败"))
+    || product.productStatus === "failed"
   );
   // The pending pill still surfaces the coarse stage label; the step-by-step
   // timeline itself is owned by the conversation, not the display area.
   const liveStageLabel = videoJobStageLabel(videoJobLive?.renderStage ?? "queued");
-  const failureDetail = videoJobLive?.errorMessage
+  const failureDetail = videoJobLive?.failureReason
+    || product.failureReason
+    || videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
@@ -173,8 +176,8 @@ export default function ProductWorkspace({
       return /^https?:\/\//i.test(candidate) || candidate.startsWith("/") ? candidate : "";
     })()
     : "";
-  const isFailedStatus = /失败/.test(product.status);
-  const isDoneStatus = /^已(完成|生成|渲染)/.test(product.status);
+  const isFailedStatus = effectiveProductStatus === "failed" || product.productStatus === "failed";
+  const isDoneStatus = effectiveProductStatus === "completed" || product.productStatus === "completed";
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
@@ -826,11 +829,11 @@ export default function ProductWorkspace({
         {isTextEditing ? (
           <div className="shadcn-prototype-text-editor-shell">
             <div className="shadcn-prototype-text-editor-status">
-              <span>{isDirectorText ? "整篇 Markdown 编导稿" : "整篇 Markdown 文案"}</span>
+              <span>{isDirectorText ? "整篇 Markdown 编导脚本" : "整篇 Markdown 文案"}</span>
               <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
             </div>
             <textarea
-              aria-label={isDirectorText ? "编辑编导稿" : "编辑文案稿"}
+              aria-label={isDirectorText ? "编辑编导脚本" : "编辑文案稿"}
               value={textEditBody}
               onChange={(event) => {
                 setTextEditBody(event.target.value);
@@ -945,17 +948,25 @@ export default function ProductWorkspace({
                 not duplicate the execution card here. */}
             <div className="shadcn-prototype-video-progress" role="status" aria-live="polite">
               <span className="shadcn-prototype-video-progress-shimmer" aria-hidden="true" />
-              <strong>视频工程生成中</strong>
+                  <strong>视频生成中</strong>
               <p>生成进度在对话区实时更新，完成后这里会自动展示剪辑器。</p>
             </div>
           </div>
         ) : !isTextEditing && !showEditorEmbed && orchestrationFailed ? (
           <div className="shadcn-prototype-product-main">
             <div className="shadcn-prototype-video-failed" role="alert">
-              <strong>视频生成失败</strong>
+              <strong>视频失败</strong>
               <p>{failureDetail || "任务在后台执行时出错，工程未能生成。"}</p>
               <div className="shadcn-prototype-video-failed-actions">
-                {onRetryVideoJob ? (
+                {product.failureAction === "modify_script" || videoJobLive?.failureAction === "modify_script" ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
+                  >
+                    修改编导脚本
+                  </button>
+                ) : onRetryVideoJob ? (
                   <button
                     type="button"
                     className="primary"

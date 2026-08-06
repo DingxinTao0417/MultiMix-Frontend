@@ -472,6 +472,9 @@ export type VideoJobResult = {
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   project: Record<string, unknown> | null;
+  productStatus?: "generating" | "completed" | "failed";
+  failureReason?: string | null;
+  failureAction?: "retry" | "modify_script" | null;
 };
 
 type RawVideoJob = {
@@ -488,6 +491,9 @@ type RawVideoJob = {
   }> | null;
   error_message: string | null;
   project: Record<string, unknown> | null;
+  product_status?: "generating" | "completed" | "failed";
+  failure_reason?: string | null;
+  failure_action?: "retry" | "modify_script" | null;
 };
 
 // Normalise a backend video-job payload into VideoJobResult. steps[] is a
@@ -515,7 +521,10 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     renderStage: raw.render_stage,
     steps,
     errorMessage: raw.error_message,
-    project: raw.project
+    project: raw.project,
+    productStatus: raw.product_status,
+    failureReason: raw.failure_reason,
+    failureAction: raw.failure_action,
   };
 }
 
@@ -642,6 +651,25 @@ function statusLabel(status: string): string {
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
+    return asset.status === "failed" ? "失败" : "完成";
+  }
+  if (asset.content_type === "video_render") {
+    if (asset.status === "failed" || metadata.video_workflow_stage === "video_project_failed") return "失败";
+    const plan = metadata.video_plan && typeof metadata.video_plan === "object" ? metadata.video_plan as Record<string, unknown> : null;
+    const scenes = Array.isArray(plan?.scenes) ? plan.scenes : [];
+    const decisions = scenes.flatMap((scene) => {
+      if (!scene || typeof scene !== "object") return [];
+      const decision = (scene as Record<string, unknown>).mg_decision;
+      return decision && typeof decision === "object" && (decision as Record<string, unknown>).needed === true
+        ? [decision as Record<string, unknown>]
+        : [];
+    });
+    if (decisions.some((decision) => decision.status === "failed")) return "失败";
+    if (metadata.orchestration_pending === true || decisions.some((decision) => decision.status !== "rendered")) return "生成中";
+    if (metadata.video_project && typeof metadata.video_project === "object") return "完成";
+    return "生成中";
+  }
   const rawVideoProject = metadata.video_project && typeof metadata.video_project === "object"
     ? metadata.video_project as Record<string, unknown>
     : null;
@@ -657,11 +685,11 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
+  if (asset.content_type === "video_render") return "视频";
   if (typeof metadata.artifact_category === "string" && metadata.artifact_category.trim()) return metadata.artifact_category.trim();
   if (asset.content_type === "content_plan") return "选题方案";
-  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
   if (asset.content_type === "social_post") return "文案稿";
-  if (asset.content_type === "video_render") return "视频工程";
   return "";
 }
 
@@ -672,7 +700,7 @@ function inferLibraryCategory(asset: ContentAsset): string {
   if (asset.asset_kind === "asset") return inferAssetSourceCategory(asset);
   if (asset.asset_kind === "copy") {
     if (asset.content_type === "content_plan" || /选题|方案|内容方案|选题方案/.test(text)) return "选题方案";
-    if (asset.content_type === "video_script" || /编导|脚本|分镜|镜头|导演/.test(text)) return "编导稿";
+    if (asset.content_type === "video_script" || /编导|脚本|分镜|镜头|导演/.test(text)) return "编导脚本";
     return "文案稿";
   }
   if (asset.asset_kind === "image") {
@@ -681,7 +709,7 @@ function inferLibraryCategory(asset: ContentAsset): string {
     return "素材图";
   }
   if (asset.asset_kind === "video" || asset.asset_kind === "video_render") {
-    if (asset.content_type === "video_render") return "视频工程";
+    if (asset.content_type === "video_render") return "视频";
     if (asset.content_type === "digital_human_video" || /数字人|avatar|talking head/i.test(text)) return "数字人视频";
     if (asset.content_type === "mg_animation_video" || /mg|动画|motion/.test(text)) return "MG动画视频";
     if (asset.content_type === "real_scene_video" || /实景|拍摄|真人|出镜/.test(text)) return "实景拍摄视频";
@@ -712,7 +740,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const understanding = understandingForAsset(asset);
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
   const noAssetHit = Boolean(metadata.no_asset_hit);
-  const status = category === "编导稿"
+  const status = category === "编导脚本"
     ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
     : (videoProjectStatusLabel(asset)
       ?? ((asset.asset_kind === "image" || asset.asset_kind === "video" || asset.asset_kind === "video_render")

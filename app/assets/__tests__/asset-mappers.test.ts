@@ -54,6 +54,63 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("uses only generating, completed, and failed for video products", () => {
+    const baseProject = { timeline: { tracks: [], media: [] } };
+    const generating = contentAssetToProduct(asset({
+      id: 201,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: baseProject,
+        video_plan: { scenes: [{ id: "scene-1", mg_decision: { needed: true, status: "planned" } }] },
+      },
+    }));
+    expect(generating.productStatus).toBe("generating");
+    expect(generating.status).toBe("生成中");
+    expect(generating.videoProjectReady).toBe(false);
+
+    const completed = contentAssetToProduct(asset({
+      id: 202,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: baseProject,
+        video_plan: { scenes: [{ id: "scene-1", mg_decision: { needed: true, status: "rendered" } }] },
+      },
+    }));
+    expect(completed.productStatus).toBe("completed");
+    expect(completed.status).toBe("完成");
+    expect(completed.videoProjectReady).toBe(true);
+
+    const failed = contentAssetToProduct(asset({
+      id: 203,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_render",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: baseProject,
+        video_plan: { scenes: [{ id: "scene-1", mg_decision: { needed: true, status: "failed", last_error: "动效服务超时" } }] },
+      },
+    }));
+    expect(failed.productStatus).toBe("failed");
+    expect(failed.status).toBe("失败");
+    expect(failed.failureReason).toBe("动效服务超时");
+  });
+
   it("maps a long-form candidate set to the dedicated product contract", () => {
     const product = contentAssetToProduct(asset({
       id: 92,
@@ -234,9 +291,9 @@ describe("asset product mapper", () => {
     const product = contentAssetToProduct(asset({}));
 
     expect(product.mode).toBe("copy");
-    expect(product.status).toBe("有来源");
-    expect(product.phase).toBe("编导稿");
-    expect(product.preview?.eyebrow).toBe("编导稿");
+    expect(product.status).toBe("完成");
+    expect(product.phase).toBe("编导脚本");
+    expect(product.preview?.eyebrow).toBe("编导脚本");
     expect(product.preview?.subtitle).toContain("确认后");
   });
 
@@ -294,8 +351,8 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(product.phase).toBe("视频工程");
-    expect(product.status).toBe("可编辑");
+    expect(product.phase).toBe("视频");
+    expect(product.status).toBe("完成");
   });
 
   it("does not expose a false-ready project without the editor timeline shape", () => {
@@ -311,8 +368,8 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(product.status).toBe("工程异常 · 待恢复");
-    expect(product.preview?.subtitle).not.toContain("视频工程已生成");
+    expect(product.status).toBe("失败");
+    expect(product.preview?.subtitle).toContain("视频内容不完整");
   });
 
   it("marks an orphaned video-render draft as a project that needs recovery", () => {
@@ -326,8 +383,8 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(product.status).toBe("工程异常 · 待恢复");
-    expect(product.preview?.subtitle).toContain("工程状态不完整");
+    expect(product.status).toBe("失败");
+    expect(product.preview?.subtitle).toContain("视频内容不完整");
     expect(product.videoProjectReady).toBe(false);
   });
 
@@ -344,7 +401,7 @@ describe("asset product mapper", () => {
       }
     }));
 
-    expect(product.status).toBe("视频生成中 · 后台任务");
+    expect(product.status).toBe("生成中");
     expect(product.preview?.subtitle).toContain("后台生成");
   });
 
@@ -362,7 +419,7 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(product.status).toBe("生成失败 · 可重试");
+    expect(product.status).toBe("失败");
     expect(product.preview?.subtitle).toContain("生成失败");
     expect(product.preview?.subtitle).not.toContain("后台生成");
   });
@@ -826,7 +883,7 @@ describe("asset product mapper", () => {
       }
     }));
 
-    expect(product.status).toBe("生成失败 · 可重试");
+    expect(product.status).toBe("失败");
     expect(product.preview?.subtitle).toContain("TTS provider timeout");
   });
 });
@@ -849,7 +906,7 @@ describe("video job stage helpers", () => {
     expect(videoJobStageLabel("rendering")).toBe("正在生成视频");
     expect(videoJobStageLabel("reviewing")).toBe("正在完成质量检查");
     expect(videoJobStageLabel("quality")).toBe("正在完成质量检查");
-    expect(videoJobStageLabel("needs_script_revision")).toBe("需要先调整编导稿");
+    expect(videoJobStageLabel("needs_script_revision")).toBe("需要调整编导脚本");
   });
 
   it("maps stages onto ordered progress steps", () => {
