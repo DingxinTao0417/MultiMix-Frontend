@@ -20,6 +20,7 @@ import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
 import { getExportMimeType } from "@editor/lib/export";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
+import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -360,8 +361,14 @@ export default function EditorView({
     if (!embed || !previewOnly || state !== "ready") return;
     const editor = EditorCore.getInstance();
     const unsubscribe = editor.playback.subscribe(publishPreviewState);
+    const unsubscribePlaybackUpdates = subscribePreviewPlaybackUpdates({
+      publish: publishPreviewState,
+    });
     publishPreviewState();
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribePlaybackUpdates();
+    };
   }, [embed, previewOnly, publishPreviewState, state]);
 
   return (

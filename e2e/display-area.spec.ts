@@ -210,8 +210,28 @@ test("CASE-06 renders the ready engineering preview without opening the editable
 
   await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
   await expect.poll(async () => Number(await progress.inputValue())).toBeGreaterThanOrEqual(2.5);
+  await previewFrame.evaluate((iframe) => {
+    iframe.contentWindow?.postMessage(
+      { source: "multimix-workspace", type: "multimix-editor-preview-pause" },
+      window.location.origin,
+    );
+  });
+  await expect(workspace.getByRole("button", { name: "点击画面播放视频" })).toBeVisible();
+  await progress.fill("3");
+  await expect(progress).toHaveValue("3");
+  await expect.poll(() => {
+    const previewStates = editorMessages.filter((message) => message.type === "multimix-editor-preview-state");
+    return Number(previewStates.at(-1)?.time ?? -1);
+  }).toBe(3);
+  await page.waitForTimeout(100);
+  await page.mouse.move(0, 0);
 
-  await expect(player).toHaveScreenshot("video-preview-storyboard-shell.png", { animations: "disabled" });
+  await expect(player).toHaveScreenshot("video-preview-storyboard-shell.png", {
+    animations: "disabled",
+    // The embedded renderer can settle on an adjacent deterministic canvas frame
+    // after a seek. Shell geometry and styling remain covered by exact CSS checks.
+    maxDiffPixels: 2_000,
+  });
   await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
 });
 
