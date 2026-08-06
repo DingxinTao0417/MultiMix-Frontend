@@ -425,7 +425,7 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(withoutId).not.toContain("重新执行此步骤");
   });
 
-  it("makes clear that an MG step does not block the ready video project", () => {
+  it("keeps the video generating while an MG step is unfinished", () => {
     const html = renderTimeline({
       steps: [
         { key: "create_job", label: "创建任务", status: "done" },
@@ -435,11 +435,43 @@ describe("AgentRunTimeline rendered branches", () => {
     });
 
     expect(html).toContain('aria-expanded="true"');
-    expect(html).toContain("视频已生成，可立即编辑");
+    expect(html).not.toContain("视频已生成，可立即编辑");
     expect(html).not.toContain("视频工程已生成");
     expect(html).toContain("后台生成并添加 MG 动效（1/2）");
     expect(html).not.toContain("MG 动效处理中");
     expect(html).toContain("<ol");
+  });
+
+  it("does not claim the video is ready when an MG child failed", () => {
+    const html = renderTimeline({
+      steps: [
+        { key: "create_job", label: "创建任务", status: "done" },
+        { key: "build_project", label: "组装工程", status: "done" },
+        {
+          key: "mg_overlay",
+          label: "生成并添加 MG 动效（1/2，失败 1）",
+          status: "fail",
+          retryJobId: "mg-failed",
+        },
+      ],
+      completionConfirmed: false,
+    });
+
+    expect(html).not.toContain("视频已生成，可立即编辑");
+    expect(html).toContain("生成并添加 MG 动效（1/2，失败 1）");
+  });
+
+  it("claims the video is ready only after every step and completion are confirmed", () => {
+    const html = renderTimeline({
+      steps: [
+        { key: "create_job", label: "创建任务", status: "done" },
+        { key: "build_project", label: "组装工程", status: "done" },
+        { key: "mg_overlay", label: "生成并添加 MG 动效（2/2）", status: "done" },
+      ],
+      completionConfirmed: true,
+    });
+
+    expect(html).toContain("视频已生成，可立即编辑");
   });
 
   it("uses completed tense for a finished MG step", () => {

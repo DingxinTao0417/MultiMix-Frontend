@@ -97,8 +97,11 @@ export default function AgentRunTimeline({
     : summary.hasFailure
       ? "fail"
       : "running");
-  const countLabel = summary.projectReady && summary.mgActive
-    ? `视频已生成，可立即编辑 · 第 ${currentStep} 步 / 共 ${summary.total} 步`
+  const completionReady = summary.allDone
+    && !summary.hasFailure
+    && completionConfirmed === true;
+  const countLabel = completionReady
+    ? `视频已生成，可立即编辑 · 共 ${summary.total} 步`
     : summary.allDone
     ? [`共 ${summary.total} 步`, summary.totalElapsedLabel ? `总历时 ${summary.totalElapsedLabel}` : undefined].filter(Boolean).join(" · ")
     : `第 ${currentStep} 步 / 共 ${summary.total} 步`;
