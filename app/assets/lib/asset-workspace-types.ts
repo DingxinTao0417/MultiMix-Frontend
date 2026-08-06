@@ -48,6 +48,7 @@ export type AssetProductSourceRef = {
   statusLabel?: string;
   referenceCount?: number;
   thumbnailUrl?: string;
+  mediaAvailability?: "available" | "missing";
   isFallback?: boolean;
 };
 
@@ -82,6 +83,11 @@ export type AssetProductSegment = {
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
   mgStatus?: string;
+  visualTreatmentLabel?: "素材主画面" | "素材 + 图形说明" | "完整图形主画面";
+  selectionReason?: string;
+  graphicComponentLabel?: string;
+  backgroundTreatmentLabel?: "已验证素材虚化背景";
+  publicReplacementNote?: string;
 };
 
 // A single material candidate shown in the picker. Every selectable row carries
@@ -139,6 +145,8 @@ export type AssetProduct = {
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string;
   failureAction?: "retry" | "modify_script";
+  expressionModeLabel?: "素材优先" | "混合表达";
+  expressionReason?: string;
   summary: string;
   ratio: string;
   duration: string;

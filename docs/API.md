@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-07-30
+> Last verified: 2026-08-07
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -964,3 +964,20 @@ npm run test:display-coverage
 ```
 
 `test:display-components` 验证真实 React 组件；`test:display-e2e` 启动隔离前后端并运行九个浏览器案例；`test:display-coverage` 依次执行两层覆盖。
+
+## 13. 视频表达方式与逐镜解释
+
+`AssetProduct` 可从 `metadata.video_plan.expression_mode` 映射以下只读展示字段：
+
+- `expressionModeLabel`: `素材优先 | 混合表达`
+- `expressionReason`: 编导模型给出的整片选择理由
+
+`AssetProductSegment` 可从 `primary_visual_strategy` 和素材替换审计映射：
+
+- `visualTreatmentLabel`: `素材主画面 | 素材 + 图形说明 | 完整图形主画面`
+- `selectionReason`: 当前分镜选择该呈现方式的理由
+- `graphicComponentLabel`: 六类已注册图形组件的中文名称
+- `backgroundTreatmentLabel`: 使用已验证素材虚化背景时显示
+- `publicReplacementNote`: 原公开素材永久失效并透明采用已预检备选时显示
+
+普通工作台不得展示 `pipeline_code` 或把内部 `mg_scene` 名称作为用户可见呈现方式。图形主画面和 MG overlay 必须分别显示为主画面方式与增强层，避免用户误认为同一动画叠加了两次。

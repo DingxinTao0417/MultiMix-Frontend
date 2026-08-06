@@ -640,6 +640,7 @@ describe("asset product mapper", () => {
               status: "persisted",
               source_type: "generated_scene",
               artifact_ref: "local://video-orchestration/1/primary-scenes/scene-2.mp4",
+              poster_ref: "local://video-orchestration/1/primary-scenes/scene-2.poster.jpg",
             },
             primary_visual_strategy: {
               mode: "evidence_card",
@@ -658,8 +659,53 @@ describe("asset product mapper", () => {
       businessHint: "建议补充真实案例素材",
     });
     expect(product.segments?.[0]?.assetThumbnailUrl).toContain(
-      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fprimary-scenes%2Fscene-2.mp4",
+      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fprimary-scenes%2Fscene-2.poster.jpg",
     );
+  });
+
+  it("maps every scene expression treatment and model-authored reason", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      metadata: {
+        capability: "video_render",
+        video_plan: {
+          expression_mode: {
+            mode: "hybrid",
+            reason: "真实素材和结构化图形需要逐镜混合。",
+            source: "director_model",
+          },
+          scenes: [{
+            id: "scene-expression",
+            title: "三步流程",
+            narration: "从资料到成片。",
+            primary_visual_strategy: {
+              mode: "mg_scene",
+              visual_treatment: "graphics_primary",
+              selection_reason: "流程关系比单张素材更容易理解。",
+              graphic_component: "process_flow",
+              background_policy: "verified_material_blur",
+            },
+            public_candidate_replacement: {
+              old_provider_item_id: "old-1",
+              new_provider_item_id: "new-2",
+              reason_code: "remote_file_missing",
+            },
+          }],
+        },
+      },
+    }));
+
+    expect(product.expressionModeLabel).toBe("混合表达");
+    expect(product.expressionReason).toBe("真实素材和结构化图形需要逐镜混合。");
+    expect(product.segments?.[0]).toMatchObject({
+      visualTreatmentLabel: "完整图形主画面",
+      selectionReason: "流程关系比单张素材更容易理解。",
+      graphicComponentLabel: "流程图",
+      backgroundTreatmentLabel: "已验证素材虚化背景",
+      publicReplacementNote: "原公开素材已失效，已透明替换为可用素材",
+    });
   });
 
   it("maps approved product media as an available product interface", () => {
@@ -719,6 +765,7 @@ describe("asset product mapper", () => {
               status: "persisted",
               source_type: "saved_asset",
               artifact_ref: "local://video-orchestration/1/materials/showroom.mp4",
+              poster_ref: "local://video-orchestration/1/materials/showroom.poster.jpg",
             },
           },
         ],
@@ -730,7 +777,7 @@ describe("asset product mapper", () => {
       primaryVisualMediaType: "video",
     });
     expect(product.segments?.[0]?.assetThumbnailUrl).toContain(
-      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fmaterials%2Fshowroom.mp4",
+      "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fmaterials%2Fshowroom.poster.jpg",
     );
     expect(product.segments?.[0]?.assetThumbnailUrl).not.toContain("content-assets");
   });

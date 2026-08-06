@@ -398,7 +398,7 @@ export default function EditorView({
       {state === "ready" ? (
         previewOnly ? (
           <div className="editor-preview-only">
-            <PreviewPanel />
+            <PreviewPanel bare />
           </div>
         ) : (
           <div className="editor-layout">

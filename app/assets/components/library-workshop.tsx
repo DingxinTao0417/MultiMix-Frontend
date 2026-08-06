@@ -178,21 +178,43 @@ function renderLibraryMediaPlaceholder(row: LibraryRow, mediaKind: "image" | "vi
   );
 }
 
+function LibraryMediaThumbnail({
+  row,
+  mediaKind,
+  viewClass,
+}: {
+  row: LibraryRow;
+  mediaKind: "image" | "video";
+  viewClass: string;
+}) {
+  const url = mediaKind === "image" ? row.previewUrl : row.thumbnailUrl;
+  const [failed, setFailed] = useState(false);
+  const unavailable = row.mediaAvailability === "missing" || failed || !url;
+  const placeholderRow = unavailable && row.mediaAvailability !== "available"
+    ? { ...row, format: "原文件不可用" }
+    : row;
+  return (
+    <span
+      className={unavailable
+        ? `shadcn-prototype-library-media-thumb empty ${mediaKind}${viewClass}`
+        : `shadcn-prototype-library-media-thumb ${mediaKind}${viewClass}`}
+      aria-label={unavailable && placeholderRow.format === "原文件不可用" ? "原文件不可用" : undefined}
+    >
+      {unavailable ? renderLibraryMediaPlaceholder(placeholderRow, mediaKind) : (
+        // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
+        <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} />
+      )}
+    </span>
+  );
+}
+
 function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conversation">) {
   const viewClass = view === "image" || view === "video" ? " grid" : "";
   const mediaKind = libraryRowMediaKind(row);
   return row.kind === "copy" ? null : mediaKind === "image" ? (
-    <span className={row.previewUrl ? `shadcn-prototype-library-media-thumb image${viewClass}` : "shadcn-prototype-library-media-thumb empty image"} aria-hidden="true">
-      {/* Thumbnails stream from the runtime-configured backend media proxy; host is not statically known. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {row.previewUrl ? <img src={row.previewUrl} alt="" loading="lazy" /> : renderLibraryMediaPlaceholder(row, "image")}
-    </span>
+    <LibraryMediaThumbnail row={row} mediaKind="image" viewClass={viewClass} />
   ) : mediaKind === "video" ? (
-    <span className={row.thumbnailUrl ? `shadcn-prototype-library-media-thumb video${viewClass}` : "shadcn-prototype-library-media-thumb empty video"} aria-hidden="true">
-      {/* List cards use still thumbnails only; the playable URL is mounted once in the detail modal. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt="" loading="lazy" /> : renderLibraryMediaPlaceholder(row, "video")}
-    </span>
+    <LibraryMediaThumbnail row={row} mediaKind="video" viewClass={viewClass} />
   ) : null;
 }
 

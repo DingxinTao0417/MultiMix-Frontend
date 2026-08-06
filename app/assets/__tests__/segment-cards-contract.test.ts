@@ -51,8 +51,10 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).toContain("segment.primaryVisualSourceType !== \"generated_scene\"");
     expect(component).toContain("segment.visualStatusLabel");
     expect(component).toContain("segment.businessHint");
-    expect(component).toContain('segment.primaryVisualSourceType === "generated_scene"');
-    expect(component).toContain("<video");
+    expect(component).toContain('segment.primaryVisualSourceType !== "generated_scene"');
+    expect(component).toContain('segment.primaryVisualMediaType === "video"');
+    expect(component).toContain("shadcn-prototype-segment-video-placeholder");
+    expect(component).not.toContain("<video");
   });
 
   test("renders every segment in one vertical list without paging or collapsing", () => {
@@ -60,6 +62,16 @@ describe("storyboard segment-card interaction contract", () => {
     expect(component).not.toContain("segments.slice(");
     expect(component).not.toContain("展开更多");
     expect(css).toMatch(/\.shadcn-prototype-segment-actions\s*\{[^}]*flex-shrink:\s*0;/s);
+  });
+
+  test("shows the planned presentation and its reason without internal pipeline terms", () => {
+    expect(component).toContain("segment.visualTreatmentLabel");
+    expect(component).toContain("segment.selectionReason");
+    expect(component).toContain("segment.graphicComponentLabel");
+    expect(component).toContain("segment.backgroundTreatmentLabel");
+    expect(component).toContain("segment.publicReplacementNote");
+    expect(component).not.toContain("mg_scene");
+    expect(component).not.toContain("pipeline_code");
   });
 
   test("keeps scrollable-card shadows inside a padded paint area", () => {

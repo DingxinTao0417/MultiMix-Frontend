@@ -1,11 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import type { AssetProductSourceSummary } from "../lib/asset-workspace-types";
 
 export type GenerationAnimationSummary = {
   mode: string;
   metrics: string[];
 };
+
+function SourceThumbnail({ url }: { url?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!url) return null;
+  if (failed) {
+    return <span className="shadcn-prototype-source-unavailable">原文件不可用</span>;
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
+    <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} />
+  );
+}
 
 // Pure display block for product-level source references (understanding
 // status + reference counts). Callers only render it when real summary data
@@ -36,8 +49,7 @@ export default function SourceRefBlock({
             {summary.refs.map((ref) => (
               <li key={ref.id} className={ref.isFallback ? "is-fallback" : undefined}>
                 <span className="shadcn-prototype-source-thumb" aria-hidden={ref.thumbnailUrl ? undefined : true}>
-                  {/* eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image */}
-                  {ref.thumbnailUrl ? <img src={ref.thumbnailUrl} alt="" loading="lazy" /> : null}
+                  <SourceThumbnail url={ref.thumbnailUrl} />
                 </span>
                 <span className="shadcn-prototype-source-copy">
                   <strong>{ref.title}</strong>

@@ -71,12 +71,10 @@ export default function SegmentCards({
               </span>
               <span className={`shadcn-prototype-segment-thumb${needsMaterial ? " needs-material" : ""}`} aria-hidden={segment.assetThumbnailUrl ? undefined : true}>
                 {segment.assetThumbnailUrl ? (
-                  segment.primaryVisualMediaType === "video" || segment.primaryVisualSourceType === "generated_scene" ? (
-                    <video src={segment.assetThumbnailUrl} muted preload="metadata" playsInline />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
-                    <img src={segment.assetThumbnailUrl} alt="" loading="lazy" />
-                  )
+                  // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
+                  <img src={segment.assetThumbnailUrl} alt="" loading="lazy" />
+                ) : segment.primaryVisualMediaType === "video" ? (
+                  <span className="shadcn-prototype-segment-video-placeholder">视频</span>
                 ) : null}
               </span>
               <span className="shadcn-prototype-segment-copy">
@@ -95,6 +93,27 @@ export default function SegmentCards({
                 {segment.businessHint ? (
                   <span className="shadcn-prototype-segment-line2">
                     {segment.businessHint}
+                  </span>
+                ) : null}
+                {segment.visualTreatmentLabel ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    呈现方式：{segment.visualTreatmentLabel}
+                    {segment.graphicComponentLabel ? ` · ${segment.graphicComponentLabel}` : ""}
+                  </span>
+                ) : null}
+                {segment.selectionReason ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    选择理由：{segment.selectionReason}
+                  </span>
+                ) : null}
+                {segment.backgroundTreatmentLabel ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    背景：{segment.backgroundTreatmentLabel}
+                  </span>
+                ) : null}
+                {segment.publicReplacementNote ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    {segment.publicReplacementNote}
                   </span>
                 ) : null}
               </span>

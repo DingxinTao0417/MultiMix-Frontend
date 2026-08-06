@@ -345,6 +345,12 @@ function thumbnailUrlFromRef(ref: string): string | undefined {
   return browserReadableMediaUrl(ref);
 }
 
+function imageThumbnailUrlFromRef(ref: string): string | undefined {
+  const normalized = ref.split("?", 1)[0]?.toLowerCase() ?? "";
+  if (/\.(mp4|webm|mov|m4v)$/.test(normalized)) return undefined;
+  return thumbnailUrlFromRef(ref);
+}
+
 type SegmentTiming = { start: number; end: number };
 
 type PrimaryVisualSourceType = "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
@@ -430,6 +436,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       : isRecord(planScene?.primary_visual_strategy)
         ? planScene.primary_visual_strategy
         : null;
+    const replacement = isRecord(segment.public_candidate_replacement)
+      ? segment.public_candidate_replacement
+      : isRecord(planScene?.public_candidate_replacement)
+        ? planScene.public_candidate_replacement
+        : null;
     const materialResolution = isRecord(segment.material_resolution)
       ? segment.material_resolution
       : isRecord(planScene?.material_resolution)
@@ -444,15 +455,19 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     const primarySourceType = primaryVisualSourceType(primaryVisual?.source_type);
     const primaryPersisted = stringValue(primaryVisual?.status) === "persisted";
     const primaryArtifactRef = stringValue(primaryVisual?.preview_ref) || stringValue(primaryVisual?.artifact_ref);
+    const primaryMediaType = primaryVisualMediaType(primaryArtifactRef, primarySourceType);
+    const primaryPosterRef = stringValue(primaryVisual?.poster_ref) || stringValue(primaryVisual?.thumbnail_ref);
     const primaryThumbnailUrl = primaryPersisted
-      ? thumbnailUrlFromRef(primaryArtifactRef)
+      ? primaryMediaType === "video"
+        ? imageThumbnailUrlFromRef(primaryPosterRef)
+        : imageThumbnailUrlFromRef(primaryArtifactRef)
       : undefined;
     const generatedPrimaryAvailable = primaryPersisted
       && primarySourceType === "generated_scene"
-      && Boolean(primaryThumbnailUrl);
+      && Boolean(primaryArtifactRef);
     const productPrimaryAvailable = primaryPersisted
       && primarySourceType === "product_asset"
-      && Boolean(primaryThumbnailUrl);
+      && Boolean(primaryArtifactRef);
     const projectTiming = projectTimings.get(stringValue(segment.id));
     const start = projectTiming?.start ?? numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
     const duration = numberOrUndefined(segment.duration) ?? numberOrUndefined(segment.duration_seconds);
@@ -472,16 +487,16 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
           ].filter(Boolean).join(" · ")
         : stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
       assetTitle: stringValue(snapshot?.title) || undefined,
-      assetThumbnailUrl: primaryThumbnailUrl || thumbnailUrlFromRef(
+      assetThumbnailUrl: primaryThumbnailUrl || (primaryMediaType === "video" ? undefined : imageThumbnailUrlFromRef(
         stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
-      ),
+      )),
       isFallback: primarySourceType === "public_asset"
         || fillStatus === "public_candidate",
       materialFillStatus: fillStatus,
       primaryVisualSourceType: primarySourceType,
       primaryVisualPersisted: primaryPersisted || undefined,
-      primaryVisualMediaType: primaryPersisted && Boolean(primaryThumbnailUrl)
-        ? primaryVisualMediaType(primaryArtifactRef, primarySourceType)
+      primaryVisualMediaType: primaryPersisted
+        ? primaryMediaType
         : undefined,
       visualStatusLabel: generatedPrimaryAvailable
         ? "已生成画面"
@@ -495,6 +510,15 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         ? stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG"
         : undefined,
       mgStatus: decision?.needed === true ? stringValue(decision.status) || undefined : undefined,
+      visualTreatmentLabel: visualTreatmentLabel(primaryStrategy?.visual_treatment),
+      selectionReason: stringValue(primaryStrategy?.selection_reason) || undefined,
+      graphicComponentLabel: graphicComponentLabel(primaryStrategy?.graphic_component),
+      backgroundTreatmentLabel: stringValue(primaryStrategy?.background_policy) === "verified_material_blur"
+        ? "已验证素材虚化背景"
+        : undefined,
+      publicReplacementNote: stringValue(replacement?.reason_code) === "remote_file_missing"
+        ? "原公开素材已失效，已透明替换为可用素材"
+        : undefined,
     };
   });
 }
@@ -520,7 +544,7 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
       title,
       statusLabel: sourceRefStateLabel(stringValue(item.state)),
       referenceCount: numberOrUndefined(item.reference_count),
-      thumbnailUrl: thumbnailUrlFromRef(stringValue(item.preview_url) || stringValue(item.thumbnail_url)),
+      thumbnailUrl: imageThumbnailUrlFromRef(stringValue(item.preview_url) || stringValue(item.thumbnail_url)),
       isFallback: stringValue(item.source_type) === "public_source" || undefined
     }];
   });
@@ -578,6 +602,24 @@ function videoProjectStatusLabel(mp4State: string): string {
   if (mp4State === "running") return "成片生成中";
   if (mp4State === "failed") return "成片失败";
   return "可编辑";
+}
+
+function visualTreatmentLabel(value: unknown): AssetProductSegment["visualTreatmentLabel"] {
+  if (value === "source_primary") return "素材主画面";
+  if (value === "source_with_graphics") return "素材 + 图形说明";
+  if (value === "graphics_primary") return "完整图形主画面";
+  return undefined;
+}
+
+function graphicComponentLabel(value: unknown): string | undefined {
+  return ({
+    material_backdrop: "素材背景",
+    process_flow: "流程图",
+    classification_cards: "分类卡",
+    quadrant_grid: "四象限",
+    relationship_network: "关系图",
+    brand_end_card: "品牌收尾页",
+  } as Record<string, string>)[stringValue(value)];
 }
 
 type ProductLifecycleStatus = "generating" | "completed" | "failed";
@@ -860,6 +902,16 @@ export function isEditorReadyVideoProject(
 
 export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const metadata = asset.metadata ?? {};
+  const rawVideoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
+  const expressionMode = isRecord(rawVideoPlan?.expression_mode)
+    ? rawVideoPlan.expression_mode
+    : undefined;
+  const expressionModeLabel = stringValue(expressionMode?.mode) === "source_led"
+    ? "素材优先" as const
+    : stringValue(expressionMode?.mode) === "hybrid"
+      ? "混合表达" as const
+      : undefined;
+  const expressionReason = stringValue(expressionMode?.reason) || undefined;
   const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
@@ -986,6 +1038,14 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       status: stringValue(mp4Artifact.mp4_state) || "ready"
     });
   }
+  if (expressionModeLabel) {
+    sections.splice(1, 0, {
+      label: "表达",
+      title: expressionModeLabel,
+      detail: expressionReason || "由编导根据素材和各分镜内容决定。",
+      status: "已决定",
+    });
+  }
   const segments = segmentsFromVideoMetadata(metadata);
   return {
     id: `asset-${asset.id}`,
@@ -1000,6 +1060,8 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     productStatus: lifecycle?.status,
     failureReason: lifecycle?.failureReason,
     failureAction: lifecycle?.failureAction,
+    expressionModeLabel,
+    expressionReason,
     summary: firstMeaningfulLine(asset.body) || asset.title,
     ratio,
     duration,

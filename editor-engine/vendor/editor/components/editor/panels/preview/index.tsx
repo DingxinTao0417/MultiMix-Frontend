@@ -53,7 +53,7 @@ function normalizeWheelDelta({
 	return delta;
 }
 
-export function PreviewPanel() {
+export function PreviewPanel({ bare = false }: { bare?: boolean }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const { toggleFullscreen } = useFullscreen({ containerRef });
 
@@ -65,6 +65,7 @@ export function PreviewPanel() {
 			<PreviewCanvas
 				containerRef={containerRef}
 				onToggleFullscreen={toggleFullscreen}
+				bare={bare}
 			/>
 			<RenderTreeController />
 		</div>
@@ -101,9 +102,11 @@ function RenderTreeController() {
 function PreviewCanvas({
 	containerRef,
 	onToggleFullscreen,
+	bare,
 }: {
 	containerRef: React.RefObject<HTMLElement | null>;
 	onToggleFullscreen: () => void;
+	bare: boolean;
 }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const viewportRef = useRef<HTMLDivElement>(null);
@@ -269,13 +272,15 @@ function PreviewCanvas({
 
 	return (
 		<PreviewViewportProvider value={viewport}>
-			<div className="flex size-full min-h-0 min-w-0 flex-col p-3">
+			<div className={`flex size-full min-h-0 min-w-0 flex-col${bare ? " p-0" : " p-3"}`}>
 				<div className="flex min-h-0 min-w-0 flex-1">
 					<ContextMenu>
 						<ContextMenuTrigger asChild>
 							<div
 								ref={viewportRef}
-								className="relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_top,_#f9faf7,_#eef2ee)]"
+								className={bare
+									? "relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden bg-transparent"
+									: "relative flex size-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-[20px] bg-[radial-gradient(circle_at_top,_#f9faf7,_#eef2ee)]"}
 								onPointerMoveCapture={updatePointerCanvasHover}
 								onPointerLeave={() => setIsPointerOverCanvas(false)}
 							>
@@ -283,7 +288,7 @@ function PreviewCanvas({
 									ref={canvasRef}
 									width={nativeWidth}
 									height={nativeHeight}
-									className="preview-video-surface absolute block border"
+									className={`preview-video-surface absolute block${bare ? " border-0" : " border"}`}
 									style={{
 										left: viewport.sceneLeft,
 										top: viewport.sceneTop,

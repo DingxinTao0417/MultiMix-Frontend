@@ -28,6 +28,10 @@ const { databasePath, artifactDir } = lifecycle;
 const e2eOnly = process.argv.includes("--e2e-only");
 const cleanupProbe = process.argv.includes("--cleanup-probe");
 const updateSnapshots = process.argv.includes("--update-snapshots");
+const grepArgument = process.argv.find((argument) => argument.startsWith("--grep="));
+const grep = grepArgument?.slice("--grep=".length) ?? "";
+const playwrightWorkersArgument = process.argv.find((argument) => argument.startsWith("--playwright-workers="));
+const playwrightWorkers = playwrightWorkersArgument?.slice("--playwright-workers=".length) ?? "";
 const children = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -128,6 +132,8 @@ try {
 
   const playwrightArgs = ["playwright", "test", "e2e/display-area.spec.ts"];
   if (updateSnapshots) playwrightArgs.push("--update-snapshots");
+  if (grep) playwrightArgs.push("--grep", grep);
+  if (playwrightWorkers) playwrightArgs.push("--workers", playwrightWorkers);
   await run(npxCommand, playwrightArgs, {
     cwd: frontendRoot,
     env: {

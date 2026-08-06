@@ -42,6 +42,8 @@ describe("video project browse-player contract", () => {
     expect(editorPage).toContain('searchParams.get("previewChannel")');
     expect(editorView).toContain("previewChannel");
     expect(editorView).toContain("editor-preview-only");
+    expect(editorView).toContain("<PreviewPanel bare />");
+    expect(projectPreview).not.toContain("rounded-[20px]");
   });
 
   test("keeps a playable full-project preview available for manual review", () => {

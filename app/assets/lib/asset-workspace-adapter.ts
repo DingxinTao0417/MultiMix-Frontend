@@ -66,6 +66,7 @@ export type LibraryRow = {
   sourceUrl?: string;
   previewUrl?: string;
   thumbnailUrl?: string;
+  mediaAvailability?: "available" | "missing";
   detailLabel?: string;
   sourceRefs?: string[];
   versions?: string[];
@@ -613,6 +614,7 @@ function browserReadableAssetRef(value: unknown): string | undefined {
 
 function previewUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  if (metadata.media_availability === "missing") return undefined;
   const videoProject = metadata.video_project && typeof metadata.video_project === "object" && !Array.isArray(metadata.video_project)
     ? metadata.video_project as Record<string, unknown>
     : null;
@@ -632,6 +634,7 @@ function previewUrlForAsset(asset: ContentAsset): string | undefined {
 
 function thumbnailUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  if (metadata.media_availability === "missing") return undefined;
   const thumbnailRef = typeof metadata.thumbnail_ref === "string" ? metadata.thumbnail_ref.trim() : "";
   if (thumbnailRef) return mediaProxyUrl(thumbnailRef);
   return [metadata.thumbnail_url, metadata.poster_url]
@@ -740,12 +743,15 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const understanding = understandingForAsset(asset);
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
   const noAssetHit = Boolean(metadata.no_asset_hit);
+  const mediaUnavailable = metadata.media_availability === "missing";
   const status = category === "编导脚本"
     ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
     : (videoProjectStatusLabel(asset)
-      ?? ((asset.asset_kind === "image" || asset.asset_kind === "video" || asset.asset_kind === "video_render")
+      ?? (mediaUnavailable
+        ? "原文件不可用"
+        : ((asset.asset_kind === "image" || asset.asset_kind === "video" || asset.asset_kind === "video_render")
         ? understandingStatusLabel(understanding?.status) ?? statusLabel(asset.status)
-        : statusLabel(asset.status)));
+        : statusLabel(asset.status))));
   const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;
   const understandingCaption = understanding?.caption;
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
@@ -770,6 +776,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     sourceUrl,
     previewUrl: previewUrlForAsset(asset),
     thumbnailUrl: thumbnailUrlForAsset(asset),
+    mediaAvailability: mediaUnavailable ? "missing" : "available",
     sourceRefs: (asset.source_mapping ?? [])
       .filter((item) => item && typeof item === "object")
       .map((item) => {

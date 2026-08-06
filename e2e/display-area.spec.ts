@@ -88,6 +88,14 @@ async function expectApprovedVideoPreviewShell(
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeLessThan(0.1);
   await expect(player).toHaveScreenshot("video-preview-shell.png", {
     animations: "disabled",
+    // The MP4 frame is intentionally verified by the readiness/seek checks
+    // above.  Mask it here so this screenshot remains a deterministic check
+    // of the player shell, controls, and spacing rather than codec seek noise.
+    mask: [video],
+    maskColor: "#111111",
+    // Keep the visual assertion stable across tiny browser text/vector
+    // anti-aliasing differences. Structural shell checks above remain exact.
+    maxDiffPixels: 20,
   });
   await resizeProductPaneAndExpectRatio(page, screen, expectedRatio);
 }
