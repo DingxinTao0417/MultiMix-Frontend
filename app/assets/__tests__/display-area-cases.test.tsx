@@ -278,6 +278,8 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByText("1 个受限全屏动画")).toBeInTheDocument();
     expect(screen.getByText("3 个分镜保护真实素材")).toBeInTheDocument();
     expect(screen.getByText("4 类受控效果")).toBeInTheDocument();
+    expect(screen.getByLabelText("来源引用")).toContainElement(screen.getByText("动画编排：自动丰富"));
+    expect(document.querySelector(".shadcn-prototype-video-plan-summary")).not.toBeInTheDocument();
   });
 
   it("prioritizes material-search failure over the generic material-gap notice", () => {

@@ -31,4 +31,15 @@ describe("source reference disclosure", () => {
     expect(disclosure).toHaveAttribute("open");
     expect(screen.getByText("门店外景")).toBeVisible();
   });
+
+  it("keeps animation information in the same expandable source card", () => {
+    render(<SourceRefBlock summary={summary} animation={{
+      mode: "自动丰富",
+      metrics: ["2 个分镜动态增强", "4 类受控效果"],
+    }} />);
+
+    const disclosure = screen.getByLabelText("来源引用");
+    expect(disclosure).toContainElement(screen.getByText("动画编排：自动丰富"));
+    expect(disclosure).toContainElement(screen.getByText("2 个分镜动态增强"));
+  });
 });

@@ -6,7 +6,7 @@ import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } fro
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
 import MarkdownProductDocument from "./markdown-product-document";
 import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
-import SourceRefBlock from "./source-ref-block";
+import SourceRefBlock, { type GenerationAnimationSummary } from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
 import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
@@ -115,6 +115,19 @@ function sceneMgDecisionSummary(scene: Record<string, unknown>): string {
 // A product is in a failed generation state when its status carries the failure
 function isFailedProduct(product: ProductArtifact): boolean {
   return product.productStatus === "failed" || product.status === "失败" || product.phase === "失败";
+}
+
+function animationSummary(planSummary: ReturnType<typeof videoPlanSummary>): GenerationAnimationSummary | undefined {
+  if (!planSummary?.animationMode) return undefined;
+  return {
+    mode: planSummary.animationMode,
+    metrics: [
+      planSummary.animationOverlayCount ? `${planSummary.animationOverlayCount} 个分镜动态增强` : "",
+      planSummary.animationFullSceneCount ? `${planSummary.animationFullSceneCount} 个受限全屏动画` : "",
+      planSummary.animationProtectedCount ? `${planSummary.animationProtectedCount} 个分镜保护真实素材` : "",
+      planSummary.animationEffectCount ? `${planSummary.animationEffectCount} 类受控效果` : "",
+    ].filter(Boolean),
+  };
 }
 
 function failureDetail(product: ProductArtifact): string {
@@ -498,19 +511,10 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             onEditVoiceover={onEditVoiceover}
           />
         ) : null}
-        {planSummary?.animationMode ? (
-          <section className="shadcn-prototype-video-plan-summary" aria-label="动画编排摘要">
-            <div className="shadcn-prototype-video-plan-metrics">
-              <span>动画编排：{planSummary.animationMode}</span>
-              {planSummary.animationOverlayCount ? <span>{planSummary.animationOverlayCount} 个分镜动态增强</span> : null}
-              {planSummary.animationFullSceneCount ? <span>{planSummary.animationFullSceneCount} 个受限全屏动画</span> : null}
-              {planSummary.animationProtectedCount ? <span>{planSummary.animationProtectedCount} 个分镜保护真实素材</span> : null}
-              {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
-            </div>
-          </section>
-        ) : null}
         {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
-        {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
+        {(product.sourceSummary || animationSummary(planSummary)) ? (
+          <SourceRefBlock summary={product.sourceSummary} animation={animationSummary(planSummary)} />
+        ) : null}
       </div>
     );
   }

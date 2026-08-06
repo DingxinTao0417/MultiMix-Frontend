@@ -2,19 +2,36 @@
 
 import type { AssetProductSourceSummary } from "../lib/asset-workspace-types";
 
+export type GenerationAnimationSummary = {
+  mode: string;
+  metrics: string[];
+};
+
 // Pure display block for product-level source references (understanding
 // status + reference counts). Callers only render it when real summary data
 // exists — never with placeholder sources.
-export default function SourceRefBlock({ summary }: { summary: AssetProductSourceSummary }) {
-  if (!summary.headline && summary.refs.length === 0) return null;
+export default function SourceRefBlock({
+  summary,
+  animation,
+}: {
+  summary?: AssetProductSourceSummary;
+  animation?: GenerationAnimationSummary;
+}) {
+  if ((!summary?.headline && !summary?.refs.length) && !animation?.mode) return null;
   return (
     <details className="shadcn-prototype-source-block" aria-label="来源引用">
       <summary>
         <span className="shadcn-prototype-source-dot" aria-hidden="true" />
-        <strong>{summary.headline}</strong>
+        <strong>{summary?.headline || "动画编排说明"}</strong>
       </summary>
       <div className="shadcn-prototype-source-content">
-        {summary.refs.length ? (
+        {animation?.mode ? (
+          <div className="shadcn-prototype-source-metrics" aria-label="动画编排信息">
+            <span>动画编排：{animation.mode}</span>
+            {animation.metrics.map((metric) => <span key={metric}>{metric}</span>)}
+          </div>
+        ) : null}
+        {summary?.refs.length ? (
           <ul>
             {summary.refs.map((ref) => (
               <li key={ref.id} className={ref.isFallback ? "is-fallback" : undefined}>
@@ -37,7 +54,7 @@ export default function SourceRefBlock({ summary }: { summary: AssetProductSourc
             ))}
           </ul>
         ) : null}
-        {summary.note ? <p>{summary.note}</p> : null}
+        {summary?.note ? <p>{summary.note}</p> : null}
       </div>
     </details>
   );

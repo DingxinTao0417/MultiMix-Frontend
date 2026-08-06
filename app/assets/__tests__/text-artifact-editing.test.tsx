@@ -107,7 +107,7 @@ describe("text artifact editing", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "编辑编导稿" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "编辑编导脚本" }), {
       target: { value: "# 家装编导稿\n\n### 1. 开场\n- 口播：新的开场" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));

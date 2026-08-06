@@ -6983,6 +6983,21 @@ label {
   padding-top: 10px;
 }
 
+.shadcn-prototype-source-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.shadcn-prototype-source-metrics span {
+  border-radius: 999px;
+  background: #f5f3ef;
+  padding: 5px 9px;
+  color: #3d3a36;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .shadcn-prototype-source-dot {
   width: 8px;
   height: 8px;

@@ -1309,9 +1309,9 @@ describe("agent conversation UI copy", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-summary");
-    expect(productPreview).toContain("编导稿摘要");
-    expect(productPreview).toContain("编导稿草稿");
-    expect(productPreview).toContain("当前是可编辑编导稿");
+    expect(productPreview).toContain("编导脚本摘要");
+    expect(productPreview).toContain('previewStageLabel = hasVideoProject ? "视频" : "编导脚本"');
+    expect(productPreview).toContain("当前是可编辑编导脚本");
     expect(productPreview).not.toContain("<span>视频方案</span>");
     expect(productPreview).toContain("查看分镜详情");
     expect(productPreview).toContain("自动补素材");
