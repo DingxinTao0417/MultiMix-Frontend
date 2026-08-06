@@ -319,7 +319,12 @@ describe("display-area eight-case matrix", () => {
       expect(screen.getByRole("button", { name: /导出/ })).toBeInTheDocument();
       expect(container.querySelector("iframe.shadcn-prototype-export-bridge")).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-      expect(container.querySelector("iframe.shadcn-prototype-editor-frame")).toBeInTheDocument();
+      const editorFrame = container.querySelector("iframe.shadcn-prototype-editor-frame");
+      expect(editorFrame).toBeInTheDocument();
+      expect(editorFrame?.parentElement).toHaveClass(
+        "shadcn-prototype-editor-host",
+        "ratio-portrait",
+      );
       expect(container.querySelector("video")).not.toBeInTheDocument();
     },
   );

@@ -2158,6 +2158,7 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
+  container-type: inline-size;
   background: var(--background);
 }
 
@@ -2346,8 +2347,24 @@ button:disabled {
 }
 
 .shadcn-prototype-editor-host {
+  align-self: start;
+  width: 100%;
+  height: min(100%, calc(100cqw + 230px));
+  max-height: 100%;
   padding: 0;
   overflow: hidden;
+}
+
+.shadcn-prototype-editor-host.ratio-landscape {
+  height: min(100%, calc(56.25cqw + 230px));
+}
+
+.shadcn-prototype-editor-host.ratio-portrait {
+  height: min(100%, calc(177.78cqw + 230px));
+}
+
+.shadcn-prototype-editor-host.ratio-cover {
+  height: min(100%, calc(125cqw + 230px));
 }
 
 .shadcn-prototype-editor-frame {

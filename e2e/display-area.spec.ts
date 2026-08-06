@@ -211,7 +211,7 @@ test("CASE-06 renders the ready engineering preview without opening the editable
   await workspace.getByRole("button", { name: /分镜 2|服务过程/ }).click();
   await expect.poll(async () => Number(await progress.inputValue())).toBeGreaterThanOrEqual(2.5);
   await previewFrame.evaluate((iframe) => {
-    iframe.contentWindow?.postMessage(
+    (iframe as HTMLIFrameElement).contentWindow?.postMessage(
       { source: "multimix-workspace", type: "multimix-editor-preview-pause" },
       window.location.origin,
     );

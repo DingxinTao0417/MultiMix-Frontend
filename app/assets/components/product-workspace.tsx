@@ -907,7 +907,7 @@ export default function ProductWorkspace({
         ) : null}
 
         {!isTextEditing && showEditorEmbed ? (
-          <div className="shadcn-prototype-product-main shadcn-prototype-editor-host">
+          <div className={`shadcn-prototype-product-main shadcn-prototype-editor-host ${getProductRatioClass(product.ratio)}`}>
             <iframe
               ref={editorFrameRef}
               key={`editor-${product.backendAssetId}`}

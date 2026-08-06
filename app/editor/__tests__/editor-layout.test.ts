@@ -62,6 +62,17 @@ describe("editor layout constraints", () => {
 		expect(view).toContain("open={isBgmPanelOpen}");
 	});
 
+	it("sizes the embedded editor from the product column and canvas ratio", () => {
+		const workspace = readProjectFile("app/assets/components/product-workspace.tsx");
+		const css = readProjectFile("app/globals.css");
+
+		expect(workspace).toContain("shadcn-prototype-product-main shadcn-prototype-editor-host");
+		expect(workspace).toContain("getProductRatioClass(product.ratio)");
+		expect(css).toContain("container-type: inline-size");
+		expect(css).toContain("calc(56.25cqw + 230px)");
+		expect(css).toContain("calc(177.78cqw + 230px)");
+	});
+
 	it("renders MG animation as normal timeline blocks instead of a collapsed summary overlay", () => {
 		const timelinePanel = readProjectFile(
 			"editor-engine/vendor/editor/components/editor/panels/timeline/index.tsx",
