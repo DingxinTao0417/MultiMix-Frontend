@@ -85,6 +85,37 @@ describe("video browse actions", () => {
     expect(screen.queryByText("视频工程生成中")).not.toBeInTheDocument();
   });
 
+  it("asks before finding a replacement for a confirmed missing scene asset", () => {
+    const product = {
+      ...displayProducts["case-05-project-failed"],
+      failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
+      failureAction: "replace_scene_asset" as const,
+    };
+    const retry = vi.fn(async () => undefined);
+    const composerSend = vi.fn();
+    window.addEventListener("multimix:composer-send", composerSend);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={retry}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重新寻找该镜素材" }));
+
+    expect(retry).not.toHaveBeenCalled();
+    expect(composerSend).toHaveBeenCalledTimes(1);
+    expect((composerSend.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      utterance: "请修改编导脚本：第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。请重新寻找该镜素材，并先让我确认新方案。",
+    });
+    window.removeEventListener("multimix:composer-send", composerSend);
+  });
+
   it("opens the selected segment voiceover editor in a dialog", () => {
     const product = {
       ...displayProducts["case-06-project-ready-no-mp4"],

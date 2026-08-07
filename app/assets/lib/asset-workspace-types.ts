@@ -144,7 +144,7 @@ export type AssetProduct = {
   // stages stay in execution details and must not be rendered as product state.
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string;
-  failureAction?: "retry" | "modify_script";
+  failureAction?: "retry" | "modify_script" | "replace_scene_asset";
   expressionModeLabel?: "素材优先" | "混合表达";
   expressionReason?: string;
   summary: string;

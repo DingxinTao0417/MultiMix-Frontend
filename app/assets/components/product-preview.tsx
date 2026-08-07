@@ -147,9 +147,25 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
     <div className="shadcn-prototype-video-failed" role="alert">
       <strong>{product.contentType === "video_render" ? "视频失败" : "生成失败"}</strong>
       <p>{failureDetail(product)}</p>
-      <p className="shadcn-prototype-video-failed-note">你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。</p>
+      <p className="shadcn-prototype-video-failed-note">
+        {product.failureAction === "replace_scene_asset"
+          ? "系统不会自动替换已经确认的素材。"
+          : "你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。"}
+      </p>
       <div className="shadcn-prototype-video-failed-actions">
-        {product.failureAction === "modify_script" ? (
+        {product.failureAction === "replace_scene_asset" ? (
+          <button
+            type="button"
+            className="primary"
+            onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
+              detail: {
+                utterance: `请修改编导脚本：${failureDetail(product)}请重新寻找该镜素材，并先让我确认新方案。`,
+              },
+            }))}
+          >
+            重新寻找该镜素材
+          </button>
+        ) : product.failureAction === "modify_script" ? (
           <button type="button" className="primary" onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}>
             修改编导脚本
           </button>

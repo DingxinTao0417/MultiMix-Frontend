@@ -977,7 +977,19 @@ export default function ProductWorkspace({
               <strong>视频失败</strong>
               <p>{failureDetail || "任务在后台执行时出错，工程未能生成。"}</p>
               <div className="shadcn-prototype-video-failed-actions">
-                {product.failureAction === "modify_script" || videoJobLive?.failureAction === "modify_script" ? (
+                {product.failureAction === "replace_scene_asset" || videoJobLive?.failureAction === "replace_scene_asset" ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
+                      detail: {
+                        utterance: `请修改编导脚本：${failureDetail || "原素材不可用。"}请重新寻找该镜素材，并先让我确认新方案。`,
+                      },
+                    }))}
+                  >
+                    重新寻找该镜素材
+                  </button>
+                ) : product.failureAction === "modify_script" || videoJobLive?.failureAction === "modify_script" ? (
                   <button
                     type="button"
                     className="primary"

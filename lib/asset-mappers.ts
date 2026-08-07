@@ -636,7 +636,7 @@ function plannedMgDecisions(metadata: Record<string, unknown>): Record<string, u
 function productLifecycleFromAsset(
   asset: ContentAsset,
   rawVideoProject: Record<string, unknown> | undefined,
-): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" } | undefined {
+): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" | "replace_scene_asset" } | undefined {
   const metadata = asset.metadata ?? {};
   const isVideo = asset.content_type === "video_render";
   const isDirector = isVideoDirectorDraft(asset);
@@ -645,13 +645,14 @@ function productLifecycleFromAsset(
   const workflowStage = stringValue(metadata.video_workflow_stage);
   const failed = asset.status === "failed" || workflowStage === "video_project_failed";
   if (failed) {
+    const replaceSceneAsset = stringValue(metadata.failure_action) === "replace_scene_asset";
     const needsScriptRevision = workflowStage === "needs_script_revision" || stringValue(metadata.failure_action) === "modify_script";
     return {
       status: "failed",
       failureReason: stringValue(metadata.failure_reason) || asset.error_message || (needsScriptRevision
         ? "当前编导脚本无法按现有素材和制作条件实现。"
         : isVideo ? "视频生成未能完成。" : "编导脚本生成未能完成。"),
-      failureAction: needsScriptRevision ? "modify_script" : "retry",
+      failureAction: replaceSceneAsset ? "replace_scene_asset" : needsScriptRevision ? "modify_script" : "retry",
     };
   }
   if (isDirector) return { status: "completed" };

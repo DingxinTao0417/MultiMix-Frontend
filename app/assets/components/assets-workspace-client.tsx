@@ -141,7 +141,7 @@ export type VideoJobLiveStatus = {
   completionConfirmed: boolean;
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string | null;
-  failureAction?: "retry" | "modify_script" | null;
+  failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
 };
 
 export function executionRunKey(jobId: string, generation: number): string {

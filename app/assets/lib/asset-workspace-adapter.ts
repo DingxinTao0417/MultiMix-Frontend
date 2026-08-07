@@ -475,7 +475,7 @@ export type VideoJobResult = {
   project: Record<string, unknown> | null;
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string | null;
-  failureAction?: "retry" | "modify_script" | null;
+  failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
 };
 
 type RawVideoJob = {
@@ -494,7 +494,7 @@ type RawVideoJob = {
   project: Record<string, unknown> | null;
   product_status?: "generating" | "completed" | "failed";
   failure_reason?: string | null;
-  failure_action?: "retry" | "modify_script" | null;
+  failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
 };
 
 // Normalise a backend video-job payload into VideoJobResult. steps[] is a
