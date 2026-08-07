@@ -22,13 +22,44 @@ const canonicalBackendRoot = process.env.MULTIMIX_CANONICAL_BACKEND_ROOT
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
   ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
   : canonicalBackendRoot;
+const canonicalEnv = {
+  ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
+  ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
+};
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
 const visionPort = Number(process.env.VIDEO_PIPELINE_VISION_PORT ?? 8428);
 const configuredVisionServiceUrl = (
-  process.env.VIDEO_PIPELINE_VISION_SERVICE_URL ?? ""
+  process.env.VIDEO_PIPELINE_VISION_SERVICE_URL
+  ?? canonicalEnv.MULTIMIX_VISION_SERVICE_URL
+  ?? canonicalEnv.VISION_SERVICE_URL
+  ?? ""
 ).trim().replace(/\/+$/, "");
 const usesExternalVisionService = configuredVisionServiceUrl.length > 0;
+const effectiveVisionApiKey = (
+  process.env.VISION_QWEN_API_KEY
+  ?? process.env.DASHSCOPE_API_KEY
+  ?? process.env.QWEN_API_KEY
+  ?? canonicalEnv.VISION_QWEN_API_KEY
+  ?? canonicalEnv.DASHSCOPE_API_KEY
+  ?? canonicalEnv.QWEN_API_KEY
+  ?? ""
+).trim();
+const effectiveVisionBaseUrl = (
+  process.env.VISION_QWEN_BASE_URL
+  ?? canonicalEnv.VISION_QWEN_BASE_URL
+  ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"
+).trim();
+const effectiveVisionModel = (
+  process.env.VISION_QWEN_MODEL
+  ?? canonicalEnv.VISION_QWEN_MODEL
+  ?? "qwen3-vl-flash"
+).trim();
+if (!usesExternalVisionService && !effectiveVisionApiKey) {
+  throw new Error(
+    "Local vision service requires a configured Qwen/DashScope API key",
+  );
+}
 const requiredPorts = usesExternalVisionService
   ? [backendPort, frontendPort]
   : [backendPort, frontendPort, visionPort];
@@ -444,6 +475,13 @@ async function verifyCandidateVideo() {
     failures.push(
       `duration=${Number.isFinite(duration) ? duration : "missing"}, expected a positive readable duration`,
     );
+  } else if (
+    duration < minimumDurationSeconds
+    || duration > maximumDurationSeconds
+  ) {
+    failures.push(
+      `duration_seconds=${duration}, expected=${minimumDurationSeconds}-${maximumDurationSeconds}`,
+    );
   }
   const { stderr: loudnessStderr } = await run(ffmpegCommand, [
     "-hide_banner",
@@ -792,10 +830,6 @@ try {
   const providerProxyHosts = ["www.pexels.com", "videos.pexels.com", "images.pexels.com"];
   providerProxy = await startProviderEgressProxy(providerProxyHosts);
 
-  const canonicalEnv = {
-    ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
-    ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
-  };
   const llmOverride = {
     baseUrl: process.env.MULTIMIX_LLM_BASE_URL?.trim() || null,
     apiKey: process.env.MULTIMIX_LLM_API_KEY?.trim() || null,
@@ -934,6 +968,9 @@ try {
           ...process.env,
           ...canonicalEnv,
           VISION_PROVIDER: "qwen",
+          VISION_QWEN_API_KEY: effectiveVisionApiKey,
+          VISION_QWEN_BASE_URL: effectiveVisionBaseUrl,
+          VISION_QWEN_MODEL: effectiveVisionModel,
           VISION_QWEN_TIMEOUT_SECONDS: "120",
         },
         "vision.log",

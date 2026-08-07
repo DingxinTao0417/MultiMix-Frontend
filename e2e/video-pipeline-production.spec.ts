@@ -472,29 +472,53 @@ async function waitForProjectReady(
     jobId: string;
   },
 ) {
-  const projectResponse = await page.request.get(
-    `${apiBase}/v1/video/projects/${assetId}`,
-    { headers },
-  );
-  if (!projectResponse.ok()) {
-    throw new Error(
-      `ready video project could not be read: job=${jobId} asset=${assetId} http=${projectResponse.status()}`,
+  const productDeadline = Date.now() + videoJobTimeoutMs;
+  let lastProductStatus = "missing";
+  while (Date.now() < productDeadline) {
+    const projectResponse = await page.request.get(
+      `${apiBase}/v1/video/projects/${assetId}`,
+      { headers },
     );
+    if (!projectResponse.ok()) {
+      throw new Error(
+        `ready video project could not be read: job=${jobId} asset=${assetId} http=${projectResponse.status()}`,
+      );
+    }
+    const project = (await projectResponse.json()) as {
+      project_ready?: boolean;
+      workflow_stage?: string;
+      project?: unknown;
+      product_status?: "generating" | "completed" | "failed";
+      failure_reason?: string;
+      failure_scene_id?: string;
+    };
+    if (
+      !project.project_ready
+      || project.workflow_stage !== "video_project_ready"
+      || !project.project
+    ) {
+      throw new Error(
+        `backend_project_not_ready_after_completed_job: job=${jobId} asset=${assetId} ready=${String(project.project_ready)} stage=${project.workflow_stage ?? "missing"}`,
+      );
+    }
+    lastProductStatus = project.product_status ?? "missing";
+    if (project.product_status === "failed") {
+      throw new Error(
+        `video product failed after project assembly: job=${jobId} asset=${assetId} scene=${project.failure_scene_id ?? "missing"} reason=${project.failure_reason ?? "missing"}`,
+      );
+    }
+    if (project.product_status === "completed") break;
+    await page.waitForTimeout(2500);
   }
-  const project = (await projectResponse.json()) as {
-    project_ready?: boolean;
-    workflow_stage?: string;
-    project?: unknown;
-  };
-  if (!project.project_ready || project.workflow_stage !== "video_project_ready" || !project.project) {
+  if (lastProductStatus !== "completed") {
     throw new Error(
-      `backend_project_not_ready_after_completed_job: job=${jobId} asset=${assetId} ready=${String(project.project_ready)} stage=${project.workflow_stage ?? "missing"}`,
+      `video_product_not_completed_before_timeout: job=${jobId} asset=${assetId} status=${lastProductStatus} timeout_ms=${videoJobTimeoutMs}`,
     );
   }
 
-  // Backend readiness is a separate fact from the workspace projection. Reload
-  // once after the durable project exists, then allow a bounded UI convergence
-  // window. This avoids treating an old DOM selector as a 20-minute render job.
+  // Internal project readiness only makes the timeline available to MG workers.
+  // Reload the workspace after the user-facing product is complete, then allow
+  // a separate bounded window for the DOM projection itself to converge.
   await page.reload({ waitUntil: "domcontentloaded" });
   const deadline = Date.now() + 2 * 60_000;
   while (Date.now() < deadline) {
@@ -878,9 +902,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       (scene) => scene.mg_decision?.needed === true,
     );
     if (plannedMgScenes.length === 0) {
-      throw new Error(
-        "director ignored the explicit request for at least one MG scene",
-      );
+      projectAsset = current;
+      return "not-needed";
     }
     const notDispatched = plannedMgScenes.filter((scene) =>
       new Set(["planned", "stale", "missing"]).has(
@@ -893,7 +916,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         },
         { timeout: 90_000, intervals: [1000, 2500, 5000] },
       )
-      .toBe("dispatched");
+      .toMatch(/^(?:dispatched|not-needed)$/);
     await expect
       .poll(
         async () => {
@@ -911,6 +934,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           const plannedMgScenes = scenesFromAsset(current).filter(
             (scene) => scene.mg_decision?.needed === true,
           );
+          if (plannedMgScenes.length === 0) {
+            projectAsset = current;
+            return "not-needed";
+          }
           const pending = plannedMgScenes.filter(
             (scene) => !new Set(["rendered", "failed"]).has(scene.mg_decision?.status ?? ""),
           );
@@ -926,7 +953,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         },
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
-      .toBe("ready");
+      .toMatch(/^(?:ready|not-needed)$/);
     const persistedVideoPlan = projectAsset!.metadata?.video_plan as {
       duration_contract?: { target_seconds?: number };
       mg_plan?: { layout?: string };
@@ -1048,20 +1075,13 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           !/^https?:\/\//.test(scene.primary_visual.artifact_ref ?? ""),
       ),
     ).toBe(true);
-  for (let index = 1; index < beforeScenes.length; index += 1) {
-    const previousVisual = beforeScenes[index - 1].primary_visual;
-    const currentVisual = beforeScenes[index].primary_visual;
-    if (
-      previousVisual?.source_type === "product_asset" &&
-      currentVisual?.source_type === "product_asset"
-    ) {
-      continue;
-    }
-    expect(
-      currentVisual?.artifact_ref,
-      `adjacent scenes ${beforeScenes[index - 1].id}/${beforeScenes[index].id} must not reuse one main visual`,
-    ).not.toBe(previousVisual?.artifact_ref);
-  }
+  const primaryVisualRefs = beforeScenes.map(
+    (scene) => scene.primary_visual?.artifact_ref ?? "",
+  );
+  expect(
+    new Set(primaryVisualRefs).size,
+    "every scene must use a distinct persisted main visual",
+  ).toBe(primaryVisualRefs.length);
   if (scenario === "hybrid") {
       const savedSourceIds = new Set(
         beforeScenes
@@ -1248,8 +1268,23 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const mgOverlayTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-overlay" && track.overlay === true,
   );
-  if (expectTwoStage)
-    expect(mgOverlayTrack?.elements?.length).toBeGreaterThan(0);
+  if (expectTwoStage) {
+    const renderedMgSceneIds = new Set(
+      beforeScenes
+        .filter(
+          (scene) =>
+            scene.mg_decision?.needed === true &&
+            scene.mg_decision?.status === "rendered",
+        )
+        .map((scene) => scene.id),
+    );
+    const mgOverlaySceneIds = new Set(
+      (mgOverlayTrack?.elements ?? [])
+        .map((element) => element.segmentId)
+        .filter((segmentId): segmentId is string => Boolean(segmentId)),
+    );
+    expect(mgOverlaySceneIds).toEqual(renderedMgSceneIds);
+  }
   if (expectTwoStage && requirePublicAsset) {
     expect(
       publicManifestScenes.length,

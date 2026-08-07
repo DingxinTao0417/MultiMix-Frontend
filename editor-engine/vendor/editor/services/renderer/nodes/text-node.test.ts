@@ -2,8 +2,52 @@ import { describe, expect, it } from "vitest";
 
 import {
 	locateSubtitleTokenInLines,
+	resolveSubtitleOutlineStyle,
 	resolveSubtitleTokenStates,
 } from "../../../lib/text/subtitle-presentation";
+
+describe("resolveSubtitleOutlineStyle", () => {
+	it("adds a dark contrast outline to light subtitles without a background", () => {
+		expect(
+			resolveSubtitleOutlineStyle({
+				textRole: "subtitle",
+				backgroundEnabled: false,
+				textColor: "#ffffff",
+				fontSize: 48,
+			}),
+		).toEqual({ color: "rgba(0, 0, 0, 0.78)", width: 4.32 });
+	});
+
+	it("adds a light contrast outline to dark subtitles without a background", () => {
+		expect(
+			resolveSubtitleOutlineStyle({
+				textRole: "subtitle",
+				backgroundEnabled: false,
+				textColor: "#123b35",
+				fontSize: 48,
+			}),
+		).toEqual({ color: "rgba(255, 255, 255, 0.84)", width: 4.32 });
+	});
+
+	it("does not outline non-subtitles or subtitles with a background", () => {
+		expect(
+			resolveSubtitleOutlineStyle({
+				textRole: "presentation_support",
+				backgroundEnabled: false,
+				textColor: "#ffffff",
+				fontSize: 48,
+			}),
+		).toBeNull();
+		expect(
+			resolveSubtitleOutlineStyle({
+				textRole: "subtitle",
+				backgroundEnabled: true,
+				textColor: "#ffffff",
+				fontSize: 48,
+			}),
+		).toBeNull();
+	});
+});
 
 describe("resolveSubtitleTokenStates", () => {
 	it("marks only the current word active for word-highlight subtitles", () => {

@@ -29,6 +29,18 @@ test("production video E2E isolates backend settings with the current MULTIMIX p
   }
 });
 
+test("production video E2E uses configured vision service and fails closed for an unconfigured local provider", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(
+    source,
+    /process\.env\.VIDEO_PIPELINE_VISION_SERVICE_URL\s*\?\?\s*canonicalEnv\.MULTIMIX_VISION_SERVICE_URL/,
+  );
+  assert.match(source, /Local vision service requires a configured Qwen\/DashScope API key/);
+  assert.match(source, /VISION_QWEN_API_KEY:\s*effectiveVisionApiKey/);
+  assert.match(source, /VISION_QWEN_BASE_URL:\s*effectiveVisionBaseUrl/);
+});
+
 test("production video E2E can disable BGM without dereferencing an absent catalog", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
@@ -57,12 +69,13 @@ test("production video E2E writes a timing ledger for runner and browser stages"
   assert.match(source, /Browser pipeline timings \(slowest first\)/);
 });
 
-test("production video E2E records target duration as a reference instead of rejecting length drift", () => {
+test("production video E2E rejects a final MP4 outside the accepted target duration", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
   assert.match(source, /durationReference/);
   assert.match(source, /!Number\.isFinite\(duration\)\s*\|\|\s*duration <= 0/s);
-  assert.doesNotMatch(source, /duration < minimumDurationSeconds\s*\|\|\s*duration > maximumDurationSeconds/s);
+  assert.match(source, /duration < minimumDurationSeconds\s*\|\|\s*duration > maximumDurationSeconds/s);
+  assert.match(source, /duration_seconds=.*expected=/);
 });
 
 test("production video browser flow records its major user-visible pipeline waits", () => {
@@ -107,6 +120,12 @@ test("production video E2E observes, but does not require, reviewed product medi
     source,
     /beforeScenes\.some\(\s*\(scene\) => scene\.primary_visual\?\.source_type === "product_asset"/s,
   );
+  assert.doesNotMatch(
+    source,
+    /previousVisual\?\.source_type === "product_asset"[\s\S]*?continue;/,
+  );
+  assert.match(source, /const primaryVisualRefs = beforeScenes\.map/);
+  assert.match(source, /new Set\(primaryVisualRefs\)\.size/);
 });
 
 test("production video E2E retries a transient transport failure while waiting for MG", () => {
@@ -118,4 +137,40 @@ test("production video E2E retries a transient transport failure while waiting f
   assert.ok(pendingIndex > -1, "MG terminal poll should remain present");
   assert.match(mgTerminalPoll, /try\s*\{\s*response = await page\.request\.get/s);
   assert.match(mgTerminalPoll, /return `transport-error:/);
+});
+
+test("production video E2E validates planned MG without requiring an MG quantity minimum", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(
+    source,
+    /director ignored the explicit request for at least one MG scene/,
+  );
+  assert.match(
+    source,
+    /if \(plannedMgScenes\.length === 0\) \{\s*projectAsset = current;\s*return "not-needed";/s,
+  );
+  assert.match(source, /mg-not-dispatched:/);
+  assert.match(source, /all enabled MG scenes reached a failed terminal state:/);
+  assert.doesNotMatch(
+    source,
+    /expect\(mgOverlayTrack\?\.elements\?\.length\)\.toBeGreaterThan\(0\)/,
+  );
+  assert.match(source, /const renderedMgSceneIds = new Set/);
+  assert.match(source, /expect\(mgOverlaySceneIds\)\.toEqual\(renderedMgSceneIds\)/);
+});
+
+test("production video E2E waits for user-visible completion before UI convergence", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const functionStart = source.indexOf("async function waitForProjectReady");
+  const functionEnd = source.indexOf("function scenesFromAsset", functionStart);
+  const readinessWait = source.slice(functionStart, functionEnd);
+  const productPoll = readinessWait.indexOf("project.product_status === \"completed\"");
+  const pageReload = readinessWait.indexOf("await page.reload");
+
+  assert.ok(functionStart > -1 && functionEnd > functionStart);
+  assert.match(readinessWait, /productDeadline = Date\.now\(\) \+ videoJobTimeoutMs/);
+  assert.match(readinessWait, /project\.product_status === "failed"/);
+  assert.match(readinessWait, /video_product_not_completed_before_timeout/);
+  assert.ok(productPoll > -1 && productPoll < pageReload);
 });

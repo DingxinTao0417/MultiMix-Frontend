@@ -15,6 +15,7 @@ import {
 import { measureTextElement } from "@editor/lib/text/measure-element";
 import {
 	locateSubtitleTokenInLines,
+	resolveSubtitleOutlineStyle,
 	resolveSubtitleTokenStates,
 } from "@editor/lib/text/subtitle-presentation";
 import {
@@ -163,6 +164,17 @@ export class TextNode extends BaseNode<TextNodeParams> {
 			ctx.textBaseline = baseline;
 			ctx.fillStyle = textColor;
 			setCanvasLetterSpacing({ ctx, letterSpacingPx: letterSpacing });
+			const hasVisibleBackground = Boolean(
+				this.params.background.enabled
+				&& resolvedBackgroundWithColor.color
+				&& resolvedBackgroundWithColor.color !== "transparent",
+			);
+			const subtitleOutline = resolveSubtitleOutlineStyle({
+				textRole: this.params.textRole,
+				backgroundEnabled: hasVisibleBackground,
+				textColor,
+				fontSize: scaledFontSize,
+			});
 
 			if (
 				this.params.background.enabled &&
@@ -201,6 +213,13 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 			for (let i = 0; i < lineCount; i++) {
 				const lineY = i * lineHeightPx - block.visualCenterOffset;
+				if (subtitleOutline) {
+					ctx.strokeStyle = subtitleOutline.color;
+					ctx.lineWidth = subtitleOutline.width;
+					ctx.lineJoin = "round";
+					ctx.miterLimit = 2;
+					ctx.strokeText(lines[i], 0, lineY);
+				}
 				ctx.fillText(lines[i], 0, lineY);
 				drawTextDecoration({
 					ctx,
@@ -247,6 +266,18 @@ export class TextNode extends BaseNode<TextNodeParams> {
 						ctx.save();
 						const accentColor = presentation.accentColor || "#f59e0b";
 						ctx.fillStyle = accentColor;
+						const activeOutline = resolveSubtitleOutlineStyle({
+							textRole: this.params.textRole,
+							backgroundEnabled: hasVisibleBackground,
+							textColor: accentColor,
+							fontSize: scaledFontSize,
+						});
+						if (activeOutline) {
+							ctx.strokeStyle = activeOutline.color;
+							ctx.lineWidth = activeOutline.width;
+							ctx.lineJoin = "round";
+							ctx.miterLimit = 2;
+						}
 						if (presentation.mode === "karaoke") {
 							ctx.shadowColor = accentColor;
 							ctx.shadowBlur = Math.max(4, scaledFontSize * 0.18);
@@ -259,15 +290,20 @@ export class TextNode extends BaseNode<TextNodeParams> {
 								Math.max(1, presentation.karaokeScale ?? 1.08),
 							);
 							ctx.scale(karaokeScale, karaokeScale);
+							if (activeOutline) {
+								ctx.strokeText(active.text, -activeWidth / 2, 0);
+							}
 							ctx.fillText(active.text, -activeWidth / 2, 0);
 							ctx.restore();
 							return;
 						}
-						ctx.fillText(
-							active.text,
-							xStart + prefixWidth,
-							location.lineIndex * lineHeightPx - block.visualCenterOffset,
-						);
+						const activeX = xStart + prefixWidth;
+						const activeY =
+							location.lineIndex * lineHeightPx - block.visualCenterOffset;
+						if (activeOutline) {
+							ctx.strokeText(active.text, activeX, activeY);
+						}
+						ctx.fillText(active.text, activeX, activeY);
 						ctx.restore();
 					}
 				}
