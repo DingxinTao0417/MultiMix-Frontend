@@ -4,6 +4,7 @@ import type {
   AssetConversation,
   AssetLongFormAction,
   AssetProduct,
+  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetWorkspaceData,
   AssetWorkspaceView,
@@ -158,6 +159,7 @@ export function buildConversationMessagePayload({
   videoParameterConfirmation,
   agentConfirmationId,
   longFormAction,
+  videoSceneReplacement,
 }: {
   conversationId: string;
   instruction: string;
@@ -167,6 +169,7 @@ export function buildConversationMessagePayload({
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
   agentConfirmationId?: string;
   longFormAction?: AssetLongFormAction;
+  videoSceneReplacement?: AssetVideoSceneReplacement;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -187,6 +190,12 @@ export function buildConversationMessagePayload({
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
+    ...(videoSceneReplacement ? {
+      video_scene_replacement: {
+        failed_project_asset_id: videoSceneReplacement.failedProjectAssetId,
+        scene_id: videoSceneReplacement.sceneId,
+      },
+    } : {}),
     ...(videoParameterConfirmation ? {
       video_parameter_confirmation: {
         pending_intent_id: videoParameterConfirmation.pendingIntentId,
@@ -331,6 +340,7 @@ export type AssetWorkspaceAdapter = {
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
     agentConfirmationId?: string;
     longFormAction?: AssetLongFormAction;
+    videoSceneReplacement?: AssetVideoSceneReplacement;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -476,6 +486,7 @@ export type VideoJobResult = {
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failureSceneId?: string | null;
 };
 
 type RawVideoJob = {
@@ -495,6 +506,7 @@ type RawVideoJob = {
   product_status?: "generating" | "completed" | "failed";
   failure_reason?: string | null;
   failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failure_scene_id?: string | null;
 };
 
 // Normalise a backend video-job payload into VideoJobResult. steps[] is a
@@ -526,6 +538,7 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     productStatus: raw.product_status,
     failureReason: raw.failure_reason,
     failureAction: raw.failure_action,
+    failureSceneId: raw.failure_scene_id,
   };
 }
 
@@ -1008,6 +1021,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       videoParameterConfirmation,
       agentConfirmationId,
       longFormAction,
+      videoSceneReplacement,
       signal,
     }) {
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1026,6 +1040,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           videoParameterConfirmation,
           agentConfirmationId,
           longFormAction,
+          videoSceneReplacement,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

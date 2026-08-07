@@ -27,6 +27,7 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetLongFormAction,
+  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
 } from "../lib/asset-workspace-types";
 import {
@@ -142,6 +143,7 @@ export type VideoJobLiveStatus = {
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failureSceneId?: string | null;
 };
 
 export function executionRunKey(jobId: string, generation: number): string {
@@ -1083,6 +1085,7 @@ export default function AssetsWorkspaceClient({
           productStatus: job.productStatus,
           failureReason: job.failureReason,
           failureAction: job.failureAction,
+          failureSceneId: job.failureSceneId,
           completionConfirmed: false,
         },
       }));
@@ -1295,6 +1298,7 @@ export default function AssetsWorkspaceClient({
           productStatus: refreshed.productStatus,
           failureReason: refreshed.failureReason,
           failureAction: refreshed.failureAction,
+          failureSceneId: refreshed.failureSceneId,
             completionConfirmed: false,
           },
         }));
@@ -1843,6 +1847,7 @@ export default function AssetsWorkspaceClient({
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
     longFormAction?: AssetLongFormAction,
+    videoSceneReplacement?: AssetVideoSceneReplacement,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1911,6 +1916,7 @@ export default function AssetsWorkspaceClient({
         videoParameterConfirmation,
         agentConfirmationId,
         longFormAction,
+        videoSceneReplacement,
         signal
       });
     } catch (error) {

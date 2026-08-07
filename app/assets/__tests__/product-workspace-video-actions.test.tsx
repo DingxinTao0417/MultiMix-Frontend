@@ -90,6 +90,8 @@ describe("video browse actions", () => {
       ...displayProducts["case-05-project-failed"],
       failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
       failureAction: "replace_scene_asset" as const,
+      failureSceneId: "seg-4",
+      backendAssetId: 440,
     };
     const retry = vi.fn(async () => undefined);
     const composerSend = vi.fn();
@@ -111,9 +113,35 @@ describe("video browse actions", () => {
     expect(retry).not.toHaveBeenCalled();
     expect(composerSend).toHaveBeenCalledTimes(1);
     expect((composerSend.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-      utterance: "请修改编导脚本：第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。请重新寻找该镜素材，并先让我确认新方案。",
+      utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+      videoSceneReplacement: {
+        failedProjectAssetId: 440,
+        sceneId: "seg-4",
+      },
     });
     window.removeEventListener("multimix:composer-send", composerSend);
+  });
+
+  it("does not guess a failed scene id from the error sentence", () => {
+    const product = {
+      ...displayProducts["case-05-project-failed"],
+      backendAssetId: 440,
+      failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
+      failureAction: "replace_scene_asset" as const,
+      failureSceneId: undefined,
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "重新寻找该镜素材" })).toBeDisabled();
   });
 
   it("opens the selected segment voiceover editor in a dialog", () => {

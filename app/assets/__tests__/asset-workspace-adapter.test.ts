@@ -207,6 +207,24 @@ describe("runtime data boundary", () => {
     });
   });
 
+  it("serializes failed-scene material replacement as a bound action", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "重新寻找第 4 镜素材",
+      selectedProductId: 440,
+      videoSceneReplacement: {
+        failedProjectAssetId: 440,
+        sceneId: "seg-4",
+      },
+    })).toMatchObject({
+      selected_product_id: 440,
+      video_scene_replacement: {
+        failed_project_asset_id: 440,
+        scene_id: "seg-4",
+      },
+    });
+  });
+
   it("maps a stored image reference through the media proxy for a list thumbnail", async () => {
     const image = asset({
       id: 73,

@@ -111,6 +111,30 @@ describe("asset product mapper", () => {
     expect(failed.failureReason).toBe("动效服务超时");
   });
 
+  it("maps the recorded failed scene id without parsing the error sentence", () => {
+    const failed = contentAssetToProduct(asset({
+      id: 204,
+      asset_kind: "video_render",
+      content_type: "video_render",
+      status: "ready",
+      generation_state: "video_project_ready",
+      error_message: "素材失效",
+      metadata: {
+        video_workflow_stage: "video_project_ready",
+        failure_action: "replace_scene_asset",
+        pipeline_attempt: {
+          failure: {
+            code: "original_material_unavailable",
+            scene_id: "seg-4",
+          },
+        },
+      },
+    }));
+
+    expect(failed.failureAction).toBe("replace_scene_asset");
+    expect(failed.failureSceneId).toBe("seg-4");
+  });
+
   it("maps a long-form candidate set to the dedicated product contract", () => {
     const product = contentAssetToProduct(asset({
       id: 92,

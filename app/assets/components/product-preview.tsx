@@ -143,6 +143,7 @@ function failureDetail(product: ProductArtifact): string {
 // runs through the conversation: retry re-submits a real instruction, adjust
 // focuses the composer. No fabricated retry when nothing can be re-run.
 function ProductFailureCard({ product }: { product: ProductArtifact }) {
+  const canReplaceFailedScene = Boolean(product.backendAssetId && product.failureSceneId);
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
       <strong>{product.contentType === "video_render" ? "视频失败" : "生成失败"}</strong>
@@ -157,9 +158,15 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
           <button
             type="button"
             className="primary"
+            disabled={!canReplaceFailedScene}
+            title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
             onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
               detail: {
-                utterance: `请修改编导脚本：${failureDetail(product)}请重新寻找该镜素材，并先让我确认新方案。`,
+                utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+                videoSceneReplacement: {
+                  failedProjectAssetId: product.backendAssetId,
+                  sceneId: product.failureSceneId,
+                },
               },
             }))}
           >

@@ -17,9 +17,11 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetConversationMessage,
+  AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
   AssetPlanConfirmationValues,
+  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
 } from "../lib/asset-workspace-types";
 import ConfirmCard from "./confirm-card";
@@ -258,6 +260,8 @@ export default function ConversationStudio({
     clientRequestId?: string,
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
+    longFormAction?: AssetLongFormAction,
+    videoSceneReplacement?: AssetVideoSceneReplacement,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
@@ -357,6 +361,7 @@ export default function ConversationStudio({
     clientRequestId?: string,
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
+    videoSceneReplacement?: AssetVideoSceneReplacement,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -403,6 +408,8 @@ export default function ConversationStudio({
         durableRequestId,
         videoParameterConfirmation,
         agentConfirmationId,
+        undefined,
+        videoSceneReplacement,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -511,9 +518,20 @@ export default function ConversationStudio({
       composerRef.current?.focus();
     };
     const onComposerSend = (event: Event) => {
-      const utterance = (event as CustomEvent<{ utterance?: string }>).detail?.utterance;
+      const detail = (event as CustomEvent<{
+        utterance?: string;
+        videoSceneReplacement?: AssetVideoSceneReplacement;
+      }>).detail;
+      const utterance = detail?.utterance;
       if (typeof utterance === "string" && utterance.trim()) {
-        void sendInstruction(utterance.trim());
+        void sendInstruction(
+          utterance.trim(),
+          undefined,
+          detail?.videoSceneReplacement ? globalThis.crypto.randomUUID() : undefined,
+          undefined,
+          undefined,
+          detail?.videoSceneReplacement,
+        );
       }
     };
     window.addEventListener("multimix:composer-focus", onFocusComposer);

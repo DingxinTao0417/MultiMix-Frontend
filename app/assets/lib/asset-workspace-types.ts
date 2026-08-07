@@ -145,6 +145,7 @@ export type AssetProduct = {
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  failureSceneId?: string;
   expressionModeLabel?: "素材优先" | "混合表达";
   expressionReason?: string;
   summary: string;
@@ -174,6 +175,11 @@ export type AssetProduct = {
   videoProjectReady?: boolean;
   videoQualityReport?: VideoQualityReport;
   metadata?: Record<string, unknown>;
+};
+
+export type AssetVideoSceneReplacement = {
+  failedProjectAssetId: number;
+  sceneId: string;
 };
 
 // Structured confirmation plan attached to an assistant message. Rendered as

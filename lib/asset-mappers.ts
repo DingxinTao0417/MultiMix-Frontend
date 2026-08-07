@@ -636,23 +636,29 @@ function plannedMgDecisions(metadata: Record<string, unknown>): Record<string, u
 function productLifecycleFromAsset(
   asset: ContentAsset,
   rawVideoProject: Record<string, unknown> | undefined,
-): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" | "replace_scene_asset" } | undefined {
+): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" | "replace_scene_asset"; failureSceneId?: string } | undefined {
   const metadata = asset.metadata ?? {};
   const isVideo = asset.content_type === "video_render";
   const isDirector = isVideoDirectorDraft(asset);
   if (!isVideo && !isDirector) return undefined;
 
   const workflowStage = stringValue(metadata.video_workflow_stage);
-  const failed = asset.status === "failed" || workflowStage === "video_project_failed";
+  const recordedFailureAction = stringValue(metadata.failure_action);
+  const failed = asset.status === "failed"
+    || workflowStage === "video_project_failed"
+    || ["retry", "modify_script", "replace_scene_asset"].includes(recordedFailureAction);
   if (failed) {
-    const replaceSceneAsset = stringValue(metadata.failure_action) === "replace_scene_asset";
-    const needsScriptRevision = workflowStage === "needs_script_revision" || stringValue(metadata.failure_action) === "modify_script";
+    const replaceSceneAsset = recordedFailureAction === "replace_scene_asset";
+    const pipelineAttempt = isRecord(metadata.pipeline_attempt) ? metadata.pipeline_attempt : {};
+    const pipelineFailure = isRecord(pipelineAttempt.failure) ? pipelineAttempt.failure : {};
+    const needsScriptRevision = workflowStage === "needs_script_revision" || recordedFailureAction === "modify_script";
     return {
       status: "failed",
       failureReason: stringValue(metadata.failure_reason) || asset.error_message || (needsScriptRevision
         ? "当前编导脚本无法按现有素材和制作条件实现。"
         : isVideo ? "视频生成未能完成。" : "编导脚本生成未能完成。"),
       failureAction: replaceSceneAsset ? "replace_scene_asset" : needsScriptRevision ? "modify_script" : "retry",
+      failureSceneId: replaceSceneAsset ? stringValue(pipelineFailure.scene_id) || undefined : undefined,
     };
   }
   if (isDirector) return { status: "completed" };
@@ -1061,6 +1067,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     productStatus: lifecycle?.status,
     failureReason: lifecycle?.failureReason,
     failureAction: lifecycle?.failureAction,
+    failureSceneId: lifecycle?.failureSceneId,
     expressionModeLabel,
     expressionReason,
     summary: firstMeaningfulLine(asset.body) || asset.title,

@@ -155,6 +155,8 @@ export default function ProductWorkspace({
     || videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
+  const replacementSceneId = videoJobLive?.failureSceneId || product.failureSceneId;
+  const canReplaceFailedScene = Boolean(product.backendAssetId && replacementSceneId);
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
   // Demo-final video surfaces (workspace-video.html): "browse" (player when an
   // MP4 exists, otherwise segment cards from video_project) is the default;
@@ -981,9 +983,15 @@ export default function ProductWorkspace({
                   <button
                     type="button"
                     className="primary"
+                    disabled={!canReplaceFailedScene}
+                    title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
                     onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
                       detail: {
-                        utterance: `请修改编导脚本：${failureDetail || "原素材不可用。"}请重新寻找该镜素材，并先让我确认新方案。`,
+                        utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+                        videoSceneReplacement: {
+                          failedProjectAssetId: product.backendAssetId,
+                          sceneId: replacementSceneId,
+                        },
                       },
                     }))}
                   >
