@@ -355,9 +355,16 @@ type SegmentTiming = { start: number; end: number };
 
 type PrimaryVisualSourceType = "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
 type MaterialFillStatus = "saved_hit" | "public_candidate" | "unfilled";
+type PrimaryVisualTreatment = "source_primary" | "source_with_graphics" | "graphics_primary";
 
 function primaryVisualSourceType(value: unknown): PrimaryVisualSourceType | undefined {
   return value === "saved_asset" || value === "public_asset" || value === "product_asset" || value === "generated_scene"
+    ? value
+    : undefined;
+}
+
+function primaryVisualTreatment(value: unknown): PrimaryVisualTreatment | undefined {
+  return value === "source_primary" || value === "source_with_graphics" || value === "graphics_primary"
     ? value
     : undefined;
 }
@@ -453,6 +460,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         ? planScene.voice
         : null;
     const primarySourceType = primaryVisualSourceType(primaryVisual?.source_type);
+    const primaryTreatment = primaryVisualTreatment(primaryStrategy?.visual_treatment);
     const primaryPersisted = stringValue(primaryVisual?.status) === "persisted";
     const primaryArtifactRef = stringValue(primaryVisual?.preview_ref) || stringValue(primaryVisual?.artifact_ref);
     const primaryMediaType = primaryVisualMediaType(primaryArtifactRef, primarySourceType);
@@ -510,7 +518,8 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         ? stringValue(visible?.label) || stringValue(decision.chosen_template) || "MG"
         : undefined,
       mgStatus: decision?.needed === true ? stringValue(decision.status) || undefined : undefined,
-      visualTreatmentLabel: visualTreatmentLabel(primaryStrategy?.visual_treatment),
+      primaryVisualTreatment: primaryTreatment,
+      visualTreatmentLabel: visualTreatmentLabel(primaryTreatment),
       selectionReason: stringValue(primaryStrategy?.selection_reason) || undefined,
       graphicComponentLabel: graphicComponentLabel(primaryStrategy?.graphic_component),
       backgroundTreatmentLabel: stringValue(primaryStrategy?.background_policy) === "verified_material_blur"

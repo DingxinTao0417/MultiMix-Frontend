@@ -10,6 +10,31 @@ type SegmentMedia = {
   src: string;
 };
 
+function GraphicsPrimaryAnchor({
+  title,
+  line,
+  visualTreatmentLabel,
+  graphicComponentLabel,
+  backgroundTreatmentLabel,
+}: {
+  title?: string;
+  line?: string;
+  visualTreatmentLabel?: string;
+  graphicComponentLabel?: string;
+  backgroundTreatmentLabel?: string;
+}) {
+  return (
+    <div className="shadcn-prototype-graphics-primary-anchor" aria-label="图形主画面预览">
+      <span className="shadcn-prototype-graphics-primary-anchor-kind">
+        {visualTreatmentLabel || graphicComponentLabel || "图形主画面"}
+      </span>
+      <strong>{title || "图形主画面"}</strong>
+      {line ? <p>{line}</p> : null}
+      <em>{backgroundTreatmentLabel || "图形背景与版式起始态"}</em>
+    </div>
+  );
+}
+
 export function mediaUrlForRef(ref: string): string {
   if (!ref) return "";
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
@@ -64,6 +89,9 @@ export default function StoryboardPreview({
   );
   const segment = product.segments?.find((item) => item.id === activeSegmentId) ?? product.segments?.[0];
   const showSegmentVideo = !failed && currentSegmentMedia?.kind === "video";
+  const showGraphicsAnchor = !failed
+    && !currentSegmentMedia
+    && segment?.primaryVisualTreatment === "graphics_primary";
 
   useEffect(() => {
     setFailed(false);
@@ -97,7 +125,16 @@ export default function StoryboardPreview({
               onError={() => setFailed(true)}
             />
           ) : null}
-          {failed || !currentSegmentMedia ? (
+          {showGraphicsAnchor ? (
+            <GraphicsPrimaryAnchor
+              title={segment?.title}
+              line={segment?.line}
+              visualTreatmentLabel={segment?.visualTreatmentLabel}
+              graphicComponentLabel={segment?.graphicComponentLabel}
+              backgroundTreatmentLabel={segment?.backgroundTreatmentLabel}
+            />
+          ) : null}
+          {failed || (!currentSegmentMedia && !showGraphicsAnchor) ? (
             <div className="shadcn-prototype-video-placeholder-screen" role={failed ? "alert" : undefined}>
               <span className="shadcn-prototype-video-placeholder-stage">分镜 {segment?.index ?? 1}</span>
               <strong>{failed ? (segment?.title || segment?.assetTitle || "分镜预览") : segment?.visualStatusLabel || "待补素材"}</strong>

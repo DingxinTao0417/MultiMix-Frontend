@@ -8,7 +8,8 @@ function segmentRange(segment: AssetProductSegment): string | null {
 }
 
 export function segmentNeedsMaterial(segment: AssetProductSegment): boolean {
-  return segment.primaryVisualSourceType !== "generated_scene"
+  return segment.primaryVisualTreatment !== "graphics_primary"
+    && segment.primaryVisualSourceType !== "generated_scene"
     && Boolean(segment.isFallback)
     && !segment.assetTitle
     && !segment.assetThumbnailUrl;
@@ -75,6 +76,8 @@ export default function SegmentCards({
                   <img src={segment.assetThumbnailUrl} alt="" loading="lazy" />
                 ) : segment.primaryVisualMediaType === "video" ? (
                   <span className="shadcn-prototype-segment-video-placeholder">视频</span>
+                ) : segment.primaryVisualTreatment === "graphics_primary" ? (
+                  <span className="shadcn-prototype-segment-graphics-placeholder">图形</span>
                 ) : null}
               </span>
               <span className="shadcn-prototype-segment-copy">

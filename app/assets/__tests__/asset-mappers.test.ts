@@ -724,6 +724,7 @@ describe("asset product mapper", () => {
     expect(product.expressionModeLabel).toBe("混合表达");
     expect(product.expressionReason).toBe("真实素材和结构化图形需要逐镜混合。");
     expect(product.segments?.[0]).toMatchObject({
+      primaryVisualTreatment: "graphics_primary",
       visualTreatmentLabel: "完整图形主画面",
       selectionReason: "流程关系比单张素材更容易理解。",
       graphicComponentLabel: "流程图",

@@ -83,6 +83,7 @@ export type AssetProductSegment = {
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
   mgStatus?: string;
+  primaryVisualTreatment?: "source_primary" | "source_with_graphics" | "graphics_primary";
   visualTreatmentLabel?: "素材主画面" | "素材 + 图形说明" | "完整图形主画面";
   selectionReason?: string;
   graphicComponentLabel?: string;
