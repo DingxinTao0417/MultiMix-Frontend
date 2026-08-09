@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · 终稿 · 智能体工作台四屏（可点击原型）</title>
+<style>
+  :root{--bg:#111114;--surface:#1A1A1F;--ink:#EDEDF2;--ink-2:#9A9AA6;--line:#2A2A33;--accent:#6E8BFF;}
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;}
+  header{display:flex;align-items:center;gap:16px;padding:14px 24px;border-bottom:1px solid var(--line)}
+  h1{font-size:15px;font-weight:650;margin:0;letter-spacing:.02em}
+  h1 span{color:var(--ink-2);font-weight:400}
+  .tabs{display:flex;gap:6px}
+  .tabs button{border:1px solid var(--line);background:transparent;color:var(--ink-2);padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer}
+  .tabs button.on{background:var(--surface);color:var(--ink);border-color:var(--accent)}
+  header nav{margin-left:auto;display:flex;gap:14px;align-items:center}
+  header a{color:var(--accent);font-size:12.5px;text-decoration:none}
+  .open{border:1px solid var(--accent);border-radius:8px;padding:6px 12px}
+  main{min-height:0;padding:14px 16px;display:grid}
+  .frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000;min-height:0;justify-self:center}
+  iframe{width:1440px;height:900px;border:0;transform-origin:0 0}
+  .tip{position:fixed;left:24px;bottom:16px;font-size:12px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<header>
+  <h1>MultiMix · 终稿四屏 <span>· V3 智能体工作台 · 可点击原型（在下方画布里直接操作）</span></h1>
+  <div class="tabs">
+    <button data-p="start.html">① 新建对话</button>
+    <button data-p="workspace-copy.html" class="on">② 文案工作台</button>
+    <button data-p="workspace-video.html">③ 视频工作台</button>
+    <button data-p="library.html">④ 库（四库切换）</button>
+    <button data-p="editor.html">⑤ 剪辑器·换肤参考</button>
+    <button data-p="login.html">⑥ 登录</button>
+    <button data-p="admin-sources.html">⑦ 素材源管理</button>
+  </div>
+  <nav>
+    <a href="../explorations/2026-07-08-round1-visual-style/index.html">第一轮</a><a href="../explorations/2026-07-08-round2-space-model/index.html">第二轮</a><a href="../explorations/2026-07-08-round3-workbench-options/index.html">第三轮</a>
+    <a class="open" id="openNew" href="screens/workspace-copy.html" target="_blank">新窗口打开当前屏 ↗</a>
+  </nav>
+</header>
+<main>
+  <div class="frame" id="frame"><iframe id="view" src="screens/workspace-copy.html"></iframe></div>
+</main>
+<div class="tip">提示：②里点产物卡可在封面图/文案间切换、试试「演示失败态」和拖文件进窗口；③里「换素材」会弹 AI 推荐选择器、「演示其他状态」看生成中/失败；④侧边栏可切四个库，配音稿能试听、数字人看口播文稿；⑥登录成功会跳工作台。</div>
+<script>
+  const frame = document.getElementById('frame'), view = document.getElementById('view'), openNew = document.getElementById('openNew');
+  const fit = () => {
+    const availW = frame.parentElement.clientWidth - 4;
+    const availH = frame.parentElement.clientHeight - 4;
+    const s = Math.min(availW / 1440, availH / 900, 1);
+    view.style.transform = 'scale(' + s + ')';
+    frame.style.width = (1440 * s) + 'px';
+    frame.style.height = (900 * s) + 'px';
+  };
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+    view.src = 'screens/' + b.dataset.p;
+    openNew.href = 'screens/' + b.dataset.p;
+  });
+  addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

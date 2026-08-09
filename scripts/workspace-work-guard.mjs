@@ -14,6 +14,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const REGISTRY_NAME = ".multimix-work-claims.json";
 const UPDATE_LOCK_NAME = ".multimix-work-claims.lock";
 const REGISTRY_VERSION = 1;
+const ACTIVE_PLAN_PREFIXES = [
+  "MultiMix-Frontend/docs/plans/active/",
+  "MultiMix-Backend/docs/plans/active/",
+];
 
 function registryPath(workspaceRoot) {
   return path.join(workspaceRoot, REGISTRY_NAME);
@@ -89,8 +93,13 @@ function normalizeOwner(value) {
 
 function normalizePlan(workspaceRoot, value, { requireExists = true } = {}) {
   const plan = normalizeRelativePath(value, "Active plan");
-  if (!plan.startsWith("docs/plans/active/") || !plan.toLowerCase().endsWith(".md")) {
-    throw new Error("Active plan must be a Markdown file under docs/plans/active/");
+  if (
+    !ACTIVE_PLAN_PREFIXES.some((prefix) => plan.startsWith(prefix)) ||
+    !plan.toLowerCase().endsWith(".md")
+  ) {
+    throw new Error(
+      "Active plan must be a Markdown file under MultiMix-Frontend/docs/plans/active/ or MultiMix-Backend/docs/plans/active/",
+    );
   }
   if (requireExists && !existsSync(path.join(workspaceRoot, ...plan.split("/")))) {
     throw new Error(`Active plan does not exist: ${plan}`);
@@ -310,9 +319,8 @@ export function findWorkspaceRoot(startPath) {
   let candidate = path.resolve(startPath);
   while (true) {
     if (
-      existsSync(path.join(candidate, "docs", "README.md")) &&
-      existsSync(path.join(candidate, "MultiMix-Frontend")) &&
-      existsSync(path.join(candidate, "MultiMix-Backend"))
+      existsSync(path.join(candidate, "MultiMix-Frontend", "docs", "README.md")) &&
+      existsSync(path.join(candidate, "MultiMix-Backend", "docs", "README.md"))
     ) {
       return candidate;
     }

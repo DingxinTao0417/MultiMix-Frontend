@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · C3 创作流 · 对话即画布</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-a:#7C5CFF; --ai-b:#00A88E;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --ai-soft:linear-gradient(120deg,rgba(124,92,255,.09),rgba(0,168,142,.09));
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --warn:#9A6A00; --warn-soft:#FFF3D9;
+  --ok:#0E8A6B;
+  --radius:16px; --radius-sm:12px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+  --shadow-float:0 6px 16px rgba(32,31,30,.07),0 28px 70px rgba(32,31,30,.13);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
+  display:grid;grid-template-rows:auto minmax(0,1fr);min-width:1280px;position:relative;
+}
+body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(640px 380px at 24% 8%,rgba(124,92,255,.05),transparent 70%),
+    radial-gradient(560px 340px at 80% 92%,rgba(0,168,142,.05),transparent 70%)}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 -14px 26px rgba(20,24,28,.14)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.5) 47.4%,rgba(255,255,255,.5) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.42) 55%,rgba(255,255,255,.42) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#C9DCEC 0%,#E8EFF4 44%,#D8C5A6 62%,#A98F6C 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.16) 30%,rgba(255,255,255,.16) 34%,transparent 34%),
+  linear-gradient(135deg,#343B42 0%,#5A646E 52%,#8C97A1 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.14) 62%,rgba(255,255,255,.14) 64%,transparent 64%),
+  linear-gradient(160deg,#D97B2F 0%,#E8A463 34%,#9AA0A6 76%,#7D838A 100%)}
+.ph-measure{background:
+  linear-gradient(90deg,transparent 40%,rgba(120,96,40,.25) 40%,rgba(120,96,40,.25) 42%,transparent 42%),
+  linear-gradient(150deg,#E5C468 0%,#DCD5C6 55%,#A5A198 100%)}
+.phbox{border-radius:9px;overflow:hidden;flex:none;background:var(--surface-2);box-shadow:0 0 0 1px var(--line)}
+.gdot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);animation:breathe 2.2s ease infinite;flex:none}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.7}}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);padding:2px 9px;border-radius:999px}
+
+/* ============ 顶栏 ============ */
+.topbar{display:flex;align-items:center;gap:12px;padding:12px 24px;position:relative;z-index:5;
+  border-bottom:1px solid var(--line);background:rgba(250,249,247,.85);backdrop-filter:blur(8px)}
+.brand-mark{width:28px;height:28px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center}
+.doc-title{font-size:14px;font-weight:650}
+.doc-meta{font-size:12px;color:var(--ink-3)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.nav-ico{width:34px;height:34px;border-radius:50%;background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--ink-2)}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--surface-2);color:var(--ink-2);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--line-2)}
+
+/* ============ 文档流 ============ */
+.stream-wrap{overflow:auto;min-height:0;position:relative;z-index:1;padding:34px 24px 130px}
+.stream{max-width:760px;margin:0 auto;display:grid;gap:26px}
+.caption{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--ink-3);letter-spacing:.04em}
+.caption::before,.caption::after{content:"";height:1px;background:var(--line);flex:1}
+
+.blk{display:grid;gap:10px;position:relative}
+.blk-head{display:flex;align-items:center;gap:9px}
+.blk-head .who{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;flex:none}
+.blk-head .who.user{background:var(--surface-2);border:1px solid var(--line-2);font-size:11.5px;font-weight:650;color:var(--ink-2)}
+.blk-head .who.ai{background:var(--ai-grad);color:#fff}
+.blk-head .name{font-size:12.5px;font-weight:650}
+.blk-head .time{font-size:11px;color:var(--ink-3)}
+.blk-body{margin-left:35px;display:grid;gap:10px}
+.blk-body .say{font-size:14.5px;line-height:1.75}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.asset-chip{display:flex;align-items:center;gap:7px;height:34px;padding:3px 11px 3px 3px;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:12px;color:var(--ink-2)}
+.asset-chip .phbox{width:28px;height:28px;border-radius:7px}
+/* 方案块（已确认） */
+.plan-card{
+  border:1px solid transparent;border-radius:var(--radius);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 4px 14px rgba(124,92,255,.07),0 16px 40px rgba(0,168,142,.07);
+  display:grid;
+}
+.pc-head{display:flex;align-items:center;gap:9px;padding:14px 18px 0}
+.pc-title{font-size:14px;font-weight:650}
+.pc-ok{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+  color:var(--ok);background:rgba(14,138,107,.09);padding:3px 10px;border-radius:999px}
+.pc-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;padding:12px 18px 16px}
+.pc-row{display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px;align-items:baseline}
+.pc-row .k{font-size:11.5px;color:var(--ink-3);text-align:right}
+.pc-row .v{font-size:13px;color:var(--ink);font-weight:500}
+
+/* 成品块：生长中的产物 */
+.artifact-blk{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);overflow:hidden;display:grid;
+}
+.ab-head{display:flex;align-items:center;gap:9px;padding:13px 18px;border-bottom:1px solid var(--line)}
+.ab-head .t{font-size:13px;font-weight:650}
+.ab-head .m{font-size:11.5px;color:var(--ink-3)}
+.ab-acts{margin-left:auto;display:flex;gap:6px}
+.mini-btn{height:29px;padding:0 12px;border-radius:999px;font-size:11.5px;font-weight:600}
+.mini-btn.ink{background:var(--ink);color:#fff}
+.mini-btn.gh{border:1px solid var(--line-2);color:var(--ink-2)}
+.ab-body{padding:20px 24px 18px;display:grid;gap:13px}
+.ab-covers{display:flex;gap:8px}
+.ab-covers .phbox{width:104px;height:78px;border-radius:10px}
+.ab-covers .phbox.main{border:1px solid transparent;
+  background:linear-gradient(var(--surface-2),var(--surface-2)) padding-box,var(--ai-grad) border-box}
+.ab-title{font-size:19px;font-weight:700;line-height:1.45}
+.ab-text{font-size:14px;line-height:1.8;color:var(--ink);display:grid;gap:9px}
+.typing{display:flex;align-items:center;gap:9px;color:var(--ink-3);font-size:13px}
+.type-bar{height:3px;border-radius:3px;width:180px;position:relative;overflow:hidden;background:var(--surface-2)}
+.type-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--ai-grad);opacity:.75;
+  animation:sweep 1.8s ease infinite}
+@keyframes sweep{0%{transform:translateX(-55%)}100%{transform:translateX(55%)}}
+.ab-tags{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-size:12.5px;color:var(--ink-2);background:var(--surface-2);padding:3px 12px;border-radius:999px}
+.ab-src{display:flex;align-items:center;gap:9px;padding:11px 18px;border-top:1px solid var(--line);
+  background:var(--ai-soft);font-size:12px;color:var(--ink-2)}
+.ab-src .s-thumbs{display:flex;gap:5px}
+.ab-src .phbox{width:26px;height:20px;border-radius:5px}
+.ab-src b{color:var(--ink);font-weight:600}
+.sugg{display:flex;gap:8px;flex-wrap:wrap;margin-left:35px}
+.sugg button{height:30px;padding:0 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);font-size:12.5px;color:var(--ink-2)}
+.sugg button:hover{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+/* ============ 右缘小地图 ============ */
+.minimap{position:fixed;right:20px;top:50%;transform:translateY(-50%);z-index:4;display:grid;gap:14px;justify-items:center}
+.mm-item{display:grid;gap:3px;justify-items:center;color:var(--ink-3);font-size:9.5px;letter-spacing:.04em}
+.mm-item i{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.mm-item.on i{background:var(--ai-grad)}
+.mm-item.on{color:var(--ink-2);font-weight:600}
+
+/* ============ 底部悬浮输入 ============ */
+.dock{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);width:680px;z-index:6}
+.cmd-bar{display:flex;align-items:center;gap:11px;height:54px;padding:0 9px 0 17px;
+  border:1px solid transparent;border-radius:999px;
+  background:linear-gradient(rgba(255,255,255,.97),rgba(255,255,255,.97)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-float)}
+.cmd-bar .hint{flex:1;font-size:13.5px;color:var(--ink-3)}
+.cmd-bar .clip{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--ink-3)}
+.cmd-bar .send{width:38px;height:38px;border-radius:50%;background:var(--ai-grad);color:#fff;
+  display:grid;place-items:center;box-shadow:0 8px 20px rgba(124,92,255,.28)}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="brand-mark">
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div>
+    <div class="doc-title">门窗案例小红书内容</div>
+    <div class="doc-meta">创作流 · 今天 14:32 开始</div>
+  </div>
+  <div class="top-right">
+    <span class="live-badge"><span class="gdot"></span>已引用 4 张素材</span>
+    <button class="nav-ico" title="图片库">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="nav-ico" title="历史创作">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.2l2.2 1.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    </button>
+    <div class="avatar">陈</div>
+  </div>
+</div>
+<!-- 文档流 -->
+<div class="stream-wrap">
+  <div class="stream">
+
+    <div class="caption">今天 14:32 · 新建创作</div>
+
+    <!-- 用户请求块 -->
+    <div class="blk">
+      <div class="blk-head">
+        <span class="who user">陈</span>
+        <span class="name">陈老板</span>
+        <span class="time">14:32</span>
+      </div>
+      <div class="blk-body">
+        <div class="say">帮我做一条门窗安装完成的小红书帖子，用我上传的那几张案例图，风格真实一点，不要太广告感。</div>
+        <div class="chips">
+          <span class="asset-chip"><span class="phbox"><span class="ph ph-panorama"></span></span>完工全景</span>
+          <span class="asset-chip"><span class="phbox"><span class="ph ph-seal"></span></span>密封细节</span>
+          <span class="asset-chip"><span class="phbox"><span class="ph ph-work"></span></span>施工过程</span>
+          <span class="asset-chip"><span class="phbox"><span class="ph ph-measure"></span></span>测量现场</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI 回应块 -->
+    <div class="blk">
+      <div class="blk-head">
+        <span class="who ai"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg></span>
+        <span class="name">MultiMix</span>
+        <span class="time">14:33</span>
+      </div>
+      <div class="blk-body">
+        <div class="say">好的。我看了你上传的 4 张案例图——密封胶条的手工细节很加分，适合走『真实记录』路线。方案你已确认，正文正在生成：</div>
+        <div class="plan-card">
+          <div class="pc-head">
+            <div class="pc-title">文案生成方案</div>
+            <span class="pc-ok">
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              已确认 · 14:35
+            </span>
+          </div>
+          <div class="pc-fields">
+            <div class="pc-row"><span class="k">平台</span><span class="v">小红书</span></div>
+            <div class="pc-row"><span class="k">风格</span><span class="v">真实客户视角 · 非广告语气</span></div>
+            <div class="pc-row"><span class="k">主图</span><span class="v">案例图 #2（安装完成全景）</span></div>
+            <div class="pc-row"><span class="k">结构</span><span class="v">钩子 → 问题 → 解决 → 效果 → CTA</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 成品块（生长中） -->
+    <div class="blk">
+      <div class="blk-head">
+        <span class="who ai"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg></span>
+        <span class="name">门窗安装 · 小红书帖</span>
+        <span class="time">v1 · 生成中</span>
+      </div>
+      <div class="blk-body">
+        <div class="artifact-blk">
+          <div class="ab-head">
+            <span class="t">小红书帖 · 正文</span>
+            <span class="m">来源已标注</span>
+            <span class="ab-acts">
+              <button class="mini-btn ink">复制全文</button>
+              <button class="mini-btn gh">保存到文案库</button>
+              <button class="mini-btn gh">导出</button>
+            </span>
+          </div>
+          <div class="ab-body">
+            <div class="ab-covers">
+              <span class="phbox main"><span class="ph ph-panorama"></span></span>
+              <span class="phbox"><span class="ph ph-seal"></span></span>
+              <span class="phbox"><span class="ph ph-work"></span></span>
+              <span class="phbox"><span class="ph ph-measure"></span></span>
+            </div>
+            <div class="ab-title">装了 12 年还没一道划痕的门窗，是我找对师傅了？</div>
+            <div class="ab-text">
+              <p>上个月终于把家里三间房的门窗全换了，折腾了快两个月，踩了很多坑……</p>
+              <p>最后选了一家不太会营销但施工特别细的本地团队。</p>
+              <p>👉 图二是安装完的全景，密封条是他们手工贴的，没有任何缝隙…</p>
+            </div>
+            <div class="typing"><span class="gdot"></span>正在写第 4 段…<span class="type-bar"></span></div>
+            <div class="ab-tags">
+              <span class="tag">#门窗安装</span><span class="tag">#装修记录</span><span class="tag">#避坑</span><span class="tag">#本地服务</span>
+            </div>
+          </div>
+          <div class="ab-src">
+            <span class="gdot"></span>基于 4 张已解析素材生成
+            <span class="s-thumbs">
+              <span class="phbox"><span class="ph ph-panorama"></span></span>
+              <span class="phbox"><span class="ph ph-seal"></span></span>
+              <span class="phbox"><span class="ph ph-work"></span></span>
+              <span class="phbox"><span class="ph ph-measure"></span></span>
+            </span>
+            <b>完工全景 被引用 3 次</b>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sugg">
+      <button>改成视频方案</button>
+      <button>风格再口语一点</button>
+      <button>加上价格锚点</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- 右缘小地图 -->
+<div class="minimap">
+  <div class="mm-item"><i></i>请求</div>
+  <div class="mm-item"><i></i>方案</div>
+  <div class="mm-item on"><i></i>成品</div>
+</div>
+
+<!-- 底部悬浮输入 -->
+<div class="dock">
+  <div class="cmd-bar">
+    <span class="hint">继续说，成品会跟着你长出来…</span>
+    <button class="clip"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.2 7.2 8.6 11.8a3.2 3.2 0 0 1-4.5-4.5l4.9-4.9a2.1 2.1 0 0 1 3 3L7.2 10a1 1 0 0 1-1.5-1.4l4.3-4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <button class="send"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+</div>
+
+</body>
+</html>

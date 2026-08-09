@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · B 导演暗房 · 对话工作台</title>
+<style>
+:root{
+  --bg:#0E0E12; --surface:#15151B; --surface-2:#1B1B23; --surface-3:#22222B; --ink:#EDEDF2; --ink-2:#9A9AA6; --ink-3:#6A6A76;
+  --line:#26262F; --line-2:#33333E;
+  --accent:#FF7A1A; --accent-ink:#FFB273; --accent-soft:rgba(255,122,26,.13); --accent-line:rgba(255,122,26,.40);
+  --ok:#3DD68C; --warn:#FFC53D;
+  --radius:12px; --radius-sm:9px;
+  --shadow-card:inset 0 1px 0 rgba(255,255,255,.04),0 12px 32px rgba(0,0,0,.42);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.6;
+  display:grid;grid-template-columns:264px minmax(0,1fr) 440px;min-width:1280px;
+}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2A2A33;border-radius:5px;border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ============ 摄影质感缩略图（暗房版：全屏最亮的对象） ============ */
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),inset 0 -14px 26px rgba(0,0,0,.22)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.55) 47.4%,rgba(255,255,255,.55) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.46) 55%,rgba(255,255,255,.46) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#D3E5F4 0%,#F0F5F9 44%,#E2CFAE 62%,#B69874 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.2) 30%,rgba(255,255,255,.2) 34%,transparent 34%),
+  linear-gradient(135deg,#3E464E 0%,#67727D 52%,#98A3AD 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.18) 62%,rgba(255,255,255,.18) 64%,transparent 64%),
+  linear-gradient(160deg,#E58434 0%,#F0AC6B 34%,#A4AAB0 76%,#878D94 100%)}
+.ph-measure{background:
+  linear-gradient(90deg,transparent 40%,rgba(120,96,40,.28) 40%,rgba(120,96,40,.28) 42%,transparent 42%),
+  linear-gradient(150deg,#EFCF72 0%,#E5DECE 55%,#AFABA1 100%)}
+.ph-living{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.6) 47.4%,rgba(255,255,255,.6) 49%,transparent 49%),
+  linear-gradient(175deg,#C2DEF1 0%,#F3F8FA 58%,#D5DFD8 100%)}
+.ph-balcony{background:
+  linear-gradient(0deg,transparent 50%,rgba(255,255,255,.44) 50%,rgba(255,255,255,.44) 51.6%,transparent 51.6%),
+  linear-gradient(160deg,#F7C795 0%,#FBEACD 52%,#DEE7EC 100%)}
+.phbox{border-radius:7px;overflow:hidden;flex:none;box-shadow:0 0 0 1px rgba(255,255,255,.07),0 4px 14px rgba(0,0,0,.35)}
+
+/* ============ 侧边栏 ============ */
+.sidebar{
+  display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr) auto;
+  background:var(--surface);border-right:1px solid var(--line);padding:16px 12px 14px;gap:14px;min-height:0;
+}
+.brand{display:flex;align-items:center;gap:9px;padding:0 6px}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--accent);display:grid;place-items:center}
+.brand-name{font-size:14.5px;font-weight:650;letter-spacing:.01em}
+.new-btn{
+  display:flex;align-items:center;justify-content:center;gap:7px;height:36px;
+  background:var(--accent);color:#1A0D02;border-radius:var(--radius-sm);
+  font-size:13px;font-weight:650;box-shadow:0 8px 22px rgba(255,122,26,.22);
+}
+.search{
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--ink-3);font-size:12.5px;
+}
+.nav{display:grid;gap:1px}
+.nav-item{
+  display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;border-radius:7px;
+  font-size:13px;color:var(--ink-2);border:1px solid transparent;
+}
+.nav-item:hover{background:rgba(255,255,255,.04)}
+.nav-item svg{color:var(--ink-3)}
+.convs{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0}
+.sec-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);padding:0 8px;font-weight:600}
+.conv-list{overflow:auto;display:grid;gap:1px;align-content:start;min-height:0}
+.conv{
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:7px;
+  font-size:12.5px;color:var(--ink-2);border:1px solid transparent;
+}
+.conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .d{font-size:11px;color:var(--ink-3)}
+.conv.active{background:var(--surface-2);border-color:var(--line-2);color:var(--ink);font-weight:600}
+.user{display:flex;align-items:center;gap:9px;padding:10px 6px 0;border-top:1px solid var(--line)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--surface-3);color:var(--ink);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--line-2)}
+.user .info{display:grid;line-height:1.35}
+.user .n{font-size:12.5px;font-weight:600}
+.user .e{font-size:11px;color:var(--ink-3)}
+/* ============ 对话列 ============ */
+.chat{
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--bg);
+  border-right:1px solid var(--line);min-height:0;
+}
+.chat-head{display:flex;align-items:center;height:56px;padding:0 24px;border-bottom:1px solid var(--line);gap:12px}
+.chat-head .title{font-size:15px;font-weight:650}
+.meta-pill{
+  margin-left:auto;display:flex;align-items:center;gap:6px;height:26px;padding:0 10px;
+  border:1px solid var(--line);border-radius:999px;font-size:12px;color:var(--ink-2);background:var(--surface-2);
+}
+.meta-pill svg{color:var(--ink-3)}
+.msgs{overflow:auto;padding:28px 32px 20px;display:grid;gap:20px;align-content:start;min-height:0}
+.msg-user{justify-self:end;max-width:78%;display:grid;gap:8px;justify-items:end}
+.bubble{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:12px 12px 4px 12px;
+  padding:11px 15px;font-size:13.5px;
+}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.asset-chip{
+  display:flex;align-items:center;gap:7px;height:32px;padding:3px 10px 3px 3px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface-2);font-size:12px;color:var(--ink-2);
+}
+.asset-chip .phbox{width:26px;height:26px;border-radius:5px}
+.msg-ai{max-width:86%;display:grid;gap:14px}
+.ai-row{display:flex;gap:10px}
+.ai-dot{
+  width:24px;height:24px;border-radius:7px;background:var(--surface-3);border:1px solid var(--line-2);
+  display:grid;place-items:center;color:var(--ink-2);flex:none;margin-top:2px;
+}
+.ai-text{font-size:13.5px;color:var(--ink);padding-top:2px}
+
+/* ★ 确认卡 —— 深色界面里唯一被点亮的卡片 */
+.confirm-card{
+  margin-left:34px;background:var(--surface-3);border:1px solid var(--accent-line);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);position:relative;overflow:hidden;max-width:560px;
+}
+.confirm-card::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(180deg,var(--accent-soft),transparent 42%)}
+.cc-head{display:flex;align-items:center;padding:15px 18px 0;gap:10px;position:relative}
+.cc-title{font-size:14.5px;font-weight:650}
+.cc-badge{
+  margin-left:auto;font-size:11px;font-weight:600;color:var(--accent-ink);background:var(--accent-soft);
+  border:1px solid var(--accent-line);padding:2px 9px;border-radius:6px;letter-spacing:.04em;
+}
+.cc-fields{display:grid;gap:9px;padding:14px 18px 16px;position:relative}
+.cc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:baseline}
+.cc-row .k{font-size:12.5px;color:var(--ink-3);text-align:right}
+.cc-row .v{font-size:13.5px;color:var(--ink);font-weight:500}
+.cc-row .v .thumbs{display:inline-flex;gap:5px;vertical-align:-5px;margin-left:7px}
+.cc-row .v .phbox{width:22px;height:22px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.09)}
+.cc-foot{display:flex;gap:10px;padding:14px 18px 16px;border-top:1px solid var(--line-2);position:relative}
+.btn-primary{
+  display:flex;align-items:center;gap:7px;height:34px;padding:0 16px;border-radius:var(--radius-sm);
+  background:var(--accent);color:#1A0D02;font-size:13px;font-weight:650;box-shadow:0 8px 22px rgba(255,122,26,.25);
+}
+.btn-ghost{
+  display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:var(--radius-sm);
+  border:1px solid var(--line-2);color:var(--ink-2);font-size:13px;font-weight:500;background:transparent;
+}
+.sugg{display:flex;gap:8px;margin-left:34px;flex-wrap:wrap}
+.sugg button{
+  height:28px;padding:0 12px;border-radius:999px;border:1px solid var(--line);
+  font-size:12.5px;color:var(--ink-2);background:var(--surface-2);
+}
+.sugg button:hover{border-color:var(--line-2);color:var(--ink)}
+
+/* 生成中：橙色 shimmer */
+.generating{margin-left:34px;display:grid;gap:9px;max-width:560px}
+.gen-line{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-2)}
+.gen-pulse{width:8px;height:8px;border-radius:2px;background:var(--accent);animation:pulse 1.2s ease infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.gen-bar{height:3px;border-radius:3px;width:72%;position:relative;overflow:hidden;background:var(--surface-3)}
+.gen-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  background:linear-gradient(90deg,var(--accent) 0%,rgba(255,122,26,.35) 45%,transparent 80%);
+  animation:sweep 1.6s ease infinite}
+@keyframes sweep{0%{transform:translateX(-30%)}100%{transform:translateX(45%)}}
+.gen-refs{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3)}
+.gen-refs .mini{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:6px;
+  padding:2px 8px 2px 2px;background:var(--surface-2);color:var(--ink-2)}
+.gen-refs .phbox{width:18px;height:18px;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.09)}
+
+/* 输入坞 */
+.dock{padding:14px 32px 20px}
+.input-card{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;
+  border:1px solid var(--line-2);border-radius:12px;background:var(--surface-2);
+  box-shadow:var(--shadow-card);padding:10px 10px 10px 14px;
+}
+.input-card .hint{color:var(--ink-3);font-size:13.5px}
+.icon-btn{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--ink-3)}
+.icon-btn:hover{background:var(--surface-3);color:var(--ink-2)}
+.send{width:32px;height:32px;border-radius:8px;background:var(--accent);color:#1A0D02;display:grid;place-items:center;
+  box-shadow:0 6px 18px rgba(255,122,26,.28)}
+
+/* ============ 产物区 ============ */
+.artifact{display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--surface);min-height:0}
+.art-head{padding:16px 22px 12px;display:grid;gap:2px;border-bottom:1px solid var(--line)}
+.art-head .t{font-size:14.5px;font-weight:650}
+.art-head .m{font-size:12px;color:var(--ink-3)}
+.art-scroll{overflow:auto;padding:18px 22px 0;min-height:0}
+.art-card{
+  background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:26px 26px 22px;display:grid;gap:16px;
+}
+.art-title{font-size:20px;line-height:1.35;font-weight:700;letter-spacing:.01em}
+.art-body{display:grid;gap:12px;font-size:13.5px;line-height:1.75;color:var(--ink)}
+.art-note{font-size:12px;color:var(--ink-3)}
+.tags{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-size:12.5px;color:var(--ink-2);background:var(--surface-3);border:1px solid var(--line-2);
+  padding:2px 10px;border-radius:999px}
+.source{
+  background:var(--surface-3);border:1px solid var(--line-2);border-left:2px solid var(--accent);
+  border-radius:var(--radius-sm);padding:12px 14px;display:grid;gap:9px;
+}
+.source .s-head{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.source .s-head svg{color:var(--accent-ink)}
+.source .s-thumbs{display:flex;gap:7px}
+.source .phbox{width:40px;height:30px;border-radius:5px}
+.source .s-note{font-size:12px;color:var(--ink-2)}
+.art-foot{display:flex;gap:10px;padding:14px 22px 20px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<!-- ================= 侧边栏 ================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#1A0D02" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="brand-name">MultiMix</div>
+  </div>
+  <button class="new-btn">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    新建对话
+  </button>
+  <div class="search">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    搜索素材、产物或来源
+  </div>
+  <nav class="nav">
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>资产库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>文案库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>图片库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>视频库</a>
+  </nav>
+  <div class="convs">
+    <div class="sec-label">对话列表</div>
+    <div class="conv-list">
+      <a class="conv active"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
+      <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
+      <a class="conv"><span class="t">春季促销帖子文案</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">小户型收纳宣传视频</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">Saas宣传视频脚本</span><span class="d">06/30</span></a>
+    </div>
+  </div>
+  <div class="user">
+    <div class="avatar">陈</div>
+    <div class="info"><span class="n">陈老板</span><span class="e">demo@multimix.local</span></div>
+  </div>
+</aside>
+
+<!-- ================= 对话列 ================= -->
+<main class="chat">
+  <div class="chat-head">
+    <div class="title">门窗案例小红书内容</div>
+    <div class="meta-pill">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      已引用 4 张素材
+    </div>
+  </div>
+
+  <div class="msgs">
+    <div class="msg-user">
+      <div class="bubble">帮我做一条门窗安装完成的小红书帖子，用我上传的那几张案例图，风格真实一点，不要太广告感。</div>
+      <div class="chips">
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-panorama"></span></span>完工全景</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-seal"></span></span>密封细节</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-work"></span></span>施工过程</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-measure"></span></span>测量现场</span>
+      </div>
+    </div>
+
+    <div class="msg-ai">
+      <div class="ai-row">
+        <div class="ai-dot">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg>
+        </div>
+        <div class="ai-text">好的。我看了你上传的 4 张案例图——密封胶条的手工细节很加分，适合走『真实记录』路线。给你拆了一个方案，确认后开始生成：</div>
+      </div>
+
+      <div class="confirm-card">
+        <div class="cc-head">
+          <div class="cc-title">文案生成方案</div>
+          <span class="cc-badge">待确认</span>
+        </div>
+        <div class="cc-fields">
+          <div class="cc-row"><span class="k">平台</span><span class="v">小红书</span></div>
+          <div class="cc-row"><span class="k">风格</span><span class="v">真实客户视角 · 非广告语气</span></div>
+          <div class="cc-row"><span class="k">主图</span><span class="v">案例图 #2（安装完成全景）<span class="thumbs"><span class="phbox"><span class="ph ph-panorama"></span></span></span></span></div>
+          <div class="cc-row"><span class="k">结构</span><span class="v">钩子 → 问题 → 解决 → 效果展示 → CTA</span></div>
+          <div class="cc-row"><span class="k">配图</span><span class="v">案例图 #1 #3 #4 做过程图<span class="thumbs"><span class="phbox"><span class="ph ph-seal"></span></span><span class="phbox"><span class="ph ph-work"></span></span><span class="phbox"><span class="ph ph-measure"></span></span></span></span></div>
+        </div>
+        <div class="cc-foot">
+          <button class="btn-primary">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            确认，开始生成
+          </button>
+          <button class="btn-ghost">调整方向</button>
+        </div>
+      </div>
+
+      <div class="sugg">
+        <button>改成视频方案</button>
+        <button>风格再口语一点</button>
+        <button>加上价格锚点</button>
+      </div>
+
+      <div class="generating">
+        <div class="gen-line"><span class="gen-pulse"></span>正在生成文案…</div>
+        <div class="gen-bar"></div>
+        <div class="gen-refs">引用中：
+          <span class="mini"><span class="phbox"><span class="ph ph-panorama"></span></span>完工全景</span>
+          <span class="mini"><span class="phbox"><span class="ph ph-seal"></span></span>密封细节</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock">
+    <div class="input-card">
+      <button class="icon-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.2 7.2 8.6 11.8a3.2 3.2 0 0 1-4.5-4.5l4.9-4.9a2.1 2.1 0 0 1 3 3L7.2 10a1 1 0 0 1-1.5-1.4l4.3-4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <span class="hint">说说你想改哪里，或直接提新需求…</span>
+      <button class="send">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+</main>
+<!-- ================= 产物区 ================= -->
+<aside class="artifact">
+  <div class="art-head">
+    <div class="t">门窗安装 · 小红书帖</div>
+    <div class="m">文案 · v1 · 来源已标注</div>
+  </div>
+  <div class="art-scroll">
+    <div class="art-card">
+      <div class="art-title">装了 12 年还没一道划痕的门窗，是我找对师傅了？</div>
+      <div class="art-body">
+        <p>上个月终于把家里三间房的门窗全换了，折腾了快两个月，踩了很多坑……</p>
+        <p>最后选了一家不太会营销但施工特别细的本地团队。</p>
+        <p>👉 图二是安装完的全景，密封条是他们手工贴的，没有任何缝隙…</p>
+        <p class="art-note">（预览截断，完整版共 320 字）</p>
+      </div>
+      <div class="tags">
+        <span class="tag">#门窗安装</span><span class="tag">#装修记录</span><span class="tag">#避坑</span><span class="tag">#本地服务</span>
+      </div>
+      <div class="source">
+        <div class="s-head">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg>
+          基于 4 张已解析素材生成
+        </div>
+        <div class="s-thumbs">
+          <span class="phbox"><span class="ph ph-panorama"></span></span>
+          <span class="phbox"><span class="ph ph-seal"></span></span>
+          <span class="phbox"><span class="ph ph-work"></span></span>
+          <span class="phbox"><span class="ph ph-measure"></span></span>
+        </div>
+        <div class="s-note">完工全景 被引用 3 次</div>
+      </div>
+    </div>
+  </div>
+  <div class="art-foot">
+    <button class="btn-primary">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.4" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" stroke="currentColor" stroke-width="1.5"/></svg>
+      复制全文
+    </button>
+    <button class="btn-ghost">保存到文案库</button>
+    <button class="btn-ghost">导出</button>
+  </div>
+</aside>
+
+</body>
+</html>

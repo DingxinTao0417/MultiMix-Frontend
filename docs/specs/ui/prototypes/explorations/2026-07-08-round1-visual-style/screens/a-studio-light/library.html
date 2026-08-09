@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · A 工作室白 · 图片库</title>
+<style>
+:root{
+  --bg:#F6F5F1; --surface:#FFFFFF; --surface-2:#FBFAF8; --ink:#1B1F1D; --ink-2:#5C6662; --ink-3:#8A928D;
+  --line:#E7E5DF; --line-2:#D9D6CE;
+  --accent:#0E7A5C; --accent-ink:#0A5C46; --accent-soft:#E9F4EF; --accent-line:#BFDFD2;
+  --stage:#12161A; --stage-2:#1A2026; --stage-ink:#E8ECEF;
+  --warn:#9A6A00; --warn-soft:#FFF4D6; --warn-line:#EAD9A8;
+  --radius:10px; --radius-sm:8px;
+  --shadow-card:0 1px 2px rgba(27,31,29,.05),0 8px 24px rgba(27,31,29,.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.6;
+  display:grid;grid-template-columns:264px minmax(0,1fr) 380px;min-width:1280px;
+}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+
+/* ============ 摄影质感缩略图 ============ */
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),inset 0 -14px 26px rgba(20,24,28,.18)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.5) 47.4%,rgba(255,255,255,.5) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.42) 55%,rgba(255,255,255,.42) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#C9DCEC 0%,#E8EFF4 44%,#D8C5A6 62%,#A98F6C 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.16) 30%,rgba(255,255,255,.16) 34%,transparent 34%),
+  linear-gradient(135deg,#343B42 0%,#5A646E 52%,#8C97A1 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.14) 62%,rgba(255,255,255,.14) 64%,transparent 64%),
+  linear-gradient(160deg,#D97B2F 0%,#E8A463 34%,#9AA0A6 76%,#7D838A 100%)}
+.ph-measure{background:
+  linear-gradient(90deg,transparent 40%,rgba(120,96,40,.25) 40%,rgba(120,96,40,.25) 42%,transparent 42%),
+  linear-gradient(150deg,#E5C468 0%,#DCD5C6 55%,#A5A198 100%)}
+.ph-living{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.55) 47.4%,rgba(255,255,255,.55) 49%,transparent 49%),
+  linear-gradient(175deg,#B9D6EA 0%,#EDF3F6 58%,#CBD6CE 100%)}
+.ph-balcony{background:
+  linear-gradient(0deg,transparent 50%,rgba(255,255,255,.4) 50%,rgba(255,255,255,.4) 51.6%,transparent 51.6%),
+  linear-gradient(160deg,#F0BF8B 0%,#F7E3C6 52%,#D6E0E6 100%)}
+.stagebox{background:var(--stage);padding:3px;border-radius:8px;flex:none}
+.stagebox .ph{border-radius:5px}
+
+/* ============ 侧边栏 ============ */
+.sidebar{
+  display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr) auto;
+  border-right:1px solid var(--line);padding:16px 12px 14px;gap:14px;min-height:0;
+}
+.brand{display:flex;align-items:center;gap:9px;padding:0 6px}
+.brand-mark{width:26px;height:26px;border-radius:7px;background:var(--ink);display:grid;place-items:center}
+.brand-name{font-size:14.5px;font-weight:650;letter-spacing:.01em}
+.new-btn{
+  display:flex;align-items:center;justify-content:center;gap:7px;height:36px;
+  background:var(--ink);color:#fff;border-radius:var(--radius-sm);
+  font-size:13px;font-weight:600;box-shadow:var(--shadow-card);
+}
+.search{
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-3);font-size:12.5px;
+}
+.nav{display:grid;gap:1px}
+.nav-item{
+  display:flex;align-items:center;gap:9px;height:32px;padding:0 8px;border-radius:7px;
+  font-size:13px;color:var(--ink-2);border:1px solid transparent;
+}
+.nav-item:hover{background:rgba(27,31,29,.045)}
+.nav-item svg{color:var(--ink-3)}
+.nav-item.active{background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(27,31,29,.04)}
+.nav-item.active svg{color:var(--ink)}
+.convs{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0}
+.sec-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);padding:0 8px;font-weight:600}
+.conv-list{overflow:auto;display:grid;gap:1px;align-content:start;min-height:0}
+.conv{
+  display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;border-radius:7px;
+  font-size:12.5px;color:var(--ink-2);border:1px solid transparent;
+}
+.conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .d{font-size:11px;color:var(--ink-3)}
+.user{display:flex;align-items:center;gap:9px;padding:10px 6px 0;border-top:1px solid var(--line)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--accent-line)}
+.user .info{display:grid;line-height:1.35}
+.user .n{font-size:12.5px;font-weight:600}
+.user .e{font-size:11px;color:var(--ink-3)}
+/* ============ 素材主区 ============ */
+.main{display:grid;grid-template-rows:auto auto minmax(0,1fr);background:var(--surface);
+  border-right:1px solid var(--line);min-height:0}
+.main-head{display:flex;align-items:center;gap:14px;height:60px;padding:0 24px;border-bottom:1px solid var(--line)}
+.main-head .title{font-size:15px;font-weight:650}
+.seg{display:flex;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:2px}
+.seg button{height:26px;padding:0 12px;border-radius:6px;font-size:12.5px;color:var(--ink-2)}
+.seg button.on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(27,31,29,.06);border:1px solid var(--line)}
+.main-head .search{margin-left:auto;width:200px}
+.btn-ink{
+  display:flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:var(--radius-sm);
+  background:var(--ink);color:#fff;font-size:13px;font-weight:600;box-shadow:var(--shadow-card);
+}
+.filters{display:flex;align-items:center;gap:8px;padding:12px 24px;border-bottom:1px solid var(--line)}
+.f-chip{height:26px;padding:0 12px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;color:var(--ink-2);
+  display:flex;align-items:center;gap:5px;background:var(--surface)}
+.f-chip b{font-weight:600;color:var(--ink-3);font-size:11.5px}
+.f-chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.f-chip.on b{color:rgba(255,255,255,.65)}
+.f-sep{width:1px;height:18px;background:var(--line-2);margin:0 4px}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot-ok{background:var(--accent)}
+.dot-wait{background:var(--warn)}
+.grid{overflow:auto;padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  gap:16px;align-content:start;min-height:0}
+.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden;
+  display:grid;gap:0;cursor:pointer}
+.card:hover{box-shadow:var(--shadow-card)}
+.card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--shadow-card)}
+.card .thumb{position:relative;aspect-ratio:4/3;background:var(--stage);padding:3px;border-radius:0}
+.card .thumb .ph{border-radius:4px}
+.cat{position:absolute;left:9px;top:9px;z-index:2;font-size:11px;font-weight:600;color:var(--stage-ink);
+  background:rgba(18,22,26,.72);padding:2px 8px;border-radius:5px;letter-spacing:.03em}
+.st{position:absolute;right:9px;top:9px;z-index:2;width:9px;height:9px;border-radius:50%;
+  box-shadow:0 0 0 2px rgba(18,22,26,.55)}
+.st.ok{background:var(--accent)}
+.st.wait{background:var(--warn);animation:blink 1.4s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.card .body{padding:10px 12px 11px;display:grid;gap:2px}
+.card .name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .stat{font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:5px}
+.card .stat .ok-t{color:var(--accent-ink);font-weight:500}
+.card .stat .wait-t{color:var(--warn);font-weight:500}
+.upload-card{border:1.5px dashed var(--line-2);border-radius:var(--radius);display:grid;place-items:center;
+  color:var(--ink-3);font-size:12.5px;gap:6px;min-height:200px;background:var(--surface-2)}
+.upload-card svg{color:var(--ink-3)}
+
+/* ============ 详情抽屉 ============ */
+.drawer{display:grid;grid-template-rows:minmax(0,1fr) auto;background:var(--bg);min-height:0}
+.drawer-scroll{overflow:auto;padding:20px;display:grid;gap:14px;align-content:start;min-height:0}
+.d-preview{background:var(--stage);padding:4px;border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.d-preview .ph{aspect-ratio:16/10;border-radius:7px}
+.d-name{font-size:15px;font-weight:650;line-height:1.4}
+.d-meta{font-size:12px;color:var(--ink-3);margin-top:2px}
+.d-sec{display:grid;gap:8px}
+.d-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);font-weight:600;display:flex;align-items:center;gap:6px}
+.ai-badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--accent-ink);
+  background:var(--accent-soft);border:1px solid var(--accent-line);padding:1px 7px;border-radius:5px;letter-spacing:.02em}
+.d-understand{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--radius-sm);
+  padding:12px 14px;font-size:13px;line-height:1.75;color:var(--ink)}
+.d-chips{display:flex;gap:7px;flex-wrap:wrap}
+.d-chip{font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);
+  padding:3px 11px;border-radius:999px}
+.d-usage{font-size:12.5px;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius-sm);padding:10px 13px;line-height:1.6}
+.d-usage b{color:var(--ink);font-weight:600}
+.drawer-foot{display:flex;gap:10px;padding:14px 20px 18px;border-top:1px solid var(--line)}
+.btn-ghost{
+  display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:var(--radius-sm);
+  border:1px solid var(--line-2);color:var(--ink-2);font-size:13px;font-weight:500;background:var(--surface);
+}
+</style>
+</head>
+<body>
+<!-- ================= 侧边栏 ================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="brand-name">MultiMix</div>
+  </div>
+  <button class="new-btn">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    新建对话
+  </button>
+  <div class="search">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    搜索素材、产物或来源
+  </div>
+  <nav class="nav">
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>资产库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>文案库</a>
+    <a class="nav-item active"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>图片库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>视频库</a>
+  </nav>
+  <div class="convs">
+    <div class="sec-label">对话列表</div>
+    <div class="conv-list">
+      <a class="conv"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
+      <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
+      <a class="conv"><span class="t">春季促销帖子文案</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">小户型收纳宣传视频</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">Saas宣传视频脚本</span><span class="d">06/30</span></a>
+    </div>
+  </div>
+  <div class="user">
+    <div class="avatar">陈</div>
+    <div class="info"><span class="n">陈老板</span><span class="e">demo@multimix.local</span></div>
+  </div>
+</aside>
+<!-- ================= 素材主区 ================= -->
+<main class="main">
+  <div class="main-head">
+    <div class="title">图片库</div>
+    <div class="seg">
+      <button class="on">上传资料</button>
+      <button>采集资料</button>
+      <button>对话沉淀</button>
+    </div>
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      搜索素材…
+    </div>
+    <button class="btn-ink">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      上传素材
+    </button>
+  </div>
+  <div class="filters">
+    <button class="f-chip on">全部 <b>23</b></button>
+    <button class="f-chip">封面图 <b>8</b></button>
+    <button class="f-chip">素材图 <b>11</b></button>
+    <button class="f-chip">分镜图 <b>4</b></button>
+    <span class="f-sep"></span>
+    <button class="f-chip"><span class="dot dot-ok"></span>已解析 <b>18</b></button>
+    <button class="f-chip"><span class="dot dot-wait"></span>待处理 <b>5</b></button>
+  </div>
+  <div class="grid">
+    <div class="card selected">
+      <div class="thumb"><span class="cat">封面图</span><span class="st ok"></span><span class="ph ph-panorama"></span></div>
+      <div class="body">
+        <div class="name">门窗安装完工全景</div>
+        <div class="stat"><span class="ok-t">已解析</span>· 被引用 3 次</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="thumb"><span class="cat">素材图</span><span class="st ok"></span><span class="ph ph-seal"></span></div>
+      <div class="body">
+        <div class="name">安装细节 · 密封条工艺</div>
+        <div class="stat"><span class="ok-t">已解析</span>· 被引用 1 次</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="thumb"><span class="cat">素材图</span><span class="st wait"></span><span class="ph ph-work"></span></div>
+      <div class="body">
+        <div class="name">施工过程记录 #1</div>
+        <div class="stat"><span class="wait-t">待处理</span>· 刚上传</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="thumb"><span class="cat">分镜图</span><span class="st ok"></span><span class="ph ph-living"></span></div>
+      <div class="body">
+        <div class="name">客厅落地窗效果</div>
+        <div class="stat"><span class="ok-t">已解析</span>· 被引用 2 次</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="thumb"><span class="cat">素材图</span><span class="st ok"></span><span class="ph ph-measure"></span></div>
+      <div class="body">
+        <div class="name">测量现场 · 施工前</div>
+        <div class="stat"><span class="ok-t">已解析</span>· 未使用</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="thumb"><span class="cat">封面图</span><span class="st ok"></span><span class="ph ph-balcony"></span></div>
+      <div class="body">
+        <div class="name">阳台推拉门完工</div>
+        <div class="stat"><span class="ok-t">已解析</span>· 未使用</div>
+      </div>
+    </div>
+    <div class="upload-card">
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      上传更多素材
+    </div>
+  </div>
+</main>
+
+<!-- ================= 详情抽屉 ================= -->
+<aside class="drawer">
+  <div class="drawer-scroll">
+    <div class="d-preview"><span class="ph ph-panorama"></span></div>
+    <div>
+      <div class="d-name">门窗安装完工全景</div>
+      <div class="d-meta">封面图 · 1.4 MB · 07/02 上传</div>
+    </div>
+    <div class="d-sec">
+      <div class="d-label">AI 理解
+        <span class="ai-badge">
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg>
+          已理解
+        </span>
+      </div>
+      <div class="d-understand">室内门窗安装完成场景。客厅落地窗，白色铝合金框架，双层玻璃，密封工艺清晰可见，光线充足，空间感强。</div>
+    </div>
+    <div class="d-sec">
+      <div class="d-label">可用场景</div>
+      <div class="d-chips">
+        <span class="d-chip">小红书封面</span><span class="d-chip">视频首帧</span><span class="d-chip">对比图（完工）</span>
+      </div>
+    </div>
+    <div class="d-sec">
+      <div class="d-label">使用记录</div>
+      <div class="d-usage">被<b>「门窗案例小红书内容」</b>对话引用 3 次。</div>
+    </div>
+  </div>
+  <div class="drawer-foot">
+    <button class="btn-ink">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.4c1.5-3 3.3-4.5 5.5-4.5s4 1.5 5.5 4.5c-1.5 3-3.3 4.5-5.5 4.5s-4-1.5-5.5-4.5Z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8.4" r="1.7" stroke="currentColor" stroke-width="1.4"/></svg>
+      在对话中使用
+    </button>
+    <button class="btn-ghost">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2.5v7.6M4.6 7 8 10.4 11.4 7M3 13.2h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      下载
+    </button>
+  </div>
+</aside>
+
+</body>
+</html>

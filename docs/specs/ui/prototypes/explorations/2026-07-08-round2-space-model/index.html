@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · 第二轮 · 空间范式重构（C 系）</title>
+<style>
+  :root{--bg:#111114;--surface:#1A1A1F;--ink:#EDEDF2;--ink-2:#9A9AA6;--line:#2A2A33;--accent:#6E8BFF;}
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;}
+  header{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line)}
+  h1{font-size:15px;font-weight:650;margin:0;letter-spacing:.02em}
+  h1 span{color:var(--ink-2);font-weight:400}
+  header a{margin-left:auto;color:var(--accent);font-size:13px;text-decoration:none}
+  main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px 16px;min-height:0}
+  .col{display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0}
+  .col .label{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .col .label b{color:var(--ink);font-weight:650}
+  .col .label a{color:var(--accent);text-decoration:none;font-size:12px;margin-left:auto}
+  .frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000;min-height:0}
+  iframe{width:1440px;height:900px;border:0;transform-origin:0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>MultiMix · 第二轮：空间范式重构 <span>· 保留 C 版视觉气质 · 三种完全不同的布局隐喻</span></h1>
+  <a href="../2026-07-08-round1-visual-style/index.html">← 第一轮（视觉风格）</a>
+  <a href="../2026-07-08-round3-workbench-options/index.html" style="margin-left:16px">第三轮（工作台三案）→</a>
+</header>
+<main>
+  <div class="col">
+    <div class="label"><b>C1 · 舞台</b> 产物即舞台 · 命令条交互 <a href="screens/c1-stage.html" target="_blank">新窗口打开 ↗</a></div>
+    <div class="frame"><iframe src="screens/c1-stage.html"></iframe></div>
+  </div>
+  <div class="col">
+    <div class="label"><b>C2 · 流水线</b> 内容生产线 · 四工位看板 <a href="screens/c2-pipeline.html" target="_blank">新窗口打开 ↗</a></div>
+    <div class="frame"><iframe src="screens/c2-pipeline.html"></iframe></div>
+  </div>
+  <div class="col">
+    <div class="label"><b>C3 · 创作流</b> 对话即画布 · 生长式文档 <a href="screens/c3-stream.html" target="_blank">新窗口打开 ↗</a></div>
+    <div class="frame"><iframe src="screens/c3-stream.html"></iframe></div>
+  </div>
+</main>
+<script>
+  const fit = () => document.querySelectorAll('.frame').forEach(f => {
+    const s = f.clientWidth / 1440;
+    const el = f.querySelector('iframe');
+    el.style.transform = 'scale(' + s + ')';
+    f.style.height = Math.min(f.parentElement.clientHeight - 30, 900 * s) + 'px';
+  });
+  addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

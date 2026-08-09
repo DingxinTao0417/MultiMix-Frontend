@@ -20,10 +20,12 @@ import {
 
 function createWorkspace() {
   const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "multimix-work-guard-"));
-  const planDirectory = path.join(workspaceRoot, "docs", "plans", "active");
-  mkdirSync(planDirectory, { recursive: true });
-  for (const name of ["task-a.md", "task-b.md", "task-c.md"]) {
-    writeFileSync(path.join(planDirectory, name), `# ${name}\n`);
+  for (const repository of ["MultiMix-Frontend", "MultiMix-Backend"]) {
+    const planDirectory = path.join(workspaceRoot, repository, "docs", "plans", "active");
+    mkdirSync(planDirectory, { recursive: true });
+    for (const name of ["task-a.md", "task-b.md", "task-c.md"]) {
+      writeFileSync(path.join(planDirectory, name), `# ${name}\n`);
+    }
   }
   return workspaceRoot;
 }
@@ -32,7 +34,7 @@ function claim(overrides = {}) {
   return {
     task: "task-a",
     owner: "agent-a",
-    plan: "docs/plans/active/task-a.md",
+    plan: "MultiMix-Backend/docs/plans/active/task-a.md",
     areas: ["video-confirmation"],
     paths: ["MultiMix-Backend/app/services/video_studio"],
     token: "token-a",
@@ -49,7 +51,7 @@ test("allows non-overlapping work and hides tokens from status", () => {
       ...claim({
         task: "task-b",
         owner: "agent-b",
-        plan: "docs/plans/active/task-b.md",
+        plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
         areas: ["asset-library-ui"],
         paths: ["MultiMix-Frontend/app/assets/components/library"],
         token: "token-b",
@@ -63,7 +65,7 @@ test("allows non-overlapping work and hides tokens from status", () => {
     const status = workGuardStatus({ workspaceRoot });
     assert.equal(status.length, 2);
     assert.equal(
-      status[0].paths.includes("docs/plans/active/task-a.md"),
+      status[0].paths.includes("MultiMix-Backend/docs/plans/active/task-a.md"),
       true,
     );
     assert.deepEqual(
@@ -102,7 +104,7 @@ test("rejects semantic and parent-child path conflicts before writing", () => {
             token: "token-b",
           }),
         }),
-      /path:docs\/plans\/active\/task-a\.md/is,
+      /path:MultiMix-Backend\/docs\/plans\/active\/task-a\.md/is,
     );
 
     assert.throws(
@@ -112,7 +114,7 @@ test("rejects semantic and parent-child path conflicts before writing", () => {
           ...claim({
             task: "task-b",
             owner: "agent-b",
-            plan: "docs/plans/active/task-b.md",
+            plan: "MultiMix-Backend/docs/plans/active/task-b.md",
             areas: ["Video-Confirmation"],
             paths: ["MultiMix-Frontend/app/assets"],
             token: "token-b",
@@ -128,7 +130,7 @@ test("rejects semantic and parent-child path conflicts before writing", () => {
           ...claim({
             task: "task-c",
             owner: "agent-c",
-            plan: "docs/plans/active/task-c.md",
+            plan: "MultiMix-Backend/docs/plans/active/task-c.md",
             areas: ["render-jobs"],
             paths: [
               "multimix-backend\\app\\services\\video_studio\\jobs.py",
@@ -153,7 +155,7 @@ test("validates plans, unique task names, and token ownership", () => {
       () =>
         beginWorkGuard({
           workspaceRoot,
-          ...claim({ plan: "docs/archive/plans/task-a.md" }),
+          ...claim({ plan: "MultiMix-Backend/docs/archive/plans/task-a.md" }),
         }),
       /active plan/i,
     );
@@ -161,7 +163,7 @@ test("validates plans, unique task names, and token ownership", () => {
       () =>
         beginWorkGuard({
           workspaceRoot,
-          ...claim({ plan: "docs/plans/active/missing.md" }),
+          ...claim({ plan: "MultiMix-Backend/docs/plans/active/missing.md" }),
         }),
       /does not exist/i,
     );
@@ -181,7 +183,7 @@ test("validates plans, unique task names, and token ownership", () => {
           workspaceRoot,
           ...claim({
             owner: "agent-b",
-            plan: "docs/plans/active/task-b.md",
+            plan: "MultiMix-Backend/docs/plans/active/task-b.md",
             areas: ["asset-library-ui"],
             paths: ["MultiMix-Frontend/app/assets"],
             token: "token-b",
@@ -198,7 +200,7 @@ test("validates plans, unique task names, and token ownership", () => {
       /token does not own/i,
     );
 
-    rmSync(path.join(workspaceRoot, "docs", "plans", "active", "task-a.md"));
+    rmSync(path.join(workspaceRoot, "MultiMix-Backend", "docs", "plans", "active", "task-a.md"));
     assert.throws(
       () => checkWorkGuard({ workspaceRoot, token: "token-a" }),
       /plan does not exist/i,
@@ -224,8 +226,8 @@ test("finds the split workspace root instead of the nested frontend docs root", 
     mkdirSync(path.join(workspaceRoot, "MultiMix-Backend"), { recursive: true });
     mkdirSync(frontendScripts, { recursive: true });
     mkdirSync(worktreeScripts, { recursive: true });
-    writeFileSync(path.join(workspaceRoot, "docs", "README.md"), "# Workspace\n");
     writeFileSync(path.join(frontendRoot, "docs", "README.md"), "# Frontend\n");
+    writeFileSync(path.join(workspaceRoot, "MultiMix-Backend", "docs", "README.md"), "# Backend\n");
 
     assert.equal(findWorkspaceRoot(frontendScripts), workspaceRoot);
     assert.equal(findWorkspaceRoot(worktreeScripts), workspaceRoot);

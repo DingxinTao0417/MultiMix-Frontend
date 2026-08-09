@@ -6,7 +6,7 @@
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
-> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与工作区根目录 `../../docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
+> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与 `MultiMix-Backend/docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
 适用版本：`multimix-web@0.1.0`（Next.js 15 App Router + React 19 + TypeScript strict）。
 
@@ -482,7 +482,7 @@ function ConversationStudio({
 - **产物卡**：用 `getConversationProducts` 取列表，再按消息与产物关联关系插入消息流；点击时更新带 `conversation`、`product` 查询参数的路由并调用 `onSelectProduct`。
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
 - **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
-- **附件**：图片和文档上传、删除、失败重试及上传进度已接入。视频属于产品上传范围，但两个选择器当前存在“可选择、随后被处理器过滤”的已知回归，修复与浏览器验证记录在 `../../docs/plans/active/2026-07-21-chat-attachment-upload-progress.md`。
+- **附件**：图片和文档上传、删除、失败重试及上传进度已接入。视频属于产品上传范围，但两个选择器当前存在“可选择、随后被处理器过滤”的已知回归，修复与浏览器验证记录在 `plans/active/2026-07-21-chat-attachment-upload-progress.md`。
 - **任务与动作**：有效 `agentTasks` 在消息头下显示轻量任务条；Agent 动作确认复用
   `ConfirmCard`，执行状态复用唯一的 `AgentRunTimeline`。只有服务端
   `status === "succeeded"` 才显示完成，只有 `retryable === true` 才显示动作重试。

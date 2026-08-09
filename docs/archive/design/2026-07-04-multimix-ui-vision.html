@@ -1,0 +1,1661 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MultiMix — UI 视觉方案</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --black: #0A0A0A;
+    --surface-1: #131313;
+    --surface-2: #1C1C1C;
+    --surface-3: #252525;
+    --border: #2E2E2E;
+    --border-light: #3A3A3A;
+    --text-primary: #F0F0F0;
+    --text-secondary: #8A8A8A;
+    --text-muted: #555;
+    --accent: #FF5C00;
+    --accent-dim: rgba(255,92,0,0.15);
+    --accent-hover: #FF7A2E;
+    --green: #22C55E;
+    --green-dim: rgba(34,197,94,0.12);
+    --blue: #3B82F6;
+    --blue-dim: rgba(59,130,246,0.12);
+    --purple: #A855F7;
+    --purple-dim: rgba(168,85,247,0.12);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --font: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+
+  body {
+    font-family: var(--font);
+    background: #0D0D0D;
+    color: var(--text-primary);
+    line-height: 1.5;
+    font-size: 13px;
+  }
+
+  /* ===== PAGE LAYOUT ===== */
+  .doc {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 48px 32px 80px;
+  }
+
+  /* ===== COVER ===== */
+  .cover {
+    margin-bottom: 64px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--border);
+  }
+  .cover-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid rgba(255,92,0,0.3);
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+  .cover h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+  }
+  .cover h1 span { color: var(--accent); }
+  .cover p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    max-width: 600px;
+  }
+
+  /* ===== SECTION HEADER ===== */
+  .section-header {
+    margin-bottom: 28px;
+    margin-top: 56px;
+  }
+  .section-header h2 {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .section-header h3 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+  }
+  .section-header p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-top: 6px;
+    max-width: 700px;
+  }
+
+  /* ===== PRIORITY GRID ===== */
+  .priority-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .priority-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .priority-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .priority-card.tier2::before { background: var(--blue); }
+  .priority-card.tier3::before { background: var(--purple); }
+  .priority-card .tier-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .priority-card.tier2 .tier-label { color: var(--blue); }
+  .priority-card.tier3 .tier-label { color: var(--purple); }
+  .priority-card h4 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+  }
+  .priority-card ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .priority-card ul li {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-left: 14px;
+    position: relative;
+  }
+  .priority-card ul li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-size: 10px;
+  }
+  .priority-card.tier2 ul li::before { color: var(--blue); }
+  .priority-card.tier3 ul li::before { color: var(--purple); }
+  .priority-card .kpi {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .priority-card .kpi strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .priority-card.tier2 .kpi strong { color: var(--blue); }
+  .priority-card.tier3 .kpi strong { color: var(--purple); }
+
+  /* ===== UI CRITIQUE ===== */
+  .critique-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .critique-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .critique-card h4 {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .dot.orange { background: var(--accent); }
+  .dot.green { background: var(--green); }
+  .critique-card ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .critique-card ul li {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding-left: 14px;
+    position: relative;
+  }
+  .critique-card ul li::before {
+    content: '·';
+    position: absolute; left: 0;
+    color: var(--accent);
+    font-size: 18px;
+    line-height: 1;
+    top: -1px;
+  }
+  .critique-card.good ul li::before { color: var(--green); }
+
+  /* ===== UI MOCKUP ===== */
+  .mockup-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    margin-top: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mockup-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .browser-chrome {
+    background: #1A1A1A;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  }
+  .browser-bar {
+    background: #111;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .browser-dots {
+    display: flex; gap: 5px;
+  }
+  .browser-dot {
+    width: 9px; height: 9px; border-radius: 50%;
+  }
+  .browser-dot:nth-child(1) { background: #FF5F56; }
+  .browser-dot:nth-child(2) { background: #FFBD2E; }
+  .browser-dot:nth-child(3) { background: #27C93F; }
+  .browser-url {
+    flex: 1;
+    background: var(--surface-3);
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    max-width: 320px;
+    margin: 0 auto;
+  }
+
+  /* ===== WORKSPACE SCREEN ===== */
+  .workspace {
+    display: flex;
+    height: 600px;
+    background: var(--black);
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--surface-1);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-top {
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .logo-mark {
+    width: 24px; height: 24px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: -1px;
+  }
+  .logo-text {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .new-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+  }
+  .sidebar-section {
+    padding: 10px 8px 4px;
+  }
+  .sidebar-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0 6px;
+    margin-bottom: 4px;
+  }
+  .sidebar-item {
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sidebar-item:hover { background: var(--surface-3); color: var(--text-primary); }
+  .sidebar-item.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+  .sidebar-item .item-icon {
+    width: 14px; height: 14px; opacity: 0.7; flex-shrink: 0;
+  }
+  .sidebar-bottom {
+    margin-top: auto;
+    padding: 10px 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Chat area */
+  .chat-area {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--black);
+  }
+  .chat-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .chat-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+  }
+  .chat-header-tag {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow: hidden;
+    padding: 20px 20px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Message bubbles */
+  .msg {
+    display: flex;
+    gap: 10px;
+    max-width: 100%;
+  }
+  .msg.user { flex-direction: row-reverse; }
+  .msg-avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .msg-avatar.ai {
+    background: var(--accent);
+    color: #fff;
+  }
+  .msg-avatar.user-av {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+  }
+  .msg-body {
+    max-width: 75%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .msg-bubble {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    border-top-left-radius: 3px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.6;
+  }
+  .msg.user .msg-bubble {
+    background: var(--surface-3);
+    border-radius: 10px;
+    border-top-right-radius: 3px;
+    border-color: var(--border-light);
+  }
+
+  /* Confirmation card */
+  .confirm-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-top: 4px;
+  }
+  .confirm-card .confirm-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .confirm-card .confirm-title .badge {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid rgba(255,92,0,0.3);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .confirm-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+  }
+  .confirm-row {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+  }
+  .confirm-row .label { color: var(--text-muted); width: 56px; flex-shrink: 0; }
+  .confirm-row .value { color: var(--text-secondary); }
+  .confirm-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .btn-confirm {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 6px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-cancel {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 14px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* Suggestions */
+  .suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .suggestion-chip {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 11px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .suggestion-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Input bar */
+  .chat-input-wrap {
+    padding: 14px 20px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .chat-input-box {
+    background: var(--surface-2);
+    border: 1px solid var(--border-light);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+  .chat-input-box:focus-within {
+    border-color: rgba(255,92,0,0.5);
+  }
+  .chat-input-inner {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text-primary);
+    background: none;
+    border: none;
+    outline: none;
+    resize: none;
+    font-family: var(--font);
+    line-height: 1.5;
+  }
+  .input-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .input-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .input-attach {
+    width: 26px; height: 26px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .input-send {
+    width: 28px; height: 28px;
+    background: var(--accent);
+    border: none;
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #fff;
+    font-size: 13px;
+  }
+
+  /* Product panel */
+  .product-panel {
+    width: 360px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--surface-1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .product-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .product-mode-badge {
+    background: var(--green-dim);
+    color: var(--green);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .product-mode-badge.video {
+    background: var(--blue-dim);
+    color: var(--blue);
+    border-color: rgba(59,130,246,0.2);
+  }
+  .product-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .product-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Copy preview */
+  .copy-preview {
+    padding: 16px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+  .copy-block {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .copy-block-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .copy-block-text {
+    font-size: 12px;
+    color: var(--text-primary);
+    line-height: 1.7;
+  }
+  .copy-block-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 10px;
+  }
+  .tag {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px 7px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+
+  /* Video preview placeholder */
+  .video-preview {
+    margin: 16px;
+    aspect-ratio: 9/16;
+    max-height: 220px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+  }
+  .video-preview-thumb {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, #1a2a1a 0%, #0d1a2e 50%, #1a1a2e 100%);
+    opacity: 0.8;
+  }
+  .video-play-btn {
+    position: relative;
+    width: 40px; height: 40px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 16px;
+  }
+  .video-label {
+    position: relative;
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+  }
+  .product-actions {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+  }
+  .btn-primary {
+    flex: 1;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 7px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* ===== SCREEN 2: ASSET LIBRARY ===== */
+  .library-screen {
+    display: flex;
+    height: 580px;
+    background: var(--black);
+  }
+  .library-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .library-toolbar {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .library-toolbar h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    flex: 1;
+  }
+  .tab-row {
+    display: flex;
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 3px;
+  }
+  .tab {
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .tab.active {
+    background: var(--surface-3);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .search-box {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 5px 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 160px;
+  }
+  .search-box input {
+    background: none;
+    border: none;
+    outline: none;
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: var(--font);
+    width: 100%;
+  }
+
+  .filter-bar {
+    padding: 8px 20px;
+    display: flex;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+  }
+  .filter-chip {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .filter-chip.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border-color: rgba(255,92,0,0.3);
+  }
+
+  .asset-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 16px 20px;
+    overflow-y: auto;
+    align-content: start;
+  }
+  .asset-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .asset-card:hover { border-color: var(--accent); }
+  .asset-thumb {
+    aspect-ratio: 16/9;
+    background: var(--surface-3);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .asset-thumb-img {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+  }
+  .asset-thumb-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.6));
+  }
+  .asset-type-badge {
+    position: absolute;
+    top: 7px; left: 7px;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+  .asset-status-dot {
+    position: absolute;
+    top: 8px; right: 8px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
+  }
+  .asset-card-body {
+    padding: 10px 12px;
+  }
+  .asset-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .asset-card-meta {
+    font-size: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .asset-card-meta-dot {
+    width: 2px; height: 2px; border-radius: 50%; background: var(--text-muted);
+  }
+
+  /* Detail drawer (right panel) */
+  .detail-drawer {
+    width: 260px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--surface-1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .detail-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-header h4 {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .detail-header p { font-size: 11px; color: var(--text-muted); }
+  .detail-body { flex: 1; padding: 14px 16px; overflow-y: auto; }
+  .detail-section {
+    margin-bottom: 18px;
+  }
+  .detail-section h5 {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .detail-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+  }
+  .detail-thumb {
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+  .detail-tags {
+    display: flex; flex-wrap: wrap; gap: 5px;
+  }
+  .detail-tag {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+  .detail-actions {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 6px;
+  }
+
+  /* ===== DESIGN NOTES ===== */
+  .design-notes {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .design-note {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .design-note .dn-icon {
+    font-size: 18px; margin-bottom: 8px;
+  }
+  .design-note h5 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+  .design-note p {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ===== PALETTE STRIP ===== */
+  .palette {
+    display: flex;
+    gap: 8px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .swatch-block {
+    width: 44px; height: 44px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+  .swatch span {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: monospace;
+    letter-spacing: 0.03em;
+  }
+
+  /* Divider */
+  hr.divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* Inline code */
+  code {
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: var(--accent);
+    font-family: 'Fira Code', monospace;
+  }
+
+  @media (max-width: 900px) {
+    .priority-grid { grid-template-columns: 1fr; }
+    .critique-grid { grid-template-columns: 1fr; }
+    .design-notes { grid-template-columns: 1fr 1fr; }
+    .asset-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <!-- COVER -->
+  <div class="cover">
+    <div class="cover-tag">
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><circle cx="4" cy="4" r="4"/></svg>
+      UI 视觉方案 · 2026.07
+    </div>
+    <h1><span>MultiMix</span> — 现在应该跑通什么，UI 怎么做</h1>
+    <p>基于商业计划书 multiMix 定位版，结合现有代码现状，给出优先体验清单 + 新视觉方案。</p>
+  </div>
+
+
+  <!-- PART 1: PRIORITY EXPERIENCES -->
+  <div class="section-header">
+    <h2>Part 1 · 优先跑通的体验</h2>
+    <h3>0–6 个月 MVP 验证闭环：三层递进</h3>
+    <p>商业计划书最核心的验证目标是：<strong>「高客单本地商家，用真实素材直接生成可发布内容，并愿意持续付费」</strong>。要证明这件事，有且只有以下三层体验必须真正跑通。</p>
+  </div>
+
+  <div class="priority-grid">
+
+    <div class="priority-card">
+      <div class="tier-label">🔴 第一优先 · 必须跑通</div>
+      <h4>对话 → 确认 → 生成文案/视频方案</h4>
+      <ul>
+        <li>商家说「帮我做一条门窗安装的小红书视频」，AI 能结构化意图并给出确认卡</li>
+        <li>确认卡里要有：目标平台、素材引用、大致方向，用户一键确认就能执行</li>
+        <li>生成后右侧能立刻看到文案或视频脚本，不是空白等待</li>
+        <li>支持「改短一点」「换个开头」这类最高频修改指令立即生效</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>首版可用率 &gt; 60%</strong>，不需要超过 2 轮就能发</div>
+    </div>
+
+    <div class="priority-card">
+      <div class="tier-label">🔴 第一优先 · 必须跑通</div>
+      <h4>素材上传 → 理解 → 在生成中被引用</h4>
+      <ul>
+        <li>商家能上传门店图/施工图，AI 能识别出「这是一个家装案例，有客厅翻新」</li>
+        <li>对话里能引用「用我第 3 张图做封面」，生成结果中真实体现</li>
+        <li>素材库里看到图片是否已被理解（已解析 / 待处理 标签）</li>
+        <li>这是核心差异化：不是通用生成，而是懂你的原材料</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>每次对话平均引用自有素材 &gt; 1 个</strong></div>
+    </div>
+
+    <div class="priority-card tier2">
+      <div class="tier-label">🟡 第二优先 · 跑通后再做</div>
+      <h4>外部情报拆解 → 用于选题</h4>
+      <ul>
+        <li>AI 能引用「最近家装类 top 视频的开头结构」给建议</li>
+        <li>选题建议页面：今天适合发什么，背后有依据</li>
+        <li>不需要用户自己找，直接在对话里作为上下文</li>
+        <li>这是「情报拆解」步骤——先把前两步跑通，再加这层</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>选题采纳率 &gt; 40%</strong></div>
+    </div>
+
+    <div class="priority-card tier2">
+      <div class="tier-label">🟡 第二优先 · 跑通后再做</div>
+      <h4>历史内容复用 · 资产沉淀感</h4>
+      <ul>
+        <li>用户发完一条内容后，这次素材使用、修改路径会保留</li>
+        <li>下次再说「像上次那个风格」，AI 能调用历史</li>
+        <li>资产库要让用户感知到「东西越用越多，不是用一次扔一次」</li>
+        <li>这是续费意愿和防流失的关键——做完 MVP 再加</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>素材复用率 &gt; 30% / 月</strong></div>
+    </div>
+
+    <div class="priority-card tier3">
+      <div class="tier-label">🟣 第三优先 · MVP 后规划</div>
+      <h4>视频编排 · MG 动效 · 数字人</h4>
+      <ul>
+        <li>视频脚本 → 完整 timeline 自动拼装</li>
+        <li>MG 补位场景（缺素材时用 MG 动效补帧）</li>
+        <li>数字人口播嵌入对话工作台</li>
+        <li>后端 video_studio + remotion 模块已在，但上游体验不稳时先不暴露给用户</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>6 个月后外贸试点</strong></div>
+    </div>
+
+    <div class="priority-card tier3">
+      <div class="tier-label">🟣 第三优先 · MVP 后规划</div>
+      <h4>订阅付费 · 用量仪表盘</h4>
+      <ul>
+        <li>生成次数、素材处理量、已用空间的可视化</li>
+        <li>套餐对比页面和升级入口</li>
+        <li>真正的付费按钮和 Webhook 通知</li>
+        <li>先在 1-2 个种子用户里验证 playbook，再做收费系统</li>
+      </ul>
+      <div class="kpi">验证指标：<strong>月付费用户 &gt; 10 家</strong></div>
+    </div>
+
+  </div>
+
+  <hr class="divider">
+
+  <!-- PART 2: UI CRITIQUE -->
+  <div class="section-header">
+    <h2>Part 2 · 现有 UI 评估</h2>
+    <h3>骨架正确，但缺乏「内容生产工具」的气质</h3>
+    <p>当前前端代码实现了正确的架构（对话 + 产物双栏、adapter 层、mock 模式），但视觉语言偏通用 SaaS，不能让一个本地商家感受到「这就是为我做的」。</p>
+  </div>
+
+  <div class="critique-grid">
+    <div class="critique-card">
+      <h4><span class="dot orange"></span>需要改进的问题</h4>
+      <ul>
+        <li>配色走的是浅色/中性调，没有明确品牌辨识度，和竞品没有视觉差异</li>
+        <li>对话区和产物区视觉权重几乎相等，用户不清楚哪里是「主区域」</li>
+        <li>确认卡（Agent 生成前的确认步骤）太平，不够有存在感——这是产品最核心的交互，应该醒目</li>
+        <li>素材卡片没有「理解状态」的反馈：哪些图已分析，哪些待处理，用户看不出来</li>
+        <li>空状态（新对话、空库）缺乏引导感，不知道从哪里开始</li>
+        <li>字体层次不够，标题/正文/辅助信息视觉差异太小，密度偏高</li>
+        <li>没有体现「内容生产工作台」的专业感，看起来更像 ChatGPT wrapper</li>
+      </ul>
+    </div>
+    <div class="critique-card good">
+      <h4><span class="dot green"></span>做得对的部分，保留</h4>
+      <ul>
+        <li>对话 + 产物双栏布局是对的，不要改成单栏</li>
+        <li>拖拽分栏宽度的交互很实用，保留</li>
+        <li>Adapter 层与 mock 分离，不影响 UI 迭代，架构正确</li>
+        <li>产物卡在对话流里内嵌的方式是对的——产物不应该和消息分离</li>
+        <li>侧边栏的对话列表 + 库切换，信息架构基本合理</li>
+        <li>消息流中的建议词（suggestion chips）这个组件形态好，继续用</li>
+        <li>右侧抽屉做详情的思路对，不要用 modal</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- PART 3: UI VISION -->
+  <div class="section-header">
+    <h2>Part 3 · 视觉方案</h2>
+    <h3>深色工作台 × 橙色主视觉 × 内容优先</h3>
+    <p>
+      核心设计决策：<strong>深色背景</strong>让内容（文案、图片、视频帧）自然成为视觉焦点；
+      <strong>橙色 #FF5C00</strong> 作为唯一品牌色，只用于核心动作（确认生成、品牌 logo、状态高亮），不滥用；
+      布局让 <strong>产物区比对话区更宽</strong>，反映「结果导向」而非「聊天导向」。
+    </p>
+  </div>
+
+  <!-- Color palette -->
+  <div style="background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 24px;">
+    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px;">色彩系统</div>
+    <div class="palette">
+      <div class="swatch"><div class="swatch-block" style="background:#FF5C00;"></div><span>#FF5C00</span><span style="color:var(--accent);font-size:9px">品牌色</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#0A0A0A;border-color:#333"></div><span>#0A0A0A</span><span style="font-size:9px">黑底</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#131313;border-color:#333"></div><span>#131313</span><span style="font-size:9px">面板</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#1C1C1C;border-color:#333"></div><span>#1C1C1C</span><span style="font-size:9px">卡片</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#252525;border-color:#333"></div><span>#252525</span><span style="font-size:9px">输入框</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#2E2E2E;border-color:#444"></div><span>#2E2E2E</span><span style="font-size:9px">分割线</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#F0F0F0;"></div><span>#F0F0F0</span><span style="font-size:9px">主文字</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#8A8A8A;"></div><span>#8A8A8A</span><span style="font-size:9px">辅助文字</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#22C55E;"></div><span>#22C55E</span><span style="font-size:9px">成功/文案</span></div>
+      <div class="swatch"><div class="swatch-block" style="background:#3B82F6;"></div><span>#3B82F6</span><span style="font-size:9px">视频/信息</span></div>
+    </div>
+  </div>
+
+  <!-- Screen 1: Conversation Workspace -->
+  <div class="mockup-label">屏幕 1 / 2 — 对话工作台（生成文案中）</div>
+  <div class="browser-chrome">
+    <div class="browser-bar">
+      <div class="browser-dots">
+        <div class="browser-dot"></div>
+        <div class="browser-dot"></div>
+        <div class="browser-dot"></div>
+      </div>
+      <div class="browser-url">app.multimix.cn/app/assets</div>
+    </div>
+
+    <div class="workspace">
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sidebar-top">
+          <div class="logo-row">
+            <div class="logo-mark">M</div>
+            <span class="logo-text">multiMix</span>
+          </div>
+          <button class="new-btn">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            新建对话
+          </button>
+        </div>
+
+        <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+          <div class="sidebar-section">
+            <div class="sidebar-section-label">最近对话</div>
+            <div class="sidebar-item active">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v8H7l-3 2V10H2V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              门窗案例小红书内容
+            </div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v8H7l-3 2V10H2V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              全屋定制获客视频方案
+            </div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v8H7l-3 2V10H2V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              春季促销帖子文案
+            </div>
+          </div>
+
+          <div class="sidebar-section">
+            <div class="sidebar-section-label">素材库</div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M1 1h12v12H1V1zm3 4h6M4 8h4" stroke="currentColor" stroke-width="1.2"/></svg>
+              文案库
+            </div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="9" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M1 6l3-2 2 2 3-3 4 3" stroke="currentColor" stroke-width="1.2"/></svg>
+              图片库
+            </div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 5-10 5V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              视频库
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-bottom">
+          <div class="sidebar-item">
+            <svg class="item-icon" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M7 5v2l1.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            demo@multimix.local
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat -->
+      <div class="chat-area">
+        <div class="chat-header">
+          <h3>门窗案例小红书内容</h3>
+          <span class="chat-header-tag">家装·门窗</span>
+          <span class="chat-header-tag">4 条素材已分析</span>
+        </div>
+
+        <div class="chat-messages">
+          <!-- User message -->
+          <div class="msg user">
+            <div class="msg-avatar user-av">T</div>
+            <div class="msg-body">
+              <div class="msg-bubble">帮我做一条门窗安装完成的小红书帖子，用我上传的那几张案例图，风格真实一点，不要太广告感</div>
+            </div>
+          </div>
+
+          <!-- AI message with confirm card -->
+          <div class="msg">
+            <div class="msg-avatar ai">M</div>
+            <div class="msg-body" style="max-width:88%">
+              <div class="msg-bubble">好的，我来帮你做这条帖子。基于你上传的 4 张门窗安装图，我拆了一个方向，你确认后开始生成：</div>
+              <div class="confirm-card">
+                <div class="confirm-title">
+                  <span>文案生成方案</span>
+                  <span class="badge">待确认</span>
+                </div>
+                <div class="confirm-rows">
+                  <div class="confirm-row"><span class="label">平台</span><span class="value">小红书</span></div>
+                  <div class="confirm-row"><span class="label">风格</span><span class="value">真实客户视角 · 非广告语气</span></div>
+                  <div class="confirm-row"><span class="label">主图</span><span class="value">案例图 #2（安装完成全景）</span></div>
+                  <div class="confirm-row"><span class="label">结构</span><span class="value">钩子 → 问题 → 解决 → 效果展示 → CTA</span></div>
+                  <div class="confirm-row"><span class="label">配图</span><span class="value">案例图 #1 #3 #4 做过程图</span></div>
+                </div>
+                <div class="confirm-actions">
+                  <button class="btn-confirm">确认，开始生成</button>
+                  <button class="btn-cancel">调整方向</button>
+                </div>
+              </div>
+              <div class="suggestions">
+                <span class="suggestion-chip">改成视频方案</span>
+                <span class="suggestion-chip">风格再口语一点</span>
+                <span class="suggestion-chip">加上价格锚点</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input-wrap">
+          <div class="chat-input-box">
+            <div style="flex:1">
+              <div class="input-hint" style="margin-bottom:4px">说说你想做什么内容…</div>
+            </div>
+            <div class="input-actions">
+              <div class="input-attach">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 10l3-3m0 0l1-4 3 3-4 1zm3-3L6 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <button class="input-send">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 10V2M2 6l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product panel -->
+      <div class="product-panel">
+        <div class="product-header">
+          <span class="product-mode-badge">文案</span>
+          <span class="product-title">门窗安装 · 小红书帖</span>
+        </div>
+        <div class="product-content">
+          <div class="copy-preview">
+            <div class="copy-block">
+              <div class="copy-block-label">标题</div>
+              <div class="copy-block-text">装了 12 年还没一道划痕的门窗，是我找对师傅了？</div>
+            </div>
+            <div class="copy-block">
+              <div class="copy-block-label">正文</div>
+              <div class="copy-block-text">
+                上个月终于把家里三间房的门窗全换了，折腾了快两个月，踩了很多坑……<br><br>
+                最后选了一家不太会营销但施工特别细的本地团队。<br><br>
+                👆 图二是安装完的全景，密封条是他们手工贴的，没有任何缝隙…<br><br>
+                <span style="color:var(--text-muted)">（预览截断，完整版共 320 字）</span>
+              </div>
+              <div class="copy-block-tags">
+                <span class="tag">#门窗安装</span>
+                <span class="tag">#家装记录</span>
+                <span class="tag">#避坑</span>
+                <span class="tag">#本地服务</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="product-actions">
+          <button class="btn-primary">复制全文</button>
+          <button class="btn-ghost">导出</button>
+          <button class="btn-ghost">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M9 2L2 9M2 2l7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Screen 2: Asset Library -->
+  <div class="mockup-label">屏幕 2 / 2 — 素材库（图片库 · 已上传资料）</div>
+  <div class="browser-chrome">
+    <div class="browser-bar">
+      <div class="browser-dots">
+        <div class="browser-dot"></div>
+        <div class="browser-dot"></div>
+        <div class="browser-dot"></div>
+      </div>
+      <div class="browser-url">app.multimix.cn/app/assets?view=library&tab=image</div>
+    </div>
+
+    <div class="library-screen">
+      <!-- Sidebar reuse -->
+      <div class="sidebar">
+        <div class="sidebar-top">
+          <div class="logo-row">
+            <div class="logo-mark">M</div>
+            <span class="logo-text">multiMix</span>
+          </div>
+          <button class="new-btn">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            新建对话
+          </button>
+        </div>
+        <div style="flex:1; overflow:hidden; display:flex; flex-direction:column;">
+          <div class="sidebar-section">
+            <div class="sidebar-section-label">最近对话</div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2h10v8H7l-3 2V10H2V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              门窗案例小红书内容
+            </div>
+          </div>
+          <div class="sidebar-section">
+            <div class="sidebar-section-label">素材库</div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M1 1h12v12H1V1zm3 4h6M4 8h4" stroke="currentColor" stroke-width="1.2"/></svg>
+              文案库
+            </div>
+            <div class="sidebar-item active">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><rect x="1" y="3" width="12" height="9" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M1 6l3-2 2 2 3-3 4 3" stroke="currentColor" stroke-width="1.2"/></svg>
+              图片库
+            </div>
+            <div class="sidebar-item">
+              <svg class="item-icon" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 5-10 5V2z" stroke="currentColor" stroke-width="1.2"/></svg>
+              视频库
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-bottom">
+          <div class="sidebar-item">
+            <svg class="item-icon" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.2"/></svg>
+            demo@multimix.local
+          </div>
+        </div>
+      </div>
+
+      <!-- Library main -->
+      <div class="library-main">
+        <div class="library-toolbar">
+          <h3>图片库</h3>
+          <div class="tab-row">
+            <div class="tab active">上传资料</div>
+            <div class="tab">采集资料</div>
+            <div class="tab">对话沉淀</div>
+          </div>
+          <div class="search-box">
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="4.5" cy="4.5" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M7 7l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            <input placeholder="搜索素材…">
+          </div>
+          <button class="new-btn" style="width:auto; padding: 6px 14px; font-size: 11px;">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            上传素材
+          </button>
+        </div>
+
+        <div class="filter-bar">
+          <div class="filter-chip active">全部 (23)</div>
+          <div class="filter-chip">封面图 (8)</div>
+          <div class="filter-chip">素材图 (11)</div>
+          <div class="filter-chip">分镜图 (4)</div>
+          <div class="filter-chip">
+            <span style="color:var(--green);margin-right:3px">●</span>已解析 (18)
+          </div>
+          <div class="filter-chip">
+            <span style="color:var(--accent);margin-right:3px">●</span>待处理 (5)
+          </div>
+        </div>
+
+        <div class="asset-grid">
+          <!-- Cards -->
+          <div class="asset-card">
+            <div class="asset-thumb">
+              <div class="asset-thumb-img">🏠</div>
+              <div class="asset-thumb-overlay"></div>
+              <div class="asset-type-badge">封面图</div>
+              <div class="asset-status-dot"></div>
+            </div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">门窗安装完工全景</div>
+              <div class="asset-card-meta">
+                <span>已解析</span>
+                <span class="asset-card-meta-dot"></span>
+                <span>被引用 3 次</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-thumb">
+              <div class="asset-thumb-img">🪟</div>
+              <div class="asset-thumb-overlay"></div>
+              <div class="asset-type-badge">素材图</div>
+              <div class="asset-status-dot"></div>
+            </div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">安装细节 - 密封条工艺</div>
+              <div class="asset-card-meta">
+                <span>已解析</span>
+                <span class="asset-card-meta-dot"></span>
+                <span>被引用 1 次</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card" style="border-color:var(--accent)">
+            <div class="asset-thumb">
+              <div class="asset-thumb-img">🛠️</div>
+              <div class="asset-thumb-overlay"></div>
+              <div class="asset-type-badge">素材图</div>
+              <div style="position:absolute;top:8px;right:8px;width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px rgba(255,92,0,0.2)"></div>
+            </div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">施工过程记录 #1</div>
+              <div class="asset-card-meta">
+                <span style="color:var(--accent)">待处理</span>
+                <span class="asset-card-meta-dot"></span>
+                <span>刚上传</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-thumb">
+              <div class="asset-thumb-img">🏡</div>
+              <div class="asset-thumb-overlay"></div>
+              <div class="asset-type-badge">分镜图</div>
+              <div class="asset-status-dot"></div>
+            </div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">客厅落地窗效果</div>
+              <div class="asset-card-meta">
+                <span>已解析</span>
+                <span class="asset-card-meta-dot"></span>
+                <span>被引用 2 次</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-thumb">
+              <div class="asset-thumb-img">📐</div>
+              <div class="asset-thumb-overlay"></div>
+              <div class="asset-type-badge">素材图</div>
+              <div class="asset-status-dot"></div>
+            </div>
+            <div class="asset-card-body">
+              <div class="asset-card-title">测量现场 - 施工前</div>
+              <div class="asset-card-meta">
+                <span>已解析</span>
+                <span class="asset-card-meta-dot"></span>
+                <span>未使用</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="asset-card">
+            <div class="asset-thumb" style="border:2px dashed var(--border); aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px; background:transparent;">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <span style="font-size:10px; color:var(--text-muted)">上传更多素材</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detail drawer -->
+      <div class="detail-drawer">
+        <div class="detail-header">
+          <h4>门窗安装完工全景</h4>
+          <p>封面图 · 已解析 · 1.4 MB</p>
+        </div>
+        <div class="detail-body">
+          <div class="detail-thumb">🏠</div>
+          <div class="detail-section">
+            <h5>AI 理解</h5>
+            <p class="detail-text">室内门窗安装完成场景。客厅落地窗，白色铝合金框架，双层玻璃，密封工艺清晰可见，光线充足，空间感强。</p>
+          </div>
+          <div class="detail-section">
+            <h5>可用场景</h5>
+            <div class="detail-tags">
+              <span class="detail-tag">小红书封面</span>
+              <span class="detail-tag">视频首帧</span>
+              <span class="detail-tag">对比图（完工）</span>
+            </div>
+          </div>
+          <div class="detail-section">
+            <h5>使用记录</h5>
+            <p class="detail-text" style="font-size:11px">被「门窗案例小红书内容」对话引用 3 次。</p>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn-primary" style="font-size:11px">在对话中使用</button>
+          <button class="btn-ghost" style="font-size:11px">下载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Design notes -->
+  <div class="section-header" style="margin-top:40px">
+    <h2>设计原则总结</h2>
+    <h3>四条不能打破的原则</h3>
+  </div>
+
+  <div class="design-notes">
+    <div class="design-note">
+      <div class="dn-icon">🎯</div>
+      <h5>产物比对话更重要</h5>
+      <p>产物区（右侧）默认宽于对话区，传递「我给你结果」而非「我们在聊天」的信号。空状态时用视频脚本卡片占位，不要空白。</p>
+    </div>
+    <div class="design-note">
+      <div class="dn-icon">🔶</div>
+      <h5>橙色只用于核心动作</h5>
+      <p>确认生成按钮、品牌 Logo、待确认状态徽章——这三处用橙色。其余全部用 <code>#8A8A8A</code> 灰色，不稀释品牌色权重。</p>
+    </div>
+    <div class="design-note">
+      <div class="dn-icon">🗃️</div>
+      <h5>素材状态必须可见</h5>
+      <p>每张图片卡片都有「已解析 / 待处理」状态和「被引用 N 次」计数。用户感知到素材在被系统理解和使用，是资产沉淀感的来源。</p>
+    </div>
+    <div class="design-note">
+      <div class="dn-icon">✅</div>
+      <h5>确认卡是最重要的交互</h5>
+      <p>Agent 在执行生成前的确认卡，是产品核心差异化的视觉体现。要比聊天气泡更大、更有存在感，背景色区分，不能埋进消息流里。</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · 终稿 · 素材源管理（管理员）</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --ok:#0E8A6B; --warn:#9A6A00; --warn-soft:#FFF3D9;
+  --radius:16px; --radius-sm:12px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:13.5px;line-height:1.6;
+  display:grid;grid-template-rows:44px minmax(0,1fr);min-width:1080px;
+}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit;transition:transform .15s ease,box-shadow .15s ease}
+button:active{transform:scale(.98)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg{flex:none;display:block}
+.topbar{display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);background:var(--bg)}
+.brand-mark{width:24px;height:24px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center}
+.crumb{font-size:12.5px;color:var(--ink-3)}
+.crumb b{color:var(--ink);font-weight:600;font-size:13px}
+.admin-tag{font-size:10.5px;font-weight:650;color:var(--warn);background:var(--warn-soft);padding:2px 9px;border-radius:999px;letter-spacing:.04em}
+.back{margin-left:auto;display:flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:999px;
+  border:1px solid var(--line);font-size:12px;color:var(--ink-2);background:var(--surface);text-decoration:none}
+.back:hover{color:var(--ink);transform:translateY(-1px);box-shadow:var(--shadow-card)}
+
+.main{overflow:auto;padding:28px 40px;display:grid;gap:18px;align-content:start;justify-content:center}
+.wrap{width:920px;display:grid;gap:16px}
+.head{display:flex;align-items:flex-start;gap:12px}
+.head h1{font-size:18px;font-weight:700;letter-spacing:.01em}
+.head .s{font-size:12.5px;color:var(--ink-2);margin-top:2px}
+.btn-ink{margin-left:auto;display:flex;align-items:center;gap:7px;height:36px;padding:0 16px;border-radius:999px;
+  background:var(--ink);color:#fff;font-size:13px;font-weight:600;box-shadow:var(--shadow-card);flex:none}
+.btn-ink:hover{transform:translateY(-1px)}
+
+.rule{
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid #7C5CFF;
+  border-radius:var(--radius-sm);padding:12px 16px;font-size:12.5px;color:var(--ink-2);line-height:1.7;
+}
+.rule b{color:var(--ink);font-weight:600}
+
+.table{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden}
+.tr{display:grid;grid-template-columns:1.4fr 1fr .8fr .9fr 1.1fr 1.2fr;gap:12px;align-items:center;
+  padding:13px 20px;border-bottom:1px solid var(--line)}
+.tr:last-child{border-bottom:0}
+.tr.th{background:var(--surface-2);font-size:11px;letter-spacing:.05em;font-weight:650;color:var(--ink-3);padding:10px 20px}
+.src-name{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px}
+.src-ic{width:30px;height:30px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;color:var(--ink-2);flex:none;font-size:12px;font-weight:700}
+.cell{font-size:12.5px;color:var(--ink-2)}
+.st-on{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ok)}
+.st-on i{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+.st-off{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--ink-3)}
+.st-off i{width:7px;height:7px;border-radius:50%;background:var(--line-2)}
+.toggle{position:relative;width:34px;height:19px;cursor:pointer;flex:none}
+.toggle input{display:none}
+.toggle i{position:absolute;inset:0;border-radius:999px;background:var(--line-2);transition:background .2s ease}
+.toggle i::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;
+  background:#fff;transition:left .2s ease;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle input:checked + i{background:var(--ai-grad)}
+.toggle input:checked + i::after{left:17px}
+.quota{display:grid;gap:4px}
+.quota .bar{height:4px;border-radius:4px;background:var(--surface-2);position:relative;overflow:hidden;width:110px}
+.quota .fill{position:absolute;left:0;top:0;bottom:0;border-radius:inherit;background:var(--ai-grad);opacity:.7}
+.quota .t{font-size:10.5px;color:var(--ink-3)}
+.ops{display:flex;gap:6px;justify-content:flex-end}
+.op{height:26px;padding:0 11px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid var(--line-2);color:var(--ink-2);background:var(--surface)}
+.op:hover{color:var(--ink);box-shadow:var(--shadow-card);transform:translateY(-1px)}
+#toast{position:fixed;right:22px;bottom:22px;z-index:99;background:var(--ink);color:#fff;
+  font-size:13px;padding:10px 16px;border-radius:10px;box-shadow:var(--shadow-card);
+  opacity:0;transform:translateY(8px);transition:.3s ease;pointer-events:none;max-width:340px}
+#toast.on{opacity:1;transform:none}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand-mark">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <span class="crumb">管理 / <b>公开素材源</b></span>
+  <span class="admin-tag">管理员</span>
+  <a class="back" href="start.html">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.4 5.2 8l4.6 4.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    返回工作台
+  </a>
+</div>
+
+<div class="main">
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>公开素材源管理</h1>
+        <div class="s">配置分镜未命中商家素材时可用的兜底素材提供方</div>
+      </div>
+      <button class="btn-ink" onclick="toast('添加素材源：填写 API Key 后自动测试连接')">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        添加素材源
+      </button>
+    </div>
+
+    <div class="rule"><b>兜底规则</b>：公开素材只在分镜没有匹配到商家自有素材（no_asset_hit）后按优先级使用，永远不会抢在已保存素材前面；使用了兜底素材的分镜会在工作台明确标注。</div>
+
+    <div class="table">
+      <div class="tr th"><span>素材源</span><span>类型</span><span>优先级</span><span>状态</span><span>今日配额</span><span style="text-align:right">操作</span></div>
+      <div class="tr">
+        <span class="src-name"><span class="src-ic">Px</span>Pexels</span>
+        <span class="cell">图片 + 视频</span>
+        <span class="cell">1</span>
+        <label class="toggle"><input type="checkbox" checked onchange="tg(this,'Pexels')"><i></i></label>
+        <span class="quota"><span class="bar"><span class="fill" style="width:89%"></span></span><span class="t">890 / 1000 次</span></span>
+        <span class="ops"><button class="op" onclick="toast('Pexels 连接正常 · 延迟 210ms')">测试连接</button><button class="op" onclick="toast('编辑 Pexels 配置…')">编辑</button></span>
+      </div>
+      <div class="tr">
+        <span class="src-name"><span class="src-ic">Pb</span>Pixabay</span>
+        <span class="cell">图片 + 视频</span>
+        <span class="cell">2</span>
+        <label class="toggle"><input type="checkbox" checked onchange="tg(this,'Pixabay')"><i></i></label>
+        <span class="quota"><span class="bar"><span class="fill" style="width:31%"></span></span><span class="t">312 / 1000 次</span></span>
+        <span class="ops"><button class="op" onclick="toast('Pixabay 连接正常 · 延迟 340ms')">测试连接</button><button class="op" onclick="toast('编辑 Pixabay 配置…')">编辑</button></span>
+      </div>
+      <div class="tr">
+        <span class="src-name"><span class="src-ic">Us</span>Unsplash</span>
+        <span class="cell">仅图片</span>
+        <span class="cell">3</span>
+        <label class="toggle"><input type="checkbox" onchange="tg(this,'Unsplash')"><i></i></label>
+        <span class="quota"><span class="bar"><span class="fill" style="width:0%"></span></span><span class="t">已停用</span></span>
+        <span class="ops"><button class="op" onclick="toast('Unsplash 未启用，先打开开关')">测试连接</button><button class="op" onclick="toast('编辑 Unsplash 配置…')">编辑</button></span>
+      </div>
+      <div class="tr">
+        <span class="src-name"><span class="src-ic">自</span>自建素材站</span>
+        <span class="cell">视频</span>
+        <span class="cell">4</span>
+        <label class="toggle"><input type="checkbox" onchange="tg(this,'自建素材站')"><i></i></label>
+        <span class="quota"><span class="bar"><span class="fill" style="width:0%"></span></span><span class="t">未配置 API Key</span></span>
+        <span class="ops"><button class="op" onclick="toast('请先在「编辑」里配置 API Key')">测试连接</button><button class="op" onclick="toast('编辑自建素材站配置…')">编辑</button></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var toastTimer = null;
+function toast(msg){
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove('on'); }, 2400);
+}
+function tg(el, name){
+  toast(name + (el.checked ? ' 已启用：将按优先级参与兜底' : ' 已停用：不再提供兜底素材'));
+}
+</script>
+
+</body>
+</html>

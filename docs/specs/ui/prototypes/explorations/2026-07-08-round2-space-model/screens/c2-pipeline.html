@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · C2 流水线 · 内容生产线</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-a:#7C5CFF; --ai-b:#00A88E;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --ai-soft:linear-gradient(120deg,rgba(124,92,255,.09),rgba(0,168,142,.09));
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --warn:#9A6A00; --warn-soft:#FFF3D9;
+  --ok:#0E8A6B;
+  --radius:16px; --radius-sm:12px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+  --shadow-float:0 6px 16px rgba(32,31,30,.07),0 28px 70px rgba(32,31,30,.13);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-width:1280px;position:relative;
+}
+body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(700px 380px at 42% 0%,rgba(124,92,255,.06),transparent 70%),
+    radial-gradient(600px 360px at 88% 100%,rgba(0,168,142,.06),transparent 70%)}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 -14px 26px rgba(20,24,28,.14)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.5) 47.4%,rgba(255,255,255,.5) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.42) 55%,rgba(255,255,255,.42) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#C9DCEC 0%,#E8EFF4 44%,#D8C5A6 62%,#A98F6C 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.16) 30%,rgba(255,255,255,.16) 34%,transparent 34%),
+  linear-gradient(135deg,#343B42 0%,#5A646E 52%,#8C97A1 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.14) 62%,rgba(255,255,255,.14) 64%,transparent 64%),
+  linear-gradient(160deg,#D97B2F 0%,#E8A463 34%,#9AA0A6 76%,#7D838A 100%)}
+.ph-measure{background:
+  linear-gradient(90deg,transparent 40%,rgba(120,96,40,.25) 40%,rgba(120,96,40,.25) 42%,transparent 42%),
+  linear-gradient(150deg,#E5C468 0%,#DCD5C6 55%,#A5A198 100%)}
+.ph-balcony{background:
+  linear-gradient(0deg,transparent 50%,rgba(255,255,255,.4) 50%,rgba(255,255,255,.4) 51.6%,transparent 51.6%),
+  linear-gradient(160deg,#F0BF8B 0%,#F7E3C6 52%,#D6E0E6 100%)}
+.phbox{border-radius:9px;overflow:hidden;flex:none;background:var(--surface-2);box-shadow:0 0 0 1px var(--line)}
+.gdot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);animation:breathe 2.2s ease infinite;flex:none}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.7}}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);padding:2px 9px;border-radius:999px}
+
+/* ============ 顶栏 ============ */
+.topbar{display:flex;align-items:center;gap:14px;padding:14px 26px;position:relative;z-index:2}
+.brand{display:flex;align-items:center;gap:9px}
+.brand-mark{width:28px;height:28px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center}
+.brand b{font-size:14.5px;font-weight:650}
+.pipe-title{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+.pipe-title b{color:var(--ink);font-weight:650;font-size:14px}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.nav-ico{width:36px;height:36px;border-radius:50%;background:var(--surface);border:1px solid var(--line);
+  display:grid;place-items:center;color:var(--ink-2)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--surface-2);color:var(--ink-2);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--line-2)}
+
+/* ============ 流水线 ============ */
+.line-wrap{position:relative;z-index:1;overflow:auto;padding:18px 26px 10px;min-height:0}
+.pipeline{display:grid;grid-template-columns:1fr 30px 1.25fr 30px 1fr 30px 1fr;gap:0;align-items:start;height:100%;min-height:0}
+.station{display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px;min-height:0;height:100%}
+.st-head{display:flex;align-items:center;gap:9px}
+.st-num{width:22px;height:22px;border-radius:50%;background:var(--surface);border:1px solid var(--line-2);
+  display:grid;place-items:center;font-size:11px;font-weight:650;color:var(--ink-2)}
+.st-head .t{font-size:13.5px;font-weight:650}
+.st-head .s{font-size:11.5px;color:var(--ink-3);margin-left:auto}
+.st-body{display:grid;gap:12px;align-content:start;overflow:auto;min-height:0;padding-bottom:8px}
+.connector{align-self:start;margin-top:64px;position:relative;height:2px;background:var(--line-2);border-radius:2px}
+.connector::after{content:"";position:absolute;top:-2.5px;left:0;width:7px;height:7px;border-radius:50%;
+  background:var(--ai-grad);animation:flow 2.4s linear infinite}
+@keyframes flow{0%{left:-4%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:96%;opacity:0}}
+/* 工位 1 · 素材 */
+.asset-mini{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius-sm);padding:8px 11px;box-shadow:var(--shadow-card)}
+.asset-mini .phbox{width:44px;height:33px;border-radius:7px}
+.asset-mini .tx{display:grid;line-height:1.45;min-width:0}
+.asset-mini .n{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.asset-mini .s{font-size:11px;color:var(--ink-3);display:flex;align-items:center;gap:4px}
+.asset-mini .s .gdot{width:6px;height:6px}
+.asset-mini .s .wdot{width:6px;height:6px;border-radius:50%;background:var(--warn);animation:blink 1.4s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.pool-note{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3);padding:0 2px}
+.pool-note a{color:var(--accent);font-weight:600;margin-left:auto}
+
+/* 工位 2 · 方案（当前闸口，hero） */
+.confirm-card{
+  border:1px solid transparent;border-radius:var(--radius);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 4px 14px rgba(124,92,255,.09),0 18px 44px rgba(0,168,142,.09);
+  display:grid;
+}
+.cc-head{display:flex;align-items:center;padding:14px 17px 0;gap:9px}
+.cc-title{font-size:14px;font-weight:650}
+.cc-badge{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+  color:var(--warn);background:var(--warn-soft);padding:3px 10px;border-radius:999px}
+.cc-badge .gdot{width:7px;height:7px}
+.cc-item{font-size:11.5px;color:var(--ink-3);padding:2px 17px 0}
+.cc-fields{display:grid;gap:8px;padding:11px 17px 14px}
+.cc-row{display:grid;grid-template-columns:38px minmax(0,1fr);gap:10px;align-items:baseline}
+.cc-row .k{font-size:11.5px;color:var(--ink-3);text-align:right}
+.cc-row .v{font-size:13px;color:var(--ink);font-weight:500}
+.cc-row .v .thumbs{display:inline-flex;gap:4px;vertical-align:-4px;margin-left:6px}
+.cc-row .v .phbox{width:20px;height:20px;border-radius:5px}
+.cc-foot{display:flex;gap:8px;padding:13px 17px 15px;border-top:1px solid var(--line)}
+.btn-primary{display:flex;align-items:center;gap:6px;height:34px;padding:0 15px;border-radius:999px;
+  background:var(--ai-grad);color:#fff;font-size:12.5px;font-weight:600;box-shadow:0 6px 18px rgba(124,92,255,.22)}
+.btn-ghost{display:flex;align-items:center;gap:5px;height:34px;padding:0 13px;border-radius:999px;
+  border:1px solid var(--line-2);color:var(--ink-2);font-size:12.5px;background:var(--surface)}
+
+/* 工位 3 · 生成中 */
+.gen-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:15px 17px;display:grid;gap:11px;box-shadow:var(--shadow-card)}
+.gen-card .g-title{font-size:13px;font-weight:650}
+.gen-card .g-sub{font-size:11.5px;color:var(--ink-3);margin-top:-7px}
+.gen-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)}
+.gen-bar{height:3px;border-radius:3px;position:relative;overflow:hidden;background:var(--surface-2)}
+.gen-bar::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--ai-grad);opacity:.75;
+  animation:sweep 1.8s ease infinite}
+@keyframes sweep{0%{transform:translateX(-55%)}100%{transform:translateX(55%)}}
+.gen-refs{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3);flex-wrap:wrap}
+.gen-refs .mini{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:7px;
+  padding:2px 8px 2px 2px;background:var(--surface);color:var(--ink-2)}
+.gen-refs .phbox{width:17px;height:17px;border-radius:4px}
+
+/* 工位 4 · 成品 */
+.done-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow-card);display:grid}
+.done-card .cov{aspect-ratio:16/9;position:relative}
+.done-card .cov .ph{border-radius:0}
+.done-card .ok-pill{position:absolute;right:10px;top:10px;z-index:2;display:inline-flex;align-items:center;gap:4px;
+  font-size:10.5px;font-weight:600;color:var(--ok);background:rgba(255,255,255,.92);padding:2px 9px;border-radius:999px}
+.done-card .bd{padding:11px 14px 13px;display:grid;gap:6px}
+.done-card .t{font-size:12.5px;font-weight:650;line-height:1.5}
+.done-card .m{font-size:11px;color:var(--ink-3)}
+.done-card .acts{display:flex;gap:6px;margin-top:2px}
+.mini-btn{height:28px;padding:0 11px;border-radius:999px;font-size:11.5px;font-weight:600}
+.mini-btn.ink{background:var(--ink);color:#fff}
+.mini-btn.gh{border:1px solid var(--line-2);color:var(--ink-2)}
+.next-slot{border:1.5px dashed var(--line-2);border-radius:var(--radius);display:grid;place-items:center;
+  color:var(--ink-3);font-size:11.5px;padding:14px;gap:4px;text-align:center}
+
+/* ============ 底部 AI 工控台 ============ */
+.console{position:relative;z-index:2;padding:12px 26px 18px;display:grid;gap:9px}
+.console .msg{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-2);padding:0 4px}
+.console .dot{width:20px;height:20px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center;color:#fff;flex:none}
+.console .msg b{color:var(--ink);font-weight:600}
+.cmd-bar{display:flex;align-items:center;gap:11px;height:52px;padding:0 9px 0 16px;
+  border:1px solid transparent;border-radius:999px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-float)}
+.cmd-bar .hint{flex:1;font-size:13.5px;color:var(--ink-3)}
+.cmd-bar .clip{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--ink-3)}
+.cmd-bar .send{width:38px;height:38px;border-radius:50%;background:var(--ai-grad);color:#fff;
+  display:grid;place-items:center;box-shadow:0 8px 20px rgba(124,92,255,.28)}
+</style>
+</head>
+<body>
+
+<!-- 顶栏 -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <b>MultiMix</b>
+  </div>
+  <div class="pipe-title">内容生产线 · <b>陈师傅门窗</b></div>
+  <div class="top-right">
+    <span class="live-badge"><span class="gdot"></span>3 条内容在线上流动</span>
+    <button class="nav-ico" title="图片库">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="avatar">陈</div>
+  </div>
+</div>
+<!-- 流水线 -->
+<div class="line-wrap">
+  <div class="pipeline">
+
+    <!-- 工位 1 · 素材 -->
+    <section class="station">
+      <div class="st-head"><span class="st-num">1</span><span class="t">素材 · 已理解</span><span class="s">23 已解析 · 5 处理中</span></div>
+      <div class="st-body">
+        <div class="asset-mini">
+          <span class="phbox"><span class="ph ph-panorama"></span></span>
+          <span class="tx"><span class="n">门窗安装完工全景</span><span class="s"><span class="gdot"></span>已理解 · 被引用 3 次</span></span>
+        </div>
+        <div class="asset-mini">
+          <span class="phbox"><span class="ph ph-seal"></span></span>
+          <span class="tx"><span class="n">安装细节 · 密封条工艺</span><span class="s"><span class="gdot"></span>已理解 · 被引用 1 次</span></span>
+        </div>
+        <div class="asset-mini">
+          <span class="phbox"><span class="ph ph-work"></span></span>
+          <span class="tx"><span class="n">施工过程记录 #1</span><span class="s"><span class="wdot"></span>处理中 · 刚上传</span></span>
+        </div>
+        <div class="asset-mini">
+          <span class="phbox"><span class="ph ph-measure"></span></span>
+          <span class="tx"><span class="n">测量现场 · 施工前</span><span class="s"><span class="gdot"></span>已理解 · 未使用</span></span>
+        </div>
+        <div class="pool-note">素材池会自动进入生成 <a>查看图片库 →</a></div>
+      </div>
+    </section>
+
+    <div class="connector"></div>
+
+    <!-- 工位 2 · 方案（当前闸口） -->
+    <section class="station">
+      <div class="st-head"><span class="st-num">2</span><span class="t">方案 · 你来确认</span><span class="s">1 个待确认</span></div>
+      <div class="st-body">
+        <div class="confirm-card">
+          <div class="cc-head">
+            <div class="cc-title">文案生成方案</div>
+            <span class="cc-badge"><span class="gdot"></span>待确认</span>
+          </div>
+          <div class="cc-item">门窗案例小红书帖 · 刚拆解</div>
+          <div class="cc-fields">
+            <div class="cc-row"><span class="k">平台</span><span class="v">小红书</span></div>
+            <div class="cc-row"><span class="k">风格</span><span class="v">真实客户视角 · 非广告语气</span></div>
+            <div class="cc-row"><span class="k">主图</span><span class="v">案例图 #2（安装完成全景）<span class="thumbs"><span class="phbox"><span class="ph ph-panorama"></span></span></span></span></div>
+            <div class="cc-row"><span class="k">结构</span><span class="v">钩子 → 问题 → 解决 → 效果展示 → CTA</span></div>
+            <div class="cc-row"><span class="k">配图</span><span class="v">案例图 #1 #3 #4 做过程图<span class="thumbs"><span class="phbox"><span class="ph ph-seal"></span></span><span class="phbox"><span class="ph ph-work"></span></span><span class="phbox"><span class="ph ph-measure"></span></span></span></span></div>
+          </div>
+          <div class="cc-foot">
+            <button class="btn-primary">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              确认，开始生成
+            </button>
+            <button class="btn-ghost">调整方向</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="connector"></div>
+
+    <!-- 工位 3 · 生成中 -->
+    <section class="station">
+      <div class="st-head"><span class="st-num">3</span><span class="t">生成中</span><span class="s">1 条进行中</span></div>
+      <div class="st-body">
+        <div class="gen-card">
+          <div class="g-title">全屋定制获客视频脚本</div>
+          <div class="g-sub">9:16 · 30 秒 · 抖音/视频号</div>
+          <div class="gen-line"><span class="gdot"></span>正在生成编导稿… 65%</div>
+          <div class="gen-bar"></div>
+          <div class="gen-refs">引用中：
+            <span class="mini"><span class="phbox"><span class="ph ph-living"></span></span>客厅落地窗</span>
+            <span class="mini"><span class="phbox"><span class="ph ph-panorama"></span></span>完工全景</span>
+          </div>
+        </div>
+        <div class="next-slot">「门窗案例小红书帖」确认后<br>将自动进入此工位</div>
+      </div>
+    </section>
+
+    <div class="connector"></div>
+
+    <!-- 工位 4 · 成品 -->
+    <section class="station">
+      <div class="st-head"><span class="st-num">4</span><span class="t">成品 · 可发布</span><span class="s">本周 3 条</span></div>
+      <div class="st-body">
+        <div class="done-card">
+          <div class="cov">
+            <span class="ph ph-balcony"></span>
+            <span class="ok-pill">
+              <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              可发布
+            </span>
+          </div>
+          <div class="bd">
+            <div class="t">阳台推拉门这样选，十年不变形</div>
+            <div class="m">小红书帖 · v2 · 来源已标注 · 昨天</div>
+            <div class="acts">
+              <button class="mini-btn ink">复制全文</button>
+              <button class="mini-btn gh">导出</button>
+            </div>
+          </div>
+        </div>
+        <div class="done-card">
+          <div class="bd">
+            <div class="t">春季促销帖子文案</div>
+            <div class="m">小红书帖 · v1 · 已发布 · 07/03</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- 底部 AI 工控台 -->
+<div class="console">
+  <div class="msg">
+    <span class="dot"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg></span>
+    我看了你上传的 4 张案例图——密封胶条的手工细节很加分，适合走『真实记录』路线。方案已放到 <b>工位 2</b>，确认后开始生成。
+  </div>
+  <div class="cmd-bar">
+    <span class="hint">跟 AI 说下一条内容想做什么，或调整线上任何一条…</span>
+    <button class="clip"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.2 7.2 8.6 11.8a3.2 3.2 0 0 1-4.5-4.5l4.9-4.9a2.1 2.1 0 0 1 3 3L7.2 10a1 1 0 0 1-1.5-1.4l4.3-4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+    <button class="send"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  </div>
+</div>
+
+</body>
+</html>

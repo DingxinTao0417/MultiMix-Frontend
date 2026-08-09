@@ -1,6 +1,6 @@
 :root {
   color-scheme: light;
-  /* V3 agentic-workbench palette (spec: docs/superpowers/specs/2026-07-08) */
+  /* V3 agentic-workbench palette (spec: docs/specs/ui/agentic-workbench-design.md) */
   --background: #faf9f7;
   --rail: #201f1e;
   --rail-soft: #34312e;

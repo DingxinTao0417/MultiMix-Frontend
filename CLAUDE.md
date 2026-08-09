@@ -17,7 +17,7 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 前端保留 adapter 边界，但生产运行时不回退 mock：未配置 `NEXT_PUBLIC_API_BASE_URL` 时显示明确的未连接状态，真实后端为空时保持空态；mock 只允许存在于自动化测试 fixture。后端接入方式变化时不应重写工作台 UI。
 
-完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。当前整改项统一记录在工作区 `../docs/plans/active/`，历史审查和完成计划只在 `../docs/archive/` 追溯，不另维护容易失真的长期 GAPS 清单。工作区文档地图见 `../docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以工作区根目录 `../docs/authority/asset-understanding-and-segment-referencing.md` 与根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
+完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。前端整改项记录在 `docs/plans/active/`，跨端与后端计划见 `../MultiMix-Backend/docs/plans/active/`，各自历史计划在对应 `docs/archive/` 追溯，不另维护容易失真的长期 GAPS 清单。跨仓库文档地图见 `../MultiMix-Backend/docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以 `../MultiMix-Backend/docs/authority/asset-understanding-and-segment-referencing.md` 与工作区根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
 ## 生产部署目标（强制核对）
 
@@ -132,7 +132,7 @@ scripts/
 
 #### 视频预览壳不可回退门禁
 
-- `docs/MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v1` 与工作区原型 `../docs/specs/ui/prototypes/current/screens/workspace-video.html` 是权威。播放器外壳固定为白底、`1px solid #eae7e1`、`20px` 圆角、`7px` 内边距和双层柔和阴影；媒体画布内部可以黑底无边框，但不得把“画布无边框”解释为“播放器无外壳”。
+- `docs/MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v1` 与工作区原型 `docs/specs/ui/prototypes/current/screens/workspace-video.html` 是权威。播放器外壳固定为白底、`1px solid #eae7e1`、`20px` 圆角、`7px` 内边距和双层柔和阴影；媒体画布内部可以黑底无边框，但不得把“画布无边框”解释为“播放器无外壳”。
 - 横竖比例只应用到媒体画布，不能应用到包含底部控制条的整个播放器；浏览态不得增加固定高度容器或独立纵向拖拽条，播放器后应直接衔接分镜摘要。
 - 播放控件必须保持原型数值：`44px` 圆形按钮、`16px` 图标、悬停 `scale(1.07)`、控制区 `8px 6px 4px`、`3px` 渐变进度轨，禁止恢复浏览器原生 range 滑块。
 - 成片播放器和无成片分镜预览必须共用白色细边框、圆角与阴影外壳；待补素材、首帧未加载和失败提示画布默认为白色，禁止退回无提示黑块。
@@ -232,7 +232,7 @@ scripts/
 
 ## 已知问题 / 注意事项
 
-- `app/globals.css` 是单一全局样式表，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`../docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
+- `app/globals.css` 是单一全局样式表，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
 - `editor-engine/vendor/editor/` 内部的 `__tests__` 用 bun:test，已在 `vitest.config.ts` 里排除；`npm run test` 只跑 `app/assets/__tests__/` 和 vendor 根下的 `buildProject.test.ts`。
 - 前端不创建或读取本地 SQLite；浏览器工作台只消费真实后端数据。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。

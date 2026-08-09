@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · UI 重设计方案对比</title>
+<style>
+  :root{--bg:#111114;--surface:#1A1A1F;--ink:#EDEDF2;--ink-2:#9A9AA6;--line:#2A2A33;--accent:#6E8BFF;}
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);background:var(--bg);color:var(--ink);
+    font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;}
+  header{display:flex;align-items:center;gap:20px;padding:14px 24px;border-bottom:1px solid var(--line)}
+  h1{font-size:15px;font-weight:650;margin:0;letter-spacing:.02em}
+  h1 span{color:var(--ink-2);font-weight:400}
+  .tabs{display:flex;gap:6px;margin-left:auto}
+  .tabs button{border:1px solid var(--line);background:transparent;color:var(--ink-2);padding:7px 14px;border-radius:8px;font-size:13px;cursor:pointer}
+  .tabs button.on{background:var(--surface);color:var(--ink);border-color:var(--accent)}
+  main{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px 16px;min-height:0}
+  .col{display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0}
+  .col .label{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
+  .col .label b{color:var(--ink);font-weight:650}
+  .col .label a{color:var(--accent);text-decoration:none;font-size:12px;margin-left:auto}
+  .frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000;min-height:0}
+  iframe{width:1440px;height:900px;border:0;transform-origin:0 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>MultiMix · UI 重设计三方案对比 <span>· 2026-07 · 同一内容脚本，三种视觉语言 · </span><a href="../2026-07-08-round2-space-model/index.html" style="color:#6E8BFF;text-decoration:none;font-size:13px">第二轮：空间范式 →</a> <a href="../2026-07-08-round3-workbench-options/index.html" style="color:#6E8BFF;text-decoration:none;font-size:13px;margin-left:10px">第三轮：工作台三案 →</a></h1>
+  <div class="tabs">
+    <button data-s="workspace" class="on">对话工作台</button>
+    <button data-s="library">图片库</button>
+    <button data-s="start">新建对话</button>
+  </div>
+</header>
+<main>
+  <div class="col">
+    <div class="label"><b>A · 工作室白</b> Linear 亮色 × Figma · 暗色媒体舞台 <a href="screens/a-studio-light/workspace.html" target="_blank" data-open>新窗口打开 ↗</a></div>
+    <div class="frame"><iframe data-v="a-studio-light" src="screens/a-studio-light/workspace.html"></iframe></div>
+  </div>
+  <div class="col">
+    <div class="label"><b>B · 导演暗房</b> 剪映专业版 × Runway · 深色+橙 <a href="screens/b-directors-cut/workspace.html" target="_blank" data-open>新窗口打开 ↗</a></div>
+    <div class="frame"><iframe data-v="b-directors-cut" src="screens/b-directors-cut/workspace.html"></iframe></div>
+  </div>
+  <div class="col">
+    <div class="label"><b>C · 智能画布</b> Claude × v0 × Arc · 氛围级 AI 感 <a href="screens/c-ai-canvas/workspace.html" target="_blank" data-open>新窗口打开 ↗</a></div>
+    <div class="frame"><iframe data-v="c-ai-canvas" src="screens/c-ai-canvas/workspace.html"></iframe></div>
+  </div>
+</main>
+<script>
+  const fit = () => document.querySelectorAll('.frame').forEach(f => {
+    const s = f.clientWidth / 1440;
+    const el = f.querySelector('iframe');
+    el.style.transform = 'scale(' + s + ')';
+    f.style.height = Math.min(f.parentElement.clientHeight - 30, 900 * s) + 'px';
+  });
+  let screen_ = 'workspace';
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    screen_ = b.dataset.s;
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('iframe').forEach(el => el.src = 'screens/' + el.dataset.v + '/' + screen_ + '.html');
+    document.querySelectorAll('[data-open]').forEach(a => a.href = 'screens/' + a.closest('.col').querySelector('iframe').dataset.v + '/' + screen_ + '.html');
+  });
+  addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>

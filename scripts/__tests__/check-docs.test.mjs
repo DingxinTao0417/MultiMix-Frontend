@@ -45,8 +45,45 @@ function makeWorkspace() {
   return root;
 }
 
+function makeSplitWorkspace() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-split-docs-check-"));
+
+  writeFile(
+    root,
+    "MultiMix-Backend/docs/README.md",
+    `# MultiMix Docs
+
+- Review standard: \`MultiMix-Backend/docs/qa/project-review-standard.md\`
+- Security baseline: \`MultiMix-Backend/docs/qa/security-review-baseline.md\`
+`,
+  );
+  writeFile(root, "MultiMix-Backend/docs/authority/rule.md", `${HEADER}\n# Rule\n`);
+  writeFile(root, "MultiMix-Backend/docs/qa/conversation.md", `${HEADER}\n# QA\n`);
+  writeFile(root, "MultiMix-Backend/docs/qa/project-review-standard.md", `${HEADER}\n# Review standard\n`);
+  writeFile(root, "MultiMix-Backend/docs/qa/security-review-baseline.md", `${HEADER}\n# Security baseline\n`);
+  writeFile(root, "MultiMix-Backend/docs/plans/active/README.md", "# Active plans\n");
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `${HEADER}\n# Plan\n`);
+  writeFile(root, "MultiMix-Backend/docs/archive/plans/old.md", "# Old plan\n");
+  writeFile(root, "MultiMix-Frontend/docs/README.md", "# Frontend Docs\n");
+  writeFile(root, "MultiMix-Frontend/docs/specs/ui/README.md", "# UI specs\n");
+  writeFile(root, "MultiMix-Frontend/docs/specs/ui/agentic.md", `${HEADER}\n# UI\n`);
+  writeFile(root, "MultiMix-Frontend/docs/specs/ui/prototypes/current/README.md", "# Current\n");
+  writeFile(root, "MultiMix-Frontend/docs/specs/ui/prototypes/current/index.html", "<a href=\"screens/start.html\">Start</a>");
+  writeFile(root, "MultiMix-Frontend/docs/specs/ui/prototypes/current/screens/start.html", "<main>Start</main>");
+
+  return root;
+}
+
+test("passes split repository docs without a workspace-root docs directory", () => {
+  const root = makeSplitWorkspace();
+
+  const issues = checkDocs(root);
+
+  assert.deepEqual(issues, []);
+});
+
 test("passes a categorized docs tree with status headers", () => {
-  const root = makeWorkspace();
+  const root = makeSplitWorkspace();
 
   const issues = checkDocs(root);
 
@@ -54,7 +91,7 @@ test("passes a categorized docs tree with status headers", () => {
 });
 
 test("flags loose files added directly under docs root", () => {
-  const root = makeWorkspace();
+  const root = makeSplitWorkspace();
   writeFile(root, "docs/new-rule.md", `${HEADER}\n# New rule\n`);
 
   const issues = checkDocs(root);
@@ -63,8 +100,8 @@ test("flags loose files added directly under docs root", () => {
 });
 
 test("flags current docs that are missing status metadata", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/authority/missing-header.md", "# Missing header\n");
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/authority/missing-header.md", "# Missing header\n");
 
   const issues = checkDocs(root);
 
@@ -72,42 +109,42 @@ test("flags current docs that are missing status metadata", () => {
 });
 
 test("flags stale paths in current docs while allowing archive references", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/qa/conversation.md", `${HEADER}\nSee docs/ui-redesign-demos/index.html\n`);
-  writeFile(root, "docs/archive/plans/history.md", "Historical reference: docs/ui-redesign-demos/index.html\n");
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/qa/conversation.md", `${HEADER}\nSee ../docs/retired-rule.md\n`);
+  writeFile(root, "MultiMix-Backend/docs/archive/plans/history.md", "Historical reference: ../docs/retired-rule.md\n");
 
   const issues = checkDocs(root);
 
   assert.equal(issues.some((issue) => issue.code === "stale-reference"), true);
 });
 
-test("points retired Tier 1 references to the archived plan", () => {
-  const root = makeWorkspace();
+test("points workspace-root references to a repository docs destination", () => {
+  const root = makeSplitWorkspace();
   writeFile(
     root,
-    "docs/qa/conversation.md",
-    `${HEADER}\nSee docs/MULTIMIX_TIER1_UPGRADE_DESIGN.md\n`,
+    "MultiMix-Backend/docs/qa/conversation.md",
+    `${HEADER}\nSee ../docs/authority/rule.md\n`,
   );
 
   const issues = checkDocs(root);
   const tier1Issue = issues.find(
     (issue) =>
       issue.code === "stale-reference" &&
-      issue.message.includes("MULTIMIX_TIER1_UPGRADE_DESIGN"),
+        issue.message.includes("../docs/"),
   );
 
   assert.match(
     tier1Issue?.fix ?? "",
-    /docs\/archive\/plans\/tier1-upgrade-design\.md/,
+    /MultiMix-Frontend\/docs|MultiMix-Backend\/docs/,
   );
 });
 
 test("flags missing Markdown references in the workspace documentation map", () => {
-  const root = makeWorkspace();
+  const root = makeSplitWorkspace();
   writeFile(
     root,
-    "docs/README.md",
-    "# Docs\n\n- Missing plan: `docs/plans/active/missing-plan.md`\n",
+    "MultiMix-Backend/docs/README.md",
+    "# Docs\n\n- Missing plan: `MultiMix-Backend/docs/plans/active/missing-plan.md`\n",
   );
 
   const issues = checkDocs(root);
@@ -116,15 +153,15 @@ test("flags missing Markdown references in the workspace documentation map", () 
     issues.some(
       (issue) =>
         issue.code === "missing-doc-reference" &&
-        issue.file === "docs/README.md",
+        issue.file === "MultiMix-Backend/docs/README.md",
     ),
     true,
   );
 });
 
 test("requires the review standard and security baseline in the documentation map", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/README.md", "# Docs\n");
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/README.md", "# Docs\n");
 
   const issues = checkDocs(root);
   const missingReferences = issues
@@ -133,18 +170,18 @@ test("requires the review standard and security baseline in the documentation ma
 
   assert.equal(missingReferences.length, 2);
   assert.equal(
-    missingReferences.some((message) => message.includes("docs/qa/project-review-standard.md")),
+    missingReferences.some((message) => message.includes("MultiMix-Backend/docs/qa/project-review-standard.md")),
     true,
   );
   assert.equal(
-    missingReferences.some((message) => message.includes("docs/qa/security-review-baseline.md")),
+    missingReferences.some((message) => message.includes("MultiMix-Backend/docs/qa/security-review-baseline.md")),
     true,
   );
 });
 
-test("flags completed plans that remain in docs/plans/active", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/plans/active/plan.md", `> Status: completed
+test("flags completed plans that remain in backend active plans", () => {
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: completed
 > Owner: docs
 > Last verified: 2026-07-10
 
@@ -157,8 +194,8 @@ test("flags completed plans that remain in docs/plans/active", () => {
 });
 
 test("flags an all-checked plan that remains active", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: active-plan
 > Owner: docs
 > Last verified: 2026-07-10
 
@@ -174,8 +211,8 @@ test("flags an all-checked plan that remains active", () => {
 });
 
 test("flags an implementation-complete heading that remains active", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: active-plan
 > Owner: docs
 > Last verified: 2026-07-28
 
@@ -192,8 +229,8 @@ test("flags an implementation-complete heading that remains active", () => {
 });
 
 test("does not treat a partially completed execution heading as a completed plan", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: active-plan
 > Owner: docs
 > Last verified: 2026-07-28
 
@@ -211,8 +248,8 @@ test("does not treat a partially completed execution heading as a completed plan
 });
 
 test("does not treat completion wording in explanatory prose as a completed plan", () => {
-  const root = makeWorkspace();
-  writeFile(root, "docs/plans/active/plan.md", `> Status: active-plan
+  const root = makeSplitWorkspace();
+  writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: active-plan
 > Owner: docs
 > Last verified: 2026-07-28
 
@@ -228,7 +265,7 @@ test("does not treat completion wording in explanatory prose as a completed plan
 });
 
 test("flags current frontend and backend docs without status metadata", () => {
-  const root = makeWorkspace();
+  const root = makeSplitWorkspace();
   writeFile(root, "MultiMix-Frontend/docs/API.md", "# Frontend API\n");
   writeFile(root, "MultiMix-Backend/docs/CHANGEIN_SYNC.md", "# Backend sync\n");
 

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · C 智能画布 · 新建对话</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-a:#7C5CFF; --ai-b:#00A88E;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --ai-soft:linear-gradient(120deg,rgba(124,92,255,.09),rgba(0,168,142,.09));
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --warn:#9A6A00; --warn-soft:#FFF3D9;
+  --radius:16px; --radius-sm:12px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
+  display:grid;grid-template-columns:264px minmax(0,1fr);min-width:1280px;
+}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 -14px 26px rgba(20,24,28,.14)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.5) 47.4%,rgba(255,255,255,.5) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.42) 55%,rgba(255,255,255,.42) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#C9DCEC 0%,#E8EFF4 44%,#D8C5A6 62%,#A98F6C 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.16) 30%,rgba(255,255,255,.16) 34%,transparent 34%),
+  linear-gradient(135deg,#343B42 0%,#5A646E 52%,#8C97A1 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.14) 62%,rgba(255,255,255,.14) 64%,transparent 64%),
+  linear-gradient(160deg,#D97B2F 0%,#E8A463 34%,#9AA0A6 76%,#7D838A 100%)}
+.ph-living{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.55) 47.4%,rgba(255,255,255,.55) 49%,transparent 49%),
+  linear-gradient(175deg,#B9D6EA 0%,#EDF3F6 58%,#CBD6CE 100%)}
+.ph-balcony{background:
+  linear-gradient(0deg,transparent 50%,rgba(255,255,255,.4) 50%,rgba(255,255,255,.4) 51.6%,transparent 51.6%),
+  linear-gradient(160deg,#F0BF8B 0%,#F7E3C6 52%,#D6E0E6 100%)}
+.phbox{border-radius:9px;overflow:hidden;flex:none;background:var(--surface-2);box-shadow:0 0 0 1px var(--line)}
+
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);padding:2px 9px;border-radius:999px}
+.live-badge .gdot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);animation:breathe 2.2s ease infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.7}}
+
+/* ============ 侧边栏 ============ */
+.sidebar{
+  display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr) auto;
+  border-right:1px solid var(--line);padding:16px 12px 14px;gap:14px;min-height:0;background:var(--bg);
+  position:relative;z-index:2;
+}
+.brand{display:flex;align-items:center;gap:9px;padding:0 6px}
+.brand-mark{width:26px;height:26px;border-radius:8px;background:var(--ai-grad);display:grid;place-items:center}
+.brand-name{font-size:14.5px;font-weight:650;letter-spacing:.01em}
+.new-btn{
+  display:flex;align-items:center;justify-content:center;gap:7px;height:38px;
+  background:var(--ink);color:#fff;border-radius:var(--radius-sm);
+  font-size:13.5px;font-weight:600;
+  box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px rgba(124,92,255,.45),var(--shadow-card);
+}
+.search{
+  display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-3);font-size:12.5px;
+}
+.nav{display:grid;gap:2px}
+.nav-item{
+  display:flex;align-items:center;gap:9px;height:34px;padding:0 10px;border-radius:10px;
+  font-size:13.5px;color:var(--ink-2);
+}
+.nav-item:hover{background:rgba(32,31,30,.04)}
+.nav-item svg{color:var(--ink-3)}
+.convs{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0}
+.sec-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);padding:0 10px;font-weight:600}
+.conv-list{overflow:auto;display:grid;gap:2px;align-content:start;min-height:0}
+.conv{
+  display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:10px;
+  font-size:12.5px;color:var(--ink-2);
+}
+.conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .d{font-size:11px;color:var(--ink-3)}
+.user{display:flex;align-items:center;gap:9px;padding:10px 6px 0;border-top:1px solid var(--line)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--surface-2);color:var(--ink-2);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--line-2)}
+.user .info{display:grid;line-height:1.35}
+.user .n{font-size:12.5px;font-weight:600}
+.user .e{font-size:11px;color:var(--ink-3)}
+/* ============ Hero 区（aurora 高光时刻） ============ */
+.stage-col{display:grid;place-items:center;overflow:auto;background:var(--surface);min-height:0;position:relative}
+.stage-col::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(640px 400px at 30% 12%,rgba(124,92,255,.09),transparent 68%),
+    radial-gradient(560px 360px at 78% 26%,rgba(0,168,142,.08),transparent 70%),
+    radial-gradient(500px 340px at 55% 88%,rgba(124,92,255,.05),transparent 72%)}
+.hero{width:100%;max-width:720px;padding:40px 32px 48px;display:grid;margin-top:-3vh;position:relative}
+.greet{font-size:13px;color:var(--ink-3);margin-bottom:10px}
+.hero h1{font-size:40px;font-weight:750;letter-spacing:.01em;line-height:1.25;margin-bottom:10px}
+.hero .sub{font-size:14.5px;color:var(--ink-2);margin-bottom:28px}
+.input-card{
+  border:1px solid transparent;border-radius:18px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 4px 14px rgba(124,92,255,.08),0 22px 52px rgba(0,168,142,.08);
+  padding:18px 16px 12px 18px;display:grid;gap:24px;margin-bottom:24px;
+}
+.input-card .hint{color:var(--ink-3);font-size:14.5px}
+.input-card .bar{display:flex;align-items:center;gap:8px}
+.icon-btn{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-3)}
+.icon-btn:hover{background:var(--surface-2);color:var(--ink-2)}
+.send{margin-left:auto;width:38px;height:38px;border-radius:50%;background:var(--ai-grad);color:#fff;
+  display:grid;place-items:center;box-shadow:0 8px 20px rgba(124,92,255,.28)}
+.sugg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
+.sugg-card{
+  display:flex;gap:12px;align-items:flex-start;text-align:left;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:15px 17px;
+}
+.sugg-card:hover{box-shadow:var(--shadow-card);border-color:var(--line-2)}
+.sugg-card .ic{width:32px;height:32px;border-radius:10px;background:var(--surface-2);
+  display:grid;place-items:center;color:var(--ink-2);flex:none}
+.sugg-card .tx{display:grid;gap:1px}
+.sugg-card .t{font-size:13.5px;font-weight:600}
+.sugg-card .s{font-size:12px;color:var(--ink-3)}
+.ready{
+  display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--surface);padding:13px 17px;box-shadow:var(--shadow-card);
+}
+.ready .tx{display:grid;line-height:1.5}
+.ready .t{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.ready .s{font-size:12px;color:var(--ink-3)}
+.ready .thumbs{display:flex;gap:6px;margin-left:auto}
+.ready .phbox{width:38px;height:29px;border-radius:7px}
+.ready a{font-size:12.5px;color:var(--accent);font-weight:600;white-space:nowrap;margin-left:4px}
+</style>
+</head>
+<body>
+
+<!-- ================= 侧边栏 ================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="brand-name">MultiMix</div>
+  </div>
+  <button class="new-btn">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    新建对话
+  </button>
+  <div class="search">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    搜索素材、产物或来源
+  </div>
+  <nav class="nav">
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>资产库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>文案库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>图片库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>视频库</a>
+  </nav>
+  <div class="convs">
+    <div class="sec-label">对话列表</div>
+    <div class="conv-list">
+      <a class="conv"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
+      <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
+      <a class="conv"><span class="t">春季促销帖子文案</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">小户型收纳宣传视频</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">Saas宣传视频脚本</span><span class="d">06/30</span></a>
+    </div>
+  </div>
+  <div class="user">
+    <div class="avatar">陈</div>
+    <div class="info"><span class="n">陈老板</span><span class="e">demo@multimix.local</span></div>
+  </div>
+</aside>
+<!-- ================= Hero ================= -->
+<main class="stage-col">
+  <div class="hero">
+    <div class="greet">下午好，陈老板</div>
+    <h1>今天想做什么内容？</h1>
+    <div class="sub">从一句话开始，MultiMix 会带着你的素材一起创作</div>
+
+    <div class="input-card">
+      <div class="hint">例如：把上周的安装案例做成一条小红书帖子…</div>
+      <div class="bar">
+        <button class="icon-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.2 7.2 8.6 11.8a3.2 3.2 0 0 1-4.5-4.5l4.9-4.9a2.1 2.1 0 0 1 3 3L7.2 10a1 1 0 0 1-1.5-1.4l4.3-4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+        <button class="send">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sugg-grid">
+      <button class="sugg-card">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+        <span class="tx"><span class="t">写一条小红书文案</span><span class="s">用已解析的案例图，真实风格</span></span>
+      </button>
+      <button class="sugg-card">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+        <span class="tx"><span class="t">生成 9:16 短视频脚本</span><span class="s">30 秒，适配抖音和视频号</span></span>
+      </button>
+      <button class="sugg-card">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+        <span class="tx"><span class="t">做一张封面图</span><span class="s">从你的完工照片里选主图</span></span>
+      </button>
+      <button class="sugg-card">
+        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 8.7V12a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5h3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m6.5 9.5 6.8-6.8M9.8 2.5h3.7v3.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="tx"><span class="t">把好评截图变成种草帖</span><span class="s">客户的话比广告更有说服力</span></span>
+      </button>
+    </div>
+
+    <div class="ready">
+      <div class="tx">
+        <span class="t">你的素材已就绪
+          <span class="live-badge"><span class="gdot"></span>已理解</span>
+        </span>
+        <span class="s">23 张图片已解析 · 5 张处理中</span>
+      </div>
+      <div class="thumbs">
+        <span class="phbox"><span class="ph ph-panorama"></span></span>
+        <span class="phbox"><span class="ph ph-seal"></span></span>
+        <span class="phbox"><span class="ph ph-work"></span></span>
+        <span class="phbox"><span class="ph ph-living"></span></span>
+        <span class="phbox"><span class="ph ph-balcony"></span></span>
+      </div>
+      <a>查看图片库 →</a>
+    </div>
+  </div>
+</main>
+
+</body>
+</html>

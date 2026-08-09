@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · V3 智能体工作台 · AI 原生感</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-a:#7C5CFF; --ai-b:#00A88E;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --ai-soft:linear-gradient(120deg,rgba(124,92,255,.09),rgba(0,168,142,.09));
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --warn:#9A6A00; --warn-soft:#FFF3D9;
+  --ok:#0E8A6B;
+  --radius:16px; --radius-sm:12px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
+  display:grid;grid-template-columns:264px minmax(0,1fr) 448px;min-width:1280px;
+}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit}
+svg{flex:none;display:block}
+
+.ph{position:relative;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.1),inset 0 -14px 26px rgba(20,24,28,.14)}
+.ph-panorama{background:
+  linear-gradient(90deg,transparent 47.4%,rgba(255,255,255,.5) 47.4%,rgba(255,255,255,.5) 49%,transparent 49%),
+  linear-gradient(0deg,transparent 55%,rgba(255,255,255,.42) 55%,rgba(255,255,255,.42) 56.6%,transparent 56.6%),
+  linear-gradient(180deg,#C9DCEC 0%,#E8EFF4 44%,#D8C5A6 62%,#A98F6C 100%)}
+.ph-seal{background:
+  linear-gradient(90deg,transparent 30%,rgba(255,255,255,.16) 30%,rgba(255,255,255,.16) 34%,transparent 34%),
+  linear-gradient(135deg,#343B42 0%,#5A646E 52%,#8C97A1 100%)}
+.ph-work{background:
+  linear-gradient(0deg,transparent 62%,rgba(255,255,255,.14) 62%,rgba(255,255,255,.14) 64%,transparent 64%),
+  linear-gradient(160deg,#D97B2F 0%,#E8A463 34%,#9AA0A6 76%,#7D838A 100%)}
+.ph-measure{background:
+  linear-gradient(90deg,transparent 40%,rgba(120,96,40,.25) 40%,rgba(120,96,40,.25) 42%,transparent 42%),
+  linear-gradient(150deg,#E5C468 0%,#DCD5C6 55%,#A5A198 100%)}
+.phbox{border-radius:9px;overflow:hidden;flex:none;background:var(--surface-2);box-shadow:0 0 0 1px var(--line)}
+.gdot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);animation:breathe 2.2s ease infinite;flex:none}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.7}}
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);padding:2px 9px;border-radius:999px}
+
+/* ============ 侧边栏（带 AI 后台状态胶囊） ============ */
+.sidebar{display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr) auto auto;
+  border-right:1px solid var(--line);padding:16px 12px 14px;gap:14px;min-height:0}
+.brand{display:flex;align-items:center;gap:9px;padding:0 6px}
+.brand-mark{width:26px;height:26px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center}
+.brand-name{font-size:14.5px;font-weight:650}
+.new-btn{display:flex;align-items:center;justify-content:center;gap:7px;height:38px;
+  background:var(--ink);color:#fff;border-radius:var(--radius-sm);font-size:13.5px;font-weight:600;box-shadow:var(--shadow-card)}
+.search{display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;
+  border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-3);font-size:12.5px}
+.nav{display:grid;gap:2px}
+.nav-item{display:flex;align-items:center;gap:9px;height:34px;padding:0 10px;border-radius:10px;
+  font-size:13.5px;color:var(--ink-2)}
+.nav-item:hover{background:rgba(32,31,30,.04)}
+.nav-item svg{color:var(--ink-3)}
+.convs{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0}
+.sec-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);padding:0 10px;font-weight:600}
+.conv-list{overflow:auto;display:grid;gap:2px;align-content:start;min-height:0}
+.conv{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:10px;
+  font-size:12.5px;color:var(--ink-2)}
+.conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .d{font-size:11px;color:var(--ink-3)}
+.conv.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.conv.active .d{color:var(--accent)}
+
+/* ★ AI 后台状态胶囊：AI 一直在为你工作 */
+.ai-status{
+  border:1px solid transparent;border-radius:var(--radius-sm);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  padding:10px 12px;display:grid;gap:5px;
+}
+.ai-status .t{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:650}
+.ai-status .s{font-size:11px;color:var(--ink-3);line-height:1.5}
+.ai-status .s b{color:var(--ink-2);font-weight:600}
+.user{display:flex;align-items:center;gap:9px;padding:10px 6px 0;border-top:1px solid var(--line)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--surface-2);color:var(--ink-2);
+  display:grid;place-items:center;font-size:12.5px;font-weight:650;border:1px solid var(--line-2)}
+.user .info{display:grid;line-height:1.35}
+.user .n{font-size:12.5px;font-weight:600}
+.user .e{font-size:11px;color:var(--ink-3)}
+/* ============ 对话列（Agent 过程可视化） ============ */
+.chat{display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--surface);
+  border-right:1px solid var(--line);min-height:0}
+.chat-head{display:flex;align-items:center;height:56px;padding:0 24px;border-bottom:1px solid var(--line);gap:12px}
+.chat-head .title{font-size:15px;font-weight:650}
+.chat-head .live-badge{margin-left:auto}
+.msgs{overflow:auto;padding:26px 30px 20px;display:grid;gap:20px;align-content:start;min-height:0}
+.msg-user{justify-self:end;max-width:78%;display:grid;gap:8px;justify-items:end}
+.bubble{background:var(--surface-2);border-radius:18px 18px 6px 18px;padding:12px 17px;font-size:14px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.asset-chip{display:flex;align-items:center;gap:7px;height:34px;padding:3px 11px 3px 3px;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:12px;color:var(--ink-2)}
+.asset-chip .phbox{width:28px;height:28px;border-radius:7px}
+.msg-ai{max-width:88%;display:grid;gap:14px}
+.ai-row{display:flex;gap:11px}
+.ai-dot{width:26px;height:26px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center;color:#fff;flex:none;margin-top:1px}
+.ai-text{font-size:14px;padding-top:2px}
+
+/* 确认卡（已确认，紧凑态） */
+.confirm-card{
+  margin-left:37px;border-radius:var(--radius);max-width:560px;
+  border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 4px 14px rgba(124,92,255,.07),0 16px 40px rgba(0,168,142,.07);
+}
+.cc-head{display:flex;align-items:center;padding:14px 19px 0;gap:10px}
+.cc-title{font-size:14.5px;font-weight:650}
+.cc-ok{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+  color:var(--ok);background:rgba(14,138,107,.09);padding:3px 10px;border-radius:999px}
+.cc-fields{display:grid;gap:8px;padding:12px 19px 15px}
+.cc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:baseline}
+.cc-row .k{font-size:12.5px;color:var(--ink-3);text-align:right}
+.cc-row .v{font-size:13.5px;font-weight:500}
+
+/* ★ Agent 执行时间线 */
+.agent-run{
+  margin-left:37px;max-width:560px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden;
+}
+.ar-head{display:flex;align-items:center;gap:8px;padding:12px 17px;border-bottom:1px solid var(--line);
+  font-size:12.5px;font-weight:650}
+.ar-head .st{margin-left:auto;font-size:11.5px;color:var(--ink-3);font-weight:500}
+.ar-steps{display:grid;padding:6px 0}
+.ar-step{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:6px;align-items:center;
+  padding:8px 17px;font-size:13px;position:relative}
+.ar-step .ic{display:grid;place-items:center}
+.ar-step .ok-ic{width:17px;height:17px;border-radius:50%;background:rgba(14,138,107,.1);color:var(--ok);display:grid;place-items:center}
+.ar-step .run-ic{width:17px;height:17px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center;color:#fff;animation:breathe 1.6s ease infinite}
+.ar-step .wait-ic{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--line-2);margin:0 auto}
+.ar-step .tx{color:var(--ink-2)}
+.ar-step.done .tx{color:var(--ink)}
+.ar-step.run .tx{color:var(--ink);font-weight:600}
+.ar-step .tm{font-size:11px;color:var(--ink-3)}
+.ar-step .refs{display:inline-flex;gap:4px;margin-left:7px;vertical-align:-4px}
+.ar-step .phbox{width:19px;height:19px;border-radius:5px}
+.ar-step.run .shim{grid-column:2/4;height:3px;border-radius:3px;margin-top:5px;position:relative;overflow:hidden;background:var(--surface-2)}
+.ar-step.run .shim::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--ai-grad);opacity:.75;animation:sweep 1.8s ease infinite}
+@keyframes sweep{0%{transform:translateX(-55%)}100%{transform:translateX(55%)}}
+
+.sugg{display:flex;gap:8px;margin-left:37px;flex-wrap:wrap}
+.sugg button{height:30px;padding:0 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);font-size:12.5px;color:var(--ink-2)}
+.sugg button:hover{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+
+.dock{padding:14px 30px 22px}
+.input-card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;
+  border:1px solid transparent;border-radius:var(--radius);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-card);padding:11px 11px 11px 16px}
+.input-card .hint{color:var(--ink-3);font-size:14px}
+.icon-btn{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-3)}
+.send{width:36px;height:36px;border-radius:50%;background:var(--ai-grad);color:#fff;display:grid;place-items:center;
+  box-shadow:0 6px 16px rgba(124,92,255,.25)}
+
+/* ============ 产物区（生成极光 + 逐字生长） ============ */
+.artifact{display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--bg);min-height:0;position:relative}
+.artifact::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(420px 300px at 65% 8%,rgba(124,92,255,.08),transparent 70%),
+    radial-gradient(380px 280px at 30% 95%,rgba(0,168,142,.07),transparent 72%);
+  animation:aur 5s ease-in-out infinite alternate}
+@keyframes aur{0%{opacity:.65}100%{opacity:1}}
+.art-head{padding:16px 24px 12px;display:grid;gap:2px;position:relative;z-index:1}
+.art-head .t{font-size:14.5px;font-weight:650;display:flex;align-items:center;gap:9px}
+.art-head .m{font-size:12px;color:var(--ink-3)}
+.art-scroll{overflow:auto;padding:0 24px;min-height:0;position:relative;z-index:1}
+.art-card{
+  border:1px solid transparent;border-radius:var(--radius);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 4px 16px rgba(124,92,255,.09),0 22px 52px rgba(0,168,142,.09);
+  padding:28px 28px 24px;display:grid;gap:16px;
+}
+.art-title{font-size:20px;line-height:1.4;font-weight:700}
+.art-body{display:grid;gap:12px;font-size:14px;line-height:1.8}
+.caret{display:inline-block;width:2px;height:15px;background:var(--ai-a);vertical-align:-2px;margin-left:2px;
+  animation:blink-c 1s step-end infinite}
+@keyframes blink-c{0%,100%{opacity:1}50%{opacity:0}}
+.typing-line{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-3)}
+.tags{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-size:12.5px;color:var(--ink-2);background:var(--surface-2);padding:3px 12px;border-radius:999px}
+.source{background:var(--ai-soft);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:13px 15px;display:grid;gap:10px}
+.source .s-head{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.source .s-thumbs{display:flex;gap:7px}
+.source .phbox{width:42px;height:31px;border-radius:7px}
+.source .phbox.hot{box-shadow:0 0 0 1px transparent;border:1px solid transparent;
+  background:linear-gradient(var(--surface-2),var(--surface-2)) padding-box,var(--ai-grad) border-box}
+.source .s-note{font-size:12px;color:var(--ink-2)}
+.art-foot{display:flex;gap:10px;padding:14px 24px 20px;position:relative;z-index:1}
+.btn-ink{display:flex;align-items:center;gap:7px;height:36px;padding:0 18px;border-radius:999px;
+  background:var(--ink);color:#fff;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-card)}
+.btn-ghost{display:flex;align-items:center;gap:6px;height:36px;padding:0 16px;border-radius:999px;
+  border:1px solid var(--line-2);color:var(--ink-2);font-size:13.5px;background:var(--surface)}
+</style>
+</head>
+<body>
+
+<!-- 侧边栏 -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="brand-name">MultiMix</div>
+  </div>
+  <button class="new-btn">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    新建对话
+  </button>
+  <div class="search">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    搜索素材、产物或来源
+  </div>
+  <nav class="nav">
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>资产库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>文案库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>图片库</a>
+    <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>视频库</a>
+  </nav>
+  <div class="convs">
+    <div class="sec-label">对话列表</div>
+    <div class="conv-list">
+      <a class="conv active"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
+      <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
+      <a class="conv"><span class="t">春季促销帖子文案</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">小户型收纳宣传视频</span><span class="d">07/03</span></a>
+      <a class="conv"><span class="t">Saas宣传视频脚本</span><span class="d">06/30</span></a>
+    </div>
+  </div>
+
+  <!-- ★ AI 后台状态 -->
+  <div class="ai-status">
+    <div class="t"><span class="gdot"></span>AI 正在后台工作</div>
+    <div class="s">正在理解 <b>「施工过程记录 #1」</b>，完成后可直接在对话中引用。</div>
+  </div>
+
+  <div class="user">
+    <div class="avatar">陈</div>
+    <div class="info"><span class="n">陈老板</span><span class="e">demo@multimix.local</span></div>
+  </div>
+</aside>
+
+<!-- 对话列 -->
+<main class="chat">
+  <div class="chat-head">
+    <div class="title">门窗案例小红书内容</div>
+    <span class="live-badge"><span class="gdot"></span>已引用 4 张素材</span>
+  </div>
+
+  <div class="msgs">
+    <div class="msg-user">
+      <div class="bubble">帮我做一条门窗安装完成的小红书帖子，用我上传的那几张案例图，风格真实一点，不要太广告感。</div>
+      <div class="chips">
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-panorama"></span></span>完工全景</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-seal"></span></span>密封细节</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-work"></span></span>施工过程</span>
+        <span class="asset-chip"><span class="phbox"><span class="ph ph-measure"></span></span>测量现场</span>
+      </div>
+    </div>
+
+    <div class="msg-ai">
+      <div class="ai-row">
+        <div class="ai-dot"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg></div>
+        <div class="ai-text">好的。我看了你上传的 4 张案例图——密封胶条的手工细节很加分，适合走『真实记录』路线。方案你已确认，我开始干活：</div>
+      </div>
+
+      <div class="confirm-card">
+        <div class="cc-head">
+          <div class="cc-title">文案生成方案</div>
+          <span class="cc-ok">
+            <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            已确认
+          </span>
+        </div>
+        <div class="cc-fields">
+          <div class="cc-row"><span class="k">平台</span><span class="v">小红书 · 真实客户视角 · 非广告语气</span></div>
+          <div class="cc-row"><span class="k">主图</span><span class="v">案例图 #2（安装完成全景）</span></div>
+          <div class="cc-row"><span class="k">结构</span><span class="v">钩子 → 问题 → 解决 → 效果展示 → CTA</span></div>
+        </div>
+      </div>
+
+      <!-- ★ Agent 执行时间线 -->
+      <div class="agent-run">
+        <div class="ar-head">
+          <span class="gdot"></span>MultiMix 正在执行
+          <span class="st">第 3 步 / 共 4 步</span>
+        </div>
+        <div class="ar-steps">
+          <div class="ar-step done">
+            <span class="ic"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span>
+            <span class="tx">已理解 4 张素材
+              <span class="refs"><span class="phbox"><span class="ph ph-panorama"></span></span><span class="phbox"><span class="ph ph-seal"></span></span><span class="phbox"><span class="ph ph-work"></span></span><span class="phbox"><span class="ph ph-measure"></span></span></span>
+            </span>
+            <span class="tm">0.8s</span>
+          </div>
+          <div class="ar-step done">
+            <span class="ic"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></span>
+            <span class="tx">已拆解生成方案（5 项设定）</span>
+            <span class="tm">2.1s</span>
+          </div>
+          <div class="ar-step run">
+            <span class="ic"><span class="run-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" fill="currentColor"/></svg></span></span>
+            <span class="tx">正在写正文 · 第 3 段「解决」，引用 密封细节</span>
+            <span class="tm">12s</span>
+            <span class="shim"></span>
+          </div>
+          <div class="ar-step">
+            <span class="ic"><span class="wait-ic"></span></span>
+            <span class="tx">排版、标签与来源标注</span>
+            <span class="tm">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sugg">
+        <button>改成视频方案</button>
+        <button>风格再口语一点</button>
+        <button>加上价格锚点</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="dock">
+    <div class="input-card">
+      <button class="icon-btn"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.2 7.2 8.6 11.8a3.2 3.2 0 0 1-4.5-4.5l4.9-4.9a2.1 2.1 0 0 1 3 3L7.2 10a1 1 0 0 1-1.5-1.4l4.3-4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+      <span class="hint">随时打断或补充，AI 会接着改…</span>
+      <button class="send"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </div>
+  </div>
+</main>
+
+<!-- 产物区 -->
+<aside class="artifact">
+  <div class="art-head">
+    <div class="t">门窗安装 · 小红书帖 <span class="live-badge"><span class="gdot"></span>生成中</span></div>
+    <div class="m">文案 · v1 · 正在逐段生长 · 来源实时标注</div>
+  </div>
+  <div class="art-scroll">
+    <div class="art-card">
+      <div class="art-title">装了 12 年还没一道划痕的门窗，是我找对师傅了？</div>
+      <div class="art-body">
+        <p>上个月终于把家里三间房的门窗全换了，折腾了快两个月，踩了很多坑……</p>
+        <p>最后选了一家不太会营销但施工特别细的本地团队。</p>
+        <p>👉 图二是安装完的全景，密封条是他们手工贴的，没有任何缝<span class="caret"></span></p>
+      </div>
+      <div class="typing-line"><span class="gdot"></span>正在写第 3 段 · 已写 208 / 约 320 字</div>
+      <div class="tags">
+        <span class="tag">#门窗安装</span><span class="tag">#装修记录</span><span class="tag">#避坑</span><span class="tag">#本地服务</span>
+      </div>
+      <div class="source">
+        <div class="s-head"><span class="gdot"></span>来源实时引用中</div>
+        <div class="s-thumbs">
+          <span class="phbox hot"><span class="ph ph-panorama"></span></span>
+          <span class="phbox hot"><span class="ph ph-seal"></span></span>
+          <span class="phbox"><span class="ph ph-work"></span></span>
+          <span class="phbox"><span class="ph ph-measure"></span></span>
+        </div>
+        <div class="s-note">此刻正在引用：完工全景 · 密封细节（亮框）</div>
+      </div>
+    </div>
+  </div>
+  <div class="art-foot">
+    <button class="btn-ink">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="5.5" y="5.5" width="8" height="8" rx="1.4" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2" stroke="currentColor" stroke-width="1.5"/></svg>
+      复制全文
+    </button>
+    <button class="btn-ghost">保存到文案库</button>
+    <button class="btn-ghost">导出</button>
+  </div>
+</aside>
+
+</body>
+</html>

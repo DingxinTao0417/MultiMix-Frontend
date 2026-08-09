@@ -3,7 +3,7 @@
 // Shared unified-candidate loader for the three "换素材" entry points
 // (workbench segment cards, embedded FilmStrip, full-screen ReplacePanel).
 //
-// Contract (docs/authority/asset-understanding-and-segment-referencing.md §6.1):
+// Contract (MultiMix-Backend/docs/authority/asset-understanding-and-segment-referencing.md §6.1):
 // - First paint shows local groups (current / recommended / library) with no
 //   external network dependency.
 // - Public candidates load asynchronously afterwards; a provider failure only

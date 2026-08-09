@@ -2,71 +2,29 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const DOC_ROOT_ALLOWED_FILES = new Set(["README.md"]);
-const DOC_ROOT_ALLOWED_DIRS = new Set(["archive", "authority", "plans", "qa", "specs"]);
-
 const GOVERNED_MARKDOWN_DIRS = [
-  "docs/authority",
-  "docs/qa",
-  "docs/plans/active",
-  "docs/specs",
   "MultiMix-Frontend/docs",
   "MultiMix-Backend/docs",
 ];
 
 const ARCHIVE_DIRS = [
-  "docs/archive",
+  "MultiMix-Frontend/docs/archive",
   "MultiMix-Backend/docs/archive",
 ];
 
 const ACTIVE_PLAN_DIRS = [
-  "docs/plans/active",
+  "MultiMix-Frontend/docs/plans/active",
   "MultiMix-Backend/docs/plans/active",
 ];
 
 const STALE_LOCATIONS = [
-  "docs/superpowers",
-  "docs/ui-redesign-demos",
-  "docs/multimix-ui-vision.html",
-  "docs/MULTIMIX_ASSET_UNDERSTANDING_AND_SEGMENT_REFERENCING.md",
-  "docs/MULTIMIX_MG_OVERLAY_AUTOMATION_AND_RENDERING.md",
-  "docs/MULTIMIX_CONVERSATION_ORCHESTRATION_RULES.md",
-  "docs/AGENT_PRE_GENERATION_CONVERSATION_REGRESSION_TESTS.md",
-  "docs/MULTIMIX_TIER1_UPGRADE_DESIGN.md",
+  "docs",
 ];
 
 const STALE_REFERENCES = [
   {
-    token: "docs/ui-redesign-demos",
-    replacement: "docs/specs/ui/prototypes/current or docs/specs/ui/prototypes/explorations",
-  },
-  {
-    token: "docs/multimix-ui-vision.html",
-    replacement: "docs/archive/design/2026-07-04-multimix-ui-vision.html",
-  },
-  {
-    token: "docs/MULTIMIX_ASSET_UNDERSTANDING_AND_SEGMENT_REFERENCING",
-    replacement: "docs/authority/asset-understanding-and-segment-referencing.md",
-  },
-  {
-    token: "docs/MULTIMIX_MG_OVERLAY_AUTOMATION_AND_RENDERING",
-    replacement: "docs/authority/mg-overlay-automation-and-rendering.md",
-  },
-  {
-    token: "docs/MULTIMIX_CONVERSATION_ORCHESTRATION_RULES",
-    replacement: "docs/authority/conversation-orchestration-rules.md",
-  },
-  {
-    token: "docs/AGENT_PRE_GENERATION_CONVERSATION_REGRESSION_TESTS",
-    replacement: "docs/qa/conversation-regression-tests.md",
-  },
-  {
-    token: "docs/MULTIMIX_TIER1_UPGRADE_DESIGN",
-    replacement: "docs/archive/plans/tier1-upgrade-design.md",
-  },
-  {
-    token: "docs/superpowers",
-    replacement: "docs/plans, docs/authority, docs/qa, or docs/specs/ui",
+    token: "../docs/",
+    replacement: "the relevant MultiMix-Frontend/docs/ or MultiMix-Backend/docs/ destination",
   },
 ];
 
@@ -81,8 +39,8 @@ const DOCUMENTATION_MAP_REFERENCE_PATTERN =
   /`((?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\/[^`\r\n]+\.md)`/g;
 
 const REQUIRED_DOCUMENTATION_MAP_REFERENCES = [
-  "docs/qa/project-review-standard.md",
-  "docs/qa/security-review-baseline.md",
+  "MultiMix-Backend/docs/qa/project-review-standard.md",
+  "MultiMix-Backend/docs/qa/security-review-baseline.md",
 ];
 
 function toPosixPath(value) {
@@ -140,42 +98,17 @@ function issue(code, file, message, fix) {
   return { code, file, message, fix };
 }
 
-function checkDocsRoot(workspaceRoot, issues) {
+function checkWorkspaceDocsRemoved(workspaceRoot, issues) {
   const docsRoot = path.join(workspaceRoot, "docs");
-  if (!exists(docsRoot)) {
+  if (exists(docsRoot)) {
     issues.push(
       issue(
         "doc-root",
         "docs",
-        "Missing workspace docs directory.",
-        "Create docs/ with README.md plus authority, plans, qa, specs, and archive directories.",
+        "Workspace-root docs are retired.",
+        "Move the content to MultiMix-Frontend/docs or MultiMix-Backend/docs, then remove docs/.",
       ),
     );
-    return;
-  }
-
-  for (const entry of fs.readdirSync(docsRoot, { withFileTypes: true })) {
-    if (entry.isFile() && !DOC_ROOT_ALLOWED_FILES.has(entry.name)) {
-      issues.push(
-        issue(
-          "doc-root",
-          `docs/${entry.name}`,
-          "Loose files are not allowed directly under docs/.",
-          "Move it into docs/authority, docs/plans/active, docs/qa, docs/specs/ui, or docs/archive and update docs/README.md.",
-        ),
-      );
-    }
-
-    if (entry.isDirectory() && !DOC_ROOT_ALLOWED_DIRS.has(entry.name)) {
-      issues.push(
-        issue(
-          "doc-root",
-          `docs/${entry.name}`,
-          "Unknown top-level docs directory.",
-          "Use one of: docs/authority, docs/plans, docs/qa, docs/specs, docs/archive.",
-        ),
-      );
-    }
   }
 }
 
@@ -250,8 +183,8 @@ function checkStaleReferences(workspaceRoot, files, issues) {
 }
 
 function checkDocumentationMapReferences(workspaceRoot, issues) {
-  const relativeFile = "docs/README.md";
-  const mapFile = path.join(workspaceRoot, "docs", "README.md");
+  const relativeFile = "MultiMix-Backend/docs/README.md";
+  const mapFile = path.join(workspaceRoot, "MultiMix-Backend", "docs", "README.md");
   if (!exists(mapFile)) {
     return;
   }
@@ -283,7 +216,7 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
         "missing-required-doc-reference",
         relativeFile,
         `Missing required current document entry '${requiredReference}'.`,
-        `Add a backticked '${requiredReference}' entry to docs/README.md.`,
+        `Add a backticked '${requiredReference}' entry to MultiMix-Backend/docs/README.md.`,
       ),
     );
   }
@@ -318,13 +251,13 @@ function checkActivePlans(workspaceRoot, files, issues) {
 }
 
 function checkCurrentPrototype(workspaceRoot, issues) {
-  const currentRoot = path.join(workspaceRoot, "docs", "specs", "ui", "prototypes", "current");
+  const currentRoot = path.join(workspaceRoot, "MultiMix-Frontend", "docs", "specs", "ui", "prototypes", "current");
   if (!exists(currentRoot)) {
     return;
   }
 
   for (const entry of fs.readdirSync(currentRoot, { withFileTypes: true })) {
-    const relativeEntry = `docs/specs/ui/prototypes/current/${entry.name}`;
+    const relativeEntry = `MultiMix-Frontend/docs/specs/ui/prototypes/current/${entry.name}`;
     if (entry.isDirectory() && entry.name !== "screens") {
       issues.push(
         issue(
@@ -351,15 +284,13 @@ function checkCurrentPrototype(workspaceRoot, issues) {
 
 export function checkDocs(workspaceRoot) {
   const root = path.resolve(workspaceRoot);
-  const docsRoot = path.join(root, "docs");
   const issues = [];
   const files = [
-    ...listFiles(docsRoot),
     ...listFiles(path.join(root, "MultiMix-Frontend", "docs")),
     ...listFiles(path.join(root, "MultiMix-Backend", "docs")),
   ];
 
-  checkDocsRoot(root, issues);
+  checkWorkspaceDocsRemoved(root, issues);
   checkStaleLocations(root, issues);
   checkMarkdownHeaders(root, files, issues);
   checkStaleReferences(root, files, issues);
@@ -389,7 +320,10 @@ function getDefaultWorkspaceRoot() {
   const frontendRoot = path.resolve(path.dirname(scriptPath), "..");
   const workspaceRoot = path.resolve(frontendRoot, "..");
 
-  if (exists(path.join(workspaceRoot, "docs", "README.md"))) {
+  if (
+    exists(path.join(workspaceRoot, "MultiMix-Frontend", "docs", "README.md")) &&
+    exists(path.join(workspaceRoot, "MultiMix-Backend", "docs", "README.md"))
+  ) {
     return workspaceRoot;
   }
 
@@ -405,7 +339,7 @@ if (isCliEntry()) {
   const workspaceRoot = explicitRoot ? path.resolve(explicitRoot) : getDefaultWorkspaceRoot();
   if (!workspaceRoot) {
     console.log(
-      "Docs check skipped: workspace docs root was not found next to this frontend checkout. Pass MULTIMIX_WORKSPACE_ROOT or a CLI path to check it explicitly.",
+      "Docs check skipped: split frontend/backend docs were not found next to this frontend checkout. Pass MULTIMIX_WORKSPACE_ROOT or a CLI path to check it explicitly.",
     );
     process.exitCode = 0;
   } else {

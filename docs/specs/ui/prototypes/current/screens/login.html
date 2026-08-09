@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MultiMix · 终稿 · 登录</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --radius:16px;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+  --shadow-float:0 6px 16px rgba(32,31,30,.07),0 28px 70px rgba(32,31,30,.13);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
+  display:grid;place-items:center;position:relative;
+}
+body::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(640px 400px at 26% 18%,rgba(124,92,255,.08),transparent 68%),
+    radial-gradient(560px 380px at 76% 78%,rgba(0,168,142,.07),transparent 70%)}
+button{font:inherit;border:0;background:none;cursor:pointer;color:inherit;transition:transform .15s ease,box-shadow .15s ease}
+button:active{transform:scale(.98)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card{
+  position:relative;width:400px;background:var(--surface);border:1px solid var(--line);
+  border-radius:20px;box-shadow:var(--shadow-float);padding:36px 36px 28px;display:grid;gap:0;
+}
+.brand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:22px}
+.brand-mark{width:34px;height:34px;border-radius:50%;background:var(--ai-grad);display:grid;place-items:center}
+.brand b{font-size:18px;font-weight:700;letter-spacing:.01em}
+h1{font-size:16px;font-weight:650;text-align:center;margin-bottom:4px}
+.sub{font-size:12.5px;color:var(--ink-3);text-align:center;margin-bottom:24px}
+.field{display:grid;gap:6px;margin-bottom:14px}
+.field label{font-size:12px;font-weight:600;color:var(--ink-2)}
+.field input{
+  height:42px;border:1px solid var(--line-2);border-radius:11px;padding:0 14px;
+  font:inherit;font-size:13.5px;color:var(--ink);background:var(--surface);outline:none;
+  transition:border-color .15s ease,box-shadow .15s ease;
+}
+.field input::placeholder{color:var(--ink-3)}
+.field input:focus{border-color:#7C5CFF;box-shadow:0 0 0 3px rgba(124,92,255,.12)}
+.forgot{text-align:right;margin:-6px 0 16px}
+.forgot a{font-size:12px;color:var(--ink-3);text-decoration:none;cursor:pointer}
+.forgot a:hover{color:var(--accent);text-decoration:underline}
+.btn-login{
+  height:44px;border-radius:999px;background:var(--ink);color:#fff;font-size:14px;font-weight:650;
+  box-shadow:var(--shadow-card);width:100%;
+}
+.btn-login:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(32,31,30,.16),0 18px 44px rgba(32,31,30,.1)}
+.divider{display:flex;align-items:center;gap:12px;margin:18px 0;font-size:11px;color:var(--ink-3)}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.btn-demo{
+  height:42px;border-radius:999px;border:1px solid transparent;width:100%;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;justify-content:center;gap:8px;
+}
+.btn-demo:hover{transform:translateY(-1px);box-shadow:var(--shadow-card)}
+.gdot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);animation:breathe 2.2s ease infinite}
+@keyframes breathe{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.8);opacity:.7}}
+.foot{margin-top:20px;font-size:11.5px;color:var(--ink-3);text-align:center;line-height:1.7}
+#toast{position:fixed;right:22px;bottom:22px;z-index:99;background:var(--ink);color:#fff;
+  font-size:13px;padding:10px 16px;border-radius:10px;box-shadow:var(--shadow-card);
+  opacity:0;transform:translateY(8px);transition:.3s ease;pointer-events:none;max-width:320px}
+#toast.on{opacity:1;transform:none}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="17" height="17" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <b>MultiMix</b>
+  </div>
+  <h1>登录你的创作工作台</h1>
+  <div class="sub">用真实素材，生成能直接发布的内容</div>
+
+  <div class="field">
+    <label>邮箱或手机号</label>
+    <input id="acc" placeholder="you@example.com" autocomplete="username">
+  </div>
+  <div class="field">
+    <label>密码</label>
+    <input id="pwd" type="password" placeholder="••••••••" autocomplete="current-password">
+  </div>
+  <div class="forgot"><a onclick="toast('重置链接已发送到你的邮箱（demo）')">忘记密码？</a></div>
+
+  <button class="btn-login" id="btnLogin">登录</button>
+
+  <div class="divider">或</div>
+
+  <button class="btn-demo" onclick="toast('以 demo@multimix.local 进入本地演示模式…')">
+    <span class="gdot"></span>本地演示模式直接进入
+  </button>
+
+  <div class="foot">登录即代表同意《服务条款》与《隐私政策》<br>未配置 Supabase 时自动进入本地模式</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var toastTimer = null;
+function toast(msg){
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ el.classList.remove('on'); }, 2400);
+}
+document.getElementById('btnLogin').addEventListener('click', function(){
+  var acc = document.getElementById('acc');
+  if(!acc.value.trim()){ toast('先填邮箱或手机号'); acc.focus(); return; }
+  if(!document.getElementById('pwd').value){ toast('请输入密码'); document.getElementById('pwd').focus(); return; }
+  toast('登录成功，正在进入工作台…');
+  setTimeout(function(){ location.href = 'start.html'; }, 800);
+});
+window.addEventListener('load', function(){ document.getElementById('acc').focus(); });
+</script>
+
+</body>
+</html>
