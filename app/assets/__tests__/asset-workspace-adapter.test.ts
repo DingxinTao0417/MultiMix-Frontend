@@ -325,6 +325,196 @@ describe("runtime data boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("retries one stalled multipart upload with the same idempotency key and form data", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = JSON.stringify(asset({ id: 44 }));
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn((formData: FormData) => {
+        if (FakeUploadRequest.instances.length === 1) {
+          this.upload.onprogress?.({ lengthComputable: true, loaded: 99, total: 100 } as ProgressEvent<EventTarget>);
+          return;
+        }
+        expect(formData).toBe(FakeUploadRequest.instances[0]?.send.mock.calls[0]?.[0]);
+        this.onload?.();
+      });
+      abort = vi.fn(() => this.onabort?.());
+
+      constructor() {
+        FakeUploadRequest.instances.push(this);
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+
+    try {
+      const upload = assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["document"], "brief.pdf", { type: "application/pdf" }),
+        "assets",
+        vi.fn(),
+        "stable-upload-key",
+      );
+
+      await vi.advanceTimersByTimeAsync(60_301);
+
+      expect(FakeUploadRequest.instances).toHaveLength(2);
+      expect(FakeUploadRequest.instances[0]?.abort).toHaveBeenCalledTimes(1);
+      for (const request of FakeUploadRequest.instances) {
+        expect(request.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "stable-upload-key");
+      }
+      await expect(upload).resolves.toMatchObject({ id: 44 });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("fails a stalled multipart upload instead of waiting forever when it has no idempotency key", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 0;
+      statusText = "";
+      responseText = "";
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => {
+        this.upload.onprogress?.({ lengthComputable: false, loaded: 1, total: 0 } as ProgressEvent<EventTarget>);
+      });
+      abort = vi.fn(() => this.onabort?.());
+
+      constructor() {
+        FakeUploadRequest.instances.push(this);
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+
+    try {
+      const upload = assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["document"], "brief.pdf", { type: "application/pdf" }),
+        "assets",
+        vi.fn(),
+      );
+      const rejection = expect(upload).rejects.toThrow("长时间没有进展");
+
+      await vi.advanceTimersByTimeAsync(60_001);
+
+      await rejection;
+      expect(FakeUploadRequest.instances).toHaveLength(1);
+      expect(FakeUploadRequest.instances[0]?.abort).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("extends the multipart stall boundary whenever upload progress continues", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instance: FakeUploadRequest | null = null;
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = JSON.stringify(asset({ id: 45 }));
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn();
+      abort = vi.fn(() => this.onabort?.());
+
+      constructor() {
+        FakeUploadRequest.instance = this;
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+
+    try {
+      const upload = assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["document"], "brief.pdf", { type: "application/pdf" }),
+        "assets",
+        vi.fn(),
+        "progressing-upload-key",
+      );
+
+      await vi.advanceTimersByTimeAsync(40_000);
+      FakeUploadRequest.instance?.upload.onprogress?.({
+        lengthComputable: true,
+        loaded: 50,
+        total: 100,
+      } as ProgressEvent<EventTarget>);
+      await vi.advanceTimersByTimeAsync(40_000);
+
+      expect(FakeUploadRequest.instance?.abort).not.toHaveBeenCalled();
+      FakeUploadRequest.instance?.onload?.();
+      await expect(upload).resolves.toMatchObject({ id: 45 });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("stops after one idempotent retry when the replacement upload also stalls", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 0;
+      statusText = "";
+      responseText = "";
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn();
+      abort = vi.fn(() => this.onabort?.());
+
+      constructor() {
+        FakeUploadRequest.instances.push(this);
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+
+    try {
+      const upload = assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["document"], "brief.pdf", { type: "application/pdf" }),
+        "assets",
+        vi.fn(),
+        "single-retry-upload-key",
+      );
+      const rejection = expect(upload).rejects.toThrow("长时间没有进展");
+
+      await vi.advanceTimersByTimeAsync(60_301);
+      expect(FakeUploadRequest.instances).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(60_001);
+
+      await rejection;
+      expect(FakeUploadRequest.instances).toHaveLength(2);
+      expect(FakeUploadRequest.instances[0]?.abort).toHaveBeenCalledTimes(1);
+      expect(FakeUploadRequest.instances[1]?.abort).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps a queued generation job in the send result", async () => {
     const now = "2026-07-17T06:00:00Z";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(

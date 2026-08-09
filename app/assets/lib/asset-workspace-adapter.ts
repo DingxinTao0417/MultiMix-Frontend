@@ -92,6 +92,8 @@ export type LibraryListOptions = {
 };
 
 type UploadProgressCallback = (percent: number | null) => void;
+const UPLOAD_STALL_TIMEOUT_MS = 60_000;
+const UPLOAD_STALL_ERROR = "上传长时间没有进展，请检查网络后重试。";
 
 function uploadErrorMessage(payload: unknown, fallback: string): string {
   if (isRecord(payload) && typeof payload.detail === "string") return payload.detail;
@@ -107,18 +109,53 @@ function uploadAssetWithProgress<T>(
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     let attempt = 0;
+    let settled = false;
     const send = () => {
       const request = new XMLHttpRequest();
+      let requestFinished = false;
+      let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      const clearStallTimer = () => {
+        if (stallTimer !== null) {
+          clearTimeout(stallTimer);
+          stallTimer = null;
+        }
+      };
+      const finishWithError = (error: Error, retryable: boolean) => {
+        if (settled || requestFinished) return;
+        requestFinished = true;
+        clearStallTimer();
+        if (retryable && idempotencyKey && attempt === 0) {
+          attempt += 1;
+          setTimeout(send, 300);
+          return;
+        }
+        settled = true;
+        reject(error);
+      };
+      const armStallTimer = () => {
+        clearStallTimer();
+        stallTimer = setTimeout(() => {
+          if (settled || requestFinished) return;
+          request.onabort = null;
+          request.abort();
+          finishWithError(new Error(UPLOAD_STALL_ERROR), true);
+        }, UPLOAD_STALL_TIMEOUT_MS);
+      };
       request.open("POST", `${API_BASE}/v1${path}`);
       if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
       if (idempotencyKey) request.setRequestHeader("Idempotency-Key", idempotencyKey);
       request.upload.onprogress = (event) => {
+        armStallTimer();
         onProgress(event.lengthComputable && event.total > 0
           ? Math.min(99, Math.round((event.loaded / event.total) * 100))
           : null);
       };
-      request.onerror = () => reject(new Error(API_CONNECTION_ERROR));
+      request.onerror = () => finishWithError(new Error(API_CONNECTION_ERROR), true);
+      request.onabort = () => finishWithError(new Error(UPLOAD_STALL_ERROR), false);
       request.onload = () => {
+        if (settled || requestFinished) return;
+        requestFinished = true;
+        clearStallTimer();
         let payload: unknown;
         try {
           payload = request.responseText ? JSON.parse(request.responseText) as unknown : undefined;
@@ -126,6 +163,7 @@ function uploadAssetWithProgress<T>(
           payload = undefined;
         }
         if (request.status >= 200 && request.status < 300) {
+          settled = true;
           resolve(payload as T);
           return;
         }
@@ -137,9 +175,15 @@ function uploadAssetWithProgress<T>(
           setTimeout(send, 300);
           return;
         }
+        settled = true;
         reject(new Error(uploadErrorMessage(payload, request.statusText)));
       };
-      request.send(formData);
+      armStallTimer();
+      try {
+        request.send(formData);
+      } catch {
+        finishWithError(new Error(API_CONNECTION_ERROR), true);
+      }
     };
     send();
   });

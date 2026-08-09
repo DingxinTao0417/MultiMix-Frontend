@@ -295,6 +295,7 @@ type SceneRow = {
       effective_presentation_variant?: string;
       product_media_region_id?: string;
       presentation_fallback?: string;
+      warning_code?: string;
     };
   };
 };
@@ -1139,6 +1140,27 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(assetManifest?.scenes).toHaveLength(expectedSceneCount);
     expect(editDecisions?.scenes).toHaveLength(expectedSceneCount);
   }
+  const generatedPrimaryFailureCodes = new Set([
+    "mg_primary_blank",
+    "mg_primary_fallback",
+    "title_scene_render_fallback",
+  ]);
+  for (const scene of beforeScenes) {
+    expect(
+      generatedPrimaryFailureCodes.has(
+        scene.primary_visual?.provenance?.warning_code ?? "",
+      ),
+      `scene ${scene.id} must not publish a generated-primary failure placeholder`,
+    ).toBe(false);
+  }
+  for (const scene of assetManifest?.scenes ?? []) {
+    expect(
+      generatedPrimaryFailureCodes.has(
+        String(scene.selected_asset?.provenance?.warning_code ?? ""),
+      ),
+      `manifest scene ${scene.scene_id ?? "unknown"} must not contain a generated-primary failure placeholder`,
+    ).toBe(false);
+  }
   const manifestAssets = Object.fromEntries(
     (assetManifest?.scenes ?? []).map((scene) => [
       scene.scene_id,
@@ -1538,6 +1560,12 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .toBe("ready");
     expect(finalQualityReport).toBeTruthy();
     qualityReport = finalQualityReport!;
+    expect(
+      (qualityReport.warnings ?? []).filter((warning) =>
+        generatedPrimaryFailureCodes.has(warning.code ?? ""),
+      ),
+      "generated-primary failure placeholders must never remain export warnings",
+    ).toEqual([]);
     const narrationCoverage = qualityReport.metrics?.narration_coverage;
     expect(narrationCoverage?.coverage_rate).toBe(1);
     expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);

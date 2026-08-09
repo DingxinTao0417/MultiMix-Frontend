@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
+    "nanoid": "3.3.18",
     "postcss": "8.5.18",
     "protobufjs": "7.6.5",
     "sharp": "0.35.0"
@@ -17,6 +18,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "security:dependencies": "npm audit --omit=dev --audit-level=high",
     "test:display-components": "vitest run app/assets/__tests__/display-area-readiness.test.tsx app/assets/__tests__/display-area-cases.test.tsx",
     "test:display-e2e": "node scripts/run-display-coverage.mjs --e2e-only",
     "test:display-coverage": "node scripts/run-display-coverage.mjs",
@@ -34,7 +36,7 @@
     "sync:agents": "node scripts/sync-agents-md.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "test:docs-check": "node --test scripts/__tests__/check-docs.test.mjs",
-    "test:guardrails": "node --test scripts/__tests__/check-video-preview-contract.test.mjs scripts/__tests__/next-env-contract.test.mjs scripts/__tests__/workspace-submit-guard.test.mjs scripts/__tests__/workspace-work-guard.test.mjs",
+    "test:guardrails": "node --test scripts/__tests__/check-video-preview-contract.test.mjs scripts/__tests__/next-env-contract.test.mjs scripts/__tests__/security-baseline-contract.test.mjs scripts/__tests__/workspace-submit-guard.test.mjs scripts/__tests__/workspace-work-guard.test.mjs",
     "check:video-preview-contract": "node scripts/check-video-preview-contract.mjs",
     "submit:guard": "node scripts/workspace-submit-guard.mjs",
     "work:guard": "node scripts/workspace-work-guard.mjs",

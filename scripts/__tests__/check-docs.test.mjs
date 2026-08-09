@@ -20,9 +20,19 @@ function writeFile(root, relativePath, content) {
 function makeWorkspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-docs-check-"));
 
-  writeFile(root, "docs/README.md", "# Docs\n");
+  writeFile(
+    root,
+    "docs/README.md",
+    `# Docs
+
+- Review standard: \`docs/qa/project-review-standard.md\`
+- Security baseline: \`docs/qa/security-review-baseline.md\`
+`,
+  );
   writeFile(root, "docs/authority/rule.md", `${HEADER}\n# Rule\n`);
   writeFile(root, "docs/qa/conversation.md", `${HEADER}\n# QA\n`);
+  writeFile(root, "docs/qa/project-review-standard.md", `${HEADER}\n# Review standard\n`);
+  writeFile(root, "docs/qa/security-review-baseline.md", `${HEADER}\n# Security baseline\n`);
   writeFile(root, "docs/plans/active/README.md", "# Active plans\n");
   writeFile(root, "docs/plans/active/plan.md", `${HEADER}\n# Plan\n`);
   writeFile(root, "docs/specs/ui/README.md", "# UI specs\n");
@@ -108,6 +118,26 @@ test("flags missing Markdown references in the workspace documentation map", () 
         issue.code === "missing-doc-reference" &&
         issue.file === "docs/README.md",
     ),
+    true,
+  );
+});
+
+test("requires the review standard and security baseline in the documentation map", () => {
+  const root = makeWorkspace();
+  writeFile(root, "docs/README.md", "# Docs\n");
+
+  const issues = checkDocs(root);
+  const missingReferences = issues
+    .filter((issue) => issue.code === "missing-required-doc-reference")
+    .map((issue) => issue.message);
+
+  assert.equal(missingReferences.length, 2);
+  assert.equal(
+    missingReferences.some((message) => message.includes("docs/qa/project-review-standard.md")),
+    true,
+  );
+  assert.equal(
+    missingReferences.some((message) => message.includes("docs/qa/security-review-baseline.md")),
     true,
   );
 });

@@ -80,6 +80,11 @@ const COMPLETED_PLAN_PATTERNS = [
 const DOCUMENTATION_MAP_REFERENCE_PATTERN =
   /`((?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\/[^`\r\n]+\.md)`/g;
 
+const REQUIRED_DOCUMENTATION_MAP_REFERENCES = [
+  "docs/qa/project-review-standard.md",
+  "docs/qa/security-review-baseline.md",
+];
+
 function toPosixPath(value) {
   return value.split(path.sep).join("/");
 }
@@ -252,8 +257,10 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
   }
 
   const content = readText(mapFile);
-  for (const match of content.matchAll(DOCUMENTATION_MAP_REFERENCE_PATTERN)) {
-    const reference = match[1];
+  const references = new Set(
+    [...content.matchAll(DOCUMENTATION_MAP_REFERENCE_PATTERN)].map((match) => match[1]),
+  );
+  for (const reference of references) {
     const target = path.join(workspaceRoot, ...reference.split("/"));
     if (!exists(target)) {
       issues.push(
@@ -265,6 +272,20 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
         ),
       );
     }
+  }
+
+  for (const requiredReference of REQUIRED_DOCUMENTATION_MAP_REFERENCES) {
+    if (references.has(requiredReference)) {
+      continue;
+    }
+    issues.push(
+      issue(
+        "missing-required-doc-reference",
+        relativeFile,
+        `Missing required current document entry '${requiredReference}'.`,
+        `Add a backticked '${requiredReference}' entry to docs/README.md.`,
+      ),
+    );
   }
 }
 

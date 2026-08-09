@@ -39,6 +39,11 @@ test("production video E2E uses configured vision service and fails closed for a
   assert.match(source, /Local vision service requires a configured Qwen\/DashScope API key/);
   assert.match(source, /VISION_QWEN_API_KEY:\s*effectiveVisionApiKey/);
   assert.match(source, /VISION_QWEN_BASE_URL:\s*effectiveVisionBaseUrl/);
+  assert.match(
+    source,
+    /VISION_REMOTE_HTTPS_PROXY:\s*`http:\/\/127\.0\.0\.1:\$\{providerProxy\.port\}`/,
+  );
+  assert.match(source, /VISION_REMOTE_PROXY_HOSTS:\s*providerProxyHosts\.join\(","\)/);
 });
 
 test("production video E2E can disable BGM without dereferencing an absent catalog", () => {

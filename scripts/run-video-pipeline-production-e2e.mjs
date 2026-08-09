@@ -972,6 +972,8 @@ try {
           VISION_QWEN_BASE_URL: effectiveVisionBaseUrl,
           VISION_QWEN_MODEL: effectiveVisionModel,
           VISION_QWEN_TIMEOUT_SECONDS: "120",
+          VISION_REMOTE_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
+          VISION_REMOTE_PROXY_HOSTS: providerProxyHosts.join(","),
         },
         "vision.log",
       );
