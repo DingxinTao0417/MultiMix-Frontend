@@ -58,6 +58,7 @@ export function AssetGenerationJobCard({
   const retryStopped = () => {
     if (job.status === "cancelled") void onRetry?.(job.id);
   };
+  const isDirectorScriptGeneration = generationTimelineTitle(job) === "编导稿生成进度";
 
   return (
     <div
@@ -72,6 +73,9 @@ export function AssetGenerationJobCard({
         errorMessage={job.status === "failed" ? failureMessage(job) : null}
         onRetry={onRetry ? (jobId) => { void onRetry(jobId); } : undefined}
         completionConfirmed={terminal}
+        completionLabel={isDirectorScriptGeneration
+          ? "编导脚本已生成，可确认或修改"
+          : "内容已生成，可查看"}
         footer={canCancel && onCancel ? (
           <button
             type="button"

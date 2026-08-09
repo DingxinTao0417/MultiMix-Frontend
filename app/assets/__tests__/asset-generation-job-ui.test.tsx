@@ -61,6 +61,20 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.getByText("内容生成已完成")).not.toBeNull();
   });
 
+  it("describes a completed director script without claiming the video is ready", () => {
+    render(<AssetGenerationJobCard job={job({
+      status: "completed",
+      stage: "completed",
+      progress_events: [
+        { key: "structuring_director_script", label: "正在整理编导稿", detail: "", status: "completed", occurred_at: "2026-07-17T06:00:01Z" },
+        { key: "completed", label: "编导稿已生成", detail: "已保存", status: "completed", occurred_at: "2026-07-17T06:00:02Z" },
+      ],
+    })} />);
+
+    expect(screen.getByText(/编导脚本已生成，可确认或修改/)).not.toBeNull();
+    expect(screen.queryByText(/视频已生成，可立即编辑/)).toBeNull();
+  });
+
   it("lets the user stop a queued or running generation", () => {
     const onCancel = vi.fn();
     render(

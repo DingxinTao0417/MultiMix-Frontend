@@ -48,6 +48,7 @@ export default function AgentRunTimeline({
   errorMessage,
   onRetry,
   completionConfirmed,
+  completionLabel = "视频已生成，可立即编辑",
   footer,
 }: {
   steps: AgentRunStep[];
@@ -56,6 +57,7 @@ export default function AgentRunTimeline({
   errorMessage?: string | null;
   onRetry?: (jobId: string) => void;
   completionConfirmed?: boolean;
+  completionLabel?: string;
   footer?: ReactNode;
 }) {
   const summary = summarizeAgentRunSteps(steps);
@@ -101,7 +103,7 @@ export default function AgentRunTimeline({
     && !summary.hasFailure
     && completionConfirmed === true;
   const countLabel = completionReady
-    ? `视频已生成，可立即编辑 · 共 ${summary.total} 步`
+    ? `${completionLabel} · 共 ${summary.total} 步`
     : summary.allDone
     ? [`共 ${summary.total} 步`, summary.totalElapsedLabel ? `总历时 ${summary.totalElapsedLabel}` : undefined].filter(Boolean).join(" · ")
     : `第 ${currentStep} 步 / 共 ${summary.total} 步`;
