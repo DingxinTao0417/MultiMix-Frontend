@@ -386,7 +386,7 @@ export default function ProductWorkspace({
     try {
       const report = await assetWorkspaceAdapter.getVideoQuality(token, product.backendAssetId);
       setQualityReport(report);
-      setExportState("idle");
+      setExportState(report.blockers.length ? "blocked" : "idle");
       return report;
     } catch {
       setExportState("error");
@@ -459,8 +459,6 @@ export default function ProductWorkspace({
       }
       return;
     }
-    const report = await requestExportQuality();
-    if (!report) return;
     if (showEditorEmbed) {
       if (editorReady && startEditorExport()) return;
       pendingExportRef.current = true;
@@ -951,7 +949,14 @@ export default function ProductWorkspace({
                 setExportState("verifying");
                 setExportProgress(100);
               }}
-              onExportQualityReport={(report) => setQualityReport(report)}
+              onExportQualityReport={(report) => {
+                setQualityReport(report);
+                if (report.blockers.length) {
+                  pendingExportRef.current = false;
+                  setExportState("blocked");
+                  setExportProgress(null);
+                }
+              }}
               onExportSuccess={handlePreviewExportSuccess}
               onExportError={(message) => {
                 pendingExportRef.current = false;

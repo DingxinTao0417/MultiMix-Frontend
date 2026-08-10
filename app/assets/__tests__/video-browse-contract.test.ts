@@ -7,6 +7,10 @@ const storyboardPreview = existsSync(storyboardPreviewUrl) ? readFileSync(storyb
 const projectPreviewUrl = new URL("../components/video-project-preview.tsx", import.meta.url);
 const projectPreview = existsSync(projectPreviewUrl) ? readFileSync(projectPreviewUrl, "utf8") : "";
 const editorView = readFileSync(new URL("../../editor/EditorView.tsx", import.meta.url), "utf8");
+const editorExportButton = readFileSync(
+  new URL("../../../editor-engine/vendor/ExportButton.tsx", import.meta.url),
+  "utf8",
+);
 const editorBootstrap = readFileSync(
   new URL("../../../editor-engine/vendor/bootstrap.ts", import.meta.url),
   "utf8",
@@ -103,7 +107,13 @@ describe("video project browse-player contract", () => {
     expect(preview).toContain("export: () => boolean");
     expect(projectPreview).toContain('postCommand("multimix-editor-export")');
     expect(editorView).toContain('message.type === "multimix-editor-ready-ack"');
-    expect(editorView).toContain('/mp4');
+    expect(editorView).toContain('/exports/finalize');
+    expect(editorView).not.toContain('/exports/verify');
+    expect(editorView).not.toContain('/mp4');
+    expect(editorView).toContain("onExport={handleStandaloneExport}");
+    expect(editorExportButton).not.toContain('/exports/verify');
+    expect(editorExportButton).not.toContain('/mp4');
+    expect(editorExportButton).not.toContain("保存到产物");
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 

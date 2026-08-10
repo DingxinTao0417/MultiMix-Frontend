@@ -392,7 +392,7 @@ type AssetsWorkspaceClientProps = {
   initialConversationId?: string;  // 初始选中对话；无效则回退首条对话
   initialProductId?: string;       // 初始选中产物
   basePath?: string;               // 默认 "/app/assets"
-  accountEmail?: string;           // 默认 "pilot@changein"，侧边栏底部展示
+  accountEmail?: string;           // 默认 "pilot@multimix"，侧边栏底部展示
 };
 ```
 
@@ -606,7 +606,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 ### 11.1 类名前缀
 
 - 当前 UI 仅用 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（认证壳）两组前缀。
-- `app/globals.css` 是单一全局样式表。历史 ChangeIn 样式已清理过，新增样式请沿用上述两组现役前缀，勿盲目复用陌生类名或引入新的顶层前缀。
+- `app/globals.css` 是单一全局样式表。历史死样式已清理过，新增样式请沿用上述两组现役前缀，勿盲目复用陌生类名或引入新的顶层前缀。
 
 ### 11.2 当前边界
 
@@ -668,12 +668,23 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
   直接透传给用户。
 - `needs_script_revision` 不是视频工程 ready 状态。前端重新聚焦原编导稿，并使用现有调整与确认入口。
 
-视频工程质量报告中的 MG 问题使用非阻断 warning 契约：
+视频工程质量报告和导出终结按以下契约执行：
 
-- `mg_failed`、`mg_not_ready`、`mg_stale`：overlay 未成功，保留原主画面并展示对应分镜警告。
+- `stage=project` 只在主工程发布或用户保存了变化后的工程时运行；通过后后端保存
+  `video_project_quality_approval` 指纹。相同工程重复保存复用批准，不重新执行内容审查。
+- 点击导出后，编辑器先保存当前序列，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
+  该阶段只核对批准指纹和 MG 等异步状态，不重新审查主画面、证据、字幕或时间线内容。
+- `stage=project` 时，`mg_failed`、`mg_not_ready`、`mg_stale` 只记录内部 warning，允许主工程先持久化以供恢复。
+- `stage=export_preflight` 时，上述 overlay 状态均为 blocker；用户可见视频在未完成时为“生成中”、失败时为“失败”，不能编辑或导出。
 - `mg_primary_blank`：full-frame `mg_scene` 失败，后端已用持久化、无文字的空白主画面保留该镜时长。
-- 上述 warning 不取消 `ready`、不隐藏编辑或导出入口；前端必须显示警告和可用的手动重试入口。
+- `mg_primary_blank` 不取消内部 `ready`，前端显示可见 warning；只要占位画面有效并连续覆盖主轨，它本身不阻断导出。
 - 空白占位未持久化、归属不正确或主轨不连续时，后端返回 blocker，前端按主工程失败处理。
+- 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
+- 浏览器完成 MP4 编码后，只向 `POST /v1/video/projects/{asset_id}/exports/finalize` 上传一次文件。
+  后端在同一请求内执行文件完整性验证并持久化同一临时文件；返回 blocker 时前端展示文件错误且
+  不得发送成功消息或提供下载。
+- `POST /v1/video/projects/{asset_id}/mp4` 和
+  `POST /v1/video/projects/{asset_id}/exports/verify` 是已退役路径，不能用于正常导出或绕过验证。
 
 ### 12.2 结构化确认卡 `metadata.plan`
 

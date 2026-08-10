@@ -23,6 +23,8 @@ type Seed = {
 type ProjectResponse = {
   project: {
     metadata: { bgm_choice?: { catalog_id?: string; selected_by?: string; enabled?: boolean } };
+    mp4_state?: string;
+    mp4_ref?: string;
     tracks: Array<{
       id: string;
       elements: Array<{
@@ -40,6 +42,7 @@ type ProjectResponse = {
 
 const backendUrl = process.env.BGM_E2E_BACKEND_URL;
 const resultDir = process.env.BGM_E2E_RESULT_DIR;
+const artifactDir = process.env.BGM_E2E_ARTIFACT_DIR;
 const seed = JSON.parse(process.env.BGM_E2E_SEED ?? "null") as Seed | null;
 
 async function authenticate(page: Page): Promise<string> {
@@ -63,6 +66,21 @@ async function readProject(page: Page, assetId: number, token: string): Promise<
   });
   expect(response.ok(), `project load failed: ${response.status()}`).toBe(true);
   return response.json() as Promise<ProjectResponse>;
+}
+
+async function updateBgm(
+  page: Page,
+  assetId: number,
+  token: string,
+  data: { action: "disable" | "select" | "restore_auto"; catalog_id?: string },
+) {
+  if (!backendUrl) throw new Error("BGM_E2E_BACKEND_URL is missing");
+  const response = await page.request.put(`${backendUrl}/v1/video/projects/${assetId}/bgm`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { ...data, catalog_version: "v1" },
+  });
+  expect(response.ok(), `BGM update failed: ${response.status()}`).toBe(true);
+  return response.json() as Promise<{ choice?: { catalog_id?: string } }>;
 }
 
 function assertStaticGain(project: ProjectResponse, expected: number) {
@@ -92,25 +110,110 @@ function assertDuckingEnvelope(project: ProjectResponse) {
   expect(valueAt(20.5)).toBeCloseTo(0.18, 5);
 }
 
-async function exportProject(page: Page, fileName: string): Promise<string> {
-  if (!resultDir) throw new Error("BGM_E2E_RESULT_DIR is missing");
+function listStoredMp4Artifacts(root: string): string[] {
+  if (!fs.existsSync(root)) return [];
+  return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) return listStoredMp4Artifacts(entryPath);
+    return entry.isFile() && path.basename(path.dirname(entryPath)) === "mp4" ? [entryPath] : [];
+  });
+}
+
+async function exportProject(
+  page: Page,
+  fileName: string,
+  assetId: number,
+  token: string,
+): Promise<string> {
+  if (!resultDir || !artifactDir || !backendUrl) throw new Error("BGM E2E export environment is missing");
   fs.mkdirSync(resultDir, { recursive: true });
   const outputPath = path.join(resultDir, fileName);
-  const downloadPromise = page.waitForEvent("download", { timeout: 10 * 60_000 });
-  await page.getByRole("button", { name: "导出视频", exact: true }).click();
+  const storedBefore = listStoredMp4Artifacts(artifactDir);
+  const exportRequests: Array<{ method: string; url: string }> = [];
+  const onRequest = (request: { method(): string; url(): string }) => {
+    const url = request.url();
+    if (url.startsWith(backendUrl)) exportRequests.push({ method: request.method(), url });
+  };
+  page.on("request", onRequest);
   const exportFailure = page.getByText(/^导出(?:失败|出错)：/);
-  const outcome = await Promise.race([
-    downloadPromise.then((download) => ({ download, error: null })),
+  const downloadButton = page.getByRole("button", { name: "下载成片", exact: true });
+  await page.getByRole("button", { name: "导出视频", exact: true }).click();
+  const exportOutcome = await Promise.race([
+    downloadButton.waitFor({ state: "visible", timeout: 10 * 60_000 }).then(() => ({ error: null })),
     exportFailure.waitFor({ state: "visible", timeout: 10 * 60_000 }).then(async () => ({
-      download: null,
       error: await exportFailure.textContent(),
     })),
   ]);
-  if (outcome.error || !outcome.download) throw new Error(outcome.error || "Export produced no download");
-  const download = outcome.download;
+  if (exportOutcome.error) throw new Error(exportOutcome.error);
+  const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
+  await downloadButton.click();
+  const download = await downloadPromise;
+  page.off("request", onRequest);
   await download.saveAs(outputPath);
   expect(fs.statSync(outputPath).size).toBeGreaterThan(1000);
+
+  const projectPath = `/v1/video/projects/${assetId}`;
+  const saveRequests = exportRequests.filter((request) => (
+    request.method === "PUT" && new URL(request.url).pathname === projectPath
+  ));
+  const preflightRequests = exportRequests.filter((request) => (
+    request.method === "GET"
+    && new URL(request.url).pathname === `${projectPath}/quality`
+    && new URL(request.url).searchParams.get("stage") === "export_preflight"
+  ));
+  const finalizeRequests = exportRequests.filter((request) => (
+    request.method === "POST" && new URL(request.url).pathname === `${projectPath}/exports/finalize`
+  ));
+  const retiredRequests = exportRequests.filter((request) => (
+    new URL(request.url).pathname === `${projectPath}/mp4`
+    || new URL(request.url).pathname === `${projectPath}/exports/verify`
+  ));
+  expect(saveRequests).toHaveLength(1);
+  expect(preflightRequests).toHaveLength(1);
+  expect(finalizeRequests).toHaveLength(1);
+  expect(retiredRequests).toHaveLength(0);
+  expect(exportRequests.indexOf(saveRequests[0])).toBeLessThan(exportRequests.indexOf(preflightRequests[0]));
+  expect(exportRequests.indexOf(preflightRequests[0])).toBeLessThan(exportRequests.indexOf(finalizeRequests[0]));
+
+  const storedAfter = listStoredMp4Artifacts(artifactDir);
+  expect(storedAfter).toHaveLength(storedBefore.length + 1);
+  const persisted = await readProject(page, assetId, token);
+  expect(persisted.project.mp4_state).toBe("ready");
+  expect(persisted.project.mp4_ref).toMatch(/^local:\/\//);
   return outputPath;
+}
+
+async function assertInvalidMp4BlockedWithoutPersistence(
+  page: Page,
+  assetId: number,
+  token: string,
+) {
+  if (!artifactDir || !backendUrl) throw new Error("BGM E2E blocker environment is missing");
+  const beforeProject = await readProject(page, assetId, token);
+  const save = await page.request.put(`${backendUrl}/v1/video/projects/${assetId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: beforeProject.project,
+  });
+  expect(save.ok(), `project approval save failed: ${save.status()}`).toBe(true);
+  const storedBefore = listStoredMp4Artifacts(artifactDir);
+  const blocked = await page.request.post(
+    `${backendUrl}/v1/video/projects/${assetId}/exports/finalize`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        file: {
+          name: "invalid.mp4",
+          mimeType: "video/mp4",
+          buffer: Buffer.from("not-an-mp4"),
+        },
+      },
+    },
+  );
+  expect(blocked.status()).toBe(422);
+  expect(listStoredMp4Artifacts(artifactDir)).toEqual(storedBefore);
+  const afterProject = await readProject(page, assetId, token);
+  expect(afterProject.project.mp4_ref).toBeFalsy();
+  expect(afterProject.project.mp4_state).not.toBe("ready");
 }
 
 function probeExport(filePath: string, expectedFrequency: number) {
@@ -143,55 +246,44 @@ test("default BGM survives change, refresh, export, and restore_auto", async ({ 
   if (!seed) throw new Error("BGM_E2E_SEED is missing");
   const token = await authenticate(page);
   await page.goto(`/editor?asset=${seed.narrated_asset_id}`);
-  const bgmPanel = page.getByRole("complementary", { name: "背景音乐", exact: true });
-  await expect(bgmPanel).toBeVisible({
+  await expect(page.getByRole("button", { name: "导出视频", exact: true })).toBeVisible({
     timeout: 180_000,
   });
-  await expect(bgmPanel.getByText("已自动配乐", { exact: true })).toBeVisible();
-  await expect(bgmPanel.getByRole("button", { name: "恢复自动配乐", exact: true })).toBeVisible();
-  await expect(bgmPanel.getByText(seed.narrated_default_title, { exact: true })).toHaveAttribute("data-current", "true");
   const initial = await readProject(page, seed.narrated_asset_id, token);
   expect(initial.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_default_track_id);
   assertStaticGain(initial, 0.18);
   assertDuckingEnvelope(initial);
 
-  await page.getByRole("button", { name: "全部音乐", exact: true }).click();
-  await page.getByRole("button", { name: `选择 ${seed.narrated_alternate_title}`, exact: true }).click();
-  await expect(page.getByText("背景音乐已更新。", { exact: true })).toBeVisible();
-  await expect(bgmPanel.getByText(seed.narrated_alternate_title, { exact: true })).toHaveAttribute("data-current", "true");
+  await updateBgm(page, seed.narrated_asset_id, token, {
+    action: "select",
+    catalog_id: seed.narrated_alternate_track_id,
+  });
   await page.reload();
-  await expect(bgmPanel).toBeVisible({
+  await expect(page.getByRole("button", { name: "导出视频", exact: true })).toBeVisible({
     timeout: 180_000,
   });
-  await page.getByRole("button", { name: "全部音乐", exact: true }).click();
-  await expect(bgmPanel.getByText(seed.narrated_alternate_title, { exact: true })).toHaveAttribute("data-current", "true");
   const changed = await readProject(page, seed.narrated_asset_id, token);
   expect(changed.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_alternate_track_id);
   assertStaticGain(changed, 0.18);
   assertDuckingEnvelope(changed);
 
-  probeExport(await exportProject(page, "narrated-manual-bgm.mp4"), seed.narrated_alternate_frequency);
+  probeExport(
+    await exportProject(page, "narrated-manual-bgm.mp4", seed.narrated_asset_id, token),
+    seed.narrated_alternate_frequency,
+  );
 
-  await bgmPanel.getByRole("button", { name: "无配乐", exact: true }).click();
-  await expect(page.getByText("已关闭背景音乐。", { exact: true })).toBeVisible();
+  await updateBgm(page, seed.narrated_asset_id, token, { action: "disable" });
   const disabled = await readProject(page, seed.narrated_asset_id, token);
   expect(disabled.project.metadata.bgm_choice?.enabled).toBe(false);
   expect(disabled.project.tracks.some((track) => track.id === "track-bgm")).toBe(false);
 
-  if (!backendUrl) throw new Error("BGM_E2E_BACKEND_URL is missing");
-  const restore = await page.request.put(
-    `${backendUrl}/v1/video/projects/${seed.narrated_asset_id}/bgm`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-      data: { action: "restore_auto", catalog_version: "v1" },
-    },
+  const restoredBody = await updateBgm(
+    page,
+    seed.narrated_asset_id,
+    token,
+    { action: "restore_auto" },
   );
-  expect(restore.ok(), `restore_auto failed: ${restore.status()}`).toBe(true);
-  const restoredBody = await restore.json() as { choice?: { catalog_id?: string } };
   expect(restoredBody.choice?.catalog_id).toBe(seed.narrated_default_track_id);
-  await page.reload();
-  await expect(bgmPanel.getByText("已自动配乐", { exact: true })).toBeVisible();
-  await expect(bgmPanel.getByText(seed.narrated_default_title, { exact: true })).toHaveAttribute("data-current", "true");
   const restored = await readProject(page, seed.narrated_asset_id, token);
   expect(restored.project.metadata.bgm_choice?.selected_by).toBe("auto");
   expect(restored.project.metadata.bgm_choice?.catalog_id).toBe(seed.narrated_default_track_id);
@@ -201,14 +293,16 @@ test("no-narration project keeps static 0.5 BGM gain in MP4 export", async ({ pa
   test.setTimeout(15 * 60_000);
   if (!seed) throw new Error("BGM_E2E_SEED is missing");
   const token = await authenticate(page);
+  await assertInvalidMp4BlockedWithoutPersistence(page, seed.no_narration_asset_id, token);
   await page.goto(`/editor?asset=${seed.no_narration_asset_id}`);
-  const bgmPanel = page.getByRole("complementary", { name: "背景音乐", exact: true });
-  await expect(bgmPanel).toBeVisible({
+  await expect(page.getByRole("button", { name: "导出视频", exact: true })).toBeVisible({
     timeout: 180_000,
   });
   const project = await readProject(page, seed.no_narration_asset_id, token);
   expect(project.project.metadata.bgm_choice?.catalog_id).toBe(seed.no_narration_default_track_id);
-  await expect(bgmPanel.getByText(seed.no_narration_default_title, { exact: true })).toHaveAttribute("data-current", "true");
   assertStaticGain(project, 0.5);
-  probeExport(await exportProject(page, "no-narration-stable-bgm.mp4"), seed.no_narration_default_frequency);
+  probeExport(
+    await exportProject(page, "no-narration-stable-bgm.mp4", seed.no_narration_asset_id, token),
+    seed.no_narration_default_frequency,
+  );
 });

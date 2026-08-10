@@ -25,8 +25,48 @@ import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+class ProjectSaveError extends Error {
+  constructor(message: string, readonly qualityReport?: VideoQualityReport) {
+    super(message);
+    this.name = "ProjectSaveError";
+  }
+}
+
+function qualityReportFromPayload(payload: unknown): VideoQualityReport | undefined {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+  if (Array.isArray(record.blockers) && Array.isArray(record.warnings)) {
+    return record as unknown as VideoQualityReport;
+  }
+  if (record.quality_report && typeof record.quality_report === "object") {
+    return record.quality_report as VideoQualityReport;
+  }
+  if (record.detail && typeof record.detail === "object") {
+    return qualityReportFromPayload(record.detail);
+  }
+  return undefined;
+}
+
+function errorMessageFromPayload(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== "object") return fallback;
+  const detail = (payload as Record<string, unknown>).detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object") {
+    const message = (detail as Record<string, unknown>).message;
+    if (typeof message === "string") return message;
+  }
+  return fallback;
+}
+
 type LoadedProject = {
   project: BackendProject;
+};
+
+type VerifiedExportHooks = {
+  onStart?: () => void;
+  onProgress?: (progress: number) => void;
+  onVerifying?: () => void;
+  onQualityReport?: (report: VideoQualityReport) => void;
 };
 
 const EMBED_READY_RETRY_MS = 1000;
@@ -142,95 +182,9 @@ export default function EditorView({
     return () => window.clearInterval(timer);
   }, [embed, postToParent, state]);
 
-  const handleEmbeddedExport = useCallback(async () => {
-    if (exportBusyRef.current) return;
-    exportBusyRef.current = true;
-    try {
-      const serialized = serializeBackendProject(EditorCore.getInstance());
-      const currentProject = (
-        Array.isArray(serialized.tracks)
-          ? serialized
-          : serialized.timeline && typeof serialized.timeline === "object"
-            ? serialized.timeline
-            : serialized
-      ) as unknown as BackendProject;
-      const localReport = inspectEditorProject(currentProject);
-      if (localReport.blockers.length) {
-        postToParent({ type: "multimix-editor-export-quality-report", report: localReport });
-      }
-      if (!assetId || !token) throw new Error("缺少成片验证所需的项目身份信息");
-      postToParent({ type: "multimix-editor-export-start" });
-      const result = await EditorCore.getInstance().renderer.exportProject({
-        options: { format: "mp4", quality: "high", includeAudio: true },
-        onProgress: ({ progress }) => postToParent({ type: "multimix-editor-export-progress", progress }),
-      });
-      if (!result.success || !result.buffer) {
-        throw new Error(result.error || "未知错误");
-      }
-      const mime = getExportMimeType({ format: "mp4" });
-      const blob = new Blob([result.buffer], { type: mime });
-      postToParent({ type: "multimix-editor-export-verifying" });
-      const formData = new FormData();
-      formData.append("file", blob, `video-${Date.now()}.mp4`);
-      const verifyResponse = await fetch(
-        `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/exports/verify`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        },
-      );
-      const verifyPayload = await verifyResponse.json().catch(() => null) as VideoQualityReport | { detail?: string } | null;
-      if (!verifyResponse.ok) {
-        throw new Error(
-          verifyPayload && "detail" in verifyPayload && typeof verifyPayload.detail === "string"
-            ? verifyPayload.detail
-            : `成片检查失败（HTTP ${verifyResponse.status}）`,
-        );
-      }
-      const verifiedReport = verifyPayload as VideoQualityReport;
-      if (verifiedReport.blockers?.length) {
-        postToParent({ type: "multimix-editor-export-quality-report", report: verifiedReport });
-      }
-      const saveResponse = await fetch(
-        `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/mp4`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": mime,
-          },
-          body: blob,
-        },
-      );
-      if (!saveResponse.ok) {
-        const savePayload = await saveResponse.json().catch(() => null) as { detail?: string } | null;
-        throw new Error(
-          savePayload?.detail || `成片保存失败（HTTP ${saveResponse.status}）`,
-        );
-      }
-      // Rendering and remote verification take long enough that the original
-      // click's browser user activation has expired. Hand the verified and
-      // persisted Blob to the parent and let a fresh, explicit download click
-      // consume it.
-      postToParent({ type: "multimix-editor-export-success", report: verifiedReport, blob });
-    } catch (cause) {
-      postToParent({
-        type: "multimix-editor-export-error",
-        message: cause instanceof Error ? cause.message : String(cause),
-      });
-    } finally {
-      exportBusyRef.current = false;
-    }
-  }, [
-    assetId,
-    postToParent,
-    token,
-  ]);
-
-  const persistCurrentProject = useCallback(async () => {
-    if (!assetId) throw new Error("缺少项目 ID");
-    const body = serializeBackendProject(EditorCore.getInstance());
+  const persistCurrentProject = useCallback(async (project?: BackendProject) => {
+    if (!assetId) throw new ProjectSaveError("缺少项目 ID");
+    const body = project ?? serializeBackendProject(EditorCore.getInstance());
     const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
       method: "PUT",
       headers: {
@@ -239,11 +193,141 @@ export default function EditorView({
       },
       body: JSON.stringify(body),
     });
-    await res.json().catch(() => null);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    rememberRawProject(body);
-    loadedProjectRef.current = unwrapProject(body);
+    const payload = await res.json().catch(() => null) as unknown;
+    if (!res.ok) {
+      throw new ProjectSaveError(
+        errorMessageFromPayload(payload, `工程保存检查失败（HTTP ${res.status}）`),
+        qualityReportFromPayload(payload),
+      );
+    }
+    rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
+    loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
   }, [assetId, token]);
+
+  const performVerifiedExport = useCallback(async (hooks: VerifiedExportHooks) => {
+    const serialized = serializeBackendProject(EditorCore.getInstance());
+    const currentProject = (
+      Array.isArray(serialized.tracks)
+        ? serialized
+        : serialized.timeline && typeof serialized.timeline === "object"
+          ? serialized.timeline
+          : serialized
+    ) as unknown as BackendProject;
+    const localReport = inspectEditorProject(currentProject);
+    if (localReport.blockers.length) {
+      hooks.onQualityReport?.(localReport);
+      return null;
+    }
+    if (!assetId || !token) throw new Error("缺少成片验证所需的项目身份信息");
+
+    await persistCurrentProject(currentProject);
+    const preflightResponse = await fetch(
+      `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/quality?stage=export_preflight`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const preflightPayload = await preflightResponse.json().catch(() => null) as unknown;
+    if (!preflightResponse.ok) {
+      throw new Error(
+        errorMessageFromPayload(
+          preflightPayload,
+          `导出前检查失败（HTTP ${preflightResponse.status}）`,
+        ),
+      );
+    }
+    const preflightReport = qualityReportFromPayload(preflightPayload);
+    if (!preflightReport) throw new Error("导出前检查没有返回有效报告");
+    if (preflightReport.blockers.length) {
+      hooks.onQualityReport?.(preflightReport);
+      return null;
+    }
+
+    hooks.onStart?.();
+    const result = await EditorCore.getInstance().renderer.exportProject({
+      options: { format: "mp4", quality: "high", includeAudio: true },
+      onProgress: ({ progress }) => hooks.onProgress?.(progress),
+    });
+    if (!result.success || !result.buffer) {
+      throw new Error(result.error || "未知错误");
+    }
+
+    const mime = getExportMimeType({ format: "mp4" });
+    const blob = new Blob([result.buffer], { type: mime });
+    hooks.onVerifying?.();
+    const formData = new FormData();
+    formData.append("file", blob, `video-${Date.now()}.mp4`);
+    const finalizeResponse = await fetch(
+      `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/exports/finalize`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      },
+    );
+    const finalizePayload = await finalizeResponse.json().catch(() => null) as unknown;
+    const verifiedReport = qualityReportFromPayload(finalizePayload);
+    if (!finalizeResponse.ok) {
+      if (verifiedReport) hooks.onQualityReport?.(verifiedReport);
+      throw new Error(
+        errorMessageFromPayload(
+          finalizePayload,
+          `成片文件验证失败（HTTP ${finalizeResponse.status}）`,
+        ),
+      );
+    }
+    if (!verifiedReport) throw new Error("成片终结接口没有返回有效验证报告");
+    if (verifiedReport.blockers.length) {
+      hooks.onQualityReport?.(verifiedReport);
+      throw new Error("成片文件未通过完整性验证");
+    }
+    return { blob, report: verifiedReport };
+  }, [assetId, persistCurrentProject, token]);
+
+  const handleEmbeddedExport = useCallback(async () => {
+    if (exportBusyRef.current) return;
+    exportBusyRef.current = true;
+    try {
+      const result = await performVerifiedExport({
+        onStart: () => postToParent({ type: "multimix-editor-export-start" }),
+        onProgress: (progress) => postToParent({ type: "multimix-editor-export-progress", progress }),
+        onVerifying: () => postToParent({ type: "multimix-editor-export-verifying" }),
+        onQualityReport: (report) => postToParent({
+          type: "multimix-editor-export-quality-report",
+          report,
+        }),
+      });
+      if (result) {
+        // The original click's browser activation expires during rendering and
+        // verification, so the parent exposes a fresh explicit download action.
+        postToParent({
+          type: "multimix-editor-export-success",
+          report: result.report,
+          blob: result.blob,
+        });
+      }
+    } catch (cause) {
+      if (cause instanceof ProjectSaveError && cause.qualityReport) {
+        postToParent({ type: "multimix-editor-export-quality-report", report: cause.qualityReport });
+      }
+      postToParent({
+        type: "multimix-editor-export-error",
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    } finally {
+      exportBusyRef.current = false;
+    }
+  }, [performVerifiedExport, postToParent]);
+
+  const handleStandaloneExport = useCallback(async (onProgress: (progress: number) => void) => {
+    let blockerMessage = "";
+    const result = await performVerifiedExport({
+      onProgress,
+      onQualityReport: (report) => {
+        blockerMessage = report.blockers[0]?.message || "当前工程未通过导出检查";
+      },
+    });
+    if (!result && blockerMessage) throw new Error(blockerMessage);
+    return result?.blob ?? null;
+  }, [performVerifiedExport]);
 
   const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse) => {
     rememberRawProject(result.project);
@@ -394,8 +478,7 @@ export default function EditorView({
             ) : null}
             {state === "ready" ? (
               <ExportButton
-                assetId={assetId}
-                token={token}
+                onExport={handleStandaloneExport}
               />
             ) : null}
           </div>

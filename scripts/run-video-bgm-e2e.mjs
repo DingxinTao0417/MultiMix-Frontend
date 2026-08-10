@@ -1,12 +1,10 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
 import {
-  safeRemoveRunDatabase,
   startLogged,
   stopChild,
   waitFor,
@@ -107,18 +105,6 @@ function restoreFiles(snapshots) {
   }
 }
 
-async function removeDatabaseWithRetry() {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      safeRemoveRunDatabase(databasePath, runId);
-      return;
-    } catch (error) {
-      if (!["EBUSY", "EPERM"].includes(error?.code) || attempt === 11) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-}
-
 async function createSyntheticMedia() {
   await run("ffmpeg", [
     "-y", "-f", "lavfi", "-i", "color=c=0x1e3a8a:s=640x360",
@@ -144,9 +130,9 @@ const snapshots = snapshotFiles([
 
 let runError;
 try {
-  lifecycle.record("environment", "starting", { backendPort, frontendPort });
   const backendPort = configuredPort("BGM_E2E_BACKEND_PORT") ?? await findFreePort();
   const frontendPort = configuredPort("BGM_E2E_FRONTEND_PORT") ?? await findFreePort();
+  lifecycle.record("environment", "starting", { backendPort, frontendPort });
   if (
     backendPort === frontendPort
     || FORBIDDEN_PORTS.has(backendPort)
@@ -231,6 +217,7 @@ try {
       PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
       BGM_E2E_BACKEND_URL: `http://127.0.0.1:${backendPort}`,
       BGM_E2E_RESULT_DIR: resultDir,
+      BGM_E2E_ARTIFACT_DIR: artifactDir,
       BGM_E2E_SEED: JSON.stringify(seedData),
     },
     stdout: process.stdout,

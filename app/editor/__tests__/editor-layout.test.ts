@@ -86,14 +86,21 @@ describe("editor layout constraints", () => {
 	it("verifies the rendered MP4 before handing it to the parent for a user-initiated download", () => {
 		const view = readProjectFile("app/editor/EditorView.tsx");
 		const localPreflight = view.indexOf("inspectEditorProject(currentProject)");
+		const persistCurrent = view.indexOf("await persistCurrentProject(currentProject)");
+		const remotePreflight = view.indexOf("/quality?stage=export_preflight");
 		const render = view.indexOf("renderer.exportProject");
-		const remoteVerification = view.indexOf("/exports/verify");
-		const verifiedBlobHandoff = view.indexOf('type: "multimix-editor-export-success", report: verifiedReport, blob');
+		const atomicFinalize = view.indexOf("/exports/finalize");
+			const verifiedBlobHandoff = view.indexOf('type: "multimix-editor-export-success"');
 
 		expect(localPreflight).toBeGreaterThan(-1);
-		expect(localPreflight).toBeLessThan(render);
-		expect(remoteVerification).toBeGreaterThan(render);
-		expect(verifiedBlobHandoff).toBeGreaterThan(remoteVerification);
+			expect(view).toContain('if (localReport.blockers.length) {\n      hooks.onQualityReport?.(localReport);\n      return null;');
+		expect(persistCurrent).toBeGreaterThan(localPreflight);
+		expect(remotePreflight).toBeGreaterThan(persistCurrent);
+		expect(remotePreflight).toBeLessThan(render);
+		expect(atomicFinalize).toBeGreaterThan(render);
+		expect(verifiedBlobHandoff).toBeGreaterThan(atomicFinalize);
+		expect(view).not.toContain("/exports/verify");
+		expect(view).not.toContain("/mp4");
 		expect(view).not.toContain("anchor.click()");
 	});
 

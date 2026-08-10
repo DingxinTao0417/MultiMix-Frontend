@@ -28,7 +28,7 @@ export default function VideoQualityPanel({
           <strong>导出提醒</strong>
           <span>
             {report.blockers.length
-              ? `${report.blockers.length} 个问题可能影响成片；本次测试仍可继续导出。`
+              ? `${report.blockers.length} 个问题必须修复后才能导出。`
               : `${report.warnings.length} 个提醒不阻止导出。`}
           </span>
         </div>

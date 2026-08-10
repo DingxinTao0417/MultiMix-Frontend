@@ -30,6 +30,7 @@ describe("VideoQualityPanel", () => {
     render(<VideoQualityPanel report={blockedReport} onLocate={onLocate} />);
 
     expect(screen.getByRole("status", { name: "视频质量检查" })).toHaveTextContent("导出提醒");
+    expect(screen.getByRole("status", { name: "视频质量检查" })).toHaveTextContent("必须修复后才能导出");
     expect(screen.queryByRole("alert", { name: "视频质量检查" })).not.toBeInTheDocument();
     expect(screen.getByText("第 1 段主画面缺失")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "定位到第 1 段" }));

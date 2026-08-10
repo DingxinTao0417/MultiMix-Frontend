@@ -347,21 +347,9 @@ describe("display-area eight-case matrix", () => {
     expect(container.querySelector("video")).toHaveAttribute("src", expect.stringContaining("display-sample.mp4"));
   });
 
-  it("keeps export available when the backend preflight reports issues", async () => {
+  it("delegates preflight to the editor after the current project is saved", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
-    const blocked: VideoQualityReport = {
-      stage: "export_preflight",
-      status: "blocked",
-      blockers: [{
-        code: "main_track_gap",
-        segment_id: "scene-1",
-        object_type: "main_track",
-        message: "第 1 段主画面没有覆盖。",
-        suggested_actions: ["补齐主轨素材"],
-      }],
-      warnings: [],
-    };
-    vi.spyOn(assetWorkspaceAdapter, "getVideoQuality").mockResolvedValue(blocked);
+    const getVideoQuality = vi.spyOn(assetWorkspaceAdapter, "getVideoQuality");
     render(
       <ProductWorkspace
         copied={false}
@@ -374,22 +362,31 @@ describe("display-area eight-case matrix", () => {
     );
     const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
-    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
-
-    expect(await screen.findByText("第 1 段主画面缺失")).toBeVisible();
-    expect(screen.getByRole("button", { name: "正在准备预览导出…" })).toBeDisabled();
-
-    fireEvent.load(frame);
-    expect(postMessage).toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-preview-sync" },
-      window.location.origin,
-    );
     dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
       { source: "multimix-workspace", type: "multimix-editor-export" },
       window.location.origin,
     ));
+    expect(getVideoQuality).not.toHaveBeenCalled();
+
+    dispatchPreviewMessage(frame, product.backendAssetId, {
+      type: "multimix-editor-export-quality-report",
+      report: {
+        stage: "export_preflight",
+        status: "blocked",
+        blockers: [{
+          code: "main_track_gap",
+          segment_id: "scene-1",
+          object_type: "main_track",
+          message: "第 1 段主画面没有覆盖。",
+          suggested_actions: ["补齐主轨素材"],
+        }],
+        warnings: [],
+      } satisfies VideoQualityReport,
+    });
+    expect(await screen.findByRole("button", { name: "修复后重新检查" })).toBeEnabled();
   });
 
   it("allows warning-only preflight to export through the existing preview", async () => {
