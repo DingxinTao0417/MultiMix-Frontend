@@ -41,6 +41,7 @@ const DOCUMENTATION_MAP_REFERENCE_PATTERN =
 const REQUIRED_DOCUMENTATION_MAP_REFERENCES = [
   "MultiMix-Backend/docs/qa/project-review-standard.md",
   "MultiMix-Backend/docs/qa/security-review-baseline.md",
+  "MultiMix-Backend/docs/qa/linear-issue-completion-evidence.md",
 ];
 
 function toPosixPath(value) {

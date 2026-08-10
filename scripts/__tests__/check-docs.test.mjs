@@ -55,12 +55,14 @@ function makeSplitWorkspace() {
 
 - Review standard: \`MultiMix-Backend/docs/qa/project-review-standard.md\`
 - Security baseline: \`MultiMix-Backend/docs/qa/security-review-baseline.md\`
+- Completion evidence: \`MultiMix-Backend/docs/qa/linear-issue-completion-evidence.md\`
 `,
   );
   writeFile(root, "MultiMix-Backend/docs/authority/rule.md", `${HEADER}\n# Rule\n`);
   writeFile(root, "MultiMix-Backend/docs/qa/conversation.md", `${HEADER}\n# QA\n`);
   writeFile(root, "MultiMix-Backend/docs/qa/project-review-standard.md", `${HEADER}\n# Review standard\n`);
   writeFile(root, "MultiMix-Backend/docs/qa/security-review-baseline.md", `${HEADER}\n# Security baseline\n`);
+  writeFile(root, "MultiMix-Backend/docs/qa/linear-issue-completion-evidence.md", `${HEADER}\n# Completion evidence\n`);
   writeFile(root, "MultiMix-Backend/docs/plans/active/README.md", "# Active plans\n");
   writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `${HEADER}\n# Plan\n`);
   writeFile(root, "MultiMix-Backend/docs/archive/plans/old.md", "# Old plan\n");
@@ -159,7 +161,7 @@ test("flags missing Markdown references in the workspace documentation map", () 
   );
 });
 
-test("requires the review standard and security baseline in the documentation map", () => {
+test("requires review, security, and issue completion evidence standards in the documentation map", () => {
   const root = makeSplitWorkspace();
   writeFile(root, "MultiMix-Backend/docs/README.md", "# Docs\n");
 
@@ -168,13 +170,17 @@ test("requires the review standard and security baseline in the documentation ma
     .filter((issue) => issue.code === "missing-required-doc-reference")
     .map((issue) => issue.message);
 
-  assert.equal(missingReferences.length, 2);
+  assert.equal(missingReferences.length, 3);
   assert.equal(
     missingReferences.some((message) => message.includes("MultiMix-Backend/docs/qa/project-review-standard.md")),
     true,
   );
   assert.equal(
     missingReferences.some((message) => message.includes("MultiMix-Backend/docs/qa/security-review-baseline.md")),
+    true,
+  );
+  assert.equal(
+    missingReferences.some((message) => message.includes("MultiMix-Backend/docs/qa/linear-issue-completion-evidence.md")),
     true,
   );
 });

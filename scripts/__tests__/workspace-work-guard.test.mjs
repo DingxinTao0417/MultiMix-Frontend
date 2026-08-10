@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -9,6 +10,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   beginWorkGuard,
@@ -17,6 +19,10 @@ import {
   findWorkspaceRoot,
   workGuardStatus,
 } from "../workspace-work-guard.mjs";
+
+const workGuardScript = fileURLToPath(
+  new URL("../workspace-work-guard.mjs", import.meta.url),
+);
 
 function createWorkspace() {
   const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "multimix-work-guard-"));
@@ -34,9 +40,11 @@ function claim(overrides = {}) {
   return {
     task: "task-a",
     owner: "agent-a",
+    issue: "LLY-100",
     plan: "MultiMix-Backend/docs/plans/active/task-a.md",
     areas: ["video-confirmation"],
     paths: ["MultiMix-Backend/app/services/video_studio"],
+    contracts: ["api/video-project"],
     token: "token-a",
     ...overrides,
   };
@@ -51,15 +59,19 @@ test("allows non-overlapping work and hides tokens from status", () => {
       ...claim({
         task: "task-b",
         owner: "agent-b",
+        issue: "LLY-101",
         plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
         areas: ["asset-library-ui"],
         paths: ["MultiMix-Frontend/app/assets/components/library"],
+        contracts: ["type/asset-card"],
         token: "token-b",
       }),
     });
 
     assert.equal(first.token, "token-a");
     assert.equal(second.token, "token-b");
+    assert.equal(first.issue, "LLY-100");
+    assert.deepEqual(first.contracts, ["api/video-project"]);
     assert.doesNotThrow(() => checkWorkGuard({ workspaceRoot, token: "token-a" }));
 
     const status = workGuardStatus({ workspaceRoot });
@@ -77,11 +89,175 @@ test("allows non-overlapping work and hides tokens from status", () => {
     );
     assert.equal(JSON.stringify(status).includes("token-a"), false);
     assert.equal(JSON.stringify(status).includes("token-b"), false);
+    assert.equal(status[0].issue, "LLY-100");
+    assert.deepEqual(status[0].contracts, ["api/video-project"]);
 
     endWorkGuard({ workspaceRoot, token: "token-a" });
     endWorkGuard({ workspaceRoot, token: "token-b" });
     assert.deepEqual(workGuardStatus({ workspaceRoot }), []);
     assert.equal(existsSync(path.join(workspaceRoot, ".multimix-work-claims.json")), false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects duplicate Linear issue ownership across otherwise independent work", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    beginWorkGuard({ workspaceRoot, ...claim() });
+
+    assert.throws(
+      () =>
+        beginWorkGuard({
+          workspaceRoot,
+          ...claim({
+            task: "task-b",
+            owner: "agent-b",
+            issue: "lly-100",
+            plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
+            areas: ["asset-library-ui"],
+            paths: ["MultiMix-Frontend/app/assets/components/library"],
+            contracts: ["type/asset-card"],
+            token: "token-b",
+          }),
+        }),
+      /task-a.*agent-a.*issue:LLY-100/is,
+    );
+    assert.equal(workGuardStatus({ workspaceRoot }).length, 1);
+    endWorkGuard({ workspaceRoot, token: "token-a" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects shared contract conflicts across different files and areas", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    beginWorkGuard({ workspaceRoot, ...claim() });
+
+    assert.throws(
+      () =>
+        beginWorkGuard({
+          workspaceRoot,
+          ...claim({
+            task: "task-b",
+            owner: "agent-b",
+            issue: "LLY-101",
+            plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
+            areas: ["asset-library-ui"],
+            paths: ["MultiMix-Frontend/app/assets/components/library"],
+            contracts: ["API/Video-Project"],
+            token: "token-b",
+          }),
+        }),
+      /task-a.*agent-a.*contract:api\/video-project/is,
+    );
+    assert.equal(workGuardStatus({ workspaceRoot }).length, 1);
+    endWorkGuard({ workspaceRoot, token: "token-a" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("validates Linear issue identifiers and shared contract slugs", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    assert.throws(
+      () => beginWorkGuard({ workspaceRoot, ...claim({ issue: "not-an-issue" }) }),
+      /Linear issue.*TEAM-123/i,
+    );
+    assert.throws(
+      () => beginWorkGuard({ workspaceRoot, ...claim({ contracts: ["api:video project"] }) }),
+      /contract.*stable lowercase slug/i,
+    );
+    assert.deepEqual(workGuardStatus({ workspaceRoot }), []);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("CLI registers Linear issue and repeated shared contracts", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    const result = spawnSync(
+      process.execPath,
+      [
+        workGuardScript,
+        "begin",
+        "--workspace-root",
+        workspaceRoot,
+        "--task",
+        "task-a",
+        "--owner",
+        "agent-a",
+        "--issue",
+        "lly-100",
+        "--plan",
+        "MultiMix-Backend/docs/plans/active/task-a.md",
+        "--contract",
+        "API/Video-Project",
+        "--contract",
+        "state/video-project",
+        "--token",
+        "token-a",
+      ],
+      { encoding: "utf8" },
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    const created = JSON.parse(result.stdout);
+    assert.equal(created.issue, "LLY-100");
+    assert.deepEqual(created.contracts, ["api/video-project", "state/video-project"]);
+    endWorkGuard({ workspaceRoot, token: "token-a" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("reads legacy claims without issue or contract fields", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    writeFileSync(
+      path.join(workspaceRoot, ".multimix-work-claims.json"),
+      `${JSON.stringify(
+        {
+          version: 1,
+          claims: [
+            {
+              task: "legacy-task",
+              owner: "legacy-agent",
+              plan: "MultiMix-Backend/docs/plans/active/task-a.md",
+              areas: ["legacy-area"],
+              paths: ["MultiMix-Backend/docs/plans/active/task-a.md"],
+              token: "legacy-token",
+              createdAt: "2026-08-01T00:00:00.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const status = workGuardStatus({ workspaceRoot });
+    assert.deepEqual(status[0].contracts, []);
+    assert.doesNotThrow(() =>
+      beginWorkGuard({
+        workspaceRoot,
+        ...claim({
+          task: "task-b",
+          owner: "agent-b",
+          issue: "LLY-101",
+          plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
+          areas: ["asset-library-ui"],
+          paths: ["MultiMix-Frontend/app/assets/components/library"],
+          contracts: ["type/asset-card"],
+          token: "token-b",
+        }),
+      }),
+    );
+    endWorkGuard({ workspaceRoot, token: "legacy-token" });
+    endWorkGuard({ workspaceRoot, token: "token-b" });
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -171,9 +347,9 @@ test("validates plans, unique task names, and token ownership", () => {
       () =>
         beginWorkGuard({
           workspaceRoot,
-          ...claim({ areas: [], paths: [] }),
+          ...claim({ areas: [], paths: [], contracts: [] }),
         }),
-      /area or path/i,
+      /area, path, or contract/i,
     );
 
     beginWorkGuard({ workspaceRoot, ...claim() });

@@ -65,6 +65,22 @@ function normalizeAreas(values = []) {
   return [...new Set(areas)].sort();
 }
 
+function normalizeContracts(values = []) {
+  const contracts = values.map((value) => {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error("Work contract cannot be empty");
+    }
+    const normalized = value.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._/-]*$/.test(normalized)) {
+      throw new Error(
+        `Work contract '${value}' must be a stable lowercase slug using letters, numbers, '.', '_', '/', or '-'`,
+      );
+    }
+    return normalized;
+  });
+  return [...new Set(contracts)].sort();
+}
+
 function normalizePaths(values = []) {
   return [
     ...new Set(values.map((value) => normalizeRelativePath(value, "Work path"))),
@@ -89,6 +105,18 @@ function normalizeOwner(value) {
     throw new Error("Owner is required");
   }
   return value.trim();
+}
+
+function normalizeIssue(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error("Linear issue cannot be empty");
+  }
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9]*-[0-9]+$/.test(normalized)) {
+    throw new Error("Linear issue must use an identifier such as TEAM-123");
+  }
+  return normalized;
 }
 
 function normalizePlan(workspaceRoot, value, { requireExists = true } = {}) {
@@ -187,8 +215,16 @@ function pathsOverlap(left, right) {
 
 function conflictReasons(candidate, current) {
   const reasons = [];
+  if (candidate.issue && current.issue === candidate.issue) {
+    reasons.push(`issue:${candidate.issue}`);
+  }
   for (const area of candidate.areas) {
     if (current.areas.includes(area)) reasons.push(`area:${area}`);
+  }
+  for (const contract of candidate.contracts) {
+    if ((current.contracts ?? []).includes(contract)) {
+      reasons.push(`contract:${contract}`);
+    }
   }
   for (const candidatePath of candidate.paths) {
     for (const currentPath of current.paths) {
@@ -202,7 +238,7 @@ function conflictReasons(candidate, current) {
 }
 
 function publicClaim(claim) {
-  const visible = { ...claim };
+  const visible = { ...claim, contracts: claim.contracts ?? [] };
   delete visible.token;
   return visible;
 }
@@ -220,24 +256,33 @@ export function beginWorkGuard({
   workspaceRoot,
   task,
   owner = `${process.env.USERNAME ?? process.env.USER ?? "unknown"}:${process.pid}`,
+  issue,
   plan,
   areas = [],
   paths = [],
+  contracts = [],
   token = crypto.randomUUID(),
 }) {
   const root = path.resolve(workspaceRoot);
   const normalizedPlan = normalizePlan(root, plan);
   const normalizedAreas = normalizeAreas(areas);
   const normalizedWorkPaths = normalizePaths(paths);
-  if (normalizedAreas.length === 0 && normalizedWorkPaths.length === 0) {
-    throw new Error("Register at least one work area or path");
+  const normalizedContracts = normalizeContracts(contracts);
+  if (
+    normalizedAreas.length === 0 &&
+    normalizedWorkPaths.length === 0 &&
+    normalizedContracts.length === 0
+  ) {
+    throw new Error("Register at least one work area, path, or contract");
   }
   const candidate = {
     task: normalizeTask(task),
     owner: normalizeOwner(owner),
+    issue: normalizeIssue(issue),
     plan: normalizedPlan,
     areas: normalizedAreas,
     paths: normalizePaths([...normalizedWorkPaths, normalizedPlan]),
+    contracts: normalizedContracts,
     token,
     createdAt: new Date().toISOString(),
   };
@@ -341,7 +386,7 @@ function defaultWorkspaceRoot() {
 function usage() {
   return [
     "Usage:",
-    "  workspace-work-guard.mjs begin --task <slug> --plan <active-plan.md> [--owner <label>] [--area <slug>]... [--path <workspace-path>]...",
+    "  workspace-work-guard.mjs begin --task <slug> --plan <active-plan.md> [--owner <label>] [--issue <TEAM-123>] [--area <slug>]... [--path <workspace-path>]... [--contract <slug>]...",
     "  workspace-work-guard.mjs status",
     "  workspace-work-guard.mjs check --token <token>",
     "  workspace-work-guard.mjs end --token <token>",
@@ -359,9 +404,11 @@ function runCli() {
       workspaceRoot,
       task: option(args, "--task"),
       owner: option(args, "--owner"),
+      issue: option(args, "--issue"),
       plan: option(args, "--plan"),
       areas: repeatedOptions(args, "--area"),
       paths: repeatedOptions(args, "--path"),
+      contracts: repeatedOptions(args, "--contract"),
       token: option(args, "--token"),
     });
     console.log(JSON.stringify(claim, null, 2));
