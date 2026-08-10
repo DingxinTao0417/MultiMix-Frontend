@@ -19,6 +19,15 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 
 完整产品定位、交互规则、资源库分类和数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`；代码契约（adapter、类型、路由、环境变量、CSS 约定）见 `docs/API.md`；部署见 `docs/DEPLOYMENT.md`。前端整改项记录在 `docs/plans/active/`，跨端与后端计划见 `../MultiMix-Backend/docs/plans/active/`，各自历史计划在对应 `docs/archive/` 追溯，不另维护容易失真的长期 GAPS 清单。跨仓库文档地图见 `../MultiMix-Backend/docs/README.md`。Agent 编排、对话循环、能力边界、状态/记忆、工具执行和 eval 的权威规范见后端 `../MultiMix-Backend/docs/MULTIMIX_AGENT_ARCHITECTURE.md`。素材理解、素材库理解状态、`video_plan`、`video_segments`、素材匹配、分镜级素材引用相关规范，统一以 `../MultiMix-Backend/docs/authority/asset-understanding-and-segment-referencing.md` 与工作区根级 `../AGENTS.md` 为准。改动资产库、文案库、图片库、视频库、新建创作、对话流、产物卡、详情、检索或 Agent 对话相关能力前，必须先对照这些设计文档，不要重新发明分类体系或对话编排规则。
 
+## Linear Issue 与开发占用门禁
+
+- 跨仓规则以 `../MultiMix-Backend/docs/authority/development-change-coordination.md` 为准，不在本文件复制完整口径。
+- 创建或实质修改 Linear 代码 Issue 前，先读取同团队未完成 Issue 和相关 active plan，比较 `area`、`path`、`contract`、`issue`；向用户报告 `no_conflict`、`soft_conflict` 或 `hard_conflict`，并确认负责人、优先级和验收条件后才可写入 Linear。
+- 硬冲突不得作为两个可并行 Issue 进入 `In Progress`；必须合并、拆公共地基、设置 `Blocks / Blocked by`，或由用户确认新的不重叠边界。
+- 多文件、行为、接口、状态、数据契约或共享模块改动先写 active plan，再运行 `npm run work:guard -- status` 和 `begin`。已发布代码任务登记 `--issue`；共享 API、数据库、状态或类型登记重复 `--contract`。
+- Issue 进入 `In Progress` 前必须取得 work claim；范围扩大时先更新 Linear 和 plan，释放旧 claim 后按完整范围重新登记，不能先修改后补登记。
+- Issue 进入 `Done` 前必须按 `../MultiMix-Backend/docs/qa/linear-issue-completion-evidence.md` 复核完成证据：用户可见系统功能必须有 Linear 截图，后台能力必须有 `../MultiMix-Backend/docs/qa/issue-test-records/` 测试记录，跨端任务两者都要。Agent 必须读取 Issue 描述、附件和评论并检查记录文件；证据不足时保持原状态并报告缺口。
+
 ## 生产部署目标（强制核对）
 
 - **Vercel 当前生产目标唯一为**：team `lywgood96-1172s-projects`、project `multimix-frontend`，生产地址 `https://multimix-frontend.vercel.app`。查询、部署、环境变量、域名或回滚前必须显式核对 team 与 project，不得依赖当前目录的自动解析。
