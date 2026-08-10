@@ -1,6 +1,6 @@
 # 最终导出验收定位与修复计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-05
 
