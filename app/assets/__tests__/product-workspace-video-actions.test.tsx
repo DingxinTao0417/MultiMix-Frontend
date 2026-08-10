@@ -19,7 +19,7 @@ describe("video browse actions", () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     const getVideoQuality = vi.spyOn(assetWorkspaceAdapter, "getVideoQuality");
     let downloadedHref = "";
-    const downloadFetch = vi.fn<typeof fetch>().mockResolvedValue(new Response(new Blob(["mp4"]), { status: 200 }));
+    const downloadFetch = vi.fn<typeof fetch>().mockResolvedValue(new Response(new TextEncoder().encode("mp4"), { status: 200 }));
     vi.stubGlobal("fetch", downloadFetch);
     vi.stubGlobal("URL", {
       createObjectURL: vi.fn(() => "blob:restored-export"),
