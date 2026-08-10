@@ -1,6 +1,6 @@
 # 图片与视频素材库卡片恢复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-05
 

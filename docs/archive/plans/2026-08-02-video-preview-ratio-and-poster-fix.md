@@ -1,6 +1,6 @@
 # 视频预览比例与首帧占位修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-02
 

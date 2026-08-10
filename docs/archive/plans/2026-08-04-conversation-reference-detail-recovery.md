@@ -1,6 +1,6 @@
 # 加入素材后对话详情恢复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-04
 

@@ -1,6 +1,6 @@
 # 视频分镜浏览态交互修整计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-02
 

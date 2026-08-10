@@ -1,6 +1,6 @@
 # 分镜轻量预览视觉起始态实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-08
 
