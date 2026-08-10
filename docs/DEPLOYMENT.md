@@ -7,7 +7,7 @@
 MultiMix 是两个并排的独立仓库：
 
 - **前端**：`MultiMix-Frontend`（Next.js 15，本仓库），部署到 **Vercel**。
-- **后端**：`MultiMix-Backend`（FastAPI，以 ChangeIn 为基座并入视频编排），独立仓库，部署到 **Railway**。
+- **后端**：`MultiMix-Backend`（FastAPI，包含视频编排），独立仓库，部署到 **Railway**。
 - **剪辑器**：完整 OpenCut 引擎代码仍保留在 `/editor`，供后续完整剪辑模式使用；当前默认产品流程使用工作台内的浏览/轻编辑能力，不把完整编辑器作为主入口。
 
 ## 运行配置

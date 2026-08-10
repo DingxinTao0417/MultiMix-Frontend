@@ -1,6 +1,6 @@
 # 视频工作台分镜浏览与胶片条编辑实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-30
 

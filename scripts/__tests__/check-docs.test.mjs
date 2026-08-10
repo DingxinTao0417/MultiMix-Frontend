@@ -267,7 +267,7 @@ test("does not treat completion wording in explanatory prose as a completed plan
 test("flags current frontend and backend docs without status metadata", () => {
   const root = makeSplitWorkspace();
   writeFile(root, "MultiMix-Frontend/docs/API.md", "# Frontend API\n");
-  writeFile(root, "MultiMix-Backend/docs/CHANGEIN_SYNC.md", "# Backend sync\n");
+  writeFile(root, "MultiMix-Backend/docs/LEGACY_SYNC.md", "# Backend sync\n");
 
   const issues = checkDocs(root);
 
@@ -283,7 +283,7 @@ test("flags current frontend and backend docs without status metadata", () => {
     issues.some(
       (issue) =>
         issue.code === "doc-header" &&
-        issue.file === "MultiMix-Backend/docs/CHANGEIN_SYNC.md",
+        issue.file === "MultiMix-Backend/docs/LEGACY_SYNC.md",
     ),
     true,
   );

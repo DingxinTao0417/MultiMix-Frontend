@@ -11,7 +11,7 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 本仓库是 **前端仓库**（`MultiMix-Frontend`）。后端是独立仓库 `MultiMix-Backend`。本机两仓库并排放置：
 
 - 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`（Next.js 15，部署 Vercel）
-- 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`（FastAPI，ChangeIn 基座 + 视频编排 + MG 动效，部署 Railway，详见其 `README.md`）
+- 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`（FastAPI、视频编排和 MG 动效，部署 Railway，详见其 `README.md`）
 
 剪辑器是 video-studio 的 OpenCut 引擎（`editor-engine/vendor/`），作为 `/editor` 路由嵌入，也能以 `?embed=1` 模式内嵌进对话工作台。
 
@@ -74,7 +74,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 - 知识检索：`services/knowledge_retrieval.py`、`saved_context_retriever.py`（把已保存资产和网页知识块喂给生成，不自动全网搜索）
 - 视频编排：`app/api/video_orchestration.py` + `services/video_studio/`（topic→脚本→素材→TTS→timeline JSON；RQ worker 异步，或 `MULTIMIX_VIDEO_ORCHESTRATION_INLINE=true` 同步）
 - MG 动效：后端 `remotion/`（Remotion 工程，渲染带 alpha 的 WebM overlay）+ `services/remotion_modal/`（Modal 远程渲染），spec 由 `services/mg_scene_spec.py` 校验，详见后端 `remotion/README.md`
-- 监控/采集（ChangeIn 原功能）：`MULTIMIX_MODULES_MONITORING_ENABLED=false` 可整体关闭
+- 监控/采集模块：`MULTIMIX_MODULES_MONITORING_ENABLED=false` 可整体关闭
 
 ### 文件结构与职责（前端）
 
@@ -171,7 +171,7 @@ scripts/
 ### 提交前
 
 1. 先运行 `node scripts/workspace-submit-guard.mjs begin` 获取工作区单写入锁并保存输出令牌；没有令牌时禁止 commit、merge 或 push。分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和本次实际提交范围。
-2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
+2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `multimix.sqlite3` 及遗留的 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
 3. 如果发现不属于当前任务的陌生改动，明确列出并保留在工作区；不要擅自回滚，也不要静默带入提交。
 
 ### 自动检查
@@ -232,12 +232,12 @@ scripts/
 
 ## 已知问题 / 注意事项
 
-- `app/globals.css` 是单一全局样式表，ChangeIn 时代的死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
+- `app/globals.css` 是单一全局样式表，历史死样式已清理。现役前缀是 `shadcn-prototype-*`（工作台）和 `multimix-auth-*`（登录壳）。新增样式沿用这些前缀，不要引入新的顶层前缀。主题为 V3 智能体工作台（规范：`docs/specs/ui/agentic-workbench-design.md`）：`:root` 与 `--sp-*` 双层 token，暖亮底（`--bg`/`--surface`/`--ink` 系）+ 品牌渐变族 `--ai-a`/`--ai-b`/`--ai-grad`/`--ai-soft`。**渐变纪律**：`--ai-grad` 只用于「AI 正在参与」的时刻（确认卡描边、时间线运行步、生成极光、发送按钮、理解徽章圆点、输入坞描边等）；普通交互一律中性色或 `--accent` 单色。动画必须带 `prefers-reduced-motion` 降级（文件末尾统一处理）。
 - `editor-engine/vendor/editor/` 内部的 `__tests__` 用 bun:test，已在 `vitest.config.ts` 里排除；`npm run test` 只跑 `app/assets/__tests__/` 和 vendor 根下的 `buildProject.test.ts`。
 - 前端不创建或读取本地 SQLite；浏览器工作台只消费真实后端数据。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
-- 后端根目录的 `changein.sqlite3` 是本地开发数据库，不入库、不删除。
-- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`MULTIMIX_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库或 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
+- 后端根目录的 `multimix.sqlite3` 是本地开发默认数据库；遗留的 `changein.sqlite3` 同样不入库、不删除。
+- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`MULTIMIX_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库、`multimix.sqlite3` 或遗留的 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
 
 ## 文件写入
 

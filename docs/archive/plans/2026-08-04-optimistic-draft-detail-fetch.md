@@ -1,6 +1,6 @@
 # 乐观草稿会话详情刷新 404 修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-04
 

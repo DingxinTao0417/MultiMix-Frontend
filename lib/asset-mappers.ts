@@ -1,5 +1,5 @@
 // Maps backend ContentAsset / AssetConversationResponse shapes into the
-// frontend AssetProduct / AssetConversation contract. Ported from ChangeIn
+// frontend AssetProduct / AssetConversation contract.
 // frontend assets-workspace-client.tsx helpers.
 
 import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";

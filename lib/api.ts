@@ -1,5 +1,5 @@
-// Backend API client for the MultiMix unified backend (ChangeIn FastAPI base).
-// Trimmed from ChangeIn frontend/lib/api.ts: keeps the assets/conversation surface
+// Backend API client for the MultiMix unified backend.
+// Keeps the assets/conversation surface used by the MultiMix workspace.
 // plus a single base-URL resolution and Bearer token injection.
 
 const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -145,7 +145,7 @@ export async function apiForm<T>(path: string, token: string | null, formData: F
   }
 }
 
-// ---- Backend response types (mirror ChangeIn assets API) ----
+// ---- Backend response types (mirror the MultiMix assets API) ----
 export type ContentAssetVersion = {
   id: number;
   asset_id: number;

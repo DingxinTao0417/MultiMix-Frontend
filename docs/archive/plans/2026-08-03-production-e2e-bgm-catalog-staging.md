@@ -1,6 +1,6 @@
 # 生产视频 E2E 的 BGM 清单隔离配置修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-03
 

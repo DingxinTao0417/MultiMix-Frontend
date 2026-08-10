@@ -1,6 +1,6 @@
 # 对话附件真实上传进度实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-30
 

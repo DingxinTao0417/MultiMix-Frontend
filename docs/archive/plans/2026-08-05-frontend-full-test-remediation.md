@@ -1,6 +1,6 @@
 # 前端全量测试遗留整改计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-05
 
