@@ -97,7 +97,7 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Loa
 }
 
 function unwrapProject(raw: Record<string, unknown>): BackendProject {
-  // ChangeIn format: video_project.timeline has the BackendProject shape.
+  // The unified backend format: video_project.timeline has the BackendProject shape.
   // video_orchestration format: the project itself IS the BackendProject.
   if (raw.tracks) return raw as unknown as BackendProject;
   if (raw.timeline && typeof raw.timeline === "object" && (raw.timeline as Record<string, unknown>).tracks) {
