@@ -51,6 +51,148 @@ describe("video browse actions", () => {
     expect(downloadedHref).toBe("blob:restored-export");
   });
 
+  it("does not offer a persisted MP4 whose verified fingerprint is stale", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const staleProduct = {
+      ...product,
+      metadata: {
+        ...product.metadata,
+        video_project: {
+          ...(product.metadata?.video_project as Record<string, unknown>),
+          mp4_verified_project_fingerprint: "previous-project",
+        },
+        video_project_quality_approval: {
+          version: "video-project-quality-approval:v1",
+          status: "approved",
+          fingerprint: "current-project",
+        },
+      },
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={staleProduct}
+        selectedConversation={conversationForDisplayProduct(staleProduct)}
+        token="token"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "下载成片" })).not.toBeInTheDocument();
+    expect(document.querySelector("video")).not.toBeInTheDocument();
+  });
+
+  it("exports the current embedded editor project instead of downloading the previous MP4", async () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const downloadFetch = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", downloadFetch);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-ready",
+      },
+    }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-export" },
+      window.location.origin,
+    ));
+    expect(downloadFetch).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the previous MP4 immediately after the embedded editor saves changes", async () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockImplementation(
+      () => new Promise(() => undefined),
+    );
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-project-updated",
+        reason: "timeline",
+      },
+    }));
+
+    expect(await screen.findByRole("button", { name: "导出视频" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "下载成片" })).not.toBeInTheDocument();
+  });
+
+  it("finishes an embedded editor export with a fresh explicit download action", async () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-progress",
+        progress: 0.42,
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "导出中 42%" })).toBeDisabled();
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-success",
+        report: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+        blob: new Blob(["fresh-mp4"], { type: "video/mp4" }),
+      },
+    }));
+
+    expect(await screen.findByRole("button", { name: "下载成片" })).toBeEnabled();
+  });
+
   it("reveals retry when a live failed job overrides stale pending metadata", () => {
     const product = {
       ...displayProducts["case-05-project-failed"],

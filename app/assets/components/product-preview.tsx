@@ -15,9 +15,21 @@ import type { VideoQualityReport } from "../lib/video-quality";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
+export function persistedVideoExportMatchesCurrentProject(product: ProductArtifact): boolean {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  const videoProject = isRecord(metadata.video_project) ? metadata.video_project : null;
+  const verifiedFingerprint = stringValue(videoProject?.mp4_verified_project_fingerprint);
+  if (!verifiedFingerprint) return true;
+  const approval = isRecord(metadata.video_project_quality_approval)
+    ? metadata.video_project_quality_approval
+    : null;
+  return verifiedFingerprint === stringValue(approval?.fingerprint);
+}
+
 export function playableVideoUrl(product: ProductArtifact): string {
   const metadata = isRecord(product.metadata) ? product.metadata : {};
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : null;
+  if (!persistedVideoExportMatchesCurrentProject(product)) return "";
   const mp4Ref = stringValue(videoProject?.mp4_ref);
   if (mp4Ref) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(mp4Ref)}`;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : null;

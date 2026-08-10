@@ -10,7 +10,12 @@ import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-wo
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
-import ProductPreview, { browseBgmSummary, playableVideoUrl, type ProductPreviewHandle } from "./product-preview";
+import ProductPreview, {
+  browseBgmSummary,
+  persistedVideoExportMatchesCurrentProject,
+  playableVideoUrl,
+  type ProductPreviewHandle,
+} from "./product-preview";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VoiceoverDialog from "./voiceover-dialog";
@@ -84,6 +89,7 @@ export default function ProductWorkspace({
   const [exportError, setExportError] = useState("");
   const [projectSyncError, setProjectSyncError] = useState("");
   const [exportDownloaded, setExportDownloaded] = useState(false);
+  const [projectEditedSinceExport, setProjectEditedSinceExport] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
@@ -123,12 +129,13 @@ export default function ProductWorkspace({
   const mp4ArtifactMetadata = productMetadata.mp4_artifact && typeof productMetadata.mp4_artifact === "object" && !Array.isArray(productMetadata.mp4_artifact)
     ? productMetadata.mp4_artifact as Record<string, unknown>
     : null;
-  const hasPersistedExport = Boolean(
+  const hasPersistedExport = persistedVideoExportMatchesCurrentProject(product) && Boolean(
     stringValue(videoProjectMetadata?.mp4_ref)
     || stringValue(mp4ArtifactMetadata?.mp4_ref)
     || stringValue(mp4ArtifactMetadata?.ref),
   );
-  const persistedExportUrl = hasPersistedExport ? playableVideoUrl(product) : "";
+  const hasCurrentPersistedExport = hasPersistedExport && !projectEditedSinceExport;
+  const persistedExportUrl = hasCurrentPersistedExport ? playableVideoUrl(product) : "";
   // Video products backed by a real orchestration project can open the editor.
   const hasVideoProject = Boolean(product.backendAssetId && product.videoProjectReady);
   // While the orchestration job runs (TTS + material search), there is no
@@ -249,6 +256,7 @@ export default function ProductWorkspace({
     setQualityReport(null);
     setExportError("");
     setExportDownloaded(false);
+    setProjectEditedSinceExport(false);
     pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
   }, [currentAssetId, hasPersistedExport, hasVideoProject]);
@@ -345,6 +353,55 @@ export default function ProductWorkspace({
           setExportState("error");
           setExportProgress(null);
           break;
+        case "multimix-editor-export-start":
+          setExportState("exporting");
+          setExportProgress(null);
+          setExportError("");
+          break;
+        case "multimix-editor-export-progress":
+          setExportState("exporting");
+          setExportProgress(
+            typeof data.progress === "number"
+              ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
+              : null,
+          );
+          break;
+        case "multimix-editor-export-verifying":
+          setExportState("verifying");
+          setExportProgress(100);
+          break;
+        case "multimix-editor-export-quality-report":
+          if (data.report) {
+            setQualityReport(data.report);
+            if (data.report.blockers.length) {
+              pendingExportRef.current = false;
+              setExportState("blocked");
+              setExportProgress(null);
+            }
+          }
+          break;
+        case "multimix-editor-export-success":
+          pendingExportRef.current = false;
+          if (data.report) setQualityReport(data.report);
+          if (data.blob instanceof Blob) {
+            verifiedExportBlobRef.current = data.blob;
+            setProjectEditedSinceExport(false);
+            setExportState("done");
+            setExportProgress(100);
+            setExportError("");
+            setExportDownloaded(false);
+          } else {
+            setExportState("error");
+            setExportProgress(null);
+            setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
+          }
+          break;
+        case "multimix-editor-export-error":
+          pendingExportRef.current = false;
+          setExportState("error");
+          setExportProgress(null);
+          setExportError(data.message || "成片合成失败，请重试。");
+          break;
         case "multimix-editor-recompose-started":
           // The film strip kicked off a segment recompose: the embed reloads
           // itself when the rebuilt project lands, so just gate export until
@@ -358,6 +415,12 @@ export default function ProductWorkspace({
           verifiedExportBlobRef.current = null;
           break;
         case "multimix-editor-project-updated":
+          setProjectEditedSinceExport(true);
+          verifiedExportBlobRef.current = null;
+          setExportState("idle");
+          setExportProgress(null);
+          setExportError("");
+          setExportDownloaded(false);
           void refreshPersistedVideoProject();
           break;
         default:
@@ -438,11 +501,19 @@ export default function ProductWorkspace({
 
   const handleExportVideo = async () => {
     if (!currentAssetId || ["exporting", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
+    if (showEditorEmbed) {
+      if (editorReady && startEditorExport()) return;
+      pendingExportRef.current = true;
+      setExportState("preparing");
+      setExportProgress(null);
+      setExportError("");
+      return;
+    }
     if (exportState === "done" && verifiedExportBlobRef.current) {
       downloadExportBlob(verifiedExportBlobRef.current);
       return;
     }
-    if (hasPersistedExport && persistedExportUrl) {
+    if (hasCurrentPersistedExport && persistedExportUrl) {
       setExportState("downloading");
       setExportError("");
       try {
@@ -457,14 +528,6 @@ export default function ProductWorkspace({
         setExportState("error");
         setExportError("成片已生成，但下载文件暂时不可用，请重试。");
       }
-      return;
-    }
-    if (showEditorEmbed) {
-      if (editorReady && startEditorExport()) return;
-      pendingExportRef.current = true;
-      setExportState("preparing");
-      setExportProgress(null);
-      setExportError("");
       return;
     }
     pendingExportRef.current = true;
@@ -503,7 +566,7 @@ export default function ProductWorkspace({
       : exportState === "done"
         ? exportDownloaded ? "再次下载" : "下载成片"
     : exportState === "error"
-          ? hasPersistedExport ? "下载失败，重试" : "导出失败，重试"
+          ? hasCurrentPersistedExport ? "下载失败，重试" : "导出失败，重试"
           : exportState === "blocked"
             ? "修复后重新检查"
           : "导出视频";
@@ -807,6 +870,11 @@ export default function ProductWorkspace({
                 onClick={() => {
                   setEditorRequested(true);
                   setVideoSurface("edit");
+                  setExportState("idle");
+                  setExportProgress(null);
+                  setExportError("");
+                  setExportDownloaded(false);
+                  verifiedExportBlobRef.current = null;
                 }}
               >
                 <Pencil size={12} aria-hidden="true" />

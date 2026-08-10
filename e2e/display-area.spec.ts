@@ -1,7 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { stat } from "node:fs/promises";
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
+  asset_ids: Record<string, number>;
 };
 
 const seed = JSON.parse(process.env.DISPLAY_COVERAGE_SEED_JSON ?? "{}") as Partial<SeedResult>;
@@ -280,8 +282,10 @@ test("video library renders one bounded page without eager video elements", asyn
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(240_000);
   const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded asset id for CASE-07");
   const video = workspace.locator("video").first();
   const player = workspace.locator(".shadcn-prototype-preview-player");
   const segmentList = workspace.locator(".shadcn-prototype-segment-cards > ol");
@@ -300,6 +304,48 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   if (layoutGap[0] && layoutGap[1]) {
     expect(layoutGap[1].y - (layoutGap[0].y + layoutGap[0].height)).toBeLessThan(32);
   }
+
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips).toHaveCount(3, { timeout: 75_000 });
+  await clips.first().click();
+  const saveResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "PUT"
+      && url.pathname === `/v1/video/projects/${assetId}`;
+  });
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  const saveResponse = await saveResponsePromise;
+  expect(saveResponse.status()).toBe(200);
+
+  await page.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect(workspace.locator("video")).toHaveCount(0);
+  const exportButton = workspace.getByRole("button", { name: "导出视频", exact: true });
+  await expect(exportButton).toBeEnabled();
+
+  const exportRequests: Array<{ method: string; pathname: string; search: string }> = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith(`/v1/video/projects/${assetId}`)) {
+      exportRequests.push({ method: request.method(), pathname: url.pathname, search: url.search });
+    }
+  });
+  await exportButton.click();
+  const downloadButton = workspace.getByRole("button", { name: "下载成片", exact: true });
+  await expect(downloadButton).toBeEnabled({ timeout: 180_000 });
+
+  const downloadPromise = page.waitForEvent("download");
+  await downloadButton.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  if (downloadPath) expect((await stat(downloadPath)).size).toBeGreaterThan(0);
+
+  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(1);
+  expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(1);
+  expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports/finalize"))).toHaveLength(1);
 });
 
 test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }) => {
