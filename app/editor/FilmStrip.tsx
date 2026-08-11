@@ -258,6 +258,7 @@ export default function FilmStrip({
         trimStart: next.trimStart,
         trimEnd: next.trimEnd,
         startTime: next.startTime,
+        duration: next.duration,
         pushHistory: false,
         rippleEnabled: true,
       });

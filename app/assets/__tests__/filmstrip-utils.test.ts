@@ -11,13 +11,14 @@ import {
 } from "../../editor/filmstrip-utils";
 
 describe("visibleDuration", () => {
-  it("subtracts both trims from the source duration", () => {
-    expect(visibleDuration({ duration: 10, trimStart: 2, trimEnd: 3 })).toBe(5);
+  it("keeps the timeline occupancy when trims only shift the source window", () => {
+    expect(visibleDuration({ duration: 10, trimStart: 2, trimEnd: 3 })).toBe(10);
     expect(visibleDuration({ duration: 4 })).toBe(4);
   });
 
-  it("never goes negative", () => {
-    expect(visibleDuration({ duration: 3, trimStart: 2, trimEnd: 2 })).toBe(0);
+  it("keeps both halves of a split clip visible even though each has a source offset", () => {
+    expect(visibleDuration({ duration: 2.7, trimStart: 0, trimEnd: 2.7 })).toBe(2.7);
+    expect(visibleDuration({ duration: 2.7, trimStart: 2.7, trimEnd: 0 })).toBe(2.7);
   });
 });
 
@@ -29,23 +30,25 @@ describe("applyEdgeTrim", () => {
     expect(next.trimEnd).toBe(3);
     expect(next.trimStart).toBe(1);
     expect(next.startTime).toBe(5);
+    expect(next).toMatchObject({ duration: 10 });
   });
 
   it("left-edge drag right shrinks the head and shifts startTime", () => {
     const next = applyEdgeTrim(base, "left", 2);
     expect(next.trimStart).toBe(3);
     expect(next.startTime).toBe(7);
+    expect(next).toMatchObject({ duration: 10 });
   });
 
   it("clamps the visible length at the 2s spec minimum", () => {
     const next = applyEdgeTrim(base, "right", -30);
-    expect(base.duration - next.trimStart - next.trimEnd).toBe(MIN_CLIP_SECONDS);
+    expect(next).toMatchObject({ duration: MIN_CLIP_SECONDS });
   });
 
   it("clamps restore drags at the 15s spec maximum and never below zero trim", () => {
     const wide = { trimStart: 0, trimEnd: 0, duration: 40, startTime: 0 };
     const next = applyEdgeTrim(wide, "right", 30);
-    expect(next.trimEnd).toBe(wide.duration - MAX_CLIP_SECONDS);
+    expect(next).toMatchObject({ duration: MAX_CLIP_SECONDS, trimEnd: wide.duration - MAX_CLIP_SECONDS });
     const restore = applyEdgeTrim({ ...base, trimEnd: 0 }, "right", 5);
     expect(restore.trimEnd).toBe(0);
   });

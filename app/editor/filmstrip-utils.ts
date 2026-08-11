@@ -9,45 +9,61 @@ export const MAX_CLIP_SECONDS = 15;
 export type TrimState = {
   trimStart: number;
   trimEnd: number;
-  duration: number; // source duration of the element
+  duration: number; // timeline occupancy of the element
   startTime: number;
 };
 
-// Visible (played) length of an element after trims.
+// `duration` is the occupied timeline length. The trim values move the source
+// window within the media; they are not extra time to subtract from the
+// timeline. In particular, split clips carry a trim offset on one side while
+// retaining their own visible timeline duration.
 export function visibleDuration(el: { duration: number; trimStart?: number; trimEnd?: number }): number {
-  return Math.max(0, el.duration - (el.trimStart ?? 0) - (el.trimEnd ?? 0));
+  return Math.max(0, el.duration);
 }
 
-// Apply a handle drag of `deltaSeconds` to one edge, clamped so the visible
-// length stays within [MIN_CLIP_SECONDS, MAX_CLIP_SECONDS] and trims never go
-// negative (can't extend past the source material). Returns the next trim
-// values plus the startTime shift a left-edge trim implies.
+// Apply a handle drag of `deltaSeconds` to one edge, clamped so the timeline
+// occupancy stays within [MIN_CLIP_SECONDS, MAX_CLIP_SECONDS]. The source
+// length is the current occupancy plus both source offsets; trims never extend
+// beyond that source window. Returns the changed occupancy as well as the
+// source offsets and the left-edge start shift.
 export function applyEdgeTrim(
   state: TrimState,
   edge: "left" | "right",
   deltaSeconds: number,
-): { trimStart: number; trimEnd: number; startTime: number } {
-  const maxVisible = Math.min(MAX_CLIP_SECONDS, state.duration);
-  const minVisible = Math.min(MIN_CLIP_SECONDS, state.duration);
+): { trimStart: number; trimEnd: number; startTime: number; duration: number } {
+  const sourceDuration = state.duration + state.trimStart + state.trimEnd;
+  const minVisible = Math.min(MIN_CLIP_SECONDS, sourceDuration);
+  const clampDuration = (value: number, maxVisible: number) => (
+    Math.max(minVisible, Math.min(maxVisible, value))
+  );
   if (edge === "left") {
     // Dragging right (+delta) shrinks from the head; dragging left restores
     // previously trimmed material.
-    let next = state.trimStart + deltaSeconds;
-    next = Math.max(0, next);
-    next = Math.min(next, state.duration - state.trimEnd - minVisible);
-    next = Math.max(next, state.duration - state.trimEnd - maxVisible);
+    const duration = clampDuration(
+      state.duration - deltaSeconds,
+      Math.min(MAX_CLIP_SECONDS, sourceDuration - state.trimEnd),
+    );
+    const appliedDelta = state.duration - duration;
+    const trimStart = state.trimStart + appliedDelta;
     return {
-      trimStart: next,
+      trimStart,
       trimEnd: state.trimEnd,
-      startTime: state.startTime + (next - state.trimStart),
+      startTime: state.startTime + appliedDelta,
+      duration,
     };
   }
   // Right edge: dragging left (-delta) shrinks from the tail.
-  let next = state.trimEnd - deltaSeconds;
-  next = Math.max(0, next);
-  next = Math.min(next, state.duration - state.trimStart - minVisible);
-  next = Math.max(next, state.duration - state.trimStart - maxVisible);
-  return { trimStart: state.trimStart, trimEnd: next, startTime: state.startTime };
+  const duration = clampDuration(
+    state.duration + deltaSeconds,
+    Math.min(MAX_CLIP_SECONDS, sourceDuration - state.trimStart),
+  );
+  const appliedDelta = duration - state.duration;
+  return {
+    trimStart: state.trimStart,
+    trimEnd: state.trimEnd - appliedDelta,
+    startTime: state.startTime,
+    duration,
+  };
 }
 
 // mm:ss badge, e.g. 30.4 -> "00:30".
