@@ -19,7 +19,11 @@ import { EditorCore } from "@editor/core";
 import type { TimelineElement, TimelineTrack } from "@editor/lib/timeline/types";
 import { API_BASE } from "@/editor-engine/vendor/api";
 import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
-import { segmentIdByElementId, segmentTextByElementId } from "@/editor-engine/vendor/buildProject";
+import {
+  copyElementPersistenceMetadata,
+  segmentIdByElementId,
+  segmentTextByElementId,
+} from "@/editor-engine/vendor/buildProject";
 import AssetPicker, { type AssetPickerItem } from "@/app/assets/components/asset-picker";
 import { useSegmentMaterialCandidates } from "@/app/assets/lib/use-segment-material-candidates";
 import { getVideoProjectJob, submitSegmentRecompose } from "@/lib/video-project-client";
@@ -207,10 +211,11 @@ export default function FilmStrip({
     const end = start + visibleDuration(selected);
     const playhead = core.playback.getCurrentTime();
     const splitTime = playhead > start + 0.2 && playhead < end - 0.2 ? playhead : (start + end) / 2;
-    core.timeline.splitElements({
+    const rightSideElements = core.timeline.splitElements({
       elements: [{ trackId: mainTrack.id, elementId: selected.id }],
       splitTime,
     });
+    copyElementPersistenceMetadata(selected.id, rightSideElements.map(({ elementId }) => elementId));
     queueSave();
   };
 

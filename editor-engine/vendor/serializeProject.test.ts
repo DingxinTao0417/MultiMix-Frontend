@@ -30,7 +30,11 @@ vi.mock('./api', () => ({
   mediaUrl: (ref: string) => `https://api.example.com/media?ref=${encodeURIComponent(ref)}`,
 }));
 
-import { buildProject, type BackendProject } from './buildProject';
+import {
+  buildProject,
+  copyElementPersistenceMetadata,
+  type BackendProject,
+} from './buildProject';
 import { initEditorWithProject } from './bootstrap';
 import { rememberRawProject, serializeBackendProject } from './serializeProject';
 
@@ -358,5 +362,65 @@ describe('scene transition editor round-trip', () => {
     expect(saved.editDecision?.transition).toBe('cut');
     expect(buildProject(serialized).project.scenes[0].tracks[0].elements[1])
       .not.toHaveProperty('transition');
+  });
+});
+
+describe('split element persistence', () => {
+  it('keeps the backend segment metadata on the new right-hand clip', () => {
+    const backend: BackendProject = {
+      metadata: { title: 'Split persistence', duration: 6 },
+      settings: { fps: 30, width: 1920, height: 1080 },
+      media: [{
+        id: 'media-product',
+        type: 'image',
+        file_path: 'local://product/split.png',
+        name: 'split.png',
+      }],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'scene-original',
+          type: 'image',
+          startTime: 0,
+          duration: 6,
+          mediaId: 'media-product',
+          segmentId: 'scene-1',
+          segmentText: '产品工作流从生成到导出',
+          safeRegion: { x: 0.08, y: 0.12, width: 0.84, height: 0.72 },
+          displayText: '一键生成可编辑视频工程',
+          focusText: '可编辑',
+          editDecision: { transition: 'dissolve' },
+        }],
+      }],
+    };
+    const project = prepareEditorRoundTrip(backend);
+    const mainTrack = project.scenes[0].tracks[0];
+    const original = mainTrack.elements[0] as Record<string, unknown>;
+    const rightHandClip = {
+      ...original,
+      id: 'scene-split-right',
+      startTime: 3,
+      duration: 3,
+      trimStart: 3,
+      trimEnd: 0,
+    };
+    original.duration = 3;
+    original.trimEnd = 3;
+    mainTrack.elements = [original as never, rightHandClip as never];
+    copyElementPersistenceMetadata('scene-original', ['scene-split-right']);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const right = serialized.tracks[0].elements[1];
+
+    expect(right).toMatchObject({
+      segmentId: 'scene-1',
+      segmentText: '产品工作流从生成到导出',
+      safeRegion: { x: 0.08, y: 0.12, width: 0.84, height: 0.72 },
+      displayText: '一键生成可编辑视频工程',
+      focusText: '可编辑',
+      editDecision: { transition: 'dissolve' },
+    });
   });
 });

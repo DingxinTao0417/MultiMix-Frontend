@@ -475,6 +475,31 @@ export const focusTextByElementId: Record<string, string> = {};
 export const editDecisionByElementId: Record<string, BackendEditDecision> = {};
 export const textRoleByElementId: Record<string, NonNullable<BackendElement["textRole"]>> = {};
 
+// Timeline split keeps the left clip id but assigns a new id to the right
+// clip. The OpenCut element type cannot carry our backend-only persistence
+// fields, so copy every element-keyed field before serializing the split.
+export function copyElementPersistenceMetadata(
+  sourceElementId: string,
+  targetElementIds: Iterable<string>,
+): void {
+  const targets = [...new Set(targetElementIds)].filter((id) => id && id !== sourceElementId);
+  if (!targets.length) return;
+
+  const copy = <T,>(map: Record<string, T>) => {
+    const value = map[sourceElementId];
+    if (value === undefined) return;
+    for (const targetId of targets) map[targetId] = value;
+  };
+
+  copy(segmentIdByElementId);
+  copy(segmentTextByElementId);
+  copy(safeRegionByElementId);
+  copy(displayTextByElementId);
+  copy(focusTextByElementId);
+  copy(editDecisionByElementId);
+  copy(textRoleByElementId);
+}
+
 function validatedSplitSupport(
   decision: BackendEditDecision | undefined,
 ): BackendPresentationSupport | null {
