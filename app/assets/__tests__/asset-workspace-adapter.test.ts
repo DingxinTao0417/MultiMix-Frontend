@@ -64,12 +64,12 @@ describe("runtime data boundary", () => {
   it("loads a lightweight conversation snapshot before the full history", async () => {
     const project = asset({
       id: 72,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_project: { timeline: { tracks: [], media: [] } },
@@ -153,8 +153,8 @@ describe("runtime data boundary", () => {
     const backendRows = Array.from({ length: 49 }, (_, index) => asset({
       id: index + 1,
       library_kind: "video",
-      asset_kind: index % 2 === 0 ? "video" : "video_render",
-      content_type: index % 2 === 0 ? "uploaded_video" : "video_render",
+      asset_kind: index % 2 === 0 ? "video" : "video",
+      content_type: index % 2 === 0 ? "uploaded_video" : "video_project",
       title: `视频条目 ${index + 1}`,
       updated_at: new Date(Date.UTC(2026, 6, 24, 2, 0, 49 - index)).toISOString(),
     }));

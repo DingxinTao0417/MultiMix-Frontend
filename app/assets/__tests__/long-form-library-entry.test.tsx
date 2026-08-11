@@ -51,7 +51,7 @@ describe("long-form source entry from the video library", () => {
   it("does not offer repurposing for an ordinary rendered video", async () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
     vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({
-      rows: [sourceRow("video_render")],
+      rows: [sourceRow("video_project")],
       nextOffset: null,
     });
 

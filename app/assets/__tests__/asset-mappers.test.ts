@@ -58,12 +58,12 @@ describe("asset product mapper", () => {
     const baseProject = { timeline: { tracks: [], media: [] } };
     const generating = contentAssetToProduct(asset({
       id: 201,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_project: baseProject,
@@ -76,12 +76,12 @@ describe("asset product mapper", () => {
 
     const completed = contentAssetToProduct(asset({
       id: 202,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_project: baseProject,
@@ -94,12 +94,12 @@ describe("asset product mapper", () => {
 
     const failed = contentAssetToProduct(asset({
       id: 203,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_project: baseProject,
@@ -114,8 +114,8 @@ describe("asset product mapper", () => {
   it("maps the recorded failed scene id without parsing the error sentence", () => {
     const failed = contentAssetToProduct(asset({
       id: 204,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       error_message: "素材失效",
@@ -163,12 +163,12 @@ describe("asset product mapper", () => {
   it("prefers a ready video project over legacy video-script task state", () => {
     const readyProject = asset({
       id: 2,
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_project: { timeline: { tracks: [], media: [] } },
@@ -237,7 +237,7 @@ describe("asset product mapper", () => {
     const malformed = asset({
       id: 489,
       parent_asset_id: 488,
-      content_type: "mg_animation_video",
+      content_type: "mg_overlay",
       metadata: { capability: "video_script", video_workflow_stage: "director_script_draft" },
     });
 
@@ -323,11 +323,11 @@ describe("asset product mapper", () => {
 
   it("treats video projects as the final conversation output without mp4 render prompts", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         capability_label: "视频工程",
         video_workflow_stage: "video_project_ready",
         orchestration_pending: false,
@@ -357,12 +357,12 @@ describe("asset product mapper", () => {
 
   it("presents legacy video projects as video projects instead of inherited director drafts", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
         artifact_category: "编导稿",
-        capability: "video_render",
+        capability: "video_project",
         video_workflow_stage: "video_project_ready",
         orchestration_pending: false,
         video_project: {
@@ -381,11 +381,11 @@ describe("asset product mapper", () => {
 
   it("does not expose a false-ready project without the editor timeline shape", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_workflow_stage: "video_project_ready",
         orchestration_pending: false,
         video_project: { title: "placeholder only" },
@@ -398,11 +398,11 @@ describe("asset product mapper", () => {
 
   it("marks an orphaned video-render draft as a project that needs recovery", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "draft",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_workflow_stage: "draft",
       },
     }));
@@ -415,10 +415,10 @@ describe("asset product mapper", () => {
   it("marks orchestration-pending video assets as generating", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
-      content_type: "video_render",
+      content_type: "video_project",
       status: "processing",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         capability_label: "视频编排",
         orchestration_pending: true,
         latest_job_public_id: "video-job-abc"
@@ -432,11 +432,11 @@ describe("asset product mapper", () => {
   it("prefers persisted failure over stale orchestration-pending metadata", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
-      content_type: "video_render",
+      content_type: "video_project",
       status: "failed",
       error_message: "Job exceeded its timeout without completing and was marked failed.",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         capability_label: "视频编排",
         orchestration_pending: true,
         latest_job_public_id: "video-job-stale",
@@ -470,11 +470,11 @@ describe("asset product mapper", () => {
 
   it("restores a missing product ratio from deterministic video project geometry", () => {
     const fromLayout = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_workflow_stage: "video_project_ready",
         orchestration_pending: false,
         video_project: {
@@ -485,11 +485,11 @@ describe("asset product mapper", () => {
       },
     }));
     const fromCanvas = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_workflow_stage: "video_project_ready",
         orchestration_pending: false,
         video_project: {
@@ -506,10 +506,10 @@ describe("asset product mapper", () => {
 
   it("maps video project segments with asset references, fallback and MG decisions", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_plan: {
           scenes: [
             { id: "seg-1", voice: { name: "male_steady" } },
@@ -585,11 +585,11 @@ describe("asset product mapper", () => {
 
   it("reports a persisted public primary visual as material used by the video", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_project: {
           segments: [{
             id: "seg-public",
@@ -649,11 +649,11 @@ describe("asset product mapper", () => {
 
   it("maps a persisted generated primary visual as available scene media", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_segments: [
           {
             id: "scene-2",
@@ -689,11 +689,11 @@ describe("asset product mapper", () => {
 
   it("maps every scene expression treatment and model-authored reason", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_plan: {
           expression_mode: {
             mode: "hybrid",
@@ -735,11 +735,11 @@ describe("asset product mapper", () => {
 
   it("maps approved product media as an available product interface", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_segments: [
           {
             id: "scene-product-ui",
@@ -769,11 +769,11 @@ describe("asset product mapper", () => {
 
   it("prefers a streamable saved primary video over its private source snapshot", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         video_segments: [
           {
             id: "scene-saved-video",
@@ -849,11 +849,11 @@ describe("asset product mapper", () => {
 
   it("projects real video-project track timing onto semantic scenes", () => {
     const product = contentAssetToProduct(asset({
-      asset_kind: "video_render",
-      content_type: "video_render",
+      asset_kind: "video",
+      content_type: "video_project",
       status: "ready",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         orchestration_pending: false,
         video_workflow_stage: "video_project_ready",
         video_segments: [
@@ -945,11 +945,11 @@ describe("asset product mapper", () => {
   it("marks failed orchestration assets as retryable with the error detail", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
-      content_type: "video_render",
+      content_type: "video_project",
       status: "failed",
       error_message: "TTS provider timeout",
       metadata: {
-        capability: "video_render",
+        capability: "video_project",
         capability_label: "视频编排",
         latest_job_public_id: "video-job-abc"
       }

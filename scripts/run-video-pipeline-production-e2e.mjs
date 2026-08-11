@@ -586,7 +586,7 @@ async function waitForManifestArtifact(timeoutMs = 20 * 60_000, signal) {
     "while time.monotonic() < timeout_at:",
     " try:",
     "  with sqlite3.connect(database_uri, uri=True, timeout=0.05) as connection:",
-    "   row=connection.execute(\"select metadata from content_assets where content_type='video_render' order by id desc limit 1\").fetchone()",
+    "   row=connection.execute(\"select metadata from content_assets where content_type='video_project' order by id desc limit 1\").fetchone()",
     "  metadata=json.loads(row[0] or '{}') if row else {}",
     "  artifacts=metadata.get('pipeline_artifacts') or {}",
     "  if isinstance(artifacts.get('asset_manifest'), dict):",

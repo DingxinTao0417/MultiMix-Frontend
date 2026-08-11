@@ -369,7 +369,7 @@ test("uploads a real PDF through the UI and downloads only a verified MP4", asyn
   // too-tight harness bound. Test-level cap is 30min (setTimeout above).
   await expect(editButton).toBeEnabled({ timeout: 15 * 60_000 });
   const projectAsset = (assetsAfterProject as E2EAsset[]).find(
-    (asset) => asset.content_type === "video_render",
+    (asset) => asset.content_type === "video_project",
   );
   expect(projectAsset, "video project asset is missing from the library").toBeDefined();
   await waitForRenderedMgOverlay(page, apiBaseUrl, authorization, projectAsset!.id);

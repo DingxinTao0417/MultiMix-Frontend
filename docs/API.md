@@ -135,11 +135,11 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 
 ```ts
 type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
-type AssetProductMode  = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
+type AssetProductMode  = "copy" | "image" | "video" | "audio" | "mg-overlay";
 ```
 
 - `AssetWorkspaceView`：主区域视图。`conversation` = 对话创作模式；其余四个 = 库模式（资产库 / 文案库 / 图片库 / 视频库）。
-- `AssetProductMode`：产物类型。决定 `ProductPreview` 的渲染分支。`digital-human` 和 `mg_animation_video` 都是视频表现形式，不是一级资源库。
+- `AssetProductMode`：展示模式。视频工程统一为 `video`；`mg-overlay` 只表示工程内的动效叠层规格，不是独立视频产品。
 
 ### 3.2 `AssetProduct`（产物，核心实体）
 
@@ -356,7 +356,7 @@ mode → 中文标签映射：
 | `image` | 图片 |
 | `audio` | 音频 |
 | `digital-human` | 数字人视频 |
-| `mg_animation_video` | MG 动效 |
+| `mg_overlay` | MG 动效叠层 |
 | `video`（默认） | 视频 |
 
 #### `getProductRatioClass(ratio): string`
@@ -537,7 +537,7 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 | `image` | 真实图片或明确比例占位 + 可选变体 + 来源引用 | `metadata.preview_url/thumbnail_url`、`preview`、`sourceSummary` |
 | `audio` | 时长 + 标题副标 + 34 根波形条 | `duration`；`preview.title/subtitle`（副标缺省「口播 / 字幕 / 时间轴已匹配」） |
 | `digital-human` | 有媒体时播放真实视频；否则显示明确的待渲染状态 | 媒体 URL、`preview`、`ratio`、`duration` |
-| `mg_animation_video` | MG scene 规格卡与明确的预览/待渲染状态 | `metadata.mg_scene/mg_scenes` |
+| `mg_overlay` | MG scene 规格卡与明确的预览/待渲染状态 | `metadata.mg_scene/mg_scenes` |
 | `video`（默认分支） | 编导稿摘要，或白色播放器外壳中的成片/分镜预览、分镜卡和来源信息 | `videoProjectReady`、媒体 URL、`segments`、`metadata.video_project/video_plan` |
 
 ### 7.2 `preview.frames` 兜底差异

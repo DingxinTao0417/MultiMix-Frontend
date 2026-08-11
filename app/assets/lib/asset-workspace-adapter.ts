@@ -597,13 +597,13 @@ function materialPreviewUrl(value: unknown): string | undefined {
 function libraryKindsForView(view: Exclude<AssetWorkspaceView, "conversation">): string[] {
   if (view === "copy") return ["copy"];
   if (view === "image") return ["image"];
-  if (view === "video") return ["video", "video_render"];
+  if (view === "video") return ["video"];
   return ["asset"]; // 资产库: uploaded/captured knowledge sources
 }
 
 function libraryRowKind(asset: ContentAsset): LibraryRow["kind"] {
   if (asset.asset_kind === "image") return "image";
-  if (asset.asset_kind === "video" || asset.asset_kind === "video_render") return "video";
+  if (asset.asset_kind === "video") return "video";
   if (asset.asset_kind === "copy") return "copy";
   return "file";
 }
@@ -714,7 +714,7 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
   if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
     return asset.status === "failed" ? "失败" : "完成";
   }
-  if (asset.content_type === "video_render") {
+  if (asset.content_type === "video_project") {
     if (asset.status === "failed" || metadata.video_workflow_stage === "video_project_failed") return "失败";
     const plan = metadata.video_plan && typeof metadata.video_plan === "object" ? metadata.video_plan as Record<string, unknown> : null;
     const scenes = Array.isArray(plan?.scenes) ? plan.scenes : [];
@@ -745,7 +745,7 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
-  if (asset.content_type === "video_render") return "视频";
+  if (asset.content_type === "video_project") return "视频";
   if (typeof metadata.artifact_category === "string" && metadata.artifact_category.trim()) return metadata.artifact_category.trim();
   if (asset.content_type === "content_plan") return "选题方案";
   if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
@@ -768,12 +768,9 @@ function inferLibraryCategory(asset: ContentAsset): string {
     if (asset.content_type === "cover_image" || /封面/.test(text)) return "封面图";
     return "素材图";
   }
-  if (asset.asset_kind === "video" || asset.asset_kind === "video_render") {
-    if (asset.content_type === "video_render") return "视频";
-    if (asset.content_type === "digital_human_video" || /数字人|avatar|talking head/i.test(text)) return "数字人视频";
-    if (asset.content_type === "mg_animation_video" || /mg|动画|motion/.test(text)) return "MG动画视频";
-    if (asset.content_type === "real_scene_video" || /实景|拍摄|真人|出镜/.test(text)) return "实景拍摄视频";
-    if (asset.content_type === "generated_video" || /生成视频|文生视频|text-to-video/.test(text)) return "生成视频素材";
+  if (asset.asset_kind === "video") {
+    if (asset.content_type === "video_project") return "视频";
+    if (asset.content_type === "mg_overlay") return "MG 动效叠层";
     return "混剪视频";
   }
   return "资料";
@@ -806,7 +803,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     : (videoProjectStatusLabel(asset)
       ?? (mediaUnavailable
         ? "原文件不可用"
-        : ((asset.asset_kind === "image" || asset.asset_kind === "video" || asset.asset_kind === "video_render")
+        : ((asset.asset_kind === "image" || asset.asset_kind === "video")
         ? understandingStatusLabel(understanding?.status) ?? statusLabel(asset.status)
         : statusLabel(asset.status))));
   const sourceUrl = typeof asset.metadata?.source_url === "string" ? asset.metadata.source_url : undefined;

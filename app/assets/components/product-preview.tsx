@@ -158,7 +158,7 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
   const canReplaceFailedScene = Boolean(product.backendAssetId && product.failureSceneId);
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
-      <strong>{product.contentType === "video_render" ? "视频失败" : "生成失败"}</strong>
+      <strong>{product.contentType === "video_project" ? "视频失败" : "生成失败"}</strong>
       <p>{failureDetail(product)}</p>
       <p className="shadcn-prototype-video-failed-note">
         {product.failureAction === "replace_scene_asset"
@@ -375,35 +375,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     );
   }
 
-  if (product.mode === "digital-human") {
-    const videoUrl = playableVideoUrl(product);
-    return (
-      <div className="shadcn-prototype-digital-human-workspace" aria-label="数字人口播视频预览">
-        <div className="shadcn-prototype-digital-human-preview">
-          {videoUrl ? (
-            <video
-              className="shadcn-prototype-product-video-player"
-              src={videoUrl}
-              controls
-              preload="metadata"
-              playsInline
-              aria-label="数字人口播视频"
-            />
-          ) : (
-            <div className="shadcn-prototype-digital-stage">
-              <div className="shadcn-prototype-digital-avatar" aria-hidden="true" />
-              <div className="shadcn-prototype-digital-caption">
-                <strong>{product.preview?.title ?? product.title}</strong>
-                <span>{product.ratio} · {product.duration} · 渲染完成后可播放</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (product.mode === "mg_animation_video") {
+  if (product.mode === "mg-overlay") {
     interface MGSceneParams {
       title: string;
       accentColor: string;

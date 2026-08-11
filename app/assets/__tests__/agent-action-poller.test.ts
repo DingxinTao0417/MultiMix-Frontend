@@ -51,7 +51,7 @@ function conversationRow(): AssetConversationResponse {
             goal: "修改产品视频",
             status: "running",
             focus: {
-              artifact_type: "video_render",
+              artifact_type: "video_project",
               asset_id: 42,
               version_id: 9,
               scene_id: "scene-2",

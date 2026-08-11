@@ -2,7 +2,7 @@ import type { VideoQualityReport } from "./video-quality";
 
 export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
-export type AssetProductMode = "copy" | "image" | "video" | "audio" | "digital-human" | "mg_animation_video";
+export type AssetProductMode = "copy" | "image" | "video" | "audio" | "mg-overlay";
 
 export type AssetProductSection = {
   label: string;

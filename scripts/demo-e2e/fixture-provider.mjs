@@ -29,7 +29,7 @@ export async function createFixtureProvider({ port = 8398 } = {}) {
         const key = String(messages.at(-1)?.content || "").trim();
         const match = Object.entries(llm).find(([candidate]) => key.includes(candidate));
         let content = match?.[1];
-        if (!content && system.includes("classify a MultiMix content-production instruction")) content = { capability: "video_render", channel: "short_video", audience: "本地门窗客户", format: "video_project", ratio: "9:16", duration: "30", style: "真实克制", video_mode: "real_scene", operation: "draft", asset_requirements: [], confidence: 0.99 };
+        if (!content && system.includes("classify a MultiMix content-production instruction")) content = { capability: "video_project", channel: "short_video", audience: "本地门窗客户", format: "video_project", ratio: "9:16", duration: "30", style: "真实克制", video_mode: "real_scene", operation: "draft", asset_requirements: [], confidence: 0.99 };
         if (!content && system.includes("generate MultiMix content artifacts")) content = {
           title: "门窗隔音获客视频",
           body_markdown: "# 门窗隔音获客视频\n\n素材不足的分镜需补充公开素材，不把施工图冒充为其他场景。",

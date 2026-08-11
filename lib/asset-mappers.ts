@@ -647,7 +647,7 @@ function productLifecycleFromAsset(
   rawVideoProject: Record<string, unknown> | undefined,
 ): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" | "replace_scene_asset"; failureSceneId?: string } | undefined {
   const metadata = asset.metadata ?? {};
-  const isVideo = asset.content_type === "video_render";
+  const isVideo = asset.content_type === "video_project";
   const isDirector = isVideoDirectorDraft(asset);
   if (!isVideo && !isDirector) return undefined;
 
@@ -845,14 +845,14 @@ function assetLabelFromProduct(asset: ContentAsset): string {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
-  if (asset.content_type === "video_render") return "视频";
+  if (asset.content_type === "video_project") return "视频";
   if (asset.content_type === "long_form_candidate_set") return "拆条候选";
   const explicit = stringValue(metadata.artifact_category);
   if (explicit) return explicit;
   if (asset.content_type === "content_plan") return "选题方案";
   if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
   if (asset.content_type === "social_post") return "文案稿";
-  if (asset.content_type === "video_render") return "视频";
+  if (asset.content_type === "video_project") return "视频";
   return stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
 }
 
@@ -873,11 +873,8 @@ function contentAssetTypeLabel(contentType: string): string {
     video_script: "编导脚本",
     cover_image: "封面图方案",
     storyboard_image: "分镜图方案",
-    video_render: "视频",
-    digital_human_video: "数字人视频准备",
-    mg_animation_video: "MG动画准备",
-    real_scene_video: "实景视频准备",
-    generated_video: "生成视频准备",
+    video_project: "视频",
+    mg_overlay: "MG 动效叠层",
     image_generation: "图片方案",
     image_edit: "图片调整方案",
     long_form_candidate_set: "拆条候选"
@@ -888,9 +885,9 @@ function contentAssetTypeLabel(contentType: string): string {
 function productModeFromAsset(asset: ContentAsset, unsupported: boolean): AssetProductMode {
   if (unsupported) return "copy";
   if (isVideoDirectorDraft(asset)) return "copy";
-  if (asset.content_type === "digital_human_video") return "digital-human";
+  if (asset.content_type === "mg_overlay") return "mg-overlay";
   if (asset.asset_kind === "image") return "image";
-  if (asset.asset_kind === "video" || asset.asset_kind === "video_render") return "video";
+  if (asset.asset_kind === "video") return "video";
   return "copy";
 }
 
@@ -908,7 +905,7 @@ export function isEditorReadyVideoProject(
 ): boolean {
   const metadata = asset.metadata ?? {};
   const lifecycle = productLifecycleFromAsset(asset, project);
-  return asset.content_type === "video_render"
+  return asset.content_type === "video_project"
     && asset.status === "ready"
     && metadata.orchestration_pending === false
     && metadata.video_workflow_stage === "video_project_ready"
@@ -949,7 +946,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const orchestrationFailed = lifecycle?.status === "failed";
   const orchestrationPending = lifecycle?.status === "generating";
   const invalidVideoProject = Boolean(rawVideoProject && lifecycle?.status === "failed" && !videoProject) || Boolean(
-    asset.content_type === "video_render"
+    asset.content_type === "video_project"
     && !rawVideoProject
     && !mp4Artifact
     && !orchestrationPending

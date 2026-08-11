@@ -169,7 +169,7 @@ export type ContentAsset = {
   project_id: number | null;
   parent_asset_id: number | null;
   library_kind?: "assets" | "copy" | "image" | "video" | string;
-  asset_kind: "asset" | "copy" | "video" | "image" | "video_render" | string;
+  asset_kind: "asset" | "copy" | "video" | "image" | string;
   content_type: string;
   title: string;
   status: "processing" | "ready" | "failed" | "draft" | "archived" | string;

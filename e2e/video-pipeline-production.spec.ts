@@ -864,14 +864,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   let projectAsset = assets
     .filter(
       (asset) =>
-        asset.content_type === "video_render" &&
+        asset.content_type === "video_project" &&
         asset.metadata?.video_plan &&
         typeof asset.metadata.video_plan === "object",
     )
     .at(-1);
   expect(
     projectAsset,
-    "video_render asset with video_plan should exist after confirmation",
+    "video_project asset with video_plan should exist after confirmation",
   ).toBeTruthy();
   let pipelineCode: string | undefined = expectTwoStage ? undefined : "legacy";
   let beforeScenes = scenesFromAsset(projectAsset!);
@@ -1454,7 +1454,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     );
     expect(
       refreshed,
-      "recomposed video_render asset should remain in the library",
+      "recomposed video_project asset should remain in the library",
     ).toBeTruthy();
     afterScenes = scenesFromAsset(refreshed!);
   expect(afterScenes).toHaveLength(expectedSceneCount);

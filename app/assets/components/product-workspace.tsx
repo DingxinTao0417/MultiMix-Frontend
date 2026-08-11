@@ -119,10 +119,12 @@ export default function ProductWorkspace({
   );
   const isDirectorText = ["video_script", "short_video_narration"].includes(product.contentType ?? "");
   const textEditDirty = textEditBody !== (product.markdownBody ?? "");
-  const hasSpeechTimeline = product.mode === "digital-human" && product.timeline.some((item) => item.line);
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
     : {}) as Record<string, unknown>;
+  const hasSpeechTimeline = product.mode === "video"
+    && productMetadata.video_type === "presenter"
+    && product.timeline.some((item) => item.line);
   const videoProjectMetadata = productMetadata.video_project && typeof productMetadata.video_project === "object" && !Array.isArray(productMetadata.video_project)
     ? productMetadata.video_project as Record<string, unknown>
     : null;

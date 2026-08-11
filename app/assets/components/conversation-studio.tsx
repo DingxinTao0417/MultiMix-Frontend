@@ -607,7 +607,7 @@ export default function ConversationStudio({
                 <ImageIcon size={15} aria-hidden="true" />
               ) : product.mode === "audio" ? (
                 <Play size={14} aria-hidden="true" />
-              ) : product.mode === "video" || product.mode === "digital-human" || product.mode === "mg_animation_video" ? (
+              ) : product.mode === "video" || product.mode === "mg-overlay" ? (
                 <Video size={15} aria-hidden="true" />
               ) : (
                 <FileText size={15} aria-hidden="true" />
@@ -900,7 +900,7 @@ export default function ConversationStudio({
                 ? "参考样例只读"
                 : adjustHint
                   ? ADJUST_HINT_PLACEHOLDER
-                  : selectedProduct && ["video", "digital-human", "mg_animation_video"].includes(selectedProduct.mode)
+                  : selectedProduct && ["video", "mg-overlay"].includes(selectedProduct.mode)
                     ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
                     : "随时打断或补充，AI 会接着改…"
             }
