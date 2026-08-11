@@ -35,10 +35,10 @@ it("keeps V3 workspace UI as the only render path", () => {
 it("keeps two-stage runtime terms out of live execution steps", () => {
   const steps = agentTimelineStepsFromBackend([
     { key: "planning_assets", label: "provider pexels", status: "done" },
-    { key: "composing", label: "animated_explainer pipeline", status: "run" },
+    { key: "composing", label: "strategy_version package_digest", status: "run" },
     { key: "reviewing", label: "VLM review", status: "wait" },
   ]);
-  expect(JSON.stringify(steps)).not.toMatch(/animated_explainer|planning_assets|pexels|provider|vlm|pipeline/i);
+  expect(JSON.stringify(steps)).not.toMatch(/strategy_version|package_digest|planning_assets|pexels|provider|vlm|pipeline/i);
   expect(steps.map((step) => step.label)).toEqual([
     "正在准备素材",
     "正在生成视频",

@@ -1049,11 +1049,11 @@ describe("agent timeline steps", () => {
   it("never forwards internal stage keys or backend labels into timeline copy", () => {
     const steps = agentTimelineStepsFromBackend([
       { key: "asset_manifest_ready", label: "Pexels provider asset_manifest_ready", status: "done" },
-      { key: "reviewing", label: "animated_explainer VLM pipeline review", status: "run" },
+      { key: "reviewing", label: "strategy_version VLM pipeline review", status: "run" },
       { key: "future_internal_stage", label: "Remotion private stage", status: "wait" },
     ]);
     const visible = JSON.stringify(steps);
-    expect(visible).not.toMatch(/asset_manifest|animated_explainer|pexels|provider|vlm|pipeline|remotion|future_internal/i);
+    expect(visible).not.toMatch(/asset_manifest|strategy_version|pexels|provider|vlm|pipeline|remotion|future_internal/i);
     expect(steps.map((step) => step.label)).toEqual([
       "正在准备素材",
       "正在完成质量检查",

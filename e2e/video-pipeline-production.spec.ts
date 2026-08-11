@@ -15,8 +15,38 @@ import {
 } from "../test-support/video-pipeline-production-helpers";
 
 const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
+const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const timingPath = process.env.VIDEO_PIPELINE_TIMING_PATH;
+
+type ActiveVideoType = "explainer" | "demonstration" | "source_excerpt";
+
+function loadActiveVideoTypes(): ActiveVideoType[] {
+  const activationPath = path.resolve(
+    process.cwd(),
+    "..",
+    "MultiMix-Backend",
+    "app",
+    "video_pipelines",
+    "unified",
+    "activation.yaml",
+  );
+  const source = fs.readFileSync(activationPath, "utf8");
+  const activeSection = source.match(/active_versions:\s*\n([\s\S]*?)(?=\n\S|$)/)?.[1] ?? "";
+  const active = [...activeSection.matchAll(/^\s{2}([a-z_]+):\s*\S+\s*$/gm)]
+    .map((match) => match[1]);
+  const allowed = new Set<ActiveVideoType>(["explainer", "demonstration", "source_excerpt"]);
+  if (active.length === 0 || active.some((videoType) => !allowed.has(videoType as ActiveVideoType))) {
+    throw new Error(`Unsupported or empty active video type registry: ${active.join(",")}`);
+  }
+  return active as ActiveVideoType[];
+}
+
+const activeVideoTypes = loadActiveVideoTypes();
+const expectedVideoType = (process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? activeVideoTypes[0]) as ActiveVideoType;
+if (!activeVideoTypes.includes(expectedVideoType)) {
+  throw new Error(`VIDEO_PIPELINE_VIDEO_TYPE is not active: ${expectedVideoType}`);
+}
 
 function recordE2ETiming(stage: string, status: "passed" | "failed", durationMs: number) {
   if (!timingPath) return;
@@ -171,13 +201,11 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
 }
-const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
-const expectedPipelineCode =
-  scenario === "hybrid" ? "real_material_hybrid" : "designed_explainer";
+const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 const requirePublicAsset =
   process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true" ||
-  scenario === "animated_public";
-const hybridMediaFilesRaw = process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES;
+  inputProfile === "explainer_public_broll";
+const demonstrationMediaFilesRaw = process.env.VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
 const testRecompose = process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
@@ -262,6 +290,15 @@ type SceneRow = {
   id: string;
   narration?: string;
   subtitle_focus?: string;
+  asset_reference?: {
+    status?: string;
+    asset_id?: number;
+    source_range?: {
+      start_seconds?: number;
+      end_seconds?: number;
+      retained_ranges?: Array<{ start_seconds?: number; end_seconds?: number }>;
+    };
+  };
   asset_requirement?: { evidence_required?: boolean };
   mg_decision?: {
     needed?: boolean;
@@ -273,6 +310,7 @@ type SceneRow = {
   };
   primary_visual_strategy?: {
     mode?: string;
+    visual_treatment?: "material_primary" | "material_enhanced" | "graphics_primary";
     presentation_variant?: string;
     presentation_support?: { headline?: string; items?: string[] };
   };
@@ -606,6 +644,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       `VIDEO_PIPELINE_SOURCE_DOCUMENT is missing: ${sourceDocument ?? ""}`,
     );
   }
+  if (
+    expectedVideoType === "source_excerpt"
+    && (!sourceExcerptVideo || !fs.existsSync(sourceExcerptVideo))
+  ) {
+    throw new Error(
+      `VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO is missing: ${sourceExcerptVideo ?? ""}`,
+    );
+  }
   if (!resultDir) throw new Error("VIDEO_PIPELINE_RESULT_DIR is required");
   fs.mkdirSync(resultDir, { recursive: true });
   const consoleErrors: string[] = [];
@@ -654,26 +700,44 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     ? { authorization }
     : {};
 
-  if (scenario === "hybrid") {
-    const hybridMediaFiles = JSON.parse(hybridMediaFilesRaw ?? "[]") as Array<{
+  if (expectedVideoType === "source_excerpt") {
+    const sourceVideoResponse = await page.request.post(`${apiBase}/v1/assets/upload`, {
+      headers,
+      multipart: {
+        file: {
+          name: "授权长视频原片.mp4",
+          mimeType: "video/mp4",
+          buffer: fs.readFileSync(sourceExcerptVideo!),
+        },
+        target_kind: "video",
+      },
+    });
+    expect(
+      sourceVideoResponse.ok(),
+      `source excerpt video upload failed: ${sourceVideoResponse.status()} ${await sourceVideoResponse.text()}`,
+    ).toBe(true);
+  }
+
+  if (expectedVideoType === "demonstration") {
+    const demonstrationMediaFiles = JSON.parse(demonstrationMediaFilesRaw ?? "[]") as Array<{
       path?: string;
       name?: string;
     }>;
     expect(
-      hybridMediaFiles.length,
-      "hybrid scenario requires at least three saved venue/process/context media files",
+      demonstrationMediaFiles.length,
+      "demonstration requires at least three saved operation/process/result media files",
     ).toBeGreaterThanOrEqual(3);
-    for (const [index, entry] of hybridMediaFiles.entries()) {
+    for (const [index, entry] of demonstrationMediaFiles.entries()) {
       const mediaPath = path.resolve(entry.path ?? "");
       expect(
         fs.existsSync(mediaPath),
-        `hybrid media is missing: ${mediaPath}`,
+        `demonstration media is missing: ${mediaPath}`,
       ).toBe(true);
       const extension = path.extname(mediaPath).toLowerCase();
       const isVideo = extension === ".mp4";
       expect(
         [".jpg", ".jpeg", ".png", ".mp4"],
-        `unsupported hybrid media: ${extension}`,
+        `unsupported demonstration media: ${extension}`,
       ).toContain(extension);
       const mimeType = isVideo
         ? "video/mp4"
@@ -697,17 +761,19 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       );
       expect(
         mediaResponse.ok(),
-        `hybrid saved-media upload failed: ${mediaResponse.status()} ${await mediaResponse.text()}`,
+        `demonstration saved-media upload failed: ${mediaResponse.status()} ${await mediaResponse.text()}`,
       ).toBe(true);
     }
   }
 
   const generationInstruction =
-    scenario === "hybrid"
+    expectedVideoType === "demonstration"
       ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的商家内容制作示范片。刚上传的装修图片只作为真实业务环境和服务过程的通用 B-roll，不是 MultiMix 客户项目，也不能证明 MultiMix 产品能力。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
-      : scenario === "animated_public"
+      : expectedVideoType === "source_excerpt"
+        ? `从刚上传的长视频中忠实摘取一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的片段视频。保留来源原声、说话人和原意，选段必须有明确 source_range，不得用改写旁白替代原片，也不得拼接造成断章取义。先给出编导稿和候选选段，不要展示内部制作方式。`
+      : inputProfile === "explainer_public_broll"
         ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
-        : scenario === "data_process"
+        : inputProfile === "explainer_data_process"
           ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的数据与流程讲解视频。至少三个分镜分别用数据总结、步骤流程和结构关系来解释资料中已经明确的产品闭环；只使用资料里有依据的信息，不虚构数字、案例或产品界面。MG 可以承担结构化解释，但不能替代真实证据或审核产品截图。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`;
   const generationResponse = await postConversation(
@@ -846,7 +912,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   await expect(summary.getByText("待补素材")).toHaveCount(0);
   const visibleText = await page.locator("body").innerText();
   expect(visibleText).not.toMatch(
-    /animated_explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b/i,
+    /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i,
   );
   expect(visibleText).not.toMatch(/待补素材|字幕\/标题卡占位/);
   const confirmedPlanCard = page
@@ -873,7 +939,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     projectAsset,
     "video_project asset with video_plan should exist after confirmation",
   ).toBeTruthy();
-  let pipelineCode: string | undefined = expectTwoStage ? undefined : "legacy";
   let beforeScenes = scenesFromAsset(projectAsset!);
   let artDirectionSummary: {
     schemaVersion?: string;
@@ -956,6 +1021,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       )
       .toMatch(/^(?:ready|not-needed)$/);
     const persistedVideoPlan = projectAsset!.metadata?.video_plan as {
+      video_type?: string;
       duration_contract?: { target_seconds?: number };
       mg_plan?: { layout?: string };
       internal_production?: {
@@ -981,9 +1047,28 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(Number(persistedVideoPlan.duration_contract?.target_seconds)).toBe(
       targetSeconds,
     );
-    pipelineCode = persistedVideoPlan.internal_production?.skill_package?.code;
-    expect(pipelineCode).toBe(expectedPipelineCode);
+    expect(persistedVideoPlan.video_type).toBe(expectedVideoType);
     beforeScenes = scenesFromAsset(projectAsset!);
+    const allowedVisualTreatments = new Set([
+      "material_primary",
+      "material_enhanced",
+      "graphics_primary",
+    ]);
+    expect(beforeScenes).not.toHaveLength(0);
+    for (const scene of beforeScenes) {
+      expect(allowedVisualTreatments.has(
+        scene.primary_visual_strategy?.visual_treatment ?? "",
+      )).toBe(true);
+      expect(scene.asset_reference?.status).toMatch(/^(?:matched|no_asset_hit)$/);
+    }
+    if (expectedVideoType === "source_excerpt") {
+      for (const scene of beforeScenes) {
+        expect(scene.asset_reference?.source_range?.start_seconds).toBeGreaterThanOrEqual(0);
+        expect(scene.asset_reference?.source_range?.end_seconds).toBeGreaterThan(
+          scene.asset_reference?.source_range?.start_seconds ?? 0,
+        );
+      }
+    }
     const artDirection =
       persistedVideoPlan.internal_production?.art_direction;
     expect(artDirection?.schema_version).toBe("video_art_direction_v2");
@@ -1083,7 +1168,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     new Set(primaryVisualRefs).size,
     "every scene must use a distinct persisted main visual",
   ).toBe(primaryVisualRefs.length);
-  if (scenario === "hybrid") {
+  if (expectedVideoType === "demonstration") {
       const savedSourceIds = new Set(
         beforeScenes
           .filter(
@@ -1094,14 +1179,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       );
     expect(
       savedSourceIds.size,
-      "hybrid should consume all three already-ranked uploaded clips before generated fallback",
+      "demonstration should consume all three already-ranked uploaded clips before generated fallback",
     ).toBeGreaterThanOrEqual(3);
       const evidenceScenes = beforeScenes.filter(
         (scene) => scene.asset_requirement?.evidence_required === true,
       );
       expect(
         evidenceScenes.length,
-        "hybrid should include at least one grounded evidence scene",
+        "demonstration should include at least one grounded evidence scene",
       ).toBeGreaterThan(0);
     for (const scene of evidenceScenes) {
       expect(scene.primary_visual?.source_type).not.toBe("public_asset");
@@ -1310,7 +1395,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   if (expectTwoStage && requirePublicAsset) {
     expect(
       publicManifestScenes.length,
-      "animated_public must adopt at least one verified and persisted public asset",
+      "public-broll explainer must adopt at least one verified and persisted public asset",
     ).toBeGreaterThan(0);
     for (const manifestScene of publicManifestScenes) {
       const selected = manifestScene.selected_asset!;
@@ -1692,9 +1777,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     JSON.stringify(
       {
       projectAssetId: projectAsset!.id,
-      scenario,
+      videoType: expectedVideoType,
       twoStageEnabled: expectTwoStage,
-      pipelineCode,
       recomposeTested,
       targetSegmentId,
       beforeRefs,
@@ -1760,7 +1844,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         licenseSnapshot: scene.selected_asset?.provenance?.license_snapshot,
       })),
         internalTermsVisible:
-          /animated_explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
+          /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
             visibleText,
           ),
       qualityMetrics: qualityReport!.metrics,

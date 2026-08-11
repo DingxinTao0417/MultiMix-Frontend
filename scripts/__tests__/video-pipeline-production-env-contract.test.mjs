@@ -102,6 +102,22 @@ test("production video browser flow records its major user-visible pipeline wait
   }
 });
 
+test("production video E2E discovers active video types and asserts the server plan contract", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const specSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(specSource, /activation\.yaml/);
+  assert.match(specSource, /activeVideoTypes/);
+  assert.match(runnerSource, /for \(const videoType of activeVideoTypes\)/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_VIDEO_TYPE: videoType/);
+  assert.match(specSource, /persistedVideoPlan\.video_type/);
+  assert.match(specSource, /expect\(persistedVideoPlan\.video_type\)\.toBe\(expectedVideoType\)/);
+  assert.doesNotMatch(specSource, /expectedPipelineCode/);
+  assert.doesNotMatch(specSource, /pipelineCode/);
+  assert.doesNotMatch(specSource, /VIDEO_PIPELINE_SCENARIO/);
+  assert.doesNotMatch(runnerSource, /VIDEO_PIPELINE_SCENARIO/);
+});
+
 test("production video E2E reports durable director substage timings separately", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const specSource = fs.readFileSync(productionSpecPath, "utf8");

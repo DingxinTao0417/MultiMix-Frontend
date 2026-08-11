@@ -3,7 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import {
   assertPortFree,
@@ -85,6 +85,49 @@ const resumeRunId = resumeArgIndex >= 0 ? process.argv[resumeArgIndex + 1] : "";
 if (resumeArgIndex >= 0 && (!resumeRunId || resumeRunId.startsWith("--"))) {
   throw new Error("--resume requires a retained VIDEO_PIPELINE_RUN_ID");
 }
+const activationPath = path.join(
+  canonicalBackendRoot,
+  "app",
+  "video_pipelines",
+  "unified",
+  "activation.yaml",
+);
+const activationSource = fs.readFileSync(activationPath, "utf8");
+const activeSection = activationSource.match(/active_versions:\s*\n([\s\S]*?)(?=\n\S|$)/)?.[1] ?? "";
+const activeVideoTypes = [...activeSection.matchAll(/^\s{2}([a-z_]+):\s*\S+\s*$/gm)]
+  .map((match) => match[1]);
+if (activeVideoTypes.length === 0 || activeVideoTypes.includes("presenter")) {
+  throw new Error(`Invalid production E2E activation: ${activeVideoTypes.join(",")}`);
+}
+if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
+  throw new Error("Resuming a retained run requires VIDEO_PIPELINE_VIDEO_TYPE");
+}
+if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+  const matrixResultRoot = path.resolve(
+    process.env.VIDEO_PIPELINE_RESULT_DIR
+      ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
+  );
+  for (const videoType of activeVideoTypes) {
+    const child = spawnSync(
+      process.execPath,
+      [process.argv[1], ...process.argv.slice(2)],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...process.env,
+          VIDEO_PIPELINE_VIDEO_TYPE: videoType,
+          VIDEO_PIPELINE_RESULT_DIR: path.join(matrixResultRoot, videoType),
+          VIDEO_PIPELINE_RUN_ID: `${crypto.randomUUID()}-${videoType}`,
+        },
+        stdio: "inherit",
+      },
+    );
+    if (child.status !== 0) {
+      process.exit(child.status ?? 1);
+    }
+  }
+  process.exit(0);
+}
 const requestedRunId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
 const defaultResultDir = path.resolve(
   process.env.VIDEO_PIPELINE_RESULT_DIR
@@ -98,9 +141,25 @@ const runId = lifecycle.runId;
 const { databasePath, artifactDir } = lifecycle;
 const resultDir = lifecycle.readState().resultDir;
 const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
+const expectedVideoType = process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? activeVideoTypes[0];
+if (!expectedVideoType || !activeVideoTypes.includes(expectedVideoType)) {
+  throw new Error(`VIDEO_PIPELINE_VIDEO_TYPE is not active: ${expectedVideoType ?? "missing"}`);
+}
 const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
+);
+const sourceExcerptVideo = path.resolve(
+  process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO
+    ?? path.join(
+      workspaceRoot,
+      "artifacts",
+      "research",
+      "commerce-video-samples-2026-08-08",
+      "thread-local-samples",
+      "01-podcast-random-highlights",
+      "input-original.mp4",
+    ),
 );
 const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
 const targetRatio = process.env.VIDEO_PIPELINE_RATIO ?? "16:9";
@@ -151,11 +210,29 @@ const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? 
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
-const scenario = process.env.VIDEO_PIPELINE_SCENARIO ?? "animated_explainer";
+const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 const twoStageEnabled = true;
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
-  || scenario === "animated_public";
+  || inputProfile === "explainer_public_broll";
+const defaultDemonstrationMedia = [
+  ["02-kitchen-renovation-v1", "过程基线.mp4"],
+  ["05-kitchen-service-promo-v2", "步骤迭代.mp4"],
+  ["07-kitchen-service-mg-v3", "结果与图形增强.mp4"],
+].map(([folder, name]) => ({
+  path: path.join(
+    workspaceRoot,
+    "artifacts",
+    "research",
+    "commerce-video-samples-2026-08-08",
+    "thread-local-samples",
+    folder,
+    "source.mp4",
+  ),
+  name,
+}));
+const demonstrationMediaFiles = process.env.VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES
+  ?? JSON.stringify(defaultDemonstrationMedia);
 const children = [];
 let providerProxy;
 let decisionAuditEnv;
@@ -640,11 +717,12 @@ function assertResumeManifest() {
   const original = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const expected = {
     runId,
-    scenario,
+    videoType: expectedVideoType,
     targetRatio,
     targetSeconds,
     expectedSceneCount,
     sourceDocument: fingerprintFile(sourceDocument),
+    sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (JSON.stringify(original[key]) !== JSON.stringify(value)) {
@@ -860,7 +938,9 @@ try {
   if (!isResume) {
     fs.writeFileSync(path.join(resultDir, "run-manifest.json"), JSON.stringify({
       runId,
-      scenario,
+      videoType: expectedVideoType,
+      activeVideoTypes,
+      inputProfile,
       targetRatio,
       expectedOutputSize,
       twoStageEnabled,
@@ -873,9 +953,10 @@ try {
         maximumSeconds: maximumDurationSeconds,
       },
       sourceDocument: fingerprintFile(sourceDocument),
+      sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
       visionServiceUrl,
       productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
-      hybridMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES),
+      demonstrationMedia: configuredInputFingerprints(demonstrationMediaFiles),
       llm: {
         baseUrl: effectiveLlmConfig.baseUrl,
         model: effectiveLlmConfig.model,
@@ -1013,15 +1094,17 @@ try {
       PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
       PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright"),
       VIDEO_PIPELINE_SOURCE_DOCUMENT: sourceDocument,
+      VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO: sourceExcerptVideo,
       VIDEO_PIPELINE_RESULT_DIR: resultDir,
       VIDEO_PIPELINE_TARGET_SECONDS: String(targetSeconds),
       VIDEO_PIPELINE_RATIO: targetRatio,
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
       VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
-      VIDEO_PIPELINE_SCENARIO: scenario,
+      VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
+      VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
       VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
-      VIDEO_PIPELINE_HYBRID_MEDIA_FILES: process.env.VIDEO_PIPELINE_HYBRID_MEDIA_FILES ?? "[]",
+      VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES: demonstrationMediaFiles,
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
       VIDEO_PIPELINE_TEST_RECOMPOSE: testRecompose ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",

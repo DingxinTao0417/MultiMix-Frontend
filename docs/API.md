@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-07
+> Last verified: 2026-08-11
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -661,8 +661,8 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 | `reviewing`、`quality` | `review` | `正在完成质量检查` |
 | `needs_script_revision` | `review` | `需要先调整编导稿` |
 
-- API 可以在受保护的 metadata 中保留 pipeline、manifest、Provider 和内部 stage 供诊断，但普通
-  `steps[]`、产物卡、编导稿和展示区不得出现 `animated_explainer`、`hybrid`、`asset_manifest`、
+- API 可以在受保护的 metadata 中保留策略快照、manifest、Provider 和内部 stage 供诊断，但普通
+  `steps[]`、产物卡、编导稿和展示区不得出现 `video_type`、策略版本、`asset_manifest`、
   Provider、Skill、模型名或原始 `render_stage`。
 - adapter 必须使用穷举映射；遇到未知内部 stage 时显示通用“正在生成视频”，不得把原始字符串
   直接透传给用户。
@@ -976,12 +976,16 @@ npm run test:display-coverage
 
 `test:display-components` 验证真实 React 组件；`test:display-e2e` 启动隔离前后端并运行九个浏览器案例；`test:display-coverage` 依次执行两层覆盖。
 
-## 13. 视频表达方式与逐镜解释
+## 13. 视频产品状态与逐镜呈现
 
-`AssetProduct` 可从 `metadata.video_plan.expression_mode` 映射以下只读展示字段：
+`AssetProduct` 只消费服务端统一合同：
 
-- `expressionModeLabel`: `素材优先 | 混合表达`
-- `expressionReason`: 编导模型给出的整片选择理由
+- `content_type=video_project`
+- `product_status=generating | completed | failed`，用户文案固定为“生成中 / 完成 / 失败”
+- 独立的 `operation_status` 与 `operation_failure_*` 用于局部修改；失败时继续展示上一稳定工程
+- `visual_treatment=material_primary | material_enhanced | graphics_primary`，分别显示“素材 / 素材加图形或素材处理 / 图形主画面”
+
+前端不得根据 MP4、可编辑性、MG 状态、素材来源或内部 job stage 二次推断产品状态与逐镜呈现。`video_type`、策略版本、摘要和 activation 只属于后台，不进入用户侧类型或状态。
 
 `AssetProductSegment` 可从 `primary_visual_strategy` 和素材替换审计映射：
 
