@@ -67,6 +67,7 @@ describe("runtime data boundary", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "completed",
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -98,6 +99,8 @@ describe("runtime data boundary", () => {
     );
     expect(snapshot.detailsLoaded).toBe(false);
     expect(snapshot.product.backendAssetId).toBe(72);
+    expect(snapshot.product.productStatus).toBe("completed");
+    expect(snapshot.product.status).toBe("完成");
   });
 
   it("serializes the exact Agent confirmation binding only when provided", () => {

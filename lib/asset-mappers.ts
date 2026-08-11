@@ -355,7 +355,7 @@ type SegmentTiming = { start: number; end: number };
 
 type PrimaryVisualSourceType = "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
 type MaterialFillStatus = "saved_hit" | "public_candidate" | "unfilled";
-type PrimaryVisualTreatment = "source_primary" | "source_with_graphics" | "graphics_primary";
+type PrimaryVisualTreatment = "material_primary" | "material_enhanced" | "graphics_primary";
 
 function primaryVisualSourceType(value: unknown): PrimaryVisualSourceType | undefined {
   return value === "saved_asset" || value === "public_asset" || value === "product_asset" || value === "generated_scene"
@@ -364,7 +364,7 @@ function primaryVisualSourceType(value: unknown): PrimaryVisualSourceType | unde
 }
 
 function primaryVisualTreatment(value: unknown): PrimaryVisualTreatment | undefined {
-  return value === "source_primary" || value === "source_with_graphics" || value === "graphics_primary"
+  return value === "material_primary" || value === "material_enhanced" || value === "graphics_primary"
     ? value
     : undefined;
 }
@@ -606,17 +606,10 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
   return { headline: `基于 ${refs.length} 个素材生成`, refs };
 }
 
-function videoProjectStatusLabel(mp4State: string): string {
-  if (mp4State === "ready") return "已有导出文件";
-  if (mp4State === "running") return "成片生成中";
-  if (mp4State === "failed") return "成片失败";
-  return "可编辑";
-}
-
 function visualTreatmentLabel(value: unknown): AssetProductSegment["visualTreatmentLabel"] {
-  if (value === "source_primary") return "素材主画面";
-  if (value === "source_with_graphics") return "素材 + 图形说明";
-  if (value === "graphics_primary") return "完整图形主画面";
+  if (value === "material_primary") return "素材";
+  if (value === "material_enhanced") return "素材加图形 / 素材处理";
+  if (value === "graphics_primary") return "图形主画面";
   return undefined;
 }
 
@@ -633,66 +626,34 @@ function graphicComponentLabel(value: unknown): string | undefined {
 
 type ProductLifecycleStatus = "generating" | "completed" | "failed";
 
-function plannedMgDecisions(metadata: Record<string, unknown>): Record<string, unknown>[] {
-  const plan = isRecord(metadata.video_plan) ? metadata.video_plan : null;
-  const scenes = Array.isArray(plan?.scenes) ? plan.scenes : [];
-  return scenes.flatMap((scene) => {
-    if (!isRecord(scene) || !isRecord(scene.mg_decision) || scene.mg_decision.needed !== true) return [];
-    return [scene.mg_decision];
-  });
-}
-
 function productLifecycleFromAsset(
   asset: ContentAsset,
-  rawVideoProject: Record<string, unknown> | undefined,
-): { status: ProductLifecycleStatus; failureReason?: string; failureAction?: "retry" | "modify_script" | "replace_scene_asset"; failureSceneId?: string } | undefined {
-  const metadata = asset.metadata ?? {};
+): {
+  status: ProductLifecycleStatus;
+  failureReason?: string;
+  failureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  failureSceneId?: string;
+  operationStatus?: ProductLifecycleStatus;
+  operationFailureReason?: string;
+  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  operationFailureSceneId?: string;
+} | undefined {
   const isVideo = asset.content_type === "video_project";
   const isDirector = isVideoDirectorDraft(asset);
   if (!isVideo && !isDirector) return undefined;
-
-  const workflowStage = stringValue(metadata.video_workflow_stage);
-  const recordedFailureAction = stringValue(metadata.failure_action);
-  const failed = asset.status === "failed"
-    || workflowStage === "video_project_failed"
-    || ["retry", "modify_script", "replace_scene_asset"].includes(recordedFailureAction);
-  if (failed) {
-    const replaceSceneAsset = recordedFailureAction === "replace_scene_asset";
-    const pipelineAttempt = isRecord(metadata.pipeline_attempt) ? metadata.pipeline_attempt : {};
-    const pipelineFailure = isRecord(pipelineAttempt.failure) ? pipelineAttempt.failure : {};
-    const needsScriptRevision = workflowStage === "needs_script_revision" || recordedFailureAction === "modify_script";
-    return {
-      status: "failed",
-      failureReason: stringValue(metadata.failure_reason) || asset.error_message || (needsScriptRevision
-        ? "当前编导脚本无法按现有素材和制作条件实现。"
-        : isVideo ? "视频生成未能完成。" : "编导脚本生成未能完成。"),
-      failureAction: replaceSceneAsset ? "replace_scene_asset" : needsScriptRevision ? "modify_script" : "retry",
-      failureSceneId: replaceSceneAsset ? stringValue(pipelineFailure.scene_id) || undefined : undefined,
-    };
-  }
   if (isDirector) return { status: "completed" };
-  if (!rawVideoProject) {
-    if (metadata.orchestration_pending === true || ["video_project_queued", "video_project_building"].includes(workflowStage)) {
-      return { status: "generating" };
-    }
-    return { status: "failed", failureReason: "视频内容不完整，无法正常播放或编辑。", failureAction: "retry" };
-  }
-  if (!hasEditorTimelineShape(rawVideoProject)) {
-    return { status: "failed", failureReason: "视频内容不完整，无法正常播放或编辑。", failureAction: "retry" };
-  }
-  const decisions = plannedMgDecisions(metadata);
-  const failedDecision = decisions.find((decision) => stringValue(decision.status) === "failed");
-  if (failedDecision) {
-    return {
-      status: "failed",
-      failureReason: stringValue(failedDecision.last_error) || "有一个分镜动效未能完成。",
-      failureAction: "retry",
-    };
-  }
-  if (metadata.orchestration_pending !== false || decisions.some((decision) => stringValue(decision.status) !== "rendered")) {
-    return { status: "generating" };
-  }
-  return { status: "completed" };
+  const status = asset.product_status;
+  if (status !== "generating" && status !== "completed" && status !== "failed") return undefined;
+  return {
+    status,
+    failureReason: asset.failure_reason || undefined,
+    failureAction: asset.failure_action || undefined,
+    failureSceneId: asset.failure_scene_id || undefined,
+    operationStatus: asset.operation_status || undefined,
+    operationFailureReason: asset.operation_failure_reason || undefined,
+    operationFailureAction: asset.operation_failure_action || undefined,
+    operationFailureSceneId: asset.operation_failure_scene_id || undefined,
+  };
 }
 
 function productStatusLabel(status: ProductLifecycleStatus | undefined): string | undefined {
@@ -904,31 +865,20 @@ export function isEditorReadyVideoProject(
     : undefined,
 ): boolean {
   const metadata = asset.metadata ?? {};
-  const lifecycle = productLifecycleFromAsset(asset, project);
   return asset.content_type === "video_project"
     && asset.status === "ready"
     && metadata.orchestration_pending === false
     && metadata.video_workflow_stage === "video_project_ready"
-    && hasEditorTimelineShape(project)
-    && lifecycle?.status === "completed";
+    && hasEditorTimelineShape(project);
 }
 
 export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const metadata = asset.metadata ?? {};
   const rawVideoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
-  const expressionMode = isRecord(rawVideoPlan?.expression_mode)
-    ? rawVideoPlan.expression_mode
-    : undefined;
-  const expressionModeLabel = stringValue(expressionMode?.mode) === "source_led"
-    ? "素材优先" as const
-    : stringValue(expressionMode?.mode) === "hybrid"
-      ? "混合表达" as const
-      : undefined;
-  const expressionReason = stringValue(expressionMode?.reason) || undefined;
   const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
-  const lifecycle = productLifecycleFromAsset(asset, rawVideoProject);
+  const lifecycle = productLifecycleFromAsset(asset);
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
@@ -952,12 +902,9 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     && !orchestrationPending
     && !orchestrationFailed
   );
-  const status = productStatusLabel(lifecycle?.status)
-    ?? (videoProject
-    ? videoProjectStatusLabel(mp4State)
-    : mp4Artifact
-      ? "MP4 成片 · 已生成"
-    : orchestrationFailed
+  const status = asset.content_type === "video_project"
+    ? productStatusLabel(lifecycle?.status) ?? "生成中"
+    : (productStatusLabel(lifecycle?.status) ?? (orchestrationFailed
       ? "生成失败 · 可重试"
     : orchestrationPending
       ? "视频生成中 · 后台任务"
@@ -975,7 +922,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
         : "有来源"
     : noAssetHit
       ? "未命中素材"
-      : "有来源");
+      : "有来源"));
   const rawRatio = stringValue(videoProject?.ratio)
     || stringValue(mp4Artifact?.ratio)
     || stringValue(intent.ratio)
@@ -1051,14 +998,6 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       status: stringValue(mp4Artifact.mp4_state) || "ready"
     });
   }
-  if (expressionModeLabel) {
-    sections.splice(1, 0, {
-      label: "表达",
-      title: expressionModeLabel,
-      detail: expressionReason || "由编导根据素材和各分镜内容决定。",
-      status: "已决定",
-    });
-  }
   const segments = segmentsFromVideoMetadata(metadata);
   return {
     id: `asset-${asset.id}`,
@@ -1074,8 +1013,10 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     failureReason: lifecycle?.failureReason,
     failureAction: lifecycle?.failureAction,
     failureSceneId: lifecycle?.failureSceneId,
-    expressionModeLabel,
-    expressionReason,
+    operationStatus: lifecycle?.operationStatus,
+    operationFailureReason: lifecycle?.operationFailureReason,
+    operationFailureAction: lifecycle?.operationFailureAction,
+    operationFailureSceneId: lifecycle?.operationFailureSceneId,
     summary: firstMeaningfulLine(asset.body) || asset.title,
     ratio,
     duration,

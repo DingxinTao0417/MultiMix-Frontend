@@ -61,6 +61,7 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "generating",
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -72,13 +73,14 @@ describe("asset product mapper", () => {
     }));
     expect(generating.productStatus).toBe("generating");
     expect(generating.status).toBe("生成中");
-    expect(generating.videoProjectReady).toBe(false);
+    expect(generating.videoProjectReady).toBe(true);
 
     const completed = contentAssetToProduct(asset({
       id: 202,
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "completed",
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -97,6 +99,9 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "failed",
+      failure_reason: "动效服务超时",
+      failure_action: "retry",
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -118,6 +123,9 @@ describe("asset product mapper", () => {
       content_type: "video_project",
       status: "ready",
       generation_state: "video_project_ready",
+      product_status: "failed",
+      failure_action: "replace_scene_asset",
+      failure_scene_id: "seg-4",
       error_message: "素材失效",
       metadata: {
         video_workflow_stage: "video_project_ready",
@@ -355,11 +363,12 @@ describe("asset product mapper", () => {
     expect(product.actions).toContain("调整分镜");
   });
 
-  it("presents legacy video projects as video projects instead of inherited director drafts", () => {
+  it("presents video projects as video projects instead of inherited director drafts", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "completed",
       metadata: {
         artifact_category: "编导稿",
         capability: "video_project",
@@ -384,6 +393,9 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "failed",
+      failure_reason: "视频内容不完整，无法正常播放或编辑。",
+      failure_action: "retry",
       metadata: {
         capability: "video_project",
         video_workflow_stage: "video_project_ready",
@@ -396,11 +408,14 @@ describe("asset product mapper", () => {
     expect(product.preview?.subtitle).toContain("视频内容不完整");
   });
 
-  it("marks an orphaned video-render draft as a project that needs recovery", () => {
+  it("marks an orphaned video project as a project that needs recovery", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
       content_type: "video_project",
       status: "draft",
+      product_status: "failed",
+      failure_reason: "视频内容不完整，无法正常播放或编辑。",
+      failure_action: "retry",
       metadata: {
         capability: "video_project",
         video_workflow_stage: "draft",
@@ -417,6 +432,7 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "processing",
+      product_status: "generating",
       metadata: {
         capability: "video_project",
         capability_label: "视频编排",
@@ -434,6 +450,9 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "failed",
+      product_status: "failed",
+      failure_reason: "Job exceeded its timeout without completing and was marked failed.",
+      failure_action: "retry",
       error_message: "Job exceeded its timeout without completing and was marked failed.",
       metadata: {
         capability: "video_project",
@@ -687,26 +706,22 @@ describe("asset product mapper", () => {
     );
   });
 
-  it("maps every scene expression treatment and model-authored reason", () => {
+  it("consumes canonical visual treatment without exposing expression mode", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
       content_type: "video_project",
       status: "ready",
+      product_status: "completed",
       metadata: {
         capability: "video_project",
         video_plan: {
-          expression_mode: {
-            mode: "hybrid",
-            reason: "真实素材和结构化图形需要逐镜混合。",
-            source: "director_model",
-          },
           scenes: [{
             id: "scene-expression",
             title: "三步流程",
             narration: "从资料到成片。",
             primary_visual_strategy: {
               mode: "mg_scene",
-              visual_treatment: "graphics_primary",
+              visual_treatment: "material_enhanced",
               selection_reason: "流程关系比单张素材更容易理解。",
               graphic_component: "process_flow",
               background_policy: "verified_material_blur",
@@ -721,16 +736,43 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(product.expressionModeLabel).toBe("混合表达");
-    expect(product.expressionReason).toBe("真实素材和结构化图形需要逐镜混合。");
+    expect((product as unknown as Record<string, unknown>).expressionModeLabel).toBeUndefined();
+    expect((product as unknown as Record<string, unknown>).expressionReason).toBeUndefined();
     expect(product.segments?.[0]).toMatchObject({
-      primaryVisualTreatment: "graphics_primary",
-      visualTreatmentLabel: "完整图形主画面",
+      primaryVisualTreatment: "material_enhanced",
+      visualTreatmentLabel: "素材加图形 / 素材处理",
       selectionReason: "流程关系比单张素材更容易理解。",
       graphicComponentLabel: "流程图",
       backgroundTreatmentLabel: "已验证素材虚化背景",
       publicReplacementNote: "原公开素材已失效，已透明替换为可用素材",
     });
+  });
+
+  it("keeps export availability and local operation failure separate from product status", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      product_status: "completed",
+      operation_status: "failed",
+      operation_failure_reason: "换素材失败",
+      operation_failure_action: "retry",
+      metadata: {
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: {
+          timeline: { tracks: [], media: [] },
+          mp4_state: "ready",
+          mp4_ref: "local://exports/final.mp4",
+        },
+      },
+    }));
+
+    expect(product.productStatus).toBe("completed");
+    expect(product.status).toBe("完成");
+    expect(product.operationStatus).toBe("failed");
+    expect(product.operationFailureReason).toBe("换素材失败");
+    expect(product.sections.some((section) => section.title === "已有导出文件")).toBe(true);
   });
 
   it("maps approved product media as an available product interface", () => {
@@ -947,6 +989,9 @@ describe("asset product mapper", () => {
       asset_kind: "video",
       content_type: "video_project",
       status: "failed",
+      product_status: "failed",
+      failure_reason: "TTS provider timeout",
+      failure_action: "retry",
       error_message: "TTS provider timeout",
       metadata: {
         capability: "video_project",

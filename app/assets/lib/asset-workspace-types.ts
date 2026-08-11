@@ -83,8 +83,8 @@ export type AssetProductSegment = {
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
   mgStatus?: string;
-  primaryVisualTreatment?: "source_primary" | "source_with_graphics" | "graphics_primary";
-  visualTreatmentLabel?: "素材主画面" | "素材 + 图形说明" | "完整图形主画面";
+  primaryVisualTreatment?: "material_primary" | "material_enhanced" | "graphics_primary";
+  visualTreatmentLabel?: "素材" | "素材加图形 / 素材处理" | "图形主画面";
   selectionReason?: string;
   graphicComponentLabel?: string;
   backgroundTreatmentLabel?: "已验证素材虚化背景";
@@ -147,8 +147,10 @@ export type AssetProduct = {
   failureReason?: string;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset";
   failureSceneId?: string;
-  expressionModeLabel?: "素材优先" | "混合表达";
-  expressionReason?: string;
+  operationStatus?: "generating" | "completed" | "failed";
+  operationFailureReason?: string;
+  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  operationFailureSceneId?: string;
   summary: string;
   ratio: string;
   duration: string;

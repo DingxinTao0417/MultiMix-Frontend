@@ -144,6 +144,10 @@ export type VideoJobLiveStatus = {
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
+  operationStatus?: "generating" | "completed" | "failed" | null;
+  operationFailureReason?: string | null;
+  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureSceneId?: string | null;
 };
 
 export function executionRunKey(jobId: string, generation: number): string {
@@ -1086,6 +1090,10 @@ export default function AssetsWorkspaceClient({
           failureReason: job.failureReason,
           failureAction: job.failureAction,
           failureSceneId: job.failureSceneId,
+          operationStatus: job.operationStatus,
+          operationFailureReason: job.operationFailureReason,
+          operationFailureAction: job.operationFailureAction,
+          operationFailureSceneId: job.operationFailureSceneId,
           completionConfirmed: false,
         },
       }));
@@ -1299,6 +1307,10 @@ export default function AssetsWorkspaceClient({
           failureReason: refreshed.failureReason,
           failureAction: refreshed.failureAction,
           failureSceneId: refreshed.failureSceneId,
+          operationStatus: refreshed.operationStatus,
+          operationFailureReason: refreshed.operationFailureReason,
+          operationFailureAction: refreshed.operationFailureAction,
+          operationFailureSceneId: refreshed.operationFailureSceneId,
             completionConfirmed: false,
           },
         }));

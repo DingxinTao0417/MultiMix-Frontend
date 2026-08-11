@@ -187,6 +187,14 @@ export type ContentAsset = {
   linked_event_ids: number[];
   archived: boolean;
   error_message: string | null;
+  product_status?: "generating" | "completed" | "failed" | null;
+  failure_reason?: string | null;
+  failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failure_scene_id?: string | null;
+  operation_status?: "generating" | "completed" | "failed" | null;
+  operation_failure_reason?: string | null;
+  operation_failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_scene_id?: string | null;
   created_at: string;
   updated_at: string;
   versions: ContentAssetVersion[];

@@ -531,6 +531,10 @@ export type VideoJobResult = {
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
+  operationStatus?: "generating" | "completed" | "failed" | null;
+  operationFailureReason?: string | null;
+  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureSceneId?: string | null;
 };
 
 type RawVideoJob = {
@@ -551,6 +555,10 @@ type RawVideoJob = {
   failure_reason?: string | null;
   failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failure_scene_id?: string | null;
+  operation_status?: "generating" | "completed" | "failed" | null;
+  operation_failure_reason?: string | null;
+  operation_failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_scene_id?: string | null;
 };
 
 // Normalise a backend video-job payload into VideoJobResult. steps[] is a
@@ -583,6 +591,10 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     failureReason: raw.failure_reason,
     failureAction: raw.failure_action,
     failureSceneId: raw.failure_scene_id,
+    operationStatus: raw.operation_status,
+    operationFailureReason: raw.operation_failure_reason,
+    operationFailureAction: raw.operation_failure_action,
+    operationFailureSceneId: raw.operation_failure_scene_id,
   };
 }
 
@@ -710,36 +722,14 @@ function statusLabel(status: string): string {
 }
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
-  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
     return asset.status === "failed" ? "失败" : "完成";
   }
   if (asset.content_type === "video_project") {
-    if (asset.status === "failed" || metadata.video_workflow_stage === "video_project_failed") return "失败";
-    const plan = metadata.video_plan && typeof metadata.video_plan === "object" ? metadata.video_plan as Record<string, unknown> : null;
-    const scenes = Array.isArray(plan?.scenes) ? plan.scenes : [];
-    const decisions = scenes.flatMap((scene) => {
-      if (!scene || typeof scene !== "object") return [];
-      const decision = (scene as Record<string, unknown>).mg_decision;
-      return decision && typeof decision === "object" && (decision as Record<string, unknown>).needed === true
-        ? [decision as Record<string, unknown>]
-        : [];
-    });
-    if (decisions.some((decision) => decision.status === "failed")) return "失败";
-    if (metadata.orchestration_pending === true || decisions.some((decision) => decision.status !== "rendered")) return "生成中";
-    if (metadata.video_project && typeof metadata.video_project === "object") return "完成";
+    if (asset.product_status === "completed") return "完成";
+    if (asset.product_status === "failed") return "失败";
     return "生成中";
   }
-  const rawVideoProject = metadata.video_project && typeof metadata.video_project === "object"
-    ? metadata.video_project as Record<string, unknown>
-    : null;
-  const videoProject = rawVideoProject && isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : null;
-  if (rawVideoProject && !videoProject) return "工程异常";
-  const mp4State = typeof videoProject?.mp4_state === "string" ? videoProject.mp4_state : "";
-  if (mp4State === "ready") return "MP4已生成";
-  if (mp4State === "running") return "成片生成中";
-  if (mp4State === "failed") return "成片失败";
-  if (videoProject) return "可编辑";
   return null;
 }
 

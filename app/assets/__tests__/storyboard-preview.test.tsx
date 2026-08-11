@@ -37,7 +37,7 @@ describe("storyboard light preview", () => {
             line: "现在开始制作你的内容。",
             isFallback: false,
             primaryVisualTreatment: "graphics_primary",
-            visualTreatmentLabel: "完整图形主画面",
+            visualTreatmentLabel: "图形主画面",
             graphicComponentLabel: "品牌收束",
             backgroundTreatmentLabel: "已验证素材虚化背景",
           }],
@@ -48,7 +48,7 @@ describe("storyboard light preview", () => {
 
     expect(screen.getByLabelText("图形主画面预览")).toBeInTheDocument();
     expect(screen.getAllByText("品牌收束")).toHaveLength(1);
-    expect(screen.getByText("完整图形主画面")).toBeInTheDocument();
+    expect(screen.getByText("图形主画面")).toBeInTheDocument();
     expect(screen.queryByText("待补素材")).not.toBeInTheDocument();
   });
 

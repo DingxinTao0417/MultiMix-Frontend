@@ -146,6 +146,10 @@ export default function ProductWorkspace({
   // terminalize before its conversation refresh clears orchestration_pending,
   // so a durable failed job must reveal recovery rather than a false spinner.
   const effectiveProductStatus = videoJobLive?.productStatus ?? product.productStatus;
+  const effectiveOperationStatus = videoJobLive?.operationStatus ?? product.operationStatus;
+  const operationFailureDetail = videoJobLive?.operationFailureReason
+    || product.operationFailureReason
+    || "本次修改未能完成，已保留上一版工程。";
   const liveVideoJobFailed = !hasVideoProject && effectiveProductStatus === "failed";
   const orchestrationPending = !hasVideoProject && (effectiveProductStatus === "generating" || (!effectiveProductStatus && (Boolean(
     product.backendAssetId && !hasVideoProject && productMetadata.orchestration_pending
@@ -865,7 +869,7 @@ export default function ProductWorkspace({
                 下载
               </button>
             ) : null}
-            {canBrowseVideo && videoSurface === "browse" ? (
+            {canBrowseVideo && !isFailedStatus && videoSurface === "browse" ? (
               <button
                 type="button"
                 className="primary"
@@ -992,6 +996,31 @@ export default function ProductWorkspace({
 
         {!isTextEditing && !showEditorEmbed && previewShowsBrowse ? (
           <div className="shadcn-prototype-product-main">
+            {effectiveOperationStatus === "failed" ? (
+              <div className="shadcn-prototype-video-failed" role="alert">
+                <strong>本次修改失败，已保留上一版</strong>
+                <p>{operationFailureDetail}</p>
+                {onRetryVideoJob ? (
+                  <div className="shadcn-prototype-video-failed-actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      disabled={retrying}
+                      onClick={async () => {
+                        setRetrying(true);
+                        try {
+                          await onRetryVideoJob(product);
+                        } finally {
+                          setRetrying(false);
+                        }
+                      }}
+                    >
+                      {retrying ? "正在重试…" : "重试本次修改"}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
