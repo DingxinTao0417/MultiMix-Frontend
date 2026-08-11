@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   assetWorkspaceAdapter,
+  assertVideoWritesAvailable,
   buildConversationMessagePayload,
   conversationFromSummary,
   libraryCategoryForAsset,
@@ -61,6 +62,10 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("blocks structured video writes during maintenance without blocking reads", () => {
+    expect(() => assertVideoWritesAvailable(true)).toThrow("视频生成与修改暂时维护中");
+    expect(() => assertVideoWritesAvailable(false)).not.toThrow();
+  });
   it("loads a lightweight conversation snapshot before the full history", async () => {
     const project = asset({
       id: 72,
@@ -839,6 +844,18 @@ describe("runtime data boundary", () => {
     expect(source).not.toContain("mockAssetWorkspaceData");
     expect(source).not.toContain("Local mock revision");
     expect(source).not.toContain("Local mock restore");
+  });
+
+  it("proactively disables video confirmation cards during write maintenance", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "app/assets/components/conversation-studio.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("VIDEO_WRITES_PAUSED");
+    expect(source).toContain("video_parameter_confirmation");
+    expect(source).toContain("video_project_confirmation");
+    expect(source).toContain("VIDEO_WRITES_PAUSED_MESSAGE");
   });
 
   it("shares asset title normalization instead of maintaining two copies", () => {

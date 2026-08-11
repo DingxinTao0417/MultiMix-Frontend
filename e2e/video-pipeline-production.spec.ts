@@ -1612,9 +1612,19 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     );
   });
   // Shared quality and export contract for both pipeline modes.
-  let finalQualityReport: QualityReport | undefined;
-  let qualityReport: QualityReport | undefined;
+  let projectQualityReport: QualityReport | undefined;
+  let exportPreflightReport: QualityReport | undefined;
   await measureE2EStage("export_preflight", async () => {
+    const projectQualityResponse = await page.request.get(
+      `${apiBase}/v1/video/projects/${projectAsset!.id}/quality?stage=project`,
+      { headers },
+    );
+    expect(
+      projectQualityResponse.ok(),
+      `project quality request failed: ${projectQualityResponse.status()}`,
+    ).toBe(true);
+    projectQualityReport = (await projectQualityResponse.json()) as QualityReport;
+    expect(projectQualityReport.blockers ?? []).toEqual([]);
     await expect
       .poll(
         async () => {
@@ -1637,27 +1647,26 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
               })),
         );
       }
-      finalQualityReport = report;
+      exportPreflightReport = report;
       return "ready";
         },
         { timeout: 10 * 60_000, intervals: [2500, 5000, 10_000] },
       )
       .toBe("ready");
-    expect(finalQualityReport).toBeTruthy();
-    qualityReport = finalQualityReport!;
+    expect(exportPreflightReport).toBeTruthy();
     expect(
-      (qualityReport.warnings ?? []).filter((warning) =>
+      (projectQualityReport.warnings ?? []).filter((warning) =>
         generatedPrimaryFailureCodes.has(warning.code ?? ""),
       ),
       "generated-primary failure placeholders must never remain export warnings",
     ).toEqual([]);
-    const narrationCoverage = qualityReport.metrics?.narration_coverage;
+    const narrationCoverage = projectQualityReport.metrics?.narration_coverage;
     expect(narrationCoverage?.coverage_rate).toBe(1);
     expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);
     const reuseGroups =
-      qualityReport.metrics?.material_reuse?.repeated_groups ?? [];
+      projectQualityReport.metrics?.material_reuse?.repeated_groups ?? [];
     const reportedReuseSceneIds = new Set(
-      (qualityReport.warnings ?? [])
+      (projectQualityReport.warnings ?? [])
         .filter((warning) => warning.code === "unintentional_material_reuse")
         .map((warning) => warning.segment_id)
         .filter((sceneId): sceneId is string => Boolean(sceneId)),
@@ -1670,7 +1679,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         ).toBe(true);
       }
     }
-    const audioMix = qualityReport.metrics?.audio_mix;
+    const audioMix = projectQualityReport.metrics?.audio_mix;
     if (expectBgm) {
       expect(audioMix?.measurement_status).toBe("measured");
       const targetRatio = Number(audioMix?.voice_to_music_ratio);
@@ -1685,7 +1694,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       );
     }
   });
-  expect(qualityReport).toBeTruthy();
+  expect(projectQualityReport).toBeTruthy();
   const exportButton = await measureE2EStage("export_preview_ready", async () => {
     await page.reload();
     await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
@@ -1847,8 +1856,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
             visibleText,
           ),
-      qualityMetrics: qualityReport!.metrics,
-      qualityWarnings: qualityReport!.warnings ?? [],
+      qualityMetrics: projectQualityReport!.metrics,
+      qualityWarnings: projectQualityReport!.warnings ?? [],
       artDirection: artDirectionSummary,
       humanReviewStatus: "pending",
       audioFinishing: {

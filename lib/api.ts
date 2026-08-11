@@ -8,6 +8,10 @@ export const API_BASE = CONFIGURED_API_BASE ?? "http://127.0.0.1:8199";
 export const API_CONNECTION_ERROR = "MULTIMIX_API_CONNECTION_ERROR";
 export const MESSAGE_NOT_SUBMITTED_ERROR = "MULTIMIX_MESSAGE_NOT_SUBMITTED";
 export const API_AUTH_EXPIRED_EVENT = "multimix:auth-expired";
+export const VIDEO_WRITES_PAUSED =
+  process.env.NEXT_PUBLIC_MULTIMIX_VIDEO_WRITES_PAUSED === "true";
+export const VIDEO_WRITES_PAUSED_MESSAGE =
+  "视频生成与修改暂时维护中，请稍后重试；已有内容仍可浏览。";
 
 const TRANSIENT_UPLOAD_STATUSES = new Set([502, 503, 504]);
 const UPLOAD_RETRY_DELAY_MS = 300;
@@ -39,6 +43,10 @@ function responseErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail?: unknown }).detail;
     if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && "message" in detail) {
+      const message = (detail as { message?: unknown }).message;
+      if (typeof message === "string") return message;
+    }
     if (Array.isArray(detail)) {
       const firstMessage = detail
         .map((item) => {

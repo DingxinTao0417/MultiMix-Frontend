@@ -15,6 +15,8 @@ import type {
 import {
   API_BASE,
   API_CONNECTION_ERROR,
+  VIDEO_WRITES_PAUSED,
+  VIDEO_WRITES_PAUSED_MESSAGE,
   api,
   apiBlob,
   apiForm,
@@ -94,6 +96,10 @@ export type LibraryListOptions = {
 type UploadProgressCallback = (percent: number | null) => void;
 const UPLOAD_STALL_TIMEOUT_MS = 60_000;
 const UPLOAD_STALL_ERROR = "上传长时间没有进展，请检查网络后重试。";
+
+export function assertVideoWritesAvailable(paused = VIDEO_WRITES_PAUSED): void {
+  if (paused) throw new Error(VIDEO_WRITES_PAUSED_MESSAGE);
+}
 
 function uploadErrorMessage(payload: unknown, fallback: string): string {
   if (isRecord(payload) && typeof payload.detail === "string") return payload.detail;
@@ -1055,6 +1061,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       videoSceneReplacement,
       signal,
     }) {
+      if (videoParameterConfirmation || videoSceneReplacement) {
+        assertVideoWritesAvailable();
+      }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
@@ -1182,6 +1191,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       return mapVideoJob(raw);
     },
     async retryVideoJob(token, jobId) {
+      assertVideoWritesAvailable();
       const raw = await api<RawVideoJob>(`/video/jobs/${encodeURIComponent(jobId)}/retry`, token, {
         method: "POST",
       });
@@ -1217,6 +1227,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       };
     },
     async replaceSegmentMaterial(token, projectAssetId, segmentId, selection, confirmOverwrite = false) {
+      assertVideoWritesAvailable();
       const result = await recomposeSegmentMaterial({
         token,
         projectAssetId,

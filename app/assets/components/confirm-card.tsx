@@ -39,12 +39,14 @@ export default function ConfirmCard({
   plan,
   disabled = false,
   optimisticallyConfirmed = false,
+  maintenanceMessage,
   onConfirm,
   onAdjust,
 }: {
   plan: AssetMessagePlan;
   disabled?: boolean;
   optimisticallyConfirmed?: boolean;
+  maintenanceMessage?: string;
   onConfirm?: (plan: AssetMessagePlan, values?: AssetPlanConfirmationValues) => void;
   onAdjust?: (plan: AssetMessagePlan) => void;
 }) {
@@ -152,6 +154,7 @@ export default function ConfirmCard({
           {plan.adjustLabel ?? "调整方向"}
         </button>
       </div>
+      {maintenanceMessage ? <p role="status">{maintenanceMessage}</p> : null}
     </div>
   );
 }

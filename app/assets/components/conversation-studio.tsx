@@ -12,7 +12,13 @@ import {
 } from "../lib/chat-attachment-policy";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
-import { formatComposerError, MESSAGE_NOT_SUBMITTED_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
+import {
+  formatComposerError,
+  MESSAGE_NOT_SUBMITTED_ERROR,
+  VIDEO_WRITES_PAUSED,
+  VIDEO_WRITES_PAUSED_MESSAGE,
+  type AssetGenerationJobResponse,
+} from "../../../lib/api";
 import type {
   AgentActionRunResponse,
   AgentRunStep,
@@ -726,7 +732,24 @@ export default function ConversationStudio({
                       && optimisticExchange.confirmationPlanKey === confirmationPlanKey(message.plan)
                     )
                   }
-                  disabled={sending || !canSend}
+                  disabled={
+                    sending
+                    || !canSend
+                    || (
+                      VIDEO_WRITES_PAUSED
+                      && ["video_parameter_confirmation", "video_project_confirmation"].includes(
+                        message.plan.kind ?? "",
+                      )
+                    )
+                  }
+                  maintenanceMessage={
+                    VIDEO_WRITES_PAUSED
+                    && ["video_parameter_confirmation", "video_project_confirmation"].includes(
+                      message.plan.kind ?? "",
+                    )
+                      ? VIDEO_WRITES_PAUSED_MESSAGE
+                      : undefined
+                  }
                   onConfirm={(plan, values) => void handleConfirmPlan(plan, values)}
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />

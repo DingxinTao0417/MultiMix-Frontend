@@ -149,6 +149,21 @@ test("production video E2E observes, but does not require, reviewed product medi
   assert.match(source, /new Set\(primaryVisualRefs\)\.size/);
 });
 
+test("production video E2E keeps project metrics separate from export preflight", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /quality\?stage=project/);
+  assert.match(source, /quality\?stage=export_preflight/);
+  assert.match(
+    source,
+    /const narrationCoverage = projectQualityReport\.metrics\?\.narration_coverage/,
+  );
+  assert.doesNotMatch(
+    source,
+    /const narrationCoverage = qualityReport\.metrics\?\.narration_coverage/,
+  );
+});
+
 test("production video E2E retries a transient transport failure while waiting for MG", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
   const pendingIndex = source.indexOf("const pending = plannedMgScenes.filter");
