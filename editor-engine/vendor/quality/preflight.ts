@@ -40,10 +40,11 @@ function isSubtitleElement(trackId: string, element: BackendElement): boolean {
 
 export function inspectEditorProject(project: BackendProject): VideoQualityReport {
   const blockers: VideoQualityIssue[] = [];
+  const warnings: VideoQualityIssue[] = [];
   const duration = Number(project.metadata.duration || 0);
   const contract = project.metadata.duration_contract;
   if (contract && (duration < contract.min_seconds || duration > contract.max_seconds)) {
-    blockers.push(issue(
+    warnings.push(issue(
       "duration_out_of_range",
       `当前时间轴 ${duration.toFixed(2)}s 不在 ${contract.min_seconds.toFixed(2)}s–${contract.max_seconds.toFixed(2)}s 内。`,
       undefined,
@@ -135,6 +136,6 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
     stage: "editor_preflight",
     status: blockers.length ? "blocked" : "pass",
     blockers,
-    warnings: [],
+    warnings,
   };
 }

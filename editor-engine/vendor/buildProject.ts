@@ -38,6 +38,7 @@ export interface BackendPresentationSupport {
 }
 export interface BackendEditDecision {
   layout?: string;
+  motion?: string;
   transition?: string;
   presentation_support?: BackendPresentationSupport;
   [key: string]: unknown;
@@ -55,6 +56,7 @@ export interface BackendElement {
   duration: number;
   trimStart?: number;
   trimEnd?: number;
+  retime?: { rate: number; maintainPitch?: boolean };
   mediaId?: string;
   content?: string;
   fontSize?: number;
@@ -657,6 +659,72 @@ function supportCardTextElement(
   };
 }
 
+function numberMotionChannel(
+  id: string,
+  duration: number,
+  start: number,
+  end: number,
+) {
+  return {
+    valueKind: "number" as const,
+    keyframes: [
+      { id: `${id}-start`, time: 0, value: start, interpolation: "linear" as const },
+      { id: `${id}-end`, time: duration, value: end, interpolation: "linear" as const },
+    ],
+  };
+}
+
+function imageMotionForDecision(
+  elementId: string,
+  decision: BackendEditDecision | undefined,
+  duration: number,
+  canvasWidth: number,
+): ElementAnimations | undefined {
+  if (!Number.isFinite(duration) || duration <= 0) return undefined;
+  switch (decision?.motion) {
+    case "pan":
+      return {
+        channels: {
+          "transform.position": {
+            valueKind: "vector",
+            keyframes: [
+              {
+                id: `${elementId}-pan-start`,
+                time: 0,
+                value: { x: -Math.round(canvasWidth * 0.025), y: 0 },
+                interpolation: "linear",
+              },
+              {
+                id: `${elementId}-pan-end`,
+                time: duration,
+                value: { x: Math.round(canvasWidth * 0.025), y: 0 },
+                interpolation: "linear",
+              },
+            ],
+          },
+          "transform.scaleX": numberMotionChannel(`${elementId}-pan-x`, duration, 1.06, 1.06),
+          "transform.scaleY": numberMotionChannel(`${elementId}-pan-y`, duration, 1.06, 1.06),
+        },
+      };
+    case "slow_push":
+      return {
+        channels: {
+          "transform.scaleX": numberMotionChannel(`${elementId}-push-x`, duration, 1, 1.06),
+          "transform.scaleY": numberMotionChannel(`${elementId}-push-y`, duration, 1, 1.06),
+        },
+      };
+    case "zoom":
+      return {
+        channels: {
+          "transform.scaleX": numberMotionChannel(`${elementId}-zoom-x`, duration, 1, 1.1),
+          "transform.scaleY": numberMotionChannel(`${elementId}-zoom-y`, duration, 1, 1.1),
+        },
+      };
+    default:
+      return undefined;
+  }
+}
+
 function brandCtaTextElement(
   element: BackendElement,
   settings: BackendProject["settings"],
@@ -806,12 +874,31 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           ...(transition ? { transition } : {}),
         };
         if (e.type === "image") {
-          return { ...base, type: "image", mediaId: e.mediaId || "" } as ImageElement;
+          const animations = e.animations ?? imageMotionForDecision(
+            e.id,
+            e.editDecision,
+            e.duration,
+            bp.settings.width,
+          );
+          return {
+            ...base,
+            type: "image",
+            mediaId: e.mediaId || "",
+            ...(animations ? { animations } : {}),
+          } as ImageElement;
         }
         // Stock video clips carry their own voices/music. Narration lives on the
         // audio track, so mute the clip's source audio unless the backend
         // explicitly kept it (e.g. a user-provided clip meant to be heard).
-        return { ...base, type: "video", mediaId: e.mediaId || "", muted: e.muted !== false } as VideoElement;
+        return {
+          ...base,
+          type: "video",
+          mediaId: e.mediaId || "",
+          muted: e.muted !== false,
+          ...(e.retime && Number.isFinite(e.retime.rate) && e.retime.rate > 0
+            ? { retime: e.retime }
+            : {}),
+        } as VideoElement;
       });
       tracks.push({
         id: t.id, name: t.name, type: "video",
@@ -834,6 +921,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           ? linearGainToEditorDb(e.volume ?? 1)
           : (e.volume ?? 1),
         animations: audioAnimationsForEditor(e.animations, e.volumeUnit),
+        ...(e.retime && Number.isFinite(e.retime.rate) && e.retime.rate > 0
+          ? { retime: e.retime }
+          : {}),
       }));
       tracks.push({ id: t.id, name: t.name, type: "audio", elements, muted: false });
     } else if (t.type === "text") {

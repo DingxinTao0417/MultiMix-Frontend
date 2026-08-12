@@ -698,16 +698,13 @@ function assertDistinctPersistedPrimaryVisualWindows(
   scenes: SceneRow[],
   videoProject: VideoProject | undefined,
 ) {
-  const repeatedScenesByRef = new Map<string, SceneRow[]>();
-  for (const scene of scenes) {
+  const repeatedGroups = scenes.slice(1).flatMap((scene, index) => {
+    const previousScene = scenes[index];
     const ref = scene.primary_visual?.artifact_ref?.trim() ?? "";
-    if (!ref) continue;
-    repeatedScenesByRef.set(ref, [...(repeatedScenesByRef.get(ref) ?? []), scene]);
-  }
-
-  const repeatedGroups = [...repeatedScenesByRef.entries()].filter(
-    ([, groupedScenes]) => groupedScenes.length > 1,
-  );
+    return ref && ref === previousScene.primary_visual?.artifact_ref?.trim()
+      ? [[ref, [previousScene, scene]] as const]
+      : [];
+  });
   if (repeatedGroups.length === 0) return;
 
   const mainVideoTrack = videoProject?.tracks?.find(

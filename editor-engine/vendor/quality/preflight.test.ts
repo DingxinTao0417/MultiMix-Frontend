@@ -20,6 +20,23 @@ const baseProject: BackendProject = {
 };
 
 describe("inspectEditorProject", () => {
+  it("reports duration outside the contract as a warning without blocking export", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      metadata: { ...baseProject.metadata, duration: 6 },
+      tracks: [{
+        id: "track-video",
+        type: "video",
+        name: "素材",
+        elements: [{ id: "v1", type: "video", mediaId: "m1", startTime: 0, duration: 6, segmentId: "scene-1" }],
+      }],
+    });
+
+    expect(report.blockers.map((item) => item.code)).not.toContain("duration_out_of_range");
+    expect(report.warnings.map((item) => item.code)).toContain("duration_out_of_range");
+    expect(report.status).toBe("pass");
+  });
+
   it("blocks a main-track gap longer than one frame", () => {
     const report = inspectEditorProject({
       ...baseProject,

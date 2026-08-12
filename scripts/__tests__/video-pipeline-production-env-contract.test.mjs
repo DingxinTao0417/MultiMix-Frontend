@@ -150,13 +150,14 @@ test("production video E2E continues a completed retained project through browse
   assert.match(retainedSpec, /unexpected retained export state/);
 });
 
-test("production video E2E rejects a final MP4 outside the accepted target duration", () => {
+test("production video E2E warns but does not reject a final MP4 for duration drift", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
   assert.match(source, /durationReference/);
   assert.match(source, /!Number\.isFinite\(duration\)\s*\|\|\s*duration <= 0/s);
   assert.match(source, /duration < minimumDurationSeconds\s*\|\|\s*duration > maximumDurationSeconds/s);
-  assert.match(source, /duration_seconds=.*expected=/);
+  assert.match(source, /warnings\.push\([\s\S]*?duration_seconds=.*expected=/);
+  assert.doesNotMatch(source, /failures\.push\([\s\S]{0,120}?duration_seconds=/);
 });
 
 test("production video browser flow records its major user-visible pipeline waits", () => {

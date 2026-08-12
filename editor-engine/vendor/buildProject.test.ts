@@ -67,6 +67,109 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('preserves backend-authored video retime for generated primary-scene alignment', () => {
+    const { project } = buildProject(makeProject({
+      media: [makeMedia({ id: 'generated-scene' })],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'generated-scene-element',
+          type: 'video',
+          startTime: 0,
+          duration: 3.072,
+          mediaId: 'generated-scene',
+          retime: { rate: 0.9375 },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      retime?: { rate: number };
+    };
+    expect(element.retime).toEqual({ rate: 0.9375 });
+  });
+
+  it('preserves pitch-safe narration retime on audio elements', () => {
+    const { project } = buildProject(makeProject({
+      media: [makeMedia({ id: 'narration', type: 'audio' })],
+      tracks: [{
+        id: 'track-audio',
+        type: 'audio',
+        name: '配音',
+        elements: [{
+          id: 'narration-element',
+          type: 'audio',
+          startTime: 0,
+          duration: 30,
+          mediaId: 'narration',
+          retime: { rate: 0.833333, maintainPitch: true },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      retime?: { rate: number; maintainPitch?: boolean };
+    };
+    expect(element.retime).toEqual({ rate: 0.833333, maintainPitch: true });
+  });
+
+  it.each([
+    ['pan', 'transform.position'],
+    ['slow_push', 'transform.scaleX'],
+    ['zoom', 'transform.scaleX'],
+  ])('turns backend %s motion into executable editor animation', (motion, channel) => {
+    const { project } = buildProject(makeProject({
+      media: [makeMedia({ id: 'static-scene', type: 'image' })],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'static-scene-element',
+          type: 'image',
+          startTime: 0,
+          duration: 4,
+          mediaId: 'static-scene',
+          editDecision: { motion },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      animations?: { channels: Record<string, { keyframes: unknown[] } | undefined> };
+    };
+    expect(element.animations?.channels[channel]?.keyframes).toHaveLength(2);
+  });
+
+  it.each(['none', 'freeze', 'speed_ramp', 'unknown_motion'])(
+    'does not invent static-image animation for %s',
+    (motion) => {
+      const { project } = buildProject(makeProject({
+        media: [makeMedia({ id: 'static-scene', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'static-scene-element',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'static-scene',
+            editDecision: { motion },
+          }],
+        }],
+      } as BackendProject));
+
+      const element = project.scenes[0].tracks[0].elements[0] as {
+        animations?: unknown;
+      };
+      expect(element.animations).toBeUndefined();
+    },
+  );
+
   it('renders controlled brand CTA above the subtitle lane as its own text treatment', () => {
     const { project } = buildProject(makeProject({
       tracks: [{

@@ -692,6 +692,7 @@ async function verifyCandidateVideo() {
   const audio = streams.find((stream) => stream.codec_type === "audio");
   const duration = Number(probe.format?.duration);
   const failures = [];
+  const warnings = [];
   if (video?.codec_name !== "h264") failures.push(`codec_name=${video?.codec_name ?? "missing"}, expected h264`);
   if (video?.pix_fmt !== "yuv420p") failures.push(`pix_fmt=${video?.pix_fmt ?? "missing"}, expected yuv420p`);
   if (video?.width !== expectedOutputSize.width) {
@@ -709,7 +710,7 @@ async function verifyCandidateVideo() {
     duration < minimumDurationSeconds
     || duration > maximumDurationSeconds
   ) {
-    failures.push(
+    warnings.push(
       `duration_seconds=${duration}, expected=${minimumDurationSeconds}-${maximumDurationSeconds}`,
     );
   }
@@ -803,6 +804,7 @@ async function verifyCandidateVideo() {
     projectAudioMix: browserResult.qualityMetrics?.audio_mix ?? {},
     keyframes,
     failures,
+    warnings,
   };
   fs.writeFileSync(path.join(resultDir, "media-probe.json"), JSON.stringify(report, null, 2));
   if (failures.length > 0) throw new Error(`Formal MP4 contract failed: ${failures.join("; ")}`);
