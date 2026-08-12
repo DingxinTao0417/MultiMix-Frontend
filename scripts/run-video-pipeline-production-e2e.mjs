@@ -13,6 +13,10 @@ import {
 } from "./demo-e2e/environment-manager.mjs";
 import { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 import { repairNextGeneratedTypeReferences } from "./next-generated-types.mjs";
+import {
+  assertDeclaredProductMediaMetadata,
+  probeProductMediaFile,
+} from "./product-media-file-probe.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
@@ -212,6 +216,7 @@ const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
+if (expectedVideoType === "source_excerpt") expectBgm = false;
 const twoStageEnabled = true;
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || inputProfile === "explainer_public_broll";
@@ -332,6 +337,149 @@ function run(command, args, options = {}) {
   });
 }
 
+async function cleanupRemoteArtifactWrites(backendEnv) {
+  const ledgerPath = backendEnv.MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH;
+  const expectedPrefix = backendEnv.MULTIMIX_ARTIFACT_KEY_PREFIX;
+  if (!ledgerPath || !expectedPrefix || !fs.existsSync(ledgerPath)) return;
+  const cleanupScript = [
+    "from pathlib import Path",
+    "import os",
+    "from app.config import Settings",
+    "from app.services.storage import ArtifactStore, artifact_key_from_ref",
+    "ledger = Path(os.environ['MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH'])",
+    "prefix = os.environ['MULTIMIX_ARTIFACT_KEY_PREFIX'].rstrip('/') + '/'",
+    "refs = list(dict.fromkeys(line.strip() for line in ledger.read_text(encoding='utf-8').splitlines() if line.strip()))",
+    "invalid = [ref for ref in refs if not ref.startswith(('supabase://', 's3://')) or not artifact_key_from_ref(ref, require_value=True).startswith(prefix)]",
+    "if invalid: raise RuntimeError('Remote artifact cleanup ledger escaped the current E2E namespace')",
+    "store = ArtifactStore(Settings(_env_file=None))",
+    "failed = []",
+    "for ref in refs:",
+    "  try: store.delete(ref)",
+    "  except Exception: failed.append(ref)",
+    "if failed:",
+    "  ledger.write_text(''.join(ref + '\\n' for ref in failed), encoding='utf-8')",
+    "  raise RuntimeError(f'Failed to clean {len(failed)} remote E2E artifacts')",
+    "ledger.unlink(missing_ok=True)",
+  ].join("\n");
+  await run(pythonCommand, ["-c", cleanupScript], {
+    cwd: backendRoot,
+    env: backendEnv,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+}
+
+async function checkpointRemoteArtifactWrites(backendEnv) {
+  const expectedPrefix = backendEnv.MULTIMIX_ARTIFACT_KEY_PREFIX;
+  if (!expectedPrefix) return;
+  const checkpointRoot = path.join(artifactDir, "retained-remote-artifacts");
+  const checkpointScript = [
+    "from pathlib import Path",
+    "import hashlib, json, os, sys",
+    "from app.config import Settings",
+    "from app.services.storage import ArtifactStore, artifact_key_from_ref",
+    "root = Path(sys.argv[1]).resolve()",
+    "root.mkdir(parents=True, exist_ok=True)",
+    "objects = (root / 'objects').resolve()",
+    "objects.mkdir(parents=True, exist_ok=True)",
+    "manifest_path = root / 'manifest.json'",
+    "prefix = os.environ['MULTIMIX_ARTIFACT_KEY_PREFIX'].rstrip('/') + '/'",
+    "ledger_value = os.environ.get('MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH', '')",
+    "ledger = Path(ledger_value) if ledger_value else None",
+    "refs = list(dict.fromkeys(line.strip() for line in ledger.read_text(encoding='utf-8').splitlines() if line.strip())) if ledger and ledger.is_file() else []",
+    "invalid = [ref for ref in refs if not ref.startswith(('supabase://', 's3://')) or not artifact_key_from_ref(ref, require_value=True).startswith(prefix)]",
+    "if invalid: raise RuntimeError('remote artifact checkpoint ref escaped the current E2E namespace')",
+    "existing = {'schema_version': 1, 'entries': []}",
+    "if manifest_path.is_file(): existing = json.loads(manifest_path.read_text(encoding='utf-8'))",
+    "if existing.get('schema_version') != 1 or not isinstance(existing.get('entries'), list): raise RuntimeError('remote artifact checkpoint manifest is invalid')",
+    "entries = {str(item.get('ref') or ''): item for item in existing['entries'] if isinstance(item, dict) and item.get('ref')}",
+    "store = ArtifactStore(Settings(_env_file=None))",
+    "for ref in refs:",
+    "  data = store.get_bytes(ref)",
+    "  stat = store.stat(ref)",
+    "  digest = hashlib.sha256(data).hexdigest()",
+    "  relative_path = f'objects/{hashlib.sha256(ref.encode(\"utf-8\")).hexdigest()}.bin'",
+    "  target = (root / relative_path).resolve()",
+    "  if root not in target.parents: raise RuntimeError('remote artifact checkpoint path escaped its cache directory')",
+    "  current = entries.get(ref)",
+    "  candidate = {'ref': ref, 'relative_path': relative_path, 'size_bytes': len(data), 'sha256': digest, 'content_type': str(stat.content_type or 'application/octet-stream').split(';', 1)[0].strip().lower()}",
+    "  if current and any(current.get(key) != candidate[key] for key in candidate): raise RuntimeError('remote artifact checkpoint digest changed')",
+    "  if target.is_file():",
+    "    cached = target.read_bytes()",
+    "    if len(cached) != len(data) or hashlib.sha256(cached).hexdigest() != digest: raise RuntimeError('remote artifact checkpoint digest changed')",
+    "  else:",
+    "    temporary = target.with_suffix('.tmp')",
+    "    temporary.write_bytes(data)",
+    "    temporary.replace(target)",
+    "  entries[ref] = candidate",
+    "manifest = {'schema_version': 1, 'namespace': prefix, 'entries': [entries[key] for key in sorted(entries)]}",
+    "temporary_manifest = manifest_path.with_suffix('.tmp')",
+    "temporary_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\\n', encoding='utf-8')",
+    "temporary_manifest.replace(manifest_path)",
+    "print(json.dumps({'entry_count': len(entries), 'new_refs': len(refs)}))",
+  ].join("\n");
+  await run(pythonCommand, ["-c", checkpointScript, checkpointRoot], {
+    cwd: backendRoot,
+    env: backendEnv,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+}
+
+async function restoreCheckpointedRemoteArtifacts(backendEnv) {
+  const expectedPrefix = backendEnv.MULTIMIX_ARTIFACT_KEY_PREFIX;
+  if (!expectedPrefix) return;
+  const checkpointRoot = path.join(artifactDir, "retained-remote-artifacts");
+  const restoreScript = [
+    "from pathlib import Path",
+    "import hashlib, json, os, sys",
+    "from app.config import Settings",
+    "from app.services.storage import ArtifactStore, artifact_key_from_ref",
+    "root = Path(sys.argv[1]).resolve()",
+    "manifest_path = root / 'manifest.json'",
+    "if not manifest_path.is_file(): raise RuntimeError('retained remote artifact checkpoint is missing')",
+    "manifest = json.loads(manifest_path.read_text(encoding='utf-8'))",
+    "prefix = os.environ['MULTIMIX_ARTIFACT_KEY_PREFIX'].rstrip('/') + '/'",
+    "if manifest.get('schema_version') != 1 or manifest.get('namespace') != prefix or not isinstance(manifest.get('entries'), list): raise RuntimeError('retained remote artifact checkpoint manifest is invalid')",
+    "store = ArtifactStore(Settings(_env_file=None))",
+    "restored = 0",
+    "for item in manifest['entries']:",
+    "  if not isinstance(item, dict): raise RuntimeError('retained remote artifact checkpoint entry is invalid')",
+    "  ref = str(item.get('ref') or '')",
+    "  if not ref.startswith(('supabase://', 's3://')) or not artifact_key_from_ref(ref, require_value=True).startswith(prefix): raise RuntimeError('remote artifact checkpoint ref escaped the current E2E namespace')",
+    "  source = (root / str(item.get('relative_path') or '')).resolve()",
+    "  if root not in source.parents: raise RuntimeError('remote artifact checkpoint path escaped its cache directory')",
+    "  if not source.is_file(): raise RuntimeError('retained remote artifact checkpoint object is missing')",
+    "  data = source.read_bytes()",
+    "  expected_size = int(item.get('size_bytes') or -1)",
+    "  expected_digest = str(item.get('sha256') or '').casefold()",
+    "  if len(data) != expected_size or hashlib.sha256(data).hexdigest() != expected_digest: raise RuntimeError('remote artifact checkpoint digest changed')",
+    "  present = False",
+    "  try:",
+    "    remote = store.get_bytes(ref)",
+    "    if len(remote) != expected_size or hashlib.sha256(remote).hexdigest() != expected_digest: raise RuntimeError('remote artifact checkpoint digest changed')",
+    "    present = True",
+    "  except Exception as exc:",
+    "    if isinstance(exc, RuntimeError) and str(exc) == 'remote artifact checkpoint digest changed': raise",
+    "    message = str(exc).casefold()",
+    "    if not any(token in message for token in ('nosuchkey', 'not found', '404')): raise",
+    "  if not present:",
+    "    key = artifact_key_from_ref(ref, require_value=True)",
+    "    restored_ref = store.put_bytes_at(key, data, str(item.get('content_type') or 'application/octet-stream'))",
+    "    if restored_ref != ref: raise RuntimeError('remote artifact checkpoint ref changed during restore')",
+    "    remote = store.get_bytes(ref)",
+    "    if len(remote) != expected_size or hashlib.sha256(remote).hexdigest() != expected_digest: raise RuntimeError('remote artifact checkpoint digest changed')",
+    "    restored += 1",
+    "print(json.dumps({'entry_count': len(manifest['entries']), 'restored': restored}))",
+  ].join("\n");
+  await run(pythonCommand, ["-c", restoreScript, checkpointRoot], {
+    cwd: backendRoot,
+    env: backendEnv,
+    stdout: process.stdout,
+    stderr: process.stderr,
+  });
+}
+
 function readTimingSummary(filePath) {
   if (!fs.existsSync(filePath)) return [];
   return fs.readFileSync(filePath, "utf8")
@@ -449,6 +597,11 @@ function stageApprovedProductMediaCatalog() {
       throw new Error(`Unsupported approved product capture type: ${extension}`);
     }
     const identifier = `multimix-ui-${index + 1}`;
+    const mediaFacts = assertDeclaredProductMediaMetadata(
+      source,
+      probeProductMediaFile(sourcePath, { command: ffprobeCommand }),
+      { mediaType, label: `Approved product capture ${index + 1}` },
+    );
     const rawRegions = source?.regions;
     if (rawRegions !== undefined && !Array.isArray(rawRegions)) {
       throw new Error(`Approved product capture ${index + 1} regions must be an array`);
@@ -496,9 +649,9 @@ function stageApprovedProductMediaCatalog() {
       media_type: mediaType,
       artifact_ref: `local://${key}`,
       roles,
-      width: Number(source?.width ?? 2048),
-      height: Number(source?.height ?? 1024),
-      duration_seconds: mediaType === "video" ? Number(source?.duration_seconds ?? 3) : 0,
+      width: mediaFacts.width,
+      height: mediaFacts.height,
+      duration_seconds: mediaType === "video" ? mediaFacts.durationSeconds : 0,
       priority: Number(source?.priority ?? index + 1),
       source: "user_approved_product_capture",
       ...(regions.length > 0 ? { regions } : {}),
@@ -709,6 +862,178 @@ async function recoverInterruptedVideoJob(backendEnv) {
   );
 }
 
+async function readRetainedVideoJob(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " job=db.query(VideoRenderJob).order_by(VideoRenderJob.id.desc()).first()",
+    " assert job is not None, 'no retained video job'",
+    " user=db.get(User, job.user_id)",
+    " assert user is not None, 'retained video job user is missing'",
+    " payload=dict(job.result_payload or {})",
+    " failure=dict(payload.get('failure') or {})",
+    " result={'publicId': job.public_id, 'status': job.status, 'renderStage': job.render_stage, 'retryable': bool(failure.get('retryable') or payload.get('retryable')), 'email': user.email}",
+    "print(json.dumps(result, ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot,
+    env: backendEnv,
+  });
+  return JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+}
+
+async function rehydrateRetainedSourceExcerpt(backendEnv) {
+  const script = [
+    "import hashlib, json, pathlib, sys",
+    "from app.config import get_settings",
+    "from app.db import SessionLocal",
+    "from app.models import ContentAsset",
+    "from app.services.storage import ArtifactStore, artifact_key_from_ref",
+    "from app.services.video_studio.project import segments_from_conversation_scenes",
+    "from app.services.video_studio.source_clip import prepare_source_clip_artifacts",
+    "source_path=pathlib.Path(sys.argv[1]).resolve()",
+    "run_id=sys.argv[2]",
+    "assert source_path.is_file(), 'source excerpt resume input is missing'",
+    "settings=get_settings()",
+    "store=ArtifactStore(settings)",
+    "local_size=source_path.stat().st_size",
+    "digest=hashlib.sha256()",
+    "with source_path.open('rb') as handle:",
+    " for block in iter(lambda: handle.read(1024 * 1024), b''): digest.update(block)",
+    "local_hash=digest.hexdigest().casefold()",
+    "with SessionLocal() as db:",
+    " sources=db.query(ContentAsset).filter(ContentAsset.content_type == 'long_form_video_source').all()",
+    " assert len(sources) == 1, 'source excerpt resume requires one retained source'",
+    " source=sources[0]",
+    " originals=[item for item in source.files if item.file_role == 'original']",
+    " assert len(originals) == 1, 'source excerpt resume requires one retained original'",
+    " original=originals[0]",
+    " ref=str(original.storage_ref or '')",
+    " expected_size=int(original.size_bytes or 0)",
+    " expected_hash=str(original.content_hash or source.content_hash or '').removeprefix('sha256:').casefold()",
+    " assert local_size == expected_size, 'source excerpt resume size changed'",
+    " assert local_hash == expected_hash, 'source excerpt resume fingerprint changed'",
+    " key=artifact_key_from_ref(ref, require_value=True)",
+    " namespace=f'e2e/video-pipeline-production/{run_id}/'",
+    " assert key.startswith(namespace), 'source excerpt resume ref left the isolated run namespace'",
+    " status='already_present'",
+    " try:",
+    "  stat=store.stat(ref)",
+    "  assert stat.size_bytes == expected_size, 'source excerpt resume remote size changed'",
+    " except Exception as exc:",
+    "  if 'nosuchkey' not in str(exc).casefold(): raise",
+    "  restored_ref=store.put_file_at(key, source_path, str(original.mime_type or 'video/mp4'))",
+    "  assert restored_ref == ref, 'source excerpt resume changed the retained storage ref'",
+    "  assert store.stat(ref).size_bytes == expected_size, 'source excerpt resume upload is incomplete'",
+    "  status='rehydrated'",
+    " projects=db.query(ContentAsset).filter(ContentAsset.content_type == 'video_project').all()",
+    " assert len(projects) == 1, 'source excerpt resume requires one retained video project'",
+    " metadata=dict(projects[0].metadata_json or {})",
+    " scenes=metadata.get('video_segments') or []",
+    " assert isinstance(scenes, list) and scenes, 'retained video project has no video segments'",
+    " project=metadata.get('video_project') or {}",
+    " orchestration=project.get('orchestration') or {}",
+    " source_clip_outcomes=orchestration.get('source_clip_outcomes') or []",
+    " assert isinstance(source_clip_outcomes, list) and source_clip_outcomes, 'retained project has no source clip outcomes'",
+    " expected={str(item.get('segment_id') or ''): item for item in source_clip_outcomes if isinstance(item, dict)}",
+    " artifacts=prepare_source_clip_artifacts(settings, db=db, store=store, user_id=source.user_id, segments=segments_from_conversation_scenes(scenes))",
+    " assert set(artifacts) == set(expected), 'rehydrated source clip segment set changed'",
+    " for segment_id, artifact in artifacts.items():",
+    "  outcome=expected[segment_id]",
+    "  assert artifact.source_asset_id == outcome.get('source_asset_id'), 'source clip asset changed during resume'",
+    "  assert artifact.source_fingerprint == outcome.get('source_fingerprint'), 'source clip fingerprint changed during resume'",
+    "  assert artifact.source_ref == outcome.get('source_ref'), 'source clip source ref changed during resume'",
+    "  assert artifact.audio_ref == outcome.get('audio_ref'), 'source clip audio ref changed during resume'",
+    "  assert abs(artifact.start_seconds - float(outcome.get('start_seconds') or 0)) <= 0.02, 'source clip start changed during resume'",
+    "  assert abs(artifact.end_seconds - float(outcome.get('end_seconds') or 0)) <= 0.02, 'source clip end changed during resume'",
+    "  assert store.stat(artifact.audio_ref).size_bytes > 0, 'rehydrated source clip audio is empty'",
+    " result={'status': status, 'source_asset_id': source.id, 'size_bytes': expected_size, 'source_clip_artifacts_rehydrated': len(artifacts)}",
+    "print(json.dumps(result))",
+  ].join("\n");
+  const { stdout } = await run(
+    pythonCommand,
+    ["-c", script, sourceExcerptVideo, runId],
+    { cwd: backendRoot, env: backendEnv },
+  );
+  const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  fs.writeFileSync(
+    path.join(resultDir, "source-excerpt-resume-rehydration.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+}
+
+async function authenticateRetainedVideoUser(job) {
+  const response = await fetch(`http://127.0.0.1:${backendPort}/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      email: job.email,
+      password: "local-video-pipeline-2026",
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Retained video user login failed: ${response.status} ${await response.text()}`);
+  }
+  const payload = await response.json();
+  if (!payload.access_token) throw new Error("Retained video user login returned no token");
+  return payload.access_token;
+}
+
+async function waitForRetainedVideoJob(job, accessToken) {
+  const deadline = Date.now() + videoJobTimeoutMs;
+  while (Date.now() < deadline) {
+    const response = await fetch(
+      `http://127.0.0.1:${backendPort}/v1/video/jobs/${job.publicId}`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
+    );
+    if (!response.ok) {
+      throw new Error(`Retained video job read failed: ${response.status} ${await response.text()}`);
+    }
+    const current = await response.json();
+    if (current.status === "completed" && current.render_stage === "done") return current;
+    if (current.status === "failed") {
+      throw new Error(`Retained video job failed again: ${JSON.stringify(current)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+  throw new Error(`Timed out waiting for retained video job ${job.publicId}`);
+}
+
+async function resumeRetainedVideoJob(backendEnv) {
+  const job = await readRetainedVideoJob(backendEnv);
+  const accessToken = await authenticateRetainedVideoUser(job);
+  let mode;
+  let completed;
+  if (job.status === "completed" && job.renderStage === "done") {
+    mode = "already_completed";
+    completed = await waitForRetainedVideoJob(job, accessToken);
+  } else if (job.status === "failed") {
+    const response = await fetch(
+      `http://127.0.0.1:${backendPort}/v1/video/jobs/${job.publicId}/retry`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${accessToken}` },
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Retained video job retry failed: ${response.status} ${await response.text()}`);
+    }
+    mode = "failed_retry";
+    completed = await waitForRetainedVideoJob(job, accessToken);
+  } else {
+    await recoverInterruptedVideoJob(backendEnv);
+    mode = "interrupted_resume";
+    completed = await waitForRetainedVideoJob(job, accessToken);
+  }
+  fs.writeFileSync(
+    path.join(resultDir, "worker-recovery-result.json"),
+    `${JSON.stringify({ mode, job: completed }, null, 2)}\n`,
+  );
+  return completed;
+}
+
 function assertResumeManifest() {
   const manifestPath = path.join(resultDir, "run-manifest.json");
   if (!fs.existsSync(manifestPath)) {
@@ -748,6 +1073,49 @@ async function verifyResumedVideoJob(backendEnv) {
   const { stdout } = await run(pythonCommand, ["-c", script], { cwd: backendRoot, env: backendEnv });
   const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
   fs.writeFileSync(path.join(resultDir, "resume-verification.json"), `${JSON.stringify(result, null, 2)}\n`);
+}
+
+async function readRetainedExportSeed(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, ContentAsset, User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " job=db.query(VideoRenderJob).order_by(VideoRenderJob.id.desc()).first()",
+    " assert job is not None and job.status == 'completed' and job.render_stage == 'done', 'retained video job is not completed'",
+    " assert job.conversation_id, 'retained export requires a conversation'",
+    " user=db.get(User, job.user_id)",
+    " asset=db.get(ContentAsset, job.asset_id)",
+    " conversation=db.get(AssetConversation, job.conversation_id)",
+    " assert user is not None and asset is not None and conversation is not None, 'retained export identity is missing'",
+    " assert asset.user_id == job.user_id and conversation.user_id == job.user_id, 'retained export identity ownership mismatch'",
+    " assert conversation.public_id, 'retained export conversation public identity is missing'",
+    " metadata=dict(asset.metadata_json or {})",
+    " plan=dict(metadata.get('video_plan') or {})",
+    " scenes=[item for item in (plan.get('scenes') or []) if isinstance(item, dict)]",
+    " assert scenes, 'retained export requires project scenes'",
+    " result={'email': user.email, 'conversationId': conversation.public_id, 'projectAssetId': asset.id, 'videoJobId': job.public_id, 'expectedSceneCount': len(scenes)}",
+    "print(json.dumps(result, ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot,
+    env: backendEnv,
+  });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  fs.writeFileSync(
+    path.join(resultDir, "retained-export-seed.json"),
+    `${JSON.stringify(seed, null, 2)}\n`,
+  );
+  return {
+    ...seed,
+    backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026",
+    resultDir,
+    targetSeconds,
+    minimumDurationSeconds,
+    maximumDurationSeconds,
+    ratio: targetRatio,
+  };
 }
 
 async function writeQaReport() {
@@ -884,13 +1252,13 @@ try {
     }
   }
   fs.mkdirSync(artifactDir, { recursive: true });
-  const stagedBgm = expectBgm ? stageBgmCatalogIfAvailable() : null;
+  const stagedBgm = !isResume && expectBgm ? stageBgmCatalogIfAvailable() : null;
   if (expectBgm && stagedBgm === null) {
     expectBgm = false;
     console.log("BGM unavailable: no active local catalog with media and license evidence; continuing without BGM.");
   }
   const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
-  const productMediaManifestRef = stageApprovedProductMediaCatalog();
+  const productMediaManifestRef = isResume ? "" : stageApprovedProductMediaCatalog();
   console.log(`Video pipeline E2E temp database: ${databasePath}`);
   console.log(`Video pipeline E2E temp artifacts: ${artifactDir}`);
   console.log(
@@ -965,6 +1333,8 @@ try {
     }, null, 2));
   }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
+  const sourceExcerptRemoteStorage = expectedVideoType === "source_excerpt";
+  const remoteWriteLedgerPath = path.join(lifecycle.runDir, "remote-artifact-writes.ndjson");
   const backendEnv = {
     ...process.env,
     ...canonicalEnv,
@@ -973,16 +1343,33 @@ try {
     MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
     MULTIMIX_DATABASE_URL: databaseUrl,
     MULTIMIX_ARTIFACT_DIR: artifactDir,
-    MULTIMIX_SUPABASE_URL: "",
+    MULTIMIX_SUPABASE_URL: sourceExcerptRemoteStorage
+      ? (canonicalEnv.MULTIMIX_SUPABASE_URL ?? canonicalEnv.SUPABASE_URL ?? "")
+      : "",
     MULTIMIX_SUPABASE_PUBLISHABLE_KEY: "",
     MULTIMIX_SUPABASE_ANON_KEY: "",
-    MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
+    MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: sourceExcerptRemoteStorage
+      ? (canonicalEnv.MULTIMIX_SUPABASE_SERVICE_ROLE_KEY ?? canonicalEnv.SUPABASE_SERVICE_ROLE_KEY ?? "")
+      : "",
     SUPABASE_URL: "",
     SUPABASE_ANON_KEY: "",
     SUPABASE_SERVICE_ROLE_KEY: "",
-    MULTIMIX_S3_ENDPOINT_URL: "",
-    MULTIMIX_S3_ACCESS_KEY: "",
-    MULTIMIX_S3_SECRET_KEY: "",
+    MULTIMIX_S3_ENDPOINT_URL: sourceExcerptRemoteStorage
+      ? (canonicalEnv.MULTIMIX_S3_ENDPOINT_URL ?? "")
+      : "",
+    MULTIMIX_S3_ACCESS_KEY: sourceExcerptRemoteStorage
+      ? (canonicalEnv.MULTIMIX_S3_ACCESS_KEY ?? "")
+      : "",
+    MULTIMIX_S3_SECRET_KEY: sourceExcerptRemoteStorage
+      ? (canonicalEnv.MULTIMIX_S3_SECRET_KEY ?? "")
+      : "",
+    MULTIMIX_S3_BUCKET: canonicalEnv.MULTIMIX_S3_BUCKET ?? "multimix-artifacts",
+    MULTIMIX_ARTIFACT_KEY_PREFIX: sourceExcerptRemoteStorage
+      ? `e2e/video-pipeline-production/${runId}`
+      : "",
+    ...(sourceExcerptRemoteStorage
+      ? { MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH: remoteWriteLedgerPath }
+      : {}),
     MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
     MULTIMIX_TEST_LLM_SNAPSHOT_DIR: path.join(artifactDir, "llm-requests"),
     MULTIMIX_ASSET_GENERATION_QUEUE_ENABLED: "true",
@@ -1008,6 +1395,7 @@ try {
     MULTIMIX_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
     MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
+  if (!sourceExcerptRemoteStorage) delete backendEnv.MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH;
   decisionAuditEnv = backendEnv;
   const nextDistDir = `.next-video-pipeline-${runId}`;
   const frontendEnv = {
@@ -1030,6 +1418,9 @@ try {
       stderr: process.stderr,
     },
   ));
+  if (isResume) {
+    await restoreCheckpointedRemoteArtifacts(backendEnv);
+  }
   let vision;
   await lifecycle.measure("vision_service_startup", async () => {
     if (!usesExternalVisionService) {
@@ -1073,9 +1464,41 @@ try {
     await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
   });
   if (isResume) {
-    await recoverInterruptedVideoJob(backendEnv);
+    if (expectedVideoType === "source_excerpt") {
+      await rehydrateRetainedSourceExcerpt(backendEnv);
+    }
+    await resumeRetainedVideoJob(backendEnv);
     await verifyResumedVideoJob(backendEnv);
     lifecycle.record("worker", "resumed_and_verified");
+    const retainedExportSeed = await readRetainedExportSeed(backendEnv);
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot,
+        frontendEnv,
+        "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    await lifecycle.measure("playwright", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-export.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-export"),
+          VIDEO_PIPELINE_RETAINED_EXPORT_SEED: JSON.stringify(retainedExportSeed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    await lifecycle.measure("candidate_video_verification", () => verifyCandidateVideo());
+    await lifecycle.measure("qa_report", () => writeQaReport());
+    lifecycle.record("playwright", "passed");
   } else {
     await lifecycle.measure("frontend_startup", async () => {
       const frontend = startProcess(
@@ -1154,12 +1577,20 @@ try {
 } finally {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
-  if (providerProxy) await providerProxy.close();
   let cleanupError;
+  if (decisionAuditEnv) {
+    try {
+      await checkpointRemoteArtifactWrites(decisionAuditEnv);
+      await cleanupRemoteArtifactWrites(decisionAuditEnv);
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+  if (providerProxy) await providerProxy.close();
   try {
     await exportDecisionEvents();
   } catch (error) {
-    cleanupError = error;
+    cleanupError ??= error;
   }
   restoreFiles(workspaceSnapshots);
   try {

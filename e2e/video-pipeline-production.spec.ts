@@ -1,16 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 
 import {
   expect,
   test,
   type APIResponse,
   type Page,
+  type Route,
   type Response as PlaywrightResponse,
 } from "@playwright/test";
 
 import {
   PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION,
+  selectClosestDurationCandidate,
   selectProductionGeneratedRecomposeTarget,
 } from "../test-support/video-pipeline-production-helpers";
 
@@ -185,7 +188,7 @@ if (!(targetRatio in ratioAcceptance)) {
   throw new Error("VIDEO_PIPELINE_RATIO must be one of 16:9, 9:16, or 1:1");
 }
 const targetRatioAcceptance = ratioAcceptance[targetRatio as keyof typeof ratioAcceptance];
-const expectedSceneCount = Number(
+let expectedSceneCount = Number(
   process.env.VIDEO_PIPELINE_EXPECTED_SCENE_COUNT
     ?? (targetSeconds >= 45 ? 8 : 6),
 );
@@ -222,6 +225,11 @@ type AssetRow = {
 
 type VideoProject = {
   ratio?: string;
+  media?: Array<{
+    id?: string;
+    type?: string;
+    file_path?: string;
+  }>;
   metadata?: {
     duration?: number;
     closing_hold_seconds?: number;
@@ -258,6 +266,9 @@ type VideoProject = {
       segmentId?: string;
       startTime?: number;
       duration?: number;
+      mediaId?: string;
+      trimStart?: number;
+      sourceStartSeconds?: number;
       content?: string;
       textRole?: string;
       subtitlePresentation?: string;
@@ -297,7 +308,15 @@ type SceneRow = {
       start_seconds?: number;
       end_seconds?: number;
       retained_ranges?: Array<{ start_seconds?: number; end_seconds?: number }>;
+      source_fingerprint?: string;
+      active_range?: { start_seconds?: number; end_seconds?: number };
     };
+  };
+  audio_intent?: {
+    mode?: string;
+    source_asset_id?: number;
+    source_fingerprint?: string;
+    source_range?: { start_seconds?: number; end_seconds?: number };
   };
   asset_requirement?: { evidence_required?: boolean };
   mg_decision?: {
@@ -405,22 +424,53 @@ async function enterWorkspace(page: Page) {
   await expect(workspaceHeading).toBeVisible({ timeout: 30_000 });
 }
 
-async function postConversation(page: Page, text: string) {
-  await page.getByLabel("输入对话内容").fill(text);
-  const responsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().includes("/v1/assets/conversations/messages"),
-    { timeout: 360_000 },
-  );
-  await page.getByRole("button", { name: "发送" }).click();
-  const response = await responsePromise;
-  const failureBody = response.ok() ? "" : await response.text();
-  expect(
-    response.ok(),
-    `conversation request failed: ${response.status()} ${failureBody}`,
-  ).toBe(true);
-  return response;
+async function postConversation(
+  page: Page,
+  text: string,
+  linkedAssetIds: number[] = [],
+  payloadPatch: Record<string, unknown> = {},
+) {
+  const messageRoute = "**/v1/assets/conversations/messages";
+  const attachLinkedAssets = async (route: Route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    const payload = request.postDataJSON() as Record<string, unknown>;
+    await route.continue({
+      postData: JSON.stringify({
+        ...payload,
+        linked_asset_ids: linkedAssetIds,
+        ...payloadPatch,
+      }),
+    });
+  };
+
+  if (linkedAssetIds.length > 0 || Object.keys(payloadPatch).length > 0) {
+    await page.route(messageRoute, attachLinkedAssets);
+  }
+  try {
+    await page.getByLabel("输入对话内容").fill(text);
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/v1/assets/conversations/messages"),
+      { timeout: 360_000 },
+    );
+    await page.getByRole("button", { name: "发送" }).click();
+    const response = await responsePromise;
+    const failureBody = response.ok() ? "" : await response.text();
+    expect(
+      response.ok(),
+      `conversation request failed: ${response.status()} ${failureBody}`,
+    ).toBe(true);
+    return response;
+  } finally {
+    if (linkedAssetIds.length > 0 || Object.keys(payloadPatch).length > 0) {
+      await page.unroute(messageRoute, attachLinkedAssets);
+    }
+  }
 }
 
 async function confirmVideoParametersIfRequired(
@@ -495,6 +545,58 @@ async function confirmVideoParametersIfRequired(
   }
   expect(payload.generation_job?.id, "generation confirmation must queue a job").toBeTruthy();
   return payload;
+}
+
+async function waitForGenerationJob(
+  page: Page,
+  {
+    apiBase,
+    headers,
+    jobId,
+    stageLabel,
+  }: {
+    apiBase: string;
+    headers: Record<string, string>;
+    jobId: string;
+    stageLabel: string;
+  },
+) {
+  let completed: (GenerationJobTimingSource & {
+    result_asset_id?: number | null;
+    error_code?: string;
+    error_message?: string;
+  }) | undefined;
+  await expect
+    .poll(
+      async () => {
+        let response: APIResponse;
+        try {
+          response = await page.request.get(
+            `${apiBase}/v1/assets/generation-jobs/${jobId}`,
+            { headers },
+          );
+        } catch (error) {
+          return `transport-error:${error instanceof Error ? error.name : "unknown"}`;
+        }
+        if (!response.ok()) return `http-${response.status()}`;
+        const job = (await response.json()) as GenerationJobTimingSource & {
+          result_asset_id?: number | null;
+          error_code?: string;
+          error_message?: string;
+        };
+        if (job.status === "failed") {
+          throw new Error(
+            `${stageLabel} failed (${job.error_code ?? "unknown"}): ${job.error_message ?? "unknown error"}`,
+          );
+        }
+        if (job.status === "completed") completed = job;
+        return job.status;
+      },
+      { timeout: 20 * 60_000, intervals: [1000, 2500, 5000] },
+    )
+    .toBe("completed");
+  expect(completed?.result_asset_id, `${stageLabel} must persist a result asset`).toBeTruthy();
+  return completed!;
 }
 
 async function waitForProjectReady(
@@ -592,6 +694,78 @@ function scenesFromAsset(asset: AssetRow): SceneRow[] {
   return (plan as { scenes: SceneRow[] }).scenes;
 }
 
+function assertDistinctPersistedPrimaryVisualWindows(
+  scenes: SceneRow[],
+  videoProject: VideoProject | undefined,
+) {
+  const repeatedScenesByRef = new Map<string, SceneRow[]>();
+  for (const scene of scenes) {
+    const ref = scene.primary_visual?.artifact_ref?.trim() ?? "";
+    if (!ref) continue;
+    repeatedScenesByRef.set(ref, [...(repeatedScenesByRef.get(ref) ?? []), scene]);
+  }
+
+  const repeatedGroups = [...repeatedScenesByRef.entries()].filter(
+    ([, groupedScenes]) => groupedScenes.length > 1,
+  );
+  if (repeatedGroups.length === 0) return;
+
+  const mainVideoTrack = videoProject?.tracks?.find(
+    (track) => track.overlay !== true && (track.id === "track-video" || track.type === "video"),
+  );
+  expect(mainVideoTrack, "reused main visuals require a non-overlay main video track").toBeTruthy();
+
+  const mediaRefById = new Map(
+    (videoProject?.media ?? [])
+      .filter((item) => item.id && item.file_path)
+      .map((item) => [item.id!, item.file_path!] as const),
+  );
+  const sourceWindowsBySceneAndRef = new Map<string, Array<{ start: number; end: number }>>();
+  for (const element of mainVideoTrack?.elements ?? []) {
+    const sceneId = element.segmentId?.trim() ?? "";
+    const ref = mediaRefById.get(element.mediaId ?? "") ?? "";
+    if (!sceneId || !ref) continue;
+    const start = Number(element.sourceStartSeconds ?? element.trimStart);
+    const duration = Number(element.duration);
+    if (!Number.isFinite(start) || start < 0 || !Number.isFinite(duration) || duration <= 0) {
+      continue;
+    }
+    const key = `${sceneId}\u0000${ref}`;
+    sourceWindowsBySceneAndRef.set(key, [
+      ...(sourceWindowsBySceneAndRef.get(key) ?? []),
+      { start, end: start + duration },
+    ]);
+  }
+
+  for (const [ref, groupedScenes] of repeatedGroups) {
+    const sceneWindows = groupedScenes.map((scene) => ({
+      sceneId: scene.id,
+      windows: sourceWindowsBySceneAndRef.get(`${scene.id}\u0000${ref}`) ?? [],
+    }));
+    for (const entry of sceneWindows) {
+      expect(
+        entry.windows.length,
+        `reused main visual requires a finite positive source window: scene=${entry.sceneId} ref=${ref}`,
+      ).toBeGreaterThan(0);
+    }
+    for (let leftIndex = 0; leftIndex < sceneWindows.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < sceneWindows.length; rightIndex += 1) {
+        const left = sceneWindows[leftIndex];
+        const right = sceneWindows[rightIndex];
+        for (const leftWindow of left.windows) {
+          for (const rightWindow of right.windows) {
+            expect(
+              leftWindow.end <= rightWindow.start + 0.001 ||
+                leftWindow.start >= rightWindow.end - 0.001,
+              `source windows must not overlap for ${ref}: ${left.sceneId}=[${leftWindow.start},${leftWindow.end}) ${right.sceneId}=[${rightWindow.start},${rightWindow.end})`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+  }
+}
+
 function mgDiagnostic(scenes: SceneRow[]) {
   return scenes
     .map((scene) => {
@@ -628,7 +802,7 @@ function generatedPrimaryRepeatsVisibleSubtitle(scene: SceneRow) {
     scene.primary_scene_spec?.content?.headline ??
     scene.primary_scene_spec?.exactText?.[0] ??
     "";
-  const visibleSubtitle = scene.subtitle_focus?.trim() || scene.narration;
+  const visibleSubtitle = scene.narration?.trim() || scene.subtitle_focus;
   return Boolean(
     headline.trim() &&
     normalizedVisibleText(headline) === normalizedVisibleText(visibleSubtitle),
@@ -700,24 +874,39 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     ? { authorization }
     : {};
 
+  let sourceExcerptAssetId: number | undefined;
+  let sourceExcerptExpectedFingerprint: string | undefined;
   if (expectedVideoType === "source_excerpt") {
-    const sourceVideoResponse = await page.request.post(`${apiBase}/v1/assets/upload`, {
+    const sourceExcerptBuffer = fs.readFileSync(sourceExcerptVideo!);
+    sourceExcerptExpectedFingerprint = crypto
+      .createHash("sha256")
+      .update(sourceExcerptBuffer)
+      .digest("hex");
+    const sourceVideoResponse = await page.request.post(`${apiBase}/v1/long-form/sources/upload`, {
       headers,
       multipart: {
         file: {
           name: "授权长视频原片.mp4",
           mimeType: "video/mp4",
-          buffer: fs.readFileSync(sourceExcerptVideo!),
+          buffer: sourceExcerptBuffer,
         },
-        target_kind: "video",
       },
     });
     expect(
       sourceVideoResponse.ok(),
       `source excerpt video upload failed: ${sourceVideoResponse.status()} ${await sourceVideoResponse.text()}`,
     ).toBe(true);
+    const sourceVideoAsset = (await sourceVideoResponse.json()) as {
+      id?: number;
+    };
+    expect(typeof sourceVideoAsset.id, "source excerpt asset id is missing").toBe("number");
+    if (typeof sourceVideoAsset.id !== "number") {
+      throw new Error("source excerpt asset id is missing");
+    }
+    sourceExcerptAssetId = sourceVideoAsset.id;
   }
 
+  const demonstrationLinkedAssetIds: number[] = [];
   if (expectedVideoType === "demonstration") {
     const demonstrationMediaFiles = JSON.parse(demonstrationMediaFilesRaw ?? "[]") as Array<{
       path?: string;
@@ -763,12 +952,34 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         mediaResponse.ok(),
         `demonstration saved-media upload failed: ${mediaResponse.status()} ${await mediaResponse.text()}`,
       ).toBe(true);
+      const mediaAsset = (await mediaResponse.json()) as {
+        id?: number;
+        metadata?: {
+          understanding?: {
+            status?: string;
+            error_code?: string;
+          };
+        };
+      };
+      const understanding = mediaAsset.metadata?.understanding;
+      expect(
+        understanding?.status,
+        `demonstration source understanding failed: index=${index + 1} status=${understanding?.status ?? "missing"} code=${understanding?.error_code ?? "missing"}`,
+      ).toBe("ready");
+      expect(
+        typeof mediaAsset.id,
+        `demonstration source asset id is missing: index=${index + 1}`,
+      ).toBe("number");
+      if (typeof mediaAsset.id !== "number") {
+        throw new Error(`demonstration source asset id is missing: index=${index + 1}`);
+      }
+      demonstrationLinkedAssetIds.push(mediaAsset.id);
     }
   }
 
   const generationInstruction =
     expectedVideoType === "demonstration"
-      ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的商家内容制作示范片。刚上传的装修图片只作为真实业务环境和服务过程的通用 B-roll，不是 MultiMix 客户项目，也不能证明 MultiMix 产品能力。请用其中一个分镜准确呈现资料中已核验的产品能力：MultiMix 可以把上传资料与已保存图片、视频组织成可编辑分镜；这条产品能力声明必须使用批准的产品界面或忠于原文的事实卡作为证据。其他镜头只在解释流程时使用动态图解；不得把通用素材说成客户案例、前后对比或效果证明。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
+      ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的 MultiMix 操作演示片。整条视频必须按“上传资料与素材 → 理解并组织已有素材 → 生成可编辑分镜与预览”的可观察操作顺序推进，不要改成只介绍概念和卖点的产品讲解。至少两个不同分镜必须使用两个不同的已审核产品界面：上传或进入工作区步骤使用工作区总览界面，生成可编辑分镜与预览步骤使用另一张分镜编辑或视频预览界面；两个操作界面都不得由装修素材替代。只有涉及 MultiMix 产品能力、操作结果或效果的文字才必须由产品资料支持。三段已选视频也都必须出现在主画面中：过程基线用于开场输入，步骤迭代用于理解和组织，结果与图形增强只用于展示画面中已经存在的区域标签和 KITCHEN FLOW / 服务流程文字，不作为产品结果证明；该镜不声称素材由系统完成了组织，不得使用“自动整理、自动标注、自动生成”等资料未逐字支持的能力表述。本轮只使用这三段已选素材和批准产品界面，不使用公共素材。刚上传的装修视频只作为被输入和组织的真实业务素材，不是 MultiMix 客户项目，也不能证明产品效果；不得把它们说成产品操作界面、客户案例、前后对比或效果证明。每个分镜必须承担不同且必要的操作、状态或结果，不能换一种说法重复前一镜。动态图解只能标注步骤关系，不能替代操作证据。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
       : expectedVideoType === "source_excerpt"
         ? `从刚上传的长视频中忠实摘取一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的片段视频。保留来源原声、说话人和原意，选段必须有明确 source_range，不得用改写旁白替代原片，也不得拼接造成断章取义。先给出编导稿和候选选段，不要展示内部制作方式。`
       : inputProfile === "explainer_public_broll"
@@ -776,16 +987,88 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         : inputProfile === "explainer_data_process"
           ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的数据与流程讲解视频。至少三个分镜分别用数据总结、步骤流程和结构关系来解释资料中已经明确的产品闭环；只使用资料里有依据的信息，不虚构数字、案例或产品界面。MG 可以承担结构化解释，但不能替代真实证据或审核产品截图。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`;
-  const generationResponse = await postConversation(
-    page,
-    `${generationInstruction}${expectBgm ? "" : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
-  );
-  const generationPayload = await confirmVideoParametersIfRequired(
-    page,
-    generationResponse,
-    targetRatio as keyof typeof ratioAcceptance,
-  );
-  const generationJobId = generationPayload.generation_job?.id;
+  let generationJobId: string | undefined;
+  if (expectedVideoType === "source_excerpt") {
+    expect(sourceExcerptAssetId, "source excerpt requires a dedicated source asset").toBeTruthy();
+    const analysisResponse = await postConversation(
+      page,
+      generationInstruction,
+      [],
+      {
+        long_form_action: {
+          kind: "analyze",
+          source_asset_id: sourceExcerptAssetId,
+        },
+      },
+    );
+    const analysisPayload = (await analysisResponse.json()) as {
+      generation_job?: { id?: string };
+    };
+    const analysisJobId = analysisPayload.generation_job?.id;
+    expect(analysisJobId, "long-form analysis must queue a generation job").toBeTruthy();
+    const analysisJob = await measureE2EStage("long_form_analysis", () =>
+      waitForGenerationJob(page, {
+        apiBase,
+        headers,
+        jobId: analysisJobId!,
+        stageLabel: "long-form analysis",
+      }),
+    );
+    const assetsResponse = await page.request.get(`${apiBase}/v1/assets`, { headers });
+    expect(assetsResponse.ok()).toBe(true);
+    const analysisAsset = ((await assetsResponse.json()) as AssetRow[]).find(
+      (asset) => asset.id === analysisJob.result_asset_id,
+    );
+    expect(analysisAsset?.content_type).toBe("long_form_candidate_set");
+    const analysisMetadata = analysisAsset?.metadata ?? {};
+    expect(analysisMetadata.source_asset_id).toBe(sourceExcerptAssetId);
+    const analysisFingerprint = String(analysisMetadata.source_fingerprint ?? "");
+    expect(analysisFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(analysisFingerprint).toBe(sourceExcerptExpectedFingerprint);
+    const topCandidateIds = Array.isArray(analysisMetadata.top_candidate_ids)
+      ? analysisMetadata.top_candidate_ids.map(String).filter(Boolean)
+      : [];
+    expect(topCandidateIds.length, "long-form analysis must produce a grounded top candidate").toBeGreaterThan(0);
+    const selectedCandidateId = selectClosestDurationCandidate(
+      Array.isArray(analysisMetadata.top_candidates)
+        ? analysisMetadata.top_candidates as Array<Record<string, unknown>>
+        : [],
+      topCandidateIds,
+      targetSeconds,
+    )?.id;
+    expect(
+      selectedCandidateId,
+      "long-form analysis must expose a positive duration for a grounded top candidate",
+    ).toBeTruthy();
+    const selectionResponse = await postConversation(
+      page,
+      `选择最值得发布、接近${targetSeconds}秒且适合${targetRatioAcceptance.instructionLabel}的候选，保留原声并生成编导稿。`,
+      [],
+      {
+        long_form_action: {
+          kind: "select",
+          analysis_asset_id: analysisAsset!.id,
+          candidate_id: selectedCandidateId,
+        },
+      },
+    );
+    const selectionPayload = (await selectionResponse.json()) as {
+      generation_job?: { id?: string };
+    };
+    generationJobId = selectionPayload.generation_job?.id;
+  } else {
+    const generationResponse = await postConversation(
+      page,
+      `${generationInstruction}${expectBgm ? "" : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
+      demonstrationLinkedAssetIds,
+    );
+    const generationPayload = await confirmVideoParametersIfRequired(
+      page,
+      generationResponse,
+      targetRatio as keyof typeof ratioAcceptance,
+    );
+    generationJobId = generationPayload.generation_job?.id;
+  }
   expect(
     generationJobId,
     "queued conversation response must include a generation job",
@@ -838,6 +1121,46 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   // user action must be the distinct video-project confirmation card.
   const pendingCard = page.getByLabel("视频方案 · 待确认");
   await expect(pendingCard).toBeVisible({ timeout: 180_000 });
+  const directorAssetsResponse = await page.request.get(`${apiBase}/v1/assets`, {
+    headers,
+  });
+  expect(directorAssetsResponse.ok()).toBe(true);
+  const directorAssets = (await directorAssetsResponse.json()) as AssetRow[];
+  const directorAsset = directorAssets
+    .filter(
+      (asset) =>
+        asset.content_type === "video_script" &&
+        asset.metadata?.video_plan &&
+        typeof asset.metadata.video_plan === "object",
+    )
+    .at(-1);
+  expect(directorAsset, "completed director generation must persist a video plan").toBeTruthy();
+  const directorVideoPlan = directorAsset!.metadata?.video_plan as {
+    video_type?: string;
+    scenes?: SceneRow[];
+    internal_production?: {
+      strategy?: {
+        video_type?: string;
+        strategy_version?: string;
+        package_digest?: string;
+        runtime_schema_version?: string;
+      };
+    };
+  };
+  expect(
+    directorVideoPlan.video_type,
+    `director selected wrong video type: expected=${expectedVideoType} actual=${directorVideoPlan.video_type ?? "missing"}`,
+  ).toBe(expectedVideoType);
+  if (expectedVideoType === "source_excerpt") {
+    expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
+    expect(expectedSceneCount, "selected source excerpt must contain retained source scenes").toBeGreaterThan(0);
+    expect(directorVideoPlan.internal_production?.strategy?.video_type).toBe("source_excerpt");
+    expect(directorVideoPlan.internal_production?.strategy?.strategy_version).toBeTruthy();
+    expect(directorVideoPlan.internal_production?.strategy?.package_digest).toMatch(/^[a-f0-9]{64}$/);
+    expect(directorVideoPlan.internal_production?.strategy?.runtime_schema_version).toBe(
+      "multimix_video_runtime_v2",
+    );
+  }
   const confirmButton = pendingCard.locator(
     "button.shadcn-prototype-confirm-primary",
   );
@@ -1022,6 +1345,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .toMatch(/^(?:ready|not-needed)$/);
     const persistedVideoPlan = projectAsset!.metadata?.video_plan as {
       video_type?: string;
+      duration_seconds?: number;
       duration_contract?: { target_seconds?: number };
       mg_plan?: { layout?: string };
       internal_production?: {
@@ -1044,9 +1368,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       };
     };
     expect(persistedVideoPlan.mg_plan?.layout).toBe(targetRatioAcceptance.layout);
-    expect(Number(persistedVideoPlan.duration_contract?.target_seconds)).toBe(
-      targetSeconds,
-    );
     expect(persistedVideoPlan.video_type).toBe(expectedVideoType);
     beforeScenes = scenesFromAsset(projectAsset!);
     const allowedVisualTreatments = new Set([
@@ -1063,14 +1384,27 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }
     if (expectedVideoType === "source_excerpt") {
       for (const scene of beforeScenes) {
-        expect(scene.asset_reference?.source_range?.start_seconds).toBeGreaterThanOrEqual(0);
-        expect(scene.asset_reference?.source_range?.end_seconds).toBeGreaterThan(
-          scene.asset_reference?.source_range?.start_seconds ?? 0,
+        const authorityRange = scene.asset_reference?.source_range;
+        const activeRange = authorityRange?.active_range;
+        expect(activeRange?.start_seconds).toBeGreaterThanOrEqual(0);
+        expect(activeRange?.end_seconds).toBeGreaterThan(
+          activeRange?.start_seconds ?? 0,
         );
+        expect(scene.audio_intent?.mode).toBe("source_clip");
+        expect(scene.audio_intent?.source_asset_id).toBe(sourceExcerptAssetId);
+        expect(scene.audio_intent?.source_fingerprint).toBe(authorityRange?.source_fingerprint);
+        expect(scene.audio_intent?.source_range).toEqual(activeRange);
+        expect(scene.primary_visual?.source_type).toBe("saved_asset");
+        expect(scene.mg_decision?.needed).toBe(false);
       }
+      expect(Number(persistedVideoPlan.duration_seconds)).toBeGreaterThan(0);
+    } else {
+      expect(Number(persistedVideoPlan.duration_contract?.target_seconds)).toBe(
+        targetSeconds,
+      );
     }
-    const artDirection =
-      persistedVideoPlan.internal_production?.art_direction;
+    const artDirection = persistedVideoPlan.internal_production?.art_direction;
+    if (expectedVideoType !== "source_excerpt") {
     expect(artDirection?.schema_version).toBe("video_art_direction_v2");
     expect(Object.keys(artDirection?.scene_surface_by_id ?? {})).toHaveLength(
       expectedSceneCount,
@@ -1152,6 +1486,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         artDirection?.scene_surface_by_id?.[scene.id],
       );
     }
+    }
   expect(beforeScenes).toHaveLength(expectedSceneCount);
     expect(
       beforeScenes.every(
@@ -1164,36 +1499,53 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const primaryVisualRefs = beforeScenes.map(
     (scene) => scene.primary_visual?.artifact_ref ?? "",
   );
-  expect(
-    new Set(primaryVisualRefs).size,
-    "every scene must use a distinct persisted main visual",
-  ).toBe(primaryVisualRefs.length);
+  if (expectedVideoType === "source_excerpt") {
+    expect(new Set(primaryVisualRefs).size).toBe(1);
+  }
   if (expectedVideoType === "demonstration") {
-      const savedSourceIds = new Set(
-        beforeScenes
-          .filter(
-            (scene) => scene.primary_visual?.source_type === "saved_asset",
-          )
-      .map((scene) => scene.primary_visual?.provenance?.source_asset_id)
-          .filter(Boolean),
-      );
+    const savedSourceIds = new Set(
+      beforeScenes
+        .filter(
+          (scene) => scene.primary_visual?.source_type === "saved_asset",
+        )
+        .map((scene) => scene.primary_visual?.provenance?.source_asset_id)
+        .filter(Boolean),
+    );
     expect(
       savedSourceIds.size,
       "demonstration should consume all three already-ranked uploaded clips before generated fallback",
     ).toBeGreaterThanOrEqual(3);
-      const evidenceScenes = beforeScenes.filter(
-        (scene) => scene.asset_requirement?.evidence_required === true,
-      );
-      expect(
-        evidenceScenes.length,
-        "demonstration should include at least one grounded evidence scene",
-      ).toBeGreaterThan(0);
+    const productScenes = beforeScenes.filter(
+      (scene) => scene.primary_visual?.source_type === "product_asset",
+    );
+    expect(
+      productScenes.length,
+      "demonstration should persist at least two reviewed product operation scenes",
+    ).toBeGreaterThanOrEqual(2);
+    const distinctProductCatalogEntries = new Set(
+      productScenes
+        .map(
+          (scene) => scene.primary_visual?.provenance?.catalog_entry_id,
+        )
+        .filter(Boolean),
+    );
+    expect(
+      distinctProductCatalogEntries.size,
+      "the two distinct reviewed product captures must both be used",
+    ).toBeGreaterThanOrEqual(2);
+    const evidenceScenes = beforeScenes.filter(
+      (scene) => scene.asset_requirement?.evidence_required === true,
+    );
+    expect(
+      evidenceScenes.length,
+      "demonstration should include at least one grounded evidence scene",
+    ).toBeGreaterThan(0);
     for (const scene of evidenceScenes) {
       expect(scene.primary_visual?.source_type).not.toBe("public_asset");
       if (scene.primary_visual?.source_type === "generated_scene") {
-          expect(scene.primary_visual.provenance?.grounding).toBe(
-            "confirmed_fact",
-          );
+        expect(scene.primary_visual.provenance?.grounding).toBe(
+          "confirmed_fact",
+        );
       }
     }
   }
@@ -1214,6 +1566,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   expect(beforeScenes).toHaveLength(expectedSceneCount);
   const videoProject = projectAsset!.metadata?.video_project as
     VideoProject | undefined;
+  if (expectedVideoType !== "source_excerpt") {
+    assertDistinctPersistedPrimaryVisualWindows(beforeScenes, videoProject);
+  }
   const assetManifest = projectAsset!.metadata?.asset_manifest as
     AssetManifest | undefined;
   const editDecisions = projectAsset!.metadata?.edit_decisions as

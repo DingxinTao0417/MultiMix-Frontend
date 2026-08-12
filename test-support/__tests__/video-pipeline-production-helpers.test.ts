@@ -2,8 +2,28 @@ import { describe, expect, it } from "vitest";
 
 import {
   PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION,
+  selectClosestDurationCandidate,
   selectProductionGeneratedRecomposeTarget,
 } from "../video-pipeline-production-helpers";
+
+describe("selectClosestDurationCandidate", () => {
+  it("selects the grounded top candidate closest to the requested duration", () => {
+    expect(selectClosestDurationCandidate([
+      { id: "long", target_seconds: 91.48 },
+      { id: "fit", target_seconds: 31.13 },
+    ], ["long", "fit"], 30)?.id).toBe("fit");
+  });
+
+  it("keeps top-candidate rank for equal duration distance and rejects invalid rows", () => {
+    expect(selectClosestDurationCandidate([
+      { id: "outside", target_seconds: 30 },
+      { id: "first", target_seconds: 29 },
+      { id: "second", target_seconds: 31 },
+      { id: "invalid", target_seconds: 0 },
+    ], ["first", "second", "invalid"], 30)?.id).toBe("first");
+    expect(selectClosestDurationCandidate([], [], 30)).toBeUndefined();
+  });
+});
 
 describe("selectProductionGeneratedRecomposeTarget", () => {
   it("selects a generated MG scene instead of another generated visual family", () => {

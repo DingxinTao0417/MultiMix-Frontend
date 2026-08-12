@@ -6,6 +6,7 @@ import path from "node:path";
 const RUNTIME_ROOT = path.join(os.homedir(), "Desktop", "multimix-test-results", "e2e-runtime");
 const RUN_ID = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/;
 const SUITE = /^[a-z][a-z0-9-]{0,79}$/;
+const RETAINED_RUN_STATUSES = new Set(["failed_retained", "passed_pending_cleanup"]);
 
 function assertSegment(value, expression, label) {
   if (typeof value !== "string" || !expression.test(value)) {
@@ -95,7 +96,7 @@ export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resu
   }
   const stageTiming = createStageTiming({ record, now });
   function finish(status, details = {}) {
-    if (!["failed_retained", "passed_pending_cleanup"].includes(status)) {
+    if (!RETAINED_RUN_STATUSES.has(status)) {
       throw new Error(`Invalid E2E terminal status: ${status}`);
     }
     state = {
@@ -133,8 +134,8 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
   const manifestPath = path.join(runDir, "run-state.json");
   if (!fs.existsSync(manifestPath)) throw new Error(`Retained E2E run not found: ${suite}/${runId}`);
   const previous = readJson(manifestPath);
-  if (previous.suite !== suite || previous.runId !== runId || previous.status !== "failed_retained") {
-    throw new Error(`E2E run ${suite}/${runId} is not a failed retained run.`);
+  if (previous.suite !== suite || previous.runId !== runId || !RETAINED_RUN_STATUSES.has(previous.status)) {
+    throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
   }
   if (!fs.existsSync(previous.databasePath) || !fs.existsSync(previous.artifactDir)) {
     throw new Error(`E2E run ${suite}/${runId} is missing its retained SQLite or ArtifactStore.`);
@@ -147,7 +148,7 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
   }
   const stageTiming = createStageTiming({ record });
   function finish(status, details = {}) {
-    if (!["failed_retained", "passed_pending_cleanup"].includes(status)) {
+    if (!RETAINED_RUN_STATUSES.has(status)) {
       throw new Error(`Invalid E2E terminal status: ${status}`);
     }
     const next = {
@@ -199,7 +200,7 @@ export function cleanupRetainedE2ERun({ suite, runId, confirmed }) {
   const manifestPath = path.join(runDir, "run-state.json");
   if (!fs.existsSync(manifestPath)) throw new Error(`Retained E2E run not found: ${suite}/${runId}`);
   const state = readJson(manifestPath);
-  if (state.suite !== suite || state.runId !== runId || !["failed_retained", "passed_pending_cleanup"].includes(state.status)) {
+  if (state.suite !== suite || state.runId !== runId || !RETAINED_RUN_STATUSES.has(state.status)) {
     throw new Error(`E2E run ${suite}/${runId} is not awaiting cleanup.`);
   }
   const receipt = { ...state, status: "cleanup_confirmed", cleanedAt: new Date().toISOString() };
