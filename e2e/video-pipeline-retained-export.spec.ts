@@ -100,6 +100,33 @@ async function readProject(
 }
 
 
+async function waitForCompletedProject(
+  page: Page,
+  value: RetainedExportSeed,
+  token: string,
+): Promise<ProjectAsset> {
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `${value.backendUrl}/v1/video/projects/${value.projectAssetId}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    if (!response.ok()) return `http-${response.status()}`;
+    const project = await response.json() as {
+      product_status?: string;
+      failure_reason?: string;
+      failure_scene_id?: string;
+    };
+    if (project.product_status === "failed") {
+      throw new Error(
+        `retained video product failed: scene=${project.failure_scene_id ?? "missing"} reason=${project.failure_reason ?? "missing"}`,
+      );
+    }
+    return project.product_status ?? "missing";
+  }, { timeout: 20 * 60_000, intervals: [1000, 2500, 5000] }).toBe("completed");
+  return readProject(page, value, token);
+}
+
+
 async function postCandidateSelection(
   page: Page,
   value: RetainedExportSeed,
@@ -383,6 +410,8 @@ test("opens and exports the completed retained video project", async ({ page }) 
         + `&product=asset-${activeSeed.projectAssetId}`,
     );
   }
+  const project = await waitForCompletedProject(page, activeSeed, token);
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(
     activeSeed.expectedSceneCount,
     { timeout: 180_000 },
@@ -394,9 +423,6 @@ test("opens and exports the completed retained video project", async ({ page }) 
   await expect(previewShell).toBeVisible();
   await expect(page.getByText("待补素材")).toHaveCount(0);
 
-  const project = activeSeed.projectAssetId === seed.projectAssetId
-    ? retainedProject
-    : await readProject(page, activeSeed, token);
   expect(project.id).toBe(activeSeed.projectAssetId);
   expect(project.content_type).toBe("video_project");
   expect(project.product_status).toBe("completed");

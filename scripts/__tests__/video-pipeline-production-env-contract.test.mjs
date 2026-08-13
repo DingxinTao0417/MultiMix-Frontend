@@ -53,7 +53,7 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.match(source, /const stagedBgm = !isResume && expectBgm/);
   assert.match(
     source,
-    /const productMediaManifestRef = isResume\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
+    /const productMediaManifestRef = \(\s*isResume \|\| inputProfile === "explainer_saved_library_simple"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
   );
   assert.doesNotMatch(source, /stagedBgm\.manifestRef/);
   assert.doesNotMatch(source, /stagedBgm\.defaultCatalogId/);
@@ -82,11 +82,17 @@ test("production video E2E writes a timing ledger for runner and browser stages"
 
 test("production video E2E lets the API authorize failed retries and rehydrates isolated source media", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
+  const retainedJobReader = source.match(
+    /async function readRetainedVideoJob[\s\S]*?\r?\n}\r?\n\r?\nasync function rehydrateRetainedSourceExcerpt/,
+  )?.[0] ?? "";
   const rehydration = source.match(
     /async function rehydrateRetainedSourceExcerpt[\s\S]*?\r?\n}\r?\n\r?\nasync function authenticateRetainedVideoUser/,
   )?.[0] ?? "";
 
   assert.match(source, /async function resumeRetainedVideoJob/);
+  assert.match(source, /from app\.services\.video_job_dispatch import dispatch_video_job/);
+  assert.match(retainedJobReader, /VideoRenderJob\.public_id\.like\(/);
+  assert.match(retainedJobReader, /video-job-%/);
   assert.match(source, /job\.status === "failed"/);
   assert.match(source, /job\.status === "completed" && job\.renderStage === "done"/);
   assert.doesNotMatch(source, /if \(!job\.retryable\)/);
@@ -119,7 +125,13 @@ test("production video E2E continues a completed retained project through browse
   )?.[0] ?? "";
 
   assert.match(source, /async function readRetainedExportSeed/);
+  assert.match(
+    source,
+    /job\.status === "completed" && job\.renderStage === "done"[\s\S]*?recoverInterruptedVideoJob\(backendEnv, \{ requireMainResume: false \}\)[\s\S]*?waitForRetainedVideoJob/,
+  );
   assert.match(seedReader, /from app\.models import AssetConversation, ContentAsset, User, VideoRenderJob/);
+  assert.match(seedReader, /VideoRenderJob\.public_id\.like\(/);
+  assert.match(seedReader, /video-job-%/);
   assert.match(seedReader, /conversation=db\.get\(AssetConversation, job\.conversation_id\)/);
   assert.match(seedReader, /'conversationId': conversation\.public_id/);
   assert.doesNotMatch(seedReader, /'conversationId': job\.conversation_id/);
@@ -131,6 +143,8 @@ test("production video E2E continues a completed retained project through browse
   assert.match(retainedSpec, /selectClosestDurationCandidate/);
   assert.match(retainedSpec, /kind:\s*"select"[\s\S]*?candidate_id/);
   assert.match(retainedSpec, /generation-jobs/);
+  assert.match(retainedSpec, /waitForCompletedProject/);
+  assert.match(retainedSpec, /product_status === "failed"/);
   assert.match(retainedSpec, /视频方案 · 待确认/);
   assert.match(retainedSpec, /latest_job_public_id/);
   assert.match(retainedSpec, /project\.metadata\?\.video_workflow_stage/);
@@ -142,6 +156,10 @@ test("production video E2E continues a completed retained project through browse
   assert.match(
     source,
     /if \(isResume\)[\s\S]*?await verifyResumedVideoJob\(backendEnv\)[\s\S]*?frontend_startup[\s\S]*?video-pipeline-retained-export\.spec\.ts[\s\S]*?candidate_video_verification[\s\S]*?qa_report/,
+  );
+  assert.match(
+    source,
+    /SELECT status, render_stage, attempts, error_message FROM video_render_jobs WHERE public_id LIKE 'video-job-%' ORDER BY id DESC LIMIT 1/,
   );
   assert.match(retainedSpec, /\[aria-label="成片预览"\], \[title="视频工程预播"\]/);
   assert.match(retainedSpec, /initialExportState/);
@@ -158,6 +176,15 @@ test("production video E2E warns but does not reject a final MP4 for duration dr
   assert.match(source, /duration < minimumDurationSeconds\s*\|\|\s*duration > maximumDurationSeconds/s);
   assert.match(source, /warnings\.push\([\s\S]*?duration_seconds=.*expected=/);
   assert.doesNotMatch(source, /failures\.push\([\s\S]{0,120}?duration_seconds=/);
+});
+
+test("simple saved-library E2E does not inject an unrelated source document", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(browserSource, /inputProfile !== "explainer_saved_library_simple"[\s\S]*?VIDEO_PIPELINE_SOURCE_DOCUMENT is missing/);
+  assert.match(browserSource, /inputProfile === "explainer_saved_library_simple"[\s\S]*?multimix_local_user/);
+  assert.match(runnerSource, /inputProfile === "explainer_saved_library_simple"\s*\? null\s*:\s*fingerprintFile\(sourceDocument\)/);
 });
 
 test("production video browser flow records its major user-visible pipeline waits", () => {

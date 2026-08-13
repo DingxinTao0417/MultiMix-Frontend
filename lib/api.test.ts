@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, API_CONNECTION_ERROR, apiForm, formatComposerError } from "./api";
+import {
+  api,
+  API_CONNECTION_ERROR,
+  apiForm,
+  formatComposerError,
+  getAssetGenerationJob,
+  getConversationAgentAction,
+} from "./api";
 
 describe("api", () => {
   afterEach(() => {
@@ -35,6 +42,27 @@ describe("api", () => {
     expect(formatComposerError(
       new Error("生成失败: The read operation timed out"),
     )).toBe("内容生成超时，本轮没有创建产物，可以直接重试。");
+  });
+
+  it("bypasses caches for generation and agent action polling", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-1", status: "queued" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "action-1", status: "queued" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getAssetGenerationJob("token", "job-1");
+    await getConversationAgentAction("token", "conversation-1", "action-1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/assets/generation-jobs/job-1"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/agent-actions/action-1"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 });
 

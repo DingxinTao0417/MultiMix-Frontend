@@ -215,6 +215,9 @@ const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFE
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
+const sourceDocumentFingerprint = inputProfile === "explainer_saved_library_simple"
+  ? null
+  : fingerprintFile(sourceDocument);
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 if (expectedVideoType === "source_excerpt") expectBgm = false;
 const twoStageEnabled = true;
@@ -838,17 +841,33 @@ async function waitForManifestArtifact(timeoutMs = 20 * 60_000, signal) {
   throw new Error("Timed out waiting for persisted asset_manifest before interruption");
 }
 
-async function recoverInterruptedVideoJob(backendEnv) {
+async function recoverInterruptedVideoJob(
+  backendEnv,
+  { requireMainResume = true } = {},
+) {
   const recoveryScript = [
     "import json",
+    "from app.config import get_settings",
     "from app.db import SessionLocal",
+    "from app.models import VideoRenderJob",
+    "from app.services.video_job_dispatch import dispatch_video_job",
     "from app.services.video_project_recovery import recover_video_project_jobs",
-    "from app.services.video_studio.jobs import run_video_orchestration_job",
+    "settings=get_settings()",
+    "def dispatch(job_id):",
+    " with SessionLocal() as dispatch_db:",
+    "  job=dispatch_db.get(VideoRenderJob, job_id)",
+    "  assert job is not None, f'recovered video job {job_id} is missing'",
+    "  dispatch_video_job(dispatch_db, job, settings)",
     "with SessionLocal() as db:",
-    " result=recover_video_project_jobs(db, dispatch=run_video_orchestration_job, stale_after_seconds=1)",
+    " result=recover_video_project_jobs(db, dispatch=dispatch, stale_after_seconds=1)",
     "print(json.dumps(result, ensure_ascii=False))",
-    "assert result.get('resume_queued') == 1, result",
-    "assert result.get('dispatched') == 1, result",
+    "assert result.get('dispatch_failed') == 0, result",
+    ...(requireMainResume
+      ? [
+          "assert result.get('resume_queued') == 1, result",
+          "assert result.get('dispatched') >= 1, result",
+        ]
+      : []),
   ].join("\n");
   const { stdout } = await run(pythonCommand, ["-c", recoveryScript], {
     cwd: backendRoot,
@@ -870,7 +889,7 @@ async function readRetainedVideoJob(backendEnv) {
     "from app.db import SessionLocal",
     "from app.models import User, VideoRenderJob",
     "with SessionLocal() as db:",
-    " job=db.query(VideoRenderJob).order_by(VideoRenderJob.id.desc()).first()",
+    " job=db.query(VideoRenderJob).filter(VideoRenderJob.public_id.like(\"video-job-%\")).order_by(VideoRenderJob.id.desc()).first()",
     " assert job is not None, 'no retained video job'",
     " user=db.get(User, job.user_id)",
     " assert user is not None, 'retained video job user is missing'",
@@ -1010,6 +1029,7 @@ async function resumeRetainedVideoJob(backendEnv) {
   let completed;
   if (job.status === "completed" && job.renderStage === "done") {
     mode = "already_completed";
+    await recoverInterruptedVideoJob(backendEnv, { requireMainResume: false });
     completed = await waitForRetainedVideoJob(job, accessToken);
   } else if (job.status === "failed") {
     const response = await fetch(
@@ -1048,7 +1068,7 @@ function assertResumeManifest() {
     targetRatio,
     targetSeconds,
     expectedSceneCount,
-    sourceDocument: fingerprintFile(sourceDocument),
+    sourceDocument: sourceDocumentFingerprint,
     sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
   };
   for (const [key, value] of Object.entries(expected)) {
@@ -1064,7 +1084,7 @@ async function verifyResumedVideoJob(backendEnv) {
     "database_path = os.environ['MULTIMIX_DATABASE_URL'].removeprefix('sqlite:///')",
     "connection = sqlite3.connect(database_path)",
     "connection.row_factory = sqlite3.Row",
-    "row = connection.execute(\"SELECT status, render_stage, attempts, error_message FROM video_render_jobs ORDER BY id DESC LIMIT 1\").fetchone()",
+    "row = connection.execute(\"SELECT status, render_stage, attempts, error_message FROM video_render_jobs WHERE public_id LIKE 'video-job-%' ORDER BY id DESC LIMIT 1\").fetchone()",
     "connection.close()",
     "assert row is not None, 'no retained video job'",
     "result = dict(row)",
@@ -1083,7 +1103,7 @@ async function readRetainedExportSeed(backendEnv) {
     "from app.db import SessionLocal",
     "from app.models import AssetConversation, ContentAsset, User, VideoRenderJob",
     "with SessionLocal() as db:",
-    " job=db.query(VideoRenderJob).order_by(VideoRenderJob.id.desc()).first()",
+    " job=db.query(VideoRenderJob).filter(VideoRenderJob.public_id.like(\"video-job-%\")).order_by(VideoRenderJob.id.desc()).first()",
     " assert job is not None and job.status == 'completed' and job.render_stage == 'done', 'retained video job is not completed'",
     " assert job.conversation_id, 'retained export requires a conversation'",
     " user=db.get(User, job.user_id)",
@@ -1194,7 +1214,7 @@ async function writeQaReport() {
         minimumSeconds: minimumDurationSeconds,
         maximumSeconds: maximumDurationSeconds,
       },
-      sourceDocument: fingerprintFile(sourceDocument),
+      sourceDocument: sourceDocumentFingerprint,
       candidateVideo: fingerprintFile(path.join(resultDir, "multimix-candidate.mp4")),
       hardFailures,
       automationPassed:
@@ -1242,7 +1262,12 @@ try {
     frontendPort,
     visionPort: usesExternalVisionService ? null : visionPort,
   });
-  if (!fs.existsSync(sourceDocument)) throw new Error(`Source document not found: ${sourceDocument}`);
+  if (
+    inputProfile !== "explainer_saved_library_simple"
+    && !fs.existsSync(sourceDocument)
+  ) {
+    throw new Error(`Source document not found: ${sourceDocument}`);
+  }
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
   if (!fs.existsSync(pythonCommand)) throw new Error(`Python interpreter not found: ${pythonCommand}`);
   fs.mkdirSync(resultDir, { recursive: true });
@@ -1260,7 +1285,11 @@ try {
     console.log("BGM unavailable: no active local catalog with media and license evidence; continuing without BGM.");
   }
   const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
-  const productMediaManifestRef = isResume ? "" : stageApprovedProductMediaCatalog();
+  const productMediaManifestRef = (
+    isResume || inputProfile === "explainer_saved_library_simple"
+  )
+    ? ""
+    : stageApprovedProductMediaCatalog();
   console.log(`Video pipeline E2E temp database: ${databasePath}`);
   console.log(`Video pipeline E2E temp artifacts: ${artifactDir}`);
   console.log(
@@ -1322,7 +1351,7 @@ try {
         minimumSeconds: minimumDurationSeconds,
         maximumSeconds: maximumDurationSeconds,
       },
-      sourceDocument: fingerprintFile(sourceDocument),
+      sourceDocument: sourceDocumentFingerprint,
       sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
       visionServiceUrl,
       productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),

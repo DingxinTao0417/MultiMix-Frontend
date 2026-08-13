@@ -520,7 +520,7 @@ export async function getAssetGenerationJob(
   return api<AssetGenerationJobResponse>(
     `/assets/generation-jobs/${encodeURIComponent(jobId)}`,
     token,
-    { signal },
+    { signal, cache: "no-store" },
   );
 }
 
@@ -555,7 +555,7 @@ export async function getConversationAgentAction(
   return api<AgentActionRunResponse>(
     `/assets/conversations/${encodeURIComponent(conversationId)}/agent-actions/${encodeURIComponent(actionRunId)}`,
     token,
-    { signal },
+    { signal, cache: "no-store" },
   );
 }
 

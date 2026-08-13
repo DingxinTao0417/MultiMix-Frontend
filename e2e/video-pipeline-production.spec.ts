@@ -304,6 +304,7 @@ type SceneRow = {
   asset_reference?: {
     status?: string;
     asset_id?: number;
+    chosen_asset_id?: number;
     source_range?: {
       start_seconds?: number;
       end_seconds?: number;
@@ -477,6 +478,7 @@ async function confirmVideoParametersIfRequired(
   page: Page,
   initialResponse: PlaywrightResponse,
   ratio: keyof typeof ratioAcceptance,
+  payloadPatch: Record<string, unknown> = {},
 ) {
   type GenerationPayload = {
     generation_job?: { id?: string };
@@ -484,14 +486,33 @@ async function confirmVideoParametersIfRequired(
   let payload = (await initialResponse.json()) as GenerationPayload;
   if (payload.generation_job?.id) return payload;
 
-  const confirmButton = page.getByRole("button", {
-    name: "确认参数并生成编导稿",
-  });
-  const directDraftButton = page.getByRole("button", {
-    name: "直接起草通用版",
-  });
+  const messageRoute = "**/v1/assets/conversations/messages";
+  const applyPayloadPatch = async (route: Route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    await route.continue({
+      postData: JSON.stringify({
+        ...(request.postDataJSON() as Record<string, unknown>),
+        ...payloadPatch,
+      }),
+    });
+  };
+  if (Object.keys(payloadPatch).length > 0) {
+    await page.route(messageRoute, applyPayloadPatch);
+  }
 
-  for (let step = 0; step < 2 && !payload.generation_job?.id; step += 1) {
+  try {
+    const confirmButton = page.getByRole("button", {
+      name: "确认参数并生成编导稿",
+    });
+    const directDraftButton = page.getByRole("button", {
+      name: "直接起草通用版",
+    });
+
+    for (let step = 0; step < 2 && !payload.generation_job?.id; step += 1) {
     let action: "direct-draft" | "confirm-parameters" | null = null;
     await expect
       .poll(
@@ -541,10 +562,15 @@ async function confirmVideoParametersIfRequired(
       response.ok(),
       `video generation confirmation failed: ${response.status()} ${responseText}`,
     ).toBe(true);
-    payload = JSON.parse(responseText) as GenerationPayload;
+      payload = JSON.parse(responseText) as GenerationPayload;
+    }
+    expect(payload.generation_job?.id, "generation confirmation must queue a job").toBeTruthy();
+    return payload;
+  } finally {
+    if (Object.keys(payloadPatch).length > 0) {
+      await page.unroute(messageRoute, applyPayloadPatch);
+    }
   }
-  expect(payload.generation_job?.id, "generation confirmation must queue a job").toBeTruthy();
-  return payload;
 }
 
 async function waitForGenerationJob(
@@ -810,7 +836,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   page,
 }) => {
   test.setTimeout(60 * 60_000);
-  if (!sourceDocument || !fs.existsSync(sourceDocument)) {
+  if (
+    inputProfile !== "explainer_saved_library_simple"
+    && (!sourceDocument || !fs.existsSync(sourceDocument))
+  ) {
     throw new Error(
       `VIDEO_PIPELINE_SOURCE_DOCUMENT is missing: ${sourceDocument ?? ""}`,
     );
@@ -850,26 +879,36 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   });
 
   await measureE2EStage("workspace_entry", () => enterWorkspace(page));
-  const uploadResponse = await measureE2EStage("document_upload", async () => {
-    const uploadPromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().includes("/v1/assets/upload"),
-      { timeout: 180_000 },
+  let apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+  let headers: Record<string, string> = {};
+  if (inputProfile === "explainer_saved_library_simple") {
+    const sessionSource = await page.evaluate(() =>
+      window.localStorage.getItem("multimix_local_user")
     );
-    const chooserPromise = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "上传 PDF 或文档" }).click();
-    await (await chooserPromise).setFiles(sourceDocument);
-    return uploadPromise;
-  });
-  expect(uploadResponse.ok(), `upload failed: ${uploadResponse.status()}`).toBe(
-    true,
-  );
-  const authorization = uploadResponse.request().headers().authorization;
-  const apiBase = new URL(uploadResponse.url()).origin;
-  const headers: Record<string, string> = authorization
-    ? { authorization }
-    : {};
+    const session = JSON.parse(sessionSource ?? "null") as { token?: string } | null;
+    expect(apiBase, "simple saved-library E2E requires the isolated backend URL").toBeTruthy();
+    expect(session?.token, "simple saved-library E2E requires the current login token").toBeTruthy();
+    headers = { authorization: `Bearer ${session!.token}` };
+  } else {
+    const uploadResponse = await measureE2EStage("document_upload", async () => {
+      const uploadPromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().includes("/v1/assets/upload"),
+        { timeout: 180_000 },
+      );
+      const chooserPromise = page.waitForEvent("filechooser");
+      await page.getByRole("button", { name: "上传 PDF 或文档" }).click();
+      await (await chooserPromise).setFiles(sourceDocument!);
+      return uploadPromise;
+    });
+    expect(uploadResponse.ok(), `upload failed: ${uploadResponse.status()}`).toBe(
+      true,
+    );
+    const authorization = uploadResponse.request().headers().authorization;
+    apiBase = new URL(uploadResponse.url()).origin;
+    headers = authorization ? { authorization } : {};
+  }
 
   let sourceExcerptAssetId: number | undefined;
   let sourceExcerptExpectedFingerprint: string | undefined;
@@ -904,7 +943,11 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   }
 
   const demonstrationLinkedAssetIds: number[] = [];
-  if (expectedVideoType === "demonstration") {
+  const savedLibraryMediaAssetIds: number[] = [];
+  if (
+    expectedVideoType === "demonstration"
+    || inputProfile === "explainer_saved_library_simple"
+  ) {
     const demonstrationMediaFiles = JSON.parse(demonstrationMediaFilesRaw ?? "[]") as Array<{
       path?: string;
       name?: string;
@@ -970,7 +1013,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       if (typeof mediaAsset.id !== "number") {
         throw new Error(`demonstration source asset id is missing: index=${index + 1}`);
       }
-      demonstrationLinkedAssetIds.push(mediaAsset.id);
+      savedLibraryMediaAssetIds.push(mediaAsset.id);
+      if (expectedVideoType === "demonstration") {
+        demonstrationLinkedAssetIds.push(mediaAsset.id);
+      }
     }
   }
 
@@ -979,6 +1025,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的 MultiMix 操作演示片。整条视频必须按“上传资料与素材 → 理解并组织已有素材 → 生成可编辑分镜与预览”的可观察操作顺序推进，不要改成只介绍概念和卖点的产品讲解。至少两个不同分镜必须使用两个不同的已审核产品界面：上传或进入工作区步骤使用工作区总览界面，生成可编辑分镜与预览步骤使用另一张分镜编辑或视频预览界面；两个操作界面都不得由装修素材替代。只有涉及 MultiMix 产品能力、操作结果或效果的文字才必须由产品资料支持。三段已选视频也都必须出现在主画面中：过程基线用于开场输入，步骤迭代用于理解和组织，结果与图形增强只用于展示画面中已经存在的区域标签和 KITCHEN FLOW / 服务流程文字，不作为产品结果证明；该镜不声称素材由系统完成了组织，不得使用“自动整理、自动标注、自动生成”等资料未逐字支持的能力表述。本轮只使用这三段已选素材和批准产品界面，不使用公共素材。刚上传的装修视频只作为被输入和组织的真实业务素材，不是 MultiMix 客户项目，也不能证明产品效果；不得把它们说成产品操作界面、客户案例、前后对比或效果证明。每个分镜必须承担不同且必要的操作、状态或结果，不能换一种说法重复前一镜。动态图解只能标注步骤关系，不能替代操作证据。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
       : expectedVideoType === "source_excerpt"
         ? `从刚上传的长视频中忠实摘取一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的片段视频。保留来源原声、说话人和原意，选段必须有明确 source_range，不得用改写旁白替代原片，也不得拼接造成断章取义。先给出编导稿和候选选段，不要展示内部制作方式。`
+      : inputProfile === "explainer_saved_library_simple"
+        ? "用我已有的家装素材，做一条家装服务宣传讲解视频"
       : inputProfile === "explainer_public_broll"
         ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : inputProfile === "explainer_data_process"
@@ -1056,13 +1104,19 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   } else {
     const generationResponse = await postConversation(
       page,
-      `${generationInstruction}${expectBgm ? "" : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
+      `${generationInstruction}${expectBgm
+        ? ""
+        : inputProfile === "explainer_saved_library_simple"
+          ? " 不要背景音乐。"
+          : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
       demonstrationLinkedAssetIds,
+      {},
     );
     const generationPayload = await confirmVideoParametersIfRequired(
       page,
       generationResponse,
       targetRatio as keyof typeof ratioAcceptance,
+      {},
     );
     generationJobId = generationPayload.generation_job?.id;
   }
@@ -1148,6 +1202,41 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     directorVideoPlan.video_type,
     `director selected wrong video type: expected=${expectedVideoType} actual=${directorVideoPlan.video_type ?? "missing"}`,
   ).toBe(expectedVideoType);
+  if (inputProfile === "explainer_saved_library_simple") {
+    expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
+    expect(
+      expectedSceneCount,
+      "simple input must let the director choose a valid content-driven scene count",
+    ).toBeGreaterThanOrEqual(4);
+    expect(
+      expectedSceneCount,
+      "simple input must stay within the automatic scene-count contract",
+    ).toBeLessThanOrEqual(8);
+    const matchedSavedPrimaryMediaIds = (directorVideoPlan.scenes ?? [])
+      .filter(
+        (scene) =>
+          scene.asset_reference?.status === "matched" &&
+          scene.primary_visual_strategy?.mode === "saved_asset",
+      )
+      .map((scene) =>
+        scene.asset_reference?.chosen_asset_id ?? scene.asset_reference?.asset_id,
+      )
+      .filter((assetId): assetId is number =>
+        typeof assetId === "number" && savedLibraryMediaAssetIds.includes(assetId),
+      );
+    expect(
+      matchedSavedPrimaryMediaIds.length,
+      "simple saved-library request must use at least one understood home-renovation image",
+    ).toBeGreaterThan(0);
+    expect(
+      new Set(matchedSavedPrimaryMediaIds).size,
+      "one saved image must not become the primary visual of multiple scenes",
+    ).toBe(matchedSavedPrimaryMediaIds.length);
+    expect(
+      matchedSavedPrimaryMediaIds,
+      "the generic hammer image must not be selected as a weakly related kitchen primary visual",
+    ).not.toContain(savedLibraryMediaAssetIds[5]);
+  }
   if (expectedVideoType === "source_excerpt") {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
     expect(expectedSceneCount, "selected source excerpt must contain retained source scenes").toBeGreaterThan(0);
