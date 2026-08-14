@@ -7,10 +7,10 @@ import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
-  assets: ["全部", "上传资料", "采集资料", "对话沉淀"],
-  copy: ["全部", "选题方案", "文案稿", "配音稿", "编导稿"],
-  image: ["全部", "封面图", "素材图", "分镜图"],
-  video: ["全部", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
+  assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
+  copy: ["全部", "选题方案", "文案稿", "编导稿", "未分类"],
+  image: ["全部", "封面图", "素材图", "分镜图", "未分类"],
+  video: ["全部", "视频工程", "未分类"]
 };
 
 const SEARCH_PLACEHOLDER: Record<Exclude<ActiveView, "conversation">, string> = {
@@ -107,18 +107,12 @@ function bodyForRow(row: LibraryRow, view: Exclude<ActiveView, "conversation">):
 }
 
 function keywordsForRow(row: LibraryRow, view: Exclude<ActiveView, "conversation">): string[] {
-  if (row.keywords && row.keywords.length > 0) return row.keywords;
-  const defaults: Record<Exclude<ActiveView, "conversation">, string[]> = {
-    assets: ["资料", "来源", "可检索"],
-    copy: ["文案", "可复用", "待标注"],
-    image: ["图片", "画面", "待标注"],
-    video: ["视频", "口播", "待标注"]
-  };
-  return defaults[view];
+  void view;
+  return row.keywords ?? [];
 }
 
 function isDigitalHuman(row: LibraryRow) {
-  return row.variant === "digital-human" || /数字人/.test(`${row.title} ${row.meta} ${row.note}`);
+  return row.variant === "digital-human";
 }
 
 function isReparsableMedia(row: LibraryRow) {

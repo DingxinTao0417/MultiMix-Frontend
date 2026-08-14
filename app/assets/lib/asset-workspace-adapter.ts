@@ -661,26 +661,17 @@ function libraryRowKind(asset: ContentAsset): LibraryRow["kind"] {
   return "file";
 }
 
-function inferKeywords(asset: ContentAsset): string[] {
-  const text = `${asset.title} ${asset.body ?? ""}`.toLowerCase();
-  const seeds = ["产品种草", "小红书", "抖音", "LinkedIn", "封面", "数字人", "口播", "产品图", "视频脚本", "规则变化", "品牌约束"];
-  const matched = seeds.filter((keyword) => text.includes(keyword.toLowerCase()));
+export function libraryKeywordsForAsset(asset: ContentAsset): string[] {
   const understanding = understandingForAsset(asset);
-  const understandingTags = understanding?.tags ?? [];
-  const roleLabels = understanding?.roles.map((item) => item.label) ?? [];
-  const roleCodes = understanding?.roles.map((item) => item.code) ?? [];
-  const sceneLabels = understanding?.sceneTypes.map((item) => item.label) ?? [];
-  const sceneCodes = understanding?.sceneTypes.map((item) => item.code) ?? [];
-  const fallback: Record<LibraryRow["kind"], string[]> = {
-    copy: ["文案", "可复用", "已归档"],
-    image: ["图片", "视觉素材", "可检索"],
-    video: ["视频", "口播", "可复用"],
-    file: ["资料", "来源", "可检索"]
-  };
-  return [...understandingTags, ...roleLabels, ...roleCodes, ...sceneLabels, ...sceneCodes, ...matched, ...fallback[libraryRowKind(asset)]]
+  return [...(understanding?.tags ?? [])]
     .map((keyword) => String(keyword).trim())
     .filter((keyword, index, array) => Boolean(keyword) && array.indexOf(keyword) === index)
     .slice(0, 8);
+}
+
+export function libraryVariantForAsset(asset: ContentAsset): "digital-human" | "standard" {
+  const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  return metadata.video_mode === "digital_human" ? "digital-human" : "standard";
 }
 
 function inferAssetSourceCategory(asset: ContentAsset): string {
@@ -688,10 +679,7 @@ function inferAssetSourceCategory(asset: ContentAsset): string {
   if (sourceType === "upload" || sourceType === "manual_text") return "上传资料";
   if (sourceType === "web_capture" || sourceType === "public_source") return "采集资料";
   if (sourceType === "conversation" || sourceType === "chat_upload") return "对话沉淀";
-  const text = `${asset.content_type} ${asset.title} ${asset.source_filename ?? ""} ${asset.original_ref ?? ""} ${asset.markdown_ref ?? ""} ${asset.body ?? ""}`.toLowerCase();
-  if (/conversation|dialog|chat|对话|沉淀|偏好|画像|卖点|品牌信息/.test(text)) return "对话沉淀";
-  if (/reader|crawl|capture|web|url|http|公众号|网页|采集|链接|markdown/.test(text)) return "采集资料";
-  return "上传资料";
+  return "未分类";
 }
 
 function contentTypeLabel(asset: ContentAsset): string {
@@ -776,35 +764,22 @@ function videoProjectStatusLabel(asset: ContentAsset): string | null {
 
 function artifactCategory(asset: ContentAsset): string {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
-  if (asset.content_type === "video_project") return "视频";
   if (typeof metadata.artifact_category === "string" && metadata.artifact_category.trim()) return metadata.artifact_category.trim();
   if (asset.content_type === "content_plan") return "选题方案";
-  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
   if (asset.content_type === "social_post") return "文案稿";
+  if (asset.content_type === "cover_image") return "封面图";
+  if (asset.content_type === "storyboard_image") return "分镜图";
+  if (["uploaded_image", "saved_image", "document_embedded_image"].includes(asset.content_type)) return "素材图";
+  if (asset.content_type === "video_project") return "视频工程";
   return "";
 }
 
 function inferLibraryCategory(asset: ContentAsset): string {
   const explicit = artifactCategory(asset);
   if (explicit) return explicit;
-  const text = `${asset.content_type} ${asset.title} ${asset.body ?? ""}`.toLowerCase();
   if (asset.asset_kind === "asset") return inferAssetSourceCategory(asset);
-  if (asset.asset_kind === "copy") {
-    if (asset.content_type === "content_plan" || /选题|方案|内容方案|选题方案/.test(text)) return "选题方案";
-    if (asset.content_type === "video_script" || /编导|脚本|分镜|镜头|导演/.test(text)) return "编导脚本";
-    return "文案稿";
-  }
-  if (asset.asset_kind === "image") {
-    if (asset.content_type === "storyboard_image" || /分镜/.test(text)) return "分镜图";
-    if (asset.content_type === "cover_image" || /封面/.test(text)) return "封面图";
-    return "素材图";
-  }
-  if (asset.asset_kind === "video") {
-    if (asset.content_type === "video_project") return "视频";
-    if (asset.content_type === "mg_overlay") return "MG 动效叠层";
-    return "混剪视频";
-  }
-  return "资料";
+  return "未分类";
 }
 
 export function libraryCategoryForAsset(asset: ContentAsset): string {
@@ -829,7 +804,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
   const noAssetHit = Boolean(metadata.no_asset_hit);
   const mediaUnavailable = metadata.media_availability === "missing";
-  const status = category === "编导脚本"
+  const status = category === "编导稿"
     ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
     : (videoProjectStatusLabel(asset)
       ?? (mediaUnavailable
@@ -847,7 +822,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     note: understandingCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
     kind: libraryRowKind(asset),
     category,
-    keywords: inferKeywords(asset),
+    keywords: libraryKeywordsForAsset(asset),
     body: (asset.body ?? "").split(/\n{2,}/).map((part) => part.trim()).filter(Boolean).slice(0, 4),
     contentType: contentTypeLabel(asset),
     contentTypeCode: asset.content_type,
@@ -877,7 +852,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     understandingCaption: understanding?.caption,
     understandingRoles: understanding?.roles.map((item) => item.label) ?? [],
     licenseLabel,
-    variant: /数字人|avatar|talking head/i.test(`${asset.title} ${asset.body ?? ""}`) ? "digital-human" : "standard"
+    variant: libraryVariantForAsset(asset)
   };
 }
 
