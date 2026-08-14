@@ -5822,11 +5822,12 @@ button:disabled {
   background: #ffffff;
 }
 
-.shadcn-prototype-public-search-controls > button,
-.shadcn-prototype-public-results article > button {
+.shadcn-prototype-public-search-submit,
+.shadcn-prototype-public-save {
   width: fit-content;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   border: 1px solid rgba(37, 99, 235, 0.22);
   border-radius: 8px;
@@ -5836,7 +5837,7 @@ button:disabled {
   font-weight: 700;
 }
 
-.shadcn-prototype-public-search-controls > button:disabled {
+.shadcn-prototype-public-search-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -5866,13 +5867,16 @@ button:disabled {
 
 .shadcn-prototype-public-results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
-.shadcn-prototype-public-results article {
+.shadcn-prototype-public-result {
   display: grid;
+  grid-template-rows: 1fr auto;
   gap: 8px;
+  min-width: 0;
+  height: 100%;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
   padding: 10px;
@@ -5881,7 +5885,9 @@ button:disabled {
 
 .shadcn-prototype-public-card {
   display: grid;
+  align-content: start;
   gap: 8px;
+  min-width: 0;
   text-align: left;
   border: 0;
   background: transparent;
@@ -5889,13 +5895,28 @@ button:disabled {
   padding: 0;
 }
 
+.shadcn-prototype-public-card-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
 .shadcn-prototype-public-card strong {
   min-height: 38px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 13px;
   line-height: 1.45;
 }
 
-.shadcn-prototype-public-card small {
+.shadcn-prototype-public-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: #6e6a64;
 }
 
@@ -5917,19 +5938,52 @@ button:disabled {
   object-fit: cover;
 }
 
+.shadcn-prototype-public-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-thumb-placeholder small {
+  font-size: 11px;
+}
+
 .shadcn-prototype-public-tags {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 5px;
+  min-height: 24px;
+  overflow: hidden;
 }
 
 .shadcn-prototype-public-tags em {
+  flex: 0 0 auto;
   border-radius: 999px;
   padding: 4px 7px;
   background: #e7f4ef;
   color: #0e8a6b;
   font-style: normal;
   font-size: 11px;
+}
+
+.shadcn-prototype-public-save {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .shadcn-prototype-public-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .shadcn-prototype-public-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- 素材源管理页（demo final/admin-sources.html）：顶栏 + 规则条 + 表格 ---- */
