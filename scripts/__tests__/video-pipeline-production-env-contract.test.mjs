@@ -12,6 +12,13 @@ const runnerPath = path.join(scriptsRoot, "run-video-pipeline-production-e2e.mjs
 const productionSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-production.spec.ts");
 const retainedExportSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-retained-export.spec.ts");
 
+test("production video E2E does not hard-code semantic rejection of a particular saved asset", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(source, /generic hammer/i);
+  assert.doesNotMatch(source, /savedLibraryMediaAssetIds\[5\]/);
+});
+
 test("production video E2E isolates backend settings with the current MULTIMIX prefix", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 

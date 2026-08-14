@@ -119,6 +119,14 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     ['pan', 'transform.position'],
     ['slow_push', 'transform.scaleX'],
     ['zoom', 'transform.scaleX'],
+    ['zoom_in', 'transform.scaleX'],
+    ['zoom_out', 'transform.scaleX'],
+    ['pan_left', 'transform.position'],
+    ['pan_right', 'transform.position'],
+    ['ken_burns', 'transform.position'],
+    ['drift_up', 'transform.position'],
+    ['drift_down', 'transform.position'],
+    ['parallax', 'transform.position'],
   ])('turns backend %s motion into executable editor animation', (motion, channel) => {
     const { project } = buildProject(makeProject({
       media: [makeMedia({ id: 'static-scene', type: 'image' })],
@@ -143,7 +151,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(element.animations?.channels[channel]?.keyframes).toHaveLength(2);
   });
 
-  it.each(['none', 'freeze', 'speed_ramp', 'unknown_motion'])(
+  it.each(['none', 'static', 'freeze', 'speed_ramp', 'unknown_motion'])(
     'does not invent static-image animation for %s',
     (motion) => {
       const { project } = buildProject(makeProject({

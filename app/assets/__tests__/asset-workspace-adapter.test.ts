@@ -124,6 +124,46 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes presenter direction as an explicit id instead of embedding it in prose", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      presenterDirectionConfirmation: {
+        directorCandidateId: "direction-b",
+      },
+    });
+
+    expect(payload).toMatchObject({
+      instruction: "确认，生成视频工程",
+      presenter_direction_confirmation: {
+        director_candidate_id: "direction-b",
+      },
+    });
+    expect(payload.instruction).not.toContain("direction-b");
+  });
+
+  it("serializes presenter audio selection with exact track bindings", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认使用所选原声音轨",
+      presenterAudioSelectionConfirmation: {
+        confirmationId: "presenter-audio-selection-current",
+        audioStreamIndex: 2,
+        audioFingerprint: "sha256:audio-2",
+        transcriptHash: "sha256:transcript-2",
+      },
+    });
+
+    expect(payload).toMatchObject({
+      presenter_audio_selection_confirmation: {
+        confirmation_id: "presenter-audio-selection-current",
+        audio_stream_index: 2,
+        audio_fingerprint: "sha256:audio-2",
+        transcript_hash: "sha256:transcript-2",
+      },
+    });
+  });
+
   it("serializes long-form actions as structured data", () => {
     expect(buildConversationMessagePayload({
       conversationId: "new",

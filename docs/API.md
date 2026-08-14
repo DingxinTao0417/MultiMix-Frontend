@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-11
+> Last verified: 2026-08-14
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -750,6 +750,62 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - 无 scenes → 后端不挂 `plan` → 前端退回建议芯片（现状行为）。
 - 第二道确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中“生成视频工程”确认门。
 - 已持久化的确认结果可能是 `processing / video_project_queued`，此时展示排队状态，不能因有占位 metadata 就显示编辑器。
+
+#### 12.2.1 真人口播两步确认
+
+口播型不能复用普通编导稿的一步确认。若多条有效人声音轨的转写内容或时间映射不一致，第一步先进入 `audio_selection_review` 子状态，提交精确选轨：
+
+```jsonc
+{
+  "content": "确认口播原声",
+  "selected_product_id": 501,
+  "presenter_audio_selection_confirmation": {
+    "confirmation_id": "presenter-audio-confirm-…",
+    "audio_stream_index": 2,
+    "audio_fingerprint": "sha256:…",
+    "transcript_hash": "sha256:…"
+  }
+}
+```
+
+- 选轨确认只冻结原声并异步生成所选音轨对应的清理稿，接口返回 `202` 和现有 generation job；它不应用删剪，也不进入导演确认。
+- 卡片必须提交当前 option 原样携带的音轨序号、PCM 指纹和转写 hash，不能因数组顺序默认选择第 0 项。过期卡片或任一绑定不一致均由后端拒绝。
+- 浏览器试听只消费后端提供的严格 `presenter-previews` 媒体引用。自然语言选轨由 LLM 映射到明确 option；无法唯一映射时追问，前端不做关键词或正则猜测。
+
+生成新的 `cleanup_review` 版本后，第一步再提交清理卡中的结构化选择：
+
+```jsonc
+{
+  "content": "确认口播清理方案",
+  "presenter_cleanup_confirmation": {
+    "cleanup_plan_id": "pcp-…",
+    "cleanup_plan_hash": "…",
+    "selected_candidate_ids": ["candidate-…"],
+    "protected_override_candidate_ids": [],
+    "confirm_protected_override": false,
+    "audio_stream_index": 0
+  }
+}
+```
+
+- 自动清理项默认选中，建议项由用户选择；保护项只有在界面完成第二次确认后才能进入 `protected_override_candidate_ids`。
+- 多条内容一致的有效人声音轨也必须展示推荐、试听和明确选择；可以共享只读清理提案，但不能因数组顺序默认提交第 0 项。
+- 后端按 `cleanup_plan_id + cleanup_plan_hash` 拒绝过期卡片。确认成功后冻结删剪和已选音轨，再进入导演方向生成。
+
+第二步提交明确方向 ID：
+
+```jsonc
+{
+  "content": "确认口播导演方向",
+  "presenter_direction_confirmation": {
+    "director_candidate_id": "direction-…"
+  }
+}
+```
+
+- 前端不得把方向名称藏在自由文本中让后端用正则猜测。
+- 至少两个合格动态样片才能展示方向确认；单个候选失败只重试自身。
+- 口播识别以 `metadata.video_plan.video_type == "presenter"` 为准，不读取顶层同名兼容字段。
 
 ### 12.3 统一分镜素材候选端点（三入口共用）
 

@@ -1252,6 +1252,191 @@ describe("message plan mapping", () => {
     });
   });
 
+  it("maps presenter visual events and material gaps from the authoritative plan scenes", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      metadata: {
+        capability: "video_project",
+        video_plan: {
+          video_type: "presenter",
+          transcript: {
+            words: [
+              { id: "pw-1", text: "先看" },
+              { id: "pw-2", text: "产品" },
+            ],
+          },
+          scenes: [{
+            id: "scene-1",
+            visual_events: [
+              {
+                event_id: "event-text",
+                type: "text_emphasis",
+                start_word_id: "pw-1",
+                end_word_id: "pw-1",
+                purpose: "强调动作",
+                presentation: "keyword_reveal",
+                status: "planned",
+                required_for_publish: false,
+              },
+              {
+                event_id: "event-takeover",
+                type: "media_takeover",
+                start_word_id: "pw-2",
+                end_word_id: "pw-2",
+                purpose: "展示产品",
+                presentation: "full_frame",
+                status: "failed",
+                required_for_publish: true,
+              },
+            ],
+            material_gap: { message: "缺少产品录屏，当前保持人物画面" },
+          }],
+        },
+        video_project: {
+          version: "multimix_video_project_v1",
+          segments: [{ id: "scene-1", title: "产品说明", narration: "先看产品" }],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({
+      isPresenter: true,
+      presenterMaterialGap: "缺少产品录屏，当前保持人物画面",
+      presenterEvents: [
+        {
+          id: "event-text",
+          type: "text_emphasis",
+          label: "文字强调",
+          spokenText: "先看",
+          purpose: "强调动作",
+          statusLabel: "待生成",
+          requiredForPublish: false,
+        },
+        {
+          id: "event-takeover",
+          type: "media_takeover",
+          label: "全屏素材",
+          spokenText: "产品",
+          purpose: "展示产品",
+          statusLabel: "生成失败",
+          requiredForPublish: true,
+        },
+      ],
+    });
+    expect(product.actions).toEqual(["调整口播包装", "修正字幕", "补充事件素材", "取消包装"]);
+  });
+
+  it("maps presenter direction samples for the combined confirmation card", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-presenter-direction",
+        title: "口播方案",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-08-14T00:00:00Z",
+        updated_at: "2026-08-14T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请选择导演方向",
+          asset_id: null,
+          created_at: "2026-08-14T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "presenter_project_confirmation",
+              title: "口播型方案",
+              status: "pending",
+              fields: [{ key: "source_edit", label: "原话与删剪", value: "保留 42 秒" }],
+              direction_default: "direction-a",
+              direction_options: [{
+                id: "direction-a",
+                label: "观点与证据交替",
+                concept: "人物建立信任，证据短时接管",
+                reason: "原片观点清楚",
+                recommended: true,
+                sample_url: "local://presenter-samples/a.mp4",
+                duration_seconds: 8,
+              }],
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      kind: "presenter_project_confirmation",
+      directionDefault: "direction-a",
+      directionOptions: [{
+        id: "direction-a",
+        recommended: true,
+        durationSeconds: 8,
+      }],
+    });
+    expect(conversation.messages?.[0]?.plan?.directionOptions?.[0]?.sampleUrl).toContain(
+      "/v1/video/media?ref=",
+    );
+  });
+
+  it("maps presenter audio selection bindings without dropping the preview", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-presenter-audio-selection",
+        title: "选择口播原声",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-08-14T00:00:00Z",
+        updated_at: "2026-08-14T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请先选择原声",
+          asset_id: 501,
+          created_at: "2026-08-14T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "presenter_audio_selection_confirmation",
+              title: "选择口播原声",
+              status: "pending",
+              confirmation_id: "presenter-audio-selection-current",
+              fields: [{ key: "audio_tracks", label: "有效人声音轨", value: "检测到 2 条" }],
+              audio_track_default: 2,
+              audio_track_options: [{
+                stream_index: 2,
+                label: "人声轨 2",
+                preview_url: `local://presenter-previews/${"a".repeat(64)}/audio-track-2.m4a`,
+                quality_score: 0.93,
+                recommended: true,
+                channels: 1,
+                codec: "aac",
+                audio_fingerprint: "sha256:audio-2",
+                transcript_hash: "sha256:transcript-2",
+              }],
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      kind: "presenter_audio_selection_confirmation",
+      confirmationId: "presenter-audio-selection-current",
+      audioTrackDefault: 2,
+      audioTrackOptions: [{
+        streamIndex: 2,
+        audioFingerprint: "sha256:audio-2",
+        transcriptHash: "sha256:transcript-2",
+      }],
+    });
+    expect(conversation.messages?.[0]?.plan?.audioTrackOptions?.[0]?.previewUrl).toContain(
+      "/v1/video/media?ref=",
+    );
+  });
+
   it("keeps private content-asset plan refs as provenance without a thumbnail request", () => {
     const conversation = conversationFromPersisted(
       {

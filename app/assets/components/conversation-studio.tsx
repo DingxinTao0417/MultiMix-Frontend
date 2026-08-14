@@ -27,6 +27,9 @@ import type {
   AssetMessagePlan,
   AssetMessagePresentation,
   AssetPlanConfirmationValues,
+  AssetPresenterAudioSelectionConfirmation,
+  AssetPresenterDirectionConfirmation,
+  AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
 } from "../lib/asset-workspace-types";
@@ -268,6 +271,9 @@ export default function ConversationStudio({
     agentConfirmationId?: string,
     longFormAction?: AssetLongFormAction,
     videoSceneReplacement?: AssetVideoSceneReplacement,
+    presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
+    presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
@@ -368,6 +374,9 @@ export default function ConversationStudio({
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
     videoSceneReplacement?: AssetVideoSceneReplacement,
+    presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
+    presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -416,6 +425,9 @@ export default function ConversationStudio({
         agentConfirmationId,
         undefined,
         videoSceneReplacement,
+        presenterDirectionConfirmation,
+        presenterCleanupConfirmation,
+        presenterAudioSelectionConfirmation,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -457,9 +469,14 @@ export default function ConversationStudio({
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
+    const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
+    const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
     const ratio = values?.ratio;
     const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
-    const instruction = !isVideoParameterConfirmation && ratioLabel ? `${base}（${ratioLabel}）` : base;
+    const confirmationDetails = [
+      ...(!isVideoParameterConfirmation && ratioLabel ? [ratioLabel] : []),
+    ];
+    const instruction = confirmationDetails.length ? `${base}（${confirmationDetails.join("；")}）` : base;
     const videoParameterConfirmation = (
       isVideoParameterConfirmation
       && plan.pendingIntentId
@@ -480,6 +497,41 @@ export default function ConversationStudio({
       setSendError("视频修改确认信息已失效，请刷新后重试。");
       return;
     }
+    const presenterCleanupConfirmation = (
+      isPresenterCleanupConfirmation
+      && plan.cleanupPlanId
+      && plan.cleanupPlanHash
+      && values?.cleanupCandidateIds
+    ) ? {
+        cleanupPlanId: plan.cleanupPlanId,
+        cleanupPlanHash: plan.cleanupPlanHash,
+        selectedCandidateIds: values.cleanupCandidateIds,
+        protectedOverrideCandidateIds: values.protectedOverrideCandidateIds ?? [],
+        confirmProtectedOverride: values.confirmProtectedOverride === true,
+        audioStreamIndex: values.audioStreamIndex,
+      } : undefined;
+    if (isPresenterCleanupConfirmation && !presenterCleanupConfirmation) {
+      setSendError("口播清理确认信息不完整，请刷新后重试。");
+      return;
+    }
+    const selectedAudioOption = plan.audioTrackOptions?.find(
+      (option) => option.streamIndex === values?.audioStreamIndex,
+    );
+    const presenterAudioSelectionConfirmation = (
+      isPresenterAudioSelectionConfirmation
+      && plan.confirmationId
+      && selectedAudioOption?.audioFingerprint
+      && selectedAudioOption.transcriptHash
+    ) ? {
+        confirmationId: plan.confirmationId,
+        audioStreamIndex: selectedAudioOption.streamIndex,
+        audioFingerprint: selectedAudioOption.audioFingerprint,
+        transcriptHash: selectedAudioOption.transcriptHash,
+      } : undefined;
+    if (isPresenterAudioSelectionConfirmation && !presenterAudioSelectionConfirmation) {
+      setSendError("原声音轨确认信息不完整，请刷新后重试。");
+      return;
+    }
     const planKey = confirmationPlanKey(plan);
     setConfirmingPlanKey(planKey);
     try {
@@ -488,6 +540,8 @@ export default function ConversationStudio({
           ? "参数已确认，正在生成编导稿。"
           : isAgentActionConfirmation
             ? "已确认，正在执行视频修改。"
+            : isPresenterAudioSelectionConfirmation
+              ? "原声已确认，正在生成对应口播清理方案。"
             : "已确认，正在创建视频工程任务。",
         presentation: "execution_anchor",
         runSteps: isAgentActionConfirmation
@@ -496,9 +550,25 @@ export default function ConversationStudio({
               label: "执行视频修改",
               status: "run",
             }]
+          : isPresenterAudioSelectionConfirmation
+            ? [{
+                key: plan.confirmationId ?? "presenter-audio-selection",
+                label: "生成口播清理方案",
+                status: "run",
+              }]
           : optimisticVideoProjectSteps(),
         confirmationPlanKey: planKey,
-      }, globalThis.crypto.randomUUID(), videoParameterConfirmation, plan.confirmationId);
+      },
+      globalThis.crypto.randomUUID(),
+      videoParameterConfirmation,
+      plan.confirmationId,
+      undefined,
+      values?.directorCandidateId
+        ? { directorCandidateId: values.directorCandidateId }
+        : undefined,
+      presenterCleanupConfirmation,
+      presenterAudioSelectionConfirmation,
+      );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
     }

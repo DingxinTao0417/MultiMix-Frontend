@@ -122,8 +122,13 @@ export default function ProductWorkspace({
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
     : {}) as Record<string, unknown>;
+  const presenterVideoPlan = productMetadata.video_plan
+    && typeof productMetadata.video_plan === "object"
+    && !Array.isArray(productMetadata.video_plan)
+    ? productMetadata.video_plan as Record<string, unknown>
+    : null;
   const hasSpeechTimeline = product.mode === "video"
-    && productMetadata.video_type === "presenter"
+    && presenterVideoPlan?.video_type === "presenter"
     && product.timeline.some((item) => item.line);
   const videoProjectMetadata = productMetadata.video_project && typeof productMetadata.video_project === "object" && !Array.isArray(productMetadata.video_project)
     ? productMetadata.video_project as Record<string, unknown>

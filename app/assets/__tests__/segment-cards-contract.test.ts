@@ -24,7 +24,7 @@ describe("storyboard segment-card interaction contract", () => {
   test("exposes a voiceover action without changing the card selection target", () => {
     expect(component).toContain("onEditVoiceover?: (segment: AssetProductSegment) => void");
     expect(component).toContain("修改配音");
-    expect(component).toContain("onEditVoiceover(segment)");
+    expect(component).toContain("onEditVoiceover?.(segment)");
     expect(component.match(/event\.stopPropagation\(\)/g)?.length).toBeGreaterThanOrEqual(2);
     expect(css).toMatch(/\.shadcn-prototype-segment-actions\s*\{[^}]*gap:\s*6px;/s);
   });

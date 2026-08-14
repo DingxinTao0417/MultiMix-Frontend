@@ -4,6 +4,9 @@ import type {
   AssetConversation,
   AssetLongFormAction,
   AssetProduct,
+  AssetPresenterAudioSelectionConfirmation,
+  AssetPresenterDirectionConfirmation,
+  AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetWorkspaceData,
@@ -210,6 +213,9 @@ export function buildConversationMessagePayload({
   agentConfirmationId,
   longFormAction,
   videoSceneReplacement,
+  presenterDirectionConfirmation,
+  presenterCleanupConfirmation,
+  presenterAudioSelectionConfirmation,
 }: {
   conversationId: string;
   instruction: string;
@@ -220,6 +226,9 @@ export function buildConversationMessagePayload({
   agentConfirmationId?: string;
   longFormAction?: AssetLongFormAction;
   videoSceneReplacement?: AssetVideoSceneReplacement;
+  presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+  presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
+  presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -244,6 +253,29 @@ export function buildConversationMessagePayload({
       video_scene_replacement: {
         failed_project_asset_id: videoSceneReplacement.failedProjectAssetId,
         scene_id: videoSceneReplacement.sceneId,
+      },
+    } : {}),
+    ...(presenterDirectionConfirmation ? {
+      presenter_direction_confirmation: {
+        director_candidate_id: presenterDirectionConfirmation.directorCandidateId,
+      },
+    } : {}),
+    ...(presenterCleanupConfirmation ? {
+      presenter_cleanup_confirmation: {
+        cleanup_plan_id: presenterCleanupConfirmation.cleanupPlanId,
+        cleanup_plan_hash: presenterCleanupConfirmation.cleanupPlanHash,
+        selected_candidate_ids: presenterCleanupConfirmation.selectedCandidateIds,
+        protected_override_candidate_ids: presenterCleanupConfirmation.protectedOverrideCandidateIds,
+        confirm_protected_override: presenterCleanupConfirmation.confirmProtectedOverride,
+        audio_stream_index: presenterCleanupConfirmation.audioStreamIndex,
+      },
+    } : {}),
+    ...(presenterAudioSelectionConfirmation ? {
+      presenter_audio_selection_confirmation: {
+        confirmation_id: presenterAudioSelectionConfirmation.confirmationId,
+        audio_stream_index: presenterAudioSelectionConfirmation.audioStreamIndex,
+        audio_fingerprint: presenterAudioSelectionConfirmation.audioFingerprint,
+        transcript_hash: presenterAudioSelectionConfirmation.transcriptHash,
       },
     } : {}),
     ...(videoParameterConfirmation ? {
@@ -391,6 +423,9 @@ export type AssetWorkspaceAdapter = {
     agentConfirmationId?: string;
     longFormAction?: AssetLongFormAction;
     videoSceneReplacement?: AssetVideoSceneReplacement;
+    presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+    presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
+    presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -1059,9 +1094,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       agentConfirmationId,
       longFormAction,
       videoSceneReplacement,
+      presenterDirectionConfirmation,
+      presenterCleanupConfirmation,
+      presenterAudioSelectionConfirmation,
       signal,
     }) {
-      if (videoParameterConfirmation || videoSceneReplacement) {
+      if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1081,6 +1119,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           agentConfirmationId,
           longFormAction,
           videoSceneReplacement,
+          presenterDirectionConfirmation,
+          presenterCleanupConfirmation,
+          presenterAudioSelectionConfirmation,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

@@ -89,6 +89,19 @@ export type AssetProductSegment = {
   graphicComponentLabel?: string;
   backgroundTreatmentLabel?: "已验证素材虚化背景";
   publicReplacementNote?: string;
+  isPresenter?: boolean;
+  presenterEvents?: AssetPresenterVisualEvent[];
+  presenterMaterialGap?: string;
+};
+
+export type AssetPresenterVisualEvent = {
+  id: string;
+  type: "text_emphasis" | "media_overlay" | "graphic_overlay" | "media_takeover" | "presenter_reframe";
+  label: "文字强调" | "画中画" | "图形说明" | "全屏素材" | "人物让位";
+  spokenText?: string;
+  purpose?: string;
+  statusLabel: "待生成" | "生成中" | "已完成" | "生成失败" | "待更新";
+  requiredForPublish: boolean;
 };
 
 // A single material candidate shown in the picker. Every selectable row carries
@@ -217,10 +230,37 @@ export type AssetLongFormAction =
 export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;
+  directorCandidateId?: string;
+  cleanupCandidateIds?: string[];
+  protectedOverrideCandidateIds?: string[];
+  confirmProtectedOverride?: boolean;
+  audioStreamIndex?: number;
+  audioFingerprint?: string;
+  transcriptHash?: string;
+};
+
+export type AssetPresenterDirectionConfirmation = {
+  directorCandidateId: string;
+};
+
+export type AssetPresenterCleanupConfirmation = {
+  cleanupPlanId: string;
+  cleanupPlanHash: string;
+  selectedCandidateIds: string[];
+  protectedOverrideCandidateIds: string[];
+  confirmProtectedOverride: boolean;
+  audioStreamIndex?: number;
+};
+
+export type AssetPresenterAudioSelectionConfirmation = {
+  confirmationId: string;
+  audioStreamIndex: number;
+  audioFingerprint: string;
+  transcriptHash: string;
 };
 
 export type AssetMessagePlan = {
-  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "agent_action_confirmation";
+  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.
@@ -244,6 +284,42 @@ export type AssetMessagePlan = {
   pendingIntentId?: string;
   pendingIntentVersion?: number;
   confirmationId?: string;
+  directionOptions?: AssetPresenterDirectionOption[];
+  directionDefault?: string;
+  cleanupPlanId?: string;
+  cleanupPlanHash?: string;
+  cleanupItems?: AssetPresenterCleanupItem[];
+  requiresClarification?: boolean;
+  audioTrackOptions?: AssetPresenterAudioTrackOption[];
+  audioTrackDefault?: number;
+};
+
+export type AssetPresenterCleanupItem = {
+  id: string;
+  state: "auto" | "suggested" | "protected";
+  category: string;
+  spokenText: string;
+  action: string;
+  reason: string;
+  estimatedSavingSeconds: number;
+  risk: string;
+  audioRisk: string;
+  visualJumpRisk: string;
+  protectionReasons: string[];
+  selected: boolean;
+  locked: boolean;
+};
+
+export type AssetPresenterAudioTrackOption = {
+  streamIndex: number;
+  label: string;
+  previewUrl: string;
+  qualityScore: number;
+  recommended: boolean;
+  channels: number;
+  codec: string;
+  audioFingerprint?: string;
+  transcriptHash?: string;
 };
 
 export type AssetPlanRatioOption = {
@@ -251,6 +327,16 @@ export type AssetPlanRatioOption = {
   value: string;
   // Merchant-facing chip label, e.g. "横屏 16:9".
   label: string;
+};
+
+export type AssetPresenterDirectionOption = {
+  id: string;
+  label: string;
+  concept: string;
+  reason: string;
+  recommended: boolean;
+  sampleUrl: string;
+  durationSeconds: number;
 };
 
 export type AssetMessagePresentation = "standard" | "hidden_confirmation" | "execution_anchor";

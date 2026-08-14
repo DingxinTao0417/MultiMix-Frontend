@@ -27,6 +27,9 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetLongFormAction,
+  AssetPresenterDirectionConfirmation,
+  AssetPresenterCleanupConfirmation,
+  AssetPresenterAudioSelectionConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
 } from "../lib/asset-workspace-types";
@@ -1860,6 +1863,9 @@ export default function AssetsWorkspaceClient({
     agentConfirmationId?: string,
     longFormAction?: AssetLongFormAction,
     videoSceneReplacement?: AssetVideoSceneReplacement,
+    presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
+    presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1929,6 +1935,9 @@ export default function AssetsWorkspaceClient({
         agentConfirmationId,
         longFormAction,
         videoSceneReplacement,
+        presenterDirectionConfirmation,
+        presenterCleanupConfirmation,
+        presenterAudioSelectionConfirmation,
         signal
       });
     } catch (error) {

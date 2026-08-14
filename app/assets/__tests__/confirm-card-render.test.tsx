@@ -78,4 +78,168 @@ describe("ConfirmCard pending state", () => {
       targetSeconds: 45,
     });
   });
+
+  it("compares presenter direction samples and submits one explicit direction", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "presenter_project_confirmation" as const,
+      title: "口播型方案",
+      status: "pending" as const,
+      fields: [
+        { key: "source_edit", label: "原话与删剪", value: "保留 42 秒 · 删除 1 段" },
+      ],
+      confirmLabel: "选择方向并生成视频",
+      ratioOptions: [
+        { value: "9:16", label: "竖屏 9:16" },
+        { value: "16:9", label: "横屏 16:9" },
+      ],
+      ratioDefault: "9:16",
+      directionDefault: "direction-a",
+      directionOptions: [
+        {
+          id: "direction-a",
+          label: "观点与证据交替",
+          concept: "人物建立信任，证据短时接管",
+          reason: "原片观点清楚，少量证据足够",
+          recommended: true,
+          sampleUrl: "/samples/a.mp4",
+          durationSeconds: 8,
+        },
+        {
+          id: "direction-b",
+          label: "产品演示交替",
+          concept: "人物与产品录屏交替解释",
+          reason: "适合更强的产品操作说明",
+          recommended: false,
+          sampleUrl: "/samples/b.mp4",
+          durationSeconds: 8,
+        },
+      ],
+    };
+
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+
+    expect(screen.getByText("推荐")).toBeTruthy();
+    expect(screen.getByText("人物建立信任，证据短时接管")).toBeTruthy();
+    expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("radio", { name: /产品演示交替/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择方向并生成视频" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      ratio: "16:9",
+      directorCandidateId: "direction-b",
+    });
+  });
+
+  it("reviews cleanup items and freezes an explicit audio track before directing", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "presenter_cleanup_confirmation" as const,
+      title: "口播清理",
+      status: "pending" as const,
+      fields: [{ key: "cleanup", label: "自然精简", value: "自动 1 项 · 建议 1 项" }],
+      confirmLabel: "确认清理并进入导演方案",
+      cleanupPlanId: "cleanup-1",
+      cleanupPlanHash: "a".repeat(64),
+      cleanupItems: [
+        {
+          id: "auto-1",
+          state: "auto" as const,
+          category: "non_lexical_filler",
+          spokenText: "嗯",
+          action: "delete",
+          reason: "孤立口癖",
+          estimatedSavingSeconds: 0.4,
+          risk: "low",
+          audioRisk: "low",
+          visualJumpRisk: "medium",
+          protectionReasons: [],
+          selected: true,
+          locked: false,
+        },
+        {
+          id: "suggested-1",
+          state: "suggested" as const,
+          category: "phrase_repetition",
+          spokenText: "再说一次",
+          action: "delete",
+          reason: "较长重说",
+          estimatedSavingSeconds: 1.2,
+          risk: "medium",
+          audioRisk: "low",
+          visualJumpRisk: "high",
+          protectionReasons: [],
+          selected: false,
+          locked: false,
+        },
+      ],
+      audioTrackDefault: 1,
+      audioTrackOptions: [
+        { streamIndex: 1, label: "人声轨 1", previewUrl: "", qualityScore: 0.9, recommended: true, channels: 1, codec: "aac" },
+        { streamIndex: 2, label: "人声轨 2", previewUrl: "", qualityScore: 0.8, recommended: false, channels: 2, codec: "aac" },
+      ],
+    };
+
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+
+    fireEvent.click(screen.getByText("再说一次"));
+    fireEvent.click(screen.getByRole("radio", { name: "人声轨 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认清理并进入导演方案" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      cleanupCandidateIds: ["auto-1", "suggested-1"],
+      protectedOverrideCandidateIds: [],
+      confirmProtectedOverride: false,
+      audioStreamIndex: 2,
+    });
+  });
+
+  it("confirms an exact audio track before generating cleanup", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "presenter_audio_selection_confirmation" as const,
+      title: "选择口播原声",
+      status: "pending" as const,
+      confirmationId: "presenter-audio-selection-current",
+      fields: [{ key: "audio", label: "有效人声音轨", value: "检测到 2 条" }],
+      confirmLabel: "确认原声并生成清理方案",
+      audioTrackDefault: 1,
+      audioTrackOptions: [
+        {
+          streamIndex: 1,
+          label: "人声轨 1",
+          previewUrl: "",
+          qualityScore: 0.9,
+          recommended: true,
+          channels: 1,
+          codec: "aac",
+          audioFingerprint: "sha256:audio-1",
+          transcriptHash: "sha256:transcript-1",
+        },
+        {
+          streamIndex: 2,
+          label: "人声轨 2",
+          previewUrl: "",
+          qualityScore: 0.8,
+          recommended: false,
+          channels: 2,
+          codec: "aac",
+          audioFingerprint: "sha256:audio-2",
+          transcriptHash: "sha256:transcript-2",
+        },
+      ],
+    };
+
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "人声轨 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认原声并生成清理方案" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      audioStreamIndex: 2,
+      audioFingerprint: "sha256:audio-2",
+      transcriptHash: "sha256:transcript-2",
+    });
+  });
 });

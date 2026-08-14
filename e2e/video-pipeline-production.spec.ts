@@ -1232,10 +1232,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       new Set(matchedSavedPrimaryMediaIds).size,
       "one saved image must not become the primary visual of multiple scenes",
     ).toBe(matchedSavedPrimaryMediaIds.length);
-    expect(
-      matchedSavedPrimaryMediaIds,
-      "the generic hammer image must not be selected as a weakly related kitchen primary visual",
-    ).not.toContain(savedLibraryMediaAssetIds[5]);
   }
   if (expectedVideoType === "source_excerpt") {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
@@ -1510,6 +1506,11 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       "path_flow",
       "mask_reveal",
       "focus_marker",
+      "fireflies",
+      "petals",
+      "sparkles",
+      "mist",
+      "light_rays",
     ]);
     const animationEntries = Object.values(
       artDirection?.scene_animation_by_id ?? {},

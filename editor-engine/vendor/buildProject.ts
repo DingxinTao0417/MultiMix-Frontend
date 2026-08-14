@@ -674,6 +674,21 @@ function numberMotionChannel(
   };
 }
 
+function vectorMotionChannel(
+  id: string,
+  duration: number,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  return {
+    valueKind: "vector" as const,
+    keyframes: [
+      { id: `${id}-start`, time: 0, value: start, interpolation: "linear" as const },
+      { id: `${id}-end`, time: duration, value: end, interpolation: "linear" as const },
+    ],
+  };
+}
+
 function imageMotionForDecision(
   elementId: string,
   decision: BackendEditDecision | undefined,
@@ -714,12 +729,50 @@ function imageMotionForDecision(
         },
       };
     case "zoom":
+    case "zoom_in":
       return {
         channels: {
           "transform.scaleX": numberMotionChannel(`${elementId}-zoom-x`, duration, 1, 1.1),
           "transform.scaleY": numberMotionChannel(`${elementId}-zoom-y`, duration, 1, 1.1),
         },
       };
+    case "zoom_out":
+      return { channels: {
+        "transform.scaleX": numberMotionChannel(`${elementId}-zoom-out-x`, duration, 1.1, 1),
+        "transform.scaleY": numberMotionChannel(`${elementId}-zoom-out-y`, duration, 1.1, 1),
+      } };
+    case "pan_left":
+    case "pan_right": {
+      const offset = Math.round(canvasWidth * 0.035);
+      const leftward = decision.motion === "pan_left";
+      return { channels: {
+        "transform.position": vectorMotionChannel(`${elementId}-${decision.motion}`, duration, { x: leftward ? offset : -offset, y: 0 }, { x: leftward ? -offset : offset, y: 0 }),
+        "transform.scaleX": numberMotionChannel(`${elementId}-pan-direction-x`, duration, 1.08, 1.08),
+        "transform.scaleY": numberMotionChannel(`${elementId}-pan-direction-y`, duration, 1.08, 1.08),
+      } };
+    }
+    case "drift_up":
+    case "drift_down": {
+      const offset = Math.round(canvasWidth * 0.025);
+      const upward = decision.motion === "drift_up";
+      return { channels: {
+        "transform.position": vectorMotionChannel(`${elementId}-${decision.motion}`, duration, { x: 0, y: upward ? offset : -offset }, { x: 0, y: upward ? -offset : offset }),
+        "transform.scaleX": numberMotionChannel(`${elementId}-drift-x`, duration, 1.06, 1.06),
+        "transform.scaleY": numberMotionChannel(`${elementId}-drift-y`, duration, 1.06, 1.06),
+      } };
+    }
+    case "ken_burns":
+      return { channels: {
+        "transform.position": vectorMotionChannel(`${elementId}-ken-burns`, duration, { x: -Math.round(canvasWidth * 0.025), y: Math.round(canvasWidth * 0.015) }, { x: Math.round(canvasWidth * 0.025), y: -Math.round(canvasWidth * 0.015) }),
+        "transform.scaleX": numberMotionChannel(`${elementId}-ken-burns-x`, duration, 1.02, 1.1),
+        "transform.scaleY": numberMotionChannel(`${elementId}-ken-burns-y`, duration, 1.02, 1.1),
+      } };
+    case "parallax":
+      return { channels: {
+        "transform.position": vectorMotionChannel(`${elementId}-parallax`, duration, { x: -Math.round(canvasWidth * 0.018), y: Math.round(canvasWidth * 0.012) }, { x: Math.round(canvasWidth * 0.018), y: -Math.round(canvasWidth * 0.012) }),
+        "transform.scaleX": numberMotionChannel(`${elementId}-parallax-x`, duration, 1.08, 1.04),
+        "transform.scaleY": numberMotionChannel(`${elementId}-parallax-y`, duration, 1.08, 1.04),
+      } };
     default:
       return undefined;
   }

@@ -14,6 +14,10 @@ import type {
   AssetConversationMessage,
   AssetMessagePlan,
   AssetPlanField,
+  AssetPresenterDirectionOption,
+  AssetPresenterCleanupItem,
+  AssetPresenterAudioTrackOption,
+  AssetPresenterVisualEvent,
   AssetPlanRatioOption,
   AssetPlanRef,
   AssetProduct,
@@ -170,7 +174,7 @@ function browserReadableMediaUrl(ref: string): string | undefined {
   if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
   if (/^[a-z0-9+.-]+:\/\//i.test(ref)) {
     const artifactPath = ref.split("://", 2)[1] ?? "";
-    if (!/(?:^|\/)(?:video-orchestration|product-media|mg)\//i.test(artifactPath)) {
+    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)) {
       return undefined;
     }
     return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
@@ -224,10 +228,16 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
   const summaryFields = planFieldsValue(value.summary_fields);
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
+  const directionOptions = planDirectionOptionsValue(value.direction_options);
+  const cleanupItems = planCleanupItemsValue(value.cleanup_items);
+  const audioTrackOptions = planAudioTrackOptionsValue(value.audio_track_options);
   const planKind = stringValue(value.kind);
   return {
     kind: planKind === "video_parameter_confirmation"
       || planKind === "video_project_confirmation"
+      || planKind === "presenter_audio_selection_confirmation"
+      || planKind === "presenter_cleanup_confirmation"
+      || planKind === "presenter_project_confirmation"
       || planKind === "agent_action_confirmation"
       ? planKind
       : undefined,
@@ -247,7 +257,89 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     pendingIntentId: stringValue(value.pending_intent_id) || undefined,
     pendingIntentVersion: positiveIntegerValue(value.pending_intent_version),
     confirmationId: stringValue(value.confirmation_id) || undefined,
+    directionOptions: directionOptions.length ? directionOptions : undefined,
+    directionDefault: stringValue(value.direction_default) || undefined,
+    cleanupPlanId: stringValue(value.cleanup_plan_id) || undefined,
+    cleanupPlanHash: stringValue(value.cleanup_plan_hash) || undefined,
+    cleanupItems: cleanupItems.length ? cleanupItems : undefined,
+    requiresClarification: value.requires_clarification === true,
+    audioTrackOptions: audioTrackOptions.length ? audioTrackOptions : undefined,
+    audioTrackDefault: typeof value.audio_track_default === "number"
+      ? value.audio_track_default
+      : undefined,
   };
+}
+
+function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AssetPresenterCleanupItem[] => {
+    if (!isRecord(item)) return [];
+    const id = stringValue(item.id);
+    const state = stringValue(item.state);
+    if (!id || !["auto", "suggested", "protected"].includes(state)) return [];
+    return [{
+      id,
+      state: state as AssetPresenterCleanupItem["state"],
+      category: stringValue(item.category),
+      spokenText: stringValue(item.spoken_text),
+      action: stringValue(item.action),
+      reason: stringValue(item.reason),
+      estimatedSavingSeconds: typeof item.estimated_saving_seconds === "number"
+        ? item.estimated_saving_seconds
+        : 0,
+      risk: stringValue(item.risk),
+      audioRisk: stringValue(item.audio_risk),
+      visualJumpRisk: stringValue(item.visual_jump_risk),
+      protectionReasons: Array.isArray(item.protection_reasons)
+        ? item.protection_reasons.map(stringValue).filter(Boolean)
+        : [],
+      selected: item.selected === true,
+      locked: item.locked === true,
+    }];
+  });
+}
+
+function planAudioTrackOptionsValue(value: unknown): AssetPresenterAudioTrackOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AssetPresenterAudioTrackOption[] => {
+    if (!isRecord(item) || typeof item.stream_index !== "number") return [];
+    return [{
+      streamIndex: item.stream_index,
+      label: stringValue(item.label) || `人声轨 ${item.stream_index}`,
+      previewUrl: planThumbnailUrl(stringValue(item.preview_url)) ?? "",
+      qualityScore: typeof item.quality_score === "number" ? item.quality_score : 0,
+      recommended: item.recommended === true,
+      channels: typeof item.channels === "number" ? item.channels : 0,
+      codec: stringValue(item.codec),
+      audioFingerprint: stringValue(item.audio_fingerprint) || undefined,
+      transcriptHash: stringValue(item.transcript_hash) || undefined,
+    }];
+  });
+}
+
+function planDirectionOptionsValue(value: unknown): AssetPresenterDirectionOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AssetPresenterDirectionOption[] => {
+    if (!isRecord(item)) return [];
+    const id = stringValue(item.id);
+    const label = stringValue(item.label);
+    const concept = stringValue(item.concept);
+    const reason = stringValue(item.reason);
+    const sampleUrl = planThumbnailUrl(stringValue(item.sample_url));
+    const durationSeconds = typeof item.duration_seconds === "number" && Number.isFinite(item.duration_seconds)
+      ? item.duration_seconds
+      : undefined;
+    if (!id || !label || !concept || !reason || !sampleUrl || !durationSeconds || durationSeconds <= 0) return [];
+    return [{
+      id,
+      label,
+      concept,
+      reason,
+      recommended: item.recommended === true,
+      sampleUrl,
+      durationSeconds,
+    }];
+  });
 }
 
 // Video-size options for the confirm card's ratio toggle (spec §5.2). Each entry
@@ -407,6 +499,68 @@ function segmentTimingsFromProject(project: Record<string, unknown> | undefined)
   return timings;
 }
 
+const PRESENTER_EVENT_LABELS: Record<AssetPresenterVisualEvent["type"], AssetPresenterVisualEvent["label"]> = {
+  text_emphasis: "文字强调",
+  media_overlay: "画中画",
+  graphic_overlay: "图形说明",
+  media_takeover: "全屏素材",
+  presenter_reframe: "人物让位",
+};
+
+const PRESENTER_EVENT_STATUS_LABELS: Record<string, AssetPresenterVisualEvent["statusLabel"]> = {
+  planned: "待生成",
+  rendering: "生成中",
+  rendered: "已完成",
+  failed: "生成失败",
+  stale: "待更新",
+};
+
+function presenterSpokenText(
+  event: Record<string, unknown>,
+  words: Record<string, unknown>[],
+  wordPositions: Map<string, number>,
+): string | undefined {
+  const start = wordPositions.get(stringValue(event.start_word_id));
+  const end = wordPositions.get(stringValue(event.end_word_id));
+  if (start == null || end == null || end < start) return undefined;
+  let text = "";
+  for (const word of words.slice(start, end + 1)) {
+    const token = stringValue(word.text);
+    if (!token) continue;
+    if (
+      text
+      && /[A-Za-z0-9]$/.test(text)
+      && /^[A-Za-z0-9]/.test(token)
+    ) text += " ";
+    text += token;
+  }
+  return text || undefined;
+}
+
+function presenterEventsFromScene(
+  scene: Record<string, unknown> | undefined,
+  words: Record<string, unknown>[],
+  wordPositions: Map<string, number>,
+): AssetPresenterVisualEvent[] | undefined {
+  const rawEvents = Array.isArray(scene?.visual_events) ? scene.visual_events.filter(isRecord) : [];
+  const events = rawEvents.flatMap((event) => {
+    const type = stringValue(event.type) as AssetPresenterVisualEvent["type"];
+    const label = PRESENTER_EVENT_LABELS[type];
+    const id = stringValue(event.event_id);
+    if (!label || !id) return [];
+    return [{
+      id,
+      type,
+      label,
+      spokenText: presenterSpokenText(event, words, wordPositions),
+      purpose: stringValue(event.purpose) || undefined,
+      statusLabel: PRESENTER_EVENT_STATUS_LABELS[stringValue(event.status)] || "待生成",
+      requiredForPublish: event.required_for_publish === true,
+    } satisfies AssetPresenterVisualEvent];
+  });
+  return events.length ? events : undefined;
+}
+
 // Storyboard summary for the segment cards. Reads the semantic layer in
 // priority order: video_project.segments → video_segments → video_plan.scenes.
 // asset_reference / mg_decision are authoritative; stock is fallback only.
@@ -417,6 +571,14 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   const planScenes = Array.isArray(videoPlan?.scenes) ? videoPlan.scenes.filter(isRecord) : [];
   const planScenesById = new Map(
     planScenes.map((scene) => [stringValue(scene.id), scene] as const).filter(([id]) => id),
+  );
+  const isPresenter = stringValue(videoPlan?.video_type) === "presenter";
+  const transcript = isRecord(videoPlan?.transcript) ? videoPlan.transcript : undefined;
+  const presenterWords = Array.isArray(transcript?.words) ? transcript.words.filter(isRecord) : [];
+  const presenterWordPositions = new Map(
+    presenterWords
+      .map((word, index) => [stringValue(word.id), index] as const)
+      .filter(([id]) => id),
   );
   const rawSegments = Array.isArray(videoProject?.segments) && videoProject.segments.length
     ? videoProject.segments
@@ -480,6 +642,8 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     const start = projectTiming?.start ?? numberOrUndefined(segment.startTime) ?? numberOrUndefined(segment.start_seconds);
     const duration = numberOrUndefined(segment.duration) ?? numberOrUndefined(segment.duration_seconds);
     const end = projectTiming?.end ?? numberOrUndefined(segment.endTime) ?? (start != null && duration != null ? start + duration : undefined);
+    const presenterScene = planScene ?? segment;
+    const materialGap = isRecord(presenterScene.material_gap) ? presenterScene.material_gap : undefined;
     return {
       id: stringValue(segment.id) || `segment-${index + 1}`,
       index: index + 1,
@@ -527,6 +691,13 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         : undefined,
       publicReplacementNote: stringValue(replacement?.reason_code) === "remote_file_missing"
         ? "原公开素材已失效，已透明替换为可用素材"
+        : undefined,
+      isPresenter: isPresenter || undefined,
+      presenterEvents: isPresenter
+        ? presenterEventsFromScene(presenterScene, presenterWords, presenterWordPositions)
+        : undefined,
+      presenterMaterialGap: isPresenter
+        ? stringValue(materialGap?.message) || undefined
         : undefined,
     };
   });
@@ -770,7 +941,8 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 }
 
 
-function suggestionsForCapability(capability: string): string[] {
+function suggestionsForCapability(capability: string, videoType = ""): string[] {
+  if (videoType === "presenter") return ["调整口播包装", "修正字幕", "补充事件素材", "取消包装"];
   if (capability === "long_form_candidate_set") return ["再给我更多候选", "只看指定主题", "调整时长或比例"];
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
   if (capability.includes("video")) return ["调整分镜", "补充产品素材", "缩短到30秒", "换成9:16"];
@@ -1026,7 +1198,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     markdownBody: asset.body,
     sections,
     timeline: timelineFromVideoProject(videoProject) ?? (mode === "copy" ? [] : timelineFromBody(asset.body, unsupported)),
-    actions: suggestionsForCapability(capability),
+    actions: suggestionsForCapability(capability, stringValue(rawVideoPlan?.video_type)),
     sourceIds: asset.linked_asset_ids.map((id) => String(id)),
     segments,
     sourceSummary: sourceSummaryForAsset(asset, segments),

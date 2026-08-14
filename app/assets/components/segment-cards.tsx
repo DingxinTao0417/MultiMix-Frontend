@@ -7,6 +7,16 @@ function segmentRange(segment: AssetProductSegment): string | null {
   return `${Math.round(segment.startSeconds)}–${Math.round(segment.endSeconds)}s`;
 }
 
+function presenterEventSummary(segment: AssetProductSegment): string | null {
+  if (!segment.presenterEvents?.length) return null;
+  return segment.presenterEvents.map((event) => [
+    `${event.label}${event.spokenText ? `「${event.spokenText}」` : ""}`,
+    event.purpose,
+    event.statusLabel,
+    event.requiredForPublish ? "发布必需" : "",
+  ].filter(Boolean).join(" · ")).join("；");
+}
+
 export function segmentNeedsMaterial(segment: AssetProductSegment): boolean {
   return segment.primaryVisualTreatment !== "graphics_primary"
     && segment.primaryVisualSourceType !== "generated_scene"
@@ -43,6 +53,9 @@ export default function SegmentCards({
           const selectable = Boolean(onSelect);
           const mgStatus = segment.mgStatus === "failed" ? "渲染失败" : null;
           const needsMaterial = segmentNeedsMaterial(segment);
+          const presenterEvents = presenterEventSummary(segment);
+          const canEditVoiceover = Boolean(onEditVoiceover && !segment.isPresenter);
+          const canReplaceMaterial = Boolean(onReplaceMaterial && !segment.isPresenter);
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
           const secondaryCopy = mgStatus && segment.subLine
             ? segment.subLine
@@ -119,26 +132,36 @@ export default function SegmentCards({
                     {segment.publicReplacementNote}
                   </span>
                 ) : null}
+                {presenterEvents ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    画面安排：{presenterEvents}
+                  </span>
+                ) : null}
+                {segment.presenterMaterialGap ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    素材缺口：{segment.presenterMaterialGap}
+                  </span>
+                ) : null}
               </span>
-              {onReplaceMaterial || onEditVoiceover ? (
+              {canReplaceMaterial || canEditVoiceover ? (
                 <span className="shadcn-prototype-segment-actions">
-                  {onEditVoiceover ? (
+                  {canEditVoiceover ? (
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onEditVoiceover(segment);
+                        onEditVoiceover?.(segment);
                       }}
                     >
                       修改配音
                     </button>
                   ) : null}
-                  {onReplaceMaterial ? (
+                  {canReplaceMaterial ? (
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        onReplaceMaterial(segment);
+                        onReplaceMaterial?.(segment);
                       }}
                     >
                       换素材
