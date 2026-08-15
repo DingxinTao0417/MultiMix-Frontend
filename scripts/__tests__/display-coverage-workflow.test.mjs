@@ -8,28 +8,8 @@ const runner = path.resolve(import.meta.dirname, "..", "run-display-coverage.mjs
 const nextConfig = path.resolve(import.meta.dirname, "..", "..", "next.config.mjs");
 const displaySpec = path.resolve(import.meta.dirname, "..", "..", "e2e", "display-area.spec.ts");
 
-test("display coverage workflow runs both repositories and retains safe failure evidence", () => {
-  const source = fs.readFileSync(workflow, "utf8");
-  assert.match(source, /DingxinTao0417\/MultiMix-Backend/);
-  assert.match(source, /npm run test:display-coverage/);
-  assert.match(source, /playwright-report|test-results/);
-  assert.match(source, /workflow_dispatch/);
-  assert.match(source, /schedule/);
-  assert.match(source, /if: failure\(\)/);
-  assert.doesNotMatch(source, /\.sqlite\*.*upload|\.env\*.*upload/i);
-});
-
-test("display coverage avoids repeating component tests for push and pull requests", () => {
-  const source = fs.readFileSync(workflow, "utf8");
-
-  assert.match(
-    source,
-    /- name: Run display E2E for code events\s+if: github\.event_name == 'push' \|\| github\.event_name == 'pull_request'\s+working-directory: MultiMix-Frontend\s+run: npm run test:display-e2e/,
-  );
-  assert.match(
-    source,
-    /- name: Run full display coverage for scheduled and manual runs\s+if: github\.event_name == 'schedule' \|\| github\.event_name == 'workflow_dispatch'\s+working-directory: MultiMix-Frontend\s+run: npm run test:display-coverage/,
-  );
+test("frontend does not own the private-backend display workflow", () => {
+  assert.equal(fs.existsSync(workflow), false);
 });
 
 test("local display coverage uses and cleans an isolated Next development directory", () => {
@@ -53,6 +33,23 @@ test("display coverage retains an auditable isolated runtime and forwards snapsh
   assert.match(runnerSource, /createE2ERunLifecycle\(\{ suite: "display-coverage", runId, resultDir \}\)/);
   assert.match(runnerSource, /passed_pending_cleanup/);
   assert.match(runnerSource, /failed_retained/);
+});
+
+test("display coverage prewarms the editor before Playwright starts", () => {
+  const runnerSource = fs.readFileSync(runner, "utf8");
+
+  assert.match(runnerSource, /\/editor\?embed=1&mode=preview/);
+  assert.match(runnerSource, /await waitFor\([^;]*\/editor\?embed=1&mode=preview[^;]*180_000\)/s);
+});
+
+test("player screenshots use an integer page clip instead of locator rounding", () => {
+  const specSource = fs.readFileSync(displaySpec, "utf8");
+
+  assert.match(specSource, /function integerBoundingClip/);
+  assert.match(specSource, /Math\.floor\(box\.x\)/);
+  assert.match(specSource, /Math\.ceil\(box\.x \+ box\.width\)/);
+  assert.match(specSource, /expect\(page\)\.toHaveScreenshot\("video-preview-shell\.png"/);
+  assert.doesNotMatch(specSource, /expect\(player\)\.toHaveScreenshot\("video-preview-shell\.png"/);
 });
 
 test("export recovery mode restarts the API, resumes one durable job, and cleans its isolated runtime", () => {

@@ -145,6 +145,7 @@ try {
   await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend);
   const frontend = startDisplayProcess(npmCommand, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)], frontendRoot, frontendEnv, "frontend.log");
   await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 120_000);
+  await waitFor(`http://127.0.0.1:${frontendPort}/editor?embed=1&mode=preview`, frontend, 180_000);
   if (cleanupProbe) throw new Error("Intentional display coverage cleanup probe");
 
   const playwrightArgs = ["playwright", "test", "e2e/display-area.spec.ts"];

@@ -59,6 +59,20 @@ async function expectProportionalFramelessMediaCanvas(page: Page, surface: Retur
   await resizeProductPaneAndExpectRatio(page, surface, expectedRatio);
 }
 
+async function integerBoundingClip(surface: ReturnType<Page["locator"]>) {
+  const box = await surface.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) throw new Error("Unable to measure screenshot surface");
+  const x = Math.floor(box.x);
+  const y = Math.floor(box.y);
+  return {
+    x,
+    y,
+    width: Math.ceil(box.x + box.width) - x,
+    height: Math.ceil(box.y + box.height) - y,
+  };
+}
+
 async function expectApprovedVideoPreviewShell(
   page: Page,
   player: ReturnType<Page["locator"]>,
@@ -88,8 +102,9 @@ async function expectApprovedVideoPreviewShell(
     node.currentTime = 0;
   });
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeLessThan(0.1);
-  await expect(player).toHaveScreenshot("video-preview-shell.png", {
+  await expect(page).toHaveScreenshot("video-preview-shell.png", {
     animations: "disabled",
+    clip: await integerBoundingClip(player),
     // The MP4 frame is intentionally verified by the readiness/seek checks
     // above.  Mask it here so this screenshot remains a deterministic check
     // of the player shell, controls, and spacing rather than codec seek noise.
