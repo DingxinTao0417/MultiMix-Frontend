@@ -59,18 +59,9 @@ async function expectProportionalFramelessMediaCanvas(page: Page, surface: Retur
   await resizeProductPaneAndExpectRatio(page, surface, expectedRatio);
 }
 
-async function integerBoundingClip(surface: ReturnType<Page["locator"]>) {
-  const box = await surface.boundingBox();
-  expect(box).not.toBeNull();
-  if (!box) throw new Error("Unable to measure screenshot surface");
-  const x = Math.floor(box.x);
-  const y = Math.floor(box.y);
-  return {
-    x,
-    y,
-    width: Math.ceil(box.x + box.width) - x,
-    height: Math.ceil(box.y + box.height) - y,
-  };
+function environmentSnapshotName(name: string) {
+  if (!process.env.CI) return name;
+  return name.replace(/\.png$/, "-ci.png");
 }
 
 async function expectApprovedVideoPreviewShell(
@@ -102,9 +93,8 @@ async function expectApprovedVideoPreviewShell(
     node.currentTime = 0;
   });
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeLessThan(0.1);
-  await expect(page).toHaveScreenshot("video-preview-shell.png", {
+  await expect(player).toHaveScreenshot(environmentSnapshotName("video-preview-shell.png"), {
     animations: "disabled",
-    clip: await integerBoundingClip(player),
     // The MP4 frame is intentionally verified by the readiness/seek checks
     // above.  Mask it here so this screenshot remains a deterministic check
     // of the player shell, controls, and spacing rather than codec seek noise.
@@ -243,7 +233,7 @@ test("CASE-06 renders the ready engineering preview without opening the editable
   await page.waitForTimeout(100);
   await page.mouse.move(0, 0);
 
-  await expect(player).toHaveScreenshot("video-preview-storyboard-shell.png", {
+  await expect(player).toHaveScreenshot(environmentSnapshotName("video-preview-storyboard-shell.png"), {
     animations: "disabled",
     // The embedded renderer can settle on an adjacent deterministic canvas frame
     // after a seek. Shell geometry and styling remain covered by exact CSS checks.

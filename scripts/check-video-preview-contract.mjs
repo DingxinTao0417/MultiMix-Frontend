@@ -14,6 +14,8 @@ export function assertVideoPreviewContract({
   preview = "",
   snapshotExists = true,
   storyboardSnapshotExists = true,
+  ciSnapshotExists = true,
+  storyboardCiSnapshotExists = true,
 }) {
   const shell = css.match(/\.shadcn-prototype-preview-player\s*\{(?<body>[^}]*)\}/s)?.groups?.body ?? "";
   const storyboardShell = css.match(/\.shadcn-prototype-project-preview\s*\{(?<body>[^}]*)\}/s)?.groups?.body ?? "";
@@ -71,15 +73,20 @@ export function assertVideoPreviewContract({
     "browser coverage must assert the approved player shell",
   );
   requireContract(
-    /toHaveScreenshot\(["']video-preview-shell\.png["']/.test(e2e),
+    /function environmentSnapshotName/.test(e2e)
+      && /process\.env\.CI/.test(e2e)
+      && /["']-ci\.png["']/.test(e2e)
+      && /toHaveScreenshot\(environmentSnapshotName\(["']video-preview-shell\.png["']\)/.test(e2e),
     "browser coverage must keep a deterministic screenshot baseline",
   );
   requireContract(
-    /toHaveScreenshot\(["']video-preview-storyboard-shell\.png["']/.test(e2e),
+    /toHaveScreenshot\(environmentSnapshotName\(["']video-preview-storyboard-shell\.png["']\)/.test(e2e),
     "browser coverage must keep a deterministic storyboard screenshot baseline",
   );
   requireContract(snapshotExists, "the screenshot baseline file must exist");
   requireContract(storyboardSnapshotExists, "the storyboard screenshot baseline file must exist");
+  requireContract(ciSnapshotExists, "the CI screenshot baseline file must exist");
+  requireContract(storyboardCiSnapshotExists, "the CI storyboard screenshot baseline file must exist");
 }
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -88,6 +95,8 @@ const frontendRoot = path.resolve(path.dirname(scriptPath), "..");
 export function checkRepositoryContract(root = frontendRoot) {
   const snapshotPath = path.join(root, "e2e", "display-area.spec.ts-snapshots", "video-preview-shell-win32.png");
   const storyboardSnapshotPath = path.join(root, "e2e", "display-area.spec.ts-snapshots", "video-preview-storyboard-shell-win32.png");
+  const ciSnapshotPath = path.join(root, "e2e", "display-area.spec.ts-snapshots", "video-preview-shell-ci-win32.png");
+  const storyboardCiSnapshotPath = path.join(root, "e2e", "display-area.spec.ts-snapshots", "video-preview-storyboard-shell-ci-win32.png");
   assertVideoPreviewContract({
     css: readFileSync(path.join(root, "app", "globals.css"), "utf8"),
     design: readFileSync(path.join(root, "docs", "MULTIMIX_WORKSPACE_DESIGN.md"), "utf8"),
@@ -99,6 +108,8 @@ export function checkRepositoryContract(root = frontendRoot) {
     ].join("\n"),
     snapshotExists: existsSync(snapshotPath),
     storyboardSnapshotExists: existsSync(storyboardSnapshotPath),
+    ciSnapshotExists: existsSync(ciSnapshotPath),
+    storyboardCiSnapshotExists: existsSync(storyboardCiSnapshotPath),
   });
 }
 

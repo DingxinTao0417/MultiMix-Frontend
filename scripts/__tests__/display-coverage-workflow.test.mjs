@@ -42,14 +42,15 @@ test("display coverage prewarms the editor before Playwright starts", () => {
   assert.match(runnerSource, /await waitFor\([^;]*\/editor\?embed=1&mode=preview[^;]*180_000\)/s);
 });
 
-test("player screenshots use an integer page clip instead of locator rounding", () => {
+test("player screenshots keep strict environment-specific baselines", () => {
   const specSource = fs.readFileSync(displaySpec, "utf8");
 
-  assert.match(specSource, /function integerBoundingClip/);
-  assert.match(specSource, /Math\.floor\(box\.x\)/);
-  assert.match(specSource, /Math\.ceil\(box\.x \+ box\.width\)/);
-  assert.match(specSource, /expect\(page\)\.toHaveScreenshot\("video-preview-shell\.png"/);
-  assert.doesNotMatch(specSource, /expect\(player\)\.toHaveScreenshot\("video-preview-shell\.png"/);
+  assert.match(specSource, /function environmentSnapshotName/);
+  assert.match(specSource, /process\.env\.CI/);
+  assert.match(specSource, /-ci\.png/);
+  assert.match(specSource, /environmentSnapshotName\("video-preview-shell\.png"\)/);
+  assert.match(specSource, /environmentSnapshotName\("video-preview-storyboard-shell\.png"\)/);
+  assert.doesNotMatch(specSource, /function integerBoundingClip/);
 });
 
 test("export recovery mode restarts the API, resumes one durable job, and cleans its isolated runtime", () => {

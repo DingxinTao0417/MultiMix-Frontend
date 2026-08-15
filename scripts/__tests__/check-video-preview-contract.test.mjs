@@ -32,12 +32,18 @@ const approved = {
 禁止只修改实现和测试期望。必须运行 check:video-preview-contract 和 test:display-coverage。
 `,
   e2e: `
+function environmentSnapshotName(name) {
+  if (!process.env.CI) return name;
+  return name.replace(/\\.png$/, "-ci.png");
+}
 async function expectApprovedVideoPreviewShell() {}
-await expect(player).toHaveScreenshot("video-preview-shell.png");
-await expect(storyboard).toHaveScreenshot("video-preview-storyboard-shell.png");
+await expect(player).toHaveScreenshot(environmentSnapshotName("video-preview-shell.png"));
+await expect(storyboard).toHaveScreenshot(environmentSnapshotName("video-preview-storyboard-shell.png"));
 `,
   snapshotExists: true,
   storyboardSnapshotExists: true,
+  ciSnapshotExists: true,
+  storyboardCiSnapshotExists: true,
 };
 
 test("accepts the approved video preview shell contract", () => {
@@ -118,5 +124,19 @@ test("rejects a missing storyboard screenshot baseline file", () => {
   assert.throws(
     () => assertVideoPreviewContract({ ...approved, storyboardSnapshotExists: false }),
     /storyboard screenshot baseline file must exist/,
+  );
+});
+
+test("rejects a missing CI screenshot baseline file", () => {
+  assert.throws(
+    () => assertVideoPreviewContract({ ...approved, ciSnapshotExists: false }),
+    /CI screenshot baseline file must exist/,
+  );
+});
+
+test("rejects a missing CI storyboard screenshot baseline file", () => {
+  assert.throws(
+    () => assertVideoPreviewContract({ ...approved, storyboardCiSnapshotExists: false }),
+    /CI storyboard screenshot baseline file must exist/,
   );
 });
