@@ -149,6 +149,14 @@ describe("video browse actions", () => {
 
   it("finishes an embedded editor export with a fresh explicit download action", async () => {
     const product = displayProducts["case-07-project-ready-mp4"];
+    let downloadedHref = "";
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:fresh-export"),
+      revokeObjectURL: vi.fn(),
+    });
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function captureDownloadHref(this: HTMLAnchorElement) {
+      downloadedHref = this.href;
+    });
     render(
       <ProductWorkspace
         copied={false}
@@ -161,6 +169,16 @@ describe("video browse actions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-ready",
+      },
+    }));
     window.dispatchEvent(new MessageEvent("message", {
       origin: window.location.origin,
       data: {
@@ -183,7 +201,19 @@ describe("video browse actions", () => {
       },
     }));
 
-    expect(await screen.findByRole("button", { name: "下载成片" })).toBeEnabled();
+    const downloadButton = await screen.findByRole("button", { name: "下载成片" });
+    expect(downloadButton).toBeEnabled();
+    postMessage.mockClear();
+
+    fireEvent.click(downloadButton);
+
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(downloadedHref).toBe("blob:fresh-export");
+    expect(postMessage).not.toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-export" },
+      window.location.origin,
+    );
+    expect(screen.getByRole("button", { name: "再次下载" })).toBeEnabled();
   });
 
   it("shows distinct upload and server verification phases", async () => {

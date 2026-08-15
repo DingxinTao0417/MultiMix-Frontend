@@ -671,16 +671,16 @@ export default function ProductWorkspace({
       }
       return;
     }
+    if (exportState === "done" && verifiedExportBlobRef.current) {
+      downloadExportBlob(verifiedExportBlobRef.current);
+      return;
+    }
     if (showEditorEmbed) {
       if (editorReady && startEditorExport()) return;
       pendingExportRef.current = true;
       setExportState("preparing");
       setExportProgress(null);
       setExportError("");
-      return;
-    }
-    if (exportState === "done" && verifiedExportBlobRef.current) {
-      downloadExportBlob(verifiedExportBlobRef.current);
       return;
     }
     if (hasCurrentPersistedExport && persistedExportUrl) {
