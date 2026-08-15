@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const root = process.cwd();
 
 function readProjectFile(path: string) {
-	return readFileSync(join(root, path), "utf8");
+	return readFileSync(join(root, path), "utf8").replaceAll("\r\n", "\n");
 }
 
 describe("editor layout constraints", () => {
