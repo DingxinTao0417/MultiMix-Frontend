@@ -7,10 +7,10 @@ import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
-  assets: ["全部", "上传资料", "采集资料", "对话沉淀"],
-  copy: ["全部", "选题方案", "文案稿", "配音稿", "编导稿"],
-  image: ["全部", "封面图", "素材图", "分镜图"],
-  video: ["全部", "混剪视频", "数字人视频", "MG动画视频", "实景拍摄视频", "生成视频素材"]
+  assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
+  copy: ["全部", "选题方案", "文案稿", "编导稿", "未分类"],
+  image: ["全部", "封面图", "素材图", "分镜图", "未分类"],
+  video: ["全部", "视频工程", "未分类"]
 };
 
 const SEARCH_PLACEHOLDER: Record<Exclude<ActiveView, "conversation">, string> = {
@@ -107,18 +107,12 @@ function bodyForRow(row: LibraryRow, view: Exclude<ActiveView, "conversation">):
 }
 
 function keywordsForRow(row: LibraryRow, view: Exclude<ActiveView, "conversation">): string[] {
-  if (row.keywords && row.keywords.length > 0) return row.keywords;
-  const defaults: Record<Exclude<ActiveView, "conversation">, string[]> = {
-    assets: ["资料", "来源", "可检索"],
-    copy: ["文案", "可复用", "待标注"],
-    image: ["图片", "画面", "待标注"],
-    video: ["视频", "口播", "待标注"]
-  };
-  return defaults[view];
+  void view;
+  return row.keywords ?? [];
 }
 
 function isDigitalHuman(row: LibraryRow) {
-  return row.variant === "digital-human" || /数字人/.test(`${row.title} ${row.meta} ${row.note}`);
+  return row.variant === "digital-human";
 }
 
 function isReparsableMedia(row: LibraryRow) {
@@ -137,6 +131,36 @@ function publicCandidateTags(candidate: PublicMaterialCandidate): string[] {
 
 function publicMediaSource(candidate: PublicMaterialCandidate): string {
   return candidate.preview_url || candidate.download_url || candidate.source_url;
+}
+
+function PublicMaterialThumbnail({ candidate, source }: { candidate: PublicMaterialCandidate; source: string }) {
+  const [loadFailed, setLoadFailed] = useState(false);
+  const canPreview = Boolean(source && candidate.media_type !== "text" && !loadFailed);
+  const label = candidate.media_type === "video"
+    ? "视频素材"
+    : candidate.media_type === "image"
+      ? "图片素材"
+      : "文案素材";
+  const PlaceholderIcon = candidate.media_type === "video"
+    ? Video
+    : candidate.media_type === "image"
+      ? ImageIcon
+      : FileText;
+
+  return (
+    <span className="shadcn-prototype-public-thumb">
+      {canPreview ? (
+        // External material sources span arbitrary hosts, so next/image remotePatterns cannot cover them.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={source} alt="" loading="lazy" onError={() => setLoadFailed(true)} />
+      ) : (
+        <span className="shadcn-prototype-public-thumb-placeholder">
+          <PlaceholderIcon size={22} aria-hidden="true" />
+          <small>{label}</small>
+        </span>
+      )}
+    </span>
+  );
 }
 
 function displayMeta(row: LibraryRow, currentView: Exclude<ActiveView, "conversation">) {
@@ -1146,7 +1170,7 @@ function LibraryWorkshop({
                   </label>
                 ))}
               </div>
-              <button type="button" disabled={publicLoading || !publicQuery.trim() || publicMediaTypes.length === 0 || selectedPublicProviders.length === 0} onClick={() => void handleRunPublicSearch()}>
+              <button className="shadcn-prototype-public-search-submit" type="button" disabled={publicLoading || !publicQuery.trim() || publicMediaTypes.length === 0 || selectedPublicProviders.length === 0} onClick={() => void handleRunPublicSearch()}>
                 <Search size={15} aria-hidden="true" />
                 {publicLoading ? "搜索中" : "搜索公开素材"}
               </button>
@@ -1157,20 +1181,25 @@ function LibraryWorkshop({
                 const tags = publicCandidateTags(candidate);
                 const src = publicMediaSource(candidate);
                 return (
-                  <article key={candidate.id}>
-                    <button type="button" className="shadcn-prototype-public-card" onClick={() => setPublicSelected(candidate)}>
-                      <span className="shadcn-prototype-public-thumb">
-                        {/* External material sources span arbitrary hosts, so next/image remotePatterns cannot cover them. */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        {candidate.media_type === "image" && src ? <img src={src} alt={candidate.title} loading="lazy" /> : candidate.media_type === "video" && src ? <img src={src} alt={candidate.title} loading="lazy" /> : <Globe2 size={22} />}
-                      </span>
-                      <strong>{candidate.title}</strong>
-                      <small>{candidate.provider} · {candidate.license_label}</small>
-                      <span className="shadcn-prototype-public-tags">
-                        {tags.slice(0, 5).map((tag) => <em key={tag}>{tag}</em>)}
+                  <article className="shadcn-prototype-public-result" key={candidate.id}>
+                    <button
+                      type="button"
+                      className="shadcn-prototype-public-card"
+                      aria-label={`查看素材：${candidate.title}`}
+                      onClick={() => setPublicSelected(candidate)}
+                    >
+                      <PublicMaterialThumbnail candidate={candidate} source={src} />
+                      <span className="shadcn-prototype-public-card-content">
+                        <strong title={candidate.title}>{candidate.title}</strong>
+                        <small className="shadcn-prototype-public-meta" title={`${candidate.provider} · ${candidate.license_label}`}>
+                          {candidate.provider} · {candidate.license_label}
+                        </small>
+                        <span className="shadcn-prototype-public-tags">
+                          {tags.slice(0, 3).map((tag) => <em key={tag}>{tag}</em>)}
+                        </span>
                       </span>
                     </button>
-                    <button type="button" onClick={() => void handleImportPublicMaterial(candidate)}>保存</button>
+                    <button type="button" className="shadcn-prototype-public-save" onClick={() => void handleImportPublicMaterial(candidate)}>保存</button>
                   </article>
                 );
               })}

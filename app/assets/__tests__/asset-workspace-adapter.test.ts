@@ -7,6 +7,8 @@ import {
   buildConversationMessagePayload,
   conversationFromSummary,
   libraryCategoryForAsset,
+  libraryKeywordsForAsset,
+  libraryVariantForAsset,
   retryConversationDetailLoad,
 } from "../lib/asset-workspace-adapter";
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
@@ -58,6 +60,76 @@ describe("asset workspace category inference", () => {
     expect(libraryCategoryForAsset(asset({
       source_type: "web_capture"
     }))).toBe("采集资料");
+  });
+
+  it("does not infer a source category from title or body when source_type is missing", () => {
+    expect(libraryCategoryForAsset(asset({
+      source_type: undefined,
+      title: "对话沉淀的品牌画像",
+      body: "来自网页采集和公众号链接",
+    }))).toBe("未分类");
+  });
+
+  it("does not infer an artifact category from copy text", () => {
+    expect(libraryCategoryForAsset(asset({
+      asset_kind: "copy",
+      content_type: "custom_copy",
+      title: "品牌编导脚本与分镜方案",
+      body: "包含镜头和导演说明",
+      source_type: "conversation",
+    }))).toBe("未分类");
+  });
+
+  it("maps only explicit artifact fields and deterministic content types", () => {
+    expect(libraryCategoryForAsset(asset({
+      asset_kind: "copy",
+      content_type: "video_script",
+    }))).toBe("编导稿");
+    expect(libraryCategoryForAsset(asset({
+      asset_kind: "image",
+      content_type: "storyboard_image",
+    }))).toBe("分镜图");
+    expect(libraryCategoryForAsset(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+    }))).toBe("视频工程");
+    expect(libraryCategoryForAsset(asset({
+      asset_kind: "image",
+      content_type: "custom_image",
+      metadata: { artifact_category: "封面图" },
+    }))).toBe("封面图");
+  });
+
+  it("uses only backend understanding tags instead of title seeds or generic defaults", () => {
+    const keywords = libraryKeywordsForAsset(asset({
+      asset_kind: "video",
+      content_type: "uploaded_video",
+      title: "小红书数字人口播视频",
+      metadata: {
+        understanding: {
+          status: "ready",
+          tags: ["工作台", "素材整理"],
+          storyboard_roles: [{ code: "process", label: "过程", score: 0.9 }],
+          scene_types: [{ code: "workspace", label: "工作场景", score: 0.8 }],
+        },
+      },
+    }));
+
+    expect(keywords).toEqual(["工作台", "素材整理"]);
+  });
+
+  it("uses only the explicit backend video mode for the digital-human marker", () => {
+    expect(libraryVariantForAsset(asset({
+      asset_kind: "video",
+      title: "数字人口播视频",
+      body: "talking head avatar",
+      metadata: {},
+    }))).toBe("standard");
+    expect(libraryVariantForAsset(asset({
+      asset_kind: "video",
+      title: "品牌介绍",
+      metadata: { video_mode: "digital_human" },
+    }))).toBe("digital-human");
   });
 });
 
