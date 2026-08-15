@@ -342,6 +342,40 @@ describe("display-area eight-case matrix", () => {
     },
   );
 
+  it("keeps the editor open when an auto-save invalidates the previous export", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const workspace = (currentProduct: typeof product) => (
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={vi.fn(async () => undefined)}
+        product={currentProduct}
+        selectedConversation={conversationForDisplayProduct(currentProduct)}
+      />
+    );
+    const { rerender } = render(workspace(product));
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完成编辑" })).toBeInTheDocument();
+
+    const refreshedProduct = {
+      ...product,
+      metadata: {
+        ...product.metadata,
+        video_project: {
+          ...(product.metadata?.video_project as Record<string, unknown>),
+          mp4_ref: null,
+        },
+      },
+    };
+    rerender(workspace(refreshedProduct));
+
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "完成编辑" })).toBeInTheDocument();
+  });
+
   it("renders a real video element only for the MP4 case", () => {
     const { container } = render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     expect(container.querySelector("video")).toHaveAttribute("src", expect.stringContaining("display-sample.mp4"));

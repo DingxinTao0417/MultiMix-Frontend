@@ -271,7 +271,7 @@ export default function ProductWorkspace({
   useEffect(() => {
     setEditorRequested(false);
     setEditorReady(false);
-    setExportState(hasPersistedExport ? "done" : "idle");
+    setExportState("idle");
     setExportProgress(null);
     setQualityReport(null);
     setExportError("");
@@ -280,7 +280,11 @@ export default function ProductWorkspace({
     pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
     recoverableExportJobRef.current = null;
-  }, [currentAssetId, hasPersistedExport, hasVideoProject]);
+  }, [currentAssetId, hasVideoProject]);
+
+  useEffect(() => {
+    setExportState(hasPersistedExport ? "done" : "idle");
+  }, [hasPersistedExport]);
 
   useEffect(() => {
     // Switching products always lands on the browse surface; the editor is
