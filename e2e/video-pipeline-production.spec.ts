@@ -1216,7 +1216,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .filter(
         (scene) =>
           scene.asset_reference?.status === "matched" &&
-          scene.primary_visual_strategy?.mode === "saved_asset",
+          scene.primary_visual?.source_type === "saved_asset",
       )
       .map((scene) =>
         scene.asset_reference?.chosen_asset_id ?? scene.asset_reference?.asset_id,
@@ -1261,12 +1261,12 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     `confirmation failed: ${confirmationResponse.status()} ${confirmationText}`,
   ).toBe(true);
   const confirmationPayload = JSON.parse(confirmationText) as {
-    conversation?: {
+    product?: {
       metadata?: { latest_job_public_id?: string };
     };
   };
   const videoJobId =
-    confirmationPayload.conversation?.metadata?.latest_job_public_id;
+    confirmationPayload.product?.metadata?.latest_job_public_id;
   expect(
     videoJobId,
     "confirmation aggregate must contain the queued video job id",

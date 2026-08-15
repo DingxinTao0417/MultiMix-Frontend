@@ -124,6 +124,33 @@ test("production video E2E lets the API authorize failed retries and rehydrates 
   assert.match(source, /await resumeRetainedVideoJob\(backendEnv\)/);
 });
 
+test("retained video polling uses the public project readiness contract", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const retainedJobWait = source.match(
+    /async function waitForRetainedVideoJob[\s\S]*?\r?\n}\r?\n\r?\nasync function resumeRetainedVideoJob/,
+  )?.[0] ?? "";
+
+  assert.match(
+    retainedJobWait,
+    /current\.status === "completed" && current\.project_ready === true/,
+  );
+  assert.doesNotMatch(retainedJobWait, /current\.render_stage/);
+});
+
+test("retained export reads duration from the public video plan contract", () => {
+  const source = fs.readFileSync(retainedExportSpecPath, "utf8");
+  const start = source.indexOf("async function reselectProjectWhenDurationIsOutOfContract");
+  const end = source.indexOf("function assertSourceClipIdentity", start);
+  const durationRecovery = source.slice(start, end);
+
+  assert.ok(start > -1 && end > start);
+  assert.match(
+    durationRecovery,
+    /currentProject\.metadata\?\.video_plan\?\.duration_seconds/,
+  );
+  assert.doesNotMatch(durationRecovery, /creative_brief/);
+});
+
 test("production video E2E continues a completed retained project through browser export", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
   const retainedSpec = fs.readFileSync(retainedExportSpecPath, "utf8");

@@ -1013,7 +1013,7 @@ async function waitForRetainedVideoJob(job, accessToken) {
       throw new Error(`Retained video job read failed: ${response.status} ${await response.text()}`);
     }
     const current = await response.json();
-    if (current.status === "completed" && current.render_stage === "done") return current;
+    if (current.status === "completed" && current.project_ready === true) return current;
     if (current.status === "failed") {
       throw new Error(`Retained video job failed again: ${JSON.stringify(current)}`);
     }

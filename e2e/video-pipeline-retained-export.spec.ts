@@ -27,8 +27,10 @@ type ProjectAsset = {
   product_status?: string;
   metadata?: Record<string, unknown> & {
     video_workflow_stage?: string;
-    creative_brief?: { duration_seconds?: number };
-    video_plan?: { scenes?: Array<Record<string, unknown>> };
+    video_plan?: {
+      duration_seconds?: number;
+      scenes?: Array<Record<string, unknown>>;
+    };
     asset_manifest?: { scenes?: Array<Record<string, unknown>> };
     video_project?: {
       media?: Array<Record<string, unknown>>;
@@ -183,7 +185,7 @@ async function reselectProjectWhenDurationIsOutOfContract(
   token: string,
   currentProject: ProjectAsset,
 ): Promise<RetainedExportSeed> {
-  const currentDuration = Number(currentProject.metadata?.creative_brief?.duration_seconds);
+  const currentDuration = Number(currentProject.metadata?.video_plan?.duration_seconds);
   if (
     Number.isFinite(currentDuration)
     && currentDuration >= value.minimumDurationSeconds
@@ -253,11 +255,10 @@ async function reselectProjectWhenDurationIsOutOfContract(
   const directorMetadata = directorAsset?.metadata ?? {};
   const directorPlan = directorMetadata.video_plan as {
     video_type?: string;
+    duration_seconds?: number;
     scenes?: Array<Record<string, unknown>>;
   } | undefined;
-  const directorDuration = Number(
-    (directorMetadata.creative_brief as { duration_seconds?: unknown } | undefined)?.duration_seconds,
-  );
+  const directorDuration = Number(directorPlan?.duration_seconds);
   expect(directorPlan?.video_type).toBe("source_excerpt");
   expect(directorDuration).toBeGreaterThanOrEqual(value.minimumDurationSeconds);
   expect(directorDuration).toBeLessThanOrEqual(value.maximumDurationSeconds);
@@ -278,9 +279,9 @@ async function reselectProjectWhenDurationIsOutOfContract(
     `retained project confirmation failed: ${confirmationResponse.status()} ${confirmationText}`,
   ).toBe(true);
   const confirmation = JSON.parse(confirmationText) as {
-    conversation?: { metadata?: { latest_job_public_id?: string } };
+    product?: { metadata?: { latest_job_public_id?: string } };
   };
-  const videoJobId = confirmation.conversation?.metadata?.latest_job_public_id;
+  const videoJobId = confirmation.product?.metadata?.latest_job_public_id;
   expect(videoJobId, "retained project confirmation returned no video job").toBeTruthy();
   let projectAssetId: number | undefined;
   await expect.poll(async () => {
