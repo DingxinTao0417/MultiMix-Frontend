@@ -16,23 +16,12 @@ afterEach(cleanup);
 
 const queuedAction: AgentActionRunResponse = {
   id: "agent-action-1",
-  taskId: "task-video",
-  actionId: "video.scene.replace_material",
   status: "queued",
-  target: {
-    scope: "scene",
-    asset_id: 42,
-    version_id: 9,
-    scene_id: "scene-2",
-  },
   requiresConfirmation: false,
   confirmationId: null,
-  confirmationReason: null,
-  jobId: "video-job-1",
   assetId: 42,
   versionId: 9,
   message: "视频修改任务已提交。",
-  errorCode: null,
   retryable: false,
 };
 

@@ -139,7 +139,7 @@ function agentActionLiveKey(conversationId: string, actionRunId: string): string
 export type VideoJobLiveStatus = {
   jobId: string;
   status: string;
-  renderStage: string;
+  workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   completionConfirmed: boolean;
@@ -600,8 +600,8 @@ export default function AssetsWorkspaceClient({
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
   const inFlightSourceAttachmentReconciliationsRef = useRef(new Set<string>());
   const inFlightLongFormCandidateContextsRef = useRef(new Set<number>());
-  // Live per-asset video job status (stage + error) fed by the poller so the
-  // workspace can show stage-level progress instead of a bare "生成中".
+  // Live per-asset video job status (public workflow state + error) fed by the
+  // poller so the workspace can show product progress instead of a bare "生成中".
   const [videoJobLive, setVideoJobLive] = useState<Record<number, VideoJobLiveStatus>>({});
   const terminalVideoJobIdsRef = useRef(new Set<string>());
   const inFlightVideoJobIdsRef = useRef(new Set<string>());
@@ -725,7 +725,9 @@ export default function AssetsWorkspaceClient({
         if (existing && !isPendingAgentAction(existing.action)) continue;
         if (
           existing?.action.status === entry.action.status
-          && existing.action.jobId === entry.action.jobId
+          && existing.action.message === entry.action.message
+          && existing.action.assetId === entry.action.assetId
+          && existing.action.versionId === entry.action.versionId
         ) continue;
         next[key] = entry;
         changed = true;
@@ -1086,7 +1088,7 @@ export default function AssetsWorkspaceClient({
         [job.assetId]: {
           jobId: job.id,
           status: job.status,
-          renderStage: job.renderStage,
+          workflowStage: job.workflowStage,
           steps: job.steps,
           errorMessage: job.errorMessage,
           productStatus: job.productStatus,
@@ -1303,7 +1305,7 @@ export default function AssetsWorkspaceClient({
           [refreshed.assetId]: {
             jobId: refreshed.id,
             status: refreshed.status,
-            renderStage: refreshed.renderStage,
+            workflowStage: refreshed.workflowStage,
             steps: refreshed.steps,
           errorMessage: refreshed.errorMessage,
           productStatus: refreshed.productStatus,

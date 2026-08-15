@@ -274,31 +274,28 @@ type AssetConversation = {
 
 ```ts
 type AgentTaskCollection = {
-  active?: { id: string; goal: string; status: string; assetId?: number;
+  active?: { goal: string; status: string; assetId?: number;
             versionId?: number; sceneId?: string };
-  paused: Array<{ id: string; goal: string; status: string }>;
+  paused: Array<{ goal: string; status: string }>;
 };
 
 type AgentActionRunResponse = {
   id: string;
-  taskId: string;
-  actionId: string;
   status: "planned" | "waiting_confirmation" | "queued" | "running"
         | "succeeded" | "failed" | "blocked" | "canceled";
-  target: Record<string, unknown>;
   requiresConfirmation: boolean;
   confirmationId: string | null;
-  jobId: string | null;
   assetId: number | null;
   versionId: number | null;
   message: string;
-  errorCode: string | null;
   retryable: boolean;
 };
 ```
 
-- mapper 只读取 `metadata.agent_mission.version === "agent_v2"`；损坏或历史结构不渲染任务条。
-- 动作状态来自服务端持久化 mission/assistant metadata，不根据消息文案猜测。
+- mapper 只读取会话响应中的显式 `agent_tasks` 与 `active_agent_action` 公开 DTO；不读取 raw
+  `metadata.agent_mission`。
+- 动作状态来自服务端公开 DTO，不根据消息文案猜测；内部 task/action/job id、target 与 error code
+  只留在服务端持久化结构或受保护诊断路径。
 
 ### 3.9 `AssetWorkshop`（库视图）
 
@@ -633,9 +630,10 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 
 ```jsonc
 "steps": [
-  { "key": "understand", "label": "理解素材与要求", "status": "done",    "elapsed_seconds": 8 },
-  { "key": "plan",       "label": "规划分镜结构",   "status": "running", "elapsed_seconds": 3 },
-  { "key": "generate",   "label": "生成与合成",     "status": "pending", "elapsed_seconds": null }
+  { "key": "create_job",    "label": "创建视频工程任务并等待执行", "status": "done", "retry_job_id": null },
+  { "key": "prepare_scenes", "label": "正在准备分镜画面",           "status": "done", "retry_job_id": null },
+  { "key": "prepare_media",  "label": "正在生成视频",               "status": "run",  "retry_job_id": null },
+  { "key": "build_project",  "label": "正在完成质量检查",           "status": "wait", "retry_job_id": null }
 ]
 ```
 
@@ -644,12 +642,13 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 并展示分镜；若后端已就绪但展示未收敛，应呈现可恢复的同步状态和 job ID，而不是继续把素材列表轮询
 当作生成进度。
 
-排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?limit=100`。该接口只返回当前用户工程的
-脱敏、append-only 事件（事件类型、原因码、关联 ID、hash、有限详情和时间），不供普通产品文案展示，
-也不返回原始用户输入、素材内容或模型提示词。
+pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?limit=100`。普通用户访问
+返回 403；该接口不供普通产品文案展示。跨用户资源继续返回 404。
 
-- ≥ 3 个语义步（理解/规划/生成），由 `render_stage` + 真实阶段时间戳（`result_payload.step_marks`）派生，禁止假进度。
-- 旧后端缺字段 → adapter 解析为空数组 → 时间线回退 `render_stage` 映射（`videoJobTimelineSteps`）。
+- ≥ 3 个产品语义步，由服务端根据内部 `render_stage` 与真实阶段标记派生；公开响应与 OpenAPI
+  均不声明 raw stage、`step_marks` 或 `elapsed_seconds`。
+- 后端缺少 `steps` 时，adapter 解析为空数组并显示通用“正在获取执行状态”；前端不得根据内部
+  stage 猜测或伪造进度。
 
 两阶段素材驱动流水线只能投影为现有用户语义步骤，不得直接显示内部 stage：
 
@@ -887,13 +886,12 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
   "id": "video-job-123",
   "asset_id": 7,
   "status": "completed",
-  "render_stage": "done",
+  "workflow_stage": "video_project_ready",
   "result": {
     "voice_preview": {
       "segment_id": "scene-2",
       "audio_ref": "local://video-orchestration/7/audio-preview/...",
-      "duration_seconds": 3.4,
-      "request_fingerprint": "..."
+      "duration_seconds": 3.4
     }
   }
 }
@@ -902,8 +900,8 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 前端必须使用 `VideoJobRead.id` 轮询，不能读取不存在的 `public_id`。试听音频通过
 `GET /v1/video/media?ref={encodeURIComponent(audio_ref)}` 播放。
 
-应用当前分镜时，把完成的 `id` 作为 `preview_job_id` 发回同一端点，并设置
-`preview_only=false`。服务端只接受仍对应当前工程版本、目标分镜和规范化配音请求的试听；
+应用当前分镜时，把完成的公开 `id` 作为 `preview_job_id` 发回同一端点，并设置
+`preview_only=false`。服务端通过不外发的内部指纹校验工程版本、目标分镜和规范化配音请求；
 过期结果返回 `voice_preview_stale`。
 
 成功应用的 job 同时返回：
@@ -986,17 +984,12 @@ POST /v1/assets/{asset_id}/versions/{undo_version_id}/restore
 {
   "agent_action": {
     "id": "agent-action-...",
-    "task_id": "task-...",
-    "action_id": "video.scene.replace_material",
     "status": "queued",
-    "target": {"scope": "scene", "asset_id": 42, "scene_id": "scene-2"},
     "requires_confirmation": false,
     "confirmation_id": null,
-    "job_id": "video-job-...",
     "asset_id": 42,
     "version_id": 7,
     "message": "视频修改任务已提交。",
-    "error_code": null,
     "retryable": false
   }
 }

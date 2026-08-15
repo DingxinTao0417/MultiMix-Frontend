@@ -38,7 +38,7 @@ describe("video project client", () => {
 
   it("returns the persisted job state for callers to wait before reloading an edited project", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      id: "job-7", asset_id: 7, status: "running", render_stage: "composing", error_message: null, project: null,
+      id: "job-7", asset_id: 7, status: "running", workflow_stage: "video_rendering", error_message: null, project: null,
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
 
     await expect(getVideoProjectJob({ token: "token", jobId: "job-7" })).resolves.toMatchObject({

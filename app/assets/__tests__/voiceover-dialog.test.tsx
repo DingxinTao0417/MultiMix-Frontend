@@ -21,14 +21,13 @@ const previewJob: VideoJob = {
   id: "preview-1",
   asset_id: 9100,
   status: "completed",
-  render_stage: "done",
+  workflow_stage: "video_project_ready",
   error_message: null,
   result: {
     voice_preview: {
       segment_id: "segment-1",
       audio_ref: "local://preview/segment-1.mp3",
       duration_seconds: 2.1,
-      request_fingerprint: "preview-fingerprint",
     },
   },
 };

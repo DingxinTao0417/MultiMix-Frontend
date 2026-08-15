@@ -9,10 +9,7 @@ import {
 const remote = (status: "queued" | "running" | "completed" | "failed") => ({
   id: "asset-generation-job-1",
   status,
-  stage: status,
-  attempts: status === "queued" ? 0 : 1,
   result_asset_id: status === "completed" ? 42 : null,
-  error_code: status === "failed" ? "provider_timeout" : null,
   error_message: status === "failed"
     ? "内容生成超时，本轮没有创建产物，可以直接重试。"
     : null,
@@ -25,7 +22,6 @@ describe("asset generation poller", () => {
     const result = nextAssetGenerationPollState({
       jobId: "asset-generation-job-1",
       status: "queued",
-      stage: "queued",
       run: 1,
       refreshConversation: false,
       errorMessage: null,
@@ -39,7 +35,6 @@ describe("asset generation poller", () => {
     const result = nextAssetGenerationPollState({
       jobId: "asset-generation-job-1",
       status: "running",
-      stage: "generating",
       run: 1,
       refreshConversation: false,
       errorMessage: null,
@@ -61,7 +56,6 @@ describe("asset generation poller", () => {
     const current = {
       jobId: "asset-generation-job-2",
       status: "queued" as const,
-      stage: "queued",
       run: 2,
       refreshConversation: false,
       errorMessage: null,
@@ -74,7 +68,6 @@ describe("asset generation poller", () => {
     const result = nextAssetGenerationPollState({
       jobId: "asset-generation-job-1",
       status: "running",
-      stage: "generating",
       run: 1,
       refreshConversation: false,
       errorMessage: null,
@@ -101,7 +94,8 @@ describe("asset generation poller", () => {
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0].conversationId).toBe("asset-conversation-1");
-    expect(jobs[0].job.error_code).toBe("provider_timeout");
+    expect(jobs[0].job).not.toHaveProperty("stage");
+    expect(jobs[0].job).not.toHaveProperty("error_code");
     expect(jobs[0].job.error_message).toContain("内容生成超时");
   });
 });

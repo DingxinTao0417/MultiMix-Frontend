@@ -11,18 +11,6 @@ import {
 import AgentRunTimeline from "./agent-run-timeline";
 
 function failureMessage(job: AssetGenerationJobResponse): string {
-  if (job.error_code === "provider_timeout") {
-    return "内容生成超时，本轮没有创建产物，可以直接重试。";
-  }
-  if (job.error_code === "provider_stalled") {
-    return "模型长时间没有任何新响应，本轮没有创建产物，可以直接重试。";
-  }
-  if (job.error_code === "stale_input") {
-    return "当前作品已经更新，本次旧任务没有覆盖新版本。";
-  }
-  if (job.error_code === "worker_abandoned") {
-    return "内容生成任务在服务重启后中断，本轮没有创建产物，可以直接重试。";
-  }
   if (job.error_message) return formatComposerError(new Error(job.error_message));
   return "内容生成失败，本轮没有创建产物，可以直接重试。";
 }

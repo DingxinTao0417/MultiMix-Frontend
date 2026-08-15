@@ -161,14 +161,9 @@ export type ContentAssetVersion = {
   version: number;
   title: string;
   body: string;
-  markdown_ref: string | null;
-  artifact_ref: string | null;
-  content_hash: string | null;
   instruction?: string | null;
   edit_intent?: string | null;
   diff_summary?: string | null;
-  structured_payload?: Record<string, unknown>;
-  metadata: Record<string, unknown>;
   created_at: string;
 };
 
@@ -214,7 +209,6 @@ export type VideoPrimaryVisualRead = {
   asset_id?: number | null;
   artifact_ref?: string | null;
   preview_ref?: string | null;
-  strategy_mode?: string | null;
 };
 
 export type AssetConversationMessageItemResponse = {
@@ -233,6 +227,8 @@ export type AssetConversationResponse = {
   metadata: Record<string, unknown>;
   messages: AssetConversationMessageItemResponse[];
   products: ContentAsset[];
+  agent_tasks?: AgentTaskCollectionResponse;
+  active_agent_action?: AgentActionRunResponse | null;
   created_at: string;
   updated_at: string;
 };
@@ -271,28 +267,32 @@ export type AgentActionStatus =
 
 export type AgentActionRunResponse = {
   id: string;
-  task_id: string;
-  action_id: string;
   status: AgentActionStatus;
-  target: Record<string, unknown>;
   requires_confirmation: boolean;
   confirmation_id: string | null;
-  confirmation_reason: string | null;
-  job_id: string | null;
   asset_id: number | null;
   version_id: number | null;
   message: string;
-  error_code: string | null;
   retryable: boolean;
+};
+
+export type AgentTaskSummaryResponse = {
+  goal: string;
+  status: string;
+  asset_id: number | null;
+  version_id: number | null;
+  scene_id: string | null;
+};
+
+export type AgentTaskCollectionResponse = {
+  active: AgentTaskSummaryResponse | null;
+  paused: AgentTaskSummaryResponse[];
 };
 
 export type AssetGenerationJobResponse = {
   id: string;
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  stage: string;
-  attempts: number;
   result_asset_id: number | null;
-  error_code: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;
@@ -319,8 +319,8 @@ export type PublicSourceRead = {
   enabled: boolean;
   media_types: string[];
   license_policy: string;
-  health_status: string;
-  last_checked_at: string | null;
+  health_status?: string;
+  last_checked_at?: string | null;
 };
 
 export type PublicMaterialCandidate = {
@@ -336,11 +336,16 @@ export type PublicMaterialCandidate = {
   creator: string;
   body_text?: string;
   understanding: {
+    status?: string;
+    updated_at?: string;
     tags?: string[];
     caption?: string;
-    analysis_status?: string;
-    tag_details?: Array<Record<string, unknown>>;
     objects?: string[];
+    storyboard_roles?: Array<Record<string, unknown>>;
+    scene_types?: Array<Record<string, unknown>>;
+    fit_reason?: string;
+    confidence?: number;
+    error?: string | null;
   };
 };
 
@@ -379,7 +384,7 @@ export type SegmentMaterialCandidatesResponse = {
     library: SegmentMaterialCandidateResponse[];
     public: SegmentMaterialCandidateResponse[];
   };
-  provider_statuses: Array<{ provider: string; status: string; error?: string }>;
+  provider_statuses: Array<{ provider: string; status: string }>;
   next_cursor: string | null;
 };
 
@@ -387,9 +392,6 @@ export type AssetIngestJobRead = {
   id: string;
   asset_id: number;
   status: string;
-  stage: string;
-  attempts: number;
-  error_class: string | null;
   error_message: string | null;
   queued_at: string | null;
   started_at: string | null;
@@ -401,10 +403,13 @@ export type AssetIngestJobRead = {
 // does not echo the full job row for these endpoints.
 export type AssetIngestJobActionRead = {
   id: string;
+  asset_id: number;
   status: string;
-  stage: string;
-  attempts: number;
-  error_message?: string | null;
+  error_message: string | null;
+  queued_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  updated_at: string | null;
 };
 
 export type ContentAssetRevisionResponse = {
@@ -431,7 +436,7 @@ export type VideoRenderJobCreateResponse = {
   job: {
     id: string;
     status: string;
-    render_stage: string;
+    workflow_stage?: string | null;
     error_message: string | null;
     mp4_ref: string | null;
   };

@@ -658,10 +658,7 @@ describe("runtime data boundary", () => {
         generation_job: {
           id: "asset-generation-job-1",
           status: "queued",
-          stage: "queued",
-          attempts: 0,
           result_asset_id: null,
-          error_code: null,
           error_message: null,
           created_at: now,
           updated_at: now,
@@ -831,7 +828,7 @@ describe("runtime data boundary", () => {
 
   it("submits candidate_id when replacing with a unified candidate", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ id: "job-1", asset_id: 9100, status: "queued", render_stage: "queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify({ id: "job-1", asset_id: 9100, status: "queued", workflow_stage: "video_project_queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -846,7 +843,7 @@ describe("runtime data boundary", () => {
   it("preserves the timeline dirty confirmation contract for browse replacement", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({ detail: { code: "timeline_dirty", message: "会覆盖手工剪辑" } }), { status: 409, headers: { "Content-Type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-recompose", asset_id: 9100, status: "queued", render_stage: "queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-recompose", asset_id: 9100, status: "queued", workflow_stage: "video_project_queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-12" })).resolves.toEqual({

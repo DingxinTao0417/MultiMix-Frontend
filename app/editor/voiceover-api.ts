@@ -23,14 +23,13 @@ export type VoicePreview = {
   segment_id: string;
   audio_ref: string;
   duration_seconds: number;
-  request_fingerprint: string;
 };
 
 export type VideoJob = {
   id: string;
   asset_id: number;
   status: "queued" | "running" | "completed" | "failed";
-  render_stage: string;
+  workflow_stage?: string | null;
   error_message: string | null;
   result: {
     voice_preview?: VoicePreview;
@@ -38,7 +37,7 @@ export type VideoJob = {
     undo_version_id?: number;
     narration_failure?: {
       segment_id?: string;
-      code?: string;
+      message?: string;
     };
   };
 };

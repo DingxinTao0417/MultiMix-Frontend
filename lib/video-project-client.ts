@@ -7,14 +7,13 @@ export type VideoProjectJobResponse = {
   id: string;
   asset_id: number;
   status: string;
-  render_stage: string;
+  workflow_stage?: string | null;
   error_message: string | null;
   project: Record<string, unknown> | null;
   steps?: Array<{
     key?: string;
     label?: string;
     status?: string;
-    elapsed_seconds?: number | null;
     retry_job_id?: string | null;
   }> | null;
 };

@@ -19,10 +19,7 @@ function generationJob(
   return {
     id: "asset-generation-job-1",
     status: "queued",
-    stage: "queued",
-    attempts: 0,
     result_asset_id: null,
-    error_code: null,
     error_message: null,
     created_at: "2026-07-30T09:00:00Z",
     updated_at: "2026-07-30T09:00:00Z",
@@ -98,10 +95,10 @@ describe("useAssetGenerationJobs", () => {
       expect(result.current.jobsByConversation["conversation-1"]?.job).toMatchObject({
         id: "asset-generation-job-persisted",
         status: "failed",
-        attempts: 2,
-        error_code: "provider_timeout",
         error_message: "生成失败，可以重试。",
       });
+      expect(result.current.jobsByConversation["conversation-1"]?.job).not.toHaveProperty("attempts");
+      expect(result.current.jobsByConversation["conversation-1"]?.job).not.toHaveProperty("error_code");
     });
   });
 
@@ -109,12 +106,9 @@ describe("useAssetGenerationJobs", () => {
     vi.useFakeTimers();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
     const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
-      .mockResolvedValueOnce(generationJob({ status: "running", stage: "generating" }))
+      .mockResolvedValueOnce(generationJob({ status: "running" }))
       .mockResolvedValueOnce(generationJob({
         status: "failed",
-        stage: "failed",
-        attempts: 1,
-        error_code: "provider_timeout",
         error_message: "生成超时，可以重试。",
       }));
     const { result } = renderHook(() => useAssetGenerationJobs({
@@ -156,8 +150,6 @@ describe("useAssetGenerationJobs", () => {
     const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
       .mockResolvedValue(generationJob({
         status: "completed",
-        stage: "completed",
-        attempts: 1,
         result_asset_id: 42,
       }));
     const refreshedConversation = conversation({ title: "已完成的素材" });
@@ -197,8 +189,6 @@ describe("useAssetGenerationJobs", () => {
     vi.spyOn(assetWorkspaceAdapter, "getGenerationJob").mockResolvedValue(
       generationJob({
         status: "completed",
-        stage: "completed",
-        attempts: 1,
         result_asset_id: 42,
       }),
     );
@@ -230,9 +220,6 @@ describe("useAssetGenerationJobs", () => {
       .mockRejectedValueOnce(new Error("temporary network failure"))
       .mockResolvedValueOnce(generationJob({
         status: "failed",
-        stage: "failed",
-        attempts: 1,
-        error_code: "provider_timeout",
         error_message: "生成超时，可以重试。",
       }));
     const { result } = renderHook(() => useAssetGenerationJobs({
@@ -267,7 +254,6 @@ describe("useAssetGenerationJobs", () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const retriedJob = generationJob({
       status: "queued",
-      attempts: 2,
       updated_at: "2026-07-30T09:05:00Z",
     });
     const retryGenerationJob = vi.spyOn(assetWorkspaceAdapter, "retryGenerationJob")
@@ -281,9 +267,6 @@ describe("useAssetGenerationJobs", () => {
     act(() => {
       result.current.registerJob("conversation-1", generationJob({
         status: "failed",
-        stage: "failed",
-        attempts: 1,
-        error_code: "provider_timeout",
         error_message: "生成超时，可以重试。",
       }));
     });
@@ -307,7 +290,6 @@ describe("useAssetGenerationJobs", () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const cancelledJob = generationJob({
       status: "cancelled",
-      stage: "cancelled",
       updated_at: "2026-07-30T09:05:00Z",
     });
     const cancelGenerationJob = vi.spyOn(assetWorkspaceAdapter, "cancelGenerationJob")
@@ -321,7 +303,6 @@ describe("useAssetGenerationJobs", () => {
     act(() => {
       result.current.registerJob("conversation-1", generationJob({
         status: "running",
-        stage: "generating",
       }));
     });
 
@@ -345,7 +326,6 @@ describe("useAssetGenerationJobs", () => {
     vi.spyOn(assetWorkspaceAdapter, "retryGenerationJob").mockResolvedValue(
       generationJob({
         status: "queued",
-        attempts: 2,
         updated_at: "2026-07-30T09:05:00Z",
       }),
     );
@@ -370,9 +350,6 @@ describe("useAssetGenerationJobs", () => {
     await act(async () => {
       olderPoll.resolve(generationJob({
         status: "failed",
-        stage: "failed",
-        attempts: 1,
-        error_code: "stale_failure",
         error_message: "旧请求失败",
       }));
       await olderPoll.promise;
@@ -382,8 +359,7 @@ describe("useAssetGenerationJobs", () => {
       run: 1,
       job: {
         status: "queued",
-        attempts: 2,
-        error_code: null,
+        updated_at: "2026-07-30T09:05:00Z",
       },
     });
   });
@@ -415,9 +391,6 @@ describe("useAssetGenerationJobs", () => {
       result.current.registerJob("conversation-1", newerJob);
       olderPoll.resolve(generationJob({
         status: "failed",
-        stage: "failed",
-        attempts: 1,
-        error_code: "stale_failure",
         error_message: "旧请求失败",
       }));
       await olderPoll.promise;
@@ -460,7 +433,7 @@ describe("useAssetGenerationJobs", () => {
     expect(getGenerationJob).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      pendingPoll.resolve(generationJob({ status: "running", stage: "generating" }));
+      pendingPoll.resolve(generationJob({ status: "running" }));
       await pendingPoll.promise;
     });
   });
@@ -469,7 +442,7 @@ describe("useAssetGenerationJobs", () => {
     vi.useFakeTimers();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
     const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
-      .mockResolvedValue(generationJob({ status: "failed", stage: "failed" }));
+      .mockResolvedValue(generationJob({ status: "failed" }));
     const { result, unmount } = renderHook(() => useAssetGenerationJobs({
       token: "token-1",
       conversations: [],

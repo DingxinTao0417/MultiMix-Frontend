@@ -608,7 +608,7 @@ function LibraryWorkshop({
     try {
       const job = await assetWorkspaceAdapter.retryAssetIngest(token, row.assetId);
       setLocalRefreshKey((value) => value + 1);
-      setActionMessage(`处理完成：${job.status} / ${job.stage}`);
+      setActionMessage(`处理完成：${job.status}`);
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : "重试处理失败。");
     }

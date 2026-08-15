@@ -132,12 +132,11 @@ type TestFullVideoJob = {
   id: string;
   assetId: number;
   status: string;
-  renderStage: string;
+  workflowStage: string;
   steps: Array<{
     key: string;
     label: string;
     status: string;
-    elapsedSeconds: number | null;
     retryJobId: string | null;
   }>;
   errorMessage: string | null;
@@ -152,12 +151,11 @@ function fullVideoJob(
     id,
     assetId: id === "main-2" ? 2 : 1,
     status: "completed",
-    renderStage: "done",
+    workflowStage: "video_project_ready",
     steps: [{
       key: "build_project",
       label: "组装可编辑视频工程",
       status: "done",
-      elapsedSeconds: 1,
       retryJobId: null,
     }],
     errorMessage: null,
@@ -269,14 +267,14 @@ describe("video execution polling decisions", () => {
       live: {
         jobId: string;
         status: string;
-        renderStage: string;
+        workflowStage: string;
         steps: TestFullVideoJob["steps"];
       },
       mapBackendSteps: typeof agentTimelineStepsFromBackend,
     ) => ReturnType<typeof agentTimelineStepsFromBackend>>("resolveLiveExecutionTimelineSteps");
 
     const steps = resolveLiveExecutionTimelineSteps(
-      { jobId: "main-1", status: "running", renderStage: "segment", steps: [] },
+      { jobId: "main-1", status: "running", workflowStage: "material_search", steps: [] },
       agentTimelineStepsFromBackend,
     );
 
@@ -458,7 +456,7 @@ describe("video execution polling decisions", () => {
 
     oldSnapshot.resolve(fullVideoJob("main-1", {
       status: "failed",
-      renderStage: "render",
+      workflowStage: "video_project_failed",
       steps: [],
       errorMessage: "old failed snapshot",
     }));
@@ -468,7 +466,7 @@ describe("video execution polling decisions", () => {
 
     newSnapshot.resolve(fullVideoJob("main-1", {
       status: "queued",
-      renderStage: "queued",
+      workflowStage: "video_project_queued",
       steps: [],
       project: null,
     }));
@@ -773,7 +771,7 @@ describe("video execution polling decisions", () => {
     const newIdentity = currentIdentity("main-1");
     const terminalJob = fullVideoJob("main-1", {
       status: "completed",
-      renderStage: "done",
+      workflowStage: "video_project_ready",
       steps: [],
     });
     startExecutionJobPolls({
@@ -793,7 +791,7 @@ describe("video execution polling decisions", () => {
 
     oldPoll.resolve(fullVideoJob("main-1", {
       status: "failed",
-      renderStage: "render",
+      workflowStage: "video_project_failed",
       steps: [],
       errorMessage: "stale failure",
     }));
@@ -949,11 +947,11 @@ describe("video execution polling decisions", () => {
 
     apply(fullVideoJob("main-1", {
       status: "completed",
-      steps: [{ key: "mg_overlay", label: "生成 MG", status: "run", elapsedSeconds: null, retryJobId: null }],
+      steps: [{ key: "mg_overlay", label: "生成 MG", status: "run", retryJobId: null }],
     }));
     apply(fullVideoJob("main-1", {
       status: "completed",
-      steps: [{ key: "mg_overlay", label: "生成 MG", status: "done", elapsedSeconds: null, retryJobId: null }],
+      steps: [{ key: "mg_overlay", label: "生成 MG", status: "done", retryJobId: null }],
     }));
 
     expect(phases).toEqual(["main-1:project_ready", "main-1:terminal"]);
@@ -990,7 +988,7 @@ describe("video execution polling decisions", () => {
     }) => void;
     const failedJob = fullVideoJob("main-1", {
       status: "failed",
-      renderStage: "render",
+      workflowStage: "video_project_failed",
       steps: [],
       errorMessage: "main render failed",
       project: null,

@@ -67,24 +67,16 @@ function agentActionStatusValue(value: unknown): AgentActionStatus | undefined {
 function agentActionFromValue(value: unknown): AgentActionRunResponse | undefined {
   if (!isRecord(value)) return undefined;
   const id = stringValue(value.id);
-  const taskId = stringValue(value.task_id);
-  const actionId = stringValue(value.action_id);
   const status = agentActionStatusValue(value.status);
-  if (!id || !taskId || !actionId || !status || !isRecord(value.target)) return undefined;
+  if (!id || !status) return undefined;
   return {
     id,
-    taskId,
-    actionId,
     status,
-    target: value.target,
     requiresConfirmation: value.requires_confirmation === true,
     confirmationId: stringValue(value.confirmation_id) || null,
-    confirmationReason: stringValue(value.confirmation_reason) || null,
-    jobId: stringValue(value.job_id) || null,
     assetId: optionalPositiveIntegerValue(value.asset_id),
     versionId: optionalPositiveIntegerValue(value.version_id),
     message: stringValue(value.message),
-    errorCode: stringValue(value.error_code) || null,
     retryable: value.retryable === true,
   };
 }
@@ -101,18 +93,11 @@ function agentRunStepsValue(value: unknown): AgentRunStep[] | undefined {
       || !label
       || !["done", "run", "wait", "fail"].includes(status)
     ) return [];
-    const elapsedSeconds = typeof item.elapsed_seconds === "number"
-      && Number.isFinite(item.elapsed_seconds)
-      && item.elapsed_seconds >= 0
-      ? item.elapsed_seconds
-      : undefined;
     return [{
       key,
       label,
       status: status as AgentRunStep["status"],
-      elapsedSeconds,
       elapsedLabel: stringValue(item.elapsed_label) || undefined,
-      retryJobId: stringValue(item.retry_job_id) || undefined,
     }];
   });
   return steps.length ? steps : undefined;
@@ -159,7 +144,6 @@ function suggestionActionsValue(value: unknown): AssetSuggestionAction[] | undef
       label,
       utterance,
       actionType: stringValue(item.action_type) || "fill_composer",
-      capability: stringValue(item.capability) || undefined,
       mode: stringValue(item.mode) || undefined,
       enabled: item.enabled !== false,
       disabledReason: stringValue(item.disabled_reason) || undefined,
@@ -834,7 +818,7 @@ function productStatusLabel(status: ProductLifecycleStatus | undefined): string 
   return undefined;
 }
 
-// Human-readable label for a video job's render_stage (backend enum).
+// Human-readable label for the public video workflow stage.
 export function videoJobStageLabel(stage: string): string {
   const labels: Record<string, string> = {
     queued: "排队等待中",
@@ -869,12 +853,13 @@ export function videoJobStepIndex(stage: string): number {
 
 export type AgentTimelineStep = AgentRunStep;
 
-// Backend semantic step (spec §5.2 ★): key/label/status + real elapsed seconds.
+// Backend semantic step (spec §5.2 ★): product copy plus an optional public
+// retry handle. Raw timing never crosses the user API boundary.
 export type VideoJobBackendStep = {
   key: string;
   label: string;
   status: string;
-  elapsedSeconds?: number | null;
+  elapsedLabel?: string | null;
   retryJobId?: string | null;
 };
 
@@ -899,21 +884,8 @@ const SAFE_BACKEND_STEP_COPY: Record<string, { key: string; label: string }> = {
   needs_script_revision: { key: "revise_director_script", label: "需要调整编导脚本" },
 };
 
-// Format real elapsed seconds into a merchant-facing label ("8秒" / "1分12秒").
-function formatStepElapsed(seconds: number): string | undefined {
-  if (seconds < 60) {
-    const rounded = Math.round(seconds * 10) / 10;
-    if (rounded <= 0) return undefined;
-    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}秒`;
-  }
-  const total = Math.round(seconds);
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return rest ? `${minutes}分${rest}秒` : `${minutes}分`;
-}
-
-// Steps and elapsed times come directly from the job; callers must not infer
-// progress from the historical render_stage when the backend omits them.
+// Steps come directly from the public job DTO; callers never infer progress
+// from the historical raw render stage.
 export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | undefined | null): AgentTimelineStep[] {
   if (!Array.isArray(steps)) return [];
   return steps.flatMap((step): AgentTimelineStep[] => {
@@ -925,16 +897,12 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
     };
     const status: AgentTimelineStep["status"] =
       step.status === "done" || step.status === "run" || step.status === "fail" ? step.status : "wait";
-    const elapsedSeconds = typeof step.elapsedSeconds === "number" && Number.isFinite(step.elapsedSeconds)
-      ? step.elapsedSeconds
-      : undefined;
     const retryJobId = typeof step.retryJobId === "string" ? step.retryJobId : undefined;
     return [{
       key: safe.key,
       label: safe.label,
       status,
-      elapsedSeconds,
-      elapsedLabel: elapsedSeconds === undefined ? undefined : formatStepElapsed(elapsedSeconds),
+      elapsedLabel: stringValue(step.elapsedLabel) || undefined,
       retryJobId,
     }];
   });
@@ -963,9 +931,8 @@ function isVideoDirectorDraft(asset: ContentAsset): boolean {
 
 function isMalformedDirectorDraft(asset: ContentAsset): boolean {
   const metadata = asset.metadata ?? {};
-  return asset.content_type !== "video_script"
-    && metadata.video_workflow_stage === "director_script_draft"
-    && metadata.capability === "video_script";
+  return !isVideoDirectorDraft(asset)
+    && metadata.video_workflow_stage === "director_script_draft";
 }
 
 function assetLabelFromProduct(asset: ContentAsset): string {
@@ -992,7 +959,7 @@ function artifactCategory(asset: ContentAsset): string {
 export function statusLabelFromProduct(asset: ContentAsset): string {
   const metadata = asset.metadata ?? {};
   if (metadata.video_project) return "视频";
-  if (metadata.unsupported_adapter) return "可执行方案";
+  if (asset.generation_state === "preparation_only") return "可执行方案";
   if (metadata.template_mode === true || metadata.grounding_status === "keyword_template") return "关键词模板";
   if (metadata.no_asset_hit) return "通用能力生成";
   return "有来源";
@@ -1047,15 +1014,14 @@ export function isEditorReadyVideoProject(
 export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const metadata = asset.metadata ?? {};
   const rawVideoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
-  const capability = typeof metadata.capability === "string" ? metadata.capability : asset.content_type;
+  const capability = asset.content_type;
   const intent = isRecord(metadata.intent) ? metadata.intent : {};
   const rawVideoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const lifecycle = productLifecycleFromAsset(asset);
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
-  const stageResults = isRecord(videoProject?.stage_results) ? videoProject.stage_results : undefined;
-  const unsupported = (Boolean(metadata.unsupported_adapter) || metadata.generation_state === "preparation_only") && !videoProject;
+  const unsupported = asset.generation_state === "preparation_only" && !videoProject;
   const mode = productModeFromAsset(asset, unsupported);
   const body = markdownToParagraphs(asset.body);
   const sourceCount = Array.isArray(asset.linked_asset_ids) ? asset.linked_asset_ids.length : 0;
@@ -1126,7 +1092,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "参数",
       title: [stringValue(intent.channel), stringValue(intent.style)].filter(Boolean).join(" / ") || "按自然语言指令",
-      detail: lifecycle?.failureReason || stringValue(videoProject?.render_error) || asset.error_message || "可继续通过对话调整比例、时长、风格、素材或表达方式。",
+      detail: lifecycle?.failureReason || asset.error_message || "可继续通过对话调整比例、时长、风格、素材或表达方式。",
       status: lifecycle?.status === "failed" ? "失败" : "可调整"
     }
   ];
@@ -1143,25 +1109,13 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       detail: mp4State === "failed" ? "工程已保留，可继续调整分镜。" : stringValue(videoProject.mp4_ref) || "可以在对话中调整分镜、字幕重点、素材方向和节奏。",
       status: mp4State || "editable"
     });
-    if (stageResults) {
-      sections.splice(3, 0, {
-        label: "执行状态",
-        title: [
-          `配音 ${stringValue(stageResults.voiceover) || "pending"}`,
-          `素材 ${stringValue(stageResults.material_match) || "pending"}`,
-          `渲染 ${stringValue(stageResults.mp4_render) || "pending"}`
-        ].join(" / "),
-        detail: "执行阶段会写回 metadata，失败时保留可编辑工程和稳定失败原因。",
-        status: videoJobStageLabel(stringValue(videoProject.latest_render_stage) || "")
-      });
-    }
   }
   if (mp4Artifact) {
     sections.splice(1, 0, {
       label: "来源工程",
       title: stringValue(metadata.source_video_project_title) || "视频工程",
       detail: "导出结果来自视频工程，不会覆盖工程本身。",
-      status: stringValue(metadata.latest_render_job_id) || "render job"
+      status: stringValue(mp4Artifact.mp4_state) || "ready"
     });
     sections.splice(2, 0, {
       label: "播放",
@@ -1220,118 +1174,30 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   };
 }
 
-function agentTaskSummaryFromValue(
-  taskId: string,
-  value: unknown,
-): AgentTaskSummary | undefined {
+function agentTaskSummaryFromValue(value: unknown): AgentTaskSummary | undefined {
   if (!isRecord(value)) return undefined;
-  const id = stringValue(value.id) || taskId;
   const goal = stringValue(value.goal);
   const status = stringValue(value.status);
-  if (!id || !goal || !status) return undefined;
-  const focus = isRecord(value.focus) ? value.focus : {};
+  if (!goal || !status) return undefined;
   return {
-    id,
     goal,
     status,
-    assetId: positiveIntegerValue(focus.asset_id),
-    versionId: positiveIntegerValue(focus.version_id),
-    sceneId: stringValue(focus.scene_id) || undefined,
+    assetId: positiveIntegerValue(value.asset_id),
+    versionId: positiveIntegerValue(value.version_id),
+    sceneId: stringValue(value.scene_id) || undefined,
   };
 }
 
-function agentTasksFromMission(value: unknown): AgentTaskCollection | undefined {
-  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
-    return undefined;
-  }
-  const tasks = value.tasks;
-  const activeTaskId = stringValue(value.active_task_id);
-  const active = activeTaskId
-    ? agentTaskSummaryFromValue(activeTaskId, tasks[activeTaskId])
-    : undefined;
-  const paused = Array.isArray(value.task_stack)
-    ? value.task_stack.flatMap((taskId): AgentTaskSummary[] => {
-        if (typeof taskId !== "string") return [];
-        const summary = agentTaskSummaryFromValue(taskId, tasks[taskId]);
+function agentTasksFromValue(value: unknown): AgentTaskCollection | undefined {
+  if (!isRecord(value)) return undefined;
+  const active = agentTaskSummaryFromValue(value.active);
+  const paused = Array.isArray(value.paused)
+    ? value.paused.flatMap((task): AgentTaskSummary[] => {
+        const summary = agentTaskSummaryFromValue(task);
         return summary ? [summary] : [];
       })
     : [];
   return active || paused.length ? { active, paused } : undefined;
-}
-
-function agentActionFromMissionRun(
-  runValue: unknown,
-  taskValue: Record<string, unknown>,
-): AgentActionRunResponse | undefined {
-  if (!isRecord(runValue) || !isRecord(runValue.request)) return undefined;
-  const request = runValue.request;
-  const observation = isRecord(runValue.last_observation)
-    ? runValue.last_observation
-    : {};
-  const confirmationId = stringValue(runValue.confirmation_id);
-  const workingContext = isRecord(taskValue.working_context)
-    ? taskValue.working_context
-    : {};
-  const confirmationBindings = isRecord(workingContext.agent_confirmations)
-    ? workingContext.agent_confirmations
-    : {};
-  const binding = confirmationId && isRecord(confirmationBindings[confirmationId])
-    ? confirmationBindings[confirmationId] as Record<string, unknown>
-    : {};
-  return agentActionFromValue({
-    id: runValue.id,
-    task_id: request.task_id,
-    action_id: request.action_id,
-    status: runValue.status,
-    target: request.target,
-    requires_confirmation: runValue.status === "waiting_confirmation",
-    confirmation_id: confirmationId,
-    confirmation_reason: binding.confirmation_reason,
-    job_id: stringValue(runValue.job_id) || stringValue(observation.job_id),
-    asset_id: positiveIntegerValue(observation.asset_id)
-      ?? (isRecord(request.target) ? positiveIntegerValue(request.target.asset_id) : undefined),
-    version_id: positiveIntegerValue(observation.version_id)
-      ?? (isRecord(request.target) ? positiveIntegerValue(request.target.version_id) : undefined),
-    message: observation.message,
-    error_code: observation.error_code,
-    retryable: runValue.status === "failed" && observation.retryable === true,
-  });
-}
-
-function activeAgentActionFromMission(value: unknown): AgentActionRunResponse | undefined {
-  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
-    return undefined;
-  }
-  const activeTaskId = stringValue(value.active_task_id);
-  const task = activeTaskId && isRecord(value.tasks[activeTaskId])
-    ? value.tasks[activeTaskId] as Record<string, unknown>
-    : undefined;
-  if (!task || !Array.isArray(task.plan) || !task.plan.length) return undefined;
-  const preferredRunId = stringValue(task.running_action_id)
-    || stringValue(task.pending_action_id);
-  const run = (
-    preferredRunId
-      ? task.plan.find((item) => isRecord(item) && stringValue(item.id) === preferredRunId)
-      : undefined
-  ) ?? [...task.plan].reverse().find((item) => isRecord(item));
-  return agentActionFromMissionRun(run, task);
-}
-
-function agentActionsByIdFromMission(
-  value: unknown,
-): Map<string, AgentActionRunResponse> {
-  const actions = new Map<string, AgentActionRunResponse>();
-  if (!isRecord(value) || value.version !== "agent_v2" || !isRecord(value.tasks)) {
-    return actions;
-  }
-  for (const taskValue of Object.values(value.tasks)) {
-    if (!isRecord(taskValue) || !Array.isArray(taskValue.plan)) continue;
-    for (const run of taskValue.plan) {
-      const action = agentActionFromMissionRun(run, taskValue);
-      if (action) actions.set(action.id, action);
-    }
-  }
-  return actions;
 }
 
 // Convert a persisted backend conversation row into the frontend Conversation
@@ -1341,8 +1207,8 @@ export function conversationFromPersisted(
   newConversationProduct: AssetProduct,
   fallbackProduct?: AssetProduct
 ): AssetConversation {
-  const mission = row.metadata.agent_mission;
-  const missionActions = agentActionsByIdFromMission(mission);
+  const publicTasks = agentTasksFromValue(row.agent_tasks);
+  const publicActiveAction = agentActionFromValue(row.active_agent_action);
   const products = row.products.map(contentAssetToProduct);
   const readyVideoProject = [...row.products].reverse().find((asset) => isEditorReadyVideoProject(asset));
   const hasReadyVideoProject = Boolean(readyVideoProject);
@@ -1359,10 +1225,7 @@ export function conversationFromPersisted(
     const persistedAgentAction = message.role === "assistant"
       ? agentActionFromValue(message.metadata.agent_action)
       : undefined;
-    const actionRunId = stringValue(message.metadata.agent_action_run_id)
-      || persistedAgentAction?.id
-      || "";
-    const agentAction = missionActions.get(actionRunId) ?? persistedAgentAction;
+    const agentAction = persistedAgentAction;
     return {
       role: message.role,
       text: message.text,
@@ -1434,8 +1297,8 @@ export function conversationFromPersisted(
     delivery: lastAssistantMessage,
     suggestions: product.actions ?? [],
     messages,
-    agentTasks: hasReadyVideoProject ? undefined : agentTasksFromMission(mission),
-    activeAgentAction: hasReadyVideoProject ? undefined : activeAgentActionFromMission(mission),
+    agentTasks: hasReadyVideoProject ? undefined : publicTasks,
+    activeAgentAction: hasReadyVideoProject ? undefined : publicActiveAction,
     product,
     products: fallbackProduct && !products.some((item) => item.id === fallbackProduct.id) ? [...products, fallbackProduct] : products,
     sourceIds: Array.from(new Set(row.products.flatMap((asset) => asset.linked_asset_ids.map((id) => String(id)))))

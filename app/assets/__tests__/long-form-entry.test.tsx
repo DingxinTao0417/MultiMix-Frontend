@@ -70,14 +70,12 @@ describe("long-form source entry", () => {
       asset_id: 93,
       job_id: "long-form-ingest-1",
       status: "queued",
-      stage: "queued",
       source_kind: "youtube",
     });
     waitReadyMock.mockResolvedValue({
       id: "long-form-ingest-1",
       asset_id: 93,
       status: "completed",
-      stage: "source_ready",
       error_message: null,
     });
     render(<LongFormEntry token="token" onSourceReady={onSourceReady} />);

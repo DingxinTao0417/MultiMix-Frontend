@@ -168,7 +168,7 @@ describe("asset product mapper", () => {
     expect(product.actions).toEqual(["再给我更多候选", "只看指定主题", "调整时长或比例"]);
   });
 
-  it("prefers a ready video project over legacy video-script task state", () => {
+  it("prefers a ready video project over public video-script task state", () => {
     const readyProject = asset({
       id: 2,
       asset_kind: "video",
@@ -186,32 +186,26 @@ describe("asset product mapper", () => {
       id: "asset-conversation-ready-wins",
       title: "厨房动线与收纳规划",
       status: "active",
-      metadata: {
-        agent_mission: {
-          version: "agent_v2",
-          active_task_id: "task-video",
-          task_stack: [],
-          tasks: {
-            "task-video": {
-              id: "task-video",
-              task_type: "generation",
-              goal: "video_script",
-              status: "waiting_user",
-              plan: [{
-                id: "action-replace-scene-2",
-                status: "succeeded",
-                request: {
-                  task_id: "task-video",
-                  action_id: "video.scene.replace_material",
-                  target: { asset_id: 2, scene_id: "scene-2" },
-                },
-                last_observation: { asset_id: 2, message: "视频修改已完成。" },
-              }],
-              created_at: "2026-08-02T00:00:00Z",
-              updated_at: "2026-08-02T00:00:00Z",
-            },
-          },
+      metadata: {},
+      agent_tasks: {
+        active: {
+          goal: "video_script",
+          status: "waiting_user",
+          asset_id: 2,
+          version_id: null,
+          scene_id: "scene-2",
         },
+        paused: [],
+      },
+      active_agent_action: {
+        id: "action-replace-scene-2",
+        status: "succeeded",
+        requires_confirmation: false,
+        confirmation_id: null,
+        asset_id: 2,
+        version_id: null,
+        message: "视频修改已完成。",
+        retryable: false,
       },
       created_at: "2026-08-02T00:00:00Z",
       updated_at: "2026-08-02T00:01:00Z",
@@ -224,6 +218,16 @@ describe("asset product mapper", () => {
         metadata: {
           suggestions: ["确认，生成视频工程", "调整分镜"],
           agent_action_run_id: "action-replace-scene-2",
+          agent_action: {
+            id: "action-replace-scene-2",
+            status: "succeeded",
+            requires_confirmation: false,
+            confirmation_id: null,
+            asset_id: 2,
+            version_id: null,
+            message: "视频修改已完成。",
+            retryable: false,
+          },
         },
         created_at: "2026-08-02T00:00:00Z",
       }],
@@ -236,7 +240,6 @@ describe("asset product mapper", () => {
     expect(conversation.messages?.[0]?.agentAction).toMatchObject({
       id: "action-replace-scene-2",
       status: "succeeded",
-      actionId: "video.scene.replace_material",
     });
   });
 
@@ -1035,11 +1038,11 @@ describe("video job stage helpers", () => {
 });
 
 describe("agent timeline steps", () => {
-  it("maps backend steps[] with real elapsed labels", () => {
+  it("maps backend steps[] with public elapsed labels", () => {
     const steps = agentTimelineStepsFromBackend([
-      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedSeconds: 8 },
-      { key: "plan", label: "匹配素材并合成配音", status: "run", elapsedSeconds: null },
-      { key: "generate", label: "组装分镜与时间线", status: "wait", elapsedSeconds: null }
+      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedLabel: "8秒" },
+      { key: "plan", label: "匹配素材并合成配音", status: "run" },
+      { key: "generate", label: "组装分镜与时间线", status: "wait" }
     ]);
     expect(steps.map((step) => step.status)).toEqual(["done", "run", "wait"]);
     expect(steps[0].elapsedLabel).toBe("8秒");
@@ -1061,13 +1064,13 @@ describe("agent timeline steps", () => {
     ]);
   });
 
-  it("preserves backend elapsed seconds for execution summaries", () => {
+  it("does not synthesize raw timing for execution summaries", () => {
     const steps = agentTimelineStepsFromBackend([
-      { key: "create_job", label: "创建视频工程任务", status: "done", elapsedSeconds: null },
-      { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "done", elapsedSeconds: 1.25 },
+      { key: "create_job", label: "创建视频工程任务", status: "done" },
+      { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "done" },
     ]);
-    expect(steps[1].elapsedSeconds).toBe(1.25);
-    expect(steps[1].elapsedLabel).toBe("1.3秒");
+    expect(steps[1]).not.toHaveProperty("elapsedSeconds");
+    expect(steps[1].elapsedLabel).toBeUndefined();
   });
 
   it("preserves a backend retry job id only when one exists", () => {
@@ -1076,7 +1079,6 @@ describe("agent timeline steps", () => {
         key: "prepare_media",
         label: "匹配分镜素材并准备配音、字幕",
         status: "fail",
-        elapsedSeconds: 4,
         retryJobId: "video-job-1",
       },
       { key: "build_project", label: "组装可编辑视频工程", status: "wait" },
@@ -1085,13 +1087,13 @@ describe("agent timeline steps", () => {
     expect(steps[1].retryJobId).toBeUndefined();
   });
 
-  it("formats minute-scale elapsed and skips malformed backend steps", () => {
+  it("preserves an explicit public elapsed label and skips malformed backend steps", () => {
     const steps = agentTimelineStepsFromBackend([
-      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedSeconds: 72 },
-      { key: "", label: "no key", status: "done", elapsedSeconds: 3 }
+      { key: "understand", label: "理解素材并写脚本", status: "done", elapsedLabel: "约 1 分钟" },
+      { key: "", label: "no key", status: "done" }
     ]);
     expect(steps).toHaveLength(1);
-    expect(steps[0].elapsedLabel).toBe("1分12秒");
+    expect(steps[0].elapsedLabel).toBe("约 1 分钟");
   });
 
   it("returns empty for missing backend steps so the caller falls back", () => {

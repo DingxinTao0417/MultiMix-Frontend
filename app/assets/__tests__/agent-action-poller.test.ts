@@ -14,23 +14,12 @@ import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 
 const queuedAction: AgentActionRunResponse = {
   id: "agent-action-1",
-  task_id: "task-video",
-  action_id: "video.scene.replace_material",
   status: "queued",
-  target: {
-    scope: "scene",
-    asset_id: 42,
-    version_id: 9,
-    scene_id: "scene-2",
-  },
   requires_confirmation: false,
   confirmation_id: null,
-  confirmation_reason: null,
-  job_id: "video-job-1",
   asset_id: 42,
   version_id: 9,
   message: "视频修改任务已提交。",
-  error_code: null,
   retryable: false,
 };
 
@@ -40,90 +29,24 @@ function conversationRow(): AssetConversationResponse {
     id: "conversation-agent",
     title: "产品视频",
     status: "active",
-    metadata: {
-      agent_mission: {
-        version: "agent_v2",
-        active_task_id: "task-video",
-        task_stack: ["task-copy"],
-        tasks: {
-          "task-video": {
-            id: "task-video",
-            goal: "修改产品视频",
-            status: "running",
-            focus: {
-              artifact_type: "video_project",
-              asset_id: 42,
-              version_id: 9,
-              scene_id: "scene-2",
-              source_buffer_id: null,
-            },
-            plan: [
-              {
-                id: queuedAction.id,
-                request: {
-                  action_id: queuedAction.action_id,
-                  task_id: queuedAction.task_id,
-                  target: queuedAction.target,
-                  parameters: { source_asset_id: 77 },
-                  reference_asset_ids: [77],
-                  expected_version_id: 9,
-                  idempotency_key: "a".repeat(64),
-                  reason_summary: "",
-                },
-                status: "queued",
-                confirmation_id: null,
-                job_id: queuedAction.job_id,
-                attempts: 0,
-                last_observation: {
-                  status: "queued",
-                  action_run_id: queuedAction.id,
-                  action_id: queuedAction.action_id,
-                  asset_id: 42,
-                  version_id: null,
-                  job_id: queuedAction.job_id,
-                  error_code: null,
-                  retryable: false,
-                  message: queuedAction.message,
-                  result: {},
-                },
-                final_message_persisted: false,
-              },
-            ],
-            pending_action_id: null,
-            running_action_id: queuedAction.id,
-            last_observation: {},
-            working_context: {},
-            return_to_task_id: null,
-            created_at: now,
-            updated_at: now,
-          },
-          "task-copy": {
-            id: "task-copy",
-            goal: "优化商品标题",
-            status: "paused",
-            focus: {
-              artifact_type: "copy",
-              asset_id: 7,
-              version_id: 3,
-              scene_id: null,
-              source_buffer_id: null,
-            },
-            plan: [],
-            pending_action_id: null,
-            running_action_id: null,
-            last_observation: {},
-            working_context: {},
-            return_to_task_id: null,
-            created_at: now,
-            updated_at: now,
-          },
-        },
-        pending_intent: null,
-        tool_runs: [],
-        folded_context: {},
-        last_read_only_branch: "",
+    metadata: {},
+    agent_tasks: {
+      active: {
+        goal: "修改产品视频",
+        status: "running",
+        asset_id: 42,
+        version_id: 9,
+        scene_id: "scene-2",
       },
+      paused: [{
+        goal: "优化商品标题",
+        status: "paused",
+        asset_id: 7,
+        version_id: 3,
+        scene_id: null,
+      }],
     },
+    active_agent_action: queuedAction,
     messages: [
       {
         id: 1,
@@ -151,26 +74,27 @@ function conversationRow(): AssetConversationResponse {
 }
 
 describe("Agent action persistence and polling", () => {
-  it("maps active and paused tasks from agent_mission v2", () => {
+  it("maps active and paused tasks from explicit public DTOs", () => {
     const conversation = conversationFromPersisted(
       conversationRow(),
       assetWorkspaceAdapter.getNewConversation().product,
     );
 
-    expect(conversation.agentTasks?.active?.id).toBe("task-video");
-    expect(conversation.agentTasks?.paused.map((task) => task.id)).toEqual([
-      "task-copy",
-    ]);
+    expect(conversation.agentTasks?.active?.goal).toBe("修改产品视频");
+    expect(conversation.agentTasks?.paused.map((task) => task.goal)).toEqual(["优化商品标题"]);
     expect(conversation.activeAgentAction?.id).toBe(queuedAction.id);
     expect(conversation.messages?.[0]?.runSteps?.[0]?.status).toBe("run");
   });
 
-  it("ignores legacy or malformed mission metadata", () => {
+  it("does not reconstruct tasks or actions from raw mission metadata", () => {
     const legacy = conversationRow();
+    legacy.agent_tasks = undefined;
+    legacy.active_agent_action = null;
+    legacy.messages[0].metadata.agent_action = undefined;
     legacy.metadata.agent_mission = {
-      version: "agent_v1",
+      version: "agent_v2",
       active_task_id: "task-video",
-      tasks: "not-a-task-map",
+      tasks: { "task-video": { goal: "不得外发的内部任务" } },
     };
 
     const conversation = conversationFromPersisted(
@@ -182,27 +106,16 @@ describe("Agent action persistence and polling", () => {
     expect(conversation.activeAgentAction).toBeUndefined();
   });
 
-  it("uses the mission observation instead of a stale queued message", () => {
+  it("uses the explicit public action projection after completion", () => {
     const completed = conversationRow();
-    const mission = completed.metadata.agent_mission as {
-      tasks: Record<string, { plan: Array<Record<string, unknown>> }>;
-    };
-    mission.tasks["task-video"].plan[0] = {
-      ...mission.tasks["task-video"].plan[0],
+    const succeededAction: AgentActionRunResponse = {
+      ...queuedAction,
       status: "succeeded",
-      last_observation: {
-        status: "succeeded",
-        action_run_id: queuedAction.id,
-        action_id: queuedAction.action_id,
-        asset_id: 42,
-        version_id: 10,
-        job_id: queuedAction.job_id,
-        error_code: null,
-        retryable: false,
-        message: "视频修改已完成。",
-        result: {},
-      },
+      version_id: 10,
+      message: "视频修改已完成。",
     };
+    completed.active_agent_action = succeededAction;
+    completed.messages[0].metadata.agent_action = succeededAction;
 
     const conversation = conversationFromPersisted(
       completed,

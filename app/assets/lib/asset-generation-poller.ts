@@ -3,7 +3,6 @@ import type { AssetGenerationJobResponse } from "../../../lib/api";
 export type AssetGenerationPollState = {
   jobId: string;
   status: AssetGenerationJobResponse["status"];
-  stage: string;
   run: number;
   refreshConversation: boolean;
   errorMessage: string | null;
@@ -55,17 +54,8 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
         job: {
           id,
           status,
-          stage: typeof metadata.asset_generation_stage === "string"
-            ? metadata.asset_generation_stage
-            : status,
-          attempts: typeof metadata.asset_generation_attempts === "number"
-            ? metadata.asset_generation_attempts
-            : 0,
           result_asset_id: typeof metadata.product_id === "number"
             ? metadata.product_id
-            : null,
-          error_code: typeof metadata.asset_generation_error_code === "string"
-            ? metadata.asset_generation_error_code
             : null,
           error_message: status === "failed" || status === "cancelled" ? message.text : null,
           created_at: "",
@@ -86,7 +76,6 @@ export function nextAssetGenerationPollState(
     return {
       ...current,
       status: "completed",
-      stage: remote.stage,
       refreshConversation: true,
       errorMessage: null,
     };
@@ -95,7 +84,6 @@ export function nextAssetGenerationPollState(
     return {
       ...current,
       status: "failed",
-      stage: remote.stage,
       refreshConversation: false,
       errorMessage: remote.error_message ?? "内容生成失败，本轮没有创建产物，可以直接重试。",
     };
@@ -104,7 +92,6 @@ export function nextAssetGenerationPollState(
     return {
       ...current,
       status: "cancelled",
-      stage: remote.stage,
       refreshConversation: false,
       errorMessage: null,
     };
@@ -112,7 +99,6 @@ export function nextAssetGenerationPollState(
   return {
     ...current,
     status: remote.status,
-    stage: remote.stage,
     refreshConversation: false,
     errorMessage: null,
   };
