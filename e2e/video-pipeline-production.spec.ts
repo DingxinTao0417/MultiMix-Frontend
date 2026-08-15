@@ -2137,6 +2137,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }
   });
   expect(projectQualityReport).toBeTruthy();
+  let exportTaskId = "";
   const exportButton = await measureE2EStage("export_preview_ready", async () => {
     await page.reload();
     await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
@@ -2149,6 +2150,12 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .last();
     await expect(exportButton).toHaveText("导出视频", { timeout: 180_000 });
     await expect(exportButton).toBeEnabled();
+    const exportCreateResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST"
+        && response.url().endsWith(`/v1/video/projects/${projectAsset!.id}/exports`),
+      { timeout: 15 * 60_000 },
+    );
     await exportButton.click();
     await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
     await expect
@@ -2156,7 +2163,18 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
-      .toMatch(/^(导出中|正在检查成片…|下载成片)/);
+      .toMatch(/^(正在合成视频|正在上传成片|正在检查成片|下载成片)/);
+    const createResponse = await exportCreateResponse;
+    expect(createResponse.status(), "export candidate upload must enqueue an async task").toBe(202);
+    const createdTask = (await createResponse.json()) as {
+      job_id?: string;
+      status?: string;
+      stage?: string;
+    };
+    expect(createdTask.job_id).toBeTruthy();
+    expect(["queued", "running", "completed"]).toContain(createdTask.status);
+    expect(["uploaded", "verifying", "publishing", "done"]).toContain(createdTask.stage);
+    exportTaskId = createdTask.job_id!;
     return exportButton;
   });
   await measureE2EStage("export_browser_render", async () => {
@@ -2166,6 +2184,21 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
       .toBe("下载成片");
+    const terminalResponse = await page.request.get(
+      `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/${encodeURIComponent(exportTaskId)}`,
+      { headers },
+    );
+    expect(terminalResponse.ok(), `export task lookup failed: ${terminalResponse.status()}`).toBe(true);
+    const terminalTask = (await terminalResponse.json()) as {
+      status?: string;
+      stage?: string;
+      mp4_ref?: string;
+      quality_report?: QualityReport;
+    };
+    expect(terminalTask.status).toBe("completed");
+    expect(terminalTask.stage).toBe("done");
+    expect(terminalTask.mp4_ref).toBeTruthy();
+    expect(terminalTask.quality_report?.blockers ?? []).toEqual([]);
   });
   const candidateVideoPath = await measureE2EStage("export_download", async () => {
     const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });

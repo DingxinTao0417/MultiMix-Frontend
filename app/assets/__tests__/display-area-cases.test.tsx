@@ -476,7 +476,7 @@ describe("display-area eight-case matrix", () => {
       });
     });
 
-    expect(screen.getByRole("button", { name: "导出中 42%" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "正在合成视频 42%" })).toBeDisabled();
   });
 
   it("requires a fresh user click to download the verified export without rendering again", async () => {

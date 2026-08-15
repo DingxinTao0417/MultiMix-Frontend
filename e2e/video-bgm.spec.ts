@@ -161,19 +161,20 @@ async function exportProject(
     && new URL(request.url).pathname === `${projectPath}/quality`
     && new URL(request.url).searchParams.get("stage") === "export_preflight"
   ));
-  const finalizeRequests = exportRequests.filter((request) => (
-    request.method === "POST" && new URL(request.url).pathname === `${projectPath}/exports/finalize`
+  const createExportRequests = exportRequests.filter((request) => (
+    request.method === "POST" && new URL(request.url).pathname === `${projectPath}/exports`
   ));
   const retiredRequests = exportRequests.filter((request) => (
     new URL(request.url).pathname === `${projectPath}/mp4`
     || new URL(request.url).pathname === `${projectPath}/exports/verify`
+    || new URL(request.url).pathname === `${projectPath}/exports/finalize`
   ));
   expect(saveRequests).toHaveLength(1);
   expect(preflightRequests).toHaveLength(1);
-  expect(finalizeRequests).toHaveLength(1);
+  expect(createExportRequests).toHaveLength(1);
   expect(retiredRequests).toHaveLength(0);
   expect(exportRequests.indexOf(saveRequests[0])).toBeLessThan(exportRequests.indexOf(preflightRequests[0]));
-  expect(exportRequests.indexOf(preflightRequests[0])).toBeLessThan(exportRequests.indexOf(finalizeRequests[0]));
+  expect(exportRequests.indexOf(preflightRequests[0])).toBeLessThan(exportRequests.indexOf(createExportRequests[0]));
 
   const storedAfter = listStoredMp4Artifacts(artifactDir);
   expect(storedAfter).toHaveLength(storedBefore.length + 1);
@@ -197,7 +198,7 @@ async function assertInvalidMp4BlockedWithoutPersistence(
   expect(save.ok(), `project approval save failed: ${save.status()}`).toBe(true);
   const storedBefore = listStoredMp4Artifacts(artifactDir);
   const blocked = await page.request.post(
-    `${backendUrl}/v1/video/projects/${assetId}/exports/finalize`,
+    `${backendUrl}/v1/video/projects/${assetId}/exports`,
     {
       headers: { Authorization: `Bearer ${token}` },
       multipart: {

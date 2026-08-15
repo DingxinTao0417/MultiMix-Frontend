@@ -43,7 +43,7 @@ import {
   type PublicSourceRead,
   type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
-import { conversationFromPersisted, contentAssetToProduct, isEditorReadyVideoProject, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
+import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord, normalizeAssetTitle } from "./asset-workspace-shared";
 import type { VideoQualityReport } from "./video-quality";
 import {
@@ -51,6 +51,12 @@ import {
   getVideoProjectJob,
   recomposeSegmentMaterial,
 } from "../../../lib/video-project-client";
+import {
+  getCurrentExportJob,
+  retryExportJob,
+  waitForExportJob,
+  type ExportFinalizeJob,
+} from "../../editor/video-export-client";
 
 export type LibraryRow = {
   assetId?: number;
@@ -466,6 +472,19 @@ export type AssetWorkspaceAdapter = {
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
+  getCurrentVideoExport(token: string, projectAssetId: number, signal?: AbortSignal): Promise<ExportFinalizeJob | null>;
+  retryVideoExport(
+    token: string,
+    projectAssetId: number,
+    job: ExportFinalizeJob,
+    signal?: AbortSignal,
+  ): Promise<ExportFinalizeJob>;
+  waitForVideoExport(
+    token: string,
+    projectAssetId: number,
+    initialJob: ExportFinalizeJob,
+    signal?: AbortSignal,
+  ): Promise<ExportFinalizeJob>;
   loadSegmentMaterialCandidates(
     token: string,
     projectAssetId: number,
@@ -1218,6 +1237,32 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         `/video/projects/${encodeURIComponent(projectAssetId)}/quality?stage=export_preflight`,
         token,
       );
+    },
+    async getCurrentVideoExport(token, projectAssetId, signal) {
+      return getCurrentExportJob({
+        apiBase: API_BASE,
+        assetId: String(projectAssetId),
+        token,
+        signal,
+      });
+    },
+    async retryVideoExport(token, projectAssetId, job, signal) {
+      return retryExportJob({
+        apiBase: API_BASE,
+        assetId: String(projectAssetId),
+        jobId: job.id,
+        token,
+        signal,
+      });
+    },
+    async waitForVideoExport(token, projectAssetId, initialJob, signal) {
+      return waitForExportJob({
+        apiBase: API_BASE,
+        assetId: String(projectAssetId),
+        token,
+        initialJob,
+        signal,
+      });
     },
     async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {
       const data = await getSegmentMaterialCandidates({

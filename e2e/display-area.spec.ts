@@ -345,7 +345,8 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
 
   expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(1);
   expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(1);
-  expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports/finalize"))).toHaveLength(1);
+  expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports"))).toHaveLength(1);
+  expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 
 test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }) => {

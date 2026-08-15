@@ -10,7 +10,10 @@ import type { BackendProject } from "@/editor-engine/vendor/buildProject";
 import { EditorCore } from "@editor/core";
 import { Timeline } from "@editor/components/editor/panels/timeline";
 import { PreviewPanel } from "@editor/components/editor/panels/preview";
-import { ExportButton } from "@/editor-engine/vendor/ExportButton";
+import {
+  ExportButton,
+  type ExportProgressState,
+} from "@/editor-engine/vendor/ExportButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
 import type { BGMChoice, BGMUpdateResponse } from "@/editor-engine/vendor/api";
@@ -21,6 +24,13 @@ import { getExportMimeType } from "@editor/lib/export";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
+import {
+  getCurrentExportJob,
+  retryExportJob,
+  uploadExportCandidate,
+  waitForExportJob,
+  type ExportFinalizeJob,
+} from "./video-export-client";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -65,8 +75,14 @@ type LoadedProject = {
 type VerifiedExportHooks = {
   onStart?: () => void;
   onProgress?: (progress: number) => void;
+  onUploading?: () => void;
   onVerifying?: () => void;
   onQualityReport?: (report: VideoQualityReport) => void;
+};
+
+type CachedExportCandidate = {
+  projectFingerprint: string;
+  blob: Blob;
 };
 
 const EMBED_READY_RETRY_MS = 1000;
@@ -106,6 +122,23 @@ function unwrapProject(raw: Record<string, unknown>): BackendProject {
   throw new Error("项目格式不兼容（缺少 tracks）");
 }
 
+async function downloadPublishedExport(
+  job: ExportFinalizeJob,
+  token: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  if (!job.mp4Ref) throw new Error("已完成的成片任务缺少下载文件");
+  const response = await fetch(
+    `${API_BASE}/v1/video/media?ref=${encodeURIComponent(job.mp4Ref)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    },
+  );
+  if (!response.ok) throw new Error(`成片下载恢复失败（HTTP ${response.status}）`);
+  return response.blob();
+}
+
 function projectBgmChoice(project: BackendProject | null): BGMChoice | null {
   const choice = project?.metadata?.bgm_choice;
   return choice && typeof choice === "object" ? choice as BGMChoice : null;
@@ -135,16 +168,28 @@ export default function EditorView({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [loadingDetail, setLoadingDetail] = useState("");
   const [isBgmPanelOpen, setIsBgmPanelOpen] = useState(false);
+  const [standaloneExportState, setStandaloneExportState] = useState<ExportProgressState>({
+    phase: "idle",
+    progress: 0,
+  });
+  const [standaloneExportBlob, setStandaloneExportBlob] = useState<Blob | null>(null);
+  const [standaloneExportError, setStandaloneExportError] = useState("");
   const startedRef = useRef(false);
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
+  const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
+  const recoverableStandaloneExportRef = useRef<ExportFinalizeJob | null>(null);
+  const activeExportAbortRef = useRef<AbortController | null>(null);
   const previewOnly = mode === "preview";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.addEventListener("pagehide", disposeEditor);
-    return () => window.removeEventListener("pagehide", disposeEditor);
+    return () => {
+      activeExportAbortRef.current?.abort();
+      window.removeEventListener("pagehide", disposeEditor);
+    };
   }, []);
 
   const postToParent = useCallback((payload: Record<string, unknown>) => {
@@ -206,6 +251,7 @@ export default function EditorView({
 
   const performVerifiedExport = useCallback(async (hooks: VerifiedExportHooks) => {
     const serialized = serializeBackendProject(EditorCore.getInstance());
+    const projectFingerprint = JSON.stringify(serialized);
     const currentProject = (
       Array.isArray(serialized.tracks)
         ? serialized
@@ -241,45 +287,68 @@ export default function EditorView({
       return null;
     }
 
-    hooks.onStart?.();
-    const result = await EditorCore.getInstance().renderer.exportProject({
-      options: { format: "mp4", quality: "high", includeAudio: true },
-      onProgress: ({ progress }) => hooks.onProgress?.(progress),
-    });
-    if (!result.success || !result.buffer) {
-      throw new Error(result.error || "未知错误");
+    let blob = candidateBlobRef.current?.projectFingerprint === projectFingerprint
+      ? candidateBlobRef.current.blob
+      : null;
+    if (!blob) {
+      hooks.onStart?.();
+      const result = await EditorCore.getInstance().renderer.exportProject({
+        options: { format: "mp4", quality: "high", includeAudio: true },
+        onProgress: ({ progress }) => hooks.onProgress?.(progress),
+      });
+      if (!result.success || !result.buffer) {
+        throw new Error(result.error || "未知错误");
+      }
+      const mime = getExportMimeType({ format: "mp4" });
+      blob = new Blob([result.buffer], { type: mime });
+      candidateBlobRef.current = { projectFingerprint, blob };
     }
 
-    const mime = getExportMimeType({ format: "mp4" });
-    const blob = new Blob([result.buffer], { type: mime });
-    hooks.onVerifying?.();
-    const formData = new FormData();
-    formData.append("file", blob, `video-${Date.now()}.mp4`);
-    const finalizeResponse = await fetch(
-      `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/exports/finalize`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      },
-    );
-    const finalizePayload = await finalizeResponse.json().catch(() => null) as unknown;
-    const verifiedReport = qualityReportFromPayload(finalizePayload);
-    if (!finalizeResponse.ok) {
-      if (verifiedReport) hooks.onQualityReport?.(verifiedReport);
-      throw new Error(
-        errorMessageFromPayload(
-          finalizePayload,
-          `成片文件验证失败（HTTP ${finalizeResponse.status}）`,
-        ),
+    hooks.onUploading?.();
+    const controller = new AbortController();
+    activeExportAbortRef.current?.abort();
+    activeExportAbortRef.current = controller;
+    try {
+      const exportJob = await uploadExportCandidate({
+        apiBase: API_BASE,
+        assetId,
+        token,
+        blob,
+        signal: controller.signal,
+      });
+      hooks.onVerifying?.();
+      const terminalJob = await waitForExportJob({
+        apiBase: API_BASE,
+        assetId,
+        token,
+        initialJob: exportJob,
+        signal: controller.signal,
+      });
+      const verifiedReport = qualityReportFromPayload(terminalJob.qualityReport);
+      if (terminalJob.status === "failed") {
+        if (verifiedReport) hooks.onQualityReport?.(verifiedReport);
+        if (!terminalJob.retryable) candidateBlobRef.current = null;
+        throw new Error(terminalJob.errorMessage || "成片文件未通过完整性验证");
+      }
+      if (!verifiedReport) throw new Error("成片任务没有返回有效验证报告");
+      if (verifiedReport.blockers.length) {
+        hooks.onQualityReport?.(verifiedReport);
+        candidateBlobRef.current = null;
+        throw new Error("成片文件未通过完整性验证");
+      }
+
+      const confirmedProject = await fetchProject(
+        `/v1/video/projects/${encodeURIComponent(assetId)}`,
+        token,
       );
+      loadedProjectRef.current = confirmedProject.project;
+      candidateBlobRef.current = null;
+      return { blob, report: verifiedReport, job: terminalJob };
+    } finally {
+      if (activeExportAbortRef.current === controller) {
+        activeExportAbortRef.current = null;
+      }
     }
-    if (!verifiedReport) throw new Error("成片终结接口没有返回有效验证报告");
-    if (verifiedReport.blockers.length) {
-      hooks.onQualityReport?.(verifiedReport);
-      throw new Error("成片文件未通过完整性验证");
-    }
-    return { blob, report: verifiedReport };
   }, [assetId, persistCurrentProject, token]);
 
   const handleEmbeddedExport = useCallback(async () => {
@@ -289,6 +358,7 @@ export default function EditorView({
       const result = await performVerifiedExport({
         onStart: () => postToParent({ type: "multimix-editor-export-start" }),
         onProgress: (progress) => postToParent({ type: "multimix-editor-export-progress", progress }),
+        onUploading: () => postToParent({ type: "multimix-editor-export-uploading" }),
         onVerifying: () => postToParent({ type: "multimix-editor-export-verifying" }),
         onQualityReport: (report) => postToParent({
           type: "multimix-editor-export-quality-report",
@@ -302,6 +372,7 @@ export default function EditorView({
           type: "multimix-editor-export-success",
           report: result.report,
           blob: result.blob,
+          jobId: result.job.id,
         });
       }
     } catch (cause) {
@@ -317,19 +388,67 @@ export default function EditorView({
     }
   }, [performVerifiedExport, postToParent]);
 
-  const handleStandaloneExport = useCallback(async (onProgress: (progress: number) => void) => {
+  const handleStandaloneExport = useCallback(async () => {
+    const recoverableJob = recoverableStandaloneExportRef.current;
+    if (recoverableJob?.retryable && assetId && token) {
+      setStandaloneExportState({ phase: "verifying", progress: 1 });
+      setStandaloneExportError("");
+      try {
+        const retried = await retryExportJob({
+          apiBase: API_BASE,
+          assetId,
+          jobId: recoverableJob.id,
+          token,
+        });
+        const terminal = await waitForExportJob({
+          apiBase: API_BASE,
+          assetId,
+          token,
+          initialJob: retried,
+        });
+        if (terminal.status === "failed") {
+          recoverableStandaloneExportRef.current = terminal.retryable ? terminal : null;
+          throw new Error(terminal.errorMessage || "成片检查未完成");
+        }
+        recoverableStandaloneExportRef.current = null;
+        setStandaloneExportBlob(await downloadPublishedExport(terminal, token));
+        setStandaloneExportState({ phase: "completed", progress: 1 });
+      } catch (cause) {
+        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
+      }
+      return;
+    }
+    recoverableStandaloneExportRef.current = null;
     let blockerMessage = "";
-    const result = await performVerifiedExport({
-      onProgress,
-      onQualityReport: (report) => {
-        blockerMessage = report.blockers[0]?.message || "当前工程未通过导出检查";
-      },
-    });
-    if (!result && blockerMessage) throw new Error(blockerMessage);
-    return result?.blob ?? null;
-  }, [performVerifiedExport]);
+    setStandaloneExportError("");
+    setStandaloneExportBlob(null);
+    try {
+      const result = await performVerifiedExport({
+        onStart: () => setStandaloneExportState({ phase: "rendering", progress: 0 }),
+        onProgress: (progress) => setStandaloneExportState({ phase: "rendering", progress }),
+        onUploading: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
+        onVerifying: () => setStandaloneExportState({ phase: "verifying", progress: 1 }),
+        onQualityReport: (report) => {
+          blockerMessage = report.blockers[0]?.message || "当前工程未通过导出检查";
+        },
+      });
+      if (!result && blockerMessage) throw new Error(blockerMessage);
+      if (result) {
+        setStandaloneExportBlob(result.blob);
+        setStandaloneExportState({ phase: "completed", progress: 1 });
+      } else {
+        setStandaloneExportState({ phase: "idle", progress: 0 });
+      }
+    } catch (cause) {
+      setStandaloneExportState({ phase: "error", progress: 0 });
+      setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [assetId, performVerifiedExport, token]);
 
   const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse) => {
+    candidateBlobRef.current = null;
+    recoverableStandaloneExportRef.current = null;
     rememberRawProject(result.project);
     const project = unwrapProject(result.project);
     loadedProjectRef.current = project;
@@ -342,6 +461,8 @@ export default function EditorView({
     setSaveState("saving");
     try {
       await persistCurrentProject();
+      candidateBlobRef.current = null;
+      recoverableStandaloneExportRef.current = null;
       postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2000);
@@ -369,6 +490,8 @@ export default function EditorView({
     void (async () => {
       try {
         const loadedProject = await fetchProject(endpoint, token);
+        candidateBlobRef.current = null;
+        recoverableStandaloneExportRef.current = null;
         loadedProjectRef.current = loadedProject.project;
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
@@ -385,6 +508,47 @@ export default function EditorView({
       }
     })();
   }, [jobId, assetId, token, postToParent]);
+
+  useEffect(() => {
+    if (embed || state !== "ready" || !assetId || !token) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const current = await getCurrentExportJob({
+          apiBase: API_BASE,
+          assetId,
+          token,
+          signal: controller.signal,
+        });
+        if (!current) return;
+        let terminal: ExportFinalizeJob = current;
+        if (current.status === "queued" || current.status === "running") {
+          setStandaloneExportState({ phase: "verifying", progress: 1 });
+          terminal = await waitForExportJob({
+            apiBase: API_BASE,
+            assetId,
+            token,
+            initialJob: current,
+            signal: controller.signal,
+          });
+        }
+        if (terminal.status === "failed") {
+          recoverableStandaloneExportRef.current = terminal.retryable ? terminal : null;
+          setStandaloneExportState({ phase: "error", progress: 0 });
+          setStandaloneExportError(terminal.errorMessage || "成片检查未完成");
+          return;
+        }
+        recoverableStandaloneExportRef.current = null;
+        setStandaloneExportBlob(await downloadPublishedExport(terminal, token, controller.signal));
+        setStandaloneExportState({ phase: "completed", progress: 1 });
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
+      }
+    })();
+    return () => controller.abort();
+  }, [assetId, embed, state, token]);
 
   useEffect(() => {
     if (!embed || typeof window === "undefined") return;
@@ -479,6 +643,9 @@ export default function EditorView({
             {state === "ready" ? (
               <ExportButton
                 onExport={handleStandaloneExport}
+                exportState={standaloneExportState}
+                verifiedBlob={standaloneExportBlob}
+                errorText={standaloneExportError}
               />
             ) : null}
           </div>

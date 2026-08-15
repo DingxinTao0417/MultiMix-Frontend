@@ -89,16 +89,21 @@ describe("editor layout constraints", () => {
 		const persistCurrent = view.indexOf("await persistCurrentProject(currentProject)");
 		const remotePreflight = view.indexOf("/quality?stage=export_preflight");
 		const render = view.indexOf("renderer.exportProject");
-		const atomicFinalize = view.indexOf("/exports/finalize");
-			const verifiedBlobHandoff = view.indexOf('type: "multimix-editor-export-success"');
+		const upload = view.indexOf("const exportJob = await uploadExportCandidate");
+		const waitForJob = view.indexOf("const terminalJob = await waitForExportJob");
+		const verifiedBlobHandoff = view.indexOf('type: "multimix-editor-export-success"');
 
 		expect(localPreflight).toBeGreaterThan(-1);
 			expect(view).toContain('if (localReport.blockers.length) {\n      hooks.onQualityReport?.(localReport);\n      return null;');
 		expect(persistCurrent).toBeGreaterThan(localPreflight);
 		expect(remotePreflight).toBeGreaterThan(persistCurrent);
 		expect(remotePreflight).toBeLessThan(render);
-		expect(atomicFinalize).toBeGreaterThan(render);
-		expect(verifiedBlobHandoff).toBeGreaterThan(atomicFinalize);
+		expect(upload).toBeGreaterThan(render);
+		expect(waitForJob).toBeGreaterThan(upload);
+		expect(verifiedBlobHandoff).toBeGreaterThan(waitForJob);
+		expect(view).toContain('type: "multimix-editor-export-uploading"');
+		expect(view).toContain('type: "multimix-editor-export-verifying"');
+		expect(view).not.toContain("/exports/finalize");
 		expect(view).not.toContain("/exports/verify");
 		expect(view).not.toContain("/mp4");
 		expect(view).not.toContain("anchor.click()");

@@ -8,6 +8,7 @@ import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
+import type { ExportFinalizeJob } from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview, {
@@ -28,8 +29,12 @@ type EditorBridgeMessage = {
   message?: string;
   report?: VideoQualityReport;
   blob?: Blob;
+  jobId?: string;
   previewChannel?: string;
 };
+
+type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "verifying"
+  | "downloading" | "blocked" | "done" | "error";
 
 export function EmptyProductWorkspace() {
   return (
@@ -83,7 +88,7 @@ export default function ProductWorkspace({
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
-  const [exportState, setExportState] = useState<"idle" | "checking" | "preparing" | "exporting" | "verifying" | "downloading" | "blocked" | "done" | "error">("idle");
+  const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
   const [exportError, setExportError] = useState("");
@@ -111,6 +116,8 @@ export default function ProductWorkspace({
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef(false);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
+  const exportRecoveryAssetRef = useRef<string | null>(null);
+  const recoverableExportJobRef = useRef<ExportFinalizeJob | null>(null);
   const modeLabel = getProductModeLabel(product.mode);
   const editableTextArtifact = Boolean(
     product.backendAssetId
@@ -270,6 +277,7 @@ export default function ProductWorkspace({
     setProjectEditedSinceExport(false);
     pendingExportRef.current = false;
     verifiedExportBlobRef.current = null;
+    recoverableExportJobRef.current = null;
   }, [currentAssetId, hasPersistedExport, hasVideoProject]);
 
   useEffect(() => {
@@ -282,17 +290,20 @@ export default function ProductWorkspace({
     setMaterialError("");
   }, [currentAssetId]);
 
-  const refreshPersistedVideoProject = useCallback(async () => {
-    if (!token || !onProductUpdated || selectedConversation.id === "new" || !product.backendAssetId) return;
+  const refreshPersistedVideoProject = useCallback(async (): Promise<boolean> => {
+    if (!token || !onProductUpdated || selectedConversation.id === "new" || !product.backendAssetId) return false;
     setProjectSyncError("");
     try {
       const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
       const updated = (refreshed.products ?? [refreshed.product]).find(
         (item) => item.backendAssetId === product.backendAssetId,
       );
-      if (updated) onProductUpdated(updated);
+      if (!updated) return false;
+      onProductUpdated(updated);
+      return true;
     } catch {
       setProjectSyncError("已保存编辑，但浏览态刷新失败。");
+      return false;
     }
   }, [onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
 
@@ -377,6 +388,11 @@ export default function ProductWorkspace({
               : null,
           );
           break;
+        case "multimix-editor-export-uploading":
+          setExportState("uploading");
+          setExportProgress(100);
+          setExportError("");
+          break;
         case "multimix-editor-export-verifying":
           setExportState("verifying");
           setExportProgress(100);
@@ -401,10 +417,22 @@ export default function ProductWorkspace({
             setExportProgress(100);
             setExportError("");
             setExportDownloaded(false);
+            void refreshPersistedVideoProject();
           } else {
-            setExportState("error");
-            setExportProgress(null);
-            setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
+            setExportState("verifying");
+            void refreshPersistedVideoProject().then((refreshed) => {
+              if (refreshed) {
+                setProjectEditedSinceExport(false);
+                setExportState("done");
+                setExportProgress(100);
+                setExportError("");
+                setExportDownloaded(false);
+                return;
+              }
+              setExportState("error");
+              setExportProgress(null);
+              setExportError("成片已完成，但页面刷新失败，请重试刷新。");
+            });
           }
           break;
         case "multimix-editor-export-error":
@@ -446,6 +474,88 @@ export default function ProductWorkspace({
     refreshPersistedVideoProject,
     showEditorEmbed,
     startEditorExport,
+  ]);
+
+  useEffect(() => {
+    if (
+      !hasVideoProject
+      || hasCurrentPersistedExport
+      || projectEditedSinceExport
+      || !token
+      || !product.backendAssetId
+      || !onProductUpdated
+      || selectedConversation.id === "new"
+      || exportRecoveryAssetRef.current === currentAssetId
+    ) return;
+
+    exportRecoveryAssetRef.current = currentAssetId;
+    const controller = new AbortController();
+    let foundExport = false;
+    void (async () => {
+      try {
+        const current = await assetWorkspaceAdapter.getCurrentVideoExport(
+          token,
+          product.backendAssetId!,
+          controller.signal,
+        );
+        if (!current) return;
+        foundExport = true;
+
+        let terminal = current;
+        if (current.status === "queued" || current.status === "running") {
+          setExportState(current.stage === "uploaded" ? "uploading" : "verifying");
+          setExportProgress(100);
+          setExportError("");
+          terminal = await assetWorkspaceAdapter.waitForVideoExport(
+            token,
+            product.backendAssetId!,
+            current,
+            controller.signal,
+          );
+        }
+        if (terminal.status === "failed") {
+          recoverableExportJobRef.current = terminal.retryable ? terminal : null;
+          setExportState("error");
+          setExportProgress(null);
+          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          return;
+        }
+        if (terminal.qualityReport) {
+          setQualityReport(terminal.qualityReport as VideoQualityReport);
+        }
+        recoverableExportJobRef.current = null;
+        const refreshed = await refreshPersistedVideoProject();
+        if (controller.signal.aborted) return;
+        if (!refreshed) {
+          setExportState("error");
+          setExportProgress(null);
+          setExportError("成片已完成，但页面刷新失败，请重试刷新。");
+          return;
+        }
+        setProjectEditedSinceExport(false);
+        setExportState("done");
+        setExportProgress(100);
+        setExportError("");
+        setExportDownloaded(false);
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        if (!foundExport) return;
+        setExportState("error");
+        setExportProgress(null);
+        setExportError(error instanceof Error ? error.message : "恢复成片任务失败，请重试。");
+      }
+    })();
+    return () => controller.abort();
+  }, [
+    currentAssetId,
+    hasCurrentPersistedExport,
+    hasVideoProject,
+    onProductUpdated,
+    product.backendAssetId,
+    projectEditedSinceExport,
+    refreshPersistedVideoProject,
+    selectedConversation.id,
+    token,
   ]);
 
   const requestExportQuality = async (): Promise<VideoQualityReport | null> => {
@@ -511,7 +621,52 @@ export default function ProductWorkspace({
   }, []);
 
   const handleExportVideo = async () => {
-    if (!currentAssetId || ["exporting", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
+    if (!currentAssetId || ["exporting", "uploading", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
+    const recoverableJob = recoverableExportJobRef.current;
+    if (recoverableJob?.retryable && token && product.backendAssetId) {
+      setExportState("verifying");
+      setExportProgress(100);
+      setExportError("");
+      try {
+        const retried = await assetWorkspaceAdapter.retryVideoExport(
+          token,
+          product.backendAssetId,
+          recoverableJob,
+        );
+        const terminal = await assetWorkspaceAdapter.waitForVideoExport(
+          token,
+          product.backendAssetId,
+          retried,
+        );
+        if (terminal.status === "failed") {
+          recoverableExportJobRef.current = terminal.retryable ? terminal : null;
+          setExportState("error");
+          setExportProgress(null);
+          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          return;
+        }
+        if (terminal.qualityReport) {
+          setQualityReport(terminal.qualityReport as VideoQualityReport);
+        }
+        recoverableExportJobRef.current = null;
+        const refreshed = await refreshPersistedVideoProject();
+        if (!refreshed) {
+          setExportState("error");
+          setExportProgress(null);
+          setExportError("成片已完成，但页面刷新失败，请重试刷新。");
+          return;
+        }
+        setProjectEditedSinceExport(false);
+        setExportState("done");
+        setExportProgress(100);
+        setExportDownloaded(false);
+      } catch (error) {
+        setExportState("error");
+        setExportProgress(null);
+        setExportError(error instanceof Error ? error.message : "成片任务重试失败，请稍后再试。");
+      }
+      return;
+    }
     if (showEditorEmbed) {
       if (editorReady && startEditorExport()) return;
       pendingExportRef.current = true;
@@ -568,12 +723,14 @@ export default function ProductWorkspace({
     ? "正在检查…"
     : exportState === "preparing"
       ? "正在准备预览导出…"
+    : exportState === "uploading"
+      ? "正在上传成片"
     : exportState === "verifying"
-      ? "正在检查成片…"
+      ? "正在检查成片"
     : exportState === "downloading"
       ? "正在准备下载…"
     : exportState === "exporting"
-      ? `导出中 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
+      ? `正在合成视频 ${exportProgress == null ? "…" : `${Math.round(exportProgress)}%`}`
       : exportState === "done"
         ? exportDownloaded ? "再次下载" : "下载成片"
     : exportState === "error"
@@ -902,7 +1059,7 @@ export default function ProductWorkspace({
                 type="button"
                 className="shadcn-prototype-open-editor"
                 disabled={
-                  ["exporting", "checking", "preparing", "verifying", "downloading"].includes(exportState)
+                  ["exporting", "uploading", "checking", "preparing", "verifying", "downloading"].includes(exportState)
                 }
                 onClick={() => void handleExportVideo()}
               >

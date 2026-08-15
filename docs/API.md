@@ -680,11 +680,22 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 - `mg_primary_blank` 不取消内部 `ready`，前端显示可见 warning；只要占位画面有效并连续覆盖主轨，它本身不阻断导出。
 - 空白占位未持久化、归属不正确或主轨不连续时，后端返回 blocker，前端按主工程失败处理。
 - 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
-- 浏览器完成 MP4 编码后，只向 `POST /v1/video/projects/{asset_id}/exports/finalize` 上传一次文件。
-  后端在同一请求内执行文件完整性验证并持久化同一临时文件；返回 blocker 时前端展示文件错误且
-  不得发送成功消息或提供下载。
-- `POST /v1/video/projects/{asset_id}/mp4` 和
-  `POST /v1/video/projects/{asset_id}/exports/verify` 是已退役路径，不能用于正常导出或绕过验证。
+- 浏览器完成 MP4 编码后，调用 `POST /v1/video/projects/{asset_id}/exports` 上传候选文件。该请求只做
+  工程与上传边界检查、持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测
+  和最终发布由现有视频 worker 继续执行。
+- 导出按钮依次显示“正在合成视频 N%”“正在上传成片”“正在检查成片”“下载成片”。这些是导出内部
+  阶段，不改变视频工程的“生成中 / 完成 / 失败”主状态。
+- `GET /v1/video/projects/{asset_id}/exports/current` 返回当前工程指纹对应的最新任务；没有可恢复任务时
+  返回 `404`。`GET /v1/video/projects/{asset_id}/exports/{job_public_id}` 用于轮询指定任务。
+- 页面刷新或连接中断后，前端先读取 current：`queued/running` 继续轮询，`completed` 刷新工程并恢复
+  下载，`failed` 显示任务错误。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
+  返回可重试失败，前端调用现有 `POST /v1/video/jobs/{job_public_id}/retry` 复用服务端候选文件，刷新
+  页面后也不重新合成。
+- 任务只有在质量检查通过且发布时工程指纹仍一致后，才原子写入 `mp4_ref`；质量失败或工程已变化均
+  不覆盖当前工程，也不把视频工程主状态改为失败。
+- `POST /v1/video/projects/{asset_id}/exports/finalize` 现返回 `410 Gone`；
+  `POST /v1/video/projects/{asset_id}/mp4` 和 `POST /v1/video/projects/{asset_id}/exports/verify`
+  同样是已退役路径，不能用于正常导出或绕过验证。
 
 ### 12.2 结构化确认卡 `metadata.plan`
 

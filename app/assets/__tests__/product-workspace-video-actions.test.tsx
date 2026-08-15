@@ -11,6 +11,7 @@ import { conversationForDisplayProduct, displayProducts } from "./fixtures/displ
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -177,7 +178,7 @@ describe("video browse actions", () => {
         progress: 0.42,
       },
     }));
-    expect(await screen.findByRole("button", { name: "导出中 42%" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "正在合成视频 42%" })).toBeDisabled();
 
     window.dispatchEvent(new MessageEvent("message", {
       origin: window.location.origin,
@@ -191,6 +192,152 @@ describe("video browse actions", () => {
     }));
 
     expect(await screen.findByRole("button", { name: "下载成片" })).toBeEnabled();
+  });
+
+  it("shows distinct upload and server verification phases", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-uploading",
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "正在上传成片" })).toBeDisabled();
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-verifying",
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
+  });
+
+  it("resumes a running export task after the workspace remounts", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    let finish!: (value: {
+      id: string;
+      assetId: number;
+      status: "completed";
+      stage: "done";
+      retryable: false;
+      errorMessage: null;
+      qualityReport: { stage: string; status: string; blockers: never[]; warnings: never[] };
+      mp4Ref: string;
+    }) => void;
+    const terminal = new Promise<Parameters<typeof finish>[0]>((resolve) => { finish = resolve; });
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue({
+      id: "video-export-1",
+      assetId: product.backendAssetId!,
+      status: "running",
+      stage: "verifying",
+      retryable: false,
+      errorMessage: null,
+      qualityReport: null,
+      mp4Ref: null,
+    });
+    vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockReturnValue(terminal);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
+      conversationForDisplayProduct(product) as never,
+    );
+    const onProductUpdated = vi.fn();
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={onProductUpdated}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
+    finish({
+      id: "video-export-1",
+      assetId: product.backendAssetId!,
+      status: "completed",
+      stage: "done",
+      retryable: false,
+      errorMessage: null,
+      qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+      mp4Ref: "supabase://exports/final.mp4",
+    });
+
+    await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
+  });
+
+  it("retries a persisted failed export without asking the renderer to run again", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const failed = {
+      id: "video-export-retry",
+      assetId: product.backendAssetId!,
+      status: "failed" as const,
+      stage: "failed" as const,
+      retryable: true,
+      errorMessage: "检查服务暂时不可用",
+      qualityReport: null,
+      mp4Ref: null,
+    };
+    const completed = {
+      ...failed,
+      status: "completed" as const,
+      stage: "done" as const,
+      retryable: false,
+      errorMessage: null,
+      qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+      mp4Ref: "local://exports/recovered.mp4",
+    };
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue(failed);
+    const retry = vi.spyOn(assetWorkspaceAdapter, "retryVideoExport").mockResolvedValue({
+      ...failed,
+      status: "queued",
+      stage: "uploaded",
+      errorMessage: null,
+    });
+    vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockResolvedValue(completed);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
+      conversationForDisplayProduct(product) as never,
+    );
+    const onProductUpdated = vi.fn();
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={onProductUpdated}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "导出失败，重试" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith(
+      "token",
+      product.backendAssetId,
+      failed,
+    ));
+    await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
   });
 
   it("reveals retry when a live failed job overrides stale pending metadata", () => {

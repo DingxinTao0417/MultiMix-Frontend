@@ -107,13 +107,18 @@ describe("video project browse-player contract", () => {
     expect(preview).toContain("export: () => boolean");
     expect(projectPreview).toContain('postCommand("multimix-editor-export")');
     expect(editorView).toContain('message.type === "multimix-editor-ready-ack"');
-    expect(editorView).toContain('/exports/finalize');
+    expect(editorView).toContain("uploadExportCandidate");
+    expect(editorView).toContain("waitForExportJob");
+    expect(editorView).not.toContain('/exports/finalize');
     expect(editorView).not.toContain('/exports/verify');
     expect(editorView).not.toContain('/mp4');
     expect(editorView).toContain("onExport={handleStandaloneExport}");
     expect(editorExportButton).not.toContain('/exports/verify');
     expect(editorExportButton).not.toContain('/mp4');
     expect(editorExportButton).not.toContain("保存到产物");
+    expect(editorExportButton).toContain("正在合成视频");
+    expect(editorExportButton).toContain("正在上传成片");
+    expect(editorExportButton).toContain("正在检查成片");
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 
