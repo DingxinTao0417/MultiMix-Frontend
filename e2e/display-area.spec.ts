@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
@@ -235,6 +235,121 @@ test("CASE-06 renders the ready engineering preview without opening the editable
     maxDiffPixels: 2_000,
   });
   await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
+});
+
+test("CASE-07 recovers the same export after API and worker restart", async ({ page }) => {
+  test.skip(process.env.DISPLAY_EXPORT_RECOVERY !== "true", "Dedicated recovery runner only");
+  test.setTimeout(300_000);
+
+  const signalPath = process.env.DISPLAY_EXPORT_RECOVERY_SIGNAL_PATH;
+  const resultPath = process.env.DISPLAY_EXPORT_RECOVERY_RESULT_PATH;
+  if (!signalPath || !resultPath) throw new Error("Missing export recovery coordination paths");
+
+  let exportStartCount = 0;
+  await page.exposeFunction("__recordExportRecoveryMessage", (message: Record<string, unknown>) => {
+    if (message.type === "multimix-editor-export-start") exportStartCount += 1;
+  });
+  await page.addInitScript(() => {
+    window.addEventListener("message", (event) => {
+      if (event.data?.source !== "multimix-editor") return;
+      const recorder = (window as typeof window & {
+        __recordExportRecoveryMessage?: (message: Record<string, unknown>) => Promise<void>;
+      }).__recordExportRecoveryMessage;
+      void recorder?.(event.data as Record<string, unknown>);
+    });
+  });
+
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded asset id for CASE-07");
+  const exportRequests: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "POST" && url.pathname === `/v1/video/projects/${assetId}/exports`) {
+      exportRequests.push(request.url());
+    }
+  });
+
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips).toHaveCount(3, { timeout: 90_000 });
+  await clips.first().click();
+  const saveResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "PUT"
+      && url.pathname === `/v1/video/projects/${assetId}`;
+  });
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  const saveResponse = await saveResponsePromise;
+  expect(saveResponse.status()).toBe(200);
+  await page.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect(workspace.locator("video")).toHaveCount(0);
+  const exportButton = workspace.getByRole("button", { name: "导出视频", exact: true });
+  await expect(exportButton).toBeEnabled({ timeout: 90_000 });
+  const exportResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST"
+      && url.pathname === `/v1/video/projects/${assetId}/exports`;
+  });
+  await exportButton.click();
+  const exportResponse = await exportResponsePromise;
+  expect(exportResponse.status()).toBe(202);
+  const createdJob = await exportResponse.json() as { job_id?: string };
+  expect(createdJob.job_id).toMatch(/^video-export-/);
+  await expect(workspace.getByRole("button", { name: "正在检查成片", exact: true })).toBeDisabled();
+
+  const currentResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "GET"
+      && url.pathname === `/v1/video/projects/${assetId}/exports/current`
+      && response.status() === 200;
+  });
+  await page.reload();
+  const currentResponse = await currentResponsePromise;
+  const recoveredJob = await currentResponse.json() as { job_id?: string };
+  expect(recoveredJob.job_id).toBe(createdJob.job_id);
+  const recoveredWorkspace = page.getByRole("region", { name: "Current product workspace" });
+  await expect(recoveredWorkspace.getByRole("button", { name: "正在检查成片", exact: true })).toBeDisabled();
+
+  await writeFile(signalPath, JSON.stringify({ assetId, jobId: createdJob.job_id }), "utf8");
+
+  const downloadButton = recoveredWorkspace.getByRole("button", { name: "下载成片", exact: true });
+  await expect(downloadButton).toBeEnabled({ timeout: 180_000 });
+  await expect.poll(async () => {
+    try {
+      return await readFile(resultPath, "utf8");
+    } catch {
+      return "";
+    }
+  }, { timeout: 30_000 }).not.toBe("");
+  const workerResultText = await readFile(resultPath, "utf8");
+  const workerResult = JSON.parse(workerResultText) as {
+    public_id?: string;
+    initial_status?: string;
+    initial_attempts?: number;
+    status?: string;
+    stage?: string;
+    attempts?: number;
+  };
+  expect(workerResult).toMatchObject({
+    public_id: createdJob.job_id,
+    initial_status: "queued",
+    initial_attempts: 0,
+    status: "completed",
+    stage: "done",
+    attempts: 1,
+  });
+
+  const downloadPromise = page.waitForEvent("download");
+  await downloadButton.click();
+  const download = await downloadPromise;
+  const downloadPath = await download.path();
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
+  expect(downloadPath).not.toBeNull();
+  if (downloadPath) expect((await stat(downloadPath)).size).toBeGreaterThan(0);
+  expect(exportStartCount).toBe(1);
+  expect(exportRequests).toHaveLength(1);
 });
 
 test("video library renders one bounded page without eager video elements", async ({ page }) => {

@@ -116,8 +116,10 @@ export default function ProductWorkspace({
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef(false);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
-  const exportRecoveryAssetRef = useRef<string | null>(null);
   const recoverableExportJobRef = useRef<ExportFinalizeJob | null>(null);
+  const onProductUpdatedRef = useRef(onProductUpdated);
+  onProductUpdatedRef.current = onProductUpdated;
+  const hasProductUpdateHandler = Boolean(onProductUpdated);
   const modeLabel = getProductModeLabel(product.mode);
   const editableTextArtifact = Boolean(
     product.backendAssetId
@@ -291,7 +293,8 @@ export default function ProductWorkspace({
   }, [currentAssetId]);
 
   const refreshPersistedVideoProject = useCallback(async (): Promise<boolean> => {
-    if (!token || !onProductUpdated || selectedConversation.id === "new" || !product.backendAssetId) return false;
+    const updateProduct = onProductUpdatedRef.current;
+    if (!token || !updateProduct || selectedConversation.id === "new" || !product.backendAssetId) return false;
     setProjectSyncError("");
     try {
       const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
@@ -299,13 +302,13 @@ export default function ProductWorkspace({
         (item) => item.backendAssetId === product.backendAssetId,
       );
       if (!updated) return false;
-      onProductUpdated(updated);
+      updateProduct(updated);
       return true;
     } catch {
       setProjectSyncError("已保存编辑，但浏览态刷新失败。");
       return false;
     }
-  }, [onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
+  }, [product.backendAssetId, selectedConversation.id, token]);
 
   const startEditorExport = useCallback((): boolean => {
     const frameWindow = editorFrameRef.current?.contentWindow;
@@ -483,12 +486,10 @@ export default function ProductWorkspace({
       || projectEditedSinceExport
       || !token
       || !product.backendAssetId
-      || !onProductUpdated
+      || !hasProductUpdateHandler
       || selectedConversation.id === "new"
-      || exportRecoveryAssetRef.current === currentAssetId
     ) return;
 
-    exportRecoveryAssetRef.current = currentAssetId;
     const controller = new AbortController();
     let foundExport = false;
     void (async () => {
@@ -503,7 +504,10 @@ export default function ProductWorkspace({
 
         let terminal = current;
         if (current.status === "queued" || current.status === "running") {
-          setExportState(current.stage === "uploaded" ? "uploading" : "verifying");
+          // A persisted task with stage=uploaded has already crossed the HTTP
+          // upload boundary.  On recovery the user is waiting for the worker,
+          // so this belongs to the checking phase rather than upload progress.
+          setExportState("verifying");
           setExportProgress(100);
           setExportError("");
           terminal = await assetWorkspaceAdapter.waitForVideoExport(
@@ -550,7 +554,7 @@ export default function ProductWorkspace({
     currentAssetId,
     hasCurrentPersistedExport,
     hasVideoProject,
-    onProductUpdated,
+    hasProductUpdateHandler,
     product.backendAssetId,
     projectEditedSinceExport,
     refreshPersistedVideoProject,

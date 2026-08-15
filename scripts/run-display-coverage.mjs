@@ -1,10 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { assertPortFree, safeRemoveRunDatabaseWithRetries, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
-import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
+import { assertPortFree, startLogged, stopChild, waitFor } from "./demo-e2e/environment-manager.mjs";
+import { cleanupRetainedE2ERun, createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
@@ -27,11 +26,14 @@ const lifecycle = createE2ERunLifecycle({ suite: "display-coverage", runId, resu
 const { databasePath, artifactDir } = lifecycle;
 const e2eOnly = process.argv.includes("--e2e-only");
 const cleanupProbe = process.argv.includes("--cleanup-probe");
+const exportRecovery = process.argv.includes("--export-recovery");
 const updateSnapshots = process.argv.includes("--update-snapshots");
 const grepArgument = process.argv.find((argument) => argument.startsWith("--grep="));
 const grep = grepArgument?.slice("--grep=".length) ?? "";
 const playwrightWorkersArgument = process.argv.find((argument) => argument.startsWith("--playwright-workers="));
 const playwrightWorkers = playwrightWorkersArgument?.slice("--playwright-workers=".length) ?? "";
+const exportRecoverySignalPath = path.join(lifecycle.runDir, "export-recovery-ready.json");
+const exportRecoveryResultPath = path.join(lifecycle.runDir, "export-recovery-result.json");
 const children = [];
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -114,6 +116,7 @@ try {
     MULTIMIX_ARTIFACT_DIR: artifactDir,
     MULTIMIX_DEFAULT_ADMIN_EMAIL: seedJson.user_email,
     MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
+    MULTIMIX_VIDEO_ORCHESTRATION_INLINE: "false",
   };
   const frontendEnv = {
     ...process.env,
@@ -124,7 +127,21 @@ try {
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
   };
 
-  const backend = startDisplayProcess(process.env.PYTHON ?? "python", ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)], backendRoot, backendEnv, "backend.log");
+  const recoveryBackendEnv = exportRecovery
+    ? { ...backendEnv, DISPLAY_EXPORT_RECOVERY_HOLD_DISPATCH: "true" }
+    : backendEnv;
+  let backend = startDisplayProcess(
+    process.env.PYTHON ?? "python",
+    [
+      "-m", "uvicorn",
+      exportRecovery ? "app.tests.fixtures.display_coverage.export_recovery:app" : "app.main:app",
+      "--host", "127.0.0.1",
+      "--port", String(backendPort),
+    ],
+    backendRoot,
+    recoveryBackendEnv,
+    "backend.log",
+  );
   await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend);
   const frontend = startDisplayProcess(npmCommand, ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)], frontendRoot, frontendEnv, "frontend.log");
   await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 120_000);
@@ -132,18 +149,64 @@ try {
 
   const playwrightArgs = ["playwright", "test", "e2e/display-area.spec.ts"];
   if (updateSnapshots) playwrightArgs.push("--update-snapshots");
-  if (grep) playwrightArgs.push("--grep", grep);
-  if (playwrightWorkers) playwrightArgs.push("--workers", playwrightWorkers);
-  await run(npxCommand, playwrightArgs, {
+  const effectiveGrep = exportRecovery
+    ? "recovers the same export after API and worker restart"
+    : grep;
+  if (effectiveGrep) playwrightArgs.push("--grep", effectiveGrep);
+  if (exportRecovery) playwrightArgs.push("--workers", "1");
+  else if (playwrightWorkers) playwrightArgs.push("--workers", playwrightWorkers);
+  const playwrightRun = run(npxCommand, playwrightArgs, {
     cwd: frontendRoot,
     env: {
       ...frontendEnv,
       DISPLAY_COVERAGE_SEED_JSON: JSON.stringify(seedJson),
+      DISPLAY_EXPORT_RECOVERY: exportRecovery ? "true" : "false",
+      DISPLAY_EXPORT_RECOVERY_SIGNAL_PATH: exportRecoverySignalPath,
+      DISPLAY_EXPORT_RECOVERY_RESULT_PATH: exportRecoveryResultPath,
       PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
     },
     stdout: process.stdout,
     stderr: process.stderr,
   });
+  void playwrightRun.catch(() => {});
+
+  if (exportRecovery) {
+    await Promise.race([
+      waitForFile(exportRecoverySignalPath, 330_000),
+      playwrightRun.then(() => {
+        throw new Error("Export recovery Playwright run ended before publishing its restart signal");
+      }),
+    ]);
+    const recoverySignal = JSON.parse(fs.readFileSync(exportRecoverySignalPath, "utf8"));
+    if (!/^video-export-/.test(String(recoverySignal.jobId ?? ""))) {
+      throw new Error("Export recovery signal did not contain a durable public job id");
+    }
+
+    await stopChild(backend);
+    backend = startDisplayProcess(
+      process.env.PYTHON ?? "python",
+      ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
+      backendRoot,
+      { ...backendEnv, DISPLAY_EXPORT_RECOVERY_HOLD_DISPATCH: "false" },
+      "backend-restarted.log",
+    );
+    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend);
+
+    const workerResult = await run(process.env.PYTHON ?? "python", [
+      "-m", "app.tests.fixtures.display_coverage.export_recovery",
+      "--run-job", recoverySignal.jobId,
+    ], {
+      cwd: backendRoot,
+      env: { ...backendEnv, DISPLAY_EXPORT_RECOVERY_HOLD_DISPATCH: "false" },
+      stdout: process.stdout,
+      stderr: process.stderr,
+    });
+    const workerResultJson = workerResult.stdout.trim().split(/\r?\n/).at(-1);
+    if (!workerResultJson) throw new Error("Export recovery worker produced no result");
+    fs.writeFileSync(exportRecoveryResultPath, workerResultJson, "utf8");
+  }
+
+  await playwrightRun;
   lifecycle.record("playwright", "passed");
 } catch (error) {
   runError = error;
@@ -153,9 +216,24 @@ try {
   for (const { child } of children.reverse()) await stopChild(child);
   for (const { log } of children) log.end();
   lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", {
-    retainedForConfirmation: true,
+    retainedForConfirmation: !exportRecovery,
   });
   fs.rmSync(nextDistDir, { recursive: true, force: true });
   restoreWorkspaceFiles(workspaceFileSnapshots);
-  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- display-coverage/${runId} --confirm`);
+  if (exportRecovery) {
+    const cleanup = cleanupRetainedE2ERun({ suite: "display-coverage", runId, confirmed: true });
+    console.log(`Export recovery runtime cleaned: ${cleanup.runDir}`);
+  } else {
+    console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- display-coverage/${runId} --confirm`);
+  }
+}
+
+async function waitForFile(filePath, timeoutMs) {
+  const startedAt = Date.now();
+  while (!fs.existsSync(filePath)) {
+    if (Date.now() - startedAt >= timeoutMs) {
+      throw new Error(`Timed out waiting for ${filePath}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
 }

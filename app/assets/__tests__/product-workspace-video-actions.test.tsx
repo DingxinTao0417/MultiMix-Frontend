@@ -276,6 +276,128 @@ describe("video browse actions", () => {
     await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
   });
 
+  it("shows persisted uploaded jobs as checking rather than uploading", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue({
+      id: "video-export-uploaded",
+      assetId: product.backendAssetId!,
+      status: "queued",
+      stage: "uploaded",
+      retryable: false,
+      errorMessage: null,
+      qualityReport: null,
+      mp4Ref: null,
+    });
+    vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockReturnValue(new Promise(() => {}));
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "正在上传成片" })).not.toBeInTheDocument();
+  });
+
+  it("does not abort export recovery when the parent replaces its update callback", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    let finishCurrent!: (value: {
+      id: string;
+      assetId: number;
+      status: "completed";
+      stage: "done";
+      retryable: false;
+      errorMessage: null;
+      qualityReport: { stage: string; status: string; blockers: never[]; warnings: never[] };
+      mp4Ref: string;
+    }) => void;
+    let recoverySignal: AbortSignal | undefined;
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockImplementation(
+      (_token, _assetId, signal) => new Promise((resolve, reject) => {
+        recoverySignal = signal;
+        finishCurrent = resolve;
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      }),
+    );
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
+      conversationForDisplayProduct(product) as never,
+    );
+    const firstUpdate = vi.fn();
+    const latestUpdate = vi.fn();
+    const props = {
+      copied: false,
+      onCopyProduct: vi.fn(async () => undefined),
+      onSaveProduct: vi.fn(async () => undefined),
+      product,
+      selectedConversation: conversationForDisplayProduct(product),
+      token: "token",
+    };
+
+    const { rerender } = render(<ProductWorkspace {...props} onProductUpdated={firstUpdate} />);
+    await waitFor(() => expect(recoverySignal).toBeDefined());
+    rerender(<ProductWorkspace {...props} onProductUpdated={latestUpdate} />);
+    expect(recoverySignal?.aborted).toBe(false);
+
+    finishCurrent({
+      id: "video-export-callback-race",
+      assetId: product.backendAssetId!,
+      status: "completed",
+      stage: "done",
+      retryable: false,
+      errorMessage: null,
+      qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+      mp4Ref: "supabase://exports/final.mp4",
+    });
+
+    await waitFor(() => expect(latestUpdate).toHaveBeenCalledTimes(1));
+    expect(firstUpdate).not.toHaveBeenCalled();
+  });
+
+  it("retries export recovery when a token change aborts the startup query", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const completed = {
+      id: "video-export-token-race",
+      assetId: product.backendAssetId!,
+      status: "completed" as const,
+      stage: "done" as const,
+      retryable: false,
+      errorMessage: null,
+      qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+      mp4Ref: "supabase://exports/final.mp4",
+    };
+    const getCurrent = vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport")
+      .mockImplementationOnce((_token, _assetId, signal) => new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      }))
+      .mockResolvedValueOnce(completed);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
+      conversationForDisplayProduct(product) as never,
+    );
+    const onProductUpdated = vi.fn();
+    const props = {
+      copied: false,
+      onCopyProduct: vi.fn(async () => undefined),
+      onSaveProduct: vi.fn(async () => undefined),
+      onProductUpdated,
+      product,
+      selectedConversation: conversationForDisplayProduct(product),
+    };
+
+    const { rerender } = render(<ProductWorkspace {...props} token="token-1" />);
+    await waitFor(() => expect(getCurrent).toHaveBeenCalledTimes(1));
+    rerender(<ProductWorkspace {...props} token="token-2" />);
+
+    await waitFor(() => expect(getCurrent).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
+  });
+
   it("retries a persisted failed export without asking the renderer to run again", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     const failed = {
