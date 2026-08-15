@@ -87,7 +87,7 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Loa
   }
   const data = await res.json();
   if (data.status !== "completed" || !data.project) {
-    throw new Error(`项目尚未就绪（${data.status} / ${data.render_stage}）`);
+    throw new Error(`项目尚未就绪（${data.workflow_stage || data.status}）`);
   }
   const raw = data.project;
   rememberRawProject(raw);

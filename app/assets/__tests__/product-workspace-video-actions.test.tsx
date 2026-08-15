@@ -57,15 +57,7 @@ describe("video browse actions", () => {
       ...product,
       metadata: {
         ...product.metadata,
-        video_project: {
-          ...(product.metadata?.video_project as Record<string, unknown>),
-          mp4_verified_project_fingerprint: "previous-project",
-        },
-        video_project_quality_approval: {
-          version: "video-project-quality-approval:v1",
-          status: "approved",
-          fingerprint: "current-project",
-        },
+        video_export_current: false,
       },
     };
 
@@ -214,7 +206,7 @@ describe("video browse actions", () => {
         videoJobLive={{
           jobId: "job-failed",
           status: "failed",
-          renderStage: "failed",
+          workflowStage: "video_project_failed",
           steps: [],
           errorMessage: "素材合成步骤失败，请重试。",
           completionConfirmed: false,
@@ -345,8 +337,8 @@ describe("video browse actions", () => {
         videoJobLive={{
           jobId: "main-job",
           status: "completed",
-          renderStage: "done",
-          steps: [{ key: "mg_overlay", label: "生成并添加 MG 动效", status: "run", elapsedSeconds: null, retryJobId: null }],
+          workflowStage: "video_project_ready",
+          steps: [{ key: "mg_overlay", label: "生成并添加 MG 动效", status: "run", retryJobId: null }],
           errorMessage: null,
           completionConfirmed: false,
         }}

@@ -30,7 +30,6 @@ export type LongFormCandidate = {
 export type LongFormAnalysis = {
   schema_version: "long_form_candidate_set:v1";
   source_asset_id: number;
-  source_fingerprint: string;
   chapters: LongFormChapter[];
   top_candidate_ids: string[];
   candidates: LongFormCandidate[];
@@ -61,7 +60,6 @@ export type LongFormSourceImport = {
   asset_id: number;
   job_id: string;
   status: "queued" | "running" | "completed" | "failed";
-  stage: string;
   source_kind: "youtube" | "bilibili" | "direct_mp4";
 };
 
@@ -69,7 +67,6 @@ export type LongFormIngestJob = {
   id: string;
   asset_id: number;
   status: "queued" | "running" | "completed" | "failed";
-  stage: string;
   error_message: string | null;
 };
 
@@ -236,7 +233,6 @@ export function longFormAnalysisFromMetadata(metadata: Record<string, unknown>):
   return {
     schema_version: "long_form_candidate_set:v1",
     source_asset_id: sourceAssetId,
-    source_fingerprint: stringValue(full.source_fingerprint || metadata.source_fingerprint),
     chapters,
     top_candidate_ids: topIds,
     candidates,

@@ -16,11 +16,10 @@ afterEach(() => {
 });
 
 describe("long-form candidate client", () => {
-  it("loads the private analysis then resolves a scoped source playback URL", async () => {
+  it("loads the public analysis then resolves a scoped source playback URL", async () => {
     const analysis = {
       schema_version: "long_form_candidate_set:v1",
       source_asset_id: 91,
-      source_fingerprint: "sha256:91",
       chapters: [],
       top_candidate_ids: ["candidate-1"],
       candidates: [{
@@ -116,14 +115,12 @@ describe("long-form candidate client", () => {
         asset_id: 93,
         job_id: "long-form-ingest-1",
         status: "queued",
-        stage: "queued",
         source_kind: "youtube",
       }), { status: 202, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         id: "long-form-ingest-1",
         asset_id: 93,
         status: "completed",
-        stage: "source_ready",
         error_message: null,
       }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);

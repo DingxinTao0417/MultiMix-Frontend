@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-06
+> Last verified: 2026-08-14
 
 ## 1. 目的
 
@@ -95,7 +95,8 @@
 - `1 个分镜使用公开素材兜底`
 - `3 段配音已生成，1 段待重试`
 
-当前后端已有 `VideoJobRead.steps[]` 和真实 `elapsed_seconds`。实施时应调整商家语言，使确认编导稿后的工程构建不再重复显示“正在写脚本”；已有编导稿应显示为“读取已确认方案并准备分镜”。
+当前后端通过 `VideoJobRead.steps[]` 返回产品语义步骤。普通用户 DTO 不返回内部
+`render_stage`、`step_marks` 或 `elapsed_seconds`；已有编导稿应显示为“读取已确认方案并准备分镜”。
 
 ### 3.3 可选动态分支
 
@@ -164,8 +165,9 @@ MG 是主工程 ready 后执行的异步增强步骤，但在产品状态上是�
 - 头部与步骤行共享 `30px` 状态列，保证头部状态、步骤状态和正文起点处于相同垂直轴线。
 - 等待状态使用完整 `18px` 圆环，不使用比成功、失败状态更小的独立圆点。
 - 失败步骤本身承担默认失败状态，不在执行卡底部重复显示“视频工程生成失败，请重试”。
-- 后端原始错误只允许出现在折叠的“查看技术详情”中，不能直接作为主错误文案。
-- 实际耗时作为次级信息；超时失败显示为“运行 N 分钟后停止”，不能与失败步骤标题争夺视觉层级。
+- 普通执行卡只显示服务端投影后的用户可读错误；原始错误和技术诊断仅进入受保护的
+  pilot/admin 路径，不能进入普通用户响应或折叠详情。
+- 普通执行卡不展示服务端原始计时；需要耗时排障时走受保护的诊断路径。
 - 重试按钮使用明确动作“重新执行此步骤”，并继续复用原工程和 job。
 
 ## 5. 数据与组件边界
@@ -174,8 +176,9 @@ MG 是主工程 ready 后执行的异步增强步骤，但在产品状态上是�
 
 - 确认事务：`client_request_id`、`confirmation_idempotency_key`。
 - 工程绑定：`asset_id`、`latest_job_public_id`。
-- 主状态：`VideoRenderJob.status`、`render_stage`、`steps[]`。
-- 真实耗时：`steps[].elapsed_seconds`。
+- 普通用户主状态：公开 `status`、`workflow_stage`、`steps[]`。
+- 服务端内部可继续使用 `VideoRenderJob.render_stage` 与 `result_payload.step_marks` 派生公开步骤，
+  但它们不进入普通用户 DTO 或 OpenAPI。
 - 工程 readiness：统一的 `video_project` readiness predicate。
 - MG：分镜级 `mg_decision` 和真实 MG jobs。
 

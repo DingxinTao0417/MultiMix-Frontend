@@ -41,7 +41,7 @@ export default function AssetPicker({
   recommended?: AssetPickerItem[];
   library: AssetPickerItem[];
   publicItems?: AssetPickerItem[];
-  providerStatuses?: Array<{ provider: string; status: string; error?: string }>;
+  providerStatuses?: Array<{ provider: string; status: string }>;
   loading?: boolean;
   submitting?: boolean;
   error?: string;

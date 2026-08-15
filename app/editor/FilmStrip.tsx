@@ -307,8 +307,7 @@ export default function FilmStrip({
   );
 
   // While a recompose job runs, poll its real status; reload the editor with
-  // the rebuilt project when it lands (no fake progress — labels come from the
-  // job's render stage).
+  // the rebuilt project when it lands (labels come from the public workflow state).
   const runningJobId = recompose.phase === "running" ? recompose.jobId : "";
   useEffect(() => {
     if (!runningJobId) return;
@@ -324,7 +323,7 @@ export default function FilmStrip({
           setRecompose({ phase: "error", message: job.error_message || "重新合成失败，可回到对话重试。" });
         } else {
           setRecompose((prev) =>
-            prev.phase === "running" ? { ...prev, stageLabel: `正在重新合成（${job.render_stage || job.status}）` } : prev,
+            prev.phase === "running" ? { ...prev, stageLabel: `正在重新合成（${job.workflow_stage || job.status}）` } : prev,
           );
         }
       } catch {

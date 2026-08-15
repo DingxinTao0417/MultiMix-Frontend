@@ -16,13 +16,11 @@ describe("AgentTaskStrip", () => {
       <AgentTaskStrip
         tasks={{
           active: {
-            id: "task-copy",
             goal: "优化新品标题",
             status: "active",
           },
           paused: [
             {
-              id: "task-video",
               goal: "修改产品视频",
               status: "paused",
               assetId: 42,

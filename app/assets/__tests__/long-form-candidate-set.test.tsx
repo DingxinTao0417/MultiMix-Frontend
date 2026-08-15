@@ -15,7 +15,6 @@ afterEach(() => {
 const analysis = {
   schema_version: "long_form_candidate_set:v1" as const,
   source_asset_id: 91,
-  source_fingerprint: "sha256:source-91",
   chapters: [
     { id: "chapter_01", start_seconds: 0, end_seconds: 120, title: "增长质量", summary: "收入与现金流。" },
     { id: "chapter_02", start_seconds: 120, end_seconds: 240, title: "利润回款", summary: "利润与回款速度。" },

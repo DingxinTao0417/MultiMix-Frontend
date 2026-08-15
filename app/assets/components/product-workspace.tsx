@@ -167,7 +167,7 @@ export default function ProductWorkspace({
   );
   // The pending pill still surfaces the coarse stage label; the step-by-step
   // timeline itself is owned by the conversation, not the display area.
-  const liveStageLabel = videoJobStageLabel(videoJobLive?.renderStage ?? "queued");
+  const liveStageLabel = videoJobStageLabel(videoJobLive?.workflowStage ?? "queued");
   const failureDetail = videoJobLive?.failureReason
     || product.failureReason
     || videoJobLive?.errorMessage

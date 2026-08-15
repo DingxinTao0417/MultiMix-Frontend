@@ -38,7 +38,7 @@ describe("voiceover api", () => {
         id: "video-job-123",
         asset_id: 7,
         status: "queued",
-        render_stage: "queued",
+        workflow_stage: "video_project_queued",
         error_message: null,
         result: {},
       }),

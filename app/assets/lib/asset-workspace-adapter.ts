@@ -309,18 +309,12 @@ export function buildVideoParameterConfirmationHeaders(
 function mapAgentAction(response: ApiAgentActionRunResponse): AgentActionRunResponse {
   return {
     id: response.id,
-    taskId: response.task_id,
-    actionId: response.action_id,
     status: response.status,
-    target: response.target,
     requiresConfirmation: response.requires_confirmation,
     confirmationId: response.confirmation_id,
-    confirmationReason: response.confirmation_reason,
-    jobId: response.job_id,
     assetId: response.asset_id,
     versionId: response.version_id,
     message: response.message,
-    errorCode: response.error_code,
     retryable: response.retryable,
   };
 }
@@ -556,7 +550,6 @@ export type VideoJobStepResult = {
   key: string;
   label: string;
   status: string;
-  elapsedSeconds: number | null;
   retryJobId: string | null;
 };
 
@@ -564,7 +557,7 @@ export type VideoJobResult = {
   id: string;
   assetId: number;
   status: string;
-  renderStage: string;
+  workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   project: Record<string, unknown> | null;
@@ -582,12 +575,11 @@ type RawVideoJob = {
   id: string;
   asset_id: number;
   status: string;
-  render_stage: string;
+  workflow_stage?: string | null;
   steps?: Array<{
     key?: string;
     label?: string;
     status?: string;
-    elapsed_seconds?: number | null;
     retry_job_id?: string | null;
   }> | null;
   error_message: string | null;
@@ -602,9 +594,8 @@ type RawVideoJob = {
   operation_failure_scene_id?: string | null;
 };
 
-// Normalise a backend video-job payload into VideoJobResult. steps[] is a
-// newer field; older backends omit it and the timeline falls back to the
-// render_stage-derived steps (spec §12 降级规则).
+// Normalise the public video-job DTO. The server owns semantic step copy and
+// exposes only workflow state plus public retry handles.
 function mapVideoJob(raw: RawVideoJob): VideoJobResult {
   const steps = Array.isArray(raw.steps)
     ? raw.steps.flatMap((step): VideoJobStepResult[] => {
@@ -615,7 +606,6 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
           key,
           label,
           status: typeof step.status === "string" ? step.status : "wait",
-          elapsedSeconds: typeof step.elapsed_seconds === "number" ? step.elapsed_seconds : null,
           retryJobId: typeof step.retry_job_id === "string" ? step.retry_job_id : null
         }];
       })
@@ -624,7 +614,7 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     id: raw.id,
     assetId: raw.asset_id,
     status: raw.status,
-    renderStage: raw.render_stage,
+    workflowStage: raw.workflow_stage || raw.status,
     steps,
     errorMessage: raw.error_message,
     project: raw.project,
@@ -1262,7 +1252,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         providerStatuses: (data.provider_statuses ?? []).map((item) => ({
           provider: stringValue(item.provider),
           status: stringValue(item.status),
-          error: stringValue(item.error) || undefined,
         })),
         publicNextCursor: data.next_cursor ?? null,
       };

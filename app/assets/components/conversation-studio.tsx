@@ -90,10 +90,7 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
   return {
     id,
     status: status as AssetGenerationJobResponse["status"],
-    stage: typeof metadata.asset_generation_stage === "string" ? metadata.asset_generation_stage : String(status),
-    attempts: 0,
     result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
-    error_code: typeof metadata.asset_generation_error_code === "string" ? metadata.asset_generation_error_code : null,
     error_message: status === "failed" || status === "cancelled" ? message.text : null,
     created_at: "",
     updated_at: "",

@@ -9,10 +9,7 @@ import type { AssetGenerationJobResponse } from "../../../lib/api";
 const job = (overrides: Partial<AssetGenerationJobResponse>): AssetGenerationJobResponse => ({
   id: "asset-generation-job-1",
   status: "queued",
-  stage: "queued",
-  attempts: 0,
   result_asset_id: null,
-  error_code: null,
   error_message: null,
   created_at: "2026-07-17T06:00:00Z",
   updated_at: "2026-07-17T06:00:01Z",
@@ -30,7 +27,6 @@ describe("AssetGenerationJobCard", () => {
 
     rerender(<AssetGenerationJobCard job={job({
       status: "running",
-      stage: "generating",
       progress_events: [{ key: "structuring_director_script", label: "正在整理编导稿", detail: "", status: "active", occurred_at: "2026-07-17T06:00:01Z" }],
     })} />);
     expect(screen.getByText("编导稿生成进度")).not.toBeNull();
@@ -41,7 +37,6 @@ describe("AssetGenerationJobCard", () => {
   it("shows real byte progress while staging a long-form source", () => {
     render(<AssetGenerationJobCard job={job({
       status: "running",
-      stage: "source_staging",
       progress_events: [{
         key: "source_staging",
         label: "正在准备原片",
@@ -55,7 +50,7 @@ describe("AssetGenerationJobCard", () => {
   });
 
   it("collapses a completed task and lets the user review its steps", () => {
-    render(<AssetGenerationJobCard job={job({ status: "completed", stage: "completed", progress_events: [{ key: "drafting", label: "正在生成内容", detail: "", status: "completed", occurred_at: "2026-07-17T06:00:01Z" }, { key: "completed", label: "内容生成已完成", detail: "已保存", status: "completed", occurred_at: "2026-07-17T06:00:02Z" } ] })} />);
+    render(<AssetGenerationJobCard job={job({ status: "completed", progress_events: [{ key: "drafting", label: "正在生成内容", detail: "", status: "completed", occurred_at: "2026-07-17T06:00:01Z" }, { key: "completed", label: "内容生成已完成", detail: "已保存", status: "completed", occurred_at: "2026-07-17T06:00:02Z" } ] })} />);
     expect(screen.queryByText("已保存")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /内容生成进度/ }));
     expect(screen.getByText("内容生成已完成")).not.toBeNull();
@@ -64,7 +59,6 @@ describe("AssetGenerationJobCard", () => {
   it("describes a completed director script without claiming the video is ready", () => {
     render(<AssetGenerationJobCard job={job({
       status: "completed",
-      stage: "completed",
       progress_events: [
         { key: "structuring_director_script", label: "正在整理编导稿", detail: "", status: "completed", occurred_at: "2026-07-17T06:00:01Z" },
         { key: "completed", label: "编导稿已生成", detail: "已保存", status: "completed", occurred_at: "2026-07-17T06:00:02Z" },
@@ -79,7 +73,7 @@ describe("AssetGenerationJobCard", () => {
     const onCancel = vi.fn();
     render(
       <AssetGenerationJobCard
-        job={job({ status: "running", stage: "generating" })}
+        job={job({ status: "running" })}
         onCancel={onCancel}
       />,
     );
@@ -91,7 +85,6 @@ describe("AssetGenerationJobCard", () => {
   it("keeps the submitted step when a historical stopped job has lost its progress events", () => {
     render(<AssetGenerationJobCard job={job({
       status: "cancelled",
-      stage: "cancelled",
       updated_at: "2026-07-17T06:00:04Z",
     })} />);
 
@@ -105,7 +98,7 @@ describe("AssetGenerationJobCard", () => {
     const onRetry = vi.fn();
     render(
       <AssetGenerationJobCard
-        job={job({ status: "cancelled", stage: "cancelled" })}
+        job={job({ status: "cancelled" })}
         onRetry={onRetry}
       />,
     );
@@ -121,8 +114,6 @@ describe("AssetGenerationJobCard", () => {
       <AssetGenerationJobCard
         job={job({
           status: "failed",
-          stage: "failed",
-          error_code: "provider_timeout",
           error_message: "AI generation service failed: The read operation timed out",
         })}
         onRetry={onRetry}
@@ -141,8 +132,6 @@ describe("AssetGenerationJobCard", () => {
       <AssetGenerationJobCard
         job={job({
           status: "failed",
-          stage: "failed",
-          error_code: "quality_rejected",
           progress_events: [null] as unknown as AssetGenerationJobResponse["progress_events"],
         })}
         onRetry={onRetry}

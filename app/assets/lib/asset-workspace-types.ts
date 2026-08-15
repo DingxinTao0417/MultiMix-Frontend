@@ -137,7 +137,6 @@ export type SegmentMaterialOption = {
 export type SegmentMaterialProviderStatus = {
   provider: string;
   status: string;
-  error?: string;
 };
 
 export type SegmentMaterialOptions = {
@@ -364,23 +363,16 @@ export type AgentActionStatus =
 
 export type AgentActionRunResponse = {
   id: string;
-  taskId: string;
-  actionId: string;
   status: AgentActionStatus;
-  target: Record<string, unknown>;
   requiresConfirmation: boolean;
   confirmationId: string | null;
-  confirmationReason: string | null;
-  jobId: string | null;
   assetId: number | null;
   versionId: number | null;
   message: string;
-  errorCode: string | null;
   retryable: boolean;
 };
 
 export type AgentTaskSummary = {
-  id: string;
   goal: string;
   status: string;
   assetId?: number;
@@ -417,7 +409,6 @@ export type AssetSuggestionAction = {
   label: string;
   utterance: string;
   actionType: "fill_composer" | "submit_message" | "open_panel" | "safe_execute" | string;
-  capability?: string;
   mode?: string;
   // True when clicking spends compute on an AI run (generate/rewrite/convert/render).
   // Drives the primary (colored) chip styling, decoupled from actionType (submit vs fill).
