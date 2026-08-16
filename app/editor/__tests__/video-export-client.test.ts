@@ -41,8 +41,15 @@ function wire(job: Partial<ExportFinalizeJob> = {}): Record<string, unknown> {
 }
 
 describe("video export finalization client", () => {
-  it("uploads one candidate to the durable export endpoint", async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(wire(), 202));
+  it("uses the multipart compatibility endpoint when direct storage is unavailable", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "multipart",
+        upload_url: "/v1/video/projects/1121/exports",
+        upload_method: "POST",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockResolvedValueOnce(response(wire(), 202));
     const blob = new Blob(["mp4"], { type: "video/mp4" });
 
     const job = await uploadExportCandidate({
@@ -54,13 +61,117 @@ describe("video export finalization client", () => {
     });
 
     expect(job).toEqual(queuedJob);
-    expect(fetchImpl).toHaveBeenCalledWith(
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      "https://api.example.test/v1/video/projects/1121/exports/uploads",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
       "https://api.example.test/v1/video/projects/1121/exports",
       expect.objectContaining({ method: "POST" }),
     );
-    const uploaded = (fetchImpl.mock.calls[0]?.[1]?.body as FormData).get("file") as File;
+    const uploaded = (fetchImpl.mock.calls[1]?.[1]?.body as FormData).get("file") as File;
     expect(uploaded.size).toBe(blob.size);
     expect(uploaded.type).toBe("video/mp4");
+  });
+
+  it("uploads directly to storage and registers only a small JSON payload", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "direct",
+        candidate_ref: "supabase://bucket/candidate.mp4",
+        upload_url: "https://storage.example.test/upload?token=short",
+        upload_method: "PUT",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
+      .mockResolvedValueOnce(response(wire(), 202));
+    const blob = new Blob(["mp4"], { type: "video/mp4" });
+
+    await expect(uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob,
+      fetchImpl,
+    })).resolves.toEqual(queuedJob);
+
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      "https://storage.example.test/upload?token=short",
+    );
+    expect(fetchImpl.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: "PUT",
+      headers: { "x-upsert": "true" },
+    }));
+    expect((fetchImpl.mock.calls[1]?.[1]?.headers as Record<string, string>).Authorization)
+      .toBeUndefined();
+    expect(fetchImpl.mock.calls[2]?.[0]).toBe(
+      "https://api.example.test/v1/video/projects/1121/exports/register",
+    );
+    expect(fetchImpl.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
+      method: "POST",
+      headers: expect.objectContaining({ "Content-Type": "application/json" }),
+    }));
+    expect(fetchImpl.mock.calls[2]?.[1]?.body).toEqual(expect.any(String));
+    expect(JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body))).toEqual(expect.objectContaining({
+      project_fingerprint: "a".repeat(64),
+    }));
+  });
+
+  it("retries a transient signed upload without creating another session", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "direct",
+        candidate_ref: "supabase://bucket/candidate.mp4",
+        upload_url: "https://storage.example.test/upload?token=short",
+        upload_method: "PUT",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockRejectedValueOnce(new TypeError("network reset"))
+      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
+      .mockResolvedValueOnce(response(wire(), 202));
+
+    await uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/exports/uploads")))
+      .toHaveLength(1);
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("storage.example.test")))
+      .toHaveLength(2);
+  });
+
+  it("retries registration without uploading the candidate again", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "direct",
+        candidate_ref: "supabase://bucket/candidate.mp4",
+        upload_url: "https://storage.example.test/upload?token=short",
+        upload_method: "PUT",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
+      .mockResolvedValueOnce(response({ detail: "temporary" }, 503))
+      .mockResolvedValueOnce(response(wire(), 202));
+
+    await uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+    });
+
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("storage.example.test")))
+      .toHaveLength(1);
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/exports/register")))
+      .toHaveLength(2);
   });
 
   it("treats a missing current job as no recovery work", async () => {

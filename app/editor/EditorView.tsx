@@ -75,7 +75,9 @@ type LoadedProject = {
 type VerifiedExportHooks = {
   onStart?: () => void;
   onProgress?: (progress: number) => void;
+  onPreparing?: () => void;
   onUploading?: () => void;
+  onRegistering?: () => void;
   onVerifying?: () => void;
   onQualityReport?: (report: VideoQualityReport) => void;
 };
@@ -304,7 +306,6 @@ export default function EditorView({
       candidateBlobRef.current = { projectFingerprint, blob };
     }
 
-    hooks.onUploading?.();
     const controller = new AbortController();
     activeExportAbortRef.current?.abort();
     activeExportAbortRef.current = controller;
@@ -315,6 +316,11 @@ export default function EditorView({
         token,
         blob,
         signal: controller.signal,
+        onStage: (stage) => {
+          if (stage === "hashing") hooks.onPreparing?.();
+          if (stage === "uploading") hooks.onUploading?.();
+          if (stage === "registering") hooks.onRegistering?.();
+        },
       });
       hooks.onVerifying?.();
       const terminalJob = await waitForExportJob({
@@ -358,7 +364,9 @@ export default function EditorView({
       const result = await performVerifiedExport({
         onStart: () => postToParent({ type: "multimix-editor-export-start" }),
         onProgress: (progress) => postToParent({ type: "multimix-editor-export-progress", progress }),
+        onPreparing: () => postToParent({ type: "multimix-editor-export-preparing" }),
         onUploading: () => postToParent({ type: "multimix-editor-export-uploading" }),
+        onRegistering: () => postToParent({ type: "multimix-editor-export-registering" }),
         onVerifying: () => postToParent({ type: "multimix-editor-export-verifying" }),
         onQualityReport: (report) => postToParent({
           type: "multimix-editor-export-quality-report",
@@ -427,7 +435,9 @@ export default function EditorView({
       const result = await performVerifiedExport({
         onStart: () => setStandaloneExportState({ phase: "rendering", progress: 0 }),
         onProgress: (progress) => setStandaloneExportState({ phase: "rendering", progress }),
+        onPreparing: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
         onUploading: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
+        onRegistering: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
         onVerifying: () => setStandaloneExportState({ phase: "verifying", progress: 1 }),
         onQualityReport: (report) => {
           blockerMessage = report.blockers[0]?.message || "当前工程未通过导出检查";

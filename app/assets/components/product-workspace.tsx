@@ -33,7 +33,7 @@ type EditorBridgeMessage = {
   previewChannel?: string;
 };
 
-type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "verifying"
+type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "registering" | "verifying"
   | "downloading" | "blocked" | "done" | "error";
 
 export function EmptyProductWorkspace() {
@@ -395,8 +395,18 @@ export default function ProductWorkspace({
               : null,
           );
           break;
+        case "multimix-editor-export-preparing":
+          setExportState("preparing");
+          setExportProgress(100);
+          setExportError("");
+          break;
         case "multimix-editor-export-uploading":
           setExportState("uploading");
+          setExportProgress(100);
+          setExportError("");
+          break;
+        case "multimix-editor-export-registering":
+          setExportState("registering");
           setExportProgress(100);
           setExportError("");
           break;
@@ -629,7 +639,7 @@ export default function ProductWorkspace({
   }, []);
 
   const handleExportVideo = async () => {
-    if (!currentAssetId || ["exporting", "uploading", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
+    if (!currentAssetId || ["exporting", "uploading", "registering", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
     const recoverableJob = recoverableExportJobRef.current;
     if (recoverableJob?.retryable && token && product.backendAssetId) {
       setExportState("verifying");
@@ -733,6 +743,8 @@ export default function ProductWorkspace({
       ? "正在准备预览导出…"
     : exportState === "uploading"
       ? "正在上传成片"
+    : exportState === "registering"
+      ? "正在确认上传"
     : exportState === "verifying"
       ? "正在检查成片"
     : exportState === "downloading"
@@ -1067,7 +1079,7 @@ export default function ProductWorkspace({
                 type="button"
                 className="shadcn-prototype-open-editor"
                 disabled={
-                  ["exporting", "uploading", "checking", "preparing", "verifying", "downloading"].includes(exportState)
+                  ["exporting", "uploading", "registering", "checking", "preparing", "verifying", "downloading"].includes(exportState)
                 }
                 onClick={() => void handleExportVideo()}
               >
@@ -1213,6 +1225,18 @@ export default function ProductWorkspace({
               onExportProgress={(progress) => {
                 setExportState("exporting");
                 setExportProgress(progress);
+              }}
+              onExportPreparing={() => {
+                setExportState("preparing");
+                setExportProgress(100);
+              }}
+              onExportUploading={() => {
+                setExportState("uploading");
+                setExportProgress(100);
+              }}
+              onExportRegistering={() => {
+                setExportState("registering");
+                setExportProgress(100);
               }}
               onExportVerifying={() => {
                 setExportState("verifying");

@@ -45,6 +45,9 @@ export type VideoProjectPreviewProps = {
   onReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
+  onExportPreparing?: () => void;
+  onExportUploading?: () => void;
+  onExportRegistering?: () => void;
   onExportVerifying?: () => void;
   onExportQualityReport?: (report: VideoQualityReport) => void;
   onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
@@ -67,6 +70,9 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     onReadyChange,
     onExportStart,
     onExportProgress,
+    onExportPreparing,
+    onExportUploading,
+    onExportRegistering,
     onExportVerifying,
     onExportQualityReport,
     onExportSuccess,
@@ -197,6 +203,18 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
           );
           return;
         }
+        if (data.type === "multimix-editor-export-preparing") {
+          onExportPreparing?.();
+          return;
+        }
+        if (data.type === "multimix-editor-export-uploading") {
+          onExportUploading?.();
+          return;
+        }
+        if (data.type === "multimix-editor-export-registering") {
+          onExportRegistering?.();
+          return;
+        }
         if (data.type === "multimix-editor-export-verifying") {
           onExportVerifying?.();
           return;
@@ -234,10 +252,13 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       assetId,
       onError,
       onExportError,
+      onExportPreparing,
       onExportProgress,
       onExportQualityReport,
+      onExportRegistering,
       onExportStart,
       onExportSuccess,
+      onExportUploading,
       onExportVerifying,
       onReadyChange,
       onTimeUpdate,

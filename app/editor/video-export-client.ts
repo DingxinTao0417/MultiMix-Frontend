@@ -20,6 +20,15 @@ type ExportClientBase = {
   signal?: AbortSignal;
 };
 
+export type ExportCandidateStage = "hashing" | "uploading" | "registering";
+
+type ExportUploadSession = {
+  mode: "direct" | "multipart";
+  uploadUrl: string;
+  uploadMethod: "PUT" | "POST";
+  projectFingerprint: string;
+};
+
 type WireExportFinalizeJob = {
   job_id?: unknown;
   asset_id?: unknown;
@@ -108,14 +117,144 @@ async function requireJob(response: Response, fallback: string): Promise<ExportF
   return parseExportJob(payload);
 }
 
+function isRetryableResponse(response: Response): boolean {
+  return response.status === 408 || response.status === 429 || response.status >= 500;
+}
+
+async function fetchWithOneRetry(
+  fetchImpl: typeof fetch,
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetchImpl(input, init);
+      if (!isRetryableResponse(response) || attempt === 1) return response;
+    } catch (cause) {
+      lastError = cause;
+      if (attempt === 1) throw cause;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("网络请求失败");
+}
+
+async function sha256Hex(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function parseUploadSession(payload: unknown): ExportUploadSession {
+  if (!payload || typeof payload !== "object") throw new Error("成片上传会话返回了无效数据");
+  const wire = payload as Record<string, unknown>;
+  if (
+    (wire.mode !== "direct" && wire.mode !== "multipart")
+    || typeof wire.upload_url !== "string"
+    || (wire.upload_method !== "PUT" && wire.upload_method !== "POST")
+    || typeof wire.project_fingerprint !== "string"
+    || !/^[0-9a-f]{64}$/.test(wire.project_fingerprint)
+  ) {
+    throw new Error("成片上传会话返回了无效状态");
+  }
+  return {
+    mode: wire.mode,
+    uploadUrl: wire.upload_url,
+    uploadMethod: wire.upload_method,
+    projectFingerprint: wire.project_fingerprint,
+  };
+}
+
+async function createUploadSession(
+  args: ExportClientBase & { sha256: string; sizeBytes: number },
+): Promise<ExportUploadSession> {
+  const response = await (args.fetchImpl ?? fetch)(
+    `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/uploads`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${args.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ sha256: args.sha256, size_bytes: args.sizeBytes }),
+      signal: args.signal,
+    },
+  );
+  const payload = await responsePayload(response);
+  if (!response.ok) {
+    throw new ExportJobHttpError(
+      errorMessage(payload, `无法创建成片上传会话（HTTP ${response.status}）`),
+      response.status,
+      payload,
+    );
+  }
+  return parseUploadSession(payload);
+}
+
 export async function uploadExportCandidate(
-  args: ExportClientBase & { blob: Blob },
+  args: ExportClientBase & {
+    blob: Blob;
+    onStage?: (stage: ExportCandidateStage) => void;
+  },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
+  args.onStage?.("hashing");
+  const sha256 = await sha256Hex(args.blob);
+  ensureNotAborted(args.signal);
+  const session = await createUploadSession({
+    ...args,
+    sha256,
+    sizeBytes: args.blob.size,
+  });
+
+  args.onStage?.("uploading");
+  if (session.mode === "direct") {
+    const formData = new FormData();
+    formData.append("cacheControl", "3600");
+    formData.append("", args.blob, "video-export.mp4");
+    const uploadResponse = await fetchWithOneRetry(
+      args.fetchImpl ?? fetch,
+      session.uploadUrl,
+      {
+        method: "PUT",
+        headers: { "x-upsert": "true" },
+        body: formData,
+        signal: args.signal,
+      },
+    );
+    if (!uploadResponse.ok) {
+      const payload = await responsePayload(uploadResponse);
+      throw new ExportJobHttpError(
+        errorMessage(payload, `成片直传失败（HTTP ${uploadResponse.status}）`),
+        uploadResponse.status,
+        payload,
+      );
+    }
+    args.onStage?.("registering");
+    const registerResponse = await fetchWithOneRetry(
+      args.fetchImpl ?? fetch,
+      `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/register`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${args.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sha256,
+          size_bytes: args.blob.size,
+          project_fingerprint: session.projectFingerprint,
+        }),
+        signal: args.signal,
+      },
+    );
+    return requireJob(registerResponse, "成片登记失败");
+  }
+
   const formData = new FormData();
   formData.append("file", args.blob, "video-export.mp4");
   const response = await (args.fetchImpl ?? fetch)(
-    `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports`,
+    new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
     {
       method: "POST",
       headers: { Authorization: `Bearer ${args.token}` },
