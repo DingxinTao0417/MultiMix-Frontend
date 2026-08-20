@@ -243,6 +243,55 @@ describe("asset product mapper", () => {
     });
   });
 
+  it("marks stale video-project confirmation plans as confirmed once a ready video exists", () => {
+    const readyProject = asset({
+      id: 12,
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_project",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: { timeline: { tracks: [], media: [] } },
+      },
+    });
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-ready-confirmed-plan",
+      title: "家装服务宣传讲解",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-20T00:01:00Z",
+      products: [asset({ id: 11 }), readyProject],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "已生成编导稿。",
+        asset_id: 11,
+        metadata: {
+          plan: {
+            kind: "video_project_confirmation",
+            title: "视频方案",
+            status: "pending",
+            fields: [{ key: "duration", label: "时长", value: "约 30 秒 · 6 个分镜" }],
+            confirm_label: "确认，生成视频工程",
+            confirm_utterance: "确认，生成视频工程",
+          },
+          suggestions: ["确认，生成视频工程", "调整分镜"],
+        },
+        created_at: "2026-08-20T00:00:00Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.[0]?.suggestions).toEqual(["调整分镜"]);
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      kind: "video_project_confirmation",
+      status: "confirmed",
+    });
+  });
+
   it("does not let a malformed non-script artifact replace the current director script", () => {
     const director = asset({ id: 488, generation_state: "draft", metadata: { capability: "video_script", video_workflow_stage: "draft" } });
     const malformed = asset({

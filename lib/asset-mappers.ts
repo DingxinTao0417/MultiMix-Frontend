@@ -1249,6 +1249,9 @@ export function conversationFromPersisted(
         !isVideoProjectConfirmationSuggestion(action.label)
         && !isVideoProjectConfirmationSuggestion(action.utterance)
       )),
+      plan: message.plan?.kind === "video_project_confirmation" && message.plan.status === "pending"
+        ? { ...message.plan, status: "confirmed" }
+        : message.plan,
     }));
   }
   for (const asset of row.products) {
