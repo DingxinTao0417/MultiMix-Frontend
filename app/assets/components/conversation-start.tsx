@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { ArrowUp, ExternalLink, FileText, Image as ImageIcon, Sparkles, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, chatAttachmentStatusLabel, type Conversation } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, shouldSubmitComposerOnEnter, type Conversation } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
@@ -223,7 +223,7 @@ export default function ConversationStart({
             onChange={(event) => setComposerValue(event.currentTarget.value)}
             onInput={(event) => resizeComposer(event.currentTarget)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (shouldSubmitComposerOnEnter(event)) {
                 event.preventDefault();
                 void submit();
               }

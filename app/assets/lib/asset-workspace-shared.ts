@@ -161,3 +161,22 @@ export function attachmentSendBlockReason(attachments: readonly AttachmentState[
   }
   return null;
 }
+
+// Minimal structural shape of a composer keyboard event, so the shared guard
+// accepts both React synthetic events and plain projected native events.
+export type ComposerEnterKeyEvent = {
+  key?: string;
+  shiftKey?: boolean;
+  isComposing?: boolean;
+  nativeEvent?: { isComposing?: boolean } | null;
+};
+
+// Whether a composer textarea keydown should submit: only a plain Enter that is
+// not part of an IME composition. During composition the Enter key confirms the
+// candidate instead of sending, so it must keep its native behavior untouched.
+export function shouldSubmitComposerOnEnter(event: ComposerEnterKeyEvent): boolean {
+  if (event.key !== "Enter" || event.shiftKey === true) return false;
+  if (event.isComposing === true) return false;
+  if (event.nativeEvent?.isComposing === true) return false;
+  return true;
+}

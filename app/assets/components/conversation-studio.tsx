@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
@@ -1005,7 +1005,7 @@ export default function ConversationStudio({
               resizeComposer(event.currentTarget);
             }}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (shouldSubmitComposerOnEnter(event)) {
                 event.preventDefault();
                 void submitInstruction();
               }
