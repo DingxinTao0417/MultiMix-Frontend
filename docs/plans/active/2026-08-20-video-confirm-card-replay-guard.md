@@ -23,15 +23,21 @@
    - 保留方案信息的展示，不再提供确认按钮。
 2. 不改变 `video_parameter_confirmation` 的最新卡保留逻辑。
 3. 不改后端确认接口；后端幂等仍保留作为安全防线。
+4. 历史清理补充：
+   - 对已生成 ready video project 的会话，过滤旧版本误触发产生的普通助手回复；
+   - 只匹配“确认视频工程”误被当作普通聊天后的固定澄清型回复；
+   - 不删除后端数据，不影响真实用户主动追问、修改分镜或后续助手回复。
 
 ## 风险与取舍
 
 - 这是 UI 状态收敛，不影响视频生成、导出和后台 job。
 - 若用户确实想重新生成视频工程，应通过失败重试或明确重新生成入口，而不是旧确认卡重复提交。
+- 历史清理采用前端只读过滤，不做生产数据库删除；好处是可回滚，风险是数据库里仍保留原始审计记录。
 
 ## 验证方式
 
 - 先补失败测试：已有 ready 视频工程时，旧 `video_project_confirmation` plan 不再保持 pending 按钮。
+- 先补失败测试：已有 ready 视频工程时，旧“我理解你想做‘确认，视频工程’……”误回复不进入前端消息列表。
 - 跑前端相关 mapper 测试。
 - 跑 `npm --prefix MultiMix-Frontend run docs:check`。
 
@@ -41,3 +47,6 @@
 - `npm --prefix MultiMix-Frontend test -- app/assets/__tests__/asset-mappers.test.ts app/assets/__tests__/conversation-execution-presentation.test.ts app/assets/__tests__/conversation-agent-actions.test.tsx`：65 passed。
 - `npm --prefix MultiMix-Frontend run docs:check`：Docs check passed。
 - `git -C MultiMix-Frontend diff --check`：通过；仅 Windows 换行提示。
+- `npm --prefix MultiMix-Frontend test -- app/assets/__tests__/asset-mappers.test.ts -t "filters legacy assistant replies"`：先失败复现，修复后通过。
+- `npm --prefix MultiMix-Frontend test -- app/assets/__tests__/asset-mappers.test.ts app/assets/__tests__/conversation-execution-presentation.test.ts app/assets/__tests__/conversation-agent-actions.test.tsx`：66 passed。
+- `npm --prefix MultiMix-Frontend run docs:check`：Docs check passed。

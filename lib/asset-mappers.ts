@@ -925,6 +925,20 @@ function isVideoProjectConfirmationSuggestion(value: string): boolean {
   return value.trim() === VIDEO_PROJECT_CONFIRMATION_SUGGESTION;
 }
 
+function isLegacyVideoProjectConfirmationMisroute(
+  message: AssetConversationMessage,
+  previousMessage: AssetConversationMessage | undefined,
+): boolean {
+  if (message.role !== "assistant" || message.assetId || message.plan) return false;
+  if (!previousMessage || previousMessage.role !== "user") return false;
+  if (!isVideoProjectConfirmationSuggestion(previousMessage.text)) return false;
+  const suggestions = message.suggestions ?? [];
+  const hasLegacyMediaChoices = ["做成文案", "做成图片", "做成视频"].every((suggestion) => (
+    suggestions.includes(suggestion)
+  ));
+  return hasLegacyMediaChoices;
+}
+
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
   return asset.content_type === "video_script" || asset.content_type === "short_video_narration";
 }
@@ -1242,6 +1256,9 @@ export function conversationFromPersisted(
     };
   });
   if (hasReadyVideoProject) {
+    messages = messages.filter((message, index, allMessages) => (
+      !isLegacyVideoProjectConfirmationMisroute(message, allMessages[index - 1])
+    ));
     messages = messages.map((message) => ({
       ...message,
       suggestions: message.suggestions?.filter((suggestion) => !isVideoProjectConfirmationSuggestion(suggestion)),
