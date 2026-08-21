@@ -52,10 +52,19 @@ function sourceClipAssetIds(scenes: unknown): Set<number> {
   if (!Array.isArray(scenes)) return sourceAssetIds;
 
   for (const scene of scenes) {
-    const audioIntent = recordValue(recordValue(scene)?.audio_intent);
-    if (audioIntent?.mode !== "source_clip") continue;
-    const sourceAssetId = positiveAssetId(audioIntent.source_asset_id);
-    if (sourceAssetId) sourceAssetIds.add(sourceAssetId);
+    const sceneRecord = recordValue(scene);
+    const audioIntent = recordValue(sceneRecord?.audio_intent);
+    if (audioIntent?.mode === "source_clip") {
+      const sourceAssetId = positiveAssetId(audioIntent.source_asset_id);
+      if (sourceAssetId) sourceAssetIds.add(sourceAssetId);
+    }
+
+    const assetReference = recordValue(sceneRecord?.asset_reference);
+    const sourceRange = recordValue(assetReference?.source_range);
+    if (sourceRange?.mode === "continuous_excerpt") {
+      const sourceAssetId = positiveAssetId(assetReference?.chosen_asset_id);
+      if (sourceAssetId) sourceAssetIds.add(sourceAssetId);
+    }
   }
   return sourceAssetIds;
 }
@@ -75,9 +84,12 @@ export function findLongFormCandidateProduct(
   const videoProject = recordValue(project.metadata?.video_project);
   const videoPlan = recordValue(project.metadata?.video_plan);
   const projectSourceAssetIds = sourceClipAssetIds(videoProject?.segments);
+  const compatibleSourceAssetIds = sourceClipAssetIds(project.metadata?.video_segments);
   const sourceAssetIds = projectSourceAssetIds.size
     ? projectSourceAssetIds
-    : sourceClipAssetIds(videoPlan?.scenes);
+    : compatibleSourceAssetIds.size
+      ? compatibleSourceAssetIds
+      : sourceClipAssetIds(videoPlan?.scenes);
 
   if (sourceAssetIds.size !== 1) return null;
   const [sourceAssetId] = [...sourceAssetIds];

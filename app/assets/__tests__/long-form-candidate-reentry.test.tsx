@@ -30,7 +30,12 @@ function candidate(id: string, sourceAssetId: number): ProductArtifact {
   };
 }
 
-function project(sourceAssetIds: number[], projectSegmentSourceAssetIds: number[] = []): ProductArtifact {
+function project(
+  sourceAssetIds: number[],
+  projectSegmentSourceAssetIds: number[] = [],
+  projectSegmentExcerptAssetIds: number[] = [],
+  compatibleSegmentSourceAssetIds: number[] = [],
+): ProductArtifact {
   return {
     ...displayProducts["case-07-project-ready-mp4"],
     id: "source-project",
@@ -43,10 +48,21 @@ function project(sourceAssetIds: number[], projectSegmentSourceAssetIds: number[
         })),
       },
       video_project: {
-        segments: projectSegmentSourceAssetIds.map((source_asset_id) => ({
-          audio_intent: { mode: "source_clip", source_asset_id },
-        })),
+        segments: [
+          ...projectSegmentSourceAssetIds.map((source_asset_id) => ({
+            audio_intent: { mode: "source_clip", source_asset_id },
+          })),
+          ...projectSegmentExcerptAssetIds.map((chosen_asset_id) => ({
+            asset_reference: {
+              chosen_asset_id,
+              source_range: { mode: "continuous_excerpt" },
+            },
+          })),
+        ],
       },
+      video_segments: compatibleSegmentSourceAssetIds.map((source_asset_id) => ({
+        audio_intent: { mode: "source_clip", source_asset_id },
+      })),
     },
   };
 }
@@ -75,6 +91,18 @@ describe("long-form candidate re-entry", () => {
 
     expect(findLongFormCandidateProduct(project([89], [88]), [staleDraftCandidate, finishedProjectCandidate]))
       .toBe(finishedProjectCandidate);
+  });
+
+  it("uses a source-ranged asset reference when the completed project has no audio-intent projection", () => {
+    const relatedCandidate = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(project([], [], [88]), [relatedCandidate])).toBe(relatedCandidate);
+  });
+
+  it("uses a compatible video-segments source when the project has no source clip", () => {
+    const relatedCandidate = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(project([], [], [], [88]), [relatedCandidate])).toBe(relatedCandidate);
   });
 
   it("opens the associated candidates without starting a new generation", () => {
