@@ -245,6 +245,9 @@ export function buildConversationMessagePayload({
         ...(longFormAction.kind === "select"
           ? { candidate_id: longFormAction.candidateId }
           : {}),
+        ...(longFormAction.kind === "select" && longFormAction.cleanupMode
+          ? { cleanup_mode: longFormAction.cleanupMode }
+          : {}),
       }
     : undefined;
   return {

@@ -44,6 +44,7 @@ export type LongFormSelectAction = {
   kind: "select";
   analysisAssetId: number;
   candidateId: string;
+  cleanupMode: "conservative" | "preserve_all";
 };
 
 export type LongFormSourceAction =
@@ -276,5 +277,12 @@ export function parseLongFormActionEvent(event: Event): LongFormSourceAction | n
   }
   const candidateId = stringValue(event.detail.candidateId);
   if (event.detail.kind !== "select" || !candidateId) return null;
-  return { kind: "select", analysisAssetId, candidateId };
+  return {
+    kind: "select",
+    analysisAssetId,
+    candidateId,
+    cleanupMode: event.detail.cleanupMode === "preserve_all"
+      ? "preserve_all"
+      : "conservative",
+  };
 }

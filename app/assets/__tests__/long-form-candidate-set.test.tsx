@@ -64,7 +64,7 @@ describe("long-form candidate set", () => {
     expect(screen.queryByText("候选 3")).not.toBeInTheDocument();
   });
 
-  it("dispatches an exact structured selection", () => {
+  it("dispatches conservative cleanup for the default short-video choice", () => {
     const handler = vi.fn();
     window.addEventListener("multimix:long-form-action", handler);
     render(
@@ -74,7 +74,7 @@ describe("long-form candidate set", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "把“别只看收入”提炼成短片" }));
+    fireEvent.click(screen.getByRole("button", { name: "把“别只看收入”提炼成短片（默认精简）" }));
 
     expect(handler).toHaveBeenCalledOnce();
     const event = handler.mock.calls[0]?.[0] as CustomEvent;
@@ -82,6 +82,28 @@ describe("long-form candidate set", () => {
       kind: "select",
       analysisAssetId: 92,
       candidateId: "cand_01",
+      cleanupMode: "conservative",
+    });
+    window.removeEventListener("multimix:long-form-action", handler);
+  });
+
+  it("lets the user retain every word inside a selected short-video range", () => {
+    const handler = vi.fn();
+    window.addEventListener("multimix:long-form-action", handler);
+    render(
+      <LongFormCandidateSet
+        analysisAssetId={92}
+        analysis={analysis}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "保留“别只看收入”原话提炼" }));
+
+    expect((handler.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      kind: "select",
+      analysisAssetId: 92,
+      candidateId: "cand_01",
+      cleanupMode: "preserve_all",
     });
     window.removeEventListener("multimix:long-form-action", handler);
   });

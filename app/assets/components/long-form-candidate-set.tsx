@@ -103,7 +103,7 @@ export default function LongFormCandidateSet({
           <div className={styles.cardTitle}>
             <h3>完整保留原意</h3>
           </div>
-          <p>按原片章节和原有顺序保留完整表达，不按默认时长强行压缩。</p>
+          <p>按原片章节和原有顺序保留完整表达，不删除口癖、空白或停顿。</p>
           <div className={styles.actions}>
             <button
               type="button"
@@ -138,12 +138,31 @@ export default function LongFormCandidateSet({
               <button
                 type="button"
                 className={styles.primary}
-                aria-label={`把“${candidate.title}”提炼成短片`}
+                aria-label={`把“${candidate.title}”提炼成短片（默认精简）`}
                 onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
-                  detail: { kind: "select", analysisAssetId, candidateId: candidate.id },
+                  detail: {
+                    kind: "select",
+                    analysisAssetId,
+                    candidateId: candidate.id,
+                    cleanupMode: "conservative",
+                  },
                 }))}
               >
-                提炼成短片
+                提炼成短片（默认精简）
+              </button>
+              <button
+                type="button"
+                aria-label={`保留“${candidate.title}”原话提炼`}
+                onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
+                  detail: {
+                    kind: "select",
+                    analysisAssetId,
+                    candidateId: candidate.id,
+                    cleanupMode: "preserve_all",
+                  },
+                }))}
+              >
+                保留原话提炼
               </button>
             </div>
           </article>

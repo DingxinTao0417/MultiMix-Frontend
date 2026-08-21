@@ -273,6 +273,7 @@ describe("runtime data boundary", () => {
         kind: "select",
         analysisAssetId: 92,
         candidateId: "cand_02",
+        cleanupMode: "preserve_all",
       },
     })).toMatchObject({
       conversation_id: "asset-conversation-1",
@@ -280,6 +281,7 @@ describe("runtime data boundary", () => {
         kind: "select",
         analysis_asset_id: 92,
         candidate_id: "cand_02",
+        cleanup_mode: "preserve_all",
       },
     });
   });
