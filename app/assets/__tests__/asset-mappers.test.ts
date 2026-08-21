@@ -348,7 +348,7 @@ describe("asset product mapper", () => {
     });
   });
 
-  it("hides a stale parameter card that immediately followed a video-project confirmation", () => {
+  it("hides the bounded misroute chain from video-project confirmation to a stale parameter card", () => {
     const readyProject = asset({
       id: 121,
       asset_kind: "video",
@@ -380,12 +380,26 @@ describe("asset product mapper", () => {
       }, {
         id: 2,
         role: "user",
-        text: "确认，生成视频工程",
+        text: "确认生成视频工程",
         asset_id: null,
         metadata: {},
         created_at: "2026-08-20T00:00:10Z",
       }, {
         id: 3,
+        role: "assistant",
+        text: "那我先做一条 30 秒横屏的确认工程视频。",
+        asset_id: null,
+        metadata: {},
+        created_at: "2026-08-20T00:00:11Z",
+      }, {
+        id: 4,
+        role: "user",
+        text: "确认",
+        asset_id: null,
+        metadata: {},
+        created_at: "2026-08-20T00:00:12Z",
+      }, {
+        id: 5,
         role: "assistant",
         text: "请确认视频参数。",
         asset_id: null,
@@ -397,7 +411,7 @@ describe("asset product mapper", () => {
             fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
           },
         },
-        created_at: "2026-08-20T00:00:11Z",
+        created_at: "2026-08-20T00:00:13Z",
       }],
     }, newConversationProduct);
 
