@@ -1237,7 +1237,7 @@ export function conversationFromPersisted(
     : readyVideoProject
       ? products.find((item) => item.backendAssetId === readyVideoProject.id) ?? newConversationProduct
       : products[defaultProductIndex] ?? newConversationProduct;
-  let messages: AssetConversationMessage[] = row.messages
+  const messages: AssetConversationMessage[] = row.messages
     .filter((message) => {
       const plan = message.metadata.plan;
       return !isRecord(plan) || stringValue(plan.status) !== "superseded";
