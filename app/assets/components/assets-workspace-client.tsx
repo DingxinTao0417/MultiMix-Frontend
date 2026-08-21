@@ -2603,6 +2603,12 @@ export default function AssetsWorkspaceClient({
                   onRetryVideoJob={isConversationSnapshot
                     ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
                     : handleRetryVideoJob}
+                  onOpenLongFormCandidates={(candidateProduct) => {
+                    setSelectedProductIds((current) => ({
+                      ...current,
+                      [selectedConversation.id]: candidateProduct.id,
+                    }));
+                  }}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}

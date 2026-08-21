@@ -36,6 +36,48 @@ type EditorBridgeMessage = {
 type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "registering" | "verifying"
   | "downloading" | "blocked" | "done" | "error";
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function positiveAssetId(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * A completed source-video project may return to its own candidate set only
+ * when every source-clip scene refers to one unambiguous uploaded video.
+ * This is an identity check, not a keyword or title similarity guess.
+ */
+export function findLongFormCandidateProduct(
+  project: ProductArtifact,
+  products: ProductArtifact[] | undefined,
+): ProductArtifact | null {
+  if (project.contentType !== "video_project") return null;
+  const videoPlan = recordValue(project.metadata?.video_plan);
+  const scenes = Array.isArray(videoPlan?.scenes) ? videoPlan.scenes : [];
+  const sourceAssetIds = new Set<number>();
+
+  for (const scene of scenes) {
+    const audioIntent = recordValue(recordValue(scene)?.audio_intent);
+    if (audioIntent?.mode !== "source_clip") continue;
+    const sourceAssetId = positiveAssetId(audioIntent.source_asset_id);
+    if (sourceAssetId) sourceAssetIds.add(sourceAssetId);
+  }
+
+  if (sourceAssetIds.size !== 1) return null;
+  const [sourceAssetId] = [...sourceAssetIds];
+  const candidates = (products ?? []).filter((item) => (
+    item.contentType === "long_form_candidate_set"
+    && positiveAssetId(item.metadata?.source_asset_id) === sourceAssetId
+  ));
+
+  return candidates.at(-1) ?? null;
+}
+
 export function EmptyProductWorkspace() {
   return (
     <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Empty product workspace">
@@ -66,6 +108,7 @@ export default function ProductWorkspace({
   onProductUpdated,
   onRestoreVersion,
   onRetryVideoJob,
+  onOpenLongFormCandidates,
   product,
   savedVersion,
   selectedConversation,
@@ -78,6 +121,7 @@ export default function ProductWorkspace({
   onProductUpdated?: (product: ProductArtifact) => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
+  onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -207,10 +251,13 @@ export default function ProductWorkspace({
     : "";
   const isFailedStatus = effectiveProductStatus === "failed" || product.productStatus === "failed";
   const isDoneStatus = effectiveProductStatus === "completed" || product.productStatus === "completed";
+  const longFormCandidateProduct = findLongFormCandidateProduct(product, selectedConversation.products);
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,
-    product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : "",
+    product.mode === "video" && !previewShowsBrowse || product.contentType === "long_form_candidate_set"
+      ? "shadcn-prototype-stage-scroll-surface"
+      : "",
     getProductRatioClass(product.ratio)
   ].filter(Boolean).join(" ");
 
@@ -1012,6 +1059,14 @@ export default function ProductWorkspace({
 
               </aside>
             </details>
+            {longFormCandidateProduct && onOpenLongFormCandidates ? (
+              <button
+                type="button"
+                onClick={() => onOpenLongFormCandidates(longFormCandidateProduct)}
+              >
+                尝试其他拆条方式
+              </button>
+            ) : null}
             {editableTextArtifact && !isTextEditing ? (
               <button
                 type="button"

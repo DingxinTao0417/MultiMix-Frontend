@@ -8,13 +8,14 @@ const workspace = readFileSync(new URL("../app/assets/components/product-workspa
 
 assert.ok(markdownDocument.includes("shadcn-prototype-copy-document shadcn-prototype-markdown shadcn-prototype-stage-scroll-surface"), "copy documents must use the shared product-stage scroll surface");
 assert.ok(preview.includes("shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface"), "video browse must use the shared product-stage scroll surface");
-assert.ok(workspace.includes('product.mode === "video" && !previewShowsBrowse ? "shadcn-prototype-stage-scroll-surface" : ""'), "plain video previews must use the shared product-stage scroll surface without nesting it around video browse");
+assert.ok(workspace.includes('product.mode === "video" && !previewShowsBrowse || product.contentType === "long_form_candidate_set"'), "plain video previews and long-form candidate sets must use the shared product-stage scroll surface without nesting it around video browse");
 assert.ok(workspace.includes('!showEditorEmbed && previewShowsBrowse ? ('), "all video-project browse paths must render without the generic video scroll wrapper");
 assert.ok(workspace.includes('{!isTextEditing && showEditorEmbed ? ('), "video browse must mount the editor only after an explicit edit intent");
 assert.ok(!workspace.includes("shadcn-prototype-export-bridge"), "video export must reuse the visible browse preview instead of mounting a hidden editor bridge");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-stage-scroll-surface\s*\{[^}]*width:\s*calc\(100% \+ 24px\);[^}]*margin-right:\s*-24px;[^}]*padding-right:\s*var\(--shadcn-prototype-stage-scroll-right-padding, 24px\);/s, "the product stage must expand into the product pane's right inset");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-artifact \.shadcn-prototype-product-main\s*\{[^}]*overflow:\s*visible;/s, "the product main must not clip the expanded stage scrollbar");
 assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-product-preview\.copy\s*\{[^}]*overflow:\s*visible;/s, "the copy preview wrapper must not clip its inner scroll surface");
+assert.match(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-product-preview\.copy\.shadcn-prototype-stage-scroll-surface\s*\{[^}]*overflow-y:\s*auto;/s, "long-form candidate sets must own a reachable stage scrollbar");
 assert.doesNotMatch(css, /\.shadcn-prototype-workspace\.conversation-mode \.shadcn-prototype-(?:product-preview\.video|copy-document)\s*\{[^}]*margin-right:/s, "product-mode-specific scrollbar offset rules are not allowed");
 assert.match(css, /\.shadcn-prototype-product-actions\s*\{[^}]*gap:\s*7px;/s, "product header actions must use the demo's 7px gap");
 assert.match(css, /\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\s*\{[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*padding:\s*0 13px;[^}]*font-size:\s*12px;/s, "header action buttons must override the generic 34px card-header rule");

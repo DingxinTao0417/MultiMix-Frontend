@@ -3332,6 +3332,16 @@ button:disabled {
   overflow: visible;
 }
 
+/* Long-form candidate sets can exceed the workspace height. They own the
+   stage scrollbar so every candidate remains reachable without loosening the
+   surrounding workspace's bounded layout. */
+.shadcn-prototype-workspace.conversation-mode .shadcn-prototype-product-preview.copy.shadcn-prototype-stage-scroll-surface {
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 24px;
+}
+
 .shadcn-prototype-product-preview.image,
 .shadcn-prototype-product-preview.video {
   grid-template-rows: auto auto;
