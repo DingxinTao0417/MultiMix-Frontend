@@ -938,60 +938,6 @@ function suggestionsForCapability(capability: string, videoType = ""): string[] 
   return ["生成LinkedIn文案", "拆成短视频方案", "改得更具体"];
 }
 
-const VIDEO_PROJECT_CONFIRMATION_SUGGESTION = "确认，生成视频工程";
-
-function isVideoProjectConfirmationSuggestion(value: string): boolean {
-  const normalized = value.trim().replace(/[\s,，。.!！?？]/g, "");
-  return normalized === VIDEO_PROJECT_CONFIRMATION_SUGGESTION.replace(/[\s,，。.!！?？]/g, "");
-}
-
-function isLegacyVideoProjectConfirmationMisroute(
-  message: AssetConversationMessage,
-  previousMessage: AssetConversationMessage | undefined,
-): boolean {
-  if (message.role !== "assistant" || message.assetId || message.plan) return false;
-  if (!previousMessage || previousMessage.role !== "user") return false;
-  if (!isVideoProjectConfirmationSuggestion(previousMessage.text)) return false;
-  const suggestions = message.suggestions ?? [];
-  const hasLegacyMediaChoices = ["做成文案", "做成图片", "做成视频"].every((suggestion) => (
-    suggestions.includes(suggestion)
-  ));
-  return hasLegacyMediaChoices;
-}
-
-function isBareConfirmation(value: string): boolean {
-  return value.trim().replace(/[\s,，。.!！?？]/g, "") === "确认";
-}
-
-function legacyVideoParameterMisrouteStartIndex(
-  messages: AssetConversationMessage[],
-  parameterCardIndex: number,
-): number | undefined {
-  const parameterCard = messages[parameterCardIndex];
-  if (parameterCard?.role !== "assistant" || parameterCard.plan?.kind !== "video_parameter_confirmation") {
-    return undefined;
-  }
-  const previous = messages[parameterCardIndex - 1];
-  if (previous?.role === "user" && isVideoProjectConfirmationSuggestion(previous.text)) {
-    return parameterCardIndex - 1;
-  }
-  const bareConfirmation = messages[parameterCardIndex - 1];
-  const erroneousPrompt = messages[parameterCardIndex - 2];
-  const projectConfirmation = messages[parameterCardIndex - 3];
-  if (
-    bareConfirmation?.role === "user"
-    && isBareConfirmation(bareConfirmation.text)
-    && erroneousPrompt?.role === "assistant"
-    && !erroneousPrompt.assetId
-    && !erroneousPrompt.plan
-    && projectConfirmation?.role === "user"
-    && isVideoProjectConfirmationSuggestion(projectConfirmation.text)
-  ) {
-    return parameterCardIndex - 3;
-  }
-  return undefined;
-}
-
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
   return asset.content_type === "video_script" || asset.content_type === "short_video_narration";
 }
@@ -1291,7 +1237,12 @@ export function conversationFromPersisted(
     : readyVideoProject
       ? products.find((item) => item.backendAssetId === readyVideoProject.id) ?? newConversationProduct
       : products[defaultProductIndex] ?? newConversationProduct;
-  let messages: AssetConversationMessage[] = row.messages.map((message) => {
+  let messages: AssetConversationMessage[] = row.messages
+    .filter((message) => {
+      const plan = message.metadata.plan;
+      return !isRecord(plan) || stringValue(plan.status) !== "superseded";
+    })
+    .map((message) => {
     const persistedAgentAction = message.role === "assistant"
       ? agentActionFromValue(message.metadata.agent_action)
       : undefined;
@@ -1311,29 +1262,6 @@ export function conversationFromPersisted(
       agentAction,
     };
   });
-  if (hasReadyVideoProject) {
-    const staleParameterMisrouteIndexes = new Set<number>();
-    messages.forEach((message, index, allMessages) => {
-      const start = legacyVideoParameterMisrouteStartIndex(allMessages, index);
-      if (start == null) return;
-      for (let current = start; current <= index; current += 1) staleParameterMisrouteIndexes.add(current);
-    });
-    messages = messages.filter((message, index, allMessages) => (
-      !isLegacyVideoProjectConfirmationMisroute(message, allMessages[index - 1])
-      && !staleParameterMisrouteIndexes.has(index)
-    ));
-    messages = messages.map((message) => ({
-      ...message,
-      suggestions: message.suggestions?.filter((suggestion) => !isVideoProjectConfirmationSuggestion(suggestion)),
-      suggestionActions: message.suggestionActions?.filter((action) => (
-        !isVideoProjectConfirmationSuggestion(action.label)
-        && !isVideoProjectConfirmationSuggestion(action.utterance)
-      )),
-      plan: message.plan?.kind === "video_project_confirmation" && message.plan.status === "pending"
-        ? { ...message.plan, status: "confirmed" }
-        : message.plan,
-    }));
-  }
   for (const asset of row.products) {
     const metadata = asset.metadata ?? {};
     const isPendingVideoProject = Boolean(

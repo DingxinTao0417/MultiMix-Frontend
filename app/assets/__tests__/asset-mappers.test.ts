@@ -236,14 +236,14 @@ describe("asset product mapper", () => {
     expect(conversation.product.backendAssetId).toBe(2);
     expect(conversation.agentTasks).toBeUndefined();
     expect(conversation.activeAgentAction).toBeUndefined();
-    expect(conversation.messages?.[0]?.suggestions).toEqual(["调整分镜"]);
+    expect(conversation.messages?.[0]?.suggestions).toEqual(["确认，生成视频工程", "调整分镜"]);
     expect(conversation.messages?.[0]?.agentAction).toMatchObject({
       id: "action-replace-scene-2",
       status: "succeeded",
     });
   });
 
-  it("marks stale video-project confirmation plans as confirmed once a ready video exists", () => {
+  it("keeps a server-confirmed video-project plan compact beside a ready video", () => {
     const readyProject = asset({
       id: 12,
       asset_kind: "video",
@@ -274,7 +274,7 @@ describe("asset product mapper", () => {
           plan: {
             kind: "video_project_confirmation",
             title: "视频方案",
-            status: "pending",
+            status: "confirmed",
             fields: [{ key: "duration", label: "时长", value: "约 30 秒 · 6 个分镜" }],
             confirm_label: "确认，生成视频工程",
             confirm_utterance: "确认，生成视频工程",
@@ -285,7 +285,7 @@ describe("asset product mapper", () => {
       }],
     }, newConversationProduct);
 
-    expect(conversation.messages?.[0]?.suggestions).toEqual(["调整分镜"]);
+    expect(conversation.messages?.[0]?.suggestions).toEqual(["确认，生成视频工程", "调整分镜"]);
     expect(conversation.messages?.[0]?.plan).toMatchObject({
       kind: "video_project_confirmation",
       status: "confirmed",
@@ -348,7 +348,36 @@ describe("asset product mapper", () => {
     });
   });
 
-  it("hides the bounded misroute chain from video-project confirmation to a stale parameter card", () => {
+  it("hides a parameter confirmation that the server marks as superseded", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-server-superseded-parameters",
+      title: "家装服务宣传讲解",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-20T00:01:00Z",
+      products: [],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "请确认视频参数。",
+        asset_id: null,
+        metadata: {
+          plan: {
+            kind: "video_parameter_confirmation",
+            title: "确认视频参数",
+            status: "superseded",
+            fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+          },
+        },
+        created_at: "2026-08-20T00:00:01Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages).toEqual([]);
+  });
+
+  it("hides only the parameter card that the server marks as superseded", () => {
     const readyProject = asset({
       id: 121,
       asset_kind: "video",
@@ -407,7 +436,7 @@ describe("asset product mapper", () => {
           plan: {
             kind: "video_parameter_confirmation",
             title: "确认视频参数",
-            status: "pending",
+            status: "superseded",
             fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
           },
         },
@@ -417,62 +446,10 @@ describe("asset product mapper", () => {
 
     expect(conversation.messages?.map((message) => message.text)).toEqual([
       "视频工程已生成，可立即编辑。",
+      "确认生成视频工程",
+      "那我先做一条 30 秒横屏的确认工程视频。",
+      "确认",
     ]);
-  });
-
-  it("filters legacy assistant replies caused by stale video-project confirmation clicks", () => {
-    const readyProject = asset({
-      id: 22,
-      asset_kind: "video",
-      content_type: "video_project",
-      status: "ready",
-      generation_state: "video_project_ready",
-      metadata: {
-        capability: "video_project",
-        orchestration_pending: false,
-        video_workflow_stage: "video_project_ready",
-        video_project: { timeline: { tracks: [], media: [] } },
-      },
-    });
-    const conversation = conversationFromPersisted({
-      id: "asset-conversation-ready-legacy-reply",
-      title: "家装服务宣传讲解",
-      status: "active",
-      metadata: {},
-      created_at: "2026-08-20T00:00:00Z",
-      updated_at: "2026-08-20T00:01:00Z",
-      products: [asset({ id: 21 }), readyProject],
-      messages: [{
-        id: 1,
-        role: "assistant",
-        text: "视频工程已生成，可立即编辑。",
-        asset_id: 22,
-        metadata: {},
-        created_at: "2026-08-20T00:00:00Z",
-      }, {
-        id: 2,
-        role: "user",
-        text: "确认，生成视频工程",
-        asset_id: null,
-        metadata: {},
-        created_at: "2026-08-20T00:00:10Z",
-      }, {
-        id: 3,
-        role: "assistant",
-        text: "我理解你想做“确认，视频工程”相关内容。你想先做成文案、图片还是视频？",
-        asset_id: null,
-        metadata: {
-          suggestions: ["做成文案", "做成图片", "做成视频"],
-        },
-        created_at: "2026-08-20T00:00:11Z",
-      }],
-    }, newConversationProduct);
-
-    expect(conversation.messages?.map((message) => message.text)).toEqual([
-      "视频工程已生成，可立即编辑。",
-      "确认，生成视频工程",
-    ]);
-    expect(conversation.delivery).toBe("视频工程已生成，可立即编辑。");
   });
 
   it("derives a ready video project's duration from its persisted timeline", () => {
