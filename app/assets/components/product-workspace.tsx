@@ -100,7 +100,13 @@ export function findLongFormCandidateProduct(
       ? compatibleSourceAssetIds
       : sourceClipAssetIds(videoPlan?.scenes);
 
-  if (sourceAssetIds.size !== 1) return null;
+  if (sourceAssetIds.size !== 1) {
+    if (sourceAssetIds.size > 1) return null;
+    const candidateSets = (products ?? []).filter((item) => (
+      item.contentType === "long_form_candidate_set"
+    ));
+    return candidateSets.length === 1 ? candidateSets[0] : null;
+  }
   const [sourceAssetId] = [...sourceAssetIds];
   const candidates = (products ?? []).filter((item) => (
     item.contentType === "long_form_candidate_set"

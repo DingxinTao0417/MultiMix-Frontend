@@ -94,6 +94,17 @@ describe("long-form candidate re-entry", () => {
       .toBeNull();
   });
 
+  it("recovers the only candidate in a historical conversation when the project has no public linkage", () => {
+    const onlyCandidate = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(project([]), [onlyCandidate])).toBe(onlyCandidate);
+  });
+
+  it("does not recover a candidate by order when a historical conversation has more than one", () => {
+    expect(findLongFormCandidateProduct(project([]), [candidate("candidate-11", 88), candidate("candidate-12", 89)]))
+      .toBeNull();
+  });
+
   it("uses the completed project's public segment source when the draft scenes are absent", () => {
     const relatedCandidate = candidate("candidate-11", 88);
 
