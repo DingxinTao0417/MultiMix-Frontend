@@ -292,6 +292,120 @@ describe("asset product mapper", () => {
     });
   });
 
+  it("keeps a new-video parameter confirmation visible beside an existing ready project", () => {
+    const readyProject = asset({
+      id: 120,
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_project",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: { timeline: { tracks: [], media: [] } },
+      },
+    });
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-ready-new-video-parameters",
+      title: "家装服务宣传讲解",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-20T00:01:00Z",
+      products: [readyProject],
+      messages: [{
+        id: 1,
+        role: "user",
+        text: "再做一条新视频",
+        asset_id: null,
+        metadata: {},
+        created_at: "2026-08-20T00:00:00Z",
+      }, {
+        id: 2,
+        role: "assistant",
+        text: "请确认参数。",
+        asset_id: null,
+        metadata: {
+          plan: {
+            kind: "video_parameter_confirmation",
+            title: "确认视频参数",
+            status: "pending",
+            fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+          },
+        },
+        created_at: "2026-08-20T00:00:01Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.map((message) => message.text)).toEqual([
+      "再做一条新视频",
+      "请确认参数。",
+    ]);
+    expect(conversation.messages?.[1]?.plan).toMatchObject({
+      kind: "video_parameter_confirmation",
+      status: "pending",
+    });
+  });
+
+  it("hides a stale parameter card that immediately followed a video-project confirmation", () => {
+    const readyProject = asset({
+      id: 121,
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_project",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: { timeline: { tracks: [], media: [] } },
+      },
+    });
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-ready-stale-parameters",
+      title: "家装服务宣传讲解",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-20T00:01:00Z",
+      products: [readyProject],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "视频工程已生成，可立即编辑。",
+        asset_id: 121,
+        metadata: {},
+        created_at: "2026-08-20T00:00:00Z",
+      }, {
+        id: 2,
+        role: "user",
+        text: "确认，生成视频工程",
+        asset_id: null,
+        metadata: {},
+        created_at: "2026-08-20T00:00:10Z",
+      }, {
+        id: 3,
+        role: "assistant",
+        text: "请确认视频参数。",
+        asset_id: null,
+        metadata: {
+          plan: {
+            kind: "video_parameter_confirmation",
+            title: "确认视频参数",
+            status: "pending",
+            fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+          },
+        },
+        created_at: "2026-08-20T00:00:11Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.map((message) => message.text)).toEqual([
+      "视频工程已生成，可立即编辑。",
+    ]);
+  });
+
   it("filters legacy assistant replies caused by stale video-project confirmation clicks", () => {
     const readyProject = asset({
       id: 22,
@@ -345,6 +459,39 @@ describe("asset product mapper", () => {
       "确认，生成视频工程",
     ]);
     expect(conversation.delivery).toBe("视频工程已生成，可立即编辑。");
+  });
+
+  it("derives a ready video project's duration from its persisted timeline", () => {
+    const product = contentAssetToProduct(asset({
+      id: 122,
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      product_status: "completed",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_project",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_project: {
+          orchestration: { layout: "landscape" },
+          timeline: {
+            tracks: [{
+              type: "video",
+              elements: [
+                { startTime: 0, duration: 18 },
+                { startTime: 18, duration: 27 },
+              ],
+            }],
+            media: [],
+          },
+        },
+      },
+    }));
+
+    expect(product.status).toBe("完成");
+    expect(product.ratio).toBe("16:9");
+    expect(product.duration).toBe("45秒");
   });
 
   it("does not let a malformed non-script artifact replace the current director script", () => {

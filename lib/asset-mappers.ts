@@ -126,6 +126,25 @@ function ratioFromVideoProjectGeometry(project: Record<string, unknown> | null |
   return width > height ? "16:9" : "9:16";
 }
 
+function durationFromVideoProjectTimeline(project: Record<string, unknown> | null | undefined): number | undefined {
+  if (!project) return undefined;
+  const timeline = isRecord(project.timeline) ? project.timeline : project;
+  const tracks = Array.isArray(timeline.tracks) ? timeline.tracks : [];
+  let latestEnd: number | undefined;
+  for (const track of tracks) {
+    if (!isRecord(track) || !Array.isArray(track.elements)) continue;
+    for (const element of track.elements) {
+      if (!isRecord(element)) continue;
+      const start = numberOrUndefined(element.startTime) ?? 0;
+      const duration = numberOrUndefined(element.duration);
+      if (duration == null || duration < 0) continue;
+      const end = start + duration;
+      latestEnd = latestEnd == null ? end : Math.max(latestEnd, end);
+    }
+  }
+  return latestEnd != null && latestEnd > 0 ? latestEnd : undefined;
+}
+
 function stringListValue(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const items = value.map((item) => String(item).trim()).filter(Boolean);
@@ -939,6 +958,17 @@ function isLegacyVideoProjectConfirmationMisroute(
   return hasLegacyMediaChoices;
 }
 
+function isLegacyVideoParameterConfirmationMisroute(
+  message: AssetConversationMessage | undefined,
+  previousMessage: AssetConversationMessage | undefined,
+): boolean {
+  return message?.role === "assistant"
+    && message.plan?.kind === "video_parameter_confirmation"
+    && Boolean(previousMessage)
+    && previousMessage?.role === "user"
+    && isVideoProjectConfirmationSuggestion(previousMessage.text);
+}
+
 function isVideoDirectorDraft(asset: ContentAsset): boolean {
   return asset.content_type === "video_script" || asset.content_type === "short_video_narration";
 }
@@ -1080,11 +1110,14 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     || stringValue(intent.ratio)
     || ratioFromVideoProjectGeometry(videoProject);
   const ratio = normalizeRatioLabel(rawRatio) || (mode === "copy" ? "Markdown" : "按指令");
+  const timelineDurationSeconds = durationFromVideoProjectTimeline(videoProject);
   const duration = videoProject?.duration_seconds
     ? `${videoProject.duration_seconds}秒`
     : mp4Artifact?.duration_seconds
       ? `${mp4Artifact.duration_seconds}秒`
-      : stringValue(intent.duration) || (capability.includes("video") ? "待确认" : `${body.length} 段`);
+      : stringValue(intent.duration)
+        || (timelineDurationSeconds ? `${timelineDurationSeconds}秒` : "")
+        || (capability.includes("video") ? "待确认" : `${body.length} 段`);
   const capabilityLabel = artifactCategory(asset);
   const sections = [
     {
@@ -1258,6 +1291,8 @@ export function conversationFromPersisted(
   if (hasReadyVideoProject) {
     messages = messages.filter((message, index, allMessages) => (
       !isLegacyVideoProjectConfirmationMisroute(message, allMessages[index - 1])
+      && !isLegacyVideoParameterConfirmationMisroute(message, allMessages[index - 1])
+      && !isLegacyVideoParameterConfirmationMisroute(allMessages[index + 1], message)
     ));
     messages = messages.map((message) => ({
       ...message,
