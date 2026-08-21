@@ -6,7 +6,7 @@ import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
-import type { AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { ExportFinalizeJob } from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
@@ -79,6 +79,7 @@ function sourceClipAssetIds(scenes: unknown): Set<number> {
 export function findLongFormCandidateProduct(
   project: ProductArtifact,
   products: ProductArtifact[] | undefined,
+  messages: AssetConversationMessage[] | undefined = [],
 ): ProductArtifact | null {
   if (project.contentType !== "video_project") return null;
   const longFormSelection = recordValue(project.metadata?.long_form_selection);
@@ -100,12 +101,23 @@ export function findLongFormCandidateProduct(
       ? compatibleSourceAssetIds
       : sourceClipAssetIds(videoPlan?.scenes);
 
+  const messageReferencedCandidates = (products ?? []).filter((item) => (
+    item.contentType === "long_form_candidate_set"
+    && Boolean(item.backendAssetId)
+    && messages.some((message) => (
+      message.role === "assistant" && message.assetId === item.backendAssetId
+    ))
+  ));
+  const uniqueMessageReferencedCandidate = messageReferencedCandidates.length === 1
+    ? messageReferencedCandidates[0]
+    : null;
+
   if (sourceAssetIds.size !== 1) {
-    if (sourceAssetIds.size > 1) return null;
+    if (sourceAssetIds.size > 1) return uniqueMessageReferencedCandidate;
     const candidateSets = (products ?? []).filter((item) => (
       item.contentType === "long_form_candidate_set"
     ));
-    return candidateSets.length === 1 ? candidateSets[0] : null;
+    return uniqueMessageReferencedCandidate ?? (candidateSets.length === 1 ? candidateSets[0] : null);
   }
   const [sourceAssetId] = [...sourceAssetIds];
   const candidates = (products ?? []).filter((item) => (
@@ -113,7 +125,7 @@ export function findLongFormCandidateProduct(
     && positiveAssetId(item.metadata?.source_asset_id) === sourceAssetId
   ));
 
-  return candidates.at(-1) ?? null;
+  return candidates.at(-1) ?? uniqueMessageReferencedCandidate;
 }
 
 export function EmptyProductWorkspace() {
@@ -289,7 +301,11 @@ export default function ProductWorkspace({
     : "";
   const isFailedStatus = effectiveProductStatus === "failed" || product.productStatus === "failed";
   const isDoneStatus = effectiveProductStatus === "completed" || product.productStatus === "completed";
-  const longFormCandidateProduct = findLongFormCandidateProduct(product, selectedConversation.products);
+  const longFormCandidateProduct = findLongFormCandidateProduct(
+    product,
+    selectedConversation.products,
+    selectedConversation.messages,
+  );
   const previewClassName = [
     "shadcn-prototype-product-preview",
     product.mode,

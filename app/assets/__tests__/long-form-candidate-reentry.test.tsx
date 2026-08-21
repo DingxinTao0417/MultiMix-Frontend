@@ -105,6 +105,26 @@ describe("long-form candidate re-entry", () => {
       .toBeNull();
   });
 
+  it("recovers one candidate explicitly referenced by the same conversation when project sources are mixed", () => {
+    const referencedCandidate = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(
+      project([88, 89]),
+      [referencedCandidate],
+      [{ role: "assistant", text: "已完成拆条", assetId: referencedCandidate.backendAssetId }],
+    )).toBe(referencedCandidate);
+  });
+
+  it("does not recover an unreferenced candidate from a mixed-source project", () => {
+    const candidateSet = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(
+      project([88, 89]),
+      [candidateSet],
+      [{ role: "assistant", text: "其他产物", assetId: 999 }],
+    )).toBeNull();
+  });
+
   it("uses the completed project's public segment source when the draft scenes are absent", () => {
     const relatedCandidate = candidate("candidate-11", 88);
 
