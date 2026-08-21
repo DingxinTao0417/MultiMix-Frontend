@@ -98,6 +98,25 @@ export default function LongFormCandidateSet({
       ) : null}
 
       <div className={styles.candidates}>
+        <article className={styles.preserveCard}>
+          <div className={styles.rank}>默认方式</div>
+          <div className={styles.cardTitle}>
+            <h3>完整保留原意</h3>
+          </div>
+          <p>按原片章节和原有顺序保留完整表达，不按默认时长强行压缩。</p>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.primary}
+              aria-label="完整保留原意"
+              onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
+                detail: { kind: "preserve", analysisAssetId },
+              }))}
+            >
+              完整保留原意
+            </button>
+          </div>
+        </article>
         {topCandidates.map((candidate, index) => (
           <article key={candidate.id} className={styles.card}>
             <div className={styles.rank}>Top {index + 1}</div>
@@ -119,12 +138,12 @@ export default function LongFormCandidateSet({
               <button
                 type="button"
                 className={styles.primary}
-                aria-label={`把“${candidate.title}”做成短视频`}
+                aria-label={`把“${candidate.title}”提炼成短片`}
                 onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
                   detail: { kind: "select", analysisAssetId, candidateId: candidate.id },
                 }))}
               >
-                做成短视频
+                提炼成短片
               </button>
             </div>
           </article>

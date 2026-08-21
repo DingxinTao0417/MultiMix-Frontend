@@ -234,6 +234,21 @@ describe("runtime data boundary", () => {
         transcript_hash: "sha256:transcript-2",
       },
     });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "完整保留原意",
+      longFormAction: {
+        kind: "preserve",
+        analysisAssetId: 92,
+      },
+    })).toMatchObject({
+      conversation_id: "asset-conversation-1",
+      long_form_action: {
+        kind: "preserve",
+        analysis_asset_id: 92,
+      },
+    });
   });
 
   it("serializes long-form actions as structured data", () => {

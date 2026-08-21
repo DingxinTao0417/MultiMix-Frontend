@@ -46,6 +46,10 @@ export type LongFormSelectAction = {
   candidateId: string;
 };
 
+export type LongFormSourceAction =
+  | LongFormSelectAction
+  | { kind: "preserve"; analysisAssetId: number };
+
 type LongFormPlaybackResponse = {
   playback_url: string;
   expires_in_seconds: number;
@@ -229,7 +233,7 @@ export function longFormAnalysisFromMetadata(metadata: Record<string, unknown>):
   const chapters = (Array.isArray(full.chapters) ? full.chapters : [])
     .map(parseChapter)
     .filter((item): item is LongFormChapter => item !== null);
-  if (!sourceAssetId || !candidates.length) return null;
+  if (!sourceAssetId || (!candidates.length && !chapters.length)) return null;
   return {
     schema_version: "long_form_candidate_set:v1",
     source_asset_id: sourceAssetId,
@@ -260,16 +264,17 @@ export async function getLongFormCandidateContext(
   };
 }
 
-export function parseLongFormActionEvent(event: Event): LongFormSelectAction | null {
+export function parseLongFormActionEvent(event: Event): LongFormSourceAction | null {
   if (!(event instanceof CustomEvent) || !isRecord(event.detail)) return null;
   const analysisAssetId = event.detail.analysisAssetId;
-  const candidateId = stringValue(event.detail.candidateId);
-  if (
-    event.detail.kind !== "select"
-    || typeof analysisAssetId !== "number"
+  if (typeof analysisAssetId !== "number"
     || !Number.isInteger(analysisAssetId)
     || analysisAssetId <= 0
-    || !candidateId
   ) return null;
+  if (event.detail.kind === "preserve") {
+    return { kind: "preserve", analysisAssetId };
+  }
+  const candidateId = stringValue(event.detail.candidateId);
+  if (event.detail.kind !== "select" || !candidateId) return null;
   return { kind: "select", analysisAssetId, candidateId };
 }

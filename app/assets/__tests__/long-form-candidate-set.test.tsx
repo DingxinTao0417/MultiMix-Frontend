@@ -74,7 +74,7 @@ describe("long-form candidate set", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "把“别只看收入”做成短视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "把“别只看收入”提炼成短片" }));
 
     expect(handler).toHaveBeenCalledOnce();
     const event = handler.mock.calls[0]?.[0] as CustomEvent;
@@ -82,6 +82,26 @@ describe("long-form candidate set", () => {
       kind: "select",
       analysisAssetId: 92,
       candidateId: "cand_01",
+    });
+    window.removeEventListener("multimix:long-form-action", handler);
+  });
+
+  it("defaults to preserving the source's complete meaning", () => {
+    const handler = vi.fn();
+    window.addEventListener("multimix:long-form-action", handler);
+    render(
+      <LongFormCandidateSet
+        analysisAssetId={92}
+        analysis={analysis}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "完整保留原意" }));
+
+    expect(handler).toHaveBeenCalledOnce();
+    expect((handler.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      kind: "preserve",
+      analysisAssetId: 92,
     });
     window.removeEventListener("multimix:long-form-action", handler);
   });

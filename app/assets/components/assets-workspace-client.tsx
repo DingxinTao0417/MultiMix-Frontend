@@ -71,7 +71,7 @@ import {
   getLongFormCandidateContext,
   longFormAnalysisFromMetadata,
   parseLongFormActionEvent,
-  type LongFormSelectAction,
+  type LongFormSourceAction,
   type LongFormSourceReady,
 } from "../lib/long-form-client";
 
@@ -2051,7 +2051,7 @@ export default function AssetsWorkspaceClient({
     setConversationLoadRevision((value) => value + 1);
   };
 
-  const handleLongFormSelect = useStableCallback(async (action: LongFormSelectAction) => {
+  const handleLongFormSelect = useStableCallback(async (action: LongFormSourceAction) => {
     const conversation = conversationsRef.current.find(
       (item) => item.id === selectedConversationIdRef.current,
     );
@@ -2061,10 +2061,14 @@ export default function AssetsWorkspaceClient({
     }
     const metadata = selectedProduct.metadata ?? {};
     const analysis = longFormAnalysisFromMetadata(metadata);
-    const candidate = analysis?.candidates.find((item) => item.id === action.candidateId);
-    const instruction = candidate?.title
-      ? `把候选「${candidate.title}」做成短视频`
-      : "把选中的候选做成短视频";
+    const candidate = action.kind === "select"
+      ? analysis?.candidates.find((item) => item.id === action.candidateId)
+      : undefined;
+    const instruction = action.kind === "preserve"
+      ? "完整保留原意"
+      : candidate?.title
+        ? `把候选「${candidate.title}」提炼成短片`
+        : "把选中的候选提炼成短片";
     try {
       await handleSendConversationMessage(
         conversation,

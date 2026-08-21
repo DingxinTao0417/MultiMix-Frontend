@@ -224,7 +224,8 @@ export type AssetVideoParameterConfirmation = {
 export type AssetLongFormAction =
   | { kind: "analyze"; sourceAssetId: number }
   | { kind: "revise"; analysisAssetId: number }
-  | { kind: "select"; analysisAssetId: number; candidateId: string };
+  | { kind: "select"; analysisAssetId: number; candidateId: string }
+  | { kind: "preserve"; analysisAssetId: number };
 
 export type AssetPlanConfirmationValues = {
   ratio?: string;
