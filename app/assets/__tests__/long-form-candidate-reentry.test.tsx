@@ -30,7 +30,7 @@ function candidate(id: string, sourceAssetId: number): ProductArtifact {
   };
 }
 
-function project(sourceAssetIds: number[]): ProductArtifact {
+function project(sourceAssetIds: number[], projectSegmentSourceAssetIds: number[] = []): ProductArtifact {
   return {
     ...displayProducts["case-07-project-ready-mp4"],
     id: "source-project",
@@ -39,6 +39,11 @@ function project(sourceAssetIds: number[]): ProductArtifact {
       ...displayProducts["case-07-project-ready-mp4"].metadata,
       video_plan: {
         scenes: sourceAssetIds.map((source_asset_id) => ({
+          audio_intent: { mode: "source_clip", source_asset_id },
+        })),
+      },
+      video_project: {
+        segments: projectSegmentSourceAssetIds.map((source_asset_id) => ({
           audio_intent: { mode: "source_clip", source_asset_id },
         })),
       },
@@ -56,6 +61,20 @@ describe("long-form candidate re-entry", () => {
 
   it("does not guess a candidate when the project mixes source videos", () => {
     expect(findLongFormCandidateProduct(project([88, 89]), [candidate("candidate-11", 88)])).toBeNull();
+  });
+
+  it("uses the completed project's public segment source when the draft scenes are absent", () => {
+    const relatedCandidate = candidate("candidate-11", 88);
+
+    expect(findLongFormCandidateProduct(project([], [88]), [relatedCandidate])).toBe(relatedCandidate);
+  });
+
+  it("prioritizes the completed project's source over a stale draft projection", () => {
+    const finishedProjectCandidate = candidate("candidate-11", 88);
+    const staleDraftCandidate = candidate("candidate-12", 89);
+
+    expect(findLongFormCandidateProduct(project([89], [88]), [staleDraftCandidate, finishedProjectCandidate]))
+      .toBe(finishedProjectCandidate);
   });
 
   it("opens the associated candidates without starting a new generation", () => {

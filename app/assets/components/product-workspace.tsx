@@ -47,19 +47,9 @@ function positiveAssetId(value: unknown): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-/**
- * A completed source-video project may return to its own candidate set only
- * when every source-clip scene refers to one unambiguous uploaded video.
- * This is an identity check, not a keyword or title similarity guess.
- */
-export function findLongFormCandidateProduct(
-  project: ProductArtifact,
-  products: ProductArtifact[] | undefined,
-): ProductArtifact | null {
-  if (project.contentType !== "video_project") return null;
-  const videoPlan = recordValue(project.metadata?.video_plan);
-  const scenes = Array.isArray(videoPlan?.scenes) ? videoPlan.scenes : [];
+function sourceClipAssetIds(scenes: unknown): Set<number> {
   const sourceAssetIds = new Set<number>();
+  if (!Array.isArray(scenes)) return sourceAssetIds;
 
   for (const scene of scenes) {
     const audioIntent = recordValue(recordValue(scene)?.audio_intent);
@@ -67,6 +57,27 @@ export function findLongFormCandidateProduct(
     const sourceAssetId = positiveAssetId(audioIntent.source_asset_id);
     if (sourceAssetId) sourceAssetIds.add(sourceAssetId);
   }
+  return sourceAssetIds;
+}
+
+/**
+ * A completed source-video project may return to its own candidate set only
+ * when every source-clip scene refers to one unambiguous uploaded video. The
+ * completed project is the durable source of truth; a draft plan is used only
+ * while a project has not retained source-clip segments. This is an identity
+ * check, not a keyword or title similarity guess.
+ */
+export function findLongFormCandidateProduct(
+  project: ProductArtifact,
+  products: ProductArtifact[] | undefined,
+): ProductArtifact | null {
+  if (project.contentType !== "video_project") return null;
+  const videoProject = recordValue(project.metadata?.video_project);
+  const videoPlan = recordValue(project.metadata?.video_plan);
+  const projectSourceAssetIds = sourceClipAssetIds(videoProject?.segments);
+  const sourceAssetIds = projectSourceAssetIds.size
+    ? projectSourceAssetIds
+    : sourceClipAssetIds(videoPlan?.scenes);
 
   if (sourceAssetIds.size !== 1) return null;
   const [sourceAssetId] = [...sourceAssetIds];
