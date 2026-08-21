@@ -81,6 +81,15 @@ export function findLongFormCandidateProduct(
   products: ProductArtifact[] | undefined,
 ): ProductArtifact | null {
   if (project.contentType !== "video_project") return null;
+  const longFormSelection = recordValue(project.metadata?.long_form_selection);
+  const analysisAssetId = positiveAssetId(longFormSelection?.analysis_asset_id);
+  if (analysisAssetId) {
+    return (products ?? []).find((item) => (
+      item.contentType === "long_form_candidate_set"
+      && item.backendAssetId === analysisAssetId
+    )) ?? null;
+  }
+
   const videoProject = recordValue(project.metadata?.video_project);
   const videoPlan = recordValue(project.metadata?.video_plan);
   const projectSourceAssetIds = sourceClipAssetIds(videoProject?.segments);

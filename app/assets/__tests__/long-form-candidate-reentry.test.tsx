@@ -35,6 +35,7 @@ function project(
   projectSegmentSourceAssetIds: number[] = [],
   projectSegmentExcerptAssetIds: number[] = [],
   compatibleSegmentSourceAssetIds: number[] = [],
+  analysisAssetId?: number,
 ): ProductArtifact {
   return {
     ...displayProducts["case-07-project-ready-mp4"],
@@ -63,6 +64,7 @@ function project(
       video_segments: compatibleSegmentSourceAssetIds.map((source_asset_id) => ({
         audio_intent: { mode: "source_clip", source_asset_id },
       })),
+      ...(analysisAssetId ? { long_form_selection: { analysis_asset_id: analysisAssetId } } : {}),
     },
   };
 }
@@ -77,6 +79,19 @@ describe("long-form candidate re-entry", () => {
 
   it("does not guess a candidate when the project mixes source videos", () => {
     expect(findLongFormCandidateProduct(project([88, 89]), [candidate("candidate-11", 88)])).toBeNull();
+  });
+
+  it("uses the project's exact public analysis link before source compatibility fields", () => {
+    const exactCandidate = candidate("candidate-101", 89);
+    const sourceCompatibleCandidate = candidate("candidate-102", 88);
+
+    expect(findLongFormCandidateProduct(project([88], [], [], [], 101), [sourceCompatibleCandidate, exactCandidate]))
+      .toBe(exactCandidate);
+  });
+
+  it("does not guess from a source when an exact analysis link has no visible candidate", () => {
+    expect(findLongFormCandidateProduct(project([88], [], [], [], 101), [candidate("candidate-102", 88)]))
+      .toBeNull();
   });
 
   it("uses the completed project's public segment source when the draft scenes are absent", () => {
