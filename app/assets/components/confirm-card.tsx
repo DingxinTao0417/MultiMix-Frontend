@@ -66,6 +66,10 @@ export default function ConfirmCard({
     () => new Set(cleanupItems.filter((item) => item.selected).map((item) => item.id))
   );
   const audioTrackOptions = plan.audioTrackOptions ?? [];
+  const subtitleOptions = plan.subtitleOptions ?? [];
+  const [selectedSubtitleMode, setSelectedSubtitleMode] = useState(
+    () => plan.subtitleDefault ?? subtitleOptions[0]?.value,
+  );
   const [selectedAudioStream, setSelectedAudioStream] = useState<number | undefined>(
     () => plan.audioTrackDefault ?? audioTrackOptions[0]?.streamIndex
   );
@@ -204,6 +208,26 @@ export default function ConfirmCard({
           </div>
         </div>
       ) : null}
+      {subtitleOptions.length ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="字幕语言">
+          <span className="shadcn-prototype-confirm-ratio-label">字幕语言</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {subtitleOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={option.value === selectedSubtitleMode}
+                className={option.value === selectedSubtitleMode ? "active" : undefined}
+                disabled={disabled}
+                onClick={() => setSelectedSubtitleMode(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {isVideoParameterConfirmation ? (
         <label className="shadcn-prototype-confirm-duration">
           <span className="shadcn-prototype-confirm-ratio-label">目标时长（秒）</span>
@@ -267,10 +291,13 @@ export default function ConfirmCard({
                 ? {
                     ratio: selectedRatio,
                     ...(selectedDirection ? { directorCandidateId: selectedDirection } : {}),
+                    ...(selectedSubtitleMode ? { sourceSubtitleMode: selectedSubtitleMode } : {}),
                   }
                 : selectedDirection
                   ? { directorCandidateId: selectedDirection }
-                  : undefined,
+                  : selectedSubtitleMode
+                    ? { sourceSubtitleMode: selectedSubtitleMode }
+                    : undefined,
             );
           }}
         >

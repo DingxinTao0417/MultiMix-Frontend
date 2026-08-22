@@ -242,6 +242,12 @@ export type AssetPlanConfirmationValues = {
   audioStreamIndex?: number;
   audioFingerprint?: string;
   transcriptHash?: string;
+  sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+};
+
+export type AssetPlanSubtitleOption = {
+  value: "translated_zh" | "source" | "bilingual";
+  label: string;
 };
 
 export type AssetPresenterDirectionConfirmation = {
@@ -297,6 +303,8 @@ export type AssetMessagePlan = {
   requiresClarification?: boolean;
   audioTrackOptions?: AssetPresenterAudioTrackOption[];
   audioTrackDefault?: number;
+  subtitleOptions?: AssetPlanSubtitleOption[];
+  subtitleDefault?: "translated_zh" | "source" | "bilingual";
 };
 
 export type AssetPresenterCleanupItem = {

@@ -272,6 +272,7 @@ export default function ConversationStudio({
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
+    sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
@@ -376,6 +377,7 @@ export default function ConversationStudio({
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
+    sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -428,6 +430,7 @@ export default function ConversationStudio({
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         confirmationProductId,
+        sourceSubtitleMode,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -569,7 +572,8 @@ export default function ConversationStudio({
         : undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
-      plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
+       plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
+       values?.sourceSubtitleMode,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);

@@ -1868,6 +1868,7 @@ export default function AssetsWorkspaceClient({
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
+    sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1940,6 +1941,7 @@ export default function AssetsWorkspaceClient({
         presenterDirectionConfirmation,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
+        sourceSubtitleMode,
         signal
       });
     } catch (error) {

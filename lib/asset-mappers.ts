@@ -234,6 +234,9 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const directionOptions = planDirectionOptionsValue(value.direction_options);
   const cleanupItems = planCleanupItemsValue(value.cleanup_items);
   const audioTrackOptions = planAudioTrackOptionsValue(value.audio_track_options);
+  const subtitleOptions = planRatioOptionsValue(value.subtitle_options)
+    .filter((option) => ["translated_zh", "source", "bilingual"].includes(option.value)) as AssetMessagePlan["subtitleOptions"];
+  const subtitleDefault = stringValue(value.subtitle_default);
   const planKind = stringValue(value.kind);
   return {
     kind: planKind === "video_parameter_confirmation"
@@ -269,6 +272,10 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     audioTrackOptions: audioTrackOptions.length ? audioTrackOptions : undefined,
     audioTrackDefault: typeof value.audio_track_default === "number"
       ? value.audio_track_default
+      : undefined,
+    subtitleOptions: subtitleOptions?.length ? subtitleOptions : undefined,
+    subtitleDefault: subtitleDefault === "translated_zh" || subtitleDefault === "source" || subtitleDefault === "bilingual"
+      ? subtitleDefault
       : undefined,
   };
 }

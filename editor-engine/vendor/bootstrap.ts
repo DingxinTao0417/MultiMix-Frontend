@@ -8,9 +8,10 @@ import type { MediaAsset } from "@editor/lib/media/types";
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
 
-// A playable project must not wait forever for one remote media connection.
-// This is a no-response bound per resource, not a cap on project playback.
-const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 300_000;
+// A playable project must not wait indefinitely for one remote media
+// connection. This bounds only the optional Blob pre-download, not project
+// playback: on timeout the existing direct-media URL fallback remains usable.
+const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 15_000;
 
 type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "timeout";
 

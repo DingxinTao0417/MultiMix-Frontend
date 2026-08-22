@@ -63,7 +63,7 @@ describe("hydrateAssetFiles", () => {
     const progress = vi.fn();
 
     const hydrated = hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia(), progress);
-    await vi.advanceTimersByTimeAsync(299_999);
+    await vi.advanceTimersByTimeAsync(14_999);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     const assets = await hydrated;

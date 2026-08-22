@@ -251,6 +251,20 @@ describe("runtime data boundary", () => {
     });
   });
 
+  it("sends the source subtitle choice as structured confirmation data", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      selectedProductId: 1194,
+      sourceSubtitleMode: "translated_zh",
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1194,
+      source_subtitle_mode: "translated_zh",
+    });
+    expect(payload.instruction).not.toContain("translated_zh");
+  });
+
   it("serializes long-form actions as structured data", () => {
     expect(buildConversationMessagePayload({
       conversationId: "new",

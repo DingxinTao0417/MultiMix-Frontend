@@ -222,6 +222,7 @@ export function buildConversationMessagePayload({
   presenterDirectionConfirmation,
   presenterCleanupConfirmation,
   presenterAudioSelectionConfirmation,
+  sourceSubtitleMode,
 }: {
   conversationId: string;
   instruction: string;
@@ -235,6 +236,7 @@ export function buildConversationMessagePayload({
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
   presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
   presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
+  sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -257,6 +259,7 @@ export function buildConversationMessagePayload({
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
+    ...(sourceSubtitleMode ? { source_subtitle_mode: sourceSubtitleMode } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
     ...(videoSceneReplacement ? {
       video_scene_replacement: {
@@ -429,6 +432,7 @@ export type AssetWorkspaceAdapter = {
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
+    sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -1084,6 +1088,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       presenterDirectionConfirmation,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
+      sourceSubtitleMode,
       signal,
     }) {
       if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
@@ -1109,6 +1114,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           presenterDirectionConfirmation,
           presenterCleanupConfirmation,
           presenterAudioSelectionConfirmation,
+          sourceSubtitleMode,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
