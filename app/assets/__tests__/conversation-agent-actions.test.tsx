@@ -153,7 +153,7 @@ describe("Conversation Agent actions", () => {
       ...assetWorkspaceAdapter.getNewConversation(),
       id: "conversation-video-project",
       detailsLoaded: true,
-      messages: [{ role: "assistant" as const, text: "请确认视频方案。", plan }],
+      messages: [{ role: "assistant" as const, text: "请确认视频方案。", assetId: 1194, plan }],
     };
 
     render(
@@ -171,5 +171,6 @@ describe("Conversation Agent actions", () => {
     await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
     expect(onSendMessage.mock.calls[0]?.[1]).toBe("确认，生成视频工程（横屏 16:9）");
     expect(onSendMessage.mock.calls[0]?.[5]).toBeUndefined();
+    expect(onSendMessage.mock.calls[0]?.[12]).toBe(1194);
   });
 });

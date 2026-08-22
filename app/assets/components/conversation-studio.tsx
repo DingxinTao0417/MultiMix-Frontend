@@ -271,6 +271,7 @@ export default function ConversationStudio({
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
+    confirmationProductId?: number,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   onRetryGeneration?: (jobId: string) => void;
@@ -374,6 +375,7 @@ export default function ConversationStudio({
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
+    confirmationProductId?: number,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -425,6 +427,7 @@ export default function ConversationStudio({
         presenterDirectionConfirmation,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
+        confirmationProductId,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -462,6 +465,7 @@ export default function ConversationStudio({
   const handleConfirmPlan = async (
     plan: AssetMessagePlan,
     values?: AssetPlanConfirmationValues,
+    confirmationProductId?: number,
   ) => {
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
@@ -565,6 +569,7 @@ export default function ConversationStudio({
         : undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
+      plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
@@ -817,7 +822,7 @@ export default function ConversationStudio({
                       ? VIDEO_WRITES_PAUSED_MESSAGE
                       : undefined
                   }
-                  onConfirm={(plan, values) => void handleConfirmPlan(plan, values)}
+                  onConfirm={(plan, values) => void handleConfirmPlan(plan, values, message.assetId ?? undefined)}
                   onAdjust={(plan) => handleAdjustPlan(plan)}
                 />
               ) : null}

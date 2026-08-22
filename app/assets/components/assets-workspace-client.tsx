@@ -1867,6 +1867,7 @@ export default function AssetsWorkspaceClient({
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
+    confirmationProductId?: number,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -1876,7 +1877,7 @@ export default function AssetsWorkspaceClient({
     }
     const selectedBackendAssetId = longFormAction?.kind === "analyze"
       ? undefined
-      : selectedProduct?.backendAssetId;
+      : confirmationProductId ?? selectedProduct?.backendAssetId;
     let assetsForSend = linkedAssets;
     if (assetsForSend.length === 0) {
       const sourceAssets = sourceAttachmentAssets(conversation.id);
