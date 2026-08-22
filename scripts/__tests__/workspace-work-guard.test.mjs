@@ -26,6 +26,11 @@ const workGuardScript = fileURLToPath(
 
 function createWorkspace() {
   const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "multimix-work-guard-"));
+  const workspacePlanDirectory = path.join(workspaceRoot, "docs", "plans", "active");
+  mkdirSync(workspacePlanDirectory, { recursive: true });
+  for (const name of ["task-a.md", "task-b.md", "task-c.md"]) {
+    writeFileSync(path.join(workspacePlanDirectory, name), `# ${name}\n`);
+  }
   for (const repository of ["MultiMix-Frontend", "MultiMix-Backend"]) {
     const planDirectory = path.join(workspaceRoot, repository, "docs", "plans", "active");
     mkdirSync(planDirectory, { recursive: true });
@@ -35,6 +40,24 @@ function createWorkspace() {
   }
   return workspaceRoot;
 }
+
+test("accepts a workspace-root active plan", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    const registered = beginWorkGuard({
+      workspaceRoot,
+      ...claim({
+        plan: "docs/plans/active/task-a.md",
+        token: "workspace-plan-token",
+      }),
+    });
+
+    assert.equal(registered.plan, "docs/plans/active/task-a.md");
+    endWorkGuard({ workspaceRoot, token: "workspace-plan-token" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
 
 function claim(overrides = {}) {
   return {

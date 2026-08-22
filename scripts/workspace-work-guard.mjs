@@ -15,6 +15,7 @@ const REGISTRY_NAME = ".multimix-work-claims.json";
 const UPDATE_LOCK_NAME = ".multimix-work-claims.lock";
 const REGISTRY_VERSION = 1;
 const ACTIVE_PLAN_PREFIXES = [
+  "docs/plans/active/",
   "MultiMix-Frontend/docs/plans/active/",
   "MultiMix-Backend/docs/plans/active/",
 ];
@@ -126,7 +127,7 @@ function normalizePlan(workspaceRoot, value, { requireExists = true } = {}) {
     !plan.toLowerCase().endsWith(".md")
   ) {
     throw new Error(
-      "Active plan must be a Markdown file under MultiMix-Frontend/docs/plans/active/ or MultiMix-Backend/docs/plans/active/",
+      "Active plan must be a Markdown file under docs/plans/active/, MultiMix-Frontend/docs/plans/active/, or MultiMix-Backend/docs/plans/active/",
     );
   }
   if (requireExists && !existsSync(path.join(workspaceRoot, ...plan.split("/")))) {
