@@ -32,10 +32,13 @@ type EditorBridgeMessage = {
   blob?: Blob;
   jobId?: string;
   previewChannel?: string;
+  requestId?: string;
+  status?: "idle" | "dirty" | "saving" | "saved" | "error";
 };
 
 type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "registering" | "verifying"
   | "downloading" | "blocked" | "done" | "error";
+type EditorExitState = "idle" | "flushing" | "error";
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -185,6 +188,9 @@ export default function ProductWorkspace({
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const [editorExitState, setEditorExitState] = useState<EditorExitState>("idle");
+  const [editorExitError, setEditorExitError] = useState("");
+  const [editorSaveState, setEditorSaveState] = useState<EditorBridgeMessage["status"]>("saved");
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
@@ -210,6 +216,8 @@ export default function ProductWorkspace({
     enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
   });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const editorFlushRequestRef = useRef<string | null>(null);
+  const editorFlushSequenceRef = useRef(0);
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef(false);
   const verifiedExportBlobRef = useRef<Blob | null>(null);
@@ -375,6 +383,10 @@ export default function ProductWorkspace({
   useEffect(() => {
     setEditorRequested(false);
     setEditorReady(false);
+    setEditorExitState("idle");
+    setEditorExitError("");
+    setEditorSaveState("saved");
+    editorFlushRequestRef.current = null;
     setExportState("idle");
     setExportProgress(null);
     setQualityReport(null);
@@ -452,6 +464,38 @@ export default function ProductWorkspace({
       window.location.origin,
     );
   }, []);
+
+  const requestEditorFlushBeforeExit = useCallback(() => {
+    if (editorExitState === "flushing") return;
+    const frameWindow = editorFrameRef.current?.contentWindow;
+    if (!frameWindow || !editorReady) {
+      setEditorExitState("error");
+      setEditorExitError("剪辑器尚未准备好保存时间线，请稍后重试。");
+      return;
+    }
+    editorFlushSequenceRef.current += 1;
+    const requestId = `editor-flush-${Date.now()}-${editorFlushSequenceRef.current}`;
+    editorFlushRequestRef.current = requestId;
+    setEditorExitState("flushing");
+    setEditorExitError("");
+    frameWindow.postMessage(
+      { source: "multimix-workspace", type: "multimix-editor-flush", requestId },
+      window.location.origin,
+    );
+  }, [editorExitState, editorReady]);
+
+  useEffect(() => {
+    if (
+      !showEditorEmbed
+      || !["dirty", "saving", "error"].includes(editorSaveState ?? "saved")
+    ) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [editorSaveState, showEditorEmbed]);
 
   useEffect(() => {
     if (!showEditorEmbed || editorReady || typeof window === "undefined") return;
@@ -582,6 +626,29 @@ export default function ProductWorkspace({
           setExportError("");
           setExportDownloaded(false);
           void refreshPersistedVideoProject();
+          break;
+        case "multimix-editor-save-state":
+          setEditorSaveState(data.status);
+          break;
+        case "multimix-editor-flush-result":
+          if (!data.requestId || data.requestId !== editorFlushRequestRef.current) break;
+          if (data.status === "saved") {
+            void (async () => {
+              await refreshPersistedVideoProject();
+              if (editorFlushRequestRef.current !== data.requestId) return;
+              editorFlushRequestRef.current = null;
+              setEditorExitState("idle");
+              setEditorExitError("");
+              setEditorSaveState("saved");
+              setEditorRequested(false);
+              setVideoSurface("browse");
+            })();
+          } else {
+            editorFlushRequestRef.current = null;
+            setEditorExitState("error");
+            setEditorExitError(data.message || "保存失败，请检查网络后重试。");
+            setEditorSaveState("error");
+          }
           break;
         default:
           break;
@@ -1182,8 +1249,13 @@ export default function ProductWorkspace({
               </button>
             ) : null}
             {showEditorEmbed ? (
-              <button type="button" className="primary" onClick={() => setVideoSurface("browse")}>
-                完成编辑
+              <button
+                type="button"
+                className="primary"
+                disabled={editorExitState === "flushing"}
+                onClick={requestEditorFlushBeforeExit}
+              >
+                {editorExitState === "flushing" ? "正在保存…" : editorExitState === "error" ? "重试保存" : "完成编辑"}
               </button>
             ) : null}
             {canBrowseVideo ? (
@@ -1271,6 +1343,13 @@ export default function ProductWorkspace({
           <div className="shadcn-prototype-video-preview-fallback" role="alert">
             <span>{projectSyncError}</span>
             <button type="button" onClick={() => void refreshPersistedVideoProject()}>重试刷新</button>
+          </div>
+        ) : null}
+
+        {showEditorEmbed && editorExitState === "error" ? (
+          <div className="shadcn-prototype-video-failed" role="alert">
+            <strong>时间线尚未保存</strong>
+            <p>{editorExitError}</p>
           </div>
         ) : null}
 

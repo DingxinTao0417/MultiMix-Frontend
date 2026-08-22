@@ -24,6 +24,7 @@ import { getExportMimeType } from "@editor/lib/export";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
+import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
   getCurrentExportJob,
   retryExportJob,
@@ -183,7 +184,12 @@ export default function EditorView({
   const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
   const recoverableStandaloneExportRef = useRef<ExportFinalizeJob | null>(null);
   const activeExportAbortRef = useRef<AbortController | null>(null);
+  const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const previewOnly = mode === "preview";
+
+  const registerTimelineFlush = useCallback((flush: (() => Promise<TimelineFlushResult>) | null) => {
+    timelineFlushRef.current = flush;
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -567,7 +573,7 @@ export default function EditorView({
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if ((data as { source?: string }).source !== "multimix-workspace") return;
-      const message = data as { type?: string; time?: number };
+      const message = data as { type?: string; time?: number; requestId?: string };
       if (message.type === "multimix-editor-ready-ack") {
         readyAcknowledgedRef.current = true;
         return;
@@ -583,6 +589,26 @@ export default function EditorView({
           postToParent({ type: "multimix-editor-ready" });
           if (previewOnly) publishPreviewState();
         }
+        return;
+      }
+      if (message.type === "multimix-editor-flush") {
+        const requestId = message.requestId;
+        if (!requestId || previewOnly || state !== "ready" || !timelineFlushRef.current) {
+          postToParent({
+            type: "multimix-editor-flush-result",
+            requestId,
+            status: "error",
+            message: "剪辑器尚未准备好保存时间线，请稍后重试。",
+          });
+          return;
+        }
+        void timelineFlushRef.current().then((result) => {
+          postToParent({
+            type: "multimix-editor-flush-result",
+            requestId,
+            ...result,
+          });
+        });
         return;
       }
       if (state !== "ready") {
@@ -693,6 +719,7 @@ export default function EditorView({
                   token={token}
                   initialSegmentId={initialSegmentId}
                   openMaterialPicker={openMaterialPicker}
+                  onFlushReady={registerTimelineFlush}
                 />
               ) : (
                 <Timeline />

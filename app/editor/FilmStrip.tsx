@@ -34,6 +34,11 @@ import {
   visibleDuration,
 } from "./filmstrip-utils";
 import VoiceoverEditor from "./VoiceoverEditor";
+import {
+  TimelineSaveCoordinator,
+  type TimelineFlushResult,
+  type TimelineSaveStatus,
+} from "./timeline-save-coordinator";
 
 type RecomposeBody = {
   operation: "replace_material" | "toggle_mg";
@@ -55,20 +60,25 @@ export default function FilmStrip({
   token,
   initialSegmentId = null,
   openMaterialPicker = false,
+  onFlushReady,
 }: {
   assetId: string | null;
   token: string | null;
   initialSegmentId?: string | null;
   openMaterialPicker?: boolean;
+  onFlushReady?: ((flush: (() => Promise<TimelineFlushResult>) | null) => void) | undefined;
 }) {
   const core = EditorCore.getInstance();
   const [revision, setRevision] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [saveNote, setSaveNote] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveNote, setSaveNote] = useState<TimelineSaveStatus>("idle");
   const [recompose, setRecompose] = useState<RecomposeState>({ phase: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
   const stripRef = useRef<HTMLDivElement | null>(null);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveCoordinatorRef = useRef<TimelineSaveCoordinator | null>(null);
+  const saveNoteRef = useRef<TimelineSaveStatus>("idle");
+  const persistTimelineRef = useRef<() => Promise<void>>(async () => undefined);
+  const timelineSaveNoteRef = useRef<(status: TimelineSaveStatus, message?: string) => void>(() => undefined);
   const dragRef = useRef<{ edge: "left" | "right"; startX: number; committed: boolean } | null>(null);
   const initialSelectionAppliedRef = useRef(false);
   const initialPickerOpenedRef = useRef(false);
@@ -173,31 +183,64 @@ export default function FilmStrip({
     [assetId],
   );
 
+  const setTimelineSaveNote = useCallback((next: TimelineSaveStatus, message?: string) => {
+    saveNoteRef.current = next;
+    setSaveNote(next);
+    postToParent({ type: "multimix-editor-save-state", status: next, message });
+  }, [postToParent]);
+  timelineSaveNoteRef.current = setTimelineSaveNote;
+
+  const persistTimeline = useCallback(async () => {
+    if (!assetId || !token) {
+      throw new Error("缺少保存时间线所需的项目信息。");
+    }
+    const body = serializeBackendProject(EditorCore.getInstance());
+    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeaders },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
+  }, [assetId, authHeaders, postToParent, token]);
+  persistTimelineRef.current = persistTimeline;
+
+  if (!saveCoordinatorRef.current) {
+    saveCoordinatorRef.current = new TimelineSaveCoordinator({
+      save: () => persistTimelineRef.current(),
+      onStateChange: (status, message) => timelineSaveNoteRef.current(status, message),
+    });
+  }
+
+  const flushPendingSave = useCallback(
+    () => saveCoordinatorRef.current!.flush(),
+    [],
+  );
+
   // Render-layer edits persist via debounced save; the backend marks
   // timeline_dirty so AI rebuilds ask before overwriting (API.md §12.5).
   const queueSave = useCallback(() => {
     if (!assetId || !token) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    setSaveNote("saving");
-    saveTimer.current = setTimeout(async () => {
-      try {
-        const body = serializeBackendProject(EditorCore.getInstance());
-        const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
-        setSaveNote("saved");
-      } catch {
-        setSaveNote("error");
-      }
-    }, 800);
-  }, [assetId, token, authHeaders, postToParent]);
+    saveCoordinatorRef.current!.markDirty();
+  }, [assetId, token]);
 
   useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveCoordinatorRef.current?.dispose();
+  }, []);
+
+  useEffect(() => {
+    onFlushReady?.(flushPendingSave);
+    return () => onFlushReady?.(null);
+  }, [flushPendingSave, onFlushReady]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!["dirty", "saving", "error"].includes(saveNoteRef.current)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, []);
 
   const selectClip = (el: TimelineElement) => {
