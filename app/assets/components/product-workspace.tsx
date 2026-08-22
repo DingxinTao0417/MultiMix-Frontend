@@ -209,6 +209,7 @@ export default function ProductWorkspace({
   const [textEditError, setTextEditError] = useState("");
   const [textEditSaved, setTextEditSaved] = useState(false);
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
+  const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
   const materialCandidates = useSegmentMaterialCandidates({
     token: token ?? null,
     projectAssetId: product.backendAssetId ?? null,
@@ -244,6 +245,21 @@ export default function ProductWorkspace({
   const hasSpeechTimeline = product.mode === "video"
     && presenterVideoPlan?.video_type === "presenter"
     && product.timeline.some((item) => item.line);
+  const sourceSubtitleOutput = presenterVideoPlan?.subtitle_output
+    && typeof presenterVideoPlan.subtitle_output === "object"
+    && !Array.isArray(presenterVideoPlan.subtitle_output)
+    ? presenterVideoPlan.subtitle_output as Record<string, unknown>
+    : null;
+  const sourceSubtitleLanguage = String(sourceSubtitleOutput?.source_language ?? "").toLowerCase();
+  const currentSourceSubtitleMode = String(sourceSubtitleOutput?.mode ?? "");
+  const sourceSubtitleVersionOptions = presenterVideoPlan?.video_type === "source_excerpt"
+    && !sourceSubtitleLanguage.startsWith("zh")
+    ? [
+        { mode: "translated_zh" as const, label: "中文字幕" },
+        { mode: "source" as const, label: "原文字幕" },
+        { mode: "bilingual" as const, label: "中英双语" },
+      ]
+    : [];
   const videoProjectMetadata = productMetadata.video_project && typeof productMetadata.video_project === "object" && !Array.isArray(productMetadata.video_project)
     ? productMetadata.video_project as Record<string, unknown>
     : null;
@@ -332,6 +348,7 @@ export default function ProductWorkspace({
     setTextEditError("");
     setTextEditSaved(false);
     setStructuralChange(null);
+    setSubtitleVersionMenuOpen(false);
   }, [product.id, product.contentHash, product.markdownBody]);
 
   useEffect(() => {
@@ -1183,6 +1200,46 @@ export default function ProductWorkspace({
 
               </aside>
             </details>
+            {canBrowseVideo && !isFailedStatus && sourceSubtitleVersionOptions.length ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-expanded={subtitleVersionMenuOpen}
+                  onClick={() => setSubtitleVersionMenuOpen((open) => !open)}
+                >
+                  字幕语言
+                </button>
+                {subtitleVersionMenuOpen ? (
+                  <div
+                    className="absolute right-0 top-full z-20 mt-2 min-w-36 rounded-xl border border-[#e5e0d8] bg-white p-2 shadow-lg"
+                    role="group"
+                    aria-label="生成新的字幕版本"
+                  >
+                    <p className="px-2 pb-1 text-xs text-[#736e67]">原声和拆条区间保持不变</p>
+                    {sourceSubtitleVersionOptions.map((option) => (
+                      <button
+                        key={option.mode}
+                        type="button"
+                        className="block w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-[#f6f3ed] disabled:cursor-default disabled:opacity-50"
+                        disabled={option.mode === currentSourceSubtitleMode}
+                        onClick={() => {
+                          setSubtitleVersionMenuOpen(false);
+                          window.dispatchEvent(new CustomEvent("multimix:composer-send", {
+                            detail: {
+                              utterance: "确认，生成字幕新版本",
+                              confirmationProductId: product.backendAssetId,
+                              sourceSubtitleMode: option.mode,
+                            },
+                          }));
+                        }}
+                      >
+                        {option.mode === currentSourceSubtitleMode ? `${option.label}（当前）` : option.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {longFormCandidateProduct && onOpenLongFormCandidates ? (
               <button
                 type="button"

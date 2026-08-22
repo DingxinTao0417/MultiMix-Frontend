@@ -16,6 +16,64 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("offers a completed source excerpt a structured subtitle-version action", () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const product = {
+      ...base,
+      backendAssetId: 948,
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...(base.metadata?.video_plan as Record<string, unknown>),
+          video_type: "source_excerpt",
+          subtitle_output: { source_language: "en", mode: "translated_zh" },
+        },
+      },
+    };
+    const composerSend = vi.fn();
+    window.addEventListener("multimix:composer-send", composerSend);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "字幕语言" }));
+    expect(screen.getByRole("button", { name: "中文字幕（当前）" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "中英双语" }));
+
+    expect(composerSend).toHaveBeenCalledWith(expect.objectContaining({
+      detail: {
+        utterance: "确认，生成字幕新版本",
+        confirmationProductId: 948,
+        sourceSubtitleMode: "bilingual",
+      },
+    }));
+    window.removeEventListener("multimix:composer-send", composerSend);
+  });
+
+  it("does not offer subtitle versions for an ordinary completed video", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "字幕语言" })).not.toBeInTheDocument();
+  });
+
   it("restores download for an already persisted MP4 without exporting again", async () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     const getVideoQuality = vi.spyOn(assetWorkspaceAdapter, "getVideoQuality");

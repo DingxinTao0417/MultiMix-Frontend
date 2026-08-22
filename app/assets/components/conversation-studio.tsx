@@ -603,6 +603,8 @@ export default function ConversationStudio({
       const detail = (event as CustomEvent<{
         utterance?: string;
         videoSceneReplacement?: AssetVideoSceneReplacement;
+        confirmationProductId?: number;
+        sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
       }>).detail;
       const utterance = detail?.utterance;
       if (typeof utterance === "string" && utterance.trim()) {
@@ -613,6 +615,11 @@ export default function ConversationStudio({
           undefined,
           undefined,
           detail?.videoSceneReplacement,
+          undefined,
+          undefined,
+          undefined,
+          detail?.confirmationProductId,
+          detail?.sourceSubtitleMode,
         );
       }
     };
