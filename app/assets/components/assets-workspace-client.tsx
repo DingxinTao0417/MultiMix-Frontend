@@ -70,7 +70,6 @@ import { useStableCallback } from "../lib/use-stable-callback";
 import {
   getLongFormCandidateContext,
   longFormAnalysisFromMetadata,
-  parseLongFormActionEvent,
   type LongFormSourceAction,
   type LongFormSourceReady,
 } from "../lib/long-form-client";
@@ -2085,15 +2084,6 @@ export default function AssetsWorkspaceClient({
     }
   });
 
-  useEffect(() => {
-    const listener = (event: Event) => {
-      const action = parseLongFormActionEvent(event);
-      if (action) void handleLongFormSelect(action);
-    };
-    window.addEventListener("multimix:long-form-action", listener);
-    return () => window.removeEventListener("multimix:long-form-action", listener);
-  }, [handleLongFormSelect]);
-
   const handleLongFormSourceReady = useStableCallback(async (source: LongFormSourceReady) => {
     await handleSendConversationMessage(
       selectedConversation,
@@ -2609,6 +2599,7 @@ export default function AssetsWorkspaceClient({
                       [selectedConversation.id]: candidateProduct.id,
                     }));
                   }}
+                  onLongFormAction={(action) => void handleLongFormSelect(action)}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}

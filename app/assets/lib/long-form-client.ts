@@ -264,25 +264,3 @@ export async function getLongFormCandidateContext(
     sourcePlaybackUrl: new URL(playback.playback_url, API_BASE).toString(),
   };
 }
-
-export function parseLongFormActionEvent(event: Event): LongFormSourceAction | null {
-  if (!(event instanceof CustomEvent) || !isRecord(event.detail)) return null;
-  const analysisAssetId = event.detail.analysisAssetId;
-  if (typeof analysisAssetId !== "number"
-    || !Number.isInteger(analysisAssetId)
-    || analysisAssetId <= 0
-  ) return null;
-  if (event.detail.kind === "preserve") {
-    return { kind: "preserve", analysisAssetId };
-  }
-  const candidateId = stringValue(event.detail.candidateId);
-  if (event.detail.kind !== "select" || !candidateId) return null;
-  return {
-    kind: "select",
-    analysisAssetId,
-    candidateId,
-    cleanupMode: event.detail.cleanupMode === "preserve_all"
-      ? "preserve_all"
-      : "conservative",
-  };
-}

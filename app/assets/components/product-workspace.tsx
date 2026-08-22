@@ -10,6 +10,7 @@ import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOpti
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { ExportFinalizeJob } from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
+import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
 import ProductPreview, {
   browseBgmSummary,
@@ -159,6 +160,7 @@ export default function ProductWorkspace({
   onRestoreVersion,
   onRetryVideoJob,
   onOpenLongFormCandidates,
+  onLongFormAction,
   product,
   savedVersion,
   selectedConversation,
@@ -172,6 +174,7 @@ export default function ProductWorkspace({
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
+  onLongFormAction?: (action: LongFormSourceAction) => void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -1315,6 +1318,7 @@ export default function ProductWorkspace({
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
+              onLongFormAction={onLongFormAction}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
               onEditVoiceover={
@@ -1441,7 +1445,7 @@ export default function ProductWorkspace({
         ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
-              <ProductPreview product={product} />
+              <ProductPreview product={product} onLongFormAction={onLongFormAction} />
             </div>
           </div>
         ) : null}

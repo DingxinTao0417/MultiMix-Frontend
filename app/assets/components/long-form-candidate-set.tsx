@@ -6,6 +6,7 @@ import VideoPreviewPlayer from "./video-preview-player";
 import {
   type LongFormAnalysis,
   type LongFormCandidate,
+  type LongFormSourceAction,
 } from "../lib/long-form-client";
 import styles from "./long-form-candidate-set.module.css";
 
@@ -32,11 +33,13 @@ export default function LongFormCandidateSet({
   analysis,
   sourcePlaybackUrl,
   chapterCount,
+  onAction,
 }: {
   analysisAssetId: number;
   analysis: LongFormAnalysis;
   sourcePlaybackUrl?: string;
   chapterCount?: number;
+  onAction?: (action: LongFormSourceAction) => void;
 }) {
   const playerRef = useRef<HTMLVideoElement | null>(null);
   const candidatesById = useMemo(
@@ -109,9 +112,7 @@ export default function LongFormCandidateSet({
               type="button"
               className={styles.primary}
               aria-label="完整保留原意"
-              onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
-                detail: { kind: "preserve", analysisAssetId },
-              }))}
+              onClick={() => onAction?.({ kind: "preserve", analysisAssetId })}
             >
               完整保留原意
             </button>
@@ -139,28 +140,24 @@ export default function LongFormCandidateSet({
                 type="button"
                 className={styles.primary}
                 aria-label={`把“${candidate.title}”提炼成短片（默认精简）`}
-                onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
-                  detail: {
-                    kind: "select",
-                    analysisAssetId,
-                    candidateId: candidate.id,
-                    cleanupMode: "conservative",
-                  },
-                }))}
+                onClick={() => onAction?.({
+                  kind: "select",
+                  analysisAssetId,
+                  candidateId: candidate.id,
+                  cleanupMode: "conservative",
+                })}
               >
                 提炼成短片（默认精简）
               </button>
               <button
                 type="button"
                 aria-label={`保留“${candidate.title}”原话提炼`}
-                onClick={() => window.dispatchEvent(new CustomEvent("multimix:long-form-action", {
-                  detail: {
-                    kind: "select",
-                    analysisAssetId,
-                    candidateId: candidate.id,
-                    cleanupMode: "preserve_all",
-                  },
-                }))}
+                onClick={() => onAction?.({
+                  kind: "select",
+                  analysisAssetId,
+                  candidateId: candidate.id,
+                  cleanupMode: "preserve_all",
+                })}
               >
                 保留原话提炼
               </button>

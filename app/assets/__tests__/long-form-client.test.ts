@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getLongFormCandidateContext,
   importLongFormSourceUrl,
-  parseLongFormActionEvent,
   uploadLongFormSource,
   waitForLongFormSourceReady,
 } from "../lib/long-form-client";
@@ -56,24 +55,6 @@ describe("long-form candidate client", () => {
     expect(context.sourcePlaybackUrl).toBe("http://127.0.0.1:8199/v1/long-form/media/signed-token");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:8199/v1/long-form/analyses/92");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:8199/v1/long-form/sources/91/playback");
-  });
-
-  it("accepts only exact structured source actions", () => {
-    expect(parseLongFormActionEvent(new CustomEvent("multimix:long-form-action", {
-      detail: { kind: "select", analysisAssetId: 92, candidateId: "candidate-1" },
-    }))).toEqual({ kind: "select", analysisAssetId: 92, candidateId: "candidate-1" });
-
-    expect(parseLongFormActionEvent(new CustomEvent("multimix:long-form-action", {
-      detail: { kind: "preserve", analysisAssetId: 92 },
-    }))).toEqual({ kind: "preserve", analysisAssetId: 92 });
-
-    expect(parseLongFormActionEvent(new CustomEvent("multimix:long-form-action", {
-      detail: { kind: "select", analysisAssetId: "92", candidateId: "candidate-1" },
-    }))).toBeNull();
-
-    expect(parseLongFormActionEvent(new CustomEvent("multimix:long-form-action", {
-      detail: { kind: "preserve", analysisAssetId: "92" },
-    }))).toBeNull();
   });
 
   it("streams upload progress through the dedicated long-form endpoint", async () => {

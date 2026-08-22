@@ -11,6 +11,7 @@ import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer from "./video-preview-player";
 import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
+import type { LongFormSourceAction } from "../lib/long-form-client";
 import type { VideoQualityReport } from "../lib/video-quality";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
@@ -262,6 +263,7 @@ type ProductPreviewProps = {
   onExportQualityReport?: (report: VideoQualityReport) => void;
   onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
   onExportError?: (message: string) => void;
+  onLongFormAction?: (action: LongFormSourceAction) => void;
 };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
@@ -279,6 +281,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onExportQualityReport,
   onExportSuccess,
   onExportError,
+  onLongFormAction,
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -313,6 +316,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
         analysis={analysis}
         sourcePlaybackUrl={stringValue(metadata.source_playback_url) || undefined}
         chapterCount={typeof metadata.chapter_count === "number" ? metadata.chapter_count : undefined}
+        onAction={onLongFormAction}
       />
     );
   }
