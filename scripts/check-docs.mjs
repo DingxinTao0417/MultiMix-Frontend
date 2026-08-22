@@ -3,28 +3,27 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const GOVERNED_MARKDOWN_DIRS = [
+  "docs",
   "MultiMix-Frontend/docs",
   "MultiMix-Backend/docs",
 ];
 
 const ARCHIVE_DIRS = [
+  "docs/archive",
   "MultiMix-Frontend/docs/archive",
   "MultiMix-Backend/docs/archive",
 ];
 
 const ACTIVE_PLAN_DIRS = [
+  "docs/plans/active",
   "MultiMix-Frontend/docs/plans/active",
   "MultiMix-Backend/docs/plans/active",
-];
-
-const STALE_LOCATIONS = [
-  "docs",
 ];
 
 const STALE_REFERENCES = [
   {
     token: "../docs/",
-    replacement: "the relevant MultiMix-Frontend/docs/ or MultiMix-Backend/docs/ destination",
+    replacement: "the canonical docs/... path or the relevant repository-specific docs path",
   },
 ];
 
@@ -38,6 +37,10 @@ const COMPLETED_PLAN_PATTERNS = [
 const DOCUMENTATION_MAP_REFERENCE_PATTERN =
   /`((?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\/[^`\r\n]+\.md)`/g;
 
+const DOCUMENTATION_MAP_FILE = "docs/README.md";
+const CURRENT_PROTOTYPE_DIRS = [
+  "docs/specs/ui/prototypes/current",
+];
 const REQUIRED_DOCUMENTATION_MAP_REFERENCES = [
   "MultiMix-Backend/docs/qa/project-review-standard.md",
   "MultiMix-Backend/docs/qa/security-review-baseline.md",
@@ -99,33 +102,22 @@ function issue(code, file, message, fix) {
   return { code, file, message, fix };
 }
 
-function checkWorkspaceDocsRemoved(workspaceRoot, issues) {
+function checkLooseRootMarkdown(workspaceRoot, issues) {
   const docsRoot = path.join(workspaceRoot, "docs");
-  if (exists(docsRoot)) {
+  if (!exists(docsRoot)) return;
+
+  for (const entry of fs.readdirSync(docsRoot, { withFileTypes: true })) {
+    if (!entry.isFile() || !isMarkdown(entry.name) || isReadme(entry.name)) {
+      continue;
+    }
     issues.push(
       issue(
         "doc-root",
-        "docs",
-        "Workspace-root docs are retired.",
-        "Move the content to MultiMix-Frontend/docs or MultiMix-Backend/docs, then remove docs/.",
+        `docs/${entry.name}`,
+        "Current Markdown documents must be categorized below the workspace docs root.",
+        "Move the document to docs/authority, docs/qa, docs/specs, docs/plans/active, or docs/archive as appropriate.",
       ),
     );
-  }
-}
-
-function checkStaleLocations(workspaceRoot, issues) {
-  for (const staleLocation of STALE_LOCATIONS) {
-    const fullPath = path.join(workspaceRoot, ...staleLocation.split("/"));
-    if (exists(fullPath)) {
-      issues.push(
-        issue(
-          "stale-location",
-          staleLocation,
-          "A retired docs path exists again.",
-          "Move the content to the current docs taxonomy and delete the retired path.",
-        ),
-      );
-    }
   }
 }
 
@@ -184,8 +176,8 @@ function checkStaleReferences(workspaceRoot, files, issues) {
 }
 
 function checkDocumentationMapReferences(workspaceRoot, issues) {
-  const relativeFile = "MultiMix-Backend/docs/README.md";
-  const mapFile = path.join(workspaceRoot, "MultiMix-Backend", "docs", "README.md");
+  const relativeFile = DOCUMENTATION_MAP_FILE;
+  const mapFile = path.join(workspaceRoot, ...DOCUMENTATION_MAP_FILE.split("/"));
   if (!exists(mapFile)) {
     return;
   }
@@ -217,7 +209,7 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
         "missing-required-doc-reference",
         relativeFile,
         `Missing required current document entry '${requiredReference}'.`,
-        `Add a backticked '${requiredReference}' entry to MultiMix-Backend/docs/README.md.`,
+        `Add a backticked '${requiredReference}' entry to ${DOCUMENTATION_MAP_FILE}.`,
       ),
     );
   }
@@ -252,33 +244,35 @@ function checkActivePlans(workspaceRoot, files, issues) {
 }
 
 function checkCurrentPrototype(workspaceRoot, issues) {
-  const currentRoot = path.join(workspaceRoot, "MultiMix-Frontend", "docs", "specs", "ui", "prototypes", "current");
-  if (!exists(currentRoot)) {
-    return;
-  }
-
-  for (const entry of fs.readdirSync(currentRoot, { withFileTypes: true })) {
-    const relativeEntry = `MultiMix-Frontend/docs/specs/ui/prototypes/current/${entry.name}`;
-    if (entry.isDirectory() && entry.name !== "screens") {
-      issues.push(
-        issue(
-          "prototype-current",
-          relativeEntry,
-          "Current prototype should only keep the selected clickable draft and its screens.",
-          "Move exploration variants to docs/specs/ui/prototypes/explorations/<date-topic>/.",
-        ),
-      );
+  for (const currentPrototypeDir of CURRENT_PROTOTYPE_DIRS) {
+    const currentRoot = path.join(workspaceRoot, ...currentPrototypeDir.split("/"));
+    if (!exists(currentRoot)) {
+      continue;
     }
 
-    if (entry.isFile() && !["README.md", "index.html"].includes(entry.name)) {
-      issues.push(
-        issue(
-          "prototype-current",
-          relativeEntry,
-          "Unexpected file in current prototype root.",
-          "Keep only README.md, index.html, and screens/ here; move variants to explorations.",
-        ),
-      );
+    for (const entry of fs.readdirSync(currentRoot, { withFileTypes: true })) {
+      const relativeEntry = `${currentPrototypeDir}/${entry.name}`;
+      if (entry.isDirectory() && entry.name !== "screens") {
+        issues.push(
+          issue(
+            "prototype-current",
+            relativeEntry,
+            "Current prototype should only keep the selected clickable draft and its screens.",
+            "Move exploration variants to docs/specs/ui/prototypes/explorations/<date-topic>/.",
+          ),
+        );
+      }
+
+      if (entry.isFile() && !["README.md", "index.html"].includes(entry.name)) {
+        issues.push(
+          issue(
+            "prototype-current",
+            relativeEntry,
+            "Unexpected file in current prototype root.",
+            "Keep only README.md, index.html, and screens/ here; move variants to explorations.",
+          ),
+        );
+      }
     }
   }
 }
@@ -287,12 +281,12 @@ export function checkDocs(workspaceRoot) {
   const root = path.resolve(workspaceRoot);
   const issues = [];
   const files = [
+    ...listFiles(path.join(root, "docs")),
     ...listFiles(path.join(root, "MultiMix-Frontend", "docs")),
     ...listFiles(path.join(root, "MultiMix-Backend", "docs")),
   ];
 
-  checkWorkspaceDocsRemoved(root, issues);
-  checkStaleLocations(root, issues);
+  checkLooseRootMarkdown(root, issues);
   checkMarkdownHeaders(root, files, issues);
   checkStaleReferences(root, files, issues);
   checkDocumentationMapReferences(root, issues);
