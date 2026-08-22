@@ -458,7 +458,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(result.lines).toBe(2);
   });
 
-  it('keeps default 1080p subtitles within a professional lower-third size', () => {
+  it('keeps default 1080p subtitles at a readable lower-third size', () => {
     const bp = makeProject({
       tracks: [{
         id: 'track-text',
@@ -476,22 +476,45 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
     const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
-    expect(renderedFontSize).toBeGreaterThanOrEqual(34);
-    expect(renderedFontSize).toBeLessThanOrEqual(38);
+    expect(renderedFontSize).toBeGreaterThanOrEqual(46);
+    expect(renderedFontSize).toBeLessThanOrEqual(54);
     expect(element.content).toBe('上传实拍，选方向，自动编导');
     expect(element.transform).toMatchObject({
       position: { x: 0, y: Math.round(bp.settings.height * 0.35) },
     });
   });
 
-  it('uses ratio-aware compact subtitle typography', () => {
+  it('does not shrink paired bilingual subtitles below the readable 1080p floor', () => {
+    const bp = makeProject({
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'tel-bilingual-size',
+          type: 'text',
+          textRole: 'subtitle',
+          content: '这是一条需要保持可读性的中文字幕。\nThis is the matching source caption.',
+          startTime: 0,
+          duration: 5,
+        }],
+      }],
+    });
+
+    const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
+    expect(renderedFontSize).toBeGreaterThanOrEqual(42);
+    expect(String(element.content).split('\n')).toHaveLength(2);
+  });
+
+  it('uses ratio-aware readable subtitle typography', () => {
     const landscape = subtitleTypographyForCanvas(1920, 1080, 0.7);
     const portrait = subtitleTypographyForCanvas(1080, 1920, 0.7);
 
-    expect(landscape.preferredFontPx).toBeGreaterThanOrEqual(32);
-    expect(landscape.preferredFontPx).toBeLessThanOrEqual(38);
-    expect(portrait.preferredFontPx).toBeGreaterThanOrEqual(34);
-    expect(portrait.preferredFontPx).toBeLessThanOrEqual(40);
+    expect(landscape.preferredFontPx).toBeGreaterThanOrEqual(46);
+    expect(landscape.preferredFontPx).toBeLessThanOrEqual(54);
+    expect(portrait.preferredFontPx).toBeGreaterThanOrEqual(44);
+    expect(portrait.preferredFontPx).toBeLessThanOrEqual(50);
   });
 
   it('centres subtitles in the backend safe region and clamps manual movement', () => {
@@ -504,7 +527,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(subtitlePositionOffset(1080, landscapeRegion, 0.42)).toBe(454);
   });
 
-  it('keeps portrait subtitles compact and inside their lower safe region', () => {
+  it('keeps portrait subtitles readable and inside their lower safe region', () => {
     const bp = makeProject({
       settings: { fps: 30, width: 1080, height: 1920 },
       tracks: [{
@@ -525,8 +548,8 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 
     const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as Record<string, any>;
     const renderedFontSize = Number(element.fontSize) * (bp.settings.height / 90);
-    expect(renderedFontSize).toBeGreaterThanOrEqual(34);
-    expect(renderedFontSize).toBeLessThanOrEqual(40);
+    expect(renderedFontSize).toBeGreaterThanOrEqual(44);
+    expect(renderedFontSize).toBeLessThanOrEqual(50);
     expect(element.transform.position.y).toBe(672);
     expect(element.textRole).toBe('subtitle');
   });

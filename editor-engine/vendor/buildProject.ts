@@ -224,11 +224,11 @@ export function subtitleTypographyForCanvas(
   const portrait = height > width;
   const shortSide = Math.max(1, Math.min(width, height));
   const baseFontPx = portrait
-    ? clamp(shortSide * 0.034, 34, 40)
-    : clamp(shortSide * 0.033, 32, 38);
+    ? clamp(shortSide * 0.044, 44, 50)
+    : clamp(shortSide * 0.046, 46, 54);
   const scale = Math.max(0.1, sizeScale) / DEFAULT_SUBTITLE_SIZE_SCALE;
   const preferredFontPx = baseFontPx * scale;
-  const minimumFloor = portrait ? 30 : 28;
+  const minimumFloor = portrait ? 40 : 42;
   return {
     preferredFontPx,
     minimumFontPx: Math.min(
