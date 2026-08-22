@@ -136,6 +136,16 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("refreshPersistedVideoProject");
   });
 
+  test("flushes embedded timeline edits before the workbench may unmount the editor", () => {
+    expect(workspace).toContain('type: "multimix-editor-flush"');
+    expect(workspace).toContain('case "multimix-editor-flush-result"');
+    expect(workspace).toContain('editorExitState === "flushing"');
+    expect(editorView).toContain('message.type === "multimix-editor-flush"');
+    expect(editorView).toContain('type: "multimix-editor-flush-result"');
+    expect(filmStrip).toContain("TimelineSaveCoordinator");
+    expect(filmStrip).toContain("beforeunload");
+  });
+
   test("does not automatically capture, upload, or poll final-frame review", () => {
     expect(editorView).not.toContain("captureRenderedReviewFrames");
     expect(editorView).not.toContain("uploadRenderedReviewFrames");

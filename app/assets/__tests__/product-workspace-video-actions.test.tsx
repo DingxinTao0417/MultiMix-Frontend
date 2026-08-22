@@ -147,6 +147,119 @@ describe("video browse actions", () => {
     expect(screen.queryByRole("button", { name: "下载成片" })).not.toBeInTheDocument();
   });
 
+  it("flushes embedded timeline edits before exit, keeps the editor on failure, and exits only after retry succeeds", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const onProductUpdated = vi.fn();
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({
+      ...conversationForDisplayProduct(product),
+      product,
+      products: [product],
+    });
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={onProductUpdated}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" },
+    }));
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      { source: "multimix-workspace", type: "multimix-editor-ready-ack" },
+      window.location.origin,
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "multimix-workspace", type: "multimix-editor-flush" }),
+      window.location.origin,
+    ));
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "正在保存…" })).toBeDisabled();
+    const firstFlush = postMessage.mock.calls.find(
+      ([message]) => (message as { type?: string }).type === "multimix-editor-flush",
+    )?.[0] as { requestId: string };
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-flush-result",
+        requestId: firstFlush.requestId,
+        status: "error",
+        message: "保存失败，请检查网络后重试。",
+      },
+    }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败，请检查网络后重试。");
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重试保存" }));
+    await waitFor(() => expect(postMessage.mock.calls.filter(
+      ([message]) => (message as { type?: string }).type === "multimix-editor-flush",
+    )).toHaveLength(2));
+    const retryFlush = postMessage.mock.calls.filter(
+      ([message]) => (message as { type?: string }).type === "multimix-editor-flush",
+    ).at(-1)?.[0] as { requestId: string };
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-flush-result",
+        requestId: retryFlush.requestId,
+        status: "saved",
+      },
+    }));
+
+    await waitFor(() => expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument());
+    expect(onProductUpdated).toHaveBeenCalledWith(product);
+  });
+
+  it("warns before a page unload while the embedded editor reports unsaved timeline changes", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-save-state",
+        status: "dirty",
+      },
+    }));
+
+    await waitFor(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    });
+  });
+
   it("finishes an embedded editor export with a fresh explicit download action", async () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     let downloadedHref = "";
