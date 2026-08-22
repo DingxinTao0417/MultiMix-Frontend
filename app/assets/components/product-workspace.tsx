@@ -251,7 +251,14 @@ export default function ProductWorkspace({
     ? presenterVideoPlan.subtitle_output as Record<string, unknown>
     : null;
   const sourceSubtitleLanguage = String(sourceSubtitleOutput?.source_language ?? "").toLowerCase();
-  const currentSourceSubtitleMode = String(sourceSubtitleOutput?.mode ?? "");
+  // A newly confirmed project persists this compact identity projection.  It
+  // is derived from (rather than replacing) the rendering-authoritative
+  // ``video_plan.subtitle_output.mode``.  Older projects only have the plan,
+  // so retain that read path as a backwards-compatible fallback.
+  const projectedSourceSubtitleMode = String(productMetadata.source_subtitle_mode ?? "").trim();
+  const plannedSourceSubtitleMode = String(sourceSubtitleOutput?.mode ?? "").trim();
+  const currentSourceSubtitleMode = [projectedSourceSubtitleMode, plannedSourceSubtitleMode]
+    .find((mode) => mode === "translated_zh" || mode === "source" || mode === "bilingual") ?? "";
   const sourceSubtitleVersionOptions = presenterVideoPlan?.video_type === "source_excerpt"
     && !sourceSubtitleLanguage.startsWith("zh")
     ? [
