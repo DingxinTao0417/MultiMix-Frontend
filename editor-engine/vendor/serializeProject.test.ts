@@ -424,3 +424,60 @@ describe('split element persistence', () => {
     });
   });
 });
+
+describe('presenter event round-trip', () => {
+  it('preserves presenter identity, safe-region motion contract, and generated animation on save', () => {
+    const backend = {
+      metadata: { title: 'Presenter event', duration: 5 },
+      settings: { fps: 30, width: 960, height: 540 },
+      media: [],
+      tracks: [{
+        id: 'track-presenter-graphics',
+        type: 'text',
+        name: '图形',
+        logicalLayer: 'graphics',
+        elements: [{
+          id: 'presenter-event-event-1',
+          type: 'text',
+          startTime: 1,
+          duration: 2.5,
+          content: 'use this technology with great care',
+          textRole: 'presenter_emphasis',
+          eventId: 'event-1',
+          eventType: 'text_emphasis',
+          presenterSceneId: 'scene-1',
+          enter: 'fade_up',
+          exit: 'fade_out',
+          requiredForPublish: false,
+          specHash: 'c'.repeat(64),
+          safeRegion: { x: 0.74, y: 0.39, width: 0.21, height: 0.24 },
+        }],
+      }],
+    } as unknown as BackendProject;
+    prepareEditorRoundTrip(backend);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[0] as unknown as Record<string, unknown>;
+
+    expect(serialized.tracks[0].logicalLayer).toBe('graphics');
+    expect(saved).toMatchObject({
+      textRole: 'presenter_emphasis',
+      eventId: 'event-1',
+      eventType: 'text_emphasis',
+      presenterSceneId: 'scene-1',
+      enter: 'fade_up',
+      exit: 'fade_out',
+      requiredForPublish: false,
+      specHash: 'c'.repeat(64),
+      safeRegion: { x: 0.74, y: 0.39, width: 0.21, height: 0.24 },
+    });
+    expect(saved.animations).toBeTruthy();
+
+    const reopened = buildProject(serialized).project.scenes[0].tracks[0].elements[0] as {
+      textRole?: string;
+      animations?: unknown;
+    };
+    expect(reopened.textRole).toBe('presenter_emphasis');
+    expect(reopened.animations).toEqual(saved.animations);
+  });
+});

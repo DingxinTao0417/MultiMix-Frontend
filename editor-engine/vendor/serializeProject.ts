@@ -10,6 +10,8 @@ import {
   editDecisionByElementId,
   filePathByMediaId,
   focusTextByElementId,
+  logicalLayerByTrackId,
+  presenterEventByElementId,
   safeRegionByElementId,
   segmentIdByElementId,
   segmentTextByElementId,
@@ -37,7 +39,12 @@ function serializeElement(el: {
   trimEnd?: number;
   mediaId?: string;
   content?: string;
-  textRole?: "subtitle" | "presentation_support";
+  textRole?:
+    | "subtitle"
+    | "presentation_support"
+    | "brand_cta"
+    | "presenter_emphasis"
+    | "presenter_graphic";
   fontSize?: number;
   transform?: {
     scaleX: number;
@@ -68,6 +75,7 @@ function serializeElement(el: {
       out.fontSize = el.fontSize;
     }
     if (el.transform) out.transform = el.transform;
+    if (el.animations) out.animations = el.animations;
   }
   if (el.type === "audio") {
     out.volume = el.volume ?? 1;
@@ -101,6 +109,8 @@ function serializeElement(el: {
   }
   const textRole = el.textRole ?? textRoleByElementId[el.id];
   if (textRole) out.textRole = textRole;
+  const presenterEvent = presenterEventByElementId[el.id];
+  if (presenterEvent) Object.assign(out, presenterEvent);
   return out;
 }
 
@@ -153,6 +163,8 @@ export function serializeBackendProject(editor: EditorCore): RawProject {
       elements,
     };
     if (t.type === "video" && t.isMain === false) track.overlay = true;
+    const logicalLayer = logicalLayerByTrackId[t.id];
+    if (logicalLayer) track.logicalLayer = logicalLayer;
     return track;
   });
 
