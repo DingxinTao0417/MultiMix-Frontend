@@ -260,7 +260,10 @@ export default function ProductWorkspace({
   const currentSourceSubtitleMode = [projectedSourceSubtitleMode, plannedSourceSubtitleMode]
     .find((mode) => mode === "translated_zh" || mode === "source" || mode === "bilingual") ?? "";
   const sourceSubtitleVersionOptions = presenterVideoPlan?.video_type === "source_excerpt"
-    && !sourceSubtitleLanguage.startsWith("zh")
+    // A persisted mode is a validated identity of an existing subtitle
+    // version. Keep its menu reachable even if a historical project had an
+    // unknown source language incorrectly projected as the TTS/UI default.
+    && (!sourceSubtitleLanguage.startsWith("zh") || Boolean(currentSourceSubtitleMode))
     ? [
         { mode: "translated_zh" as const, label: "中文字幕" },
         { mode: "source" as const, label: "原文字幕" },

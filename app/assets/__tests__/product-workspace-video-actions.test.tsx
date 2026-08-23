@@ -89,6 +89,37 @@ describe("video browse actions", () => {
     expect(screen.getByRole("button", { name: "中文字幕" })).toBeEnabled();
   });
 
+  it("keeps the menu available for a persisted variant whose legacy source language was misprojected", () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const product = {
+      ...base,
+      metadata: {
+        ...base.metadata,
+        source_subtitle_mode: "bilingual",
+        video_plan: {
+          ...(base.metadata?.video_plan as Record<string, unknown>),
+          video_type: "source_excerpt",
+          subtitle_output: { source_language: "zh-CN", mode: "bilingual" },
+        },
+      },
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "字幕语言" }));
+    expect(screen.getByRole("button", { name: "中英双语（当前）" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "中文字幕" })).toBeEnabled();
+  });
+
   it("does not offer subtitle versions for an ordinary completed video", () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     render(
