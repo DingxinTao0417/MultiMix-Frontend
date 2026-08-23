@@ -314,6 +314,17 @@ export type AssetPresenterCleanupItem = {
   spokenText: string;
   action: string;
   reason: string;
+  decisionLabel?: string;
+  decisionReason?: string;
+  semanticReview?: {
+    verdict: "approve" | "downgrade" | "protect";
+    reason: string;
+  };
+  secondaryRecognition?: {
+    status: "confirmed" | "disagreed" | "invalid" | "unavailable";
+    label: string;
+    model?: string;
+  };
   estimatedSavingSeconds: number;
   risk: string;
   audioRisk: string;

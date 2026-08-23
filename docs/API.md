@@ -784,6 +784,14 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 生成新的 `cleanup_review` 版本后，第一步再提交清理卡中的结构化选择：
 
+清理卡 `plan.cleanup_items[*]` 除原话、候选类型、风险和选中状态外，还会返回：
+
+- `decision_label` / `decision_reason`：服务端冻结的最终显示结论，例如“自动通过”“降为建议”“已保护”及完整理由。
+- `semantic_review`：可选的独立语义复核 `{ verdict, reason }`，`verdict` 只允许 `approve | downgrade | protect`。
+- `secondary_recognition`：可选的第二 ASR 客观证据显示对象，状态只允许 `confirmed | disagreed | invalid | unavailable`；它只能说明两次识别是否一致，不能替代语义删除判断。
+
+前端必须原样展示这些服务端字段，不得根据口癖词、类别、置信度或风险值自行推断最终状态。历史卡片缺少新字段时可按已有 `state` 显示兼容标签，但不得补造复核原因。
+
 ```jsonc
 {
   "content": "确认口播清理方案",
