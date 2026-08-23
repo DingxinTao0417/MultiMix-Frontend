@@ -109,10 +109,6 @@ export function useAssetGenerationJobs(
           changed = true;
           continue;
         }
-        if (live.run === 0 && live.job.status !== entry.job.status) {
-          next[entry.conversationId] = { ...live, job: entry.job };
-          changed = true;
-        }
       }
       return changed ? next : current;
     });

@@ -144,6 +144,44 @@ describe("useAssetGenerationJobs", () => {
     expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("failed");
   });
 
+  it("does not let stale persisted queued metadata overwrite a polled running job", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
+      .mockResolvedValue(generationJob({ status: "running" }));
+    const persistedQueued = conversation({
+      messages: [{
+        role: "assistant",
+        text: "内容生成任务已进入队列。",
+        metadata: {
+          asset_generation_job_id: "asset-generation-job-1",
+          asset_generation_status: "queued",
+        },
+      }],
+    });
+    const { result, rerender } = renderHook(
+      ({ conversations }) => useAssetGenerationJobs({
+        token: "token-1",
+        conversations,
+        onConversationRefreshed: vi.fn(),
+        onConversationRefreshError: vi.fn(),
+      }),
+      { initialProps: { conversations: [] as Conversation[] } },
+    );
+
+    act(() => {
+      result.current.registerJob("conversation-1", generationJob());
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("running");
+
+    rerender({ conversations: [persistedQueued] });
+
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("running");
+  });
+
   it("refreshes the conversation once and removes a completed job", async () => {
     vi.useFakeTimers();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
