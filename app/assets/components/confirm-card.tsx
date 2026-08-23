@@ -109,6 +109,12 @@ export default function ConfirmCard({
         <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">
           {cleanupItems.map((item) => {
             const checked = selectedCleanupIds.has(item.id);
+            const decisionLabel = item.decisionLabel ?? {
+              auto: "自动处理",
+              suggested: "建议确认",
+              protected: "已保护",
+            }[item.state];
+            const decisionReason = item.decisionReason || item.reason;
             return (
               <label key={item.id} data-state={item.state}>
                 <input
@@ -124,7 +130,18 @@ export default function ConfirmCard({
                 />
                 <span>
                   <strong>{item.spokenText || item.category}</strong>
-                  <small>{item.reason} · 预计缩短 {item.estimatedSavingSeconds.toFixed(1)} 秒</small>
+                  <em>{decisionLabel}</em>
+                  <small>{decisionReason}</small>
+                  {item.reason && item.reason !== decisionReason ? <small>候选判断：{item.reason}</small> : null}
+                  {item.secondaryRecognition ? (
+                    <>
+                      <small>{item.secondaryRecognition.label}</small>
+                      {item.secondaryRecognition.model ? (
+                        <small>交叉识别模型：{item.secondaryRecognition.model}</small>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <small>预计缩短 {item.estimatedSavingSeconds.toFixed(1)} 秒</small>
                   <small>音频风险 {item.audioRisk} · 跳切风险 {item.visualJumpRisk}</small>
                   {item.protectionReasons.length ? <em>保护：{item.protectionReasons.join("、")}</em> : null}
                 </span>

@@ -155,6 +155,17 @@ describe("ConfirmCard pending state", () => {
           audioRisk: "low",
           visualJumpRisk: "medium",
           protectionReasons: [],
+          decisionLabel: "自动通过",
+          decisionReason: "删除不改变原意、语气或逻辑关系",
+          semanticReview: {
+            verdict: "approve" as const,
+            reason: "删除不改变原意、语气或逻辑关系",
+          },
+          secondaryRecognition: {
+            status: "confirmed" as const,
+            label: "第二次识别一致，已恢复自动处理",
+            model: "paraformer-v2",
+          },
           selected: true,
           locked: false,
         },
@@ -170,6 +181,16 @@ describe("ConfirmCard pending state", () => {
           audioRisk: "low",
           visualJumpRisk: "high",
           protectionReasons: [],
+          decisionLabel: "降为建议",
+          decisionReason: "可能承担承接上句的表达作用",
+          semanticReview: {
+            verdict: "downgrade" as const,
+            reason: "可能承担承接上句的表达作用",
+          },
+          secondaryRecognition: {
+            status: "disagreed" as const,
+            label: "两次识别不一致，保持建议",
+          },
           selected: false,
           locked: false,
         },
@@ -183,6 +204,12 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
 
+    expect(screen.getByText("自动通过")).toBeTruthy();
+    expect(screen.getByText("删除不改变原意、语气或逻辑关系")).toBeTruthy();
+    expect(screen.getByText("第二次识别一致，已恢复自动处理")).toBeTruthy();
+    expect(screen.getByText("降为建议")).toBeTruthy();
+    expect(screen.getByText("可能承担承接上句的表达作用")).toBeTruthy();
+    expect(screen.getByText("两次识别不一致，保持建议")).toBeTruthy();
     fireEvent.click(screen.getByText("再说一次"));
     fireEvent.click(screen.getByRole("radio", { name: "人声轨 2" }));
     fireEvent.click(screen.getByRole("button", { name: "确认清理并进入导演方案" }));

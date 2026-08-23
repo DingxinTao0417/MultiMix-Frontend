@@ -1327,6 +1327,76 @@ describe("message plan mapping", () => {
     expect(product.actions).toEqual(["调整口播包装", "修正字幕", "补充事件素材", "取消包装"]);
   });
 
+  it("maps presenter cleanup review outcomes and secondary recognition evidence", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-presenter-cleanup",
+        title: "口播清理",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-08-14T00:00:00Z",
+        updated_at: "2026-08-14T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请确认清理方案",
+          asset_id: 501,
+          created_at: "2026-08-14T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "presenter_cleanup_confirmation",
+              title: "口播清理",
+              status: "pending",
+              fields: [{ key: "cleanup_summary", label: "自然精简", value: "自动 1 项" }],
+              cleanup_items: [{
+                id: "candidate-filler",
+                state: "auto",
+                category: "non_lexical_filler",
+                spoken_text: "嗯",
+                action: "delete",
+                reason: "孤立口癖",
+                decision_label: "自动通过",
+                decision_reason: "删除不改变原意、语气或逻辑关系",
+                semantic_review: {
+                  verdict: "approve",
+                  reason: "删除不改变原意、语气或逻辑关系",
+                },
+                secondary_recognition: {
+                  status: "confirmed",
+                  label: "第二次识别一致，已恢复自动处理",
+                  model: "paraformer-v2",
+                },
+                estimated_saving_seconds: 0.3,
+                risk: "low",
+                audio_risk: "low",
+                visual_jump_risk: "low",
+                protection_reasons: [],
+                selected: true,
+                locked: false,
+              }],
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan?.cleanupItems?.[0]).toMatchObject({
+      decisionLabel: "自动通过",
+      decisionReason: "删除不改变原意、语气或逻辑关系",
+      semanticReview: {
+        verdict: "approve",
+        reason: "删除不改变原意、语气或逻辑关系",
+      },
+      secondaryRecognition: {
+        status: "confirmed",
+        label: "第二次识别一致，已恢复自动处理",
+        model: "paraformer-v2",
+      },
+    });
+  });
+
   it("maps presenter direction samples for the combined confirmation card", () => {
     const conversation = conversationFromPersisted(
       {

@@ -277,6 +277,27 @@ function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
     const id = stringValue(item.id);
     const state = stringValue(item.state);
     if (!id || !["auto", "suggested", "protected"].includes(state)) return [];
+    const semanticReviewValue = isRecord(item.semantic_review) ? item.semantic_review : undefined;
+    const semanticVerdict = stringValue(semanticReviewValue?.verdict);
+    const semanticReason = stringValue(semanticReviewValue?.reason);
+    const semanticReview = ["approve", "downgrade", "protect"].includes(semanticVerdict)
+      && semanticReason
+      ? {
+          verdict: semanticVerdict as "approve" | "downgrade" | "protect",
+          reason: semanticReason,
+        }
+      : undefined;
+    const secondaryValue = isRecord(item.secondary_recognition) ? item.secondary_recognition : undefined;
+    const secondaryStatus = stringValue(secondaryValue?.status);
+    const secondaryLabel = stringValue(secondaryValue?.label);
+    const secondaryRecognition = ["confirmed", "disagreed", "invalid", "unavailable"].includes(secondaryStatus)
+      && secondaryLabel
+      ? {
+          status: secondaryStatus as "confirmed" | "disagreed" | "invalid" | "unavailable",
+          label: secondaryLabel,
+          model: stringValue(secondaryValue?.model) || undefined,
+        }
+      : undefined;
     return [{
       id,
       state: state as AssetPresenterCleanupItem["state"],
@@ -284,6 +305,10 @@ function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
       spokenText: stringValue(item.spoken_text),
       action: stringValue(item.action),
       reason: stringValue(item.reason),
+      decisionLabel: stringValue(item.decision_label),
+      decisionReason: stringValue(item.decision_reason),
+      semanticReview,
+      secondaryRecognition,
       estimatedSavingSeconds: typeof item.estimated_saving_seconds === "number"
         ? item.estimated_saving_seconds
         : 0,
