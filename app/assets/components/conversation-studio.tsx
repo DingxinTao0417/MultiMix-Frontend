@@ -898,6 +898,14 @@ export default function ConversationStudio({
                             void sendInstruction(intent.utterance);
                             return;
                           }
+                          if (panelProduct) {
+                            // A fill-only suggestion such as “调整分镜” is
+                            // attached to a specific draft card. Keep that
+                            // target selected so the later composer submission
+                            // carries its backend asset ID instead of whichever
+                            // unrelated product was previously active.
+                            onSelectProduct(selectedConversation.id, panelProduct.id);
+                          }
                           setComposerValue(intent.utterance);
                           requestAnimationFrame(() => {
                             composerRef.current?.focus();
