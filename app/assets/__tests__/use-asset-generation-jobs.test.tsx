@@ -102,6 +102,40 @@ describe("useAssetGenerationJobs", () => {
     });
   });
 
+  it("retries a failed job during the live-registry restore window with its current conversation", async () => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
+    const retriedJob = generationJob({
+      id: "asset-generation-job-persisted",
+      status: "queued",
+      updated_at: "2026-08-23T13:00:00Z",
+    });
+    const retryGenerationJob = vi.spyOn(assetWorkspaceAdapter, "retryGenerationJob")
+      .mockResolvedValue(retriedJob);
+    const { result } = renderHook(
+      ({ conversations }) => useAssetGenerationJobs({
+        token: "token-1",
+        conversations,
+        onConversationRefreshed: vi.fn(),
+        onConversationRefreshError: vi.fn(),
+      }),
+      { initialProps: { conversations: [] as Conversation[] } },
+    );
+
+    await act(async () => {
+      await result.current.retryJob("asset-generation-job-persisted", "conversation-1");
+    });
+
+    expect(retryGenerationJob).toHaveBeenCalledWith(
+      "token-1",
+      "asset-generation-job-persisted",
+    );
+    expect(result.current.jobsByConversation["conversation-1"]).toEqual({
+      conversationId: "conversation-1",
+      job: retriedJob,
+      run: 1,
+    });
+  });
+
   it("starts polling after 200ms and repeats a running job after 2.5s", async () => {
     vi.useFakeTimers();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);

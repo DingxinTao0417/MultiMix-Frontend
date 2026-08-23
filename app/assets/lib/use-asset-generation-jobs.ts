@@ -34,10 +34,12 @@ export function useAssetGenerationJobs(
   } = args;
   const [jobsByConversation, setJobsByConversation] = useState<Record<string, AssetGenerationJobLive>>({});
   const jobsByConversationRef = useRef(jobsByConversation);
+  const conversationsRef = useRef(conversations);
   const inFlightRunsRef = useRef(new Set<string>());
   const refreshedRunsRef = useRef(new Set<string>());
   const onConversationRefreshedRef = useRef(onConversationRefreshed);
   const onConversationRefreshErrorRef = useRef(onConversationRefreshError);
+  conversationsRef.current = conversations;
   onConversationRefreshedRef.current = onConversationRefreshed;
   onConversationRefreshErrorRef.current = onConversationRefreshError;
   const registerJob = useCallback((
@@ -54,20 +56,31 @@ export function useAssetGenerationJobs(
       [conversationId]: live,
     }));
   }, []);
-  const retryJob = useCallback(async (jobId: string) => {
+  const retryJob = useCallback(async (jobId: string, fallbackConversationId?: string) => {
     if (!token) return;
-    const entry = Object.values(jobsByConversationRef.current)
-      .find((live) => live.job.id === jobId);
-    if (!entry) return;
+    const liveEntry = Object.values(jobsByConversationRef.current)
+      .find((live) => live.job.id === jobId)
+    const persistedEntry = assetGenerationJobsFromConversations(conversationsRef.current)
+      .find((persisted) => persisted.job.id === jobId);
+    const conversationId = liveEntry?.conversationId
+      ?? persistedEntry?.conversationId
+      ?? fallbackConversationId;
+    if (!conversationId) {
+      throw new Error("未找到可重试的内容生成任务，请刷新对话后重试。");
+    }
     const remote = await assetWorkspaceAdapter.retryGenerationJob(token, jobId);
-    const nextEntry = { ...entry, job: remote, run: entry.run + 1 };
+    const nextEntry = {
+      conversationId,
+      job: remote,
+      run: (liveEntry?.run ?? 0) + 1,
+    };
     jobsByConversationRef.current = {
       ...jobsByConversationRef.current,
-      [entry.conversationId]: nextEntry,
+      [conversationId]: nextEntry,
     };
     setJobsByConversation((jobs) => ({
       ...jobs,
-      [entry.conversationId]: nextEntry,
+      [conversationId]: nextEntry,
     }));
   }, [token]);
   const cancelJob = useCallback(async (jobId: string) => {

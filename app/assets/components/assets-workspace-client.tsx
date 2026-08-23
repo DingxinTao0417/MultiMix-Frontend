@@ -1223,7 +1223,7 @@ export default function AssetsWorkspaceClient({
   const handleRetryGeneration = async (jobId: string) => {
     if (!token) return;
     try {
-      await retryAssetGenerationJob(jobId);
+      await retryAssetGenerationJob(jobId, selectedConversation.id);
     } catch (error) {
       toast.error(formatComposerError(error));
     }
