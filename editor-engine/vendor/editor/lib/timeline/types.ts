@@ -170,7 +170,12 @@ export interface SubtitlePresentation {
 export interface TextElement extends BaseVisualElement {
 	type: "text";
 	content: string;
-	textRole?: "subtitle" | "presentation_support" | "brand_cta";
+	textRole?:
+		| "subtitle"
+		| "presentation_support"
+		| "brand_cta"
+		| "presenter_emphasis"
+		| "presenter_graphic";
 	subtitlePresentation?: SubtitlePresentation;
 	fontSize: number;
 	fontFamily: string;

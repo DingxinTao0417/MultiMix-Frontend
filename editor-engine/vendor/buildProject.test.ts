@@ -1270,3 +1270,104 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     });
   });
 });
+
+describe('buildProject - presenter visual events', () => {
+  it('places presenter text and graphic cards inside their authored safe regions with subtle entrance and exit motion', () => {
+    const backend = makeProject({
+      settings: { fps: 30, width: 960, height: 540 },
+      tracks: [{
+        id: 'track-presenter-graphics',
+        type: 'text',
+        name: '图形',
+        elements: [
+          {
+            id: 'presenter-event-left',
+            type: 'text',
+            startTime: 3.2,
+            duration: 2.5,
+            content: 'example of face swap using AI.',
+            textRole: 'presenter_emphasis',
+            eventId: 'event-left',
+            eventType: 'text_emphasis',
+            enter: 'fade_up',
+            exit: 'fade_out',
+            requiredForPublish: false,
+            specHash: 'a'.repeat(64),
+            safeRegion: { x: 0.05, y: 0.08, width: 0.25, height: 0.23 },
+          },
+          {
+            id: 'presenter-event-right',
+            type: 'text',
+            startTime: 19.92,
+            duration: 4.44,
+            content: 'used in institutions where they have online classes',
+            textRole: 'presenter_graphic',
+            eventId: 'event-right',
+            eventType: 'graphic_overlay',
+            enter: 'fade_up',
+            exit: 'fade_out',
+            requiredForPublish: false,
+            specHash: 'b'.repeat(64),
+            safeRegion: { x: 0.74, y: 0.39, width: 0.21, height: 0.24 },
+          },
+        ],
+      }],
+    } as unknown as Partial<BackendProject>);
+
+    const elements = buildProject(backend).project.scenes[0].tracks[0].elements as Array<{
+      textRole?: string;
+      content?: string;
+      transform: { position: { x: number; y: number } };
+      animations?: {
+        channels: {
+          opacity?: { keyframes: Array<{ time: number; value: number }> };
+          'transform.position'?: {
+            keyframes: Array<{ time: number; value: { x: number; y: number } }>;
+          };
+        };
+      };
+    }>;
+    const [left, right] = elements;
+
+    expect(left.textRole).toBe('presenter_emphasis');
+    expect(left.content?.replaceAll('\n', ' ')).toContain('face swap');
+    expect(left.transform.position.x).toBe(-312);
+    expect(right.textRole).toBe('presenter_graphic');
+    expect(right.content?.replaceAll('\n', ' ')).toContain('online classes');
+    expect(right.transform.position.x).toBe(331);
+    expect(left.animations?.channels.opacity?.keyframes.map(({ value }) => value))
+      .toEqual([0, 1, 1, 0]);
+    expect(right.animations?.channels['transform.position']?.keyframes[0].value.y)
+      .toBeGreaterThan(right.transform.position.y);
+    expect(right.animations?.channels['transform.position']?.keyframes.at(-1)?.value.y)
+      .toBeLessThan(right.transform.position.y);
+  });
+
+  it('keeps ordinary subtitles on the existing subtitle layout path', () => {
+    const backend = makeProject({
+      settings: { fps: 30, width: 960, height: 540 },
+      tracks: [{
+        id: 'track-text',
+        type: 'text',
+        name: '字幕',
+        elements: [{
+          id: 'subtitle-unchanged',
+          type: 'text',
+          startTime: 0,
+          duration: 2,
+          content: 'ordinary subtitle',
+          textRole: 'subtitle',
+          safeRegion: { x: 0.08, y: 0.76, width: 0.84, height: 0.18 },
+        }],
+      }],
+    });
+
+    const subtitle = buildProject(backend).project.scenes[0].tracks[0].elements[0] as {
+      transform: { position: { x: number; y: number } };
+      animations?: unknown;
+    };
+
+    expect(subtitle.transform.position.x).toBe(0);
+    expect(subtitle.animations).toBeUndefined();
+  });
+});

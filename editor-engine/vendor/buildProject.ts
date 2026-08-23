@@ -72,7 +72,19 @@ export interface BackendElement {
   animations?: ElementAnimations;
   transition?: BackendTransition;
   editDecision?: BackendEditDecision;
-  textRole?: "subtitle" | "presentation_support" | "brand_cta";
+  textRole?:
+    | "subtitle"
+    | "presentation_support"
+    | "brand_cta"
+    | "presenter_emphasis"
+    | "presenter_graphic";
+  eventId?: string;
+  eventType?: string;
+  presenterSceneId?: string;
+  enter?: string;
+  exit?: string;
+  requiredForPublish?: boolean;
+  specHash?: string;
   subtitlePresentation?: "static_phrase" | "word_highlight" | "karaoke";
   subtitleTokens?: Array<{ text: string; startOffset: number; endOffset: number }>;
   subtitleBackground?: { enabled: boolean; color: string };
@@ -92,6 +104,7 @@ export interface BackendTrack {
   name: string;
   elements: BackendElement[];
   overlay?: boolean;    // MG overlay track: composited above the main video, isMain=false
+  logicalLayer?: string;
 }
 export interface BackendProject {
   metadata: {
@@ -476,6 +489,16 @@ export const displayTextByElementId: Record<string, string> = {};
 export const focusTextByElementId: Record<string, string> = {};
 export const editDecisionByElementId: Record<string, BackendEditDecision> = {};
 export const textRoleByElementId: Record<string, NonNullable<BackendElement["textRole"]>> = {};
+export const presenterEventByElementId: Record<string, {
+  eventId: string;
+  eventType?: string;
+  presenterSceneId?: string;
+  enter?: string;
+  exit?: string;
+  requiredForPublish: boolean;
+  specHash?: string;
+}> = {};
+export const logicalLayerByTrackId: Record<string, string> = {};
 
 // Timeline split keeps the left clip id but assigns a new id to the right
 // clip. The OpenCut element type cannot carry our backend-only persistence
@@ -500,6 +523,7 @@ export function copyElementPersistenceMetadata(
   copy(focusTextByElementId);
   copy(editDecisionByElementId);
   copy(textRoleByElementId);
+  copy(presenterEventByElementId);
 }
 
 function validatedSplitSupport(
@@ -686,6 +710,175 @@ function vectorMotionChannel(
       { id: `${id}-start`, time: 0, value: start, interpolation: "linear" as const },
       { id: `${id}-end`, time: duration, value: end, interpolation: "linear" as const },
     ],
+  };
+}
+
+function presenterEventAnimations(
+  element: BackendElement,
+  position: { x: number; y: number },
+): ElementAnimations | undefined {
+  if (element.animations) return element.animations;
+  const duration = element.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return undefined;
+  const hasEntrance = element.enter !== "cut";
+  const hasExit = element.exit !== "cut";
+  if (!hasEntrance && !hasExit) return undefined;
+  const entranceEnd = Math.min(0.22, duration * 0.18);
+  const exitStart = Math.max(entranceEnd, duration - Math.min(0.18, duration * 0.18));
+  const opacityKeyframes = [
+    { id: `${element.id}-opacity-start`, time: 0, value: hasEntrance ? 0 : 1, interpolation: "linear" as const },
+    { id: `${element.id}-opacity-in`, time: entranceEnd, value: 1, interpolation: "linear" as const },
+    { id: `${element.id}-opacity-out`, time: exitStart, value: 1, interpolation: "linear" as const },
+    { id: `${element.id}-opacity-end`, time: duration, value: hasExit ? 0 : 1, interpolation: "linear" as const },
+  ];
+  const positionKeyframes = [
+    {
+      id: `${element.id}-position-start`,
+      time: 0,
+      value: { x: position.x, y: position.y + (hasEntrance ? 12 : 0) },
+      interpolation: "linear" as const,
+    },
+    {
+      id: `${element.id}-position-in`,
+      time: entranceEnd,
+      value: position,
+      interpolation: "linear" as const,
+    },
+    {
+      id: `${element.id}-position-out`,
+      time: exitStart,
+      value: position,
+      interpolation: "linear" as const,
+    },
+    {
+      id: `${element.id}-position-end`,
+      time: duration,
+      value: { x: position.x, y: position.y - (hasExit ? 6 : 0) },
+      interpolation: "linear" as const,
+    },
+  ];
+  return {
+    channels: {
+      opacity: { valueKind: "number", keyframes: opacityKeyframes },
+      "transform.position": { valueKind: "vector", keyframes: positionKeyframes },
+    },
+  };
+}
+
+function wrapPresenterEventLine(
+  text: string,
+  fontPx: number,
+  availableWidth: number,
+  measure: CaptionMeasure,
+): string[] {
+  const words = text.trim().split(/\s+/u).filter(Boolean);
+  if (words.length <= 1) return wrapMeasuredLine(text, fontPx, availableWidth, measure);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && measure(candidate, fontPx) > availableWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.flatMap((line) => (
+    measure(line, fontPx) <= availableWidth
+      ? [line]
+      : wrapMeasuredLine(line, fontPx, availableWidth, measure)
+  ));
+}
+
+function layoutPresenterEventText(
+  text: string,
+  options: SupportCardLayoutOptions,
+): SupportCardLayout {
+  const sourceLines = (text || "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!sourceLines.length) {
+    return { text: "", lines: 0, fontPx: options.preferredFontPx };
+  }
+  const preferred = Math.max(options.minimumFontPx, options.preferredFontPx);
+  const minimum = Math.min(preferred, options.minimumFontPx);
+  const measure = options.measureText
+    ?? browserTextWidth(options.fontFamily ?? "sans-serif");
+  const lineHeight = options.lineHeight ?? 1.3;
+  let fallback: SupportCardLayout | null = null;
+  for (let fontPx = Math.floor(preferred); fontPx >= Math.ceil(minimum); fontPx -= 1) {
+    const visualLines = sourceLines.flatMap((line) =>
+      wrapPresenterEventLine(line, fontPx, options.availableWidth, measure)
+    );
+    const candidate = {
+      text: visualLines.join("\n"),
+      lines: visualLines.length,
+      fontPx,
+    };
+    fallback = candidate;
+    if (visualLines.length * fontPx * lineHeight <= options.availableHeight) {
+      return candidate;
+    }
+  }
+  return fallback ?? { text: sourceLines.join("\n"), lines: sourceLines.length, fontPx: minimum };
+}
+
+function presenterEventTextElement(
+  element: BackendElement,
+  settings: BackendProject["settings"],
+): TextElement {
+  const region = element.safeRegion ?? { x: 0.08, y: 0.12, width: 0.32, height: 0.24 };
+  const graphic = element.textRole === "presenter_graphic";
+  const paddingX = Math.max(10, Math.round(settings.width * 0.012));
+  const paddingY = Math.max(8, Math.round(settings.height * 0.012));
+  const preferredFontPx = Math.min(
+    graphic ? 30 : 32,
+    Math.max(graphic ? 19 : 20, settings.height * (graphic ? 0.042 : 0.044)),
+  );
+  const minimumFontPx = Math.max(14, preferredFontPx * 0.7);
+  const layout = layoutPresenterEventText((element.content || "").trim(), {
+    availableWidth: Math.max(1, settings.width * region.width - paddingX * 2),
+    availableHeight: Math.max(1, settings.height * region.height - paddingY * 2),
+    preferredFontPx,
+    minimumFontPx,
+    fontFamily: subtitleStyle.fontFamily,
+    lineHeight: graphic ? 1.3 : 1.24,
+  });
+  const position = {
+    x: Math.round(settings.width * (region.x + region.width / 2 - 0.5)),
+    y: Math.round(settings.height * (region.y + region.height / 2 - 0.5)),
+  };
+  return {
+    id: element.id,
+    name: element.name || (graphic ? "口播图形" : "口播重点"),
+    type: "text",
+    content: layout.text,
+    duration: element.duration,
+    startTime: element.startTime,
+    trimStart: element.trimStart ?? 0,
+    trimEnd: element.trimEnd ?? 0,
+    fontSize: Math.max(2, (layout.fontPx * 90) / settings.height),
+    fontFamily: subtitleStyle.fontFamily,
+    color: "#ffffff",
+    background: {
+      enabled: true,
+      color: graphic ? "#171b26ee" : "#111827cc",
+      cornerRadius: graphic ? 16 : 12,
+      paddingX,
+      paddingY,
+    },
+    textAlign: "left",
+    fontWeight: "bold",
+    fontStyle: "normal",
+    textDecoration: "none",
+    lineHeight: graphic ? 1.3 : 1.24,
+    transform: { ...IDENTITY_TRANSFORM, position },
+    opacity: 1,
+    animations: presenterEventAnimations(element, position),
+    textRole: element.textRole,
   };
 }
 
@@ -899,6 +1092,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
   const segmentWindows = buildSegmentWindows(bp.tracks);
 
   for (const t of bp.tracks) {
+    if (t.logicalLayer) logicalLayerByTrackId[t.id] = t.logicalLayer;
     const sourceElements = t.overlay
       ? t.elements.map((element) => clampOverlayElementToSegment(element, segmentWindows))
       : t.elements;
@@ -910,6 +1104,17 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       if (e.focusText) focusTextByElementId[e.id] = e.focusText;
       if (e.editDecision) editDecisionByElementId[e.id] = e.editDecision;
       if (e.textRole) textRoleByElementId[e.id] = e.textRole;
+      if (e.eventId) {
+        presenterEventByElementId[e.id] = {
+          eventId: e.eventId,
+          ...(e.eventType ? { eventType: e.eventType } : {}),
+          ...(e.presenterSceneId ? { presenterSceneId: e.presenterSceneId } : {}),
+          ...(e.enter ? { enter: e.enter } : {}),
+          ...(e.exit ? { exit: e.exit } : {}),
+          requiredForPublish: e.requiredForPublish === true,
+          ...(e.specHash ? { specHash: e.specHash } : {}),
+        };
+      }
     }
     if (t.type === "video") {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
@@ -984,6 +1189,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       // breaks lines on "\n" (no auto-wrap). So we pick a per-line char budget,
       // hard-wrap the sentence into lines, and size the font to that budget.
       const elements = sourceElements.map((e): TextElement => {
+        if (e.textRole === "presenter_emphasis" || e.textRole === "presenter_graphic") {
+          return presenterEventTextElement(e, bp.settings);
+        }
         if (e.textRole === "presentation_support") {
           return supportCardTextElement(e, bp.settings);
         }
@@ -1086,6 +1294,8 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     focusTextByElementId,
     editDecisionByElementId,
     textRoleByElementId,
+    presenterEventByElementId,
+    logicalLayerByTrackId,
   ]) {
     for (const key of Object.keys(map)) delete map[key];
   }
