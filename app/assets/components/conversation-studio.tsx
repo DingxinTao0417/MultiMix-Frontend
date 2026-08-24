@@ -481,6 +481,14 @@ export default function ConversationStudio({
       ...(!isVideoParameterConfirmation && ratioLabel ? [ratioLabel] : []),
     ];
     const instruction = confirmationDetails.length ? `${base}（${confirmationDetails.join("；")}）` : base;
+    // The initial project confirmation already persists the plan's subtitle
+    // default. ``source_subtitle_mode`` is reserved for an explicit variant of
+    // an existing source-excerpt project, where the backend resolves its parent
+    // draft. Sending the card default here would misroute a fresh draft as a
+    // variant request and reject it before queueing.
+    const sourceSubtitleMode = plan.kind === "video_project_confirmation"
+      ? undefined
+      : values?.sourceSubtitleMode;
     const videoParameterConfirmation = (
       isVideoParameterConfirmation
       && plan.pendingIntentId
@@ -573,7 +581,7 @@ export default function ConversationStudio({
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
        plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
-       values?.sourceSubtitleMode,
+       sourceSubtitleMode,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);

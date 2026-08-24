@@ -148,6 +148,12 @@ describe("Conversation Agent actions", () => {
         { value: "9:16", label: "竖屏 9:16" },
       ],
       ratioDefault: "16:9",
+      subtitleOptions: [
+        { value: "translated_zh", label: "中文字幕" },
+        { value: "source", label: "原文字幕" },
+        { value: "bilingual", label: "中英双语" },
+      ],
+      subtitleDefault: "translated_zh",
     };
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -172,5 +178,6 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[1]).toBe("确认，生成视频工程（横屏 16:9）");
     expect(onSendMessage.mock.calls[0]?.[5]).toBeUndefined();
     expect(onSendMessage.mock.calls[0]?.[12]).toBe(1194);
+    expect(onSendMessage.mock.calls[0]?.[13]).toBeUndefined();
   });
 });
