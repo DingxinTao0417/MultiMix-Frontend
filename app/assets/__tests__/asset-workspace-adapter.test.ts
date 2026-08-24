@@ -333,6 +333,53 @@ describe("runtime data boundary", () => {
     expect(page.nextOffset).toBe(48);
   });
 
+  it("keeps exact search results when semantic search returns no matches", async () => {
+    const exact = asset({ id: 81, title: "精确命中的素材" });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const pathname = new URL(String(input)).pathname;
+      const payload = pathname.endsWith("/semantic-search")
+        ? []
+        : [{ asset: exact, snippet: exact.title, score: 1, matched_fields: ["title"] }];
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "assets", "精确命中");
+    vi.unstubAllGlobals();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(page.rows.map((row) => row.assetId)).toEqual([81]);
+  });
+
+  it("keeps exact search results when semantic search is unavailable", async () => {
+    const exact = asset({ id: 82, title: "Provider 降级素材" });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const pathname = new URL(String(input)).pathname;
+      if (pathname.endsWith("/semantic-search")) {
+        return new Response(JSON.stringify({ detail: "unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify([
+        { asset: exact, snippet: exact.title, score: 1, matched_fields: ["title"] },
+      ]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "assets", "Provider 降级");
+    vi.unstubAllGlobals();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(page.rows.map((row) => row.assetId)).toEqual([82]);
+  });
+
   it("maps a video thumbnail separately from its playable preview", async () => {
     const video = asset({
       id: 72,
