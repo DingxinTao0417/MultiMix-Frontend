@@ -1179,6 +1179,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     contentType: asset.content_type,
     contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
+    videoProductCompleted: asset.product_completed === true,
     metadata,
     mode,
     title: normalizeAssetTitle(asset.title),

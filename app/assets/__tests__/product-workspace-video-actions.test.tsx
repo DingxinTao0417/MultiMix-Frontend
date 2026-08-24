@@ -16,6 +16,29 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("does not expose editing or export until the server confirms product completion", () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const product = {
+      ...base,
+      productStatus: "generating" as const,
+      videoProductCompleted: false,
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导出视频" })).not.toBeInTheDocument();
+  });
+
   it("offers a completed source excerpt a structured subtitle-version action", () => {
     const base = displayProducts["case-07-project-ready-mp4"];
     const product = {
@@ -855,8 +878,13 @@ describe("video browse actions", () => {
     expect(screen.queryByRole("button", { name: "修改配音" })).not.toBeInTheDocument();
   });
 
-  it("keeps preview and editing available while planned MG overlays run", () => {
-    const product = displayProducts["case-06-project-ready-no-mp4"];
+  it("blocks editing and export while planned MG overlays run", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    const product = {
+      ...base,
+      productStatus: "generating" as const,
+      videoProductCompleted: false,
+    };
 
     render(
       <ProductWorkspace
@@ -873,14 +901,64 @@ describe("video browse actions", () => {
           steps: [{ key: "mg_overlay", label: "生成并添加 MG 动效", status: "run", retryJobId: null }],
           errorMessage: null,
           completionConfirmed: false,
+          productStatus: "generating",
+          productCompleted: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("视频生成中")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导出视频" })).not.toBeInTheDocument();
+  });
+
+  it("restores editing and export after MG overlays render", () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+        videoJobLive={{
+          jobId: "main-job",
+          status: "completed",
+          workflowStage: "video_project_ready",
+          steps: [{ key: "mg_overlay", label: "生成并添加 MG 动效", status: "done", retryJobId: null }],
+          errorMessage: null,
+          completionConfirmed: true,
+          productStatus: "completed",
+          productCompleted: true,
         }}
       />,
     );
 
     expect(screen.getByRole("button", { name: "编辑" })).toBeEnabled();
-    expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+  });
+
+  it("keeps a ready internal project failed until MG recovery, with retry but no edit/export", () => {
+    const product = displayProducts["case-08-mg-failed-project-ready"];
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("第 1 镜动效未能完成。");
+    expect(screen.getByRole("button", { name: /重试生成/ })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导出视频" })).not.toBeInTheDocument();
   });
 
   it("opens the material picker without leaving the finished-video browse surface", async () => {

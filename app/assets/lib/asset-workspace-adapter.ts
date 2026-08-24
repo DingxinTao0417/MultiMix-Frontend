@@ -588,6 +588,7 @@ export type VideoJobResult = {
   errorMessage: string | null;
   project: Record<string, unknown> | null;
   productStatus?: "generating" | "completed" | "failed";
+  productCompleted: boolean;
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
@@ -611,6 +612,7 @@ type RawVideoJob = {
   error_message: string | null;
   project: Record<string, unknown> | null;
   product_status?: "generating" | "completed" | "failed";
+  product_completed?: boolean;
   failure_reason?: string | null;
   failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failure_scene_id?: string | null;
@@ -645,6 +647,7 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     errorMessage: raw.error_message,
     project: raw.project,
     productStatus: raw.product_status,
+    productCompleted: raw.product_completed === true,
     failureReason: raw.failure_reason,
     failureAction: raw.failure_action,
     failureSceneId: raw.failure_scene_id,

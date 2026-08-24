@@ -283,7 +283,9 @@ export default function ProductWorkspace({
   );
   const hasCurrentPersistedExport = hasPersistedExport && !projectEditedSinceExport;
   const persistedExportUrl = hasCurrentPersistedExport ? playableVideoUrl(product) : "";
-  // Video products backed by a real orchestration project can open the editor.
+  // ``videoProjectReady`` is the internal timeline checkpoint. The server-owned
+  // product-completion contract is stricter: required MG must also be rendered
+  // before users can open the editor or export.
   const hasVideoProject = Boolean(product.backendAssetId && product.videoProjectReady);
   // While the orchestration job runs (TTS + material search), there is no
   // editable project yet; surface stage-level progress instead of the editor.
@@ -295,13 +297,14 @@ export default function ProductWorkspace({
   const operationFailureDetail = videoJobLive?.operationFailureReason
     || product.operationFailureReason
     || "本次修改未能完成，已保留上一版工程。";
-  const liveVideoJobFailed = !hasVideoProject && effectiveProductStatus === "failed";
-  const orchestrationPending = !hasVideoProject && (effectiveProductStatus === "generating" || (!effectiveProductStatus && (Boolean(
-    product.backendAssetId && !hasVideoProject && productMetadata.orchestration_pending
+  const videoProductCompleted = videoJobLive?.productCompleted ?? product.videoProductCompleted === true;
+  const liveVideoJobFailed = !videoProductCompleted && effectiveProductStatus === "failed";
+  const orchestrationPending = !videoProductCompleted && (effectiveProductStatus === "generating" || (!effectiveProductStatus && (Boolean(
+    product.backendAssetId && !videoProductCompleted && productMetadata.orchestration_pending
   ) || videoJobLive?.status === "running" || videoJobLive?.status === "queued")));
   // Failed jobs keep latest_job_public_id in metadata; the poller/mapper marks
   // the asset failed. Show a persistent error card with a retry action.
-  const orchestrationFailed = !hasVideoProject && !orchestrationPending && Boolean(
+  const orchestrationFailed = !videoProductCompleted && !orchestrationPending && Boolean(
     liveVideoJobFailed
     || product.productStatus === "failed"
   );
@@ -320,15 +323,15 @@ export default function ProductWorkspace({
   // MP4 exists, otherwise segment cards from video_project) is the default;
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
-  const canBrowseVideo = hasVideoProject;
+  const canBrowseVideo = hasVideoProject && videoProductCompleted;
   const videoBgmSummary = canBrowseVideo ? browseBgmSummary(product) : "";
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
-  const showEditorEmbed = hasVideoProject && editorRequested && videoSurface === "edit";
+  const showEditorEmbed = canBrowseVideo && editorRequested && videoSurface === "edit";
   // ProductPreview renders its own browse state (poster/player + segment cards)
   // for any generated project — with or without an exported MP4, and even
   // without a backendAssetId (mock / externally-hosted). Mirror that here so the
   // legacy timeline strip never doubles up under it.
-  const previewShowsBrowse = Boolean(product.videoProjectReady);
+  const previewShowsBrowse = canBrowseVideo;
   // Image products download their real hero file; without a URL the button hides.
   const imageDownloadUrl = product.mode === "image"
     ? (() => {

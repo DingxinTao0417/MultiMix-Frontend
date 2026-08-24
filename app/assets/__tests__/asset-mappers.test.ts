@@ -62,6 +62,7 @@ describe("asset product mapper", () => {
       content_type: "video_project",
       status: "ready",
       product_status: "generating",
+      product_completed: false,
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -74,6 +75,7 @@ describe("asset product mapper", () => {
     expect(generating.productStatus).toBe("generating");
     expect(generating.status).toBe("生成中");
     expect(generating.videoProjectReady).toBe(true);
+    expect(generating.videoProductCompleted).toBe(false);
 
     const completed = contentAssetToProduct(asset({
       id: 202,
@@ -81,6 +83,7 @@ describe("asset product mapper", () => {
       content_type: "video_project",
       status: "ready",
       product_status: "completed",
+      product_completed: true,
       generation_state: "video_project_ready",
       metadata: {
         capability: "video_project",
@@ -93,6 +96,7 @@ describe("asset product mapper", () => {
     expect(completed.productStatus).toBe("completed");
     expect(completed.status).toBe("完成");
     expect(completed.videoProjectReady).toBe(true);
+    expect(completed.videoProductCompleted).toBe(true);
 
     const failed = contentAssetToProduct(asset({
       id: 203,
@@ -100,6 +104,7 @@ describe("asset product mapper", () => {
       content_type: "video_project",
       status: "ready",
       product_status: "failed",
+      product_completed: false,
       failure_reason: "动效服务超时",
       failure_action: "retry",
       generation_state: "video_project_ready",
@@ -114,6 +119,7 @@ describe("asset product mapper", () => {
     expect(failed.productStatus).toBe("failed");
     expect(failed.status).toBe("失败");
     expect(failed.failureReason).toBe("动效服务超时");
+    expect(failed.videoProductCompleted).toBe(false);
   });
 
   it("maps the recorded failed scene id without parsing the error sentence", () => {

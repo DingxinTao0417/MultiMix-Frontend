@@ -173,6 +173,7 @@ export const displayProducts: Record<DisplayCaseId, AssetProduct> = {
     phase: "视频",
     productStatus: "completed",
     videoProjectReady: true,
+    videoProductCompleted: true,
     segments: readySegments,
     metadata: { orchestration_pending: false, video_project: readyProject, video_plan: basePlan },
   },
@@ -183,6 +184,7 @@ export const displayProducts: Record<DisplayCaseId, AssetProduct> = {
     phase: "视频",
     productStatus: "completed",
     videoProjectReady: true,
+    videoProductCompleted: true,
     segments: readySegments,
     metadata: { orchestration_pending: false, video_project: { ...readyProject, mp4_ref: "display-sample.mp4" }, video_plan: basePlan },
   },
@@ -194,7 +196,8 @@ export const displayProducts: Record<DisplayCaseId, AssetProduct> = {
     productStatus: "failed",
     failureReason: "第 1 镜动效未能完成。",
     failureAction: "retry",
-    videoProjectReady: false,
+    videoProjectReady: true,
+    videoProductCompleted: false,
     segments: [
       {
         ...readySegments[0],
