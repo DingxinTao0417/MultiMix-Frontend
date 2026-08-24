@@ -1,8 +1,9 @@
 # 视频确认卡重复点击防护
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-20
+> Disposition: archived on 2026-08-24; the RED-to-GREEN tests, mapper regression and documentation checks are recorded as complete below.
 
 ## 背景与根因
 

@@ -1,6 +1,6 @@
 # LLY-30 修复中文输入法 Enter 误发送创作请求
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-15
 
@@ -136,3 +136,14 @@ onKeyDown={(event) => {
 - 不改 `next-env.d.ts`；该文件的用户既存单行修改保持原样，不混入本任务。
 - 不使用 E2E 服务或 SQLite；本修复由组件测试覆盖。
 - 不 commit、不 push、不部署、不修改 Linear 状态；完成后停在待 Codex 审查状态。
+
+## 完成与归档（2026-08-24）
+
+- 当前 `main` 的 `bdfdaca` 已让创作首页与工作室输入框共用 `shouldSubmitComposerOnEnter`。普通 Enter
+  才发送；Shift+Enter、React 事件的 `isComposing` 与原生事件投影的 `isComposing` 都不发送且不阻止
+  默认候选确认行为。
+- 两个入口的发送函数、附件守卫、发送按钮、停止生成和后端接口均未改动；没有以旧式 keyCode 或
+  组件内状态绕过输入法时序。
+- 组件回归 `app/assets/__tests__/composer-ime-submit.test.tsx` 为 `11 passed`，前端 `typecheck` 通过。
+  未启动 E2E 或后端服务、未创建 SQLite、未调用 Provider。
+- 本计划已有修复提交和当前定向复核，移入归档。

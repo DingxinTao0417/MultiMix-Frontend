@@ -6,7 +6,6 @@ import { spawn } from "node:child_process";
 
 import {
   assertPortFree,
-  safeRemoveRunDatabase,
   startLogged,
   stopChild,
   waitFor,
@@ -114,21 +113,6 @@ function restoreFiles(snapshots) {
     if (snapshot.existed) fs.writeFileSync(snapshot.filePath, snapshot.contents);
     else fs.rmSync(snapshot.filePath, { force: true });
   }
-}
-
-async function removeRunDatabaseWithRetry(filePath, expectedRunId) {
-  let lastError;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      safeRemoveRunDatabase(filePath, expectedRunId);
-      return;
-    } catch (error) {
-      lastError = error;
-      if (!["EBUSY", "EPERM"].includes(error?.code) || attempt === 11) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  throw lastError;
 }
 
 async function writeMediaReport() {

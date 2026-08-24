@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 type Seed = {
   email: string;

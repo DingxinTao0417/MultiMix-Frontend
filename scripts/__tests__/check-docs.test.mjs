@@ -17,34 +17,6 @@ function writeFile(root, relativePath, content) {
   fs.writeFileSync(target, content, "utf8");
 }
 
-function makeWorkspace() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-docs-check-"));
-
-  writeFile(
-    root,
-    "docs/README.md",
-    `# Docs
-
-- Review standard: \`docs/qa/project-review-standard.md\`
-- Security baseline: \`docs/qa/security-review-baseline.md\`
-`,
-  );
-  writeFile(root, "docs/authority/rule.md", `${HEADER}\n# Rule\n`);
-  writeFile(root, "docs/qa/conversation.md", `${HEADER}\n# QA\n`);
-  writeFile(root, "docs/qa/project-review-standard.md", `${HEADER}\n# Review standard\n`);
-  writeFile(root, "docs/qa/security-review-baseline.md", `${HEADER}\n# Security baseline\n`);
-  writeFile(root, "docs/plans/active/README.md", "# Active plans\n");
-  writeFile(root, "docs/plans/active/plan.md", `${HEADER}\n# Plan\n`);
-  writeFile(root, "docs/specs/ui/README.md", "# UI specs\n");
-  writeFile(root, "docs/specs/ui/agentic.md", `${HEADER}\n# UI\n`);
-  writeFile(root, "docs/specs/ui/prototypes/current/README.md", "# Current\n");
-  writeFile(root, "docs/specs/ui/prototypes/current/index.html", "<a href=\"screens/start.html\">Start</a>");
-  writeFile(root, "docs/specs/ui/prototypes/current/screens/start.html", "<main>Start</main>");
-  writeFile(root, "docs/archive/plans/old.md", "# Old plan\n");
-
-  return root;
-}
-
 function makeSplitWorkspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-split-docs-check-"));
 

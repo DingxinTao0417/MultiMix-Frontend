@@ -1,8 +1,9 @@
 # 长视频候选重选入口与滚动修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-21
+> Disposition: archived on 2026-08-24; the final production verification on 2026-08-22 is recorded below.
 
 ## 背景与根因
 

@@ -2,13 +2,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
 import {
   assertPortFree,
-  safeRemoveRunDatabaseWithRetries,
   startLogged,
   stopChild,
   waitFor,
