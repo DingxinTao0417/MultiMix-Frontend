@@ -143,6 +143,7 @@ export type VideoJobLiveStatus = {
   errorMessage: string | null;
   completionConfirmed: boolean;
   productStatus?: "generating" | "completed" | "failed";
+  productCompleted?: boolean;
   failureReason?: string | null;
   failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
@@ -1091,6 +1092,7 @@ export default function AssetsWorkspaceClient({
           steps: job.steps,
           errorMessage: job.errorMessage,
           productStatus: job.productStatus,
+          productCompleted: job.productCompleted,
           failureReason: job.failureReason,
           failureAction: job.failureAction,
           failureSceneId: job.failureSceneId,
@@ -1308,6 +1310,7 @@ export default function AssetsWorkspaceClient({
             steps: refreshed.steps,
           errorMessage: refreshed.errorMessage,
           productStatus: refreshed.productStatus,
+          productCompleted: refreshed.productCompleted,
           failureReason: refreshed.failureReason,
           failureAction: refreshed.failureAction,
           failureSceneId: refreshed.failureSceneId,

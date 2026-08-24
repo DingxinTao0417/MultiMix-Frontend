@@ -164,7 +164,8 @@ type AssetProduct = {
   versions?: AssetProductVersion[];  // 版本历史；详情区可查看和恢复
   preview?: AssetProductPreview;     // 预览补充数据
   backendAssetId?: number;     // 真实后端资产 id
-  videoProjectReady?: boolean; // 共享契约判定的视频工程可编辑状态
+  videoProjectReady?: boolean; // 内部工程检查点：时间线已可读，仍可等待必需 MG
+  videoProductCompleted?: boolean; // 服务端唯一的用户可编辑、可导出成片完成契约
   metadata?: Record<string, unknown>;
 };
 ```

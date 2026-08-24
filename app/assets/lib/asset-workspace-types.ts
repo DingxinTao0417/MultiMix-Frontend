@@ -188,6 +188,9 @@ export type AssetProduct = {
   // True only when the backend project satisfies the shared editor-readiness
   // contract. UI surfaces must not infer readiness from raw metadata presence.
   videoProjectReady?: boolean;
+  // Server-owned user-visible completion contract. Only a completed product
+  // may open the editor or export; project readiness is an internal checkpoint.
+  videoProductCompleted?: boolean;
   videoQualityReport?: VideoQualityReport;
   metadata?: Record<string, unknown>;
 };

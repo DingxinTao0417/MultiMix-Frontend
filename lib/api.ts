@@ -191,6 +191,7 @@ export type ContentAsset = {
   archived: boolean;
   error_message: string | null;
   product_status?: "generating" | "completed" | "failed" | null;
+  product_completed?: boolean;
   failure_reason?: string | null;
   failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
   failure_scene_id?: string | null;
