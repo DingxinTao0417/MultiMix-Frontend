@@ -1,6 +1,6 @@
 # 原片摘编受控验收摘要入口
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-25
 
