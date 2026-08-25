@@ -39,4 +39,12 @@
 - 已在 `asset-workspace-adapter.ts` 增加窄化的 `SourceExcerptAudit` 映射和只读 `getSourceExcerptAudit`；它只沿用现有 token 参数发起请求，不持久化 token 或响应。
 - 工作台只在已完成的 `source_excerpt` 工程显示“核验原片精简”按钮；点击前不发请求。结果面板仅显示区间计数/时长、三项布尔合同和稳定失败码；任何读取错误只显示通用失败提示。
 - 新增面板回归和 adapter 请求/映射回归。验证：`npm run test -- app/assets/__tests__/source-excerpt-audit-panel.test.tsx app/assets/__tests__/asset-workspace-adapter.test.ts` 为 `46 passed`；`npm run typecheck`、`npm run docs:check` 和 `git diff --check` 通过。
-- 未启动本地服务、未创建 SQLite、未调用 Provider、未部署。生产点击核验仍需单独授权。
+- 未启动本地服务、未创建 SQLite、未调用 Provider。
+- 提交 `a18413e` 已推送；Vercel 指定 team `lywgood96-1172s-projects`、project `multimix-frontend` 的 production 部署为 `READY`，且部署提交精确匹配。
+- 已在生产页尝试一次受控点击，但新开页渲染为空白（可见按钮数 `0`、页面文本长度 `0`），无法呈现或点击入口；公开 URL 返回 HTTP `200` 仅说明页面可达，不能替代已登录工作台验证。未读取或重放会话凭据，也未直接调用鉴权 API。
+- 生产点击核验尚未完成。待用户恢复其生产工作台会话后，对工程 `1276` 点击一次入口并只记录约定的 body-free 摘要；在此之前不得写为功能或端到端验收通过。
+
+## 生产点击验收通过（2026-08-25）
+
+- 用户恢复生产会话后，工程 `1276` 的入口可见并成功点击一次。面板仅展示允许的摘要：来源窗口 `26.48s`，保留 `5` 段 / `17.61s`，删减 `4` 段 / `8.87s`，安全删减、来源指纹、原声/画面/字幕时间线三项均为真，失败码为空。
+- 该次请求只走页面既有内存 token 注入；没有导出、持久化或重放 token，未展示任何正文。故入口在生产中完成受控读取并正确呈现 body-free 结果。
