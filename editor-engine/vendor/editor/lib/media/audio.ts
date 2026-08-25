@@ -15,6 +15,7 @@ import {
 import { canElementHaveAudio } from "@editor/lib/timeline/element-utils";
 import { canTracktHaveAudio } from "@editor/lib/timeline";
 import { mediaSupportsAudio } from "@editor/lib/media/media-utils";
+import { decodeVideoAudioWithNativeAudioContext } from "@editor/lib/media/video-audio-decode";
 import { getSourceTimeAtClipTime, renderRetimedBuffer } from "@editor/lib/retime";
 import { Input, ALL_FORMATS, BlobSource, AudioBufferSink } from "mediabunny";
 
@@ -216,7 +217,9 @@ async function resolveAudioBufferForVideoElement({
 
 	try {
 		const audioTrack = await input.getPrimaryAudioTrack();
-		if (!audioTrack) return null;
+		if (!audioTrack) {
+			throw new Error("Video source has no decodable audio track");
+		}
 
 		const sink = new AudioBufferSink(audioTrack);
 		const targetSampleRate = audioContext.sampleRate;
@@ -229,7 +232,9 @@ async function resolveAudioBufferForVideoElement({
 			totalSamples += buffer.length;
 		}
 
-		if (chunks.length === 0) return null;
+		if (chunks.length === 0) {
+			throw new Error("Video source did not produce decoded audio samples");
+		}
 
 		const nativeSampleRate = chunks[0].sampleRate;
 		const numChannels = Math.min(
@@ -279,7 +284,15 @@ async function resolveAudioBufferForVideoElement({
 		return await offlineContext.startRendering();
 	} catch (error) {
 		console.warn("Failed to decode video audio:", error);
-		return null;
+		try {
+			return await decodeVideoAudioWithNativeAudioContext({
+				file: mediaAsset.file,
+				audioContext,
+			});
+		} catch (nativeError) {
+			console.warn("Failed to decode video audio with the browser decoder:", nativeError);
+			return null;
+		}
 	} finally {
 		input.dispose();
 	}

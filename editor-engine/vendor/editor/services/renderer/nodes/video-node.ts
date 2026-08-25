@@ -2,6 +2,7 @@ import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
 import { VisualNode, type VisualNodeParams } from "./visual-node";
 import { videoCache } from "@editor/services/video-cache/service";
+import { assertDecodedVideoFrame } from "./video-frame-contract";
 
 export interface VideoNodeParams extends VisualNodeParams {
 	url: string;
@@ -28,18 +29,21 @@ export class VideoNode extends VisualNode<VideoNodeParams> {
 			alpha: this.params.hasAlpha,
 		});
 
-		if (frame) {
-			const source = this.params.hasAlpha
-				? this.keyOutDecodedBlackAlpha({ source: frame.canvas })
-				: frame.canvas;
-			this.renderVisual({
-				renderer,
-				source,
-				sourceWidth: frame.canvas.width,
-				sourceHeight: frame.canvas.height,
-				timelineTime: time,
-			});
-		}
+		const decodedFrame = assertDecodedVideoFrame({
+			frame,
+			mediaId: this.params.mediaId,
+			time: videoTime,
+		});
+		const source = this.params.hasAlpha
+			? this.keyOutDecodedBlackAlpha({ source: decodedFrame.canvas })
+			: decodedFrame.canvas;
+		this.renderVisual({
+			renderer,
+			source,
+			sourceWidth: decodedFrame.canvas.width,
+			sourceHeight: decodedFrame.canvas.height,
+			timelineTime: time,
+		});
 	}
 
 	private keyOutDecodedBlackAlpha({

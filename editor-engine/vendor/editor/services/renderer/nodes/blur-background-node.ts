@@ -2,6 +2,7 @@ import { TIME_EPSILON_SECONDS } from "@editor/constants/animation-constants";
 import { buildGaussianBlurPasses } from "@editor/lib/effects/definitions/blur";
 import { getSourceTimeAtClipTime } from "@editor/lib/retime";
 import { videoCache } from "@editor/services/video-cache/service";
+import { assertDecodedVideoFrame } from "./video-frame-contract";
 import type { RetimeConfig } from "@editor/lib/timeline";
 import type { CanvasRenderer } from "../canvas-renderer";
 import { createOffscreenCanvas } from "../canvas-utils";
@@ -67,14 +68,16 @@ export class BlurBackgroundNode extends BaseNode<BlurBackgroundNodeParams> {
 				time: this.getSourceLocalTime({ time }),
 			});
 
-			if (!frame) {
-				return null;
-			}
+			const decodedFrame = assertDecodedVideoFrame({
+				frame,
+				mediaId: this.params.mediaId,
+				time: this.getSourceLocalTime({ time }),
+			});
 
 			return {
-				source: frame.canvas,
-				width: frame.canvas.width,
-				height: frame.canvas.height,
+				source: decodedFrame.canvas,
+				width: decodedFrame.canvas.width,
+				height: decodedFrame.canvas.height,
 			};
 		}
 

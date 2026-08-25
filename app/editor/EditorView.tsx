@@ -31,6 +31,7 @@ import {
   uploadExportCandidate,
   waitForExportJob,
   type ExportFinalizeJob,
+  type ExportCandidateFormat,
 } from "./video-export-client";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -86,6 +87,7 @@ type VerifiedExportHooks = {
 type CachedExportCandidate = {
   projectFingerprint: string;
   blob: Blob;
+  format: ExportCandidateFormat;
 };
 
 const EMBED_READY_RETRY_MS = 1000;
@@ -295,10 +297,10 @@ export default function EditorView({
       return null;
     }
 
-    let blob = candidateBlobRef.current?.projectFingerprint === projectFingerprint
-      ? candidateBlobRef.current.blob
+    let candidate = candidateBlobRef.current?.projectFingerprint === projectFingerprint
+      ? candidateBlobRef.current
       : null;
-    if (!blob) {
+    if (!candidate) {
       hooks.onStart?.();
       const result = await EditorCore.getInstance().renderer.exportProject({
         options: { format: "mp4", quality: "high", includeAudio: true },
@@ -307,9 +309,10 @@ export default function EditorView({
       if (!result.success || !result.buffer) {
         throw new Error(result.error || "未知错误");
       }
-      const mime = getExportMimeType({ format: "mp4" });
-      blob = new Blob([result.buffer], { type: mime });
-      candidateBlobRef.current = { projectFingerprint, blob };
+      const format = (result.format ?? "mp4") as ExportCandidateFormat;
+      const blob = new Blob([result.buffer], { type: getExportMimeType({ format }) });
+      candidate = { projectFingerprint, blob, format };
+      candidateBlobRef.current = candidate;
     }
 
     const controller = new AbortController();
@@ -320,7 +323,8 @@ export default function EditorView({
         apiBase: API_BASE,
         assetId,
         token,
-        blob,
+        blob: candidate.blob,
+        format: candidate.format,
         signal: controller.signal,
         onStage: (stage) => {
           if (stage === "hashing") hooks.onPreparing?.();
@@ -355,7 +359,7 @@ export default function EditorView({
       );
       loadedProjectRef.current = confirmedProject.project;
       candidateBlobRef.current = null;
-      return { blob, report: verifiedReport, job: terminalJob };
+      return { blob: candidate.blob, report: verifiedReport, job: terminalJob };
     } finally {
       if (activeExportAbortRef.current === controller) {
         activeExportAbortRef.current = null;
