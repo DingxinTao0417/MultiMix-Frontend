@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { getProductRatioClass } from "../lib/asset-workspace-shared";
 import type { SegmentMaterialOption } from "../lib/asset-workspace-types";
+import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 
 // One selectable material in the picker grid.
 export type AssetPickerItem = SegmentMaterialOption;
@@ -54,19 +55,19 @@ export default function AssetPicker({
   onUpload?: () => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (open) setSelectedId(null);
   }, [open, title]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, title]);
+  useDialogFocusManagement({
+    open,
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: onClose,
+  });
 
   const selectedItem = useMemo(
     () => [...recommended, ...library, ...publicItems].find((item) => item.id === selectedId && item.selectable !== false) ?? null,
@@ -117,13 +118,13 @@ export default function AssetPicker({
 
   return (
     <div className="shadcn-prototype-picker-mask" role="presentation" onClick={onClose}>
-      <div className={`shadcn-prototype-picker ${getProductRatioClass(ratio)}`.trim()} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <div ref={dialogRef} className={`shadcn-prototype-picker ${getProductRatioClass(ratio)}`.trim()} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <div className="shadcn-prototype-picker-head">
           <div>
             <div className="shadcn-prototype-picker-title">{title}</div>
             {subtitle ? <div className="shadcn-prototype-picker-sub">{subtitle}</div> : null}
           </div>
-          <button type="button" className="shadcn-prototype-picker-close" aria-label="关闭" onClick={onClose}>
+          <button ref={closeButtonRef} type="button" className="shadcn-prototype-picker-close" aria-label="关闭" onClick={onClose}>
             <X size={14} aria-hidden="true" />
           </button>
         </div>

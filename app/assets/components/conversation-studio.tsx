@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
@@ -304,7 +304,10 @@ export default function ConversationStudio({
 }) {
   const products = getConversationProducts(selectedConversation);
   const [composerValue, setComposerValue] = useState("");
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendErrorNotice, setSendErrorNotice] = useState<{ message: string | null; revision: number }>({
+    message: null,
+    revision: 0,
+  });
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
   // Set when the user clicks a plan's "调整方向": the composer swaps to a guiding
@@ -325,6 +328,13 @@ export default function ConversationStudio({
   const runtimeWriteStatusId = writeCapabilities.reason
     ? "multimix-studio-runtime-write-status"
     : undefined;
+  const setSendError = useCallback((message: string | null) => {
+    setSendErrorNotice((current) => ({
+      message,
+      revision: message ? current.revision + 1 : current.revision,
+    }));
+  }, []);
+  const sendError = sendErrorNotice.message;
 
   const conversationMessages = useMemo<VisibleConversationMessage[]>(() => {
     if (selectedConversation.messages && selectedConversation.messages.length > 0) {
@@ -371,7 +381,7 @@ export default function ConversationStudio({
       }
       activeRequestRef.current = null;
     };
-  }, [selectedConversation.id]);
+  }, [selectedConversation.id, setSendError]);
 
   useEffect(() => {
     if (composerRef.current) {
@@ -1082,9 +1092,18 @@ export default function ConversationStudio({
           </button>
         </div>
         {imageAttachments.length ? <p className="shadcn-prototype-chat-attachment-help">{ATTACHMENT_HELP_TEXT}</p> : null}
-        {sendError && optimisticExchange?.presentation !== "execution_anchor" ? (
-          <p className="shadcn-prototype-composer-error">{sendError}</p>
-        ) : null}
+        <p
+          className="shadcn-prototype-composer-error"
+          data-testid="conversation-studio-error-announcer"
+          role={sendError && optimisticExchange?.presentation !== "execution_anchor" ? "alert" : undefined}
+          aria-live="assertive"
+          aria-atomic="true"
+          style={sendError && optimisticExchange?.presentation !== "execution_anchor" ? undefined : { margin: 0 }}
+        >
+          {sendError && optimisticExchange?.presentation !== "execution_anchor" ? (
+            <span key={sendErrorNotice.revision}>{sendError}</span>
+          ) : null}
+        </p>
         {writeCapabilities.reason ? (
           <p
             id={runtimeWriteStatusId}

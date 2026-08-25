@@ -11,6 +11,7 @@ import {
   type RuntimeWriteCapabilities,
   type RuntimeWriteConnectionState,
 } from "../lib/runtime-write-capabilities";
+import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
@@ -382,6 +383,12 @@ function LibraryWorkshop({
   const [publicSelected, setPublicSelected] = useState<PublicMaterialCandidate | null>(null);
   const [publicLoading, setPublicLoading] = useState(false);
   const [publicMessage, setPublicMessage] = useState<string | null>(null);
+  const detailDialogRef = useRef<HTMLElement | null>(null);
+  const detailCloseRef = useRef<HTMLButtonElement | null>(null);
+  const publicDialogRef = useRef<HTMLElement | null>(null);
+  const publicQueryRef = useRef<HTMLInputElement | null>(null);
+  const webDialogRef = useRef<HTMLElement | null>(null);
+  const webUrlRef = useRef<HTMLInputElement | null>(null);
 
   // Debounce the raw input so backend search fires once per pause, not per keystroke.
   useEffect(() => {
@@ -528,6 +535,25 @@ function LibraryWorkshop({
     : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
+
+  useDialogFocusManagement({
+    open: Boolean(selectedRow),
+    dialogRef: detailDialogRef,
+    initialFocusRef: detailCloseRef,
+    onEscape: () => setSelectedRowIdentity(null),
+  });
+  useDialogFocusManagement({
+    open: publicSearchOpen,
+    dialogRef: publicDialogRef,
+    initialFocusRef: publicQueryRef,
+    onEscape: () => setPublicSearchOpen(false),
+  });
+  useDialogFocusManagement({
+    open: Boolean(assetModal),
+    dialogRef: webDialogRef,
+    initialFocusRef: webUrlRef,
+    onEscape: () => setAssetModal(null),
+  });
 
   useEffect(() => {
     setActiveFilter("全部");
@@ -914,10 +940,12 @@ function LibraryWorkshop({
       {selectedRow ? (
         <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
           <aside
+            ref={detailDialogRef}
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal"
             aria-label={`${selectedRow.title}详情`}
             aria-modal="true"
             role="dialog"
+            tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
@@ -927,7 +955,7 @@ function LibraryWorkshop({
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
-                <button type="button" aria-label="关闭详情" onClick={() => setSelectedRowIdentity(null)}>
+                <button ref={detailCloseRef} type="button" aria-label="关闭详情" onClick={() => setSelectedRowIdentity(null)}>
                   <X size={16} aria-hidden="true" />
                 </button>
               </div>
@@ -1180,10 +1208,12 @@ function LibraryWorkshop({
       {publicSearchOpen ? (
         <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setPublicSearchOpen(false)}>
           <aside
+            ref={publicDialogRef}
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-public-search"
             aria-label="公开素材搜索"
             aria-modal="true"
             role="dialog"
+            tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
@@ -1198,7 +1228,7 @@ function LibraryWorkshop({
             <div className="shadcn-prototype-public-search-controls">
               <label>
                 <span>关键词</span>
-                <input value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="例如：台灯、舞台灯光、厨房翻新" />
+                <input ref={publicQueryRef} value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="例如：台灯、舞台灯光、厨房翻新" />
               </label>
               <div className="shadcn-prototype-public-search-checks" aria-label="媒体类型">
                 {(["text", "image", "video"] as const).map((mediaType) => (
@@ -1286,10 +1316,12 @@ function LibraryWorkshop({
       {assetModal ? (
         <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setAssetModal(null)}>
           <aside
+            ref={webDialogRef}
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal"
             aria-label="读取网页资料"
             aria-modal="true"
             role="dialog"
+            tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <header>
@@ -1304,7 +1336,7 @@ function LibraryWorkshop({
             <div className="shadcn-prototype-asset-form">
               <label>
                 <span>URL</span>
-                <input value={webUrl} onChange={(event) => setWebUrl(event.currentTarget.value)} placeholder="https://example.com/article" />
+                <input ref={webUrlRef} value={webUrl} onChange={(event) => setWebUrl(event.currentTarget.value)} placeholder="https://example.com/article" />
               </label>
               <label>
                 <span>标题</span>

@@ -148,6 +148,9 @@ export default function SegmentCards({
                   {canEditVoiceover ? (
                     <button
                       type="button"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                      }}
                       onClick={(event) => {
                         event.stopPropagation();
                         onEditVoiceover?.(segment);
@@ -159,6 +162,9 @@ export default function SegmentCards({
                   {canReplaceMaterial ? (
                     <button
                       type="button"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                      }}
                       onClick={(event) => {
                         event.stopPropagation();
                         onReplaceMaterial?.(segment);

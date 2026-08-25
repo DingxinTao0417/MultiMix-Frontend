@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import VoiceoverEditor, { type VoiceoverApi } from "../../editor/VoiceoverEditor";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
+import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 
 export default function VoiceoverDialog({
   open,
@@ -24,18 +25,18 @@ export default function VoiceoverDialog({
   onProjectUpdated: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const requestClose = useCallback(() => {
     if (!busy) onClose();
   }, [busy, onClose]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") requestClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, requestClose]);
+  useDialogFocusManagement({
+    open: open && Boolean(segment),
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    onEscape: requestClose,
+  });
 
   if (!open || !segment) return null;
 
@@ -48,10 +49,12 @@ export default function VoiceoverDialog({
       onClick={requestClose}
     >
       <div
+        ref={dialogRef}
         className="shadcn-prototype-picker shadcn-prototype-voiceover-dialog"
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="shadcn-prototype-picker-head">
@@ -60,6 +63,7 @@ export default function VoiceoverDialog({
             <div className="shadcn-prototype-picker-sub">先试听再应用，失败不会修改当前视频。</div>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             className="shadcn-prototype-picker-close"
             aria-label="关闭"

@@ -2,7 +2,8 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode, useState } from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import AssetPicker from "../components/asset-picker";
@@ -15,6 +16,66 @@ const recommended = [{
 }];
 
 describe("AssetPicker confirmation flow", () => {
+  it("traps focus, isolates the background, and restores the trigger in Strict Mode", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <div data-testid="picker-background" aria-hidden="false">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.currentTarget.blur();
+                setOpen(true);
+              }}
+            >
+              打开素材选择器
+            </button>
+          </div>
+          <div data-testid="picker-preisolated" aria-hidden="true" inert>
+            原有隔离区域
+          </div>
+          <AssetPicker
+            open={open}
+            title="为分镜 #2 换素材"
+            recommended={recommended}
+            library={[]}
+            onSelect={vi.fn()}
+            onClose={() => setOpen(false)}
+          />
+        </>
+      );
+    }
+
+    render(<StrictMode><Harness /></StrictMode>);
+    const trigger = screen.getByRole("button", { name: "打开素材选择器" });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", { name: "为分镜 #2 换素材" });
+    const close = within(dialog).getByRole("button", { name: "关闭" });
+    await waitFor(() => expect(close).toHaveFocus());
+    expect(screen.getByTestId("picker-background")).toHaveAttribute("inert");
+    expect(screen.getByTestId("picker-background")).toHaveAttribute("aria-hidden", "true");
+
+    const focusable = [...dialog.querySelectorAll<HTMLElement>("button:not([disabled]), [tabindex]:not([tabindex='-1'])")];
+    const last = focusable.at(-1)!;
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(close).toHaveFocus();
+    close.focus();
+    fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
+
+    fireEvent.keyDown(last, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(screen.getByTestId("picker-background")).not.toHaveAttribute("inert");
+    expect(screen.getByTestId("picker-background")).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("picker-preisolated")).toHaveAttribute("inert");
+    expect(screen.getByTestId("picker-preisolated")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("selects a recommendation before submitting the replacement", () => {
     const onSelect = vi.fn();
     render(

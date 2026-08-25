@@ -81,7 +81,10 @@ export default function ConversationStart({
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<{ message: string | null; revision: number }>({
+    message: null,
+    revision: 0,
+  });
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
@@ -93,6 +96,12 @@ export default function ConversationStart({
   const runtimeWriteStatusId = writeCapabilities.reason
     ? "multimix-start-runtime-write-status"
     : undefined;
+  const setError = (message: string | null) => {
+    setErrorNotice((current) => ({
+      message,
+      revision: message ? current.revision + 1 : current.revision,
+    }));
+  };
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = "52px";
@@ -315,7 +324,16 @@ export default function ConversationStart({
           </p>
         ) : null}
         {imageAttachments.length ? <p className="shadcn-prototype-chat-attachment-help">{ATTACHMENT_HELP_TEXT}</p> : null}
-        {error ? <p className="shadcn-prototype-composer-error">{error}</p> : null}
+        <p
+          className="shadcn-prototype-composer-error"
+          data-testid="conversation-start-error-announcer"
+          role={errorNotice.message ? "alert" : undefined}
+          aria-live="assertive"
+          aria-atomic="true"
+          style={errorNotice.message ? undefined : { margin: 0 }}
+        >
+          {errorNotice.message ? <span key={errorNotice.revision}>{errorNotice.message}</span> : null}
+        </p>
         {suggestions.length > 0 ? (
           <div className="shadcn-prototype-start-sugg-grid" aria-label="推荐指令">
             {suggestions.map((suggestion) => {
