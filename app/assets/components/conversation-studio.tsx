@@ -38,6 +38,10 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import {
+  DEFAULT_RUNTIME_WRITE_CAPABILITIES,
+  type RuntimeWriteCapabilities,
+} from "../lib/runtime-write-capabilities";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -245,7 +249,9 @@ export default function ConversationStudio({
   diagnosticsSlot = null,
   detailLoadError = false,
   onRetryDetail,
-  readonly = false
+  readonly = false,
+  writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
+  onRetryWriteAvailability,
 }: {
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
@@ -293,6 +299,8 @@ export default function ConversationStudio({
   detailLoadError?: boolean;
   onRetryDetail?: () => void;
   readonly?: boolean;
+  writeCapabilities?: RuntimeWriteCapabilities;
+  onRetryWriteAvailability?: () => void;
 }) {
   const products = getConversationProducts(selectedConversation);
   const [composerValue, setComposerValue] = useState("");
@@ -312,6 +320,11 @@ export default function ConversationStudio({
   selectedConversationIdRef.current = selectedConversation.id;
   const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const canSend = Boolean(onSendMessage) && !readonly && writeCapabilities.canGenerate;
+  const canUpload = Boolean(onUploadImages) && !readonly && writeCapabilities.canUpload;
+  const runtimeWriteStatusId = writeCapabilities.reason
+    ? "multimix-studio-runtime-write-status"
+    : undefined;
 
   const conversationMessages = useMemo<VisibleConversationMessage[]>(() => {
     if (selectedConversation.messages && selectedConversation.messages.length > 0) {
@@ -384,7 +397,7 @@ export default function ConversationStudio({
       setSendError(blockReason);
       return;
     }
-    if (readonly || !onSendMessage || (!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || sending) return;
+    if (!canSend || !onSendMessage || (!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || sending) return;
     const controller = new AbortController();
     const durableRequestId = clientRequestId
       ?? (selectedProduct?.videoProjectReady ? globalThis.crypto.randomUUID() : undefined);
@@ -638,9 +651,10 @@ export default function ConversationStudio({
       window.removeEventListener("multimix:composer-send", onComposerSend);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversation.id, sending, readonly]);
+  }, [selectedConversation.id, sending, readonly, writeCapabilities.canGenerate]);
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
+    if (!canUpload) return;
     const partition = partitionChatAttachmentFiles(files);
     setSendError(chatAttachmentRejectionMessage(partition));
     if (partition.acceptedFiles.length) {
@@ -659,7 +673,7 @@ export default function ConversationStudio({
   };
 
   const handleDrop = (event: DragEvent) => {
-    if (!onUploadImages || readonly) return;
+    if (!canUpload) return;
     event.preventDefault();
     setIsDraggingUpload(false);
     handleAttachmentFiles(event.dataTransfer.files);
@@ -724,7 +738,6 @@ export default function ConversationStudio({
     );
   };
 
-  const canSend = Boolean(onSendMessage) && !readonly;
   const composerControlClassName = [
     imageAttachments.length ? "shadcn-prototype-composer-control has-attachments" : "shadcn-prototype-composer-control",
     isDraggingUpload ? "drag-active" : ""
@@ -738,7 +751,7 @@ export default function ConversationStudio({
       className="shadcn-prototype-card shadcn-prototype-chat"
       aria-label="Content generation conversation"
       onDragOver={(event) => {
-        if (onUploadImages && !readonly) {
+        if (canUpload) {
           event.preventDefault();
           setIsDraggingUpload(true);
         }
@@ -855,20 +868,22 @@ export default function ConversationStudio({
                     ? ["succeeded", "failed", "blocked", "canceled"].includes(liveAgentAction.status)
                     : liveRunState?.completionConfirmed}
                   onRetry={
-                    liveAgentAction?.retryable && onRetryAgentAction
-                      ? (actionRunId) => void onRetryAgentAction(actionRunId)
-                      : liveRunState && onRetryExecution
-                        ? (retryJobId) => {
-                            void onRetryExecution(retryJobId, liveRunState.jobId);
-                          }
-                        : undefined
+                    !writeCapabilities.canGenerate
+                      ? undefined
+                      : liveAgentAction?.retryable && onRetryAgentAction
+                        ? (actionRunId) => void onRetryAgentAction(actionRunId)
+                        : liveRunState && onRetryExecution
+                          ? (retryJobId) => {
+                              void onRetryExecution(retryJobId, liveRunState.jobId);
+                            }
+                          : undefined
                   }
                 />
               ) : null}
               {renderedGenerationJob ? (
                 <AssetGenerationJobCard
                   job={renderedGenerationJob}
-                  onRetry={onRetryGeneration}
+                  onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
                 />
               ) : null}
@@ -938,7 +953,7 @@ export default function ConversationStudio({
         {generationJob && !liveGenerationJobMessagePresent ? (
           <AssetGenerationJobCard
             job={generationJob}
-            onRetry={onRetryGeneration}
+            onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
             onCancel={onCancelGeneration}
           />
         ) : null}
@@ -969,7 +984,7 @@ export default function ConversationStudio({
                     ) : null}
                   </div>
                   {attachment.status === "failed" ? (
-                    <button type="button" onClick={() => onRetryImageAttachment?.(attachment.id)}>重试</button>
+                    <button type="button" disabled={!canUpload} onClick={() => onRetryImageAttachment?.(attachment.id)}>重试</button>
                   ) : null}
                   <button type="button" aria-label={`移除 ${attachment.fileName}`} onClick={() => onRemoveImageAttachment?.(attachment.id)}>×</button>
                 </article>
@@ -983,6 +998,7 @@ export default function ConversationStudio({
             accept={CHAT_IMAGE_UPLOAD_ACCEPT}
             multiple
             hidden
+            disabled={!canUpload}
             onChange={handleImageInputChange}
           />
           <button
@@ -990,8 +1006,11 @@ export default function ConversationStudio({
             type="button"
             aria-label="上传图片素材"
             title="上传图片素材"
-            disabled={!canSend || !onUploadImages}
-            onClick={() => imageInputRef.current?.click()}
+            disabled={!canUpload}
+            aria-describedby={runtimeWriteStatusId}
+            onClick={() => {
+              if (canUpload) imageInputRef.current?.click();
+            }}
           >
             <ImageIcon size={16} aria-hidden="true" />
           </button>
@@ -1001,6 +1020,7 @@ export default function ConversationStudio({
             accept={CHAT_SOURCE_UPLOAD_ACCEPT}
             multiple
             hidden
+            disabled={!canUpload}
             onChange={handleSourceInputChange}
           />
           <button
@@ -1008,8 +1028,11 @@ export default function ConversationStudio({
             type="button"
             aria-label="上传 PDF 或文档"
             title="上传 PDF 或文档"
-            disabled={!canSend || !onUploadImages}
-            onClick={() => sourceInputRef.current?.click()}
+            disabled={!canUpload}
+            aria-describedby={runtimeWriteStatusId}
+            onClick={() => {
+              if (canUpload) sourceInputRef.current?.click();
+            }}
           >
             <FileText size={15} aria-hidden="true" />
           </button>
@@ -1018,8 +1041,10 @@ export default function ConversationStudio({
             ref={composerRef}
             aria-label="输入对话内容"
             placeholder={
-              !canSend
+              readonly
                 ? "参考样例只读"
+                : !writeCapabilities.canGenerate
+                  ? "后端暂时不可用，暂不能创作"
                 : adjustHint
                   ? ADJUST_HINT_PLACEHOLDER
                   : selectedProduct && ["video", "mg-overlay"].includes(selectedProduct.mode)
@@ -1029,6 +1054,7 @@ export default function ConversationStudio({
             rows={1}
             value={composerValue}
             disabled={!canSend}
+            aria-describedby={runtimeWriteStatusId}
             onChange={(event) => {
               setComposerValue(event.currentTarget.value);
               if (adjustHint) setAdjustHint(false);
@@ -1049,6 +1075,7 @@ export default function ConversationStudio({
             aria-label={sending ? "停止生成" : "发送"}
             title={sending ? "停止生成" : "发送"}
             disabled={!canSend && !sending}
+            aria-describedby={runtimeWriteStatusId}
             onClick={sending ? stopGeneration : undefined}
           >
             {sending ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <ArrowUp size={17} aria-hidden="true" />}
@@ -1057,6 +1084,18 @@ export default function ConversationStudio({
         {imageAttachments.length ? <p className="shadcn-prototype-chat-attachment-help">{ATTACHMENT_HELP_TEXT}</p> : null}
         {sendError && optimisticExchange?.presentation !== "execution_anchor" ? (
           <p className="shadcn-prototype-composer-error">{sendError}</p>
+        ) : null}
+        {writeCapabilities.reason ? (
+          <p
+            id={runtimeWriteStatusId}
+            className="shadcn-prototype-composer-error"
+            role="status"
+          >
+            {writeCapabilities.reason}
+            {writeCapabilities.recovery === "retry" && onRetryWriteAvailability ? (
+              <button type="button" onClick={onRetryWriteAvailability}>重新连接</button>
+            ) : null}
+          </p>
         ) : null}
       </form>
     </section>

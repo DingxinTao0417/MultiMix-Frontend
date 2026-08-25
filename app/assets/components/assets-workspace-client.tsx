@@ -73,6 +73,11 @@ import {
   type LongFormSourceAction,
   type LongFormSourceReady,
 } from "../lib/long-form-client";
+import {
+  isRuntimeConnectionError,
+  resolveRuntimeWriteCapabilities,
+  type RuntimeWriteConnectionState,
+} from "../lib/runtime-write-capabilities";
 
 // Split the heavy panels (react-markdown pipeline, library views) out of the
 // initial bundle; only the active view's chunk is fetched. Auth gating already
@@ -529,6 +534,7 @@ export default function AssetsWorkspaceClient({
   onLogout
 }: AssetsWorkspaceClientProps) {
   const router = useRouter();
+  const backendConfigured = assetWorkspaceAdapter.isBackendEnabled();
   const initialConversationSummariesRef = useRef(cachedConversationSummaries(accountEmail));
   const [conversations, setConversations] = useState<Conversation[]>(() => (
     assetWorkspaceAdapter.mergeConversationSummaries(initialConversationSummariesRef.current, [])
@@ -539,6 +545,12 @@ export default function AssetsWorkspaceClient({
       : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const [runtimeWriteConnectionState, setRuntimeWriteConnectionState] = useState<RuntimeWriteConnectionState>("checking");
+  const runtimeWriteCapabilities = useMemo(() => resolveRuntimeWriteCapabilities({
+    backendConfigured,
+    hasToken: Boolean(token),
+    connectionState: runtimeWriteConnectionState,
+  }), [backendConfigured, runtimeWriteConnectionState, token]);
   const deletingConversationIdsRef = useRef(new Set<string>());
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
@@ -643,6 +655,18 @@ export default function AssetsWorkspaceClient({
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
+  const handleWriteAvailabilityChange = useStableCallback((state: RuntimeWriteConnectionState) => {
+    setRuntimeWriteConnectionState(state);
+  });
+  const reportRuntimeWriteFailure = useStableCallback((error: unknown) => {
+    if (isRuntimeConnectionError(error)) {
+      setRuntimeWriteConnectionState("unavailable");
+    }
+  });
+  const handleRetryWriteAvailability = useStableCallback(() => {
+    setRuntimeWriteConnectionState("checking");
+    setConversationLoadRevision((value) => value + 1);
+  });
 
   useEffect(() => {
     const analysisAssetId = selectedProduct?.backendAssetId;
@@ -791,12 +815,14 @@ export default function AssetsWorkspaceClient({
 
   // Load persisted conversation history from the backend when a token is present.
   useEffect(() => {
-    if (!assetWorkspaceAdapter.isBackendEnabled()) {
+    if (!backendConfigured) {
+      setRuntimeWriteConnectionState("checking");
       setConversationLoadState("unconfigured");
       setConversations([]);
       return;
     }
     if (!token) {
+      setRuntimeWriteConnectionState("checking");
       setConversationLoadState("loading");
       return;
     }
@@ -823,6 +849,7 @@ export default function AssetsWorkspaceClient({
             selectedConversationId: selectedConversationIdRef.current,
           });
         });
+        setRuntimeWriteConnectionState("available");
         setConversationLoadState("ready");
         const currentRouteConversationId = new URL(window.location.href).searchParams.get("conversation");
         if (initialConversationId && shouldRestoreInitialConversationFocus({
@@ -844,6 +871,7 @@ export default function AssetsWorkspaceClient({
       })
       .catch(() => {
         if (cancelled) return;
+        setRuntimeWriteConnectionState("unavailable");
         if (conversationsRef.current.length) {
           setConversationLoadState("ready");
           toast.error("无法刷新对话列表，正在显示上次记录。");
@@ -856,7 +884,7 @@ export default function AssetsWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [accountEmail, initialConversationId, initialProductId, token, conversationLoadRevision]);
+  }, [accountEmail, backendConfigured, initialConversationId, initialProductId, token, conversationLoadRevision]);
 
   useEffect(() => {
     const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;
@@ -1223,10 +1251,15 @@ export default function AssetsWorkspaceClient({
   }, [agentActions, selectedConversation.id]);
 
   const handleRetryGeneration = async (jobId: string) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能重新生成。");
+      return;
+    }
     if (!token) return;
     try {
       await retryAssetGenerationJob(jobId, selectedConversation.id);
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       toast.error(formatComposerError(error));
     }
   };
@@ -1236,11 +1269,16 @@ export default function AssetsWorkspaceClient({
     try {
       await cancelAssetGenerationJob(jobId);
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       toast.error(formatComposerError(error));
     }
   };
 
   const handleRetryAgentAction = async (actionRunId: string) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能重试修改任务。");
+      return;
+    }
     if (!token) {
       toast.error("登录状态已失效，请重新登录后重试。");
       return;
@@ -1272,11 +1310,16 @@ export default function AssetsWorkspaceClient({
       }));
       toast.success("已重新开始这个修改步骤。");
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       toast.error(formatComposerError(error));
     }
   };
 
   const handleRetryExecution = async (retryJobId: string, executionJobId: string) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能重试生成任务。");
+      return;
+    }
     if (!token) {
       toast.error("登录状态已失效，请重新登录后重试。");
       return;
@@ -1324,10 +1367,12 @@ export default function AssetsWorkspaceClient({
       },
       restartPolling: () => setVideoJobPollRevision((current) => current + 1),
       onRetryRejected: (error) => {
+        reportRuntimeWriteFailure(error);
         const message = error instanceof Error ? error.message : "请稍后再试。";
         toast.error("重试请求失败：" + message);
       },
-      onAggregateRefreshFailed: (notice) => {
+      onAggregateRefreshFailed: (notice, error) => {
+        reportRuntimeWriteFailure(error);
         setVideoJobLive((current) => {
           const entry = Object.entries(current).find(([, live]) => live.jobId === executionJobId);
           if (!entry) return current;
@@ -1347,6 +1392,10 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleRetryVideoJob = async (product: ProductArtifact) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能重试视频任务。");
+      return;
+    }
     await dispatchProductVideoJobRetry({
       product,
       retryExecution: handleRetryExecution,
@@ -1435,7 +1484,7 @@ export default function AssetsWorkspaceClient({
 
   const handleStartRenameConversation = (conversation: Conversation) => {
     setConversationMenuId(null);
-    if (conversation.id === "new") return;
+    if (conversation.id === "new" || !runtimeWriteCapabilities.canPersist) return;
     setRenameDraft(conversation.title);
     setRenamingConversationId(conversation.id);
   };
@@ -1450,7 +1499,7 @@ export default function AssetsWorkspaceClient({
     const nextTitle = renameDraft.trim();
     setRenamingConversationId(null);
     setRenameDraft("");
-    if (!nextTitle || nextTitle === conversation.title) return;
+    if (!nextTitle || nextTitle === conversation.title || !runtimeWriteCapabilities.canPersist) return;
     const previousTitle = conversation.title;
     // Optimistically rename in place; reconcile against the backend below.
     setConversations((current) => current.map((item) =>
@@ -1459,7 +1508,8 @@ export default function AssetsWorkspaceClient({
     if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
     void assetWorkspaceAdapter.renameConversation(token, conversation.id, nextTitle)
       .then(() => setConversationLoadRevision((value) => value + 1))
-      .catch(() => {
+      .catch((error) => {
+        reportRuntimeWriteFailure(error);
         setConversations((current) => current.map((item) =>
           item.id === conversation.id ? { ...item, title: previousTitle } : item
         ));
@@ -1468,6 +1518,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleDeleteConversation = (conversationId: string) => {
+    if (!runtimeWriteCapabilities.canPersist) return;
     void runExclusiveConversationDelete(
       deletingConversationIdsRef.current,
       conversationId,
@@ -1488,7 +1539,8 @@ export default function AssetsWorkspaceClient({
         try {
           await assetWorkspaceAdapter.deleteConversation(token, conversationId);
           setConversationLoadRevision((value) => value + 1);
-        } catch {
+        } catch (error) {
+          reportRuntimeWriteFailure(error);
           // Restore on failure so we never hide a conversation that still exists.
           setConversations((current) => {
             if (current.some((conversation) => conversation.id === removed.id)) return current;
@@ -1551,6 +1603,10 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleSaveProduct = async (product: ProductArtifact) => {
+    if (!runtimeWriteCapabilities.canPersist) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能保存。");
+      return;
+    }
     try {
       const result = await assetWorkspaceAdapter.saveProduct(product, token);
       setSavedProductIds((current) => ({
@@ -1558,7 +1614,8 @@ export default function AssetsWorkspaceClient({
         [product.id]: result.version
       }));
       toast.success("已保存");
-    } catch {
+    } catch (error) {
+      reportRuntimeWriteFailure(error);
       toast.error("保存失败，请稍后重试。");
     }
   };
@@ -1583,7 +1640,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+    if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       toast.error("请先登录并配置后端后再恢复版本。");
       return;
     }
@@ -1595,7 +1652,8 @@ export default function AssetsWorkspaceClient({
         [result.product.id]: result.product.version ?? result.diffSummary
       }));
       toast.success(result.assistantMessage || "已恢复版本");
-    } catch {
+    } catch (error) {
+      reportRuntimeWriteFailure(error);
       toast.error("恢复失败，请稍后重试。");
     }
   };
@@ -1611,6 +1669,10 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleAddAssetToConversation = (row: LibraryRow) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能发起创作。");
+      return;
+    }
     if (!row.assetId) {
       toast.error("这个条目还没有后端资产 ID。");
       return;
@@ -1626,6 +1688,10 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleUseLibraryAsset = async (row: LibraryRow, intent: LibraryActionIntent) => {
+    if (!runtimeWriteCapabilities.canGenerate) {
+      toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能发起创作。");
+      return;
+    }
     if (!row.assetId) {
       toast.error("这个条目还没有后端资产 ID。");
       return;
@@ -1672,7 +1738,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleChatImageUpload = (files: File[]) => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+    if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       toast.error("请先登录并配置后端后再上传资料。");
       return;
     }
@@ -1758,7 +1824,7 @@ export default function AssetsWorkspaceClient({
   }, [token]);
 
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
     try {
       const asset = await assetWorkspaceAdapter.uploadAsset(
         token,
@@ -1799,6 +1865,7 @@ export default function AssetsWorkspaceClient({
       }
       setLibraryRefreshKey((value) => value + 1);
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       const msg = error instanceof Error ? error.message : "资料上传失败。";
       setChatImageUploads((current) => ({
         ...current,
@@ -1839,7 +1906,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const materialPackageAsset = async (conversationId: string): Promise<ConversationContextAsset | null> => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) return null;
+    if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) return null;
     const readyUploads = (chatImageUploads[conversationId] ?? []).filter((item) => item.fileKind === "image" && item.status === "ready" && item.assetId);
     if (!readyUploads.length) return null;
     const titleSeed = readyUploads[0]?.title.replace(/\.[^.]+$/, "") || "本次上传图片";
@@ -1876,7 +1943,7 @@ export default function AssetsWorkspaceClient({
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
     }
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+    if (!runtimeWriteCapabilities.canGenerate || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
     const selectedBackendAssetId = longFormAction?.kind === "analyze"
@@ -1948,6 +2015,7 @@ export default function AssetsWorkspaceClient({
         signal
       });
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       if (
         clientRequestId
         && !signal?.aborted
@@ -2104,7 +2172,7 @@ export default function AssetsWorkspaceClient({
   });
 
   const handleUploadClick = () => {
-    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+    if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       setUploadError("请先登录并配置后端后再上传资料。");
       return;
     }
@@ -2113,7 +2181,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleUploadFile = async (file: File | undefined) => {
-    if (!file || !token || activeView === "conversation") return;
+    if (!file || !runtimeWriteCapabilities.canUpload || !token || activeView === "conversation") return;
     setUploading(true);
     setUploadError(null);
     try {
@@ -2121,6 +2189,7 @@ export default function AssetsWorkspaceClient({
       setLibraryRefreshKey((value) => value + 1);
       setActiveView(activeView);
     } catch (error) {
+      reportRuntimeWriteFailure(error);
       const msg = error instanceof Error ? error.message : "上传失败，请稍后重试。";
       setUploadError(msg);
       toast.error(msg);
@@ -2425,11 +2494,11 @@ export default function AssetsWorkspaceClient({
                 </button>
                 {conversationMenuId === conversation.id ? (
                   <div className="shadcn-prototype-conversation-menu" onClick={(event) => event.stopPropagation()}>
-                    <button type="button" onClick={() => handleStartRenameConversation(conversation)}>
+                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleStartRenameConversation(conversation)}>
                       <Pencil size={13} aria-hidden="true" />
                       重命名
                     </button>
-                    <button type="button" onClick={() => handleDeleteConversation(conversation.id)}>
+                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleDeleteConversation(conversation.id)}>
                       <Trash2 size={13} aria-hidden="true" />
                       删除对话
                     </button>
@@ -2480,6 +2549,7 @@ export default function AssetsWorkspaceClient({
                 type="file"
                 accept={uploadAcceptForView(activeView)}
                 style={{ display: "none" }}
+                disabled={!runtimeWriteCapabilities.canUpload}
                 onChange={(event) => {
                   void handleUploadFile(event.currentTarget.files?.[0]);
                 }}
@@ -2515,6 +2585,8 @@ export default function AssetsWorkspaceClient({
               token={token}
               onOpenImageLibrary={() => setActiveView("image")}
               onLongFormSourceReady={handleLongFormSourceReady}
+              writeCapabilities={runtimeWriteCapabilities}
+              onRetryWriteAvailability={handleRetryWriteAvailability}
             />
           ) : activeView === "conversation" ? (
             <>
@@ -2552,6 +2624,8 @@ export default function AssetsWorkspaceClient({
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
+                writeCapabilities={runtimeWriteCapabilities}
+                onRetryWriteAvailability={handleRetryWriteAvailability}
               />
               <div
                 className="shadcn-prototype-resize-handle"
@@ -2596,9 +2670,11 @@ export default function AssetsWorkspaceClient({
                       };
                     }));
                   }}
-                  onRetryVideoJob={isConversationSnapshot
-                    ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
-                    : handleRetryVideoJob}
+                  onRetryVideoJob={!runtimeWriteCapabilities.canGenerate
+                    ? undefined
+                    : isConversationSnapshot
+                      ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
+                      : handleRetryVideoJob}
                   onOpenLongFormCandidates={(candidateProduct) => {
                     setSelectedProductIds((current) => ({
                       ...current,
@@ -2626,6 +2702,9 @@ export default function AssetsWorkspaceClient({
                 uploading={uploading}
                 onUseAsset={stableHandleUseLibraryAsset}
                 onAddAssetToConversation={stableHandleAddAssetToConversation}
+                writeCapabilities={runtimeWriteCapabilities}
+                onRetryWriteAvailability={handleRetryWriteAvailability}
+                onWriteAvailabilityChange={handleWriteAvailabilityChange}
               />
             </LibraryWorkspaceErrorBoundary>
           )}
