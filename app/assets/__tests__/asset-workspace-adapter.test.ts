@@ -138,6 +138,41 @@ describe("runtime data boundary", () => {
     expect(() => assertVideoWritesAvailable(true)).toThrow("视频生成与修改暂时维护中");
     expect(() => assertVideoWritesAvailable(false)).not.toThrow();
   });
+
+  it("reads the source excerpt audit with the caller token and maps only its summary", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      asset_id: 1276,
+      project_ready: true,
+      product_completed: true,
+      audit: {
+        source_asset_count: 1,
+        source_window_duration_seconds: 27,
+        retained_range_count: 2,
+        retained_duration_seconds: 17,
+        removed_range_count: 1,
+        removed_duration_seconds: 10,
+        has_safe_removal: true,
+        source_fingerprint_consistent: true,
+        source_audio_visual_subtitle_timeline_consistent: true,
+        failure_codes: [],
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const audit = await assetWorkspaceAdapter.getSourceExcerptAudit("token", 1276);
+    vi.unstubAllGlobals();
+
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe(
+      "/v1/video/projects/1276/source-excerpt-audit",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer token" });
+    expect(audit).toMatchObject({
+      assetId: 1276,
+      audit: { sourceWindowDurationSeconds: 27, removedRangeCount: 1 },
+    });
+    expect(JSON.stringify(audit)).not.toContain("source_fingerprint");
+  });
+
   it("loads a lightweight conversation snapshot before the full history", async () => {
     const project = asset({
       id: 72,

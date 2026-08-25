@@ -96,6 +96,63 @@ export type LibraryPage = {
   nextOffset: number | null;
 };
 
+export type SourceExcerptAudit = {
+  assetId: number;
+  projectReady: boolean;
+  productCompleted: boolean;
+  audit: {
+    sourceAssetCount: number;
+    sourceWindowDurationSeconds: number;
+    retainedRangeCount: number;
+    retainedDurationSeconds: number;
+    removedRangeCount: number;
+    removedDurationSeconds: number;
+    hasSafeRemoval: boolean;
+    sourceFingerprintConsistent: boolean;
+    sourceAudioVisualSubtitleTimelineConsistent: boolean;
+    failureCodes: string[];
+  };
+};
+
+type RawSourceExcerptAudit = {
+  asset_id: number;
+  project_ready: boolean;
+  product_completed: boolean;
+  audit: {
+    source_asset_count: number;
+    source_window_duration_seconds: number;
+    retained_range_count: number;
+    retained_duration_seconds: number;
+    removed_range_count: number;
+    removed_duration_seconds: number;
+    has_safe_removal: boolean;
+    source_fingerprint_consistent: boolean;
+    source_audio_visual_subtitle_timeline_consistent: boolean;
+    failure_codes: string[];
+  };
+};
+
+function mapSourceExcerptAudit(raw: RawSourceExcerptAudit): SourceExcerptAudit {
+  return {
+    assetId: raw.asset_id,
+    projectReady: raw.project_ready,
+    productCompleted: raw.product_completed,
+    audit: {
+      sourceAssetCount: raw.audit.source_asset_count,
+      sourceWindowDurationSeconds: raw.audit.source_window_duration_seconds,
+      retainedRangeCount: raw.audit.retained_range_count,
+      retainedDurationSeconds: raw.audit.retained_duration_seconds,
+      removedRangeCount: raw.audit.removed_range_count,
+      removedDurationSeconds: raw.audit.removed_duration_seconds,
+      hasSafeRemoval: raw.audit.has_safe_removal,
+      sourceFingerprintConsistent: raw.audit.source_fingerprint_consistent,
+      sourceAudioVisualSubtitleTimelineConsistent:
+        raw.audit.source_audio_visual_subtitle_timeline_consistent,
+      failureCodes: raw.audit.failure_codes,
+    },
+  };
+}
+
 export type LibraryListOptions = {
   offset?: number;
   limit?: number;
@@ -473,6 +530,7 @@ export type AssetWorkspaceAdapter = {
   getVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
+  getSourceExcerptAudit(token: string, projectAssetId: number): Promise<SourceExcerptAudit>;
   getCurrentVideoExport(token: string, projectAssetId: number, signal?: AbortSignal): Promise<ExportFinalizeJob | null>;
   retryVideoExport(
     token: string,
@@ -1239,6 +1297,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         `/video/projects/${encodeURIComponent(projectAssetId)}/quality?stage=export_preflight`,
         token,
       );
+    },
+    async getSourceExcerptAudit(token, projectAssetId) {
+      return mapSourceExcerptAudit(await api<RawSourceExcerptAudit>(
+        `/video/projects/${encodeURIComponent(projectAssetId)}/source-excerpt-audit`,
+        token,
+      ));
     },
     async getCurrentVideoExport(token, projectAssetId, signal) {
       return getCurrentExportJob({

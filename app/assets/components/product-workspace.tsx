@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
-import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
@@ -210,6 +210,9 @@ export default function ProductWorkspace({
   const [textEditSaved, setTextEditSaved] = useState(false);
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
+  const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
+  const [sourceExcerptAuditState, setSourceExcerptAuditState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [sourceExcerptAuditError, setSourceExcerptAuditError] = useState("");
   const materialCandidates = useSegmentMaterialCandidates({
     token: token ?? null,
     projectAssetId: product.backendAssetId ?? null,
@@ -341,6 +344,10 @@ export default function ProductWorkspace({
     : "";
   const isFailedStatus = effectiveProductStatus === "failed" || product.productStatus === "failed";
   const isDoneStatus = effectiveProductStatus === "completed" || product.productStatus === "completed";
+  const canAuditSourceExcerpt = canBrowseVideo
+    && !isFailedStatus
+    && presenterVideoPlan?.video_type === "source_excerpt"
+    && Boolean(token && product.backendAssetId);
   const longFormCandidateProduct = findLongFormCandidateProduct(
     product,
     selectedConversation.products,
@@ -798,6 +805,21 @@ export default function ProductWorkspace({
     }
   };
 
+  const requestSourceExcerptAudit = async () => {
+    if (!token || !product.backendAssetId || !canAuditSourceExcerpt) return;
+    setSourceExcerptAuditState("loading");
+    setSourceExcerptAuditError("");
+    setSourceExcerptAudit(null);
+    try {
+      const result = await assetWorkspaceAdapter.getSourceExcerptAudit(token, product.backendAssetId);
+      setSourceExcerptAudit(result);
+      setSourceExcerptAuditState("ready");
+    } catch {
+      setSourceExcerptAuditState("error");
+      setSourceExcerptAuditError("原片精简核验读取失败，请重试。");
+    }
+  };
+
   const downloadExportBlob = (blob: Blob) => {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -1056,6 +1078,12 @@ export default function ProductWorkspace({
     };
   }, [materialJobId, onProductUpdated, product.backendAssetId, selectedConversation.id, token]);
 
+  useEffect(() => {
+    setSourceExcerptAudit(null);
+    setSourceExcerptAuditState("idle");
+    setSourceExcerptAuditError("");
+  }, [product.backendAssetId]);
+
   const handleDownloadImage = async () => {
     if (!imageDownloadUrl) return;
     try {
@@ -1213,6 +1241,15 @@ export default function ProductWorkspace({
 
               </aside>
             </details>
+            {canAuditSourceExcerpt ? (
+              <button
+                type="button"
+                disabled={sourceExcerptAuditState === "loading"}
+                onClick={() => void requestSourceExcerptAudit()}
+              >
+                {sourceExcerptAuditState === "loading" ? "核验中…" : "核验原片精简"}
+              </button>
+            ) : null}
             {canBrowseVideo && !isFailedStatus && sourceSubtitleVersionOptions.length ? (
               <div className="relative">
                 <button
@@ -1354,6 +1391,32 @@ export default function ProductWorkspace({
             ) : null}
           </div>
         </header>
+
+        {canAuditSourceExcerpt && sourceExcerptAuditState === "ready" && sourceExcerptAudit ? (
+          <section
+            className="mx-5 mb-3 rounded-xl border border-[#e5e0d8] bg-[#faf8f4] px-4 py-3 text-sm text-[#4d4944]"
+            aria-label="原片精简核验结果"
+          >
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              <span>来源窗口 {sourceExcerptAudit.audit.sourceWindowDurationSeconds} 秒</span>
+              <span>保留 {sourceExcerptAudit.audit.retainedRangeCount} 段 / {sourceExcerptAudit.audit.retainedDurationSeconds} 秒</span>
+              <span>删减 {sourceExcerptAudit.audit.removedRangeCount} 段 / {sourceExcerptAudit.audit.removedDurationSeconds} 秒</span>
+            </div>
+            <p className="mt-2">
+              {sourceExcerptAudit.audit.hasSafeRemoval ? "存在安全删减区间" : "未发现可验证的安全删减区间"}；
+              {sourceExcerptAudit.audit.sourceFingerprintConsistent ? "来源指纹一致" : "来源指纹不一致"}；
+              {sourceExcerptAudit.audit.sourceAudioVisualSubtitleTimelineConsistent
+                ? "原声、画面、字幕时间线一致"
+                : "原声、画面、字幕时间线不一致"}
+            </p>
+            {sourceExcerptAudit.audit.failureCodes.length ? (
+              <p className="mt-1 text-xs text-[#736e67]">失败码：{sourceExcerptAudit.audit.failureCodes.join("、")}</p>
+            ) : null}
+          </section>
+        ) : null}
+        {canAuditSourceExcerpt && sourceExcerptAuditState === "error" ? (
+          <p className="mx-5 mb-3 text-sm text-[#a43b32]" role="alert">{sourceExcerptAuditError}</p>
+        ) : null}
 
         {isTextEditing ? (
           <div className="shadcn-prototype-text-editor-shell">
