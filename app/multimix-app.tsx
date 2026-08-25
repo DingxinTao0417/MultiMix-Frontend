@@ -216,7 +216,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       onLogout={() => { void handleLogout(); }}
       initialConversationId={searchParams.get("conversation") ?? undefined}
       initialProductId={searchParams.get("product") ?? undefined}
-      initialView={activeViewFromParam(searchParams.get("view"))}
+      initialView={searchParams.get("conversation") ? undefined : activeViewFromParam(searchParams.get("view"))}
     />
   );
 }

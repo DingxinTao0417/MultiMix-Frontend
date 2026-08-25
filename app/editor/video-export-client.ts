@@ -21,6 +21,7 @@ type ExportClientBase = {
 };
 
 export type ExportCandidateStage = "hashing" | "uploading" | "registering";
+export type ExportCandidateFormat = "mp4" | "webm";
 
 type ExportUploadSession = {
   mode: "direct" | "multipart";
@@ -166,7 +167,7 @@ function parseUploadSession(payload: unknown): ExportUploadSession {
 }
 
 async function createUploadSession(
-  args: ExportClientBase & { sha256: string; sizeBytes: number },
+  args: ExportClientBase & { sha256: string; sizeBytes: number; format: ExportCandidateFormat },
 ): Promise<ExportUploadSession> {
   const response = await (args.fetchImpl ?? fetch)(
     `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/uploads`,
@@ -176,7 +177,11 @@ async function createUploadSession(
         Authorization: `Bearer ${args.token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ sha256: args.sha256, size_bytes: args.sizeBytes }),
+      body: JSON.stringify({
+        sha256: args.sha256,
+        size_bytes: args.sizeBytes,
+        format: args.format,
+      }),
       signal: args.signal,
     },
   );
@@ -194,24 +199,27 @@ async function createUploadSession(
 export async function uploadExportCandidate(
   args: ExportClientBase & {
     blob: Blob;
+    format?: ExportCandidateFormat;
     onStage?: (stage: ExportCandidateStage) => void;
   },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
+  const format = args.format ?? "mp4";
   args.onStage?.("hashing");
   const sha256 = await sha256Hex(args.blob);
   ensureNotAborted(args.signal);
   const session = await createUploadSession({
     ...args,
-    sha256,
-    sizeBytes: args.blob.size,
+      sha256,
+      sizeBytes: args.blob.size,
+      format,
   });
 
   args.onStage?.("uploading");
   if (session.mode === "direct") {
     const formData = new FormData();
     formData.append("cacheControl", "3600");
-    formData.append("", args.blob, "video-export.mp4");
+    formData.append("", args.blob, `video-export.${format}`);
     const uploadResponse = await fetchWithOneRetry(
       args.fetchImpl ?? fetch,
       session.uploadUrl,
@@ -243,6 +251,7 @@ export async function uploadExportCandidate(
         body: JSON.stringify({
           sha256,
           size_bytes: args.blob.size,
+          format,
           project_fingerprint: session.projectFingerprint,
         }),
         signal: args.signal,
@@ -252,7 +261,7 @@ export async function uploadExportCandidate(
   }
 
   const formData = new FormData();
-  formData.append("file", args.blob, "video-export.mp4");
+  formData.append("file", args.blob, `video-export.${format}`);
   const response = await (args.fetchImpl ?? fetch)(
     new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
     {

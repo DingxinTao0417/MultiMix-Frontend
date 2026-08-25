@@ -40,6 +40,40 @@ export type SceneExporterEvents = {
 	cancelled: [];
 };
 
+export async function resolveBrowserExportFormat({
+	requestedFormat,
+	includeAudio,
+	audioBuffer,
+}: {
+	requestedFormat: ExportFormat;
+	includeAudio: boolean;
+	audioBuffer?: Pick<AudioBuffer, "sampleRate" | "numberOfChannels">;
+}): Promise<ExportFormat> {
+	if (requestedFormat !== "mp4" || !includeAudio || !audioBuffer) {
+		return requestedFormat;
+	}
+	if (typeof AudioEncoder === "undefined") return "webm";
+	const support = await AudioEncoder.isConfigSupported({
+		codec: "mp4a.40.2",
+		sampleRate: audioBuffer.sampleRate,
+		numberOfChannels: audioBuffer.numberOfChannels,
+		bitrate: 192000,
+	});
+	return support.supported ? "mp4" : "webm";
+}
+
+export function assertAudioBufferForExport({
+	shouldIncludeAudio,
+	audioBuffer,
+}: {
+	shouldIncludeAudio: boolean;
+	audioBuffer?: AudioBuffer;
+}): void {
+	if (shouldIncludeAudio && !audioBuffer) {
+		throw new Error("Source audio could not be decoded for export");
+	}
+}
+
 export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 	private renderer: CanvasRenderer;
 	private format: ExportFormat;
@@ -79,12 +113,22 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		rootNode,
 	}: {
 		rootNode: RootNode;
-	}): Promise<ArrayBuffer | null> {
+	}): Promise<{ buffer: ArrayBuffer; format: ExportFormat } | null> {
+		assertAudioBufferForExport({
+			shouldIncludeAudio: this.shouldIncludeAudio,
+			audioBuffer: this.audioBuffer,
+		});
+
 		const { fps } = this.renderer;
 		const frameCount = Math.ceil(rootNode.duration * fps);
+		const resolvedFormat = await resolveBrowserExportFormat({
+			requestedFormat: this.format,
+			includeAudio: this.shouldIncludeAudio,
+			audioBuffer: this.audioBuffer,
+		});
 
 		const outputFormat =
-			this.format === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
+			resolvedFormat === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
 
 		const output = new Output({
 			format: outputFormat,
@@ -92,34 +136,21 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		});
 
 		const videoSource = new CanvasSource(this.renderer.canvas, {
-			codec: this.format === "webm" ? "vp9" : "avc",
+			codec: resolvedFormat === "webm" ? "vp9" : "avc",
 			bitrate: qualityMap[this.quality],
 			// Force H.264 High profile for mp4: many browsers' WebCodecs only
 			// support High (avc1.6400xx), not the Baseline that mediabunny would
 			// otherwise pick by default, which makes mp4 export silently fail.
 			// Level 5.2 (…34) covers large portrait frames like 1080x1920.
-			...(this.format === "webm" ? {} : { fullCodecString: "avc1.640034" }),
+			...(resolvedFormat === "webm" ? {} : { fullCodecString: "avc1.640034" }),
 		});
 
 		output.addVideoTrack(videoSource, { frameRate: fps });
 
 		let audioSource: AudioBufferSource | null = null;
 		if (this.shouldIncludeAudio && this.audioBuffer) {
-			let audioCodec: "aac" | "opus" =
-				this.format === "webm" ? "opus" : "aac";
-
-			if (audioCodec === "aac" && typeof AudioEncoder !== "undefined") {
-				const { supported } = await AudioEncoder.isConfigSupported({
-					codec: "mp4a.40.2",
-					sampleRate: this.audioBuffer.sampleRate,
-					numberOfChannels: this.audioBuffer.numberOfChannels,
-					bitrate: 192000,
-				});
-				if (!supported) audioCodec = "opus";
-			}
-
 			audioSource = new AudioBufferSource({
-				codec: audioCodec,
+				codec: resolvedFormat === "webm" ? "opus" : "aac",
 				bitrate: qualityMap[this.quality],
 			});
 			output.addAudioTrack(audioSource);
@@ -163,6 +194,6 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		}
 
 		this.emit("complete", buffer);
-		return buffer;
+		return { buffer, format: resolvedFormat };
 	}
 }
