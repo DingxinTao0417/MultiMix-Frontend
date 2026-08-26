@@ -40,6 +40,31 @@ function wire(job: Partial<ExportFinalizeJob> = {}): Record<string, unknown> {
   };
 }
 
+type ResumableOptions = {
+  endpoint: string;
+  fingerprint: () => Promise<string>;
+  chunkSize: number;
+  retryDelays: number[];
+  headers: Record<string, string>;
+  metadata: Record<string, string>;
+  onSuccess: () => void;
+  onError: (error: Error) => void;
+};
+
+function successfulResumableUploadFactory() {
+  const start = vi.fn();
+  const factory = vi.fn((_blob: Blob, options: ResumableOptions) => {
+    start.mockImplementation(() => options.onSuccess());
+    return {
+      abort: vi.fn().mockResolvedValue(undefined),
+      findPreviousUploads: vi.fn().mockResolvedValue([]),
+      resumeFromPreviousUpload: vi.fn(),
+      start,
+    };
+  });
+  return { factory, start };
+}
+
 describe("video export finalization client", () => {
   it("uses the multipart compatibility endpoint when direct storage is unavailable", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
@@ -76,18 +101,18 @@ describe("video export finalization client", () => {
     expect(uploaded.type).toBe("video/mp4");
   });
 
-  it("uploads directly to storage and registers only a small JSON payload", async () => {
+  it("uses signed resumable upload for a direct storage session", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
         mode: "direct",
-        candidate_ref: "supabase://bucket/candidate.mp4",
-        upload_url: "https://storage.example.test/upload?token=short",
+        candidate_ref: "supabase://multimix-artifacts/video-orchestration/7/export-candidates/candidate.mp4",
+        upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/multimix-artifacts/video-orchestration/7/export-candidates/candidate.mp4?token=short",
         upload_method: "PUT",
         project_fingerprint: "a".repeat(64),
       }, 201))
-      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
       .mockResolvedValueOnce(response(wire(), 202));
     const blob = new Blob(["mp4"], { type: "video/mp4" });
+    const { factory: resumableUploadFactory, start } = successfulResumableUploadFactory();
 
     await expect(uploadExportCandidate({
       apiBase: "https://api.example.test",
@@ -95,42 +120,70 @@ describe("video export finalization client", () => {
       token: "token",
       blob,
       fetchImpl,
+      resumableUploadFactory,
     })).resolves.toEqual(queuedJob);
 
-    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
-      "https://storage.example.test/upload?token=short",
+    expect(resumableUploadFactory).toHaveBeenCalledWith(
+      blob,
+      expect.objectContaining({
+        endpoint: "https://project.storage.supabase.co/storage/v1/upload/resumable/sign",
+        fingerprint: expect.any(Function),
+        chunkSize: 6 * 1024 * 1024,
+        retryDelays: [0, 3_000, 5_000, 10_000, 20_000],
+        headers: { "x-signature": "short", "x-upsert": "true" },
+        metadata: {
+          bucketName: "multimix-artifacts",
+          objectName: "video-orchestration/7/export-candidates/candidate.mp4",
+          contentType: "video/mp4",
+          cacheControl: "3600",
+        },
+      }),
     );
-    expect(fetchImpl.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
-      method: "PUT",
-      headers: { "x-upsert": "true" },
-    }));
-    expect((fetchImpl.mock.calls[1]?.[1]?.headers as Record<string, string>).Authorization)
-      .toBeUndefined();
-    expect(fetchImpl.mock.calls[2]?.[0]).toBe(
+    const resumableOptions = resumableUploadFactory.mock.calls[0]?.[1];
+    await expect(resumableOptions?.fingerprint()).resolves.toBe(
+      "multimix-video-export:multimix-artifacts:video-orchestration/7/"
+        + "export-candidates/candidate.mp4:"
+        + "862c4ec62defaadafbf7638961214d286015c38ed4ccc7b10d52bdf434e5bee1",
+    );
+    expect(start).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
       "https://api.example.test/v1/video/projects/1121/exports/register",
     );
-    expect(fetchImpl.mock.calls[2]?.[1]).toEqual(expect.objectContaining({
+    expect(fetchImpl.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
       method: "POST",
       headers: expect.objectContaining({ "Content-Type": "application/json" }),
     }));
-    expect(fetchImpl.mock.calls[2]?.[1]?.body).toEqual(expect.any(String));
-    expect(JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body))).toEqual(expect.objectContaining({
+    expect(fetchImpl.mock.calls[1]?.[1]?.body).toEqual(expect.any(String));
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body))).toEqual(expect.objectContaining({
       project_fingerprint: "a".repeat(64),
     }));
   });
 
-  it("retries a transient signed upload without creating another session", async () => {
+  it("resumes a matching interrupted direct upload before starting", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
         mode: "direct",
-        candidate_ref: "supabase://bucket/candidate.mp4",
-        upload_url: "https://storage.example.test/upload?token=short",
+        upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/bucket/candidate.mp4?token=short",
         upload_method: "PUT",
         project_fingerprint: "a".repeat(64),
       }, 201))
-      .mockRejectedValueOnce(new TypeError("network reset"))
-      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
       .mockResolvedValueOnce(response(wire(), 202));
+    const previousUpload = {
+      size: 3,
+      metadata: {},
+      creationTime: "yesterday",
+      urlStorageKey: "upload-key",
+      uploadUrl: "https://project.storage.supabase.co/upload/previous",
+      parallelUploadUrls: null,
+    };
+    const resumeFromPreviousUpload = vi.fn();
+    const factory = vi.fn((_blob: Blob, options: ResumableOptions) => ({
+      abort: vi.fn().mockResolvedValue(undefined),
+      findPreviousUploads: vi.fn().mockResolvedValue([previousUpload]),
+      resumeFromPreviousUpload,
+      start: vi.fn(() => options.onSuccess()),
+    }));
 
     await uploadExportCandidate({
       apiBase: "https://api.example.test",
@@ -138,27 +191,24 @@ describe("video export finalization client", () => {
       token: "token",
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
+      resumableUploadFactory: factory,
     });
 
-    expect(fetchImpl).toHaveBeenCalledTimes(4);
-    expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/exports/uploads")))
-      .toHaveLength(1);
-    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("storage.example.test")))
-      .toHaveLength(2);
+    expect(resumeFromPreviousUpload).toHaveBeenCalledWith(previousUpload);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("retries registration without uploading the candidate again", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
         mode: "direct",
-        candidate_ref: "supabase://bucket/candidate.mp4",
-        upload_url: "https://storage.example.test/upload?token=short",
+        upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/bucket/candidate.mp4?token=short",
         upload_method: "PUT",
         project_fingerprint: "a".repeat(64),
       }, 201))
-      .mockResolvedValueOnce(response({ Key: "candidate.mp4" }, 200))
       .mockResolvedValueOnce(response({ detail: "temporary" }, 503))
       .mockResolvedValueOnce(response(wire(), 202));
+    const { factory, start } = successfulResumableUploadFactory();
 
     await uploadExportCandidate({
       apiBase: "https://api.example.test",
@@ -166,12 +216,59 @@ describe("video export finalization client", () => {
       token: "token",
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
+      resumableUploadFactory: factory,
     });
 
-    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("storage.example.test")))
-      .toHaveLength(1);
+    expect(start).toHaveBeenCalledOnce();
     expect(fetchImpl.mock.calls.filter(([url]) => String(url).endsWith("/exports/register")))
       .toHaveLength(2);
+  });
+
+  it("aborts an active resumable upload when the caller aborts", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(response({
+      mode: "direct",
+      upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/bucket/candidate.mp4?token=short",
+      upload_method: "PUT",
+      project_fingerprint: "a".repeat(64),
+    }, 201));
+    const abort = vi.fn().mockResolvedValue(undefined);
+    const factory = vi.fn(() => ({
+      abort,
+      findPreviousUploads: vi.fn().mockResolvedValue([]),
+      resumeFromPreviousUpload: vi.fn(),
+      start: vi.fn(() => controller.abort()),
+    }));
+
+    await expect(uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+      signal: controller.signal,
+      resumableUploadFactory: factory,
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(abort).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a malformed direct upload URL before registering a candidate", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(response({
+      mode: "direct",
+      upload_url: "https://storage.example.test/upload?token=short",
+      upload_method: "PUT",
+      project_fingerprint: "a".repeat(64),
+    }, 201));
+
+    await expect(uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+    })).rejects.toThrow("成片上传会话未返回有效的大文件上传地址");
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("treats a missing current job as no recovery work", async () => {

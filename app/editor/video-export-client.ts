@@ -1,5 +1,9 @@
+import { Upload } from "tus-js-client";
+
 export const EXPORT_JOB_POLL_INTERVAL_MS = 2_000;
 const EXPORT_JOB_MAX_CONSECUTIVE_NETWORK_ERRORS = 3;
+const SUPABASE_TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
+const SUPABASE_TUS_RETRY_DELAYS_MS = [0, 3_000, 5_000, 10_000, 20_000];
 
 export type ExportFinalizeJob = {
   id: string;
@@ -28,6 +32,41 @@ type ExportUploadSession = {
   uploadUrl: string;
   uploadMethod: "PUT" | "POST";
   projectFingerprint: string;
+};
+
+type ResumableUploadOptions = {
+  endpoint: string;
+  fingerprint: () => Promise<string>;
+  retryDelays: number[];
+  headers: Record<string, string>;
+  uploadDataDuringCreation: boolean;
+  removeFingerprintOnSuccess: boolean;
+  storeFingerprintForResuming: boolean;
+  metadata: Record<string, string>;
+  chunkSize: number;
+  onSuccess: () => void;
+  onError: (error: Error) => void;
+};
+
+type PreviousResumableUpload = Parameters<Upload["resumeFromPreviousUpload"]>[0];
+
+type ResumableUploadHandle = {
+  abort: () => Promise<void>;
+  findPreviousUploads: () => Promise<PreviousResumableUpload[]>;
+  resumeFromPreviousUpload: (previousUpload: PreviousResumableUpload) => void;
+  start: () => void;
+};
+
+type ResumableUploadFactory = (
+  blob: Blob,
+  options: ResumableUploadOptions,
+) => ResumableUploadHandle;
+
+type SupabaseSignedResumableTarget = {
+  endpoint: string;
+  token: string;
+  bucketName: string;
+  objectName: string;
 };
 
 type WireExportFinalizeJob = {
@@ -166,6 +205,108 @@ function parseUploadSession(payload: unknown): ExportUploadSession {
   };
 }
 
+function parseSupabaseSignedResumableTarget(uploadUrl: string): SupabaseSignedResumableTarget {
+  const url = new URL(uploadUrl);
+  const marker = "/storage/v1/object/upload/sign/";
+  const markerIndex = url.pathname.indexOf(marker);
+  const encodedPath = markerIndex >= 0
+    ? url.pathname.slice(markerIndex + marker.length)
+    : "";
+  const pathParts = encodedPath.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+  const token = url.searchParams.get("token") ?? "";
+  const [bucketName, ...objectParts] = pathParts;
+  const objectName = objectParts.join("/");
+  if (!bucketName || !objectName || !token || !/^https?:$/.test(url.protocol)) {
+    throw new Error("成片上传会话未返回有效的大文件上传地址");
+  }
+
+  const endpointUrl = new URL(url.origin);
+  if (!endpointUrl.hostname.includes(".storage.supabase.")) {
+    endpointUrl.hostname = endpointUrl.hostname.replace(
+      /\.supabase\.(co|in|red)$/,
+      ".storage.supabase.$1",
+    );
+  }
+  endpointUrl.pathname = "/storage/v1/upload/resumable/sign";
+  return {
+    endpoint: endpointUrl.toString(),
+    token,
+    bucketName,
+    objectName,
+  };
+}
+
+async function uploadDirectCandidateResumably(
+  args: {
+    blob: Blob;
+    format: ExportCandidateFormat;
+    sha256: string;
+    uploadUrl: string;
+    signal?: AbortSignal;
+    resumableUploadFactory?: ResumableUploadFactory;
+  },
+): Promise<void> {
+  ensureNotAborted(args.signal);
+  const target = parseSupabaseSignedResumableTarget(args.uploadUrl);
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      args.signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = () => {
+      void upload.abort().catch(() => undefined).finally(() => {
+        finish(() => reject(abortError()));
+      });
+    };
+    const factory = args.resumableUploadFactory
+      ?? ((blob, options) => new Upload(blob, options) as ResumableUploadHandle);
+    const upload = factory(args.blob, {
+      endpoint: target.endpoint,
+      fingerprint: async () => [
+        "multimix-video-export",
+        target.bucketName,
+        target.objectName,
+        args.sha256,
+      ].join(":"),
+      retryDelays: SUPABASE_TUS_RETRY_DELAYS_MS,
+      headers: {
+        "x-signature": target.token,
+        "x-upsert": "true",
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      storeFingerprintForResuming: true,
+      metadata: {
+        bucketName: target.bucketName,
+        objectName: target.objectName,
+        contentType: args.blob.type || `video/${args.format}`,
+        cacheControl: "3600",
+      },
+      chunkSize: SUPABASE_TUS_CHUNK_SIZE_BYTES,
+      onSuccess: () => finish(resolve),
+      onError: (error) => finish(() => reject(error)),
+    });
+    args.signal?.addEventListener("abort", onAbort, { once: true });
+    if (args.signal?.aborted) {
+      onAbort();
+      return;
+    }
+    void upload.findPreviousUploads()
+      .then((previousUploads) => {
+        if (settled) return;
+        if (previousUploads[0]) upload.resumeFromPreviousUpload(previousUploads[0]);
+        upload.start();
+      })
+      .catch((error: unknown) => {
+        finish(() => reject(error));
+      });
+  });
+}
+
 async function createUploadSession(
   args: ExportClientBase & { sha256: string; sizeBytes: number; format: ExportCandidateFormat },
 ): Promise<ExportUploadSession> {
@@ -201,6 +342,7 @@ export async function uploadExportCandidate(
     blob: Blob;
     format?: ExportCandidateFormat;
     onStage?: (stage: ExportCandidateStage) => void;
+    resumableUploadFactory?: ResumableUploadFactory;
   },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
@@ -217,27 +359,14 @@ export async function uploadExportCandidate(
 
   args.onStage?.("uploading");
   if (session.mode === "direct") {
-    const formData = new FormData();
-    formData.append("cacheControl", "3600");
-    formData.append("", args.blob, `video-export.${format}`);
-    const uploadResponse = await fetchWithOneRetry(
-      args.fetchImpl ?? fetch,
-      session.uploadUrl,
-      {
-        method: "PUT",
-        headers: { "x-upsert": "true" },
-        body: formData,
-        signal: args.signal,
-      },
-    );
-    if (!uploadResponse.ok) {
-      const payload = await responsePayload(uploadResponse);
-      throw new ExportJobHttpError(
-        errorMessage(payload, `成片直传失败（HTTP ${uploadResponse.status}）`),
-        uploadResponse.status,
-        payload,
-      );
-    }
+    await uploadDirectCandidateResumably({
+      blob: args.blob,
+      format,
+      sha256,
+      uploadUrl: session.uploadUrl,
+      signal: args.signal,
+      resumableUploadFactory: args.resumableUploadFactory,
+    });
     args.onStage?.("registering");
     const registerResponse = await fetchWithOneRetry(
       args.fetchImpl ?? fetch,
