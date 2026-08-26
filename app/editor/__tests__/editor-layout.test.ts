@@ -109,6 +109,18 @@ describe("editor layout constraints", () => {
 		expect(view).not.toContain("anchor.click()");
 	});
 
+	it("refreshes editor authentication without losing a running export job", () => {
+		const page = readProjectFile("app/editor/page.tsx");
+		const view = readProjectFile("app/editor/EditorView.tsx");
+
+		expect(page).toContain("supabase.auth.onAuthStateChange");
+		expect(page).toContain("supabase.auth.refreshSession()");
+		expect(page).toContain("refreshAccessToken={refreshAccessToken}");
+		expect(view).toContain("const tokenRef = useRef(token)");
+		expect(view).toContain("getToken: getExportToken");
+		expect(view).toContain("refreshToken: refreshExportToken");
+	});
+
 	it("uses bounded polling for material replacement and does not expose manual MG generation", () => {
 		const panel = readProjectFile("editor-engine/vendor/ReplacePanel.tsx");
 		const api = readProjectFile("editor-engine/vendor/api.ts");

@@ -20,6 +20,8 @@ type ExportClientBase = {
   apiBase: string;
   assetId: string;
   token: string;
+  getToken?: () => string | Promise<string>;
+  refreshToken?: () => Promise<string | null>;
   fetchImpl?: typeof fetch;
   signal?: AbortSignal;
 };
@@ -179,6 +181,33 @@ async function fetchWithOneRetry(
   throw lastError instanceof Error ? lastError : new Error("网络请求失败");
 }
 
+async function fetchAuthenticated(
+  args: ExportClientBase,
+  input: string,
+  init: RequestInit,
+  retryTransient = false,
+): Promise<Response> {
+  const fetchImpl = args.fetchImpl ?? fetch;
+  const send = (token: string) => {
+    const requestInit = {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> | undefined),
+        Authorization: `Bearer ${token}`,
+      },
+    };
+    return retryTransient
+      ? fetchWithOneRetry(fetchImpl, input, requestInit)
+      : fetchImpl(input, requestInit);
+  };
+  const token = await args.getToken?.() || args.token;
+  const response = await send(token);
+  if (response.status !== 401 || !args.refreshToken) return response;
+  const refreshedToken = await args.refreshToken();
+  if (!refreshedToken) return response;
+  return send(refreshedToken);
+}
+
 async function sha256Hex(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0"))
@@ -310,12 +339,12 @@ async function uploadDirectCandidateResumably(
 async function createUploadSession(
   args: ExportClientBase & { sha256: string; sizeBytes: number; format: ExportCandidateFormat },
 ): Promise<ExportUploadSession> {
-  const response = await (args.fetchImpl ?? fetch)(
+  const response = await fetchAuthenticated(
+    args,
     `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/uploads`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${args.token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -368,13 +397,12 @@ export async function uploadExportCandidate(
       resumableUploadFactory: args.resumableUploadFactory,
     });
     args.onStage?.("registering");
-    const registerResponse = await fetchWithOneRetry(
-      args.fetchImpl ?? fetch,
+    const registerResponse = await fetchAuthenticated(
+      args,
       `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/register`,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${args.token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -385,17 +413,18 @@ export async function uploadExportCandidate(
         }),
         signal: args.signal,
       },
+      true,
     );
     return requireJob(registerResponse, "成片登记失败");
   }
 
   const formData = new FormData();
   formData.append("file", args.blob, `video-export.${format}`);
-  const response = await (args.fetchImpl ?? fetch)(
+  const response = await fetchAuthenticated(
+    args,
     new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
     {
       method: "POST",
-      headers: { Authorization: `Bearer ${args.token}` },
       body: formData,
       signal: args.signal,
     },
@@ -407,10 +436,10 @@ export async function getCurrentExportJob(
   args: ExportClientBase,
 ): Promise<ExportFinalizeJob | null> {
   ensureNotAborted(args.signal);
-  const response = await (args.fetchImpl ?? fetch)(
+  const response = await fetchAuthenticated(
+    args,
     `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/current`,
     {
-      headers: { Authorization: `Bearer ${args.token}` },
       signal: args.signal,
     },
   );
@@ -422,11 +451,11 @@ export async function getExportJob(
   args: ExportClientBase & { jobId: string },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
-  const response = await (args.fetchImpl ?? fetch)(
+  const response = await fetchAuthenticated(
+    args,
     `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}`
       + `/exports/${encodeURIComponent(args.jobId)}`,
     {
-      headers: { Authorization: `Bearer ${args.token}` },
       signal: args.signal,
     },
   );
@@ -437,11 +466,11 @@ export async function retryExportJob(
   args: ExportClientBase & { jobId: string },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
-  const response = await (args.fetchImpl ?? fetch)(
+  const response = await fetchAuthenticated(
+    args,
     `${args.apiBase}/v1/video/jobs/${encodeURIComponent(args.jobId)}/retry`,
     {
       method: "POST",
-      headers: { Authorization: `Bearer ${args.token}` },
       signal: args.signal,
     },
   );

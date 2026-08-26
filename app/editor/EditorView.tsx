@@ -153,6 +153,7 @@ export default function EditorView({
   jobId,
   assetId,
   token,
+  refreshAccessToken,
   embed,
   mode = "edit",
   previewChannel = null,
@@ -162,6 +163,7 @@ export default function EditorView({
   jobId: string | null;
   assetId: string | null;
   token: string | null;
+  refreshAccessToken?: () => Promise<string | null>;
   embed?: boolean;
   mode?: "edit" | "preview";
   previewChannel?: string | null;
@@ -179,6 +181,7 @@ export default function EditorView({
   });
   const [standaloneExportBlob, setStandaloneExportBlob] = useState<Blob | null>(null);
   const [standaloneExportError, setStandaloneExportError] = useState("");
+  const tokenRef = useRef(token);
   const startedRef = useRef(false);
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
@@ -188,6 +191,21 @@ export default function EditorView({
   const activeExportAbortRef = useRef<AbortController | null>(null);
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const previewOnly = mode === "preview";
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
+  const getExportToken = useCallback(
+    () => tokenRef.current ?? token ?? "",
+    [token],
+  );
+
+  const refreshExportToken = useCallback(async () => {
+    const refreshed = await refreshAccessToken?.() ?? null;
+    if (refreshed) tokenRef.current = refreshed;
+    return refreshed;
+  }, [refreshAccessToken]);
 
   const registerTimelineFlush = useCallback((flush: (() => Promise<TimelineFlushResult>) | null) => {
     timelineFlushRef.current = flush;
@@ -239,12 +257,13 @@ export default function EditorView({
 
   const persistCurrentProject = useCallback(async (project?: BackendProject) => {
     if (!assetId) throw new ProjectSaveError("缺少项目 ID");
+    const currentToken = getExportToken();
     const body = project ?? serializeBackendProject(EditorCore.getInstance());
     const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
       },
       body: JSON.stringify(body),
     });
@@ -257,7 +276,7 @@ export default function EditorView({
     }
     rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
     loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
-  }, [assetId, token]);
+  }, [assetId, getExportToken]);
 
   const performVerifiedExport = useCallback(async (hooks: VerifiedExportHooks) => {
     const serialized = serializeBackendProject(EditorCore.getInstance());
@@ -274,12 +293,13 @@ export default function EditorView({
       hooks.onQualityReport?.(localReport);
       return null;
     }
-    if (!assetId || !token) throw new Error("缺少成片验证所需的项目身份信息");
+    const currentToken = getExportToken();
+    if (!assetId || !currentToken) throw new Error("缺少成片验证所需的项目身份信息");
 
     await persistCurrentProject(currentProject);
     const preflightResponse = await fetch(
       `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/quality?stage=export_preflight`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${currentToken}` } },
     );
     const preflightPayload = await preflightResponse.json().catch(() => null) as unknown;
     if (!preflightResponse.ok) {
@@ -322,7 +342,9 @@ export default function EditorView({
       const exportJob = await uploadExportCandidate({
         apiBase: API_BASE,
         assetId,
-        token,
+        token: currentToken,
+        getToken: getExportToken,
+        refreshToken: refreshExportToken,
         blob: candidate.blob,
         format: candidate.format,
         signal: controller.signal,
@@ -336,7 +358,9 @@ export default function EditorView({
       const terminalJob = await waitForExportJob({
         apiBase: API_BASE,
         assetId,
-        token,
+        token: currentToken,
+        getToken: getExportToken,
+        refreshToken: refreshExportToken,
         initialJob: exportJob,
         signal: controller.signal,
       });
@@ -353,9 +377,10 @@ export default function EditorView({
         throw new Error("成片文件未通过完整性验证");
       }
 
+      const confirmedToken = await refreshExportToken() || getExportToken();
       const confirmedProject = await fetchProject(
         `/v1/video/projects/${encodeURIComponent(assetId)}`,
-        token,
+        confirmedToken,
       );
       loadedProjectRef.current = confirmedProject.project;
       candidateBlobRef.current = null;
@@ -365,7 +390,7 @@ export default function EditorView({
         activeExportAbortRef.current = null;
       }
     }
-  }, [assetId, persistCurrentProject, token]);
+  }, [assetId, getExportToken, persistCurrentProject, refreshExportToken]);
 
   const handleEmbeddedExport = useCallback(async () => {
     if (exportBusyRef.current) return;
@@ -408,7 +433,8 @@ export default function EditorView({
 
   const handleStandaloneExport = useCallback(async () => {
     const recoverableJob = recoverableStandaloneExportRef.current;
-    if (recoverableJob?.retryable && assetId && token) {
+    const currentToken = getExportToken();
+    if (recoverableJob?.retryable && assetId && currentToken) {
       setStandaloneExportState({ phase: "verifying", progress: 1 });
       setStandaloneExportError("");
       try {
@@ -416,12 +442,16 @@ export default function EditorView({
           apiBase: API_BASE,
           assetId,
           jobId: recoverableJob.id,
-          token,
+          token: currentToken,
+          getToken: getExportToken,
+          refreshToken: refreshExportToken,
         });
         const terminal = await waitForExportJob({
           apiBase: API_BASE,
           assetId,
-          token,
+          token: currentToken,
+          getToken: getExportToken,
+          refreshToken: refreshExportToken,
           initialJob: retried,
         });
         if (terminal.status === "failed") {
@@ -429,7 +459,8 @@ export default function EditorView({
           throw new Error(terminal.errorMessage || "成片检查未完成");
         }
         recoverableStandaloneExportRef.current = null;
-        setStandaloneExportBlob(await downloadPublishedExport(terminal, token));
+        const downloadToken = await refreshExportToken() || getExportToken();
+        setStandaloneExportBlob(await downloadPublishedExport(terminal, downloadToken));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
         setStandaloneExportState({ phase: "error", progress: 0 });
@@ -464,7 +495,7 @@ export default function EditorView({
       setStandaloneExportState({ phase: "error", progress: 0 });
       setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
     }
-  }, [assetId, performVerifiedExport, token]);
+  }, [assetId, getExportToken, performVerifiedExport, refreshExportToken]);
 
   const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse) => {
     candidateBlobRef.current = null;
@@ -509,7 +540,7 @@ export default function EditorView({
     setState("loading");
     void (async () => {
       try {
-        const loadedProject = await fetchProject(endpoint, token);
+        const loadedProject = await fetchProject(endpoint, getExportToken());
         candidateBlobRef.current = null;
         recoverableStandaloneExportRef.current = null;
         loadedProjectRef.current = loadedProject.project;
@@ -527,17 +558,20 @@ export default function EditorView({
         });
       }
     })();
-  }, [jobId, assetId, token, postToParent]);
+  }, [jobId, assetId, getExportToken, postToParent, token]);
 
   useEffect(() => {
-    if (embed || state !== "ready" || !assetId || !token) return;
+    const currentToken = getExportToken();
+    if (embed || state !== "ready" || !assetId || !currentToken) return;
     const controller = new AbortController();
     void (async () => {
       try {
         const current = await getCurrentExportJob({
           apiBase: API_BASE,
           assetId,
-          token,
+          token: currentToken,
+          getToken: getExportToken,
+          refreshToken: refreshExportToken,
           signal: controller.signal,
         });
         if (!current) return;
@@ -547,7 +581,9 @@ export default function EditorView({
           terminal = await waitForExportJob({
             apiBase: API_BASE,
             assetId,
-            token,
+            token: currentToken,
+            getToken: getExportToken,
+            refreshToken: refreshExportToken,
             initialJob: current,
             signal: controller.signal,
           });
@@ -559,7 +595,10 @@ export default function EditorView({
           return;
         }
         recoverableStandaloneExportRef.current = null;
-        setStandaloneExportBlob(await downloadPublishedExport(terminal, token, controller.signal));
+        const downloadToken = await refreshExportToken() || getExportToken();
+        setStandaloneExportBlob(
+          await downloadPublishedExport(terminal, downloadToken, controller.signal),
+        );
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
         if (controller.signal.aborted) return;
@@ -568,7 +607,7 @@ export default function EditorView({
       }
     })();
     return () => controller.abort();
-  }, [assetId, embed, state, token]);
+  }, [assetId, embed, getExportToken, refreshExportToken, state]);
 
   useEffect(() => {
     if (!embed || typeof window === "undefined") return;

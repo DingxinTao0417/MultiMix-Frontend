@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 
@@ -25,18 +25,20 @@ function readLocalToken(): string | null {
 }
 
 async function readToken(): Promise<string | null> {
-  const local = readLocalToken();
-  if (local) return local;
   // Supabase auth mode stores the session in the Supabase client, not under
-  // the local-user key; without this the editor runs unauthenticated there.
+  // the local-user key. Read it first so a refreshed session wins over the
+  // compatibility projection in localStorage.
   try {
     const { supabase } = await import("@/lib/supabase");
-    if (!supabase) return null;
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) return data.session.access_token;
+    }
   } catch {
-    return null;
+    // Local auth mode and a temporarily unavailable Supabase client both use
+    // the existing compatibility token below.
   }
+  return readLocalToken();
 }
 
 function EditorPageContent() {
@@ -51,15 +53,46 @@ function EditorPageContent() {
   const [token, setToken] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
+  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const { supabase } = await import("@/lib/supabase");
+      if (!supabase) return readLocalToken();
+      const { data, error } = await supabase.auth.refreshSession();
+      if (error || !data.session?.access_token) return null;
+      setToken(data.session.access_token);
+      return data.session.access_token;
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    let unsubscribeAuth: () => void = () => undefined;
+    const onStorage = (event: StorageEvent) => {
+      if (!cancelled && event.key === LOCAL_USER_KEY) setToken(readLocalToken());
+    };
+    window.addEventListener("storage", onStorage);
     void readToken().then((value) => {
       if (cancelled) return;
       setToken(value);
       setReady(true);
     });
+    void import("@/lib/supabase").then(({ supabase }) => {
+      if (!supabase) return;
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!cancelled) setToken(session?.access_token ?? readLocalToken());
+      });
+      if (cancelled) {
+        subscription.unsubscribe();
+      } else {
+        unsubscribeAuth = () => subscription.unsubscribe();
+      }
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
+      window.removeEventListener("storage", onStorage);
+      unsubscribeAuth();
     };
   }, []);
 
@@ -69,6 +102,7 @@ function EditorPageContent() {
       jobId={jobId}
       assetId={assetId}
       token={token}
+      refreshAccessToken={refreshAccessToken}
       embed={embed}
       mode={mode}
       previewChannel={previewChannel}

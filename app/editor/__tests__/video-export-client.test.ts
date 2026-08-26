@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   getCurrentExportJob,
+  getExportJob,
   retryExportJob,
   uploadExportCandidate,
   waitForExportJob,
@@ -322,6 +323,61 @@ describe("video export finalization client", () => {
       sleep: async () => undefined,
     })).resolves.toEqual(completed);
     expect(fetchImpl.mock.calls[1]?.[0]).toContain("/exports/video-export-1");
+  });
+
+  it("refreshes an expired token once while polling the same export job", async () => {
+    const completed = { ...queuedJob, status: "completed" as const, stage: "done" as const };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ detail: "Invalid Supabase session" }, 401))
+      .mockResolvedValueOnce(response(wire(completed)));
+    let currentToken = "expired-token";
+    const refreshToken = vi.fn().mockImplementation(async () => {
+      currentToken = "fresh-token";
+      return currentToken;
+    });
+
+    await expect(waitForExportJob({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "expired-token",
+      getToken: () => currentToken,
+      initialJob: queuedJob,
+      fetchImpl,
+      refreshToken,
+      sleep: async () => undefined,
+    } as Parameters<typeof waitForExportJob>[0] & {
+      refreshToken: typeof refreshToken;
+    })).resolves.toEqual(completed);
+
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(fetchImpl.mock.calls[1]?.[0]);
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toEqual(expect.objectContaining({
+      Authorization: "Bearer expired-token",
+    }));
+    expect(fetchImpl.mock.calls[1]?.[1]?.headers).toEqual(expect.objectContaining({
+      Authorization: "Bearer fresh-token",
+    }));
+  });
+
+  it("fails closed after one refresh when the replacement token is also rejected", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ detail: "Invalid Supabase session" }, 401))
+      .mockResolvedValueOnce(response({ detail: "Invalid Supabase session" }, 401));
+    const refreshToken = vi.fn().mockResolvedValue("still-invalid-token");
+
+    await expect(getExportJob({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      jobId: queuedJob.id,
+      token: "expired-token",
+      fetchImpl,
+      refreshToken,
+    })).rejects.toMatchObject({ status: 401 });
+
+    expect(refreshToken).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(fetchImpl.mock.calls[1]?.[0]);
   });
 
   it("returns a structured failed terminal job", async () => {
