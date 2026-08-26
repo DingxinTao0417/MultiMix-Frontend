@@ -1588,6 +1588,7 @@ describe("agent conversation UI copy", () => {
 
     expect(libraryWorkshop).not.toContain("公开素材搜索");
     expect(libraryWorkshop).not.toContain("handleImportPublicMaterial");
+    expect(adapter).not.toContain("/assets/public-sources");
     expect(adapter).not.toContain("/assets/public-search");
     expect(adapter).not.toContain("/assets/public-import");
     expect(adapter).not.toContain("/admin/public-sources");
