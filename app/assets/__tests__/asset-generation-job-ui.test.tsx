@@ -126,6 +126,29 @@ describe("AssetGenerationJobCard", () => {
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
   });
 
+  it("shows only body-free failure fields in technical details", () => {
+    render(
+      <AssetGenerationJobCard
+        job={job({
+          status: "failed",
+          error_message: "内容生成服务拒绝了本次请求。",
+          failure_diagnostic: {
+            error_code: "provider_rejected",
+            stage: "presenter_events",
+            http_status: 400,
+            provider_error_code: "InvalidSchema",
+            request_fingerprint: "sha256:body-free",
+            attempts: 2,
+            fallback: "none",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("错误码：provider_rejected · 阶段：presenter_events · HTTP：400 · Provider：InvalidSchema · 指纹：sha256:body-free · 尝试：2 · Fallback：none")).not.toBeNull();
+    expect(screen.queryByText("内容生成服务拒绝了本次请求。")).toBeNull();
+  });
+
   it("keeps a historical failed job retryable when its saved progress is invalid", () => {
     const onRetry = vi.fn();
     render(

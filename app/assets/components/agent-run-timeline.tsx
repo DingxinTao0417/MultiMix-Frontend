@@ -46,6 +46,7 @@ export default function AgentRunTimeline({
   title = "视频生成进度",
   statusTone: statusToneOverride,
   errorMessage,
+  technicalDetail,
   onRetry,
   completionConfirmed,
   completionLabel = "视频已生成，可立即编辑",
@@ -55,6 +56,7 @@ export default function AgentRunTimeline({
   title?: string;
   statusTone?: "success" | "fail" | "running" | "cancelled";
   errorMessage?: string | null;
+  technicalDetail?: string | null;
   onRetry?: (jobId: string) => void;
   completionConfirmed?: boolean;
   completionLabel?: string;
@@ -92,7 +94,7 @@ export default function AgentRunTimeline({
   ) ?? steps.find((step) => step.retryJobId);
   const retryJobId = retryStep?.retryJobId;
   const errorPresentation = summary.hasFailure
-    ? executionErrorPresentation(errorMessage ?? "")
+    ? executionErrorPresentation(technicalDetail ?? errorMessage ?? "")
     : null;
   const statusTone = statusToneOverride ?? (summary.allDone
     ? "success"

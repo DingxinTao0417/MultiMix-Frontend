@@ -298,6 +298,15 @@ export type AssetGenerationJobResponse = {
   created_at: string;
   updated_at: string;
   started_at?: string | null;
+  failure_diagnostic?: {
+    error_code?: string;
+    stage?: string;
+    http_status?: number;
+    provider_error_code?: string;
+    request_fingerprint?: string;
+    attempts?: number;
+    fallback?: string;
+  };
   progress_events?: Array<{
     key: string;
     label: string;
