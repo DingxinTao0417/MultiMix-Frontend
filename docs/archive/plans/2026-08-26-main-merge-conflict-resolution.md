@@ -1,6 +1,6 @@
 # Frontend main 合并冲突解决计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-26
 
@@ -25,4 +25,9 @@
 
 - 已将多 generation job 的锚定/去重渲染与 `canGenerate` 重试门控合并；未确认任务不会重复展示。
 - 已合并公开素材 DTO/adapter、写入门控、焦点管理与本地 `failure_diagnostic`、`productStatus`；并补回自动合并遗漏的公开素材搜索入口。
-- 通过：冲突相关前端测试 `40 passed`、`npm run typecheck`；待执行文档检查、合并提交、推送和生产部署。
+- 通过：冲突相关前端测试 `40 passed`、`npm run typecheck` 和文档检查；合并提交 `9e1ce65` 已进入
+  `main`，后续文档提交 `4eaab70` 已推送，本地与远端一致。
+
+## 归档结论（2026-08-26）
+
+冲突解决、回归、合并和远端同步均已完成。生产部署属于独立发布动作，不再用本合并计划充当发布待办。
