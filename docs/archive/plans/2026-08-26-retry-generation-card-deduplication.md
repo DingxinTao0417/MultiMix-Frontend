@@ -1,6 +1,6 @@
 # 重试内容生成卡片去重
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-26
 
@@ -28,8 +28,14 @@
 - 历史失败消息仍可按现有规则展示；只阻止其对应实时对象再次作为游离卡追加。
 - 本次不修改 API、后端重试语义或卡片视觉。
 
-## 验证方式
+## 实施与验证结果
 
-- Vitest：新增重试链双实时对象的复现用例，修复前失败、修复后通过。
-- 运行现有 `conversation-generation-card-order` 与 `asset-generation-job-ui` 测试，确认普通历史卡和单卡行为无回归。
-- 运行前端类型检查与文档检查。
+- 实现已由前端提交 `85f3035` 进入 `main`。
+- 提交态类型检查通过。
+- `asset-generation-job-ui`、`conversation-generation-card-order`、`use-asset-generation-jobs` 共 27 项定向测试通过。
+- 隔离浏览器 E2E 通过：刷新前后任务卡顺序稳定、重试文案不重复、产物卡位于后续建议之前。
+- `docs:check` 通过；E2E 使用端口 `3219` 和 API 路由夹具，未创建数据库，进程和临时副本已清理。
+
+## 结论
+
+重试任务卡去重已实现并完成提交态与浏览器验证，无剩余执行项。本计划归档。
