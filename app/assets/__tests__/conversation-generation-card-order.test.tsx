@@ -51,6 +51,60 @@ describe("conversation generation card order", () => {
     expect(screen.getAllByText("内容生成已排队")).toHaveLength(1);
   });
 
+  it("keeps only the message-anchored successor card after a retry", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-generation-retry",
+      detailsLoaded: true,
+      messages: [{
+        id: 103,
+        role: "assistant" as const,
+        text: "内容生成任务已重新进入队列。",
+        metadata: {
+          asset_generation_job_id: "asset-generation-job-retry",
+          asset_generation_status: "running",
+          retry_of_asset_generation_job_id: "asset-generation-job-failed",
+        },
+      }],
+    };
+    const generationJobs = [
+      {
+        id: "asset-generation-job-failed",
+        status: "running" as const,
+        result_asset_id: null,
+        error_message: null,
+        created_at: "2026-08-26T02:00:00Z",
+        updated_at: "2026-08-26T04:00:00Z",
+        started_at: "2026-08-26T02:00:00Z",
+        progress_events: [],
+      },
+      {
+        id: "asset-generation-job-retry",
+        status: "running" as const,
+        result_asset_id: null,
+        error_message: null,
+        created_at: "2026-08-26T04:00:00Z",
+        updated_at: "2026-08-26T04:00:10Z",
+        started_at: "2026-08-26T04:00:00Z",
+        progress_events: [],
+      },
+    ];
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        generationJobs={generationJobs}
+      />,
+    );
+
+    expect(document.querySelectorAll("[data-generation-job-id]")).toHaveLength(1);
+    expect(document.querySelector('[data-generation-job-id="asset-generation-job-retry"]')).not.toBeNull();
+    expect(document.querySelector('[data-generation-job-id="asset-generation-job-failed"]')).toBeNull();
+  });
+
   it("places the generated product before follow-up suggestions", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),

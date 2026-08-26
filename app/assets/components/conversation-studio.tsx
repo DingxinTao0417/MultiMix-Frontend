@@ -743,6 +743,11 @@ export default function ConversationStudio({
       .map((message) => generationJobFromMessage(message)?.id)
       .filter((id): id is string => Boolean(id)),
   );
+  const supersededGenerationJobIds = new Set(
+    visibleConversationMessages
+      .map((message) => message.metadata?.retry_of_asset_generation_job_id)
+      .filter((id): id is string => typeof id === "string" && Boolean(id)),
+  );
 
   return (
     <section
@@ -947,7 +952,7 @@ export default function ConversationStudio({
           );
         })}
         {liveGenerationJobs
-          .filter((job) => !anchoredGenerationJobIds.has(job.id))
+          .filter((job) => !anchoredGenerationJobIds.has(job.id) && !supersededGenerationJobIds.has(job.id))
           .map((job) => (
             <AssetGenerationJobCard
               key={job.id}
