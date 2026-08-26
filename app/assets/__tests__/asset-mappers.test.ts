@@ -242,6 +242,8 @@ describe("asset product mapper", () => {
     expect(conversation.product.backendAssetId).toBe(2);
     expect(conversation.agentTasks).toBeUndefined();
     expect(conversation.activeAgentAction).toBeUndefined();
+    expect(conversation.messages?.[0]?.id).toBe(1);
+    expect(conversation.messages?.[0]?.createdAt).toBe("2026-08-02T00:00:00Z");
     expect(conversation.messages?.[0]?.suggestions).toEqual(["确认，生成视频工程", "调整分镜"]);
     expect(conversation.messages?.[0]?.agentAction).toMatchObject({
       id: "action-replace-scene-2",

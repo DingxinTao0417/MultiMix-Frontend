@@ -1281,6 +1281,8 @@ export function conversationFromPersisted(
       : undefined;
     const agentAction = persistedAgentAction;
     return {
+      id: message.id,
+      createdAt: message.created_at,
       role: message.role,
       text: message.text,
       presentation: confirmationMessagePresentation(message.role, message.metadata),

@@ -2041,8 +2041,10 @@ button:disabled {
 }
 
 .shadcn-prototype-thread article.shadcn-prototype-workflow-card-message {
+  display: grid;
   width: min(560px, 92%);
   max-width: min(560px, 92%);
+  gap: 14px;
 }
 
 .shadcn-prototype-workflow-card-message > :is(

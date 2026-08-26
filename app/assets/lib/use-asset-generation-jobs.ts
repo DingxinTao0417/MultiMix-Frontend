@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AssetGenerationJobResponse } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "./asset-workspace-adapter";
@@ -32,8 +32,8 @@ export function useAssetGenerationJobs(
     onConversationRefreshError,
     token,
   } = args;
-  const [jobsByConversation, setJobsByConversation] = useState<Record<string, AssetGenerationJobLive>>({});
-  const jobsByConversationRef = useRef(jobsByConversation);
+  const [jobsById, setJobsById] = useState<Record<string, AssetGenerationJobLive>>({});
+  const jobsByIdRef = useRef(jobsById);
   const conversationsRef = useRef(conversations);
   const inFlightRunsRef = useRef(new Set<string>());
   const refreshedRunsRef = useRef(new Set<string>());
@@ -47,18 +47,18 @@ export function useAssetGenerationJobs(
     job: AssetGenerationJobResponse,
   ) => {
     const live = { conversationId, job, run: 0 };
-    jobsByConversationRef.current = {
-      ...jobsByConversationRef.current,
-      [conversationId]: live,
+    jobsByIdRef.current = {
+      ...jobsByIdRef.current,
+      [job.id]: live,
     };
-    setJobsByConversation((current) => ({
+    setJobsById((current) => ({
       ...current,
-      [conversationId]: live,
+      [job.id]: live,
     }));
   }, []);
   const retryJob = useCallback(async (jobId: string, fallbackConversationId?: string) => {
     if (!token) return;
-    const liveEntry = Object.values(jobsByConversationRef.current)
+    const liveEntry = Object.values(jobsByIdRef.current)
       .find((live) => live.job.id === jobId)
     const persistedEntry = assetGenerationJobsFromConversations(conversationsRef.current)
       .find((persisted) => persisted.job.id === jobId);
@@ -74,62 +74,54 @@ export function useAssetGenerationJobs(
       job: remote,
       run: (liveEntry?.run ?? 0) + 1,
     };
-    jobsByConversationRef.current = {
-      ...jobsByConversationRef.current,
-      [conversationId]: nextEntry,
+    jobsByIdRef.current = {
+      ...jobsByIdRef.current,
+      [remote.id]: nextEntry,
     };
-    setJobsByConversation((jobs) => ({
+    setJobsById((jobs) => ({
       ...jobs,
-      [conversationId]: nextEntry,
+      [remote.id]: nextEntry,
     }));
   }, [token]);
   const cancelJob = useCallback(async (jobId: string) => {
     if (!token) return;
-    const entry = Object.values(jobsByConversationRef.current)
+    const entry = Object.values(jobsByIdRef.current)
       .find((live) => live.job.id === jobId);
     if (!entry) return;
     const remote = await assetWorkspaceAdapter.cancelGenerationJob(token, jobId);
     const nextEntry = { ...entry, job: remote, run: entry.run + 1 };
-    jobsByConversationRef.current = {
-      ...jobsByConversationRef.current,
-      [entry.conversationId]: nextEntry,
+    jobsByIdRef.current = {
+      ...jobsByIdRef.current,
+      [remote.id]: nextEntry,
     };
-    setJobsByConversation((jobs) => ({
+    setJobsById((jobs) => ({
       ...jobs,
-      [entry.conversationId]: nextEntry,
+      [remote.id]: nextEntry,
     }));
   }, [token]);
 
   useEffect(() => {
-    jobsByConversationRef.current = jobsByConversation;
-  }, [jobsByConversation]);
+    jobsByIdRef.current = jobsById;
+  }, [jobsById]);
 
   useEffect(() => {
     const persisted = assetGenerationJobsFromConversations(conversations);
     if (!persisted.length) return;
-    setJobsByConversation((current) => {
+    setJobsById((current) => {
       let changed = false;
       const next = { ...current };
       for (const entry of persisted) {
-        const live = next[entry.conversationId];
+        const live = next[entry.job.id];
         if (!live) {
-          next[entry.conversationId] = { ...entry, run: 0 };
+          next[entry.job.id] = { ...entry, run: 0 };
           changed = true;
-          continue;
-        }
-        if (live.job.id !== entry.job.id) {
-          next[entry.conversationId] = { ...entry, run: live.run + 1 };
-          changed = true;
-          continue;
         }
       }
       return changed ? next : current;
     });
   }, [conversations]);
 
-  const pollLifecycleKey = assetGenerationPollLifecycleKey(
-    Object.values(jobsByConversation),
-  );
+  const pollLifecycleKey = assetGenerationPollLifecycleKey(Object.values(jobsById));
   useEffect(() => {
     if (!token || !assetWorkspaceAdapter.isBackendEnabled() || !pollLifecycleKey) return;
     const authToken = token;
@@ -146,7 +138,7 @@ export function useAssetGenerationJobs(
 
     async function poll(live: AssetGenerationJobLive) {
       const identity = `${live.job.id}::${live.run}`;
-      const current = jobsByConversationRef.current[live.conversationId];
+      const current = jobsByIdRef.current[live.job.id];
       if (
         cancelled
         || current?.job.id !== live.job.id
@@ -157,16 +149,16 @@ export function useAssetGenerationJobs(
       try {
         const remote = await assetWorkspaceAdapter.getGenerationJob(authToken, live.job.id);
         if (cancelled) return;
-        const latest = jobsByConversationRef.current[live.conversationId];
+        const latest = jobsByIdRef.current[live.job.id];
         if (latest?.job.id !== live.job.id || latest.run !== live.run) return;
         const remoteLive = { ...latest, job: remote };
-        jobsByConversationRef.current = {
-          ...jobsByConversationRef.current,
-          [live.conversationId]: remoteLive,
+        jobsByIdRef.current = {
+          ...jobsByIdRef.current,
+          [live.job.id]: remoteLive,
         };
-        setJobsByConversation((jobs) => ({
+        setJobsById((jobs) => ({
           ...jobs,
-          [live.conversationId]: remoteLive,
+          [live.job.id]: remoteLive,
         }));
         if (remote.status === "completed") {
           if (refreshedRunsRef.current.has(identity)) return;
@@ -178,19 +170,19 @@ export function useAssetGenerationJobs(
             );
             if (cancelled) return;
             onConversationRefreshedRef.current(detail);
-            const nextRef = { ...jobsByConversationRef.current };
-            const currentRef = nextRef[live.conversationId];
+            const nextRef = { ...jobsByIdRef.current };
+            const currentRef = nextRef[live.job.id];
             if (currentRef?.job.id === live.job.id && currentRef.run === live.run) {
-              delete nextRef[live.conversationId];
-              jobsByConversationRef.current = nextRef;
+              delete nextRef[live.job.id];
+              jobsByIdRef.current = nextRef;
             }
-            setJobsByConversation((jobs) => {
-              const latestJob = jobs[live.conversationId];
+            setJobsById((jobs) => {
+              const latestJob = jobs[live.job.id];
               if (latestJob?.job.id !== live.job.id || latestJob.run !== live.run) {
                 return jobs;
               }
               const next = { ...jobs };
-              delete next[live.conversationId];
+              delete next[live.job.id];
               return next;
             });
           } catch {
@@ -209,7 +201,7 @@ export function useAssetGenerationJobs(
       }
     }
 
-    for (const live of Object.values(jobsByConversationRef.current)) {
+    for (const live of Object.values(jobsByIdRef.current)) {
       if (live.job.status === "queued" || live.job.status === "running") {
         schedule(live, 200);
       }
@@ -220,8 +212,19 @@ export function useAssetGenerationJobs(
     };
   }, [pollLifecycleKey, token]);
 
+  const jobsByConversation = useMemo(() => {
+    const latest: Record<string, AssetGenerationJobLive> = {};
+    for (const live of Object.values(jobsById)) latest[live.conversationId] = live;
+    return latest;
+  }, [jobsById]);
+  const jobsForConversation = useCallback(
+    (conversationId: string) => Object.values(jobsById).filter((live) => live.conversationId === conversationId),
+    [jobsById],
+  );
+
   return {
     jobsByConversation,
+    jobsForConversation,
     registerJob,
     retryJob,
     cancelJob,

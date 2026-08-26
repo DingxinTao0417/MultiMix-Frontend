@@ -578,7 +578,7 @@ export default function AssetsWorkspaceClient({
     toast.error("内容已生成，但对话刷新失败，请重新打开这条对话。");
   });
   const {
-    jobsByConversation: assetGenerationJobs,
+    jobsForConversation: assetGenerationJobsForConversation,
     registerJob: registerAssetGenerationJob,
     retryJob: retryAssetGenerationJob,
     cancelJob: cancelAssetGenerationJob,
@@ -636,7 +636,8 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
-  const selectedAssetGenerationJob = assetGenerationJobs[selectedConversation.id]?.job ?? null;
+  const selectedAssetGenerationJobs = assetGenerationJobsForConversation(selectedConversation.id)
+    .map((live) => live.job);
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
@@ -2541,7 +2542,7 @@ export default function AssetsWorkspaceClient({
                   });
                 }}
                 onSendMessage={handleSendConversationMessage}
-                generationJob={selectedAssetGenerationJob}
+                generationJobs={selectedAssetGenerationJobs}
                 onRetryGeneration={handleRetryGeneration}
                 onCancelGeneration={handleCancelGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}

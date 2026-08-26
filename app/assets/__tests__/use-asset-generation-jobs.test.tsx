@@ -102,6 +102,30 @@ describe("useAssetGenerationJobs", () => {
     });
   });
 
+  it("keeps multiple generation jobs addressable in the same conversation", () => {
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1",
+      conversations: [],
+      onConversationRefreshed: vi.fn(),
+      onConversationRefreshError: vi.fn(),
+    }));
+    const first = generationJob({ id: "asset-generation-job-1" });
+    const second = generationJob({
+      id: "asset-generation-job-2",
+      updated_at: "2026-07-30T09:01:00Z",
+    });
+
+    act(() => {
+      result.current.registerJob("conversation-1", first);
+      result.current.registerJob("conversation-1", second);
+    });
+
+    expect(result.current.jobsForConversation("conversation-1").map(({ job }) => job.id)).toEqual([
+      "asset-generation-job-1",
+      "asset-generation-job-2",
+    ]);
+  });
+
   it("retries a failed job during the live-registry restore window with its current conversation", async () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const retriedJob = generationJob({

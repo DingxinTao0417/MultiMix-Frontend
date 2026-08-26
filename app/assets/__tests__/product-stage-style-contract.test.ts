@@ -15,6 +15,7 @@ describe("product stage style contract", () => {
     expect(conversationStudio).toContain("message.plan || timelineSteps.length || renderedGenerationJob");
     expect(css).toMatch(/\.shadcn-prototype-thread article\.shadcn-prototype-workflow-card-message\s*\{[^}]*width:\s*min\(560px, 92%\);/s);
     expect(css).toMatch(/\.shadcn-prototype-workflow-card-message > :is\(\s*\.shadcn-prototype-confirm-card,\s*\.shadcn-prototype-agent-run\s*\)\s*\{[^}]*width:\s*100%;/s);
+    expect(css).toMatch(/article\.shadcn-prototype-workflow-card-message\s*\{[^}]*display:\s*grid;[^}]*gap:\s*14px;/s);
   });
 
   test("uses one aligned status grid and SVG icons across execution states", () => {

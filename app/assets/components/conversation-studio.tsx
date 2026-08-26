@@ -114,6 +114,7 @@ function conversationMessageKey(message: VisibleConversationMessage, index: numb
   // a different confirmation card. Include the card's semantic identity so
   // React never keeps the first confirmation's local UI instance for the
   // independent video-project confirmation.
+  if (typeof message.id === "number") return `message-${message.id}`;
   return message.plan
     ? `${message.role}-${index}-${confirmationPlanKey(message.plan)}`
     : `${message.role}-${index}`;
@@ -236,6 +237,7 @@ export default function ConversationStudio({
   onPendingExchangeChange,
   onSendMessage,
   generationJob = null,
+  generationJobs = [],
   onRetryGeneration,
   onCancelGeneration,
   liveRunStateByAssetId,
@@ -275,6 +277,7 @@ export default function ConversationStudio({
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
+  generationJobs?: AssetGenerationJobResponse[];
   onRetryGeneration?: (jobId: string) => void;
   onCancelGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
@@ -729,8 +732,16 @@ export default function ConversationStudio({
     imageAttachments.length ? "shadcn-prototype-composer-control has-attachments" : "shadcn-prototype-composer-control",
     isDraggingUpload ? "drag-active" : ""
   ].filter(Boolean).join(" ");
-  const liveGenerationJobMessagePresent = Boolean(
-    generationJob && visibleConversationMessages.some((message) => generationJobFromMessage(message)?.id === generationJob.id),
+  const liveGenerationJobs = generationJobs.length
+    ? generationJobs
+    : generationJob
+      ? [generationJob]
+      : [];
+  const liveGenerationJobsById = new Map(liveGenerationJobs.map((job) => [job.id, job]));
+  const anchoredGenerationJobIds = new Set(
+    visibleConversationMessages
+      .map((message) => generationJobFromMessage(message)?.id)
+      .filter((id): id is string => Boolean(id)),
   );
 
   return (
@@ -785,8 +796,8 @@ export default function ConversationStudio({
             executionTimelineSteps,
           );
           const messageGenerationJob = generationJobFromMessage(message);
-          const renderedGenerationJob = messageGenerationJob && generationJob?.id === messageGenerationJob.id
-            ? generationJob
+          const renderedGenerationJob = messageGenerationJob && liveGenerationJobsById.has(messageGenerationJob.id)
+            ? liveGenerationJobsById.get(messageGenerationJob.id) ?? messageGenerationJob
             : messageGenerationJob;
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
@@ -810,7 +821,7 @@ export default function ConversationStudio({
               ].filter(Boolean).join(" ")}>
               {showsAssistantWaiting ? (
                 <AssistantReplyPending />
-              ) : shouldRenderMessageBody(message) ? (
+              ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
                 <p>{message.text}</p>
               ) : null}
               {message.plan ? (
@@ -872,6 +883,7 @@ export default function ConversationStudio({
                   onCancel={onCancelGeneration}
                 />
               ) : null}
+              {renderProductCards(index)}
               {(() => {
                 const suggestions = visibleSuggestions(message)
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
@@ -931,17 +943,19 @@ export default function ConversationStudio({
                 ) : null;
               })()}
               </article>
-              {renderProductCards(index)}
             </div>
           );
         })}
-        {generationJob && !liveGenerationJobMessagePresent ? (
-          <AssetGenerationJobCard
-            job={generationJob}
-            onRetry={onRetryGeneration}
-            onCancel={onCancelGeneration}
-          />
-        ) : null}
+        {liveGenerationJobs
+          .filter((job) => !anchoredGenerationJobIds.has(job.id))
+          .map((job) => (
+            <AssetGenerationJobCard
+              key={job.id}
+              job={job}
+              onRetry={onRetryGeneration}
+              onCancel={onCancelGeneration}
+            />
+          ))}
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>

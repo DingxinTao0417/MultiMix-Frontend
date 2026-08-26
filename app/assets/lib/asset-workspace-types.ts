@@ -414,6 +414,8 @@ export type AgentTaskCollection = {
 };
 
 export type AssetConversationMessage = {
+  id?: number;
+  createdAt?: string;
   role: "user" | "assistant";
   text: string;
   presentation?: AssetMessagePresentation;
