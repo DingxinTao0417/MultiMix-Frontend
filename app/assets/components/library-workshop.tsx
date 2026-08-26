@@ -1,10 +1,9 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { Copy, Download, FileText, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
-import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
@@ -125,44 +124,6 @@ function libraryRowIdentity(row: LibraryRow): string {
     : `${row.kind}:${row.title}:${row.updatedAtIso ?? row.meta}`;
 }
 
-function publicCandidateTags(candidate: PublicMaterialCandidate): string[] {
-  return [...new Set((candidate.understanding?.tags ?? []).map((tag) => String(tag).trim()).filter(Boolean))];
-}
-
-function publicMediaSource(candidate: PublicMaterialCandidate): string {
-  return candidate.preview_url || candidate.download_url || candidate.source_url;
-}
-
-function PublicMaterialThumbnail({ candidate, source }: { candidate: PublicMaterialCandidate; source: string }) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const canPreview = Boolean(source && candidate.media_type !== "text" && !loadFailed);
-  const label = candidate.media_type === "video"
-    ? "视频素材"
-    : candidate.media_type === "image"
-      ? "图片素材"
-      : "文案素材";
-  const PlaceholderIcon = candidate.media_type === "video"
-    ? Video
-    : candidate.media_type === "image"
-      ? ImageIcon
-      : FileText;
-
-  return (
-    <span className="shadcn-prototype-public-thumb">
-      {canPreview ? (
-        // External material sources span arbitrary hosts, so next/image remotePatterns cannot cover them.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={source} alt="" loading="lazy" onError={() => setLoadFailed(true)} />
-      ) : (
-        <span className="shadcn-prototype-public-thumb-placeholder">
-          <PlaceholderIcon size={22} aria-hidden="true" />
-          <small>{label}</small>
-        </span>
-      )}
-    </span>
-  );
-}
-
 function displayMeta(row: LibraryRow, currentView: Exclude<ActiveView, "conversation">) {
   // Unified meta across text libraries: the category shows as the top badge, so
   // the meta line carries only the status. Category/contentType are not repeated
@@ -271,12 +232,8 @@ function mergeLibraryRows(current: LibraryRow[], incoming: LibraryRow[]): Librar
   return [...rows.values()].sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
 }
 
-// Demo-final detail: understanding is "ready" when the status reads 已理解/
-// 已解析/可检索 (final/library.html st: ok) — anything else is still pending.
 function understandingReady(row: LibraryRow): boolean {
-  const label = row.statusLabel ?? "";
-  if (label.includes("失败")) return false;
-  return label.startsWith("已") || label === "可检索";
+  return row.understandingStatus === "ready";
 }
 
 // Demo-final usage record ("被「对话」引用 N 次"). We only have referenceCount,
@@ -284,40 +241,6 @@ function understandingReady(row: LibraryRow): boolean {
 function usageText(row: LibraryRow): string | null {
   if (row.referenceCount == null) return null;
   return row.referenceCount > 0 ? `已被引用 ${row.referenceCount} 次。` : "尚未被使用。";
-}
-
-// Demo-final voiceover 试听 bar. There is no audio URL on LibraryRow yet, so this
-// mirrors the prototype's accelerated 30s progress animation as a preview.
-function VoiceoverAudioBar() {
-  const [progress, setProgress] = useState(0);
-  const [playing, setPlaying] = useState(false);
-
-  useEffect(() => {
-    if (!playing) return;
-    const timer = setInterval(() => {
-      setProgress((value) => {
-        if (value >= 30) {
-          setPlaying(false);
-          return 0;
-        }
-        return value + 1;
-      });
-    }, 100);
-    return () => clearInterval(timer);
-  }, [playing]);
-
-  const seconds = String(Math.min(progress, 30)).padStart(2, "0");
-  return (
-    <div className="shadcn-prototype-library-audio">
-      <button type="button" className="ab-play" aria-label={playing ? "暂停试听" : "试听配音"} onClick={() => setPlaying((value) => !value)}>
-        <Play size={12} fill="currentColor" aria-hidden="true" />
-      </button>
-      <span className="ab-wave" aria-hidden="true">
-        <span className="ab-fill" style={{ width: `${(Math.min(progress, 30) / 30) * 100}%` }} />
-      </span>
-      <span className="ab-t">00:{seconds} / 00:30</span>
-    </div>
-  );
 }
 
 export type LibraryActionIntent = "create" | "video" | "regenerate-image" | "long-form";
@@ -361,15 +284,6 @@ function LibraryWorkshop({
   const [webTitle, setWebTitle] = useState("");
   const [webBody, setWebBody] = useState("");
   const [submittingAsset, setSubmittingAsset] = useState(false);
-  const [publicSearchOpen, setPublicSearchOpen] = useState(false);
-  const [publicSources, setPublicSources] = useState<PublicSourceRead[]>([]);
-  const [selectedPublicProviders, setSelectedPublicProviders] = useState<string[]>([]);
-  const [publicQuery, setPublicQuery] = useState("");
-  const [publicMediaTypes, setPublicMediaTypes] = useState<Array<"text" | "image" | "video">>(["text", "image", "video"]);
-  const [publicResults, setPublicResults] = useState<PublicMaterialCandidate[]>([]);
-  const [publicSelected, setPublicSelected] = useState<PublicMaterialCandidate | null>(null);
-  const [publicLoading, setPublicLoading] = useState(false);
-  const [publicMessage, setPublicMessage] = useState<string | null>(null);
 
   // Debounce the raw input so backend search fires once per pause, not per keystroke.
   useEffect(() => {
@@ -523,23 +437,6 @@ function LibraryWorkshop({
 
   const canUseBackend = Boolean(token && assetWorkspaceAdapter.isBackendEnabled());
 
-  useEffect(() => {
-    if (!publicSearchOpen || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
-    let cancelled = false;
-    void assetWorkspaceAdapter.listPublicSources(token)
-      .then((sources) => {
-        if (cancelled) return;
-        setPublicSources(sources);
-        setSelectedPublicProviders((current) => current.length ? current.filter((provider) => sources.some((source) => source.provider === provider)) : sources.map((source) => source.provider));
-      })
-      .catch((error) => {
-        if (!cancelled) setPublicMessage(error instanceof Error ? error.message : "公开素材源读取失败。");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [publicSearchOpen, token]);
-
   const handleCreateWebCapture = async () => {
     if (!token || !webUrl.trim() || !webBody.trim()) return;
     setSubmittingAsset(true);
@@ -626,39 +523,6 @@ function LibraryWorkshop({
     }
   };
 
-  const handleRunPublicSearch = async () => {
-    if (!token || !publicQuery.trim()) return;
-    setPublicLoading(true);
-    setPublicMessage(null);
-    setPublicSelected(null);
-    try {
-      const candidates = await assetWorkspaceAdapter.searchPublicMaterials(token, {
-        query: publicQuery.trim(),
-        mediaTypes: publicMediaTypes,
-        providers: selectedPublicProviders,
-        limit: 12
-      });
-      setPublicResults(candidates);
-      setPublicMessage(candidates.length ? `找到 ${candidates.length} 个公开素材候选。` : "未找到公开素材候选。");
-    } catch (error) {
-      setPublicMessage(error instanceof Error ? error.message : "公开素材搜索失败。");
-    } finally {
-      setPublicLoading(false);
-    }
-  };
-
-  const handleImportPublicMaterial = async (candidate: PublicMaterialCandidate) => {
-    if (!token) return;
-    setPublicMessage(null);
-    try {
-      await assetWorkspaceAdapter.importPublicMaterial(token, candidate);
-      setLocalRefreshKey((value) => value + 1);
-      setPublicMessage("公开素材已保存入库。");
-    } catch (error) {
-      setPublicMessage(error instanceof Error ? error.message : "公开素材保存失败。");
-    }
-  };
-
   const handleCopyRow = async (row: LibraryRow) => {
     const text = bodyForRow(row, view).join("\n\n");
     setActionMessage(null);
@@ -680,8 +544,8 @@ function LibraryWorkshop({
   };
 
   const handleOpenEditor = (row: LibraryRow) => {
-    if (!row.assetId) return;
-    window.open(`/app/assets?asset=${encodeURIComponent(String(row.assetId))}&view=video`, "_blank", "noopener,noreferrer");
+    if (!row.assetId || row.contentTypeCode !== "video_project" || row.productStatus !== "completed") return;
+    window.open(`/editor?asset=${encodeURIComponent(String(row.assetId))}`, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -740,10 +604,6 @@ function LibraryWorkshop({
               <button type="button" disabled={!canUseBackend} onClick={() => setAssetModal("web")}>
                 <FileText size={15} aria-hidden="true" />
                 读取网页
-              </button>
-              <button type="button" disabled={!canUseBackend} onClick={() => setPublicSearchOpen(true)}>
-                <Globe2 size={15} aria-hidden="true" />
-                公开素材搜索
               </button>
             </>
           ) : null}
@@ -918,9 +778,15 @@ function LibraryWorkshop({
                   </h3>
                   {understandingReady(selectedRow) ? (
                     <div className="shadcn-prototype-library-understand">{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</div>
+                  ) : selectedRow.understandingStatus === "failed" ? (
+                    <div className="shadcn-prototype-library-understand">
+                      素材理解失败，请重新解析后再用于检索和分镜匹配。
+                    </div>
                   ) : (
                     <div className="shadcn-prototype-library-pending">
-                      <span className="row"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />AI 正在理解这张图…</span>
+                      <span className="row"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />
+                        {selectedRow.understandingStatus === "processing" ? "AI 正在理解这张图…" : "等待开始素材理解…"}
+                      </span>
                       <span className="bar" aria-hidden="true" />
                       <span className="hint">完成后会自动生成画面描述、可用场景和检索关键词</span>
                     </div>
@@ -955,12 +821,6 @@ function LibraryWorkshop({
                     {selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}
                   </div>
                 </section>
-                {selectedRow.category === "配音稿" ? (
-                  <section className="shadcn-prototype-library-content">
-                    <h3>试听 <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />配音预览</span></h3>
-                    <VoiceoverAudioBar />
-                  </section>
-                ) : null}
                 <section className="shadcn-prototype-library-content">
                   <h3>来源</h3>
                   <div className="shadcn-prototype-library-usage">{selectedRow.sourceLabel ?? selectedRow.meta}{usageText(selectedRow) ? ` · ${usageText(selectedRow)}` : ""}</div>
@@ -1094,7 +954,14 @@ function LibraryWorkshop({
                     <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) handleOpenEditor(selectedRow); }}><Video size={14} aria-hidden="true" />打开剪辑器</button>
+                  {selectedRow.contentTypeCode === "video_project" ? (
+                    <button
+                      type="button"
+                      disabled={!selectedRow.assetId || selectedRow.productStatus !== "completed"}
+                      title={selectedRow.productStatus === "completed" ? "打开剪辑器" : "视频工程完成后可编辑"}
+                      onClick={() => { if (selectedRow) handleOpenEditor(selectedRow); }}
+                    ><Video size={14} aria-hidden="true" />打开剪辑器</button>
+                  ) : null}
                   {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
@@ -1111,112 +978,6 @@ function LibraryWorkshop({
                 </>
               )}
             </div>
-          </aside>
-        </div>
-      ) : null}
-      {publicSearchOpen ? (
-        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setPublicSearchOpen(false)}>
-          <aside
-            className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-public-search"
-            aria-label="公开素材搜索"
-            aria-modal="true"
-            role="dialog"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <header>
-              <div>
-                <span>公开素材源</span>
-                <h2>公开素材搜索</h2>
-              </div>
-              <button type="button" aria-label="关闭公开素材搜索" onClick={() => setPublicSearchOpen(false)}>
-                <X size={16} aria-hidden="true" />
-              </button>
-            </header>
-            <div className="shadcn-prototype-public-search-controls">
-              <label>
-                <span>关键词</span>
-                <input value={publicQuery} onChange={(event) => setPublicQuery(event.target.value)} placeholder="例如：台灯、舞台灯光、厨房翻新" />
-              </label>
-              <div className="shadcn-prototype-public-search-checks" aria-label="媒体类型">
-                {(["text", "image", "video"] as const).map((mediaType) => (
-                  <label key={mediaType}>
-                    <input
-                      type="checkbox"
-                      checked={publicMediaTypes.includes(mediaType)}
-                      onChange={(event) => {
-                        setPublicMediaTypes((current) => event.target.checked
-                          ? [...new Set([...current, mediaType])]
-                          : current.filter((item) => item !== mediaType));
-                      }}
-                    />
-                    {mediaType === "text" ? "文案" : mediaType === "image" ? "图片" : "视频"}
-                  </label>
-                ))}
-              </div>
-              <div className="shadcn-prototype-public-search-checks" aria-label="公开数据源">
-                {publicSources.map((source) => (
-                  <label key={source.provider}>
-                    <input
-                      type="checkbox"
-                      checked={selectedPublicProviders.includes(source.provider)}
-                      onChange={(event) => {
-                        setSelectedPublicProviders((current) => event.target.checked
-                          ? [...new Set([...current, source.provider])]
-                          : current.filter((item) => item !== source.provider));
-                      }}
-                    />
-                    {source.name}
-                    <small>{source.media_types.map((item) => item === "text" ? "文案" : item === "image" ? "图片" : "视频").join("、")}</small>
-                  </label>
-                ))}
-              </div>
-              <button className="shadcn-prototype-public-search-submit" type="button" disabled={publicLoading || !publicQuery.trim() || publicMediaTypes.length === 0 || selectedPublicProviders.length === 0} onClick={() => void handleRunPublicSearch()}>
-                <Search size={15} aria-hidden="true" />
-                {publicLoading ? "搜索中" : "搜索公开素材"}
-              </button>
-              {publicMessage ? <p role="status">{publicMessage}</p> : null}
-            </div>
-            <div className="shadcn-prototype-public-results">
-              {publicResults.map((candidate) => {
-                const tags = publicCandidateTags(candidate);
-                const src = publicMediaSource(candidate);
-                return (
-                  <article className="shadcn-prototype-public-result" key={candidate.id}>
-                    <button
-                      type="button"
-                      className="shadcn-prototype-public-card"
-                      aria-label={`查看素材：${candidate.title}`}
-                      onClick={() => setPublicSelected(candidate)}
-                    >
-                      <PublicMaterialThumbnail candidate={candidate} source={src} />
-                      <span className="shadcn-prototype-public-card-content">
-                        <strong title={candidate.title}>{candidate.title}</strong>
-                        <small className="shadcn-prototype-public-meta" title={`${candidate.provider} · ${candidate.license_label}`}>
-                          {candidate.provider} · {candidate.license_label}
-                        </small>
-                        <span className="shadcn-prototype-public-tags">
-                          {tags.slice(0, 3).map((tag) => <em key={tag}>{tag}</em>)}
-                        </span>
-                      </span>
-                    </button>
-                    <button type="button" className="shadcn-prototype-public-save" onClick={() => void handleImportPublicMaterial(candidate)}>保存</button>
-                  </article>
-                );
-              })}
-            </div>
-            {publicSelected ? (
-              <section className="shadcn-prototype-library-content">
-                <h3>{publicSelected.title}</h3>
-                <div className="shadcn-prototype-library-prose">
-                  <p>{publicSelected.understanding.caption || publicSelected.body_text || "无摘要。"}</p>
-                  <p>标签：{publicCandidateTags(publicSelected).join("、") || "暂无标签"}</p>
-                  <p>来源：{publicSelected.provider}</p>
-                  <p>作者：{publicSelected.creator || "未提供"}</p>
-                  <p>许可证：{publicSelected.license_label}{publicSelected.license ? `（${publicSelected.license}）` : ""}</p>
-                  <p>链接：{publicSelected.source_url}</p>
-                </div>
-              </section>
-            ) : null}
           </aside>
         </div>
       ) : null}

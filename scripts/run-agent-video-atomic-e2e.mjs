@@ -229,6 +229,19 @@ function extractTurnContext(requestBody) {
     ? requestBody.messages
     : [];
   const content = String(messages.at(-1)?.content ?? "");
+  try {
+    const payload = JSON.parse(content);
+    if (payload && typeof payload === "object") {
+      return {
+        context: payload.context && typeof payload.context === "object"
+          ? payload.context
+          : {},
+        instruction: String(payload.trusted_user_task ?? "").trim(),
+      };
+    }
+  } catch {
+    // Retain compatibility with the legacy text prompt below.
+  }
   const marker = "\n\nUser message:\n";
   const markerIndex = content.lastIndexOf(marker);
   const contextText = markerIndex >= 0

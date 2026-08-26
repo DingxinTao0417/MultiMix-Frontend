@@ -306,3 +306,42 @@ test("flags current workspace docs without status metadata", () => {
     true,
   );
 });
+
+test("flags broken relative Markdown links in any current document", () => {
+  const root = makeSplitWorkspace();
+  writeFile(
+    root,
+    "MultiMix-Frontend/docs/API.md",
+    `${HEADER}\n# Frontend API\n\nSee [missing contract](./missing-contract.md).\n`,
+  );
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "broken-doc-link"), true);
+});
+
+test("flags missing backticked canonical doc paths outside the map", () => {
+  const root = makeSplitWorkspace();
+  writeFile(
+    root,
+    "MultiMix-Frontend/docs/API.md",
+    `${HEADER}\n# Frontend API\n\nUse \`MultiMix-Backend/docs/qa/missing.md\`.\n`,
+  );
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "missing-doc-reference"), true);
+});
+
+test("flags archive documents presented as current authority", () => {
+  const root = makeSplitWorkspace();
+  writeFile(
+    root,
+    "MultiMix-Frontend/docs/API.md",
+    `${HEADER}\n# Frontend API\n\nCurrent authority: [active contract](../../docs/archive/plans/old.md).\n`,
+  );
+
+  const issues = checkDocs(root);
+
+  assert.equal(issues.some((issue) => issue.code === "archive-current-reference"), true);
+});

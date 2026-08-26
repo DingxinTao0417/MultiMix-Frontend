@@ -36,6 +36,7 @@ const COMPLETED_PLAN_PATTERNS = [
 
 const DOCUMENTATION_MAP_REFERENCE_PATTERN =
   /`((?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\/[^`\r\n]+\.md)`/g;
+const MARKDOWN_LINK_PATTERN = /\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
 const DOCUMENTATION_MAP_FILE = "docs/README.md";
 const CURRENT_PROTOTYPE_DIRS = [
@@ -96,6 +97,21 @@ function listFiles(root) {
 
 function readText(target) {
   return fs.readFileSync(target, "utf8");
+}
+
+function resolveCanonicalDocReference(workspaceRoot, sourceRelativeFile, reference) {
+  if (reference.startsWith("MultiMix-Frontend/") || reference.startsWith("MultiMix-Backend/")) {
+    return path.join(workspaceRoot, ...reference.split("/"));
+  }
+  if (reference.startsWith("docs/")) {
+    if (sourceRelativeFile.startsWith("MultiMix-Frontend/")) {
+      return path.join(workspaceRoot, "MultiMix-Frontend", ...reference.split("/"));
+    }
+    if (sourceRelativeFile.startsWith("MultiMix-Backend/")) {
+      return path.join(workspaceRoot, "MultiMix-Backend", ...reference.split("/"));
+    }
+  }
+  return path.join(workspaceRoot, ...reference.split("/"));
 }
 
 function issue(code, file, message, fix) {
@@ -187,7 +203,8 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
     [...content.matchAll(DOCUMENTATION_MAP_REFERENCE_PATTERN)].map((match) => match[1]),
   );
   for (const reference of references) {
-    const target = path.join(workspaceRoot, ...reference.split("/"));
+    if (/[*<>]/.test(reference)) continue;
+    const target = resolveCanonicalDocReference(workspaceRoot, relativeFile, reference);
     if (!exists(target)) {
       issues.push(
         issue(
@@ -212,6 +229,70 @@ function checkDocumentationMapReferences(workspaceRoot, issues) {
         `Add a backticked '${requiredReference}' entry to ${DOCUMENTATION_MAP_FILE}.`,
       ),
     );
+  }
+}
+
+function checkCurrentDocumentLinks(workspaceRoot, files, issues) {
+  for (const file of files) {
+    const relativeFile = relativePath(workspaceRoot, file);
+    if (!isMarkdown(relativeFile) || ARCHIVE_DIRS.some((dir) => isInside(relativeFile, dir))) {
+      continue;
+    }
+
+    const content = readText(file);
+    const references = new Set(
+      [...content.matchAll(DOCUMENTATION_MAP_REFERENCE_PATTERN)].map((match) => match[1]),
+    );
+    for (const reference of references) {
+      if (/[*<>]/.test(reference)) continue;
+      const target = resolveCanonicalDocReference(workspaceRoot, relativeFile, reference);
+      if (!exists(target)) {
+        issues.push(
+          issue(
+            "missing-doc-reference",
+            relativeFile,
+            `References missing current document '${reference}'.`,
+            "Update the path to an existing current document or remove the stale reference.",
+          ),
+        );
+      }
+    }
+
+    for (const match of content.matchAll(MARKDOWN_LINK_PATTERN)) {
+      const label = match[1];
+      const rawTarget = match[2].replace(/^<|>$/g, "").split("#", 1)[0];
+      if (!rawTarget || /^(?:https?:|mailto:|data:)/i.test(rawTarget)) continue;
+      if (!rawTarget.toLowerCase().endsWith(".md")) continue;
+
+      const target = /^(?:docs|MultiMix-Frontend\/docs|MultiMix-Backend\/docs)\//.test(rawTarget)
+        ? resolveCanonicalDocReference(workspaceRoot, relativeFile, rawTarget)
+        : path.resolve(path.dirname(file), rawTarget);
+      const targetRelative = relativePath(workspaceRoot, target);
+      if (!exists(target)) {
+        issues.push(
+          issue(
+            "broken-doc-link",
+            relativeFile,
+            `Markdown link points to missing document '${rawTarget}'.`,
+            "Update the relative link to an existing document or remove it.",
+          ),
+        );
+      }
+
+      if (
+        ARCHIVE_DIRS.some((dir) => isInside(targetRelative, dir)) &&
+        /(?:current|authority|active|当前|权威|现行)/i.test(label)
+      ) {
+        issues.push(
+          issue(
+            "archive-current-reference",
+            relativeFile,
+            `Archive document '${rawTarget}' is presented as current authority.`,
+            "Point current authority to a current document; keep archive links explicitly historical.",
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -290,6 +371,7 @@ export function checkDocs(workspaceRoot) {
   checkMarkdownHeaders(root, files, issues);
   checkStaleReferences(root, files, issues);
   checkDocumentationMapReferences(root, issues);
+  checkCurrentDocumentLinks(root, files, issues);
   checkActivePlans(root, files, issues);
   checkCurrentPrototype(root, issues);
 

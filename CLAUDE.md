@@ -69,7 +69,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 
 > 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 
-入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`；`&embed=1` 为工作台内嵌模式）、`/admin/public-sources`（公开素材源管理，需真实后端）。
+入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`；`&embed=1` 为工作台内嵌模式）。公开素材只通过视频分镜候选链路使用，当前没有独立管理页。
 
 认证两种模式：`NEXT_PUBLIC_MULTIMIX_AUTH_MODE=local` 或未配 Supabase 时，自动以 `demo@multimix.local` 登录（仅存浏览器 `localStorage`）；配置 `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 后走 Supabase Auth（PKCE、自动刷新 token），后端对应 `MULTIMIX_AUTH_PROVIDER`。`lib/supabase.ts` 在未配置时导出 `null`，代码不得假设其非空。
 
@@ -95,7 +95,6 @@ app/
   multimix-app.tsx                  # 认证壳：Supabase / local 自动登录，注入 searchParams
   globals.css                       # 单一全局样式表（前缀约定见「已知问题」）
   editor/                           # /editor 剪辑器路由（dynamic ssr:false + Tailwind v4 CSS scope）
-  admin/public-sources/page.tsx     # 公开素材源管理页（需真实后端）
   assets/
     __tests__/                      # vitest 单测（agent 文案、asset-mappers）
     components/                     # UI 组件层（新增组件放这里）

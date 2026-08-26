@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useEditor } from "@editor/hooks/use-editor";
 import {
   API_BASE,
-  generateMG,
   recomposeSegmentMaterial,
   segmentMaterialCandidates,
   type SegmentMaterialCandidate,
 } from "./api";
 import { getVideoProjectJob } from "@/lib/video-project-client";
+import { waitForJobTerminal } from "@/lib/job-poller";
 import { updateEditorProject } from "./bootstrap";
 import { segmentIdByElementId, segmentTextByElementId, type BackendProject } from "./buildProject";
 import {
@@ -22,21 +22,13 @@ import {
 export function ReplacePanel({ assetId, token }: { assetId?: string | null; token?: string | null }) {
   const selected = useEditor((e) => e.selection.getSelectedElements());
   const tracks = useEditor((e) => e.timeline.getTracks());
-  const canvasSize = useEditor((e) => e.project.getActiveOrNull()?.settings.canvasSize);
-
-  // Derive layout + dimensions from the current project so replacements match.
-  const projW = canvasSize?.width ?? 1080;
-  const projH = canvasSize?.height ?? 1920;
-  const projLayout = projW > projH ? "landscape" : projW === projH ? "square" : "portrait";
-
   const [localCandidates, setLocalCandidates] = useState<SegmentMaterialCandidate[]>([]);
   const [publicCandidates, setPublicCandidates] = useState<SegmentMaterialCandidate[]>([]);
   const [publicError, setPublicError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [replacing, setReplacing] = useState(false);
-  const [mgUrl, setMgUrl] = useState<string | null>(null);
-  const [mgLoading, setMgLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const pollAbortRef = useRef<AbortController | null>(null);
 
   const sel = selected.length === 1 ? selected[0] : null;
   let selEl: { id: string; type: string; duration: number; startTime: number; trackId: string } | null = null;
@@ -55,8 +47,9 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
     setLocalCandidates([]);
     setPublicCandidates([]);
     setPublicError(null);
-    setMgUrl(null);
+    pollAbortRef.current?.abort();
   }, [selEl?.id]);
+  useEffect(() => () => pollAbortRef.current?.abort(), []);
   const segText = selEl ? segmentTextByElementId[selEl.id] || "" : "";
   // Real segment id (not the timeline element id) is what the recompose and
   // candidate endpoints are scoped to.
@@ -117,36 +110,15 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   }
 
   async function waitForVideoJob(jobId: string) {
-    for (;;) {
-      const job = await getVideoProjectJob({ token, jobId });
-      if (job.status === "completed") return;
-      if (job.status === "failed") {
-        throw new Error(job.error_message || "视频修改失败，请重试。");
-      }
-      await new Promise((resolve) => window.setTimeout(resolve, 1500));
-    }
-  }
-
-  async function makeMG() {
-    if (!selEl || !segText || !assetId) return;
-    setMgLoading(true);
-    setMgUrl(null);
-    try {
-      const res = await generateMG(Number(assetId), segText, selEl.duration, projLayout, token, selEl.startTime);
-      if (res.id) await waitForVideoJob(res.id);
-      if (res.status === "completed" || res.id) {
-        await reloadProject();
-        alert("MG 动效已添加到时间轴底部的“动效”轨道。");
-      } else if (res.status === "failed" && res.error_message) {
-        alert(`MG 渲染失败：${res.error_message}`);
-      } else {
-        alert(`MG 渲染中（${res.status}），稍后刷新查看。`);
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "MG 动画生成失败";
-      alert(msg);
-    } finally {
-      setMgLoading(false);
+    pollAbortRef.current?.abort();
+    const controller = new AbortController();
+    pollAbortRef.current = controller;
+    const job = await waitForJobTerminal(
+      () => getVideoProjectJob({ token, jobId }),
+      { signal: controller.signal, timeoutMs: 5 * 60_000 },
+    );
+    if (job.status === "failed") {
+      throw new Error(job.error_message || "视频修改失败，请重试。");
     }
   }
 
@@ -240,7 +212,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
           <SheetHeader className="gap-2 border-b border-[#eceef0] px-5 py-5">
             <SheetTitle className="text-[16px] font-semibold text-[#17211d]">替换素材</SheetTitle>
             <SheetDescription className="text-[12px] leading-5 text-[#627069]">
-              先选中一个视频或图片片段，再搜索候选素材或生成 MG 动效。
+              先选中一个视频或图片片段，再从素材库或公共候选中替换。
             </SheetDescription>
           </SheetHeader>
 
@@ -253,20 +225,13 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div>
                   <button
                     onClick={fetchOptions}
                     disabled={loading || !canReplace}
                     className="inline-flex min-h-[38px] items-center justify-center rounded-full border border-[#18181b] bg-[#18181b] px-4 text-[12px] font-[650] text-white disabled:cursor-default disabled:opacity-60"
                   >
                     {loading ? "搜索中…" : "找候选"}
-                  </button>
-                  <button
-                    onClick={makeMG}
-                    disabled={mgLoading || !canReplace}
-                    className="inline-flex min-h-[38px] items-center justify-center rounded-full border border-[#cbd6ce] bg-white px-4 text-[12px] font-[650] text-[#17211d] disabled:cursor-default disabled:opacity-60"
-                  >
-                    {mgLoading ? "生成中…" : "生成 MG"}
                   </button>
                 </div>
 
@@ -278,19 +243,6 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
                   </div>
                 ) : null}
 
-                {mgUrl ? (
-                  <div className="space-y-2">
-                    <div className="text-[12px] font-semibold text-[#17211d]">MG 预览</div>
-                    <iframe
-                      src={mgUrl}
-                      title="MG preview"
-                      className="h-[220px] w-full rounded-2xl border border-[#d7ded7] bg-black"
-                    />
-                    <div className="text-[11px] leading-5 text-[#627069]">
-                      这是 HTML 预览；最终渲染为视频依赖后端 hyperframes 环境。
-                    </div>
-                  </div>
-                ) : null}
               </div>
           </div>
         </div>

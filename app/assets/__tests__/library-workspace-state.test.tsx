@@ -18,6 +18,19 @@ describe("library workspace dynamic states", () => {
     expect(workshop).toContain("未连接后端");
     expect(readyStrip).not.toContain('assetWorkspaceAdapter.getWorkshop("image").rows');
   });
+
+  it("uses authoritative understanding and completed project state", () => {
+    const workshop = readFileSync(resolve(process.cwd(), "app/assets/components/library-workshop.tsx"), "utf8");
+    const adapter = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
+
+    expect(workshop).toContain('row.understandingStatus === "ready"');
+    expect(workshop).toContain('selectedRow.understandingStatus === "failed"');
+    expect(workshop).toContain('selectedRow.contentTypeCode === "video_project"');
+    expect(workshop).toContain('selectedRow.productStatus === "completed"');
+    expect(workshop).toContain('/editor?asset=');
+    expect(workshop).not.toContain("VoiceoverAudioBar");
+    expect(adapter).toContain("productStatus: asset.product_status");
+  });
   it("shows an accessible image-library loading state", () => {
     render(<LibraryWorkspaceLoading title="图片库" />);
 

@@ -1506,7 +1506,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("useAssetGenerationJobs");
     expect(workspaceClient).toContain("registerJob: registerAssetGenerationJob");
     expect(workspaceClient).toContain("retryJob: retryAssetGenerationJob");
-    expect(workspaceClient).toContain("generationJob={selectedAssetGenerationJob}");
+    expect(workspaceClient).toContain("generationJobs={selectedAssetGenerationJobs}");
     expect(workspaceClient).toContain("const message = formatComposerError(error)");
     expect(workspaceClient).not.toContain("assetWorkspaceAdapter.reviseProduct({");
     expect(conversationStudio).toContain("<AssetGenerationJobCard");
@@ -1582,17 +1582,15 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-video-placeholder-preview");
   });
 
-  it("keeps public source management UI-rich without requiring provider data changes", () => {
-    const adminSources = readAssetFile("app/admin/public-sources/page.tsx");
-    const globals = readAssetFile("app/globals.css");
+  it("does not expose fake public-source administration or a duplicate global import flow", () => {
+    const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+    const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
 
-    expect(adminSources).toContain("添加素材源");
-    expect(adminSources).toContain("优先级");
-    expect(adminSources).toContain("今日额度");
-    expect(adminSources).toContain("仅保存为本页草稿");
-    expect(adminSources).toContain("frontOnlyDraftSources");
-    expect(globals).toContain(".shadcn-prototype-admin-add");
-    expect(globals).toContain(".shadcn-prototype-admin-quota");
+    expect(libraryWorkshop).not.toContain("公开素材搜索");
+    expect(libraryWorkshop).not.toContain("handleImportPublicMaterial");
+    expect(adapter).not.toContain("/assets/public-search");
+    expect(adapter).not.toContain("/assets/public-import");
+    expect(adapter).not.toContain("/admin/public-sources");
   });
 
   it("renders cached real-conversation summaries while revalidating without demo fallback", () => {

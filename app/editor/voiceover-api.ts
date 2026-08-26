@@ -177,16 +177,16 @@ export async function pollVideoJob(
   jobId: string,
   token: string,
   intervalMs = 1500,
+  signal?: AbortSignal,
 ): Promise<VideoJob> {
-  for (;;) {
+  const { waitForJobTerminal } = await import("@/lib/job-poller");
+  return waitForJobTerminal(async () => {
     const response = await fetch(
       `${API_BASE}/v1/video/jobs/${encodeURIComponent(jobId)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${token}` }, signal },
     );
-    const job = await parseJob(response);
-    if (job.status === "completed" || job.status === "failed") return job;
-    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
-  }
+    return parseJob(response);
+  }, { intervalMs, timeoutMs: 5 * 60_000, signal });
 }
 
 export function voicePreviewUrl(audioRef: string): string {

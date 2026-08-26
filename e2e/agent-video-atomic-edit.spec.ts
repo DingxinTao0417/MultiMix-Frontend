@@ -39,36 +39,14 @@ type ContentAsset = {
 
 type AgentRun = {
   id: string;
-  action_id: string;
   status: string;
   confirmation_id?: string | null;
-};
-
-type AgentTask = {
-  id: string;
-  goal: string;
-  status: string;
-  focus: {
-    asset_id?: number | null;
-    version_id?: number | null;
-    scene_id?: string | null;
-  };
-  plan: AgentRun[];
-};
-
-type AgentMission = {
-  version: "agent_v2";
-  active_task_id: string | null;
-  task_stack: string[];
-  tasks: Record<string, AgentTask>;
-  last_read_only_branch?: string;
+  asset_id?: number | null;
 };
 
 type Conversation = {
   id: string;
-  metadata: {
-    agent_mission?: AgentMission;
-  };
+  metadata: Record<string, unknown>;
   products: ContentAsset[];
 };
 
@@ -123,24 +101,6 @@ async function readAsset(page: Page, token: string): Promise<ContentAsset> {
   return body.asset;
 }
 
-function missionOf(conversation: Conversation): AgentMission {
-  const mission = conversation.metadata.agent_mission;
-  expect(mission?.version).toBe("agent_v2");
-  if (!mission) throw new Error("Conversation has no agent_v2 mission");
-  return mission;
-}
-
-function activeTaskOf(mission: AgentMission): AgentTask {
-  const task = mission.tasks[mission.active_task_id ?? ""];
-  if (!task) throw new Error("Agent mission has no active task");
-  return task;
-}
-
-function actionCount(mission: AgentMission): number {
-  return Object.values(mission.tasks)
-    .reduce((count, task) => count + task.plan.length, 0);
-}
-
 function scenesOf(asset: ContentAsset): VideoScene[] {
   const scenes = asset.metadata.video_plan?.scenes;
   if (!Array.isArray(scenes)) throw new Error("Video asset has no scenes");
@@ -181,25 +141,13 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   });
 
   const initialConversation = await readConversation(page, token);
-  const initialMission = missionOf(initialConversation);
-  const initialTask = activeTaskOf(initialMission);
+  expect(initialConversation.metadata).not.toHaveProperty("agent_mission");
   const initialAsset = await readAsset(page, token);
   const initialScenes = structuredClone(scenesOf(initialAsset));
-  const initialActionCount = actionCount(initialMission);
-  expect(initialMission.active_task_id).toBe(seed.active_task_id);
-  expect(initialTask.focus).toMatchObject({
-    asset_id: seed.video_asset_id,
-    version_id: seed.initial_version_id,
-    scene_id: "scene-2",
-  });
 
   const question = await sendMessage(page, "这个产品视频一共有几个分镜？");
   expect(question.body.agent_action ?? null).toBeNull();
-  const afterQuestion = missionOf(await readConversation(page, token));
-  const afterQuestionTask = activeTaskOf(afterQuestion);
-  expect(afterQuestion.active_task_id).toBe(initialMission.active_task_id);
-  expect(afterQuestionTask.focus).toEqual(initialTask.focus);
-  expect(actionCount(afterQuestion)).toBe(initialActionCount);
+  expect((await readConversation(page, token)).metadata).not.toHaveProperty("agent_mission");
   expect((await readAsset(page, token)).versions).toHaveLength(
     initialAsset.versions.length,
   );
@@ -228,9 +176,7 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     linked_asset_ids?: number[];
   };
   expect(replacementRequest.linked_asset_ids).toContain(seed.replacement_asset_id);
-  expect(replacement.body.agent_action).toMatchObject({
-    action_id: "video.scene.replace_material",
-  });
+  expect(replacement.body.agent_action?.asset_id).toBe(seed.video_asset_id);
   expect(["queued", "running"]).toContain(
     replacement.body.agent_action?.status,
   );
@@ -258,7 +204,6 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   );
   expect(changedScenes[1]?.primary_visual).toMatchObject({
     status: "persisted",
-    provenance: { source_asset_id: String(seed.replacement_asset_id) },
   });
   expect(changedScenes[1]?.primary_visual?.asset_id).toBeTruthy();
 
@@ -304,8 +249,8 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   await page.getByText("详情", { exact: true }).click();
   const voice = await sendMessage(page, "把整支视频换成沉稳男声");
   expect(voice.body.agent_action).toMatchObject({
-    action_id: "video.project.set_voice",
     status: "waiting_confirmation",
+    asset_id: seed.video_asset_id,
   });
   expect(voice.body.agent_action?.confirmation_id).toBeTruthy();
   const confirmation = page.getByLabel("确认视频修改 · 待确认").last();
@@ -314,17 +259,13 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     confirmation.getByRole("button", { name: "确认修改", exact: true }),
   ).toBeVisible();
 
-  const beforeUnsupported = await readConversation(page, token);
-  const beforeUnsupportedMission = missionOf(beforeUnsupported);
   const versionsBeforeUnsupported = (await readAsset(page, token)).versions.length;
-  const actionsBeforeUnsupported = actionCount(beforeUnsupportedMission);
   const unsupported = await sendMessage(page, "把视频发布到所有平台");
   expect(unsupported.body.agent_action ?? null).toBeNull();
   await expect(
     page.getByText(/还不能安全确定要修改的视频范围/).last(),
   ).toBeVisible();
-  const afterUnsupported = missionOf(await readConversation(page, token));
-  expect(actionCount(afterUnsupported)).toBe(actionsBeforeUnsupported);
+  expect((await readConversation(page, token)).metadata).not.toHaveProperty("agent_mission");
   expect((await readAsset(page, token)).versions).toHaveLength(
     versionsBeforeUnsupported,
   );

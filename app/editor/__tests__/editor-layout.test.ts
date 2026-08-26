@@ -109,18 +109,20 @@ describe("editor layout constraints", () => {
 		expect(view).not.toContain("anchor.click()");
 	});
 
-	it("waits for real jobs before the full-screen editor reloads material or manual MG changes", () => {
+	it("uses bounded polling for material replacement and does not expose manual MG generation", () => {
 		const panel = readProjectFile("editor-engine/vendor/ReplacePanel.tsx");
 		const api = readProjectFile("editor-engine/vendor/api.ts");
 
 		expect(api).toContain('from "@/lib/video-project-client"');
 		expect(api).not.toContain("/segments/${encodeURIComponent(segmentId)}/recompose");
-		expect(panel).toContain("async function waitForVideoJob(jobId: string)");
-		expect(panel).toContain("await waitForVideoJob(result.job.id)");
-		expect(panel).toContain("if (res.id) await waitForVideoJob(res.id)");
-		expect(panel.indexOf("await waitForVideoJob(result.job.id)")).toBeLessThan(
+		expect(panel).toContain('from "@/lib/job-poller"');
+		expect(panel).toContain("await waitForJobTerminal(");
+		expect(panel.indexOf("await waitForJobTerminal(")).toBeLessThan(
 			panel.indexOf("await reloadAndClose()"),
 		);
+		expect(panel).not.toContain("generateMG");
+		expect(panel).not.toContain("生成 MG");
+		expect(api).not.toContain('template: "lower_third"');
 	});
 
 	it("does not expose material replacement before a visual timeline segment is selected", () => {
