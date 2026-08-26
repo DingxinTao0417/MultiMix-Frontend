@@ -1582,15 +1582,17 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-video-placeholder-preview");
   });
 
-  it("does not expose fake public-source administration or a duplicate global import flow", () => {
+  it("keeps source administration out of the library while preserving public material search", () => {
     const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
     const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
 
-    expect(libraryWorkshop).not.toContain("公开素材搜索");
-    expect(libraryWorkshop).not.toContain("handleImportPublicMaterial");
-    expect(adapter).not.toContain("/assets/public-search");
-    expect(adapter).not.toContain("/assets/public-import");
-    expect(adapter).not.toContain("/admin/public-sources");
+    expect(libraryWorkshop).toContain("公开素材搜索");
+    expect(libraryWorkshop).toContain("handleImportPublicMaterial");
+    expect(adapter).toContain("/assets/public-search");
+    expect(adapter).toContain("/assets/public-import");
+    expect(libraryWorkshop).not.toContain("listAdminPublicSources");
+    expect(libraryWorkshop).not.toContain("updateAdminPublicSource");
+    expect(libraryWorkshop).not.toContain("checkAdminPublicSourceHealth");
   });
 
   it("renders cached real-conversation summaries while revalidating without demo fallback", () => {
