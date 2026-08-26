@@ -180,4 +180,50 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[12]).toBe(1194);
     expect(onSendMessage.mock.calls[0]?.[13]).toBeUndefined();
   });
+
+  it("submits an explicit source subtitle choice on the initial video confirmation", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "video_project_confirmation",
+      title: "视频方案",
+      status: "pending",
+      fields: [
+        { key: "format", label: "视频形式", value: "横屏" },
+        { key: "duration", label: "时长", value: "约 18 秒 · 2 个分镜" },
+      ],
+      confirmLabel: "确认",
+      confirmUtterance: "确认，生成视频工程",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }],
+      ratioDefault: "16:9",
+      subtitleOptions: [
+        { value: "translated_zh", label: "中文字幕" },
+        { value: "source", label: "原文字幕" },
+        { value: "bilingual", label: "中英双语" },
+      ],
+      subtitleDefault: "translated_zh",
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-source-subtitle",
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认视频方案。", assetId: 1298, plan }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "原文字幕" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
+    expect(onSendMessage.mock.calls[0]?.[12]).toBe(1298);
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe("source");
+  });
 });
