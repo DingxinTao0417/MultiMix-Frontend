@@ -119,12 +119,12 @@ async function enterLocalWorkspace(page: Page) {
   ]);
   if (entry === "login") {
     if (testEmail && testPassword) {
-      await page.getByLabel("邮箱或手机号").fill(testEmail);
+      await page.getByLabel("邮箱").fill(testEmail);
       await page.getByLabel("密码").fill(testPassword);
       await page.locator("form").getByRole("button", { name: "登录" }).click();
     } else {
       await page.locator(".multimix-auth-switch").getByRole("button", { name: "注册" }).click();
-      await page.getByLabel("邮箱或手机号").fill(`pdf-video-${Date.now()}@${testEmailDomain}`);
+      await page.getByLabel("邮箱").fill(`pdf-video-${Date.now()}@${testEmailDomain}`);
       await page.getByLabel("密码").fill("local-pdf-video-2026");
       await page.locator("form").getByRole("button", { name: "注册" }).click();
     }

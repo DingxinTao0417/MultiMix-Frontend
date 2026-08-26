@@ -14,6 +14,10 @@ import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
 import LongFormEntry from "./long-form-entry";
 import type { LongFormSourceReady } from "../lib/long-form-client";
+import {
+  DEFAULT_RUNTIME_WRITE_CAPABILITIES,
+  type RuntimeWriteCapabilities,
+} from "../lib/runtime-write-capabilities";
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
@@ -57,6 +61,8 @@ export default function ConversationStart({
   token,
   onOpenImageLibrary,
   onLongFormSourceReady,
+  writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
+  onRetryWriteAvailability,
 }: {
   suggestions: string[];
   onSend?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
@@ -69,17 +75,33 @@ export default function ConversationStart({
   token?: string | null;
   onOpenImageLibrary?: () => void;
   onLongFormSourceReady?: (source: LongFormSourceReady) => Promise<void>;
+  writeCapabilities?: RuntimeWriteCapabilities;
+  onRetryWriteAvailability?: () => void;
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<{ message: string | null; revision: number }>({
+    message: null,
+    revision: 0,
+  });
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const canUpload = Boolean(onUploadImages) && writeCapabilities.canUpload;
+  const canGenerate = Boolean(onSend) && writeCapabilities.canGenerate;
+  const runtimeWriteStatusId = writeCapabilities.reason
+    ? "multimix-start-runtime-write-status"
+    : undefined;
+  const setError = (message: string | null) => {
+    setErrorNotice((current) => ({
+      message,
+      revision: message ? current.revision + 1 : current.revision,
+    }));
+  };
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = "52px";
@@ -99,7 +121,7 @@ export default function ConversationStart({
       return;
     }
     const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
-    if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !onSend || sending) return;
+    if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !canGenerate || !onSend || sending) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     setSending(true);
@@ -123,6 +145,7 @@ export default function ConversationStart({
   };
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
+    if (!canUpload) return;
     const partition = partitionChatAttachmentFiles(files);
     setError(chatAttachmentRejectionMessage(partition));
     if (partition.acceptedFiles.length) {
@@ -141,7 +164,7 @@ export default function ConversationStart({
   };
 
   const handleDrop = (event: DragEvent) => {
-    if (!onUploadImages) return;
+    if (!canUpload) return;
     event.preventDefault();
     setIsDraggingUpload(false);
     handleAttachmentFiles(event.dataTransfer.files);
@@ -168,7 +191,7 @@ export default function ConversationStart({
       className="shadcn-prototype-start"
       aria-label="新建对话"
       onDragOver={(event) => {
-        if (onUploadImages) {
+        if (canUpload) {
           event.preventDefault();
           setIsDraggingUpload(true);
         }
@@ -180,7 +203,7 @@ export default function ConversationStart({
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>今天想做什么内容？</h1>
         <p className="shadcn-prototype-start-sub">从一句话开始，MultiMix 会带着你的素材一起创作</p>
-        {onLongFormSourceReady ? (
+        {onLongFormSourceReady && canUpload && canGenerate ? (
           <LongFormEntry token={token} onSourceReady={onLongFormSourceReady} />
         ) : null}
         <div className={dockClassName}>
@@ -206,7 +229,7 @@ export default function ConversationStart({
                       </span>
                     ) : null}
                   </div>
-                  {attachment.status === "failed" ? <button type="button" onClick={() => onRetryImageAttachment?.(attachment.id)}>重试</button> : null}
+                  {attachment.status === "failed" ? <button type="button" disabled={!canUpload} onClick={() => onRetryImageAttachment?.(attachment.id)}>重试</button> : null}
                   <button type="button" aria-label={`移除 ${attachment.fileName}`} onClick={() => onRemoveImageAttachment?.(attachment.id)}>×</button>
                 </article>
               ))}
@@ -219,7 +242,8 @@ export default function ConversationStart({
             placeholder="例如：把上周的安装案例做成一条小红书帖子…"
             rows={1}
             value={composerValue}
-            disabled={!onSend}
+            disabled={!canGenerate}
+            aria-describedby={runtimeWriteStatusId}
             onChange={(event) => setComposerValue(event.currentTarget.value)}
             onInput={(event) => resizeComposer(event.currentTarget)}
             onKeyDown={(event) => {
@@ -236,6 +260,7 @@ export default function ConversationStart({
               accept={CHAT_IMAGE_UPLOAD_ACCEPT}
               multiple
               hidden
+              disabled={!canUpload}
               onChange={handleImageInputChange}
             />
             <button
@@ -243,8 +268,11 @@ export default function ConversationStart({
               type="button"
               aria-label="上传图片素材"
               title="上传图片素材"
-              disabled={!onSend || !onUploadImages}
-              onClick={() => imageInputRef.current?.click()}
+              disabled={!canUpload}
+              aria-describedby={runtimeWriteStatusId}
+              onClick={() => {
+                if (canUpload) imageInputRef.current?.click();
+              }}
             >
               <ImageIcon size={16} aria-hidden="true" />
             </button>
@@ -254,6 +282,7 @@ export default function ConversationStart({
               accept={CHAT_SOURCE_UPLOAD_ACCEPT}
               multiple
               hidden
+              disabled={!canUpload}
               onChange={handleSourceInputChange}
             />
             <button
@@ -261,8 +290,11 @@ export default function ConversationStart({
               type="button"
               aria-label="上传 PDF 或文档"
               title="上传 PDF 或文档"
-              disabled={!onSend || !onUploadImages}
-              onClick={() => sourceInputRef.current?.click()}
+              disabled={!canUpload}
+              aria-describedby={runtimeWriteStatusId}
+              onClick={() => {
+                if (canUpload) sourceInputRef.current?.click();
+              }}
             >
               <FileText size={15} aria-hidden="true" />
             </button>
@@ -271,15 +303,37 @@ export default function ConversationStart({
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"
               aria-label={sending ? "停止" : "发送"}
-              disabled={!onSend}
+              disabled={!canGenerate && !sending}
+              aria-describedby={runtimeWriteStatusId}
               onClick={sending ? stop : () => void submit()}
             >
               {sending ? <Square size={13} fill="currentColor" aria-hidden="true" /> : <ArrowUp size={16} aria-hidden="true" />}
             </button>
           </div>
         </div>
+        {writeCapabilities.reason ? (
+          <p
+            id={runtimeWriteStatusId}
+            className="shadcn-prototype-composer-error"
+            role="status"
+          >
+            {writeCapabilities.reason}
+            {writeCapabilities.recovery === "retry" && onRetryWriteAvailability ? (
+              <button type="button" onClick={onRetryWriteAvailability}>重新连接</button>
+            ) : null}
+          </p>
+        ) : null}
         {imageAttachments.length ? <p className="shadcn-prototype-chat-attachment-help">{ATTACHMENT_HELP_TEXT}</p> : null}
-        {error ? <p className="shadcn-prototype-composer-error">{error}</p> : null}
+        <p
+          className="shadcn-prototype-composer-error"
+          data-testid="conversation-start-error-announcer"
+          role={errorNotice.message ? "alert" : undefined}
+          aria-live="assertive"
+          aria-atomic="true"
+          style={errorNotice.message ? undefined : { margin: 0 }}
+        >
+          {errorNotice.message ? <span key={errorNotice.revision}>{errorNotice.message}</span> : null}
+        </p>
         {suggestions.length > 0 ? (
           <div className="shadcn-prototype-start-sugg-grid" aria-label="推荐指令">
             {suggestions.map((suggestion) => {

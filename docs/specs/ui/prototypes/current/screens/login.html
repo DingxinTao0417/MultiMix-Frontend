@@ -84,7 +84,7 @@ h1{font-size:16px;font-weight:650;text-align:center;margin-bottom:4px}
   <div class="sub">用真实素材，生成能直接发布的内容</div>
 
   <div class="field">
-    <label>邮箱或手机号</label>
+    <label>邮箱</label>
     <input id="acc" placeholder="you@example.com" autocomplete="username">
   </div>
   <div class="field">
@@ -117,7 +117,7 @@ function toast(msg){
 }
 document.getElementById('btnLogin').addEventListener('click', function(){
   var acc = document.getElementById('acc');
-  if(!acc.value.trim()){ toast('先填邮箱或手机号'); acc.focus(); return; }
+  if(!acc.value.trim()){ toast('先填邮箱'); acc.focus(); return; }
   if(!document.getElementById('pwd').value){ toast('请输入密码'); document.getElementById('pwd').focus(); return; }
   toast('登录成功，正在进入工作台…');
   setTimeout(function(){ location.href = 'start.html'; }, 800);

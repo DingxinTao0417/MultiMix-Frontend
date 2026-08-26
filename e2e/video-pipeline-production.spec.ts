@@ -417,7 +417,7 @@ async function enterWorkspace(page: Page) {
       .getByRole("button", { name: "注册" })
       .click();
     await page
-      .getByLabel("邮箱或手机号")
+      .getByLabel("邮箱")
       .fill(`video-pipeline-${Date.now()}@example.com`);
     await page.getByLabel("密码").fill("local-video-pipeline-2026");
     await page.locator("form").getByRole("button", { name: "注册" }).click();

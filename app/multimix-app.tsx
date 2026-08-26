@@ -339,7 +339,7 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
 
         <form onSubmit={submit}>
           <label className="multimix-auth-field">
-            <span>邮箱或手机号</span>
+            <span>邮箱</span>
             <input
               name="email"
               type="email"

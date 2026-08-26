@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import SegmentCards from "../components/segment-cards";
@@ -8,6 +8,51 @@ import type { AssetProductSegment } from "../lib/asset-workspace-types";
 
 
 describe("presenter segment review", () => {
+  it.each(["Enter", " "])("keeps the %j key on the nested voiceover action", (key) => {
+    const onSelect = vi.fn();
+    const onEditVoiceover = vi.fn();
+    const segment = {
+      id: "scene-keyboard",
+      index: 1,
+      title: "键盘操作分镜",
+      line: "只执行内部按钮",
+      isFallback: false,
+      isPresenter: false,
+    } as AssetProductSegment;
+
+    render(
+      <SegmentCards
+        segments={[segment]}
+        onSelect={onSelect}
+        onEditVoiceover={onEditVoiceover}
+      />,
+    );
+
+    const action = screen.getByRole("button", { name: "修改配音" });
+    fireEvent.keyDown(action, { key });
+    fireEvent.keyUp(action, { key });
+    fireEvent.click(action);
+
+    expect(onEditVoiceover).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("keeps Enter and Space selection on the parent card", () => {
+    const onSelect = vi.fn();
+    const segment = {
+      id: "scene-parent-keyboard",
+      index: 2,
+      title: "父卡键盘选择",
+      isFallback: false,
+    } as AssetProductSegment;
+
+    render(<SegmentCards segments={[segment]} onSelect={onSelect} />);
+    const card = screen.getByRole("button", { name: /父卡键盘选择/ });
+    fireEvent.keyDown(card, { key: "Enter" });
+    fireEvent.keyDown(card, { key: " " });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the event arrangement, publish requirement and material gap", () => {
     const segment = {
       id: "scene-1",
