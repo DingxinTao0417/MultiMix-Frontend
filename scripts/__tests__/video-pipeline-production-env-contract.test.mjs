@@ -68,6 +68,15 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.match(source, /MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID:\s*effectiveBgm\.defaultCatalogId/);
 });
 
+test("production video E2E validates BGM through the public project track", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(source, /videoProject\?\.metadata\?\.bgm_choice/);
+  assert.match(source, /const bgmTrack = videoProject\?\.tracks\?\.find/);
+  assert.match(source, /expect\(bgmTrack\?\.type\)\.toBe\("audio"\)/);
+  assert.match(source, /intentional no-BGM degradation must not create a music track/);
+});
+
 test("production video E2E writes a timing ledger for runner and browser stages", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
@@ -244,6 +253,18 @@ test("production video E2E discovers active video types and asserts the server p
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const specSource = fs.readFileSync(productionSpecPath, "utf8");
 
+  assert.doesNotMatch(
+    runnerSource,
+    /activeVideoTypes\.includes\("presenter"\)/,
+    "an explicitly selected active video type must not be blocked by another active type",
+  );
+  assert.doesNotMatch(
+    specSource,
+    /active\.some\(\(videoType\) => !allowed\.has/,
+    "the browser spec must validate its selected type instead of rejecting the full registry",
+  );
+  assert.match(runnerSource, /if \(activeVideoTypes\.length === 0\)/);
+  assert.match(specSource, /if \(active\.length === 0\)/);
   assert.match(specSource, /activation\.yaml/);
   assert.match(specSource, /activeVideoTypes/);
   assert.match(runnerSource, /for \(const videoType of activeVideoTypes\)/);
@@ -436,12 +457,42 @@ test("production video E2E retries a transient transport failure while waiting f
   assert.match(generationJobPoll, /job\.status === "failed"/);
 });
 
-test("production video E2E validates planned MG without requiring an MG quantity minimum", () => {
+test("production video E2E treats only the current export 404 as an expected console miss", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.doesNotMatch(
+  assert.match(source, /const expectedMissingCurrentExportConsoleError = \(message: string\) =>/);
+  assert.match(
     source,
-    /director ignored the explicit request for at least one MG scene/,
+    /message\.includes\(\s*"Failed to load resource: the server responded with a status of 404",?\s*\)/s,
+  );
+  assert.match(source, /message\.includes\(`@ \$\{currentExportUrl\}:`\)/);
+  assert.match(
+    source,
+    /!expectedMissingCurrentExportConsoleError\(message\)/,
+  );
+});
+
+test("production video E2E only requires an MG quantity for an explicit opt-in run", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    source,
+    /const requireMg = process\.env\.VIDEO_PIPELINE_REQUIRE_MG === "true"/,
+  );
+  assert.match(
+    source,
+    /requireMg\s*\?\s*"[^"\n]*MG overlay[^"\n]*"\s*:\s*""/,
+  );
+  assert.match(
+    source,
+    /已有家装素材继续作为该镜主画面[^"\n]*不是 MG 主画面/,
+  );
+  assert.match(source, /结果与图形增强[^"\n]*callout/);
+  assert.match(source, /focus_label[^"\n]*图纸核对区/);
+  assert.match(source, /图纸核对区[^"\n]*不得出现在旁白和字幕/);
+  assert.match(
+    source,
+    /if \(requireMg\) \{\s*expect\(\s*plannedMgScenes\.length,[\s\S]*director ignored the explicit request for at least one MG scene[\s\S]*\)\.toBeGreaterThan\(0\);\s*\}/,
   );
   assert.match(
     source,
@@ -457,6 +508,52 @@ test("production video E2E validates planned MG without requiring an MG quantity
   assert.match(source, /expect\(mgOverlaySceneIds\)\.toEqual\(renderedMgSceneIds\)/);
 });
 
+test("production video E2E validates art direction through the public animation summary", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(source, /internal_production/);
+  assert.match(source, /animation_overlay_count/);
+  assert.match(source, /animation_full_scene_count/);
+  assert.match(source, /animation_protected_count/);
+  assert.match(source, /animation_effect_count/);
+  assert.match(source, /publicAnimationSceneCount/);
+});
+
+test("production video E2E validates two-stage output through the public project", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(source, /metadata\?\.asset_manifest/);
+  assert.doesNotMatch(source, /metadata\?\.edit_decisions/);
+  assert.match(source, /publicProjectReferenceMatch/);
+  assert.match(source, /publicPrimaryVisuals/);
+});
+
+test("production video E2E defines generated-primary warning codes before export preflight", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const declaration = source.indexOf("const generatedPrimaryFailureCodes = new Set");
+  const usage = source.indexOf("generatedPrimaryFailureCodes.has");
+
+  assert.ok(declaration > -1);
+  assert.ok(usage > declaration);
+  assert.match(source, /"mg_primary_blank"/);
+  assert.match(source, /"mg_primary_fallback"/);
+  assert.match(source, /"title_scene_render_fallback"/);
+});
+
+test("production video E2E validates generated headline subtitle dedup through the public main track", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const functionStart = source.indexOf(
+    "function generatedPrimaryRepeatsVisibleSubtitle",
+  );
+  const functionEnd = source.indexOf('test("produces persisted visuals', functionStart);
+  const helper = source.slice(functionStart, functionEnd);
+
+  assert.doesNotMatch(helper, /primary_scene_spec/);
+  assert.match(helper, /primaryElement\?\.displayText/);
+  assert.doesNotMatch(helper, /primaryElement\?\.name/);
+  assert.match(source, /generatedPrimaryRepeatsVisibleSubtitle\(scene, mainElement\)/);
+});
+
 test("production video E2E waits for user-visible completion before UI convergence", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
   const functionStart = source.indexOf("async function waitForProjectReady");
@@ -470,4 +567,12 @@ test("production video E2E waits for user-visible completion before UI convergen
   assert.match(readinessWait, /project\.product_status === "failed"/);
   assert.match(readinessWait, /video_product_not_completed_before_timeout/);
   assert.ok(productPoll > -1 && productPoll < pageReload);
+});
+
+test("production video E2E resolves a queued confirmation job from every public aggregate location", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /confirmationPayload\.product\?\.metadata\?\.latest_job_public_id/);
+  assert.match(source, /confirmationPayload\.conversation\?\.metadata\?\.latest_job_public_id/);
+  assert.match(source, /message\.metadata\?\.job_public_id/);
 });

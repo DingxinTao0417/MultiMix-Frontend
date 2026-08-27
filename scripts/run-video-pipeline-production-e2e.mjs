@@ -100,7 +100,7 @@ const activationSource = fs.readFileSync(activationPath, "utf8");
 const activeSection = activationSource.match(/active_versions:\s*\n([\s\S]*?)(?=\n\S|$)/)?.[1] ?? "";
 const activeVideoTypes = [...activeSection.matchAll(/^\s{2}([a-z_]+):\s*\S+\s*$/gm)]
   .map((match) => match[1]);
-if (activeVideoTypes.length === 0 || activeVideoTypes.includes("presenter")) {
+if (activeVideoTypes.length === 0) {
   throw new Error(`Invalid production E2E activation: ${activeVideoTypes.join(",")}`);
 }
 if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
