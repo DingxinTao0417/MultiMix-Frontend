@@ -5798,6 +5798,206 @@ button:disabled {
   flex: none;
 }
 
+.shadcn-prototype-public-search {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.shadcn-prototype-public-search-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.shadcn-prototype-public-search-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-search-controls > label:first-child {
+  flex: 1 1 300px;
+}
+
+.shadcn-prototype-public-search-controls input[type="text"],
+.shadcn-prototype-public-search-controls input:not([type]) {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #201f1e;
+  background: #ffffff;
+}
+
+.shadcn-prototype-public-search-submit,
+.shadcn-prototype-public-save {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #5b45e0;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.shadcn-prototype-public-search-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.shadcn-prototype-public-search-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shadcn-prototype-public-search-checks label {
+  width: fit-content;
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #ffffff;
+  color: #201f1e;
+}
+
+.shadcn-prototype-public-search-checks small {
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-results {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shadcn-prototype-public-result {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.shadcn-prototype-public-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.shadcn-prototype-public-card-content {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shadcn-prototype-public-card strong {
+  min-height: 38px;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.shadcn-prototype-public-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #f5f3ef;
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.shadcn-prototype-public-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: #6e6a64;
+}
+
+.shadcn-prototype-public-thumb-placeholder small {
+  font-size: 11px;
+}
+
+.shadcn-prototype-public-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 5px;
+  min-height: 24px;
+  overflow: hidden;
+}
+
+.shadcn-prototype-public-tags em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: #e7f4ef;
+  color: #0e8a6b;
+  font-style: normal;
+  font-size: 11px;
+}
+
+.shadcn-prototype-public-save {
+  width: 100%;
+}
+
+@media (max-width: 760px) {
+  .shadcn-prototype-public-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .shadcn-prototype-public-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---- 素材源管理页（demo final/admin-sources.html）：顶栏 + 规则条 + 表格 ---- */
 .shadcn-prototype-admin-page {
   min-height: 100vh;

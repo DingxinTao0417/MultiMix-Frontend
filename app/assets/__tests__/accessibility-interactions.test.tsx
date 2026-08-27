@@ -45,6 +45,7 @@ function copyRow(): LibraryRow {
 function mockLibrary(rows: LibraryRow[]) {
   vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
   vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows, nextOffset: null });
+  vi.spyOn(assetWorkspaceAdapter, "listPublicSources").mockResolvedValue([]);
 }
 
 afterEach(() => {
@@ -96,7 +97,7 @@ describe("LibraryWorkshop dialog accessibility", () => {
     expect(backgroundSurface).not.toHaveAttribute("aria-hidden");
   });
 
-  it("names and restores the web-capture dialog", async () => {
+  it("names and restores the public-search and web-capture dialogs", async () => {
     mockLibrary([]);
     render(
       <LibraryWorkshop
@@ -106,7 +107,17 @@ describe("LibraryWorkshop dialog accessibility", () => {
       />,
     );
 
-    const webTrigger = await screen.findByRole("button", { name: "读取网页" });
+    const publicTrigger = await screen.findByRole("button", { name: "公开素材搜索" });
+    publicTrigger.focus();
+    fireEvent.click(publicTrigger);
+    const publicDialog = await screen.findByRole("dialog", { name: "公开素材搜索" });
+    expect(publicDialog).toHaveAttribute("aria-modal", "true");
+    await waitFor(() => expect(within(publicDialog).getByRole("textbox", { name: "关键词" })).toHaveFocus());
+    fireEvent.keyDown(publicDialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "公开素材搜索" })).not.toBeInTheDocument());
+    expect(publicTrigger).toHaveFocus();
+
+    const webTrigger = screen.getByRole("button", { name: "读取网页" });
     webTrigger.focus();
     fireEvent.click(webTrigger);
     const webDialog = await screen.findByRole("dialog", { name: "读取网页资料" });

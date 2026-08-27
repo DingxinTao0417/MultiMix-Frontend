@@ -39,6 +39,8 @@ import {
   type ContentAsset,
   type ContentAssetSearchResult,
   type ContentAssetRevisionResponse,
+  type PublicMaterialCandidate,
+  type PublicSourceRead,
   type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
@@ -581,6 +583,12 @@ export type AssetWorkspaceAdapter = {
   downloadAsset(token: string, assetId: number): Promise<Blob>;
   deleteAsset(token: string, assetId: number): Promise<void>;
   reparseAsset(token: string, assetId: number): Promise<ContentAsset>;
+  listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
+  searchPublicMaterials(token: string, payload: { query: string; mediaTypes: Array<"text" | "image" | "video">; providers?: string[]; limit?: number }): Promise<PublicMaterialCandidate[]>;
+  importPublicMaterial(token: string, candidate: PublicMaterialCandidate): Promise<ContentAsset>;
+  listAdminPublicSources(token: string): Promise<PublicSourceRead[]>;
+  updateAdminPublicSource(token: string, provider: string, payload: Partial<Pick<PublicSourceRead, "enabled" | "media_types">>): Promise<PublicSourceRead>;
+  checkAdminPublicSourceHealth(token: string, provider: string): Promise<PublicSourceRead>;
 };
 
 export function conversationFromSummary(
@@ -1430,6 +1438,40 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async reparseAsset(token, assetId) {
       return api<ContentAsset>(`/assets/${assetId}/reparse`, token, { method: "POST" });
+    },
+    async listPublicSources(token, mediaType) {
+      const query = mediaType ? `?media_type=${encodeURIComponent(mediaType)}` : "";
+      return api<PublicSourceRead[]>(`/assets/public-sources${query}`, token);
+    },
+    async searchPublicMaterials(token, payload) {
+      const response = await api<{ query: string; candidates: PublicMaterialCandidate[] }>("/assets/public-search", token, {
+        method: "POST",
+        body: JSON.stringify({
+          query: payload.query,
+          media_types: payload.mediaTypes,
+          providers: payload.providers,
+          limit: payload.limit ?? 12
+        })
+      });
+      return response.candidates;
+    },
+    async importPublicMaterial(token, candidate) {
+      return api<ContentAsset>("/assets/public-import", token, {
+        method: "POST",
+        body: JSON.stringify({ candidate })
+      });
+    },
+    async listAdminPublicSources(token) {
+      return api<PublicSourceRead[]>("/admin/public-sources", token);
+    },
+    async updateAdminPublicSource(token, provider, payload) {
+      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}`, token, {
+        method: "PATCH",
+        body: JSON.stringify(payload)
+      });
+    },
+    async checkAdminPublicSourceHealth(token, provider) {
+      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}/health`, token, { method: "POST" });
     }
   };
 }

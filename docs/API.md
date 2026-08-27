@@ -69,8 +69,8 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | --- | --- |
 | 工作台展示 | `listConversations`、`getNewConversation`、`getWorkshop`、`getProductText` |
 | 对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、`sendMessage`、`reconcileMessage`、生成任务查询/重试、Agent 动作查询/重试、产物保存和版本恢复 |
-| 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除 |
-| 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载（含公共素材）与单镜素材替换 |
+| 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
+| 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
 精确参数和返回类型以 `asset-workspace-adapter.ts` 中的 `AssetWorkspaceAdapter` 为准。产品路径是“编导稿确认 → 对话确认接口创建视频工程 → 查询任务状态”。
 
