@@ -237,6 +237,9 @@ describe("runtime data boundary", () => {
       instruction: "确认，生成视频工程",
       presenterDirectionConfirmation: {
         directorCandidateId: "direction-b",
+        ratio: "9:16",
+        subtitleMode: "bilingual",
+        targetSeconds: 30,
       },
     });
 
@@ -244,6 +247,9 @@ describe("runtime data boundary", () => {
       instruction: "确认，生成视频工程",
       presenter_direction_confirmation: {
         director_candidate_id: "direction-b",
+        ratio: "9:16",
+        subtitle_mode: "bilingual",
+        target_seconds: 30,
       },
     });
     expect(payload.instruction).not.toContain("direction-b");

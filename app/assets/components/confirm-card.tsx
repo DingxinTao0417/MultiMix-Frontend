@@ -74,6 +74,7 @@ export default function ConfirmCard({
     () => plan.audioTrackDefault ?? audioTrackOptions[0]?.streamIndex
   );
   const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+  const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
   const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
   const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
   const durationMin = plan.durationMin ?? 5;
@@ -245,7 +246,7 @@ export default function ConfirmCard({
           </div>
         </div>
       ) : null}
-      {isVideoParameterConfirmation ? (
+      {isVideoParameterConfirmation || isPresenterProjectConfirmation ? (
         <label className="shadcn-prototype-confirm-duration">
           <span className="shadcn-prototype-confirm-ratio-label">目标时长（秒）</span>
           <input
@@ -307,6 +308,9 @@ export default function ConfirmCard({
               : ratioOptions.length
                 ? {
                     ratio: selectedRatio,
+                    ...(isPresenterProjectConfirmation ? {
+                      targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
+                    } : {}),
                     ...(selectedDirection ? { directorCandidateId: selectedDirection } : {}),
                     ...(selectedSubtitleMode ? { sourceSubtitleMode: selectedSubtitleMode } : {}),
                   }

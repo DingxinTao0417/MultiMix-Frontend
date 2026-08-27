@@ -94,6 +94,15 @@ describe("ConfirmCard pending state", () => {
         { value: "16:9", label: "横屏 16:9" },
       ],
       ratioDefault: "9:16",
+      durationSeconds: 42,
+      durationMin: 5,
+      durationMax: 120,
+      subtitleOptions: [
+        { value: "translated_zh" as const, label: "中文字幕" },
+        { value: "source" as const, label: "原文字幕" },
+        { value: "bilingual" as const, label: "中英双语" },
+      ],
+      subtitleDefault: "translated_zh" as const,
       directionDefault: "direction-a",
       directionOptions: [
         {
@@ -124,11 +133,15 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(2);
     fireEvent.click(screen.getByRole("radio", { name: /产品演示交替/ }));
     fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));
+    fireEvent.click(screen.getByRole("radio", { name: "中英双语" }));
+    fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "43" } });
     fireEvent.click(screen.getByRole("button", { name: "选择方向并生成视频" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       ratio: "16:9",
+      targetSeconds: 43,
       directorCandidateId: "direction-b",
+      sourceSubtitleMode: "bilingual",
     });
   });
 

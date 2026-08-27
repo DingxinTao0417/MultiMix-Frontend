@@ -255,6 +255,9 @@ export type AssetPlanSubtitleOption = {
 
 export type AssetPresenterDirectionConfirmation = {
   directorCandidateId: string;
+  ratio?: string;
+  subtitleMode?: "translated_zh" | "source" | "bilingual";
+  targetSeconds?: number;
 };
 
 export type AssetPresenterCleanupConfirmation = {

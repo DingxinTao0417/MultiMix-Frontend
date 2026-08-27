@@ -601,7 +601,12 @@ export default function ConversationStudio({
       plan.confirmationId,
       undefined,
       values?.directorCandidateId
-        ? { directorCandidateId: values.directorCandidateId }
+        ? {
+            directorCandidateId: values.directorCandidateId,
+            ...(ratio ? { ratio } : {}),
+            ...(values?.sourceSubtitleMode ? { subtitleMode: values.sourceSubtitleMode } : {}),
+            ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
+          }
         : undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,

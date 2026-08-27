@@ -328,6 +328,9 @@ export function buildConversationMessagePayload({
     ...(presenterDirectionConfirmation ? {
       presenter_direction_confirmation: {
         director_candidate_id: presenterDirectionConfirmation.directorCandidateId,
+        ...(presenterDirectionConfirmation.ratio ? { ratio: presenterDirectionConfirmation.ratio } : {}),
+        ...(presenterDirectionConfirmation.subtitleMode ? { subtitle_mode: presenterDirectionConfirmation.subtitleMode } : {}),
+        ...(presenterDirectionConfirmation.targetSeconds ? { target_seconds: presenterDirectionConfirmation.targetSeconds } : {}),
       },
     } : {}),
     ...(presenterCleanupConfirmation ? {
