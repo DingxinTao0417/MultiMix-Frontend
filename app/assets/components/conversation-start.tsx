@@ -18,6 +18,10 @@ import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
 } from "../lib/runtime-write-capabilities";
+import {
+  getProductAnalyticsSessionId,
+  trackProductEvent,
+} from "../../../lib/product-analytics";
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
@@ -30,6 +34,12 @@ const SUGGESTION_PRESETS: Record<string, { hint?: string; fill?: string }> = {
   "用图片和视频做成片": { hint: "优先使用你的真实素材", fill: "用我已有的图片和视频生成一条 9:16 的 30 秒短视频" },
   "把文档做成短视频": { hint: "关键内容保留来源", fill: "把我上传的文档做成一条可编辑的短视频，关键内容保留来源" },
   "继续修改已有视频": { hint: "换画面、改文案或调整分镜", fill: "继续修改我已有的视频，先让我选择要修改的版本" }
+};
+const SUGGESTION_EVENT_KEYS: Record<string, string> = {
+  "用已有素材生成短视频": "saved-assets-video",
+  "用图片和视频做成片": "images-and-video",
+  "把文档做成短视频": "document-to-video",
+  "继续修改已有视频": "continue-editing-video",
 };
 
 function suggestionIcon(label: string): ReactNode {
@@ -113,6 +123,14 @@ export default function ConversationStart({
       resizeComposer(composerRef.current);
     }
   }, [composerValue]);
+
+  useEffect(() => {
+    void trackProductEvent(token, {
+      eventName: "workspace_opened",
+      sessionId: getProductAnalyticsSessionId(),
+      properties: { entry_surface: "new_conversation" },
+    });
+  }, [token]);
 
   const submit = async () => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
@@ -336,7 +354,7 @@ export default function ConversationStart({
         </p>
         {suggestions.length > 0 ? (
           <div className="shadcn-prototype-start-sugg-grid" aria-label="推荐指令">
-            {suggestions.map((suggestion) => {
+            {suggestions.map((suggestion, index) => {
               const preset = SUGGESTION_PRESETS[suggestion];
               return (
                 <button
@@ -344,7 +362,16 @@ export default function ConversationStart({
                   className="shadcn-prototype-start-sugg-card"
                   key={suggestion}
                   disabled={sending}
-                  onClick={() => fillComposer(preset?.fill ?? suggestion)}
+                  onClick={() => {
+                    void trackProductEvent(token, {
+                      eventName: "recommendation_selected",
+                      properties: {
+                        recommendation_key: SUGGESTION_EVENT_KEYS[suggestion]
+                          ?? `recommendation-${index + 1}`,
+                      },
+                    });
+                    fillComposer(preset?.fill ?? suggestion);
+                  }}
                 >
                   <span className="ic">{suggestionIcon(suggestion)}</span>
                   <span className="tx">
