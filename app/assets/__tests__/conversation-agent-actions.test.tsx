@@ -226,4 +226,87 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[12]).toBe(1298);
     expect(onSendMessage.mock.calls[0]?.[13]).toBe("source");
   });
+
+  it("does not expose an unbound generic confirmation while Presenter cleanup is pending", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const cleanupPlan: AssetMessagePlan = {
+      kind: "presenter_cleanup_confirmation",
+      title: "口播清理",
+      status: "pending",
+      fields: [{ key: "cleanup", label: "自然精简", value: "自动 1 项" }],
+      confirmLabel: "确认清理并进入导演方案",
+      cleanupPlanId: "cleanup-current",
+      cleanupPlanHash: "a".repeat(64),
+      cleanupItems: [{
+        id: "cleanup-item-1",
+        state: "auto",
+        category: "non_lexical_filler",
+        spokenText: "嗯",
+        action: "delete",
+        reason: "孤立口癖",
+        estimatedSavingSeconds: 0.4,
+        risk: "low",
+        audioRisk: "low",
+        visualJumpRisk: "low",
+        protectionReasons: [],
+        selected: true,
+        locked: false,
+      }],
+      audioTrackDefault: 1,
+      audioTrackOptions: [{
+        streamIndex: 1,
+        label: "人声轨 1",
+        previewUrl: "",
+        qualityScore: 0.9,
+        recommended: true,
+        channels: 1,
+        codec: "aac",
+      }],
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-presenter-cleanup",
+      detailsLoaded: true,
+      messages: [
+        {
+          role: "assistant" as const,
+          text: "旧建议",
+          suggestionActions: [{
+            id: "generic-confirm",
+            label: "确认生成",
+            utterance: "确认",
+            actionType: "submit_message",
+            enabled: true,
+            requiresConfirmation: false,
+          }],
+        },
+        { role: "assistant" as const, text: "请确认清理方案。", plan: cleanupPlan },
+      ],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "确认生成" })).not.toBeInTheDocument();
+    const confirmButton = screen.getByRole("button", { name: "确认清理并进入导演方案" });
+    expect(confirmButton).toBeEnabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[10]).toEqual({
+      cleanupPlanId: "cleanup-current",
+      cleanupPlanHash: "a".repeat(64),
+      selectedCandidateIds: ["cleanup-item-1"],
+      protectedOverrideCandidateIds: [],
+      confirmProtectedOverride: false,
+      audioStreamIndex: 1,
+    });
+  });
 });

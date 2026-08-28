@@ -354,6 +354,13 @@ export default function ConversationStudio({
     () => mergeVisibleConversationMessages(conversationMessages, optimisticExchange),
     [conversationMessages, optimisticExchange]
   );
+  // Presenter cleanup is a bound, two-step confirmation.  A legacy generic
+  // `submit_message` suggestion may carry only "确认" and cannot include the
+  // cleanup plan ID/hash or selected cleanup items.  Keep that unbound shortcut
+  // out of the UI while the structured card is the active confirmation path.
+  const hasPendingPresenterCleanupConfirmation = visibleConversationMessages.some(
+    (message) => message.plan?.kind === "presenter_cleanup_confirmation" && message.plan.status === "pending",
+  );
 
   const productCardsByMessageIndex = useMemo(
     () => mapProductsToConversationMessages(visibleConversationMessages, products),
@@ -921,7 +928,13 @@ export default function ConversationStudio({
               {(() => {
                 const suggestions = visibleSuggestions(message)
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
-                  .filter(({ intent }) => !intent.hidden);
+                  .filter(({ intent }) => {
+                    if (intent.hidden) return false;
+                    const normalizedUtterance = intent.utterance.replace(/\s+/g, "");
+                    const isUnboundGenericConfirmation = intent.mode === "submit_message"
+                      && ["确认", "确认生成"].includes(normalizedUtterance);
+                    return !hasPendingPresenterCleanupConfirmation || !isUnboundGenericConfirmation;
+                  });
                 return suggestions.length ? (
                   <div className="shadcn-prototype-suggestion-row" aria-label="推荐调整指令">
                     {suggestions.map(({ suggestion, intent }) => {
