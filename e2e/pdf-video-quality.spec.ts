@@ -111,8 +111,8 @@ async function refreshAfterQueuedGeneration(page: Page, response: Awaited<Return
 
 async function enterLocalWorkspace(page: Page) {
   await page.goto("/app/assets");
-  const loginHeading = page.getByRole("heading", { name: "登录你的创作工作台" });
-  const workspaceHeading = page.getByRole("heading", { name: "今天想做什么内容？" });
+  const loginHeading = page.getByRole("heading", { name: "登录你的 AI 短视频创作工作台" });
+  const workspaceHeading = page.getByRole("heading", { name: "今天想做什么短视频？" });
   const entry = await Promise.race([
     loginHeading.waitFor({ state: "visible", timeout: 30_000 }).then(() => "login" as const),
     workspaceHeading.waitFor({ state: "visible", timeout: 30_000 }).then(() => "workspace" as const),

@@ -1447,16 +1447,25 @@ describe("agent conversation UI copy", () => {
   });
 
   it("renders the demo-final start hero and input dock", () => {
+    const authApp = readAssetFile("app/multimix-app.tsx");
     const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+    const materialsReady = readAssetFile("app/assets/components/materials-ready-strip.tsx");
+    const backgroundStatus = readAssetFile("app/assets/components/ai-background-status.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const globals = readAssetFile("app/globals.css");
 
     expect(workspaceClient).toContain('initialConversationId === "new"');
-    expect(conversationStart).toContain("今天想做什么内容？");
-    expect(conversationStart).toContain("从一句话开始，MultiMix 会带着你的素材一起创作");
+    expect(authApp).toContain("登录你的 AI 短视频创作工作台");
+    expect(authApp).toContain("上传素材，说出需求，生成可编辑的短视频");
+    expect(conversationStart).toContain("今天想做什么短视频？");
+    expect(conversationStart).toContain("上传素材，说出需求，生成可编辑的短视频");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
-    expect(conversationStart).toContain("支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么");
+    expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频素材 · 只上传素材时，AI 会先理解再询问需求");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
+    expect(conversationStart).toContain("AI 自动编导并匹配画面");
+    expect(materialsReady).toContain("你的素材可以开始做视频了");
+    expect(backgroundStatus).toContain("AI 正在理解素材");
+    expect(backgroundStatus).toContain("完成后可用于视频创作");
     expect(globals).toContain(".shadcn-prototype-start-dock");
     expect(globals).toContain(".shadcn-prototype-start-sugg-grid");
     expect(globals).toContain("min-height: 52px");

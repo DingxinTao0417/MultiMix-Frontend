@@ -21,15 +21,15 @@ import {
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
+const ATTACHMENT_HELP_TEXT = "只上传素材时，我会先理解内容并询问这条视频想表达什么；图片和视频会作为画面素材，PDF/文档会作为内容依据。";
 
 // Demo-final suggestion cards carry a hint line and a richer fill utterance;
 // unknown labels degrade to a title-only card (no invented copy).
 const SUGGESTION_PRESETS: Record<string, { hint?: string; fill?: string }> = {
-  "写一条小红书文案": { hint: "用已解析的案例图，真实风格", fill: "写一条小红书文案，用已解析的案例图，真实风格" },
-  "生成 9:16 短视频脚本": { hint: "30 秒，适配抖音和视频号", fill: "生成一条 9:16 的 30 秒短视频脚本，适配抖音和视频号" },
-  "做一张封面图": { hint: "从你的完工照片里选主图", fill: "做一张封面图，从我的完工照片里选主图" },
-  "把好评截图变成种草帖": { hint: "客户的话比广告更有说服力", fill: "把客户好评截图变成一条种草帖" }
+  "用已有素材生成短视频": { hint: "AI 自动编导并匹配画面", fill: "用我已有的素材生成一条可编辑的短视频" },
+  "用图片和视频做成片": { hint: "优先使用你的真实素材", fill: "用我已有的图片和视频生成一条 9:16 的 30 秒短视频" },
+  "把文档做成短视频": { hint: "关键内容保留来源", fill: "把我上传的文档做成一条可编辑的短视频，关键内容保留来源" },
+  "继续修改已有视频": { hint: "换画面、改文案或调整分镜", fill: "继续修改我已有的视频，先让我选择要修改的版本" }
 };
 
 function suggestionIcon(label: string): ReactNode {
@@ -201,8 +201,8 @@ export default function ConversationStart({
     >
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
-        <h1>今天想做什么内容？</h1>
-        <p className="shadcn-prototype-start-sub">从一句话开始，MultiMix 会带着你的素材一起创作</p>
+        <h1>今天想做什么短视频？</h1>
+        <p className="shadcn-prototype-start-sub">上传素材，说出需求，生成可编辑的短视频</p>
         {onLongFormSourceReady && canUpload && canGenerate ? (
           <LongFormEntry token={token} onSourceReady={onLongFormSourceReady} />
         ) : null}
@@ -239,7 +239,7 @@ export default function ConversationStart({
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
-            placeholder="例如：把上周的安装案例做成一条小红书帖子…"
+            placeholder="例如：用我上周的安装素材，做一条 30 秒竖屏短视频…"
             rows={1}
             value={composerValue}
             disabled={!canGenerate}
@@ -298,7 +298,7 @@ export default function ConversationStart({
             >
               <FileText size={15} aria-hidden="true" />
             </button>
-            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么</span>
+            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 / 视频素材 · 只上传素材时，AI 会先理解再询问需求</span>
             <button
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"

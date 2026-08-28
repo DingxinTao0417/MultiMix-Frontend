@@ -386,10 +386,10 @@ type QualityReport = {
 async function enterWorkspace(page: Page) {
   await page.goto("/app/assets");
   const loginHeading = page.getByRole("heading", {
-    name: "登录你的创作工作台",
+    name: "登录你的 AI 短视频创作工作台",
   });
   const workspaceHeading = page.getByRole("heading", {
-    name: "今天想做什么内容？",
+    name: "今天想做什么短视频？",
   });
   const entry = await Promise.race([
     loginHeading

@@ -1099,10 +1099,10 @@ describe("runtime data boundary", () => {
   it("keeps product starter prompts without restoring demo conversations", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
     expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([
-      "写一条小红书文案",
-      "生成 9:16 短视频脚本",
-      "做一张封面图",
-      "把好评截图变成种草帖"
+      "用已有素材生成短视频",
+      "用图片和视频做成片",
+      "把文档做成短视频",
+      "继续修改已有视频"
     ]);
   });
 });
