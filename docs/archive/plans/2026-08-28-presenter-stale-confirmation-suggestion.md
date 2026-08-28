@@ -1,6 +1,6 @@
 # Prevent stale Presenter cleanup confirmations
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-28
 
@@ -53,3 +53,10 @@ not compete with an active Presenter cleanup confirmation.
    card and that the exact card confirmation advances without a conflict.  Report
    only phases, HTTP/completion status, call counts, fallback and failure codes;
    never record generated body text.
+
+## Completion evidence
+
+- Commit `1d21bc2` implemented the narrow suppression and its regression coverage, then reached the configured Vercel production project successfully.
+- A later fresh controlled Presenter conversation displayed and applied the structured cleanup confirmation exactly once, continued through aligned subtitles and Presenter direction, and never used a competing generic confirmation.
+- The same production flow subsequently created the bound video project and completed the worker render. No model body or sensitive media content was recorded in the acceptance evidence.
+- The backend continued to enforce stale binding rejection; this frontend change only removed the conflicting unbound action. The plan is complete and archived.
