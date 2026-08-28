@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AssetGenerationJobCard } from "../components/asset-generation-job-card";
@@ -124,6 +124,33 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.queryByText(/AI generation service failed/i)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重新执行此步骤" }));
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
+  });
+
+  it("blocks a second failed-job retry until the first request rejects", async () => {
+    let rejectRetry!: (reason?: unknown) => void;
+    const pendingRetry = new Promise<void>((_resolve, reject) => {
+      rejectRetry = reject;
+    });
+    const onRetry = vi.fn(() => pendingRetry);
+    render(
+      <AssetGenerationJobCard
+        job={job({ status: "failed" })}
+        onRetry={onRetry}
+      />,
+    );
+
+    const retryButton = screen.getByRole("button", { name: "重新执行此步骤" });
+    fireEvent.click(retryButton);
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "正在重试…" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "正在重试…" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    rejectRetry(new Error("retry rejected"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "重新执行此步骤" })).toHaveProperty("disabled", false);
+    });
   });
 
   it("keeps provider diagnostics out of the ordinary failure card", () => {

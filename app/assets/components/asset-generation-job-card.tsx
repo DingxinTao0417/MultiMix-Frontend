@@ -25,6 +25,7 @@ export function AssetGenerationJobCard({
   onCancel?: (jobId: string) => void | Promise<void>;
 }) {
   const [stopping, setStopping] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const canCancel = job.status === "queued" || job.status === "running";
   const terminal = job.status === "completed" || job.status === "cancelled";
@@ -32,6 +33,9 @@ export function AssetGenerationJobCard({
   useEffect(() => {
     if (!canCancel) setStopping(false);
   }, [canCancel, job.status]);
+  useEffect(() => {
+    if (job.status !== "failed" && job.status !== "cancelled") setRetrying(false);
+  }, [job.status]);
   useEffect(() => {
     if (job.status !== "running") return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -43,8 +47,13 @@ export function AssetGenerationJobCard({
     setStopping(true);
     try { await onCancel(job.id); } catch { setStopping(false); }
   };
+  const retry = async (jobId: string) => {
+    if (!onRetry || retrying) return;
+    setRetrying(true);
+    try { await onRetry(jobId); } catch { setRetrying(false); }
+  };
   const retryStopped = () => {
-    if (job.status === "cancelled") void onRetry?.(job.id);
+    if (job.status === "cancelled") void retry(job.id);
   };
   const isDirectorScriptGeneration = generationTimelineTitle(job) === "编导稿生成进度";
 
@@ -59,7 +68,8 @@ export function AssetGenerationJobCard({
         title={generationTimelineTitle(job)}
         statusTone={job.status === "cancelled" ? "cancelled" : undefined}
         errorMessage={job.status === "failed" ? failureMessage(job) : null}
-        onRetry={onRetry ? (jobId) => { void onRetry(jobId); } : undefined}
+        onRetry={onRetry ? (jobId) => { void retry(jobId); } : undefined}
+        retrying={retrying}
         completionConfirmed={terminal}
         completionLabel={isDirectorScriptGeneration
           ? "编导脚本已生成，可确认或修改"
@@ -77,9 +87,10 @@ export function AssetGenerationJobCard({
           <button
             type="button"
             className="shadcn-prototype-agent-run-retry"
+            disabled={retrying}
             onClick={retryStopped}
           >
-            重新生成
+            {retrying ? "正在重试…" : "重新生成"}
           </button>
         ) : null}
       />

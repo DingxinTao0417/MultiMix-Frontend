@@ -46,6 +46,7 @@ export default function AgentRunTimeline({
   statusTone: statusToneOverride,
   errorMessage,
   onRetry,
+  retrying = false,
   completionConfirmed,
   completionLabel = "视频已生成，可立即编辑",
   footer,
@@ -55,6 +56,7 @@ export default function AgentRunTimeline({
   statusTone?: "success" | "fail" | "running" | "cancelled";
   errorMessage?: string | null;
   onRetry?: (jobId: string) => void;
+  retrying?: boolean;
   completionConfirmed?: boolean;
   completionLabel?: string;
   footer?: ReactNode;
@@ -159,9 +161,10 @@ export default function AgentRunTimeline({
                 <button
                   type="button"
                   className="shadcn-prototype-agent-run-retry"
+                  disabled={retrying}
                   onClick={() => dispatchAgentRunRetry(retryJobId, onRetry)}
                 >
-                  重新执行此步骤
+                  {retrying ? "正在重试…" : "重新执行此步骤"}
                 </button>
               ) : null}
             </div>
