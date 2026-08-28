@@ -355,9 +355,8 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(html).toContain("<ol");
   });
 
-  it("renders failures expanded with technical detail but no duplicate failure summary", () => {
-    const errorMessage = "渲染服务暂时不可用".repeat(30);
-    const truncatedError = `${errorMessage.slice(0, 159)}…`;
+  it("renders the projected user-facing failure without a technical-details disclosure", () => {
+    const errorMessage = "视频生成未能完成，请重试。";
     const html = renderTimeline({
       steps: [{
         key: "build_project",
@@ -372,9 +371,9 @@ describe("AgentRunTimeline rendered branches", () => {
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("<ol");
     expect(html).not.toContain("视频工程生成失败，请重试。");
-    expect(html).toContain("查看技术详情");
-    expect(html).toContain(truncatedError);
-    expect(html).not.toContain(errorMessage);
+    expect(html).not.toContain("查看技术详情");
+    expect(html).not.toContain("<code>");
+    expect(html).toContain(errorMessage);
     expect(html).toContain("重新执行此步骤");
   });
 

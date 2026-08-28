@@ -126,7 +126,7 @@ describe("AssetGenerationJobCard", () => {
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
   });
 
-  it("shows only body-free failure fields in technical details", () => {
+  it("keeps provider diagnostics out of the ordinary failure card", () => {
     render(
       <AssetGenerationJobCard
         job={job({
@@ -145,8 +145,8 @@ describe("AssetGenerationJobCard", () => {
       />,
     );
 
-    expect(screen.getByText("错误码：provider_rejected · 阶段：presenter_events · HTTP：400 · Provider：InvalidSchema · 指纹：sha256:body-free · 尝试：2 · Fallback：none")).not.toBeNull();
-    expect(screen.queryByText("内容生成服务拒绝了本次请求。")).toBeNull();
+    expect(screen.getByText("内容生成服务拒绝了本次请求。")).not.toBeNull();
+    expect(screen.queryByText(/provider_rejected|presenter_events|InvalidSchema|sha256:body-free/)).toBeNull();
   });
 
   it("keeps a historical failed job retryable when its saved progress is invalid", () => {

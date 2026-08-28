@@ -4,7 +4,6 @@ import { Check, ChevronDown, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import {
   dispatchAgentRunRetry,
-  executionErrorPresentation,
   resolveAgentRunExpandedState,
   summarizeAgentRunSteps,
 } from "../lib/agent-run-timeline-model";
@@ -46,7 +45,6 @@ export default function AgentRunTimeline({
   title = "视频生成进度",
   statusTone: statusToneOverride,
   errorMessage,
-  technicalDetail,
   onRetry,
   completionConfirmed,
   completionLabel = "视频已生成，可立即编辑",
@@ -56,7 +54,6 @@ export default function AgentRunTimeline({
   title?: string;
   statusTone?: "success" | "fail" | "running" | "cancelled";
   errorMessage?: string | null;
-  technicalDetail?: string | null;
   onRetry?: (jobId: string) => void;
   completionConfirmed?: boolean;
   completionLabel?: string;
@@ -93,9 +90,7 @@ export default function AgentRunTimeline({
     (step) => step.status === "fail" && step.retryJobId,
   ) ?? steps.find((step) => step.retryJobId);
   const retryJobId = retryStep?.retryJobId;
-  const errorPresentation = summary.hasFailure
-    ? executionErrorPresentation(technicalDetail ?? errorMessage ?? "")
-    : null;
+  const visibleFailureMessage = summary.hasFailure ? errorMessage?.trim() : "";
   const statusTone = statusToneOverride ?? (summary.allDone
     ? "success"
     : summary.hasFailure
@@ -153,14 +148,11 @@ export default function AgentRunTimeline({
               </li>
             ))}
           </ol>
-          {summary.hasFailure && (errorPresentation || (onRetry && retryJobId)) ? (
+          {summary.hasFailure && (visibleFailureMessage || (onRetry && retryJobId)) ? (
             <div className="shadcn-prototype-agent-run-error">
-              {errorPresentation ? (
+              {visibleFailureMessage ? (
                 <div className="shadcn-prototype-agent-run-error-copy">
-                  <details>
-                    <summary>查看技术详情</summary>
-                    <code>{errorPresentation.technicalDetail}</code>
-                  </details>
+                  <p>{visibleFailureMessage}</p>
                 </div>
               ) : null}
               {onRetry && retryJobId ? (

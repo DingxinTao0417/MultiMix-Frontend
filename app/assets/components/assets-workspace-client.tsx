@@ -1234,7 +1234,7 @@ export default function AssetsWorkspaceClient({
         jobId: live.jobId,
         status: live.status,
         steps: resolveLiveExecutionTimelineSteps(live),
-        errorMessage: live.errorMessage,
+        errorMessage: live.failureReason ?? live.operationFailureReason ?? null,
         completionConfirmed: live.completionConfirmed,
       };
     }
