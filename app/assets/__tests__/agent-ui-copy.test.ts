@@ -1460,7 +1460,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("今天想做什么短视频？");
     expect(conversationStart).toContain("上传素材，说出需求，生成可编辑的短视频");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
-    expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频素材 · 只上传素材时，AI 会先理解再询问需求");
+    expect(conversationStart).toContain("支持拖入 PDF / 图片 · 视频请先上传到视频素材库");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
     expect(conversationStart).toContain("AI 自动编导并匹配画面");
     expect(materialsReady).toContain("你的素材可以开始做视频了");

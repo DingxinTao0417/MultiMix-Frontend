@@ -1132,7 +1132,8 @@ function LibraryWorkshop({
                 </>
               ) : view === "video" ? (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
                   {selectedRow.contentTypeCode === "long_form_video_source" ? (
                     <button
                       type="button"

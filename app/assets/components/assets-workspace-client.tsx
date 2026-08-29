@@ -74,6 +74,10 @@ import {
   type LongFormSourceReady,
 } from "../lib/long-form-client";
 import {
+  mergeConversationContextAssets,
+  type ConversationContextAsset,
+} from "../lib/conversation-context-assets";
+import {
   isRuntimeConnectionError,
   resolveRuntimeWriteCapabilities,
   type RuntimeWriteConnectionState,
@@ -107,11 +111,6 @@ type AssetsWorkspaceClientProps = {
   accountEmail?: string;
   token?: string | null;
   onLogout?: () => void;
-};
-
-type ConversationContextAsset = {
-  id: number;
-  title: string;
 };
 
 type PendingConversationExchange = {
@@ -505,14 +504,6 @@ function uploadAcceptForView(view: ActiveView): string {
   if (view === "image") return ".png,.jpg,.jpeg,.webp,.gif";
   if (view === "video") return ".mp4,.mov,.webm,.mkv";
   return ".md,.markdown,.pdf,.xlsx,.xlsm,.html,.htm,.txt";
-}
-
-function mergeContextAssets(current: ConversationContextAsset[], additions: ConversationContextAsset[]): ConversationContextAsset[] {
-  const byId = new Map<number, ConversationContextAsset>();
-  for (const item of [...current, ...additions]) {
-    byId.set(item.id, item);
-  }
-  return [...byId.values()].slice(-8);
 }
 
 function cachedConversationSummaries(accountEmail: string) {
@@ -1681,7 +1672,10 @@ export default function AssetsWorkspaceClient({
     const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
     setConversationContextAssets((current) => ({
       ...current,
-      [targetConversationId]: mergeContextAssets(current[targetConversationId] ?? [], [{ id: row.assetId!, title: row.title }])
+      [targetConversationId]: mergeConversationContextAssets(
+        current[targetConversationId] ?? [],
+        [{ id: row.assetId!, title: row.title }],
+      )
     }));
     setSelectedConversationId(targetConversationId);
     setActiveView("conversation");
@@ -1956,8 +1950,8 @@ export default function AssetsWorkspaceClient({
       const packageAsset = await materialPackageAsset(conversation.id);
       assetsForSend = packageAsset ? [...sourceAssets, packageAsset] : sourceAssets;
     }
-    const contextAssets = assetsForSend.length > 0 ? [] : conversationContextAssets[conversation.id] ?? [];
-    const combinedContextAssets = mergeContextAssets(contextAssets, assetsForSend);
+    const contextAssets = conversationContextAssets[conversation.id] ?? [];
+    const combinedContextAssets = mergeConversationContextAssets(contextAssets, assetsForSend);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
     const optimisticConversationId = conversation.id === "new"
       ? `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -2096,7 +2090,10 @@ export default function AssetsWorkspaceClient({
     if (targetConversationId !== conversation.id && combinedLinkedAssetIds.length > 0) {
       setConversationContextAssets((current) => {
         const next = { ...current };
-        next[targetConversationId] = mergeContextAssets(next[targetConversationId] ?? [], combinedContextAssets);
+        next[targetConversationId] = mergeConversationContextAssets(
+          next[targetConversationId] ?? [],
+          combinedContextAssets,
+        );
         if (conversation.id === "new") delete next[conversation.id];
         if (optimisticConversationId) delete next[optimisticConversationId];
         return next;

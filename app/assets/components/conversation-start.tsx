@@ -25,7 +25,7 @@ import {
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传素材时，我会先理解内容并询问这条视频想表达什么；图片和视频会作为画面素材，PDF/文档会作为内容依据。";
+const ATTACHMENT_HELP_TEXT = "只上传素材时，我会先理解内容并询问这条视频想表达什么；图片会作为画面素材，PDF/文档会作为内容依据。视频请先上传到视频素材库。";
 
 // Demo-final suggestion cards carry a hint line and a richer fill utterance;
 // unknown labels degrade to a title-only card (no invented copy).
@@ -316,7 +316,7 @@ export default function ConversationStart({
             >
               <FileText size={15} aria-hidden="true" />
             </button>
-            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 / 视频素材 · 只上传素材时，AI 会先理解再询问需求</span>
+            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 · 视频请先上传到视频素材库</span>
             <button
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"

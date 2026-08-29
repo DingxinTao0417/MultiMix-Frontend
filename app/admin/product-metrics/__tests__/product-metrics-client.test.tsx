@@ -108,6 +108,7 @@ describe("ProductMetricsClient", () => {
     expect(screen.getByLabelText("产品激活漏斗")).toBeVisible();
     expect(screen.getByText("用户素材分镜占比")).toBeVisible();
     expect(screen.getByText("75%")) .toBeVisible();
+    expect(screen.getByText("最近 30 天注册的非管理员用户 cohort")).toBeVisible();
     expect(getAdminProductMetrics).toHaveBeenCalledWith("admin-token", 30);
   });
 

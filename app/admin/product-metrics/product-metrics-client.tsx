@@ -153,7 +153,7 @@ export default function ProductMetricsClient() {
                 <small>
                   上一步转化 {percent(step.users / Math.max(metrics.funnel[index - 1].users, 1))}
                 </small>
-              ) : <small>统计窗口内非管理员用户</small>}
+              ) : <small>最近 {metrics.window_days} 天注册的非管理员用户 cohort</small>}
             </article>
           ))}
         </section>
