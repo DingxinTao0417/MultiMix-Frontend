@@ -31,6 +31,7 @@
     "test:e2e:video-pipeline-production": "node scripts/run-video-pipeline-production-e2e.mjs",
     "test:e2e:video-pipeline-recompose": "node scripts/run-video-pipeline-production-e2e.mjs --recompose",
     "test:e2e:video-pipeline-resume": "node scripts/run-video-pipeline-production-e2e.mjs --resume",
+    "test:e2e:product-positioning": "node scripts/run-product-positioning-e2e.mjs",
     "test:e2e:admin-product-metrics": "node scripts/run-admin-product-metrics-e2e.mjs",
     "test:e2e:runs": "node scripts/manage-e2e-run.mjs list",
     "test:e2e:cleanup-run": "node scripts/manage-e2e-run.mjs cleanup",
