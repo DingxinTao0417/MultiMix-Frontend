@@ -182,6 +182,8 @@ describe("ConfirmCard pending state", () => {
     ).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
     fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
+    expect(screen.queryByText("开启（默认）")).toBeNull();
+    expect(screen.getByText("关闭")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {

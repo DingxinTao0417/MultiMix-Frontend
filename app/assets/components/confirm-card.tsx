@@ -87,9 +87,35 @@ export default function ConfirmCard({
     && plan.ttsAvailable === false;
   const durationMin = plan.durationMin ?? 5;
   const durationMax = plan.durationMax ?? 600;
+  const currentFields = isVideoParameterConfirmation
+    ? plan.fields.map((field) => {
+        if (field.key === "ratio" && selectedRatio && selectedRatio !== plan.ratioDefault) {
+          return {
+            ...field,
+            value: ratioOptions.find((option) => option.value === selectedRatio)?.label ?? selectedRatio,
+          };
+        }
+        if (
+          field.key === "duration"
+          && targetSeconds !== (plan.durationSeconds ?? 30)
+        ) {
+          return { ...field, value: `${targetSeconds} 秒` };
+        }
+        if (
+          field.key === "ai_voice"
+          && selectedAiVoice !== undefined
+          && selectedAiVoice !== plan.voiceDefault
+        ) {
+          return { ...field, value: selectedAiVoice ? "开启" : "关闭" };
+        }
+        return field;
+      })
+    : plan.fields;
 
   if (plan.status === "confirmed" || optimisticallyConfirmed) {
-    const summary = plan.summaryFields?.length ? plan.summaryFields : plan.fields;
+    const summary = plan.status === "confirmed" && plan.summaryFields?.length
+      ? plan.summaryFields
+      : currentFields;
     return (
       <div className="shadcn-prototype-confirm-card confirmed" aria-label={`${plan.title} · 已确认`}>
         <div className="shadcn-prototype-confirm-done-head">
@@ -116,7 +142,7 @@ export default function ConfirmCard({
         </span>
       </div>
       <div className="shadcn-prototype-confirm-fields">
-        <PlanFieldRows fields={plan.fields} />
+        <PlanFieldRows fields={currentFields} />
       </div>
       {cleanupItems.length ? (
         <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">

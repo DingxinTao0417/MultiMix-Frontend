@@ -756,6 +756,8 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 后端只接受当前 pending intent 的 ID 和版本。普通自然语言“确认”不会生成编导稿。比例优先级是用户明确选择 > 权威主要上传视频原始比例 > 从头生成 `16:9`；多个上传视频比例冲突且没有主要视频时 `ratio_default=null`、`ratio_confirmation_required=true`，前端必须等待选择。声音优先级是用户明确选择 > 有有效口播时保留原声并关闭 AI 配音 > 从头生成或无口播时开启 AI 旁白；是否配置 TTS 不改变默认选择。`tts_available=false` 且 AI 配音开启时必须提示用户关闭配音，按钮保持禁用，不能提交半成品。缺省时长为 `30 秒`。
 
+待确认卡的字段摘要必须即时投影用户当前选择：调整比例、时长或 AI 配音后，原默认值不能继续显示。提交后的乐观“已确认”状态沿用本次提交值；收到服务端确认消息后再以服务端 `summary_fields` / `video_parameters` 为准。上传探测到普通音轨不等于有效口播，前端不得据此提前显示“保留原声”。
+
 新视频计划公开投影包含 `metadata.video_plan.video_parameters`，字段限定为 `schema_version`、比例及来源、时长及来源、AI 配音及声音来源、TTS 能力事实、`recommendation_mode` 和 `confirmed`；内部探测路径或 Provider 凭证不得透出。旧卡片缺少新增字段时继续按旧比例/时长契约读取，不追溯补值。
 
 第二道位于编导稿生成后。编导稿草稿（`video_workflow_stage == "director_script_draft"`）的 assistant 消息 `metadata` 挂载原有 `plan` 对象：
@@ -849,6 +851,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 ```
 
 - 后端校验当前发布 candidate 绑定后，才异步发布并渲染一个下一候选；陈旧 ID、没有未发布候选或重复请求不得回放当前方案伪装新版本。成功结果进入普通版本历史，可撤销、恢复。
+- 运行时间线中活动阶段的“用时”从该阶段最新 `occurred_at` 计算；整项任务总耗时只有在明确展示总时长的组件中才从 job `started_at` 计算。断连恢复不得把历史等待时间显示成当前阶段耗时。
 - 口播识别以 `metadata.video_plan.video_type == "presenter"` 为准，不读取顶层同名兼容字段。
 - Agent 修改已有口播文案时，`video.presenter.edit` 的 `correct_verbatim` 必须包含 `spoken_script_resolution=screen_text_only|ai_voice|reupload_recording`。缺失选择由 Agent 追问；AI 配音不可用或新录音尚未上传时不修改稳定工程。
 

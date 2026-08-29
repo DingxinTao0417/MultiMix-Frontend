@@ -114,6 +114,8 @@ const clearedExternalEnv = {
   MULTIMIX_OPENAI_API_KEY: "",
   OPENAI_API_KEY: "",
   ELEVENLABS_API_KEY: "",
+  MULTIMIX_TTS_PROVIDER: "",
+  MULTIMIX_TTS_API_KEY: "",
   PEXELS_API_KEY: "",
   PIXABAY_API_KEY: "",
 };
