@@ -52,7 +52,11 @@ export default function ConfirmCard({
 }) {
   const ratioOptions = plan.ratioOptions ?? [];
   const [selectedRatio, setSelectedRatio] = useState(
-    () => plan.ratioDefault ?? ratioOptions[0]?.value ?? ""
+    () => plan.ratioDefault ?? (plan.ratioConfirmationRequired ? "" : ratioOptions[0]?.value ?? "")
+  );
+  const voiceOptions = plan.voiceOptions ?? [];
+  const [selectedAiVoice, setSelectedAiVoice] = useState<boolean | undefined>(
+    () => plan.voiceDefault,
   );
   const [targetSeconds, setTargetSeconds] = useState(
     () => plan.durationSeconds ?? 30
@@ -77,6 +81,10 @@ export default function ConfirmCard({
   const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
   const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
   const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
+  const isSingleWinnerRecommendation = plan.recommendationMode === "single_winner";
+  const voiceBlocked = isVideoParameterConfirmation
+    && selectedAiVoice === true
+    && plan.ttsAvailable === false;
   const durationMin = plan.durationMin ?? 5;
   const durationMax = plan.durationMax ?? 600;
 
@@ -174,20 +182,15 @@ export default function ConfirmCard({
         </div>
       ) : null}
       {directionOptions.length ? (
-        <div className="shadcn-prototype-confirm-directions" role="radiogroup" aria-label="口播导演方向">
+        <div
+          className="shadcn-prototype-confirm-directions"
+          {...(!isSingleWinnerRecommendation ? { role: "radiogroup", "aria-label": "口播导演方向" } : {})}
+        >
           <span className="shadcn-prototype-confirm-ratio-label">导演方向与动态样片</span>
           <div className="shadcn-prototype-confirm-direction-options">
-            {directionOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={option.id === selectedDirection}
-                aria-label={`${option.label}${option.recommended ? "（推荐）" : ""}`}
-                className={option.id === selectedDirection ? "active" : undefined}
-                disabled={disabled}
-                onClick={() => setSelectedDirection(option.id)}
-              >
+            {(isSingleWinnerRecommendation ? directionOptions.slice(0, 1) : directionOptions).map((option) => {
+              const content = (
+                <>
                 <video
                   aria-label="方向动态样片"
                   src={option.sampleUrl}
@@ -201,8 +204,27 @@ export default function ConfirmCard({
                   <span>{option.concept}</span>
                   <small>{option.reason}</small>
                 </span>
-              </button>
-            ))}
+                </>
+              );
+              return isSingleWinnerRecommendation ? (
+                <article key={option.id} className="active" aria-label={`${option.label}（推荐方案）`}>
+                  {content}
+                </article>
+              ) : (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={option.id === selectedDirection}
+                  aria-label={`${option.label}${option.recommended ? "（推荐）" : ""}`}
+                  className={option.id === selectedDirection ? "active" : undefined}
+                  disabled={disabled}
+                  onClick={() => setSelectedDirection(option.id)}
+                >
+                  {content}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : null}
@@ -225,6 +247,31 @@ export default function ConfirmCard({
             ))}
           </div>
         </div>
+      ) : null}
+      {voiceOptions.length ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="AI 配音">
+          <span className="shadcn-prototype-confirm-ratio-label">AI 配音</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {voiceOptions.map((option) => (
+              <button
+                key={String(option.value)}
+                type="button"
+                role="radio"
+                aria-checked={option.value === selectedAiVoice}
+                className={option.value === selectedAiVoice ? "active" : undefined}
+                disabled={disabled}
+                onClick={() => setSelectedAiVoice(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {voiceBlocked ? (
+        <p role="alert" className="shadcn-prototype-confirm-warning">
+          AI 配音当前不可用。你可以关闭配音继续，系统不会生成半成品。
+        </p>
       ) : null}
       {subtitleOptions.length ? (
         <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="字幕语言">
@@ -264,7 +311,14 @@ export default function ConfirmCard({
         <button
           type="button"
           className="shadcn-prototype-confirm-primary"
-          disabled={disabled || !onConfirm || Boolean(plan.requiresClarification)}
+          disabled={
+            disabled
+            || !onConfirm
+            || Boolean(plan.requiresClarification)
+            || (isVideoParameterConfirmation && plan.ratioConfirmationRequired === true && !selectedRatio)
+            || (isVideoParameterConfirmation && voiceOptions.length > 0 && selectedAiVoice === undefined)
+            || voiceBlocked
+          }
           onClick={() => {
             if (isPresenterAudioSelectionConfirmation) {
               const selectedTrack = audioTrackOptions.find(
@@ -304,6 +358,7 @@ export default function ConfirmCard({
               ? {
                   ratio: selectedRatio,
                   targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
+                  aiVoiceEnabled: selectedAiVoice,
                 }
               : ratioOptions.length
                 ? {

@@ -6,6 +6,7 @@ import type {
   AssetProduct,
   AssetPresenterAudioSelectionConfirmation,
   AssetPresenterDirectionConfirmation,
+  AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
@@ -278,6 +279,7 @@ export function buildConversationMessagePayload({
   longFormAction,
   videoSceneReplacement,
   presenterDirectionConfirmation,
+  presenterDirectionRequest,
   presenterCleanupConfirmation,
   presenterAudioSelectionConfirmation,
   sourceSubtitleMode,
@@ -292,6 +294,7 @@ export function buildConversationMessagePayload({
   longFormAction?: AssetLongFormAction;
   videoSceneReplacement?: AssetVideoSceneReplacement;
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+  presenterDirectionRequest?: AssetPresenterDirectionRequest;
   presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
   presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -333,6 +336,11 @@ export function buildConversationMessagePayload({
         ...(presenterDirectionConfirmation.targetSeconds ? { target_seconds: presenterDirectionConfirmation.targetSeconds } : {}),
       },
     } : {}),
+    ...(presenterDirectionRequest ? {
+      presenter_direction_request: {
+        current_candidate_id: presenterDirectionRequest.currentCandidateId,
+      },
+    } : {}),
     ...(presenterCleanupConfirmation ? {
       presenter_cleanup_confirmation: {
         cleanup_plan_id: presenterCleanupConfirmation.cleanupPlanId,
@@ -357,6 +365,9 @@ export function buildConversationMessagePayload({
         version: videoParameterConfirmation.version,
         ratio: videoParameterConfirmation.ratio,
         target_seconds: videoParameterConfirmation.targetSeconds,
+        ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
+          ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
+          : {}),
       },
     } : {}),
   };
@@ -373,6 +384,9 @@ export function buildVideoParameterConfirmationHeaders(
     version: confirmation.version,
     ratio: confirmation.ratio,
     target_seconds: confirmation.targetSeconds,
+    ...(typeof confirmation.aiVoiceEnabled === "boolean"
+      ? { ai_voice_enabled: confirmation.aiVoiceEnabled }
+      : {}),
   };
   return {
     [VIDEO_PARAMETER_CONFIRMATION_HEADER]: `v1.${encodeURIComponent(JSON.stringify(payload))}`,
@@ -491,6 +505,7 @@ export type AssetWorkspaceAdapter = {
     longFormAction?: AssetLongFormAction;
     videoSceneReplacement?: AssetVideoSceneReplacement;
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+    presenterDirectionRequest?: AssetPresenterDirectionRequest;
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -1152,12 +1167,13 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       longFormAction,
       videoSceneReplacement,
       presenterDirectionConfirmation,
+      presenterDirectionRequest,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
       sourceSubtitleMode,
       signal,
     }) {
-      if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1178,6 +1194,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           longFormAction,
           videoSceneReplacement,
           presenterDirectionConfirmation,
+          presenterDirectionRequest,
           presenterCleanupConfirmation,
           presenterAudioSelectionConfirmation,
           sourceSubtitleMode,

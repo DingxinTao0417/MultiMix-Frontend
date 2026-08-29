@@ -29,6 +29,7 @@ import type {
   AssetPlanConfirmationValues,
   AssetPresenterAudioSelectionConfirmation,
   AssetPresenterDirectionConfirmation,
+  AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
@@ -277,6 +278,7 @@ export default function ConversationStudio({
     longFormAction?: AssetLongFormAction,
     videoSceneReplacement?: AssetVideoSceneReplacement,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
@@ -407,6 +409,7 @@ export default function ConversationStudio({
     agentConfirmationId?: string,
     videoSceneReplacement?: AssetVideoSceneReplacement,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
@@ -460,6 +463,7 @@ export default function ConversationStudio({
         undefined,
         videoSceneReplacement,
         presenterDirectionConfirmation,
+        presenterDirectionRequest,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         confirmationProductId,
@@ -521,17 +525,23 @@ export default function ConversationStudio({
       && values.sourceSubtitleMode !== plan.subtitleDefault
       ? values.sourceSubtitleMode
       : undefined;
+    const voiceChoiceRequired = (plan.voiceOptions?.length ?? 0) > 0;
+    const voiceChoiceValid = !voiceChoiceRequired || typeof values?.aiVoiceEnabled === "boolean";
     const videoParameterConfirmation = (
       isVideoParameterConfirmation
       && plan.pendingIntentId
       && plan.pendingIntentVersion
       && ratio
       && values?.targetSeconds
+      && voiceChoiceValid
     ) ? {
         pendingIntentId: plan.pendingIntentId,
         version: plan.pendingIntentVersion,
         ratio,
         targetSeconds: values.targetSeconds,
+        ...(typeof values.aiVoiceEnabled === "boolean"
+          ? { aiVoiceEnabled: values.aiVoiceEnabled }
+          : {}),
       } : undefined;
     if (isVideoParameterConfirmation && !videoParameterConfirmation) {
       setSendError("视频参数确认信息不完整，请刷新后重试。");
@@ -615,6 +625,7 @@ export default function ConversationStudio({
             ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
           }
         : undefined,
+      undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
        plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
@@ -625,7 +636,31 @@ export default function ConversationStudio({
     }
   };
 
-  const handleAdjustPlan = (plan: AssetMessagePlan) => {
+  const handleAdjustPlan = (plan: AssetMessagePlan, confirmationProductId?: number) => {
+    if (
+      plan.recommendationMode === "single_winner"
+      && plan.directionDefault
+      && confirmationProductId
+    ) {
+      void sendInstruction(
+        "换个方向",
+        {
+          assistantText: "正在准备下一个推荐方向。",
+          presentation: "execution_anchor",
+          confirmationPlanKey: confirmationPlanKey(plan),
+        },
+        globalThis.crypto.randomUUID(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { currentCandidateId: plan.directionDefault },
+        undefined,
+        undefined,
+        confirmationProductId,
+      );
+      return;
+    }
     // A custom adjust label seeds the composer; the default "调整方向" carries no
     // instruction, so we show a guiding placeholder instead of an empty box —
     // otherwise the click just silently focuses and reads as a dead button.
@@ -660,6 +695,7 @@ export default function ConversationStudio({
           undefined,
           undefined,
           detail?.videoSceneReplacement,
+          undefined,
           undefined,
           undefined,
           undefined,
@@ -892,7 +928,7 @@ export default function ConversationStudio({
                       : undefined
                   }
                   onConfirm={(plan, values) => void handleConfirmPlan(plan, values, message.assetId ?? undefined)}
-                  onAdjust={(plan) => handleAdjustPlan(plan)}
+                  onAdjust={(plan) => handleAdjustPlan(plan, message.assetId ?? undefined)}
                 />
               ) : null}
               {timelineSteps.length ? (

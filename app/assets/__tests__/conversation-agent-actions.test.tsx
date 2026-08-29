@@ -177,8 +177,8 @@ describe("Conversation Agent actions", () => {
     await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
     expect(onSendMessage.mock.calls[0]?.[1]).toBe("确认，生成视频工程（横屏 16:9）");
     expect(onSendMessage.mock.calls[0]?.[5]).toBeUndefined();
-    expect(onSendMessage.mock.calls[0]?.[12]).toBe(1194);
-    expect(onSendMessage.mock.calls[0]?.[13]).toBeUndefined();
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe(1194);
+    expect(onSendMessage.mock.calls[0]?.[14]).toBeUndefined();
   });
 
   it("submits an explicit source subtitle choice on the initial video confirmation", async () => {
@@ -223,8 +223,55 @@ describe("Conversation Agent actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
 
     await waitFor(() => expect(onSendMessage).toHaveBeenCalled());
-    expect(onSendMessage.mock.calls[0]?.[12]).toBe(1298);
-    expect(onSendMessage.mock.calls[0]?.[13]).toBe("source");
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe(1298);
+    expect(onSendMessage.mock.calls[0]?.[14]).toBe("source");
+  });
+
+  it("keeps legacy video-parameter cards confirmable without backfilling an AI voice choice", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "video_parameter_confirmation",
+      title: "确认视频参数",
+      status: "pending",
+      fields: [
+        { key: "ratio", label: "视频比例", value: "横屏 16:9（默认）" },
+        { key: "duration", label: "目标时长", value: "30 秒（默认）" },
+      ],
+      confirmLabel: "确认参数并生成编导稿",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }],
+      ratioDefault: "16:9",
+      durationSeconds: 30,
+      durationMin: 5,
+      durationMax: 120,
+      pendingIntentId: "legacy-pending",
+      pendingIntentVersion: 4,
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-legacy-video-parameters",
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认。", plan }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[5]).toEqual({
+      pendingIntentId: "legacy-pending",
+      version: 4,
+      ratio: "16:9",
+      targetSeconds: 30,
+    });
   });
 
   it("does not expose an unbound generic confirmation while Presenter cleanup is pending", async () => {
@@ -300,7 +347,7 @@ describe("Conversation Agent actions", () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
-    expect(onSendMessage.mock.calls[0]?.[10]).toEqual({
+    expect(onSendMessage.mock.calls[0]?.[11]).toEqual({
       cleanupPlanId: "cleanup-current",
       cleanupPlanHash: "a".repeat(64),
       selectedCandidateIds: ["cleanup-item-1"],
@@ -308,5 +355,59 @@ describe("Conversation Agent actions", () => {
       confirmProtectedOverride: false,
       audioStreamIndex: 1,
     });
+  });
+
+  it("requests the next Presenter direction only after the explicit single-winner action", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "presenter_project_confirmation",
+      title: "口播型方案",
+      status: "pending",
+      fields: [{ key: "directions", label: "导演方向", value: "系统推荐 1 个方案" }],
+      confirmLabel: "确认推荐方案并生成视频",
+      adjustLabel: "换个方向",
+      directionOptions: [{
+        id: "direction-a",
+        label: "推荐方向",
+        concept: "人物主导",
+        reason: "主体清晰",
+        recommended: true,
+        sampleUrl: "/preview/a.mp4",
+        durationSeconds: 2.5,
+      }],
+      directionDefault: "direction-a",
+      recommendationMode: "single_winner",
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-presenter-direction",
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: "请确认推荐方案。",
+        assetId: 1501,
+        plan,
+      }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "换个方向" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[1]).toBe("换个方向");
+    expect(onSendMessage.mock.calls[0]?.[10]).toEqual({
+      currentCandidateId: "direction-a",
+    });
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe(1501);
   });
 });

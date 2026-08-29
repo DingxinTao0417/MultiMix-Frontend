@@ -19,6 +19,7 @@ import type {
   AssetPresenterAudioTrackOption,
   AssetPresenterVisualEvent,
   AssetPlanRatioOption,
+  AssetPlanVoiceOption,
   AssetPlanRef,
   AssetProduct,
   AssetProductMode,
@@ -231,6 +232,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
   const summaryFields = planFieldsValue(value.summary_fields);
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
+  const voiceOptions = planVoiceOptionsValue(value.voice_options);
   const directionOptions = planDirectionOptionsValue(value.direction_options);
   const cleanupItems = planCleanupItemsValue(value.cleanup_items);
   const audioTrackOptions = planAudioTrackOptionsValue(value.audio_track_options);
@@ -257,6 +259,14 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     confirmUtterance: stringValue(value.confirm_utterance) || undefined,
     ratioOptions: ratioOptions.length ? ratioOptions : undefined,
     ratioDefault: stringValue(value.ratio_default) || undefined,
+    ratioConfirmationRequired: value.ratio_confirmation_required === true,
+    voiceOptions: voiceOptions.length ? voiceOptions : undefined,
+    voiceDefault: typeof value.voice_default === "boolean" ? value.voice_default : undefined,
+    ttsAvailable: typeof value.tts_available === "boolean" ? value.tts_available : undefined,
+    voiceBlockedUntilDisabled: value.voice_blocked_until_disabled === true,
+    recommendationMode: value.recommendation_mode === "single_winner"
+      ? "single_winner"
+      : undefined,
     durationSeconds: positiveIntegerValue(value.duration_seconds),
     durationMin: positiveIntegerValue(value.duration_min),
     durationMax: positiveIntegerValue(value.duration_max),
@@ -388,6 +398,16 @@ function planRatioOptionsValue(value: unknown): AssetPlanRatioOption[] {
     const label = stringValue(item.label);
     if (!ratioValue || !label) return [];
     return [{ value: ratioValue, label }];
+  });
+}
+
+function planVoiceOptionsValue(value: unknown): AssetPlanVoiceOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item): AssetPlanVoiceOption[] => {
+    if (!isRecord(item) || typeof item.value !== "boolean") return [];
+    const label = stringValue(item.label);
+    if (!label) return [];
+    return [{ value: item.value, label }];
   });
 }
 

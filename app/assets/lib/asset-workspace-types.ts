@@ -222,6 +222,7 @@ export type AssetVideoParameterConfirmation = {
   version: number;
   ratio: string;
   targetSeconds: number;
+  aiVoiceEnabled?: boolean;
 };
 
 export type AssetLongFormAction =
@@ -238,6 +239,7 @@ export type AssetLongFormAction =
 export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;
+  aiVoiceEnabled?: boolean;
   directorCandidateId?: string;
   cleanupCandidateIds?: string[];
   protectedOverrideCandidateIds?: string[];
@@ -258,6 +260,10 @@ export type AssetPresenterDirectionConfirmation = {
   ratio?: string;
   subtitleMode?: "translated_zh" | "source" | "bilingual";
   targetSeconds?: number;
+};
+
+export type AssetPresenterDirectionRequest = {
+  currentCandidateId: string;
 };
 
 export type AssetPresenterCleanupConfirmation = {
@@ -295,6 +301,12 @@ export type AssetMessagePlan = {
   // ratio is woven into the confirm instruction so the backend can honor it.
   ratioOptions?: AssetPlanRatioOption[];
   ratioDefault?: string;
+  ratioConfirmationRequired?: boolean;
+  voiceOptions?: AssetPlanVoiceOption[];
+  voiceDefault?: boolean;
+  ttsAvailable?: boolean;
+  voiceBlockedUntilDisabled?: boolean;
+  recommendationMode?: "single_winner";
   durationSeconds?: number;
   durationMin?: number;
   durationMax?: number;
@@ -356,6 +368,11 @@ export type AssetPlanRatioOption = {
   // Canonical ratio the backend parses ("9:16" | "16:9" | "1:1").
   value: string;
   // Merchant-facing chip label, e.g. "横屏 16:9".
+  label: string;
+};
+
+export type AssetPlanVoiceOption = {
+  value: boolean;
   label: string;
 };
 

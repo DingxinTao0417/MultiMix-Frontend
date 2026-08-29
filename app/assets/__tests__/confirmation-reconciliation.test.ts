@@ -36,6 +36,7 @@ describe("video confirmation transport reconciliation", () => {
         version: 1,
         ratio: "9:16",
         targetSeconds: 45,
+        aiVoiceEnabled: true,
       },
     });
 
@@ -44,6 +45,7 @@ describe("video confirmation transport reconciliation", () => {
       version: 1,
       ratio: "9:16",
       target_seconds: 45,
+      ai_voice_enabled: true,
     });
   });
 
@@ -53,12 +55,14 @@ describe("video confirmation transport reconciliation", () => {
       version: 1,
       ratio: "9:16",
       targetSeconds: 45,
+      aiVoiceEnabled: false,
     })).toEqual({
       "X-MultiMix-Video-Parameter-Confirmation": `v1.${encodeURIComponent(JSON.stringify({
         pending_intent_id: "pending-1",
         version: 1,
         ratio: "9:16",
         target_seconds: 45,
+        ai_voice_enabled: false,
       }))}`,
     });
   });

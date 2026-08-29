@@ -58,6 +58,12 @@ describe("ConfirmCard pending state", () => {
         { value: "9:16", label: "竖屏 9:16" },
       ],
       ratioDefault: "16:9",
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: true,
       durationSeconds: 30,
       durationMin: 5,
       durationMax: 120,
@@ -70,16 +76,18 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("横屏 16:9（默认）")).toBeTruthy();
     expect(screen.getByDisplayValue("30")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
+    fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
     fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       ratio: "9:16",
       targetSeconds: 45,
+      aiVoiceEnabled: false,
     });
   });
 
-  it("compares presenter direction samples and submits one explicit direction", () => {
+  it("shows only the published presenter recommendation and submits it", () => {
     const onConfirm = vi.fn();
     const plan = {
       kind: "presenter_project_confirmation" as const,
@@ -88,7 +96,9 @@ describe("ConfirmCard pending state", () => {
       fields: [
         { key: "source_edit", label: "原话与删剪", value: "保留 42 秒 · 删除 1 段" },
       ],
-      confirmLabel: "选择方向并生成视频",
+      confirmLabel: "确认推荐方案并生成视频",
+      adjustLabel: "换个方向",
+      recommendationMode: "single_winner" as const,
       ratioOptions: [
         { value: "9:16", label: "竖屏 9:16" },
         { value: "16:9", label: "横屏 16:9" },
@@ -114,15 +124,6 @@ describe("ConfirmCard pending state", () => {
           sampleUrl: "/samples/a.mp4",
           durationSeconds: 8,
         },
-        {
-          id: "direction-b",
-          label: "产品演示交替",
-          concept: "人物与产品录屏交替解释",
-          reason: "适合更强的产品操作说明",
-          recommended: false,
-          sampleUrl: "/samples/b.mp4",
-          durationSeconds: 8,
-        },
       ],
     };
 
@@ -130,18 +131,63 @@ describe("ConfirmCard pending state", () => {
 
     expect(screen.getByText("推荐")).toBeTruthy();
     expect(screen.getByText("人物建立信任，证据短时接管")).toBeTruthy();
-    expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("radio", { name: /产品演示交替/ }));
+    expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(1);
+    expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));
     fireEvent.click(screen.getByRole("radio", { name: "中英双语" }));
     fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "43" } });
-    fireEvent.click(screen.getByRole("button", { name: "选择方向并生成视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认推荐方案并生成视频" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       ratio: "16:9",
       targetSeconds: 43,
-      directorCandidateId: "direction-b",
+      directorCandidateId: "direction-a",
       sourceSubtitleMode: "bilingual",
+    });
+  });
+
+  it("requires a ratio choice and blocks unavailable default AI voice", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "video_parameter_confirmation" as const,
+      title: "确认视频参数",
+      status: "pending" as const,
+      fields: [
+        { key: "ratio", label: "视频比例", value: "需要你选择" },
+        { key: "ai_voice", label: "AI 配音", value: "开启（默认）" },
+      ],
+      confirmLabel: "确认参数并生成编导稿",
+      ratioOptions: [
+        { value: "16:9", label: "横屏 16:9" },
+        { value: "9:16", label: "竖屏 9:16" },
+      ],
+      ratioConfirmationRequired: true,
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: false,
+      voiceBlockedUntilDisabled: true,
+      durationSeconds: 30,
+      pendingIntentId: "pending-conflict",
+      pendingIntentVersion: 1,
+    };
+
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("alert").textContent).toContain("AI 配音当前不可用");
+    expect(
+      screen.getByRole("button", { name: "确认参数并生成编导稿" }).hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
+    fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      ratio: "9:16",
+      targetSeconds: 30,
+      aiVoiceEnabled: false,
     });
   });
 

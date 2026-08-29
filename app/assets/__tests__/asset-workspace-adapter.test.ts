@@ -255,6 +255,22 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("direction-b");
   });
 
+  it("requests a new presenter version only through the structured next-direction contract", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-presenter",
+      instruction: "换个方向",
+      selectedProductId: 92,
+      presenterDirectionRequest: {
+        currentCandidateId: "direction-a",
+      },
+    });
+
+    expect(payload.presenter_direction_request).toEqual({
+      current_candidate_id: "direction-a",
+    });
+    expect(payload.instruction).not.toContain("direction-a");
+  });
+
   it("serializes presenter audio selection with exact track bindings", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

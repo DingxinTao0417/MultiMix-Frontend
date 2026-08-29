@@ -340,6 +340,15 @@ describe("asset product mapper", () => {
             title: "确认视频参数",
             status: "pending",
             fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+            ratio_confirmation_required: true,
+            voice_options: [
+              { value: true, label: "生成 AI 配音" },
+              { value: false, label: "不生成 AI 配音" },
+            ],
+            voice_default: true,
+            tts_available: false,
+            voice_blocked_until_disabled: true,
+            recommendation_mode: "single_winner",
           },
         },
         created_at: "2026-08-20T00:00:01Z",
@@ -353,6 +362,15 @@ describe("asset product mapper", () => {
     expect(conversation.messages?.[1]?.plan).toMatchObject({
       kind: "video_parameter_confirmation",
       status: "pending",
+      ratioConfirmationRequired: true,
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: false,
+      voiceBlockedUntilDisabled: true,
+      recommendationMode: "single_winner",
     });
   });
 
@@ -1672,6 +1690,7 @@ describe("message plan mapping", () => {
               status: "pending",
               fields: [{ key: "source_edit", label: "原话与删剪", value: "保留 42 秒" }],
               direction_default: "direction-a",
+              recommendation_mode: "single_winner",
               direction_options: [{
                 id: "direction-a",
                 label: "观点与证据交替",
@@ -1691,6 +1710,7 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan).toMatchObject({
       kind: "presenter_project_confirmation",
       directionDefault: "direction-a",
+      recommendationMode: "single_winner",
       directionOptions: [{
         id: "direction-a",
         recommended: true,
