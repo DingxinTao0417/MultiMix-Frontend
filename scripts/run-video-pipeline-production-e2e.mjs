@@ -220,7 +220,7 @@ const sourceDocumentFingerprint = inputProfile === "explainer_saved_library_simp
   : fingerprintFile(sourceDocument);
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
 if (expectedVideoType === "source_excerpt") expectBgm = false;
-const twoStageEnabled = true;
+const twoStageEnabled = expectedVideoType !== "presenter";
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || inputProfile === "explainer_public_broll";
 const defaultDemonstrationMedia = [
@@ -398,13 +398,18 @@ async function checkpointRemoteArtifactWrites(backendEnv) {
     "entries = {str(item.get('ref') or ''): item for item in existing['entries'] if isinstance(item, dict) and item.get('ref')}",
     "store = ArtifactStore(Settings(_env_file=None))",
     "for ref in refs:",
-    "  data = store.get_bytes(ref)",
-    "  stat = store.stat(ref)",
-    "  digest = hashlib.sha256(data).hexdigest()",
     "  relative_path = f'objects/{hashlib.sha256(ref.encode(\"utf-8\")).hexdigest()}.bin'",
     "  target = (root / relative_path).resolve()",
     "  if root not in target.parents: raise RuntimeError('remote artifact checkpoint path escaped its cache directory')",
     "  current = entries.get(ref)",
+    "  if current and target.is_file():",
+    "   if current.get('relative_path') != relative_path: raise RuntimeError('remote artifact checkpoint digest changed')",
+    "   cached = target.read_bytes()",
+    "   if len(cached) != int(current.get('size_bytes') or -1) or hashlib.sha256(cached).hexdigest() != str(current.get('sha256') or '').casefold(): raise RuntimeError('remote artifact checkpoint digest changed')",
+    "   continue",
+    "  data = store.get_bytes(ref)",
+    "  stat = store.stat(ref)",
+    "  digest = hashlib.sha256(data).hexdigest()",
     "  candidate = {'ref': ref, 'relative_path': relative_path, 'size_bytes': len(data), 'sha256': digest, 'content_type': str(stat.content_type or 'application/octet-stream').split(';', 1)[0].strip().lower()}",
     "  if current and any(current.get(key) != candidate[key] for key in candidate): raise RuntimeError('remote artifact checkpoint digest changed')",
     "  if target.is_file():",
@@ -421,12 +426,22 @@ async function checkpointRemoteArtifactWrites(backendEnv) {
     "temporary_manifest.replace(manifest_path)",
     "print(json.dumps({'entry_count': len(entries), 'new_refs': len(refs)}))",
   ].join("\n");
-  await run(pythonCommand, ["-c", checkpointScript, checkpointRoot], {
-    cwd: backendRoot,
-    env: backendEnv,
-    stdout: process.stdout,
-    stderr: process.stderr,
-  });
+  const checkpointAttempts = 3;
+  for (let attempt = 1; attempt <= checkpointAttempts; attempt += 1) {
+    try {
+      await run(pythonCommand, ["-c", checkpointScript, checkpointRoot], {
+        cwd: backendRoot,
+        env: backendEnv,
+        stdout: process.stdout,
+        stderr: process.stderr,
+      });
+      return;
+    } catch (error) {
+      if (attempt === checkpointAttempts) throw error;
+      console.warn(`checkpoint remote artifacts attempt ${attempt} failed; retrying`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+    }
+  }
 }
 
 async function restoreCheckpointedRemoteArtifacts(backendEnv) {
@@ -539,6 +554,17 @@ function configuredInputFingerprints(raw) {
       .map(fingerprintFile);
   } catch {
     return [];
+  }
+}
+
+function configuredInputIncludesVideo(raw) {
+  if (!raw) return false;
+  try {
+    const values = JSON.parse(raw);
+    return Array.isArray(values)
+      && values.some((value) => path.extname(String(value?.path ?? "")).toLowerCase() === ".mp4");
+  } catch {
+    return false;
   }
 }
 
@@ -1116,7 +1142,7 @@ async function readRetainedExportSeed(backendEnv) {
     " plan=dict(metadata.get('video_plan') or {})",
     " scenes=[item for item in (plan.get('scenes') or []) if isinstance(item, dict)]",
     " assert scenes, 'retained export requires project scenes'",
-    " result={'email': user.email, 'conversationId': conversation.public_id, 'projectAssetId': asset.id, 'videoJobId': job.public_id, 'expectedSceneCount': len(scenes)}",
+    " result={'email': user.email, 'conversationId': conversation.public_id, 'projectAssetId': asset.id, 'videoJobId': job.public_id, 'expectedSceneCount': len(scenes), 'videoType': plan.get('video_type')}",
     "print(json.dumps(result, ensure_ascii=False))",
   ].join("\n");
   const { stdout } = await run(pythonCommand, ["-c", script], {
@@ -1124,6 +1150,9 @@ async function readRetainedExportSeed(backendEnv) {
     env: backendEnv,
   });
   const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  if (seed.videoType !== expectedVideoType) {
+    throw new Error("retained export video type changed");
+  }
   fs.writeFileSync(
     path.join(resultDir, "retained-export-seed.json"),
     `${JSON.stringify(seed, null, 2)}\n`,
@@ -1364,7 +1393,8 @@ try {
     }, null, 2));
   }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
-  const sourceExcerptRemoteStorage = expectedVideoType === "source_excerpt";
+  const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"
+    || configuredInputIncludesVideo(demonstrationMediaFiles);
   const remoteWriteLedgerPath = path.join(lifecycle.runDir, "remote-artifact-writes.ndjson");
   const backendEnv = {
     ...process.env,
@@ -1374,31 +1404,31 @@ try {
     MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
     MULTIMIX_DATABASE_URL: databaseUrl,
     MULTIMIX_ARTIFACT_DIR: artifactDir,
-    MULTIMIX_SUPABASE_URL: sourceExcerptRemoteStorage
+    MULTIMIX_SUPABASE_URL: usesRemoteArtifactStorage
       ? (canonicalEnv.MULTIMIX_SUPABASE_URL ?? canonicalEnv.SUPABASE_URL ?? "")
       : "",
     MULTIMIX_SUPABASE_PUBLISHABLE_KEY: "",
     MULTIMIX_SUPABASE_ANON_KEY: "",
-    MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: sourceExcerptRemoteStorage
+    MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: usesRemoteArtifactStorage
       ? (canonicalEnv.MULTIMIX_SUPABASE_SERVICE_ROLE_KEY ?? canonicalEnv.SUPABASE_SERVICE_ROLE_KEY ?? "")
       : "",
     SUPABASE_URL: "",
     SUPABASE_ANON_KEY: "",
     SUPABASE_SERVICE_ROLE_KEY: "",
-    MULTIMIX_S3_ENDPOINT_URL: sourceExcerptRemoteStorage
+    MULTIMIX_S3_ENDPOINT_URL: usesRemoteArtifactStorage
       ? (canonicalEnv.MULTIMIX_S3_ENDPOINT_URL ?? "")
       : "",
-    MULTIMIX_S3_ACCESS_KEY: sourceExcerptRemoteStorage
+    MULTIMIX_S3_ACCESS_KEY: usesRemoteArtifactStorage
       ? (canonicalEnv.MULTIMIX_S3_ACCESS_KEY ?? "")
       : "",
-    MULTIMIX_S3_SECRET_KEY: sourceExcerptRemoteStorage
+    MULTIMIX_S3_SECRET_KEY: usesRemoteArtifactStorage
       ? (canonicalEnv.MULTIMIX_S3_SECRET_KEY ?? "")
       : "",
     MULTIMIX_S3_BUCKET: canonicalEnv.MULTIMIX_S3_BUCKET ?? "multimix-artifacts",
-    MULTIMIX_ARTIFACT_KEY_PREFIX: sourceExcerptRemoteStorage
+    MULTIMIX_ARTIFACT_KEY_PREFIX: usesRemoteArtifactStorage
       ? `e2e/video-pipeline-production/${runId}`
       : "",
-    ...(sourceExcerptRemoteStorage
+    ...(usesRemoteArtifactStorage
       ? { MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH: remoteWriteLedgerPath }
       : {}),
     MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
@@ -1426,7 +1456,7 @@ try {
     MULTIMIX_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
     MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
   };
-  if (!sourceExcerptRemoteStorage) delete backendEnv.MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH;
+  if (!usesRemoteArtifactStorage) delete backendEnv.MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH;
   decisionAuditEnv = backendEnv;
   const nextDistDir = `.next-video-pipeline-${runId}`;
   const frontendEnv = {

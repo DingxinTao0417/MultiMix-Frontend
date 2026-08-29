@@ -22,7 +22,7 @@ const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const timingPath = process.env.VIDEO_PIPELINE_TIMING_PATH;
 
-type ActiveVideoType = "explainer" | "demonstration" | "source_excerpt";
+type ActiveVideoType = "explainer" | "demonstration" | "source_excerpt" | "presenter";
 
 function loadActiveVideoTypes(): string[] {
   const activationPath = path.resolve(
@@ -50,6 +50,7 @@ const supportedVideoTypes = new Set<ActiveVideoType>([
   "explainer",
   "demonstration",
   "source_excerpt",
+  "presenter",
 ]);
 if (!supportedVideoTypes.has(configuredVideoType as ActiveVideoType)) {
   throw new Error(`Unsupported production E2E video type: ${configuredVideoType}`);
@@ -203,6 +204,9 @@ let expectedSceneCount = Number(
 const videoJobTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
 );
+const mediaUploadTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS ?? 3 * 60_000,
+);
 if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) {
   throw new Error("VIDEO_PIPELINE_TARGET_SECONDS must be a positive number");
 }
@@ -211,6 +215,9 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 }
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
+}
+if (!Number.isInteger(mediaUploadTimeoutMs) || mediaUploadTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS must be a positive integer");
 }
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 const requirePublicAsset =
@@ -269,6 +276,7 @@ type VideoProject = {
   tracks?: Array<{
     id?: string;
     type?: string;
+    name?: string;
     overlay?: boolean;
     elements?: Array<{
       id?: string;
@@ -499,9 +507,13 @@ async function confirmVideoParametersIfRequired(
     const directDraftButton = page.getByRole("button", {
       name: "直接起草通用版",
     });
+    const requestDirectorDraftButton = page.getByRole("button", {
+      name: "生成编导稿",
+      exact: true,
+    });
 
     for (let step = 0; step < 2 && !payload.generation_job?.id; step += 1) {
-    let action: "direct-draft" | "confirm-parameters" | null = null;
+    let action: "direct-draft" | "request-director-draft" | "confirm-parameters" | null = null;
     await expect
       .poll(
         async () => {
@@ -509,15 +521,27 @@ async function confirmVideoParametersIfRequired(
             action = "direct-draft";
           } else if (await confirmButton.isVisible().catch(() => false)) {
             action = "confirm-parameters";
+          } else if (await requestDirectorDraftButton.isVisible().catch(() => false)) {
+            action = "request-director-draft";
           }
           return action;
         },
         { timeout: 30_000 },
       )
       .not.toBeNull();
-    const button = action === "direct-draft" ? directDraftButton : confirmButton;
+    const button = action === "direct-draft"
+      ? directDraftButton
+      : action === "request-director-draft"
+        ? requestDirectorDraftButton
+        : confirmButton;
     await expect(button).toBeEnabled();
-    if (action === "direct-draft") {
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/v1/assets/conversations/messages"),
+      { timeout: 360_000 },
+    );
+    if (action === "direct-draft" || action === "request-director-draft") {
       if (ratio !== "16:9") {
         throw new Error(
           `video parameter confirmation was skipped for non-default ratio ${ratio}`,
@@ -525,16 +549,13 @@ async function confirmVideoParametersIfRequired(
       }
       await button.click();
       const composer = page.getByRole("textbox", { name: "输入对话内容" });
-      await expect(composer).toHaveValue("直接起草通用版");
-    }
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().includes("/v1/assets/conversations/messages"),
-      { timeout: 360_000 },
-    );
-    if (action === "direct-draft") {
-      await page.getByRole("button", { name: "发送" }).click();
+      const composerValue = await composer.inputValue();
+      if (composerValue) {
+        expect(composerValue).toBe(
+          action === "direct-draft" ? "直接起草通用版" : "生成编导稿",
+        );
+        await page.getByRole("button", { name: "发送" }).click();
+      }
     } else {
       const ratioRadio = page.getByRole("radio", {
         name: ratioAcceptance[ratio].confirmationLabel,
@@ -542,6 +563,12 @@ async function confirmVideoParametersIfRequired(
       await expect(ratioRadio).toBeVisible();
       await ratioRadio.click();
       await expect(ratioRadio).toHaveAttribute("aria-checked", "true");
+      const targetSecondsInput = page
+        .getByRole("spinbutton", { name: "目标时长（秒）" })
+        .last();
+      await expect(targetSecondsInput).toBeVisible();
+      await targetSecondsInput.fill(String(targetSeconds));
+      await expect(targetSecondsInput).toHaveValue(String(targetSeconds));
       await button.click();
     }
     const response = await responsePromise;
@@ -559,6 +586,74 @@ async function confirmVideoParametersIfRequired(
       await page.unroute(messageRoute, applyPayloadPatch);
     }
   }
+}
+
+function videoProjectConfirmationCard(page: Page) {
+  return page
+    .getByLabel("视频方案 · 待确认")
+    .or(page.getByLabel("口播型方案 · 待确认"))
+    .last();
+}
+
+async function confirmPresenterCleanupIfRequired(
+  page: Page,
+  {
+    apiBase,
+    headers,
+  }: {
+    apiBase: string;
+    headers: Record<string, string>;
+  },
+) {
+  const cleanupButton = page.getByRole("button", {
+    name: "确认清理并进入导演方案",
+  });
+  const directionCard = videoProjectConfirmationCard(page);
+  let nextStep: "cleanup" | "direction" | null = null;
+  await expect
+    .poll(
+      async () => {
+        if (await cleanupButton.isVisible().catch(() => false)) {
+          nextStep = "cleanup";
+        } else if (await directionCard.isVisible().catch(() => false)) {
+          nextStep = "direction";
+        }
+        return nextStep;
+      },
+      { timeout: 180_000 },
+    )
+    .not.toBeNull();
+  if (nextStep === "direction") return undefined;
+
+  await expect(cleanupButton).toBeEnabled();
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST"
+      && response.url().includes("/v1/assets/conversations/messages"),
+    { timeout: 360_000 },
+  );
+  await cleanupButton.click();
+  const response = await responsePromise;
+  const responseText = await response.text();
+  expect(
+    response.ok(),
+    `presenter cleanup confirmation failed: ${response.status()} ${responseText}`,
+  ).toBe(true);
+  const payload = JSON.parse(responseText) as {
+    generation_job?: { id?: string };
+  };
+  const jobId = payload.generation_job?.id;
+  expect(
+    jobId,
+    "presenter cleanup confirmation must queue a director job",
+  ).toBeTruthy();
+  return measureE2EStage("presenter_director_generation", () =>
+    waitForGenerationJob(page, {
+      apiBase,
+      headers,
+      jobId: jobId!,
+      stageLabel: "presenter director generation",
+    }));
 }
 
 async function waitForGenerationJob(
@@ -932,6 +1027,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
 
   const demonstrationLinkedAssetIds: number[] = [];
   const savedLibraryMediaAssetIds: number[] = [];
+  const savedLibraryVideoAssetIds: number[] = [];
   if (
     expectedVideoType === "demonstration"
     || inputProfile === "explainer_saved_library_simple"
@@ -965,15 +1061,16 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       const mediaResponse = await page.request.post(
         `${apiBase}/v1/assets/upload`,
         {
-        headers,
-        multipart: {
-          file: {
-            name: entry.name ?? `真实门店与过程素材${index + 1}${extension}`,
-            mimeType,
-            buffer: fs.readFileSync(mediaPath),
+          headers,
+          multipart: {
+            file: {
+              name: entry.name ?? `真实门店与过程素材${index + 1}${extension}`,
+              mimeType,
+              buffer: fs.readFileSync(mediaPath),
+            },
+            target_kind: mediaKind,
           },
-          target_kind: mediaKind,
-        },
+          timeout: mediaUploadTimeoutMs,
         },
       );
       expect(
@@ -1002,6 +1099,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         throw new Error(`demonstration source asset id is missing: index=${index + 1}`);
       }
       savedLibraryMediaAssetIds.push(mediaAsset.id);
+      if (isVideo) savedLibraryVideoAssetIds.push(mediaAsset.id);
       if (expectedVideoType === "demonstration") {
         demonstrationLinkedAssetIds.push(mediaAsset.id);
       }
@@ -1147,6 +1245,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   } finally {
     recordDirectorSubstageTimings(latestGenerationJob);
   }
+  const presenterDirectorJob = await confirmPresenterCleanupIfRequired(page, {
+    apiBase,
+    headers,
+  });
+  if (presenterDirectorJob) {
+    latestGenerationJob = presenterDirectorJob;
+    recordDirectorSubstageTimings(presenterDirectorJob);
+  }
   const narrationBlocked = page
     .getByText(/口播质检未通过|当前不能确认生成视频工程/)
     .last();
@@ -1158,7 +1264,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   // Director generation completes asynchronously.  Do not reuse the earlier
   // parameter card while the client is refreshing the completed job: the next
   // user action must be the distinct video-project confirmation card.
-  const pendingCard = page.getByLabel("视频方案 · 待确认");
+  const pendingCard = videoProjectConfirmationCard(page);
   await expect(pendingCard).toBeVisible({ timeout: 180_000 });
   const directorAssetsResponse = await page.request.get(`${apiBase}/v1/assets`, {
     headers,
@@ -1177,12 +1283,25 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const directorVideoPlan = directorAsset!.metadata?.video_plan as {
     video_type?: string;
     scenes?: SceneRow[];
+    video_parameters?: {
+      ratio?: string;
+      ratio_source?: string;
+      ratio_source_asset_id?: number | null;
+      ai_voice_enabled?: boolean;
+      voice_source?: string;
+      voice_source_asset_id?: number | null;
+      recommendation_mode?: string;
+      confirmed?: boolean;
+    };
   };
   expect(
     directorVideoPlan.video_type,
     `director selected wrong video type: expected=${expectedVideoType} actual=${directorVideoPlan.video_type ?? "missing"}`,
   ).toBe(expectedVideoType);
-  if (inputProfile === "explainer_saved_library_simple") {
+  if (
+    inputProfile === "explainer_saved_library_simple"
+    && expectedVideoType !== "presenter"
+  ) {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
     expect(
       expectedSceneCount,
@@ -1212,6 +1331,28 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       new Set(matchedSavedPrimaryMediaIds).size,
       "one saved image must not become the primary visual of multiple scenes",
     ).toBe(matchedSavedPrimaryMediaIds.length);
+  }
+  if (expectedVideoType === "presenter") {
+    expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
+    expect(
+      expectedSceneCount,
+      "presenter direction must retain at least one source-backed scene",
+    ).toBeGreaterThan(0);
+    const videoParameters = directorVideoPlan.video_parameters;
+    expect(videoParameters?.ratio).toBe(targetRatio);
+    expect(videoParameters?.ratio_source).toBe("source_video");
+    expect(savedLibraryVideoAssetIds).toContain(
+      videoParameters?.ratio_source_asset_id,
+    );
+    expect(videoParameters?.ai_voice_enabled).toBe(false);
+    expect(videoParameters?.voice_source).toBe("source_audio");
+    expect(savedLibraryVideoAssetIds).toContain(
+      videoParameters?.voice_source_asset_id,
+    );
+    expect(videoParameters?.recommendation_mode).toBe("single_winner");
+    await expect(
+      pendingCard.getByRole("article", { name: /推荐方案/ }),
+    ).toHaveCount(1);
   }
   if (expectedVideoType === "source_excerpt") {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
@@ -1310,12 +1451,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i,
   );
   expect(visibleText).not.toMatch(/待补素材|字幕\/标题卡占位/);
-  const confirmedPlanCard = page
-    .locator(".shadcn-prototype-confirm-card")
-    .last();
-  await expect(confirmedPlanCard).toContainText(
-    targetRatioAcceptance.confirmationLabel,
-  );
+  if (expectedVideoType !== "presenter") {
+    const confirmedPlanCard = page
+      .locator(".shadcn-prototype-confirm-card")
+      .last();
+    await expect(confirmedPlanCard).toContainText(
+      targetRatioAcceptance.confirmationLabel,
+    );
+  }
 
   const listResponse = await page.request.get(`${apiBase}/v1/assets`, {
     headers,
@@ -1575,9 +1718,39 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   }
   }
   expect(beforeScenes).toHaveLength(expectedSceneCount);
+  const finalVideoPlan = projectAsset!.metadata?.video_plan as {
+    video_parameters?: {
+      ratio?: string;
+      ratio_source?: string;
+      ratio_source_asset_id?: number | null;
+      ai_voice_enabled?: boolean;
+      voice_source?: string;
+      voice_source_asset_id?: number | null;
+      recommendation_mode?: string;
+      confirmed?: boolean;
+    };
+  };
+  if (expectedVideoType === "presenter") {
+    const videoParameters = finalVideoPlan.video_parameters;
+    expect(videoParameters?.ratio).toBe(targetRatio);
+    expect(videoParameters?.ratio_source).toBe("source_video");
+    expect(savedLibraryVideoAssetIds).toContain(
+      videoParameters?.ratio_source_asset_id,
+    );
+    expect(videoParameters?.ai_voice_enabled).toBe(false);
+    expect(videoParameters?.voice_source).toBe("source_audio");
+    expect(savedLibraryVideoAssetIds).toContain(
+      videoParameters?.voice_source_asset_id,
+    );
+    expect(videoParameters?.recommendation_mode).toBe("single_winner");
+    expect(videoParameters?.confirmed).toBe(true);
+  }
   const videoProject = projectAsset!.metadata?.video_project as
     VideoProject | undefined;
-  if (expectedVideoType !== "source_excerpt") {
+  if (
+    expectedVideoType !== "source_excerpt"
+    && expectedVideoType !== "presenter"
+  ) {
     assertDistinctPersistedPrimaryVisualWindows(beforeScenes, videoProject);
   }
   const mainTrack = videoProject?.tracks?.find(
@@ -1658,24 +1831,44 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       (narrationTrack?.elements ?? []).map((element) => element.segmentId),
     ).size,
   ).toBe(expectedSceneCount);
+  if (expectedVideoType === "presenter") {
+    expect(narrationTrack?.type).toBe("audio");
+    expect(narrationTrack?.name).toBe("原声");
+    expect(narrationTrack?.elements).toHaveLength(expectedSceneCount);
+    for (const element of narrationTrack?.elements ?? []) {
+      expect(element.name).toMatch(/^原声/);
+      expect(element.mediaId).toBeTruthy();
+    }
+  }
   const subtitleTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-text",
   );
   const subtitleSegmentIds = new Set(
     (subtitleTrack?.elements ?? []).map((element) => element.segmentId),
   );
-  for (const scene of beforeScenes) {
-    const mainElement = mainTrack?.elements?.find(
-      (element) => element.segmentId === scene.id,
-    );
-    const repeatedGeneratedHeadline =
-      generatedPrimaryRepeatsVisibleSubtitle(scene, mainElement);
+  if (expectedVideoType === "presenter") {
     expect(
-      subtitleSegmentIds.has(scene.id),
-      repeatedGeneratedHeadline
-        ? `generated headline already carries the visible subtitle for ${scene.id}`
-        : `non-duplicated visible subtitle is still required for ${scene.id}`,
-    ).toBe(!repeatedGeneratedHeadline);
+      subtitleTrack?.elements?.length ?? 0,
+      "presenter subtitle cues must be public and non-empty",
+    ).toBeGreaterThan(0);
+    for (const element of subtitleTrack?.elements ?? []) {
+      expect(String(element.displayText ?? element.content ?? "").trim()).not.toBe("");
+      expect(Number(element.duration ?? 0)).toBeGreaterThan(0);
+    }
+  } else {
+    for (const scene of beforeScenes) {
+      const mainElement = mainTrack?.elements?.find(
+        (element) => element.segmentId === scene.id,
+      );
+      const repeatedGeneratedHeadline =
+        generatedPrimaryRepeatsVisibleSubtitle(scene, mainElement);
+      expect(
+        subtitleSegmentIds.has(scene.id),
+        repeatedGeneratedHeadline
+          ? `generated headline already carries the visible subtitle for ${scene.id}`
+          : `non-duplicated visible subtitle is still required for ${scene.id}`,
+      ).toBe(!repeatedGeneratedHeadline);
+    }
   }
   const mgOverlayTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-overlay" && track.overlay === true,
@@ -1951,8 +2144,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       "generated-primary failure placeholders must never remain export warnings",
     ).toEqual([]);
     const narrationCoverage = projectQualityReport.metrics?.narration_coverage;
-    expect(narrationCoverage?.coverage_rate).toBe(1);
-    expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);
+    if (expectedVideoType !== "presenter") {
+      expect(narrationCoverage?.coverage_rate).toBe(1);
+      expect(narrationCoverage?.missing_scene_ids ?? []).toEqual([]);
+    }
     const reuseGroups =
       projectQualityReport.metrics?.material_reuse?.repeated_groups ?? [];
     const reportedReuseSceneIds = new Set(

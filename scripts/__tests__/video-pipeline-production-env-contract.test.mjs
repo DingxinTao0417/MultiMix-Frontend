@@ -177,6 +177,7 @@ test("production video E2E continues a completed retained project through browse
   assert.match(seedReader, /video-job-%/);
   assert.match(seedReader, /conversation=db\.get\(AssetConversation, job\.conversation_id\)/);
   assert.match(seedReader, /'conversationId': conversation\.public_id/);
+  assert.match(seedReader, /'videoType': plan\.get\('video_type'\)/);
   assert.doesNotMatch(seedReader, /'conversationId': job\.conversation_id/);
   assert.match(source, /video-pipeline-retained-export\.spec\.ts/);
   assert.match(source, /VIDEO_PIPELINE_RETAINED_EXPORT_SEED/);
@@ -184,6 +185,10 @@ test("production video E2E continues a completed retained project through browse
   assert.match(source, /minimumDurationSeconds/);
   assert.match(source, /maximumDurationSeconds/);
   assert.match(retainedSpec, /selectClosestDurationCandidate/);
+  assert.match(retainedSpec, /activeSeed\.videoType === "source_excerpt"/);
+  assert.match(retainedSpec, /assertPresenterSourceIdentity\(project\)/);
+  assert.match(retainedSpec, /presenter original audio track is missing/);
+  assert.match(retainedSpec, /twoStageEnabled: activeSeed\.videoType !== "presenter"/);
   assert.match(retainedSpec, /kind:\s*"select"[\s\S]*?candidate_id/);
   assert.match(retainedSpec, /generation-jobs/);
   assert.match(retainedSpec, /waitForCompletedProject/);
@@ -341,6 +346,76 @@ test("source excerpt E2E isolates public ASR storage and precisely cleans its re
   assert.doesNotMatch(source, /delete.*bucket/i);
 });
 
+test("saved-library video E2E uses the same isolated remote storage for cloud ASR", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(source, /function configuredInputIncludesVideo/);
+  assert.match(source, /path\.extname\(.*\)\.toLowerCase\(\) === "\.mp4"/);
+  assert.match(
+    source,
+    /const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"\s*\|\| configuredInputIncludesVideo\(demonstrationMediaFiles\)/,
+  );
+  assert.match(source, /MULTIMIX_SUPABASE_URL: usesRemoteArtifactStorage/);
+  assert.match(source, /MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: usesRemoteArtifactStorage/);
+  assert.match(source, /MULTIMIX_ARTIFACT_KEY_PREFIX: usesRemoteArtifactStorage/);
+  assert.match(source, /MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH: remoteWriteLedgerPath/);
+  assert.match(source, /await cleanupRemoteArtifactWrites\(decisionAuditEnv\)/);
+});
+
+test("saved-library media upload has an explicit acceptance timeout", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /const mediaUploadTimeoutMs = Number\(/);
+  assert.match(source, /VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS/);
+  assert.match(source, /timeout: mediaUploadTimeoutMs/);
+});
+
+test("saved-library video E2E continues the presenter cleanup confirmation before the recommended direction", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /async function confirmPresenterCleanupIfRequired/);
+  assert.match(source, /确认清理并进入导演方案/);
+  assert.match(source, /presenter cleanup confirmation must queue a director job/);
+  assert.match(source, /await confirmPresenterCleanupIfRequired\(/);
+});
+
+test("production E2E treats presenter as an active type and confirms its single recommendation", () => {
+  const specSource = fs.readFileSync(productionSpecPath, "utf8");
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(specSource, /type ActiveVideoType = [^;]*"presenter"/);
+  assert.match(specSource, /function videoProjectConfirmationCard/);
+  assert.match(specSource, /getByLabel\("口播型方案 · 待确认"\)/);
+  assert.match(specSource, /videoParameters\?\.ratio_source\)\.toBe\("source_video"\)/);
+  assert.match(specSource, /videoParameters\?\.voice_source\)\.toBe\("source_audio"\)/);
+  assert.match(specSource, /videoParameters\?\.ai_voice_enabled\)\.toBe\(false\)/);
+  assert.match(specSource, /expect\(narrationTrack\?\.type\)\.toBe\("audio"\)/);
+  assert.match(specSource, /expect\(narrationTrack\?\.name\)\.toBe\("原声"\)/);
+  assert.match(specSource, /expect\(narrationTrack\?\.elements\)\.toHaveLength\(expectedSceneCount\)/);
+  assert.doesNotMatch(specSource, /narrationTrack\?\.logicalLayer/);
+  assert.doesNotMatch(specSource, /videoProject\?\.orchestration\?\.tts_segments/);
+  assert.match(specSource, /presenter subtitle cues must be public and non-empty/);
+  assert.match(specSource, /expect\(String\(element\.displayText \?\? element\.content \?\? ""\)\.trim\(\)\)\.not\.toBe\(""\)/);
+  assert.match(specSource, /expect\(Number\(element\.duration \?\? 0\)\)\.toBeGreaterThan\(0\)/);
+  assert.doesNotMatch(specSource, /directorVideoPlan\.director_plan/);
+  assert.match(specSource, /pendingCard\.getByRole\("article", \{ name: \/推荐方案\/ \}\)/);
+  assert.match(specSource, /getByRole\("spinbutton", \{ name: "目标时长（秒）" \}\)/);
+  assert.match(specSource, /fill\(String\(targetSeconds\)\)/);
+  assert.doesNotMatch(
+    specSource,
+    /inputProfile === "explainer_saved_library_simple"\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?multimix_local_user/,
+  );
+  assert.match(
+    specSource,
+    /inputProfile === "explainer_saved_library_simple"\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?simple input must let the director choose/,
+  );
+  assert.match(
+    specSource,
+    /if \(expectedVideoType !== "presenter"\) \{[\s\S]{0,300}?confirmedPlanCard[\s\S]{0,300}?confirmationLabel/,
+  );
+  assert.match(runnerSource, /const twoStageEnabled = expectedVideoType !== "presenter"/);
+});
+
 test("retained production E2E checkpoints remote artifacts before cleanup and restores them before resume", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
@@ -352,6 +427,11 @@ test("retained production E2E checkpoints remote artifacts before cleanup and re
   assert.match(source, /content_type/);
   assert.match(source, /remote artifact checkpoint ref escaped the current E2E namespace/);
   assert.match(source, /remote artifact checkpoint digest changed/);
+  assert.match(source, /const checkpointAttempts = 3/);
+  assert.match(source, /checkpoint remote artifacts attempt \$\{attempt\}/);
+  assert.match(source, /if current and target\.is_file\(\):/);
+  assert.match(source, /if len\(cached\) != int\(current\.get\('size_bytes'\) or -1\)/);
+  assert.match(source, /continue/);
   assert.match(source, /remote artifact checkpoint path escaped its cache directory/);
   assert.match(
     source,
