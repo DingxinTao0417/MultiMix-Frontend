@@ -373,6 +373,16 @@ export function buildConversationMessagePayload({
   };
 }
 
+export function createLibraryCreationDraftConversation(
+  newConversation: AssetConversation,
+  nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+): AssetConversation {
+  return {
+    ...newConversation,
+    id: `draft-library-${nonce}`,
+  };
+}
+
 const VIDEO_PARAMETER_CONFIRMATION_HEADER = "X-MultiMix-Video-Parameter-Confirmation";
 
 export function buildVideoParameterConfirmationHeaders(

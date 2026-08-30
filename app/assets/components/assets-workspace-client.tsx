@@ -22,7 +22,13 @@ import {
 } from "lucide-react";
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
-import { assetWorkspaceAdapter, type LibraryRow, type VideoJobResult, type VideoJobStepResult } from "../lib/asset-workspace-adapter";
+import {
+  assetWorkspaceAdapter,
+  createLibraryCreationDraftConversation,
+  type LibraryRow,
+  type VideoJobResult,
+  type VideoJobStepResult,
+} from "../lib/asset-workspace-adapter";
 import type {
   AgentActionRunResponse,
   AgentRunStep,
@@ -1693,13 +1699,13 @@ export default function AssetsWorkspaceClient({
       return;
     }
     const linkedAsset = { id: row.assetId, title: row.title };
-    const targetConversation = assetWorkspaceAdapter.getNewConversation();
+    const newConversation = assetWorkspaceAdapter.getNewConversation();
     if (intent === "long-form") {
-      setSelectedConversationId(targetConversation.id);
+      setSelectedConversationId(newConversation.id);
       setActiveView("conversation");
       try {
         await handleSendConversationMessage(
-          targetConversation,
+          newConversation,
           `分析《${row.title}》，整理完整章节并给我最值得发布的 Top 5`,
           undefined,
           [],
@@ -1714,6 +1720,7 @@ export default function AssetsWorkspaceClient({
       }
       return;
     }
+    const targetConversation = createLibraryCreationDraftConversation(newConversation);
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
       : intent === "regenerate-image"
@@ -2097,7 +2104,9 @@ export default function AssetsWorkspaceClient({
           next[targetConversationId] ?? [],
           combinedContextAssets,
         );
-        if (conversation.id === "new") delete next[conversation.id];
+        if (conversation.id === "new" || conversation.id.startsWith("draft-")) {
+          delete next[conversation.id];
+        }
         if (optimisticConversationId) delete next[optimisticConversationId];
         return next;
       });

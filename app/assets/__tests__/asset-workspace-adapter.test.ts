@@ -5,6 +5,7 @@ import {
   assetWorkspaceAdapter,
   assertVideoWritesAvailable,
   buildConversationMessagePayload,
+  createLibraryCreationDraftConversation,
   conversationFromSummary,
   libraryCategoryForAsset,
   libraryKeywordsForAsset,
@@ -134,6 +135,24 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("creates an isolated draft id for a direct library creation request", () => {
+    const draft = createLibraryCreationDraftConversation(
+      assetWorkspaceAdapter.getNewConversation(),
+      "selected-video",
+    );
+
+    expect(draft.id).toBe("draft-library-selected-video");
+    expect(draft).not.toBe(assetWorkspaceAdapter.getNewConversation());
+    expect(buildConversationMessagePayload({
+      conversationId: draft.id,
+      instruction: "基于《真人口播原片》做成视频。",
+      linkedAssetIds: [91],
+    })).toMatchObject({
+      conversation_id: undefined,
+      linked_asset_ids: [91],
+    });
+  });
+
   it("blocks structured video writes during maintenance without blocking reads", () => {
     expect(() => assertVideoWritesAvailable(true)).toThrow("视频生成与修改暂时维护中");
     expect(() => assertVideoWritesAvailable(false)).not.toThrow();
