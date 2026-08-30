@@ -1127,7 +1127,12 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           startTime: e.startTime,
           trimStart: e.trimStart ?? 0,
           trimEnd: e.trimEnd ?? 0,
-          transform: mediaTransformForDecision(e.editDecision, bp.settings.width),
+          transform: e.transform
+            ? {
+                ...e.transform,
+                position: { ...e.transform.position },
+              }
+            : mediaTransformForDecision(e.editDecision, bp.settings.width),
           opacity: 1,
           ...(transition ? { transition } : {}),
         };
