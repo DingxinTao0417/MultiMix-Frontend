@@ -268,6 +268,9 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("自动通过")).toBeTruthy();
     expect(screen.getByText("删除不改变原意、语气或逻辑关系")).toBeTruthy();
     expect(screen.getByText("第二次识别一致，已恢复自动处理")).toBeTruthy();
+    expect(screen.queryByText("降为建议")).toBeNull();
+    expect(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" }));
     expect(screen.getByText("降为建议")).toBeTruthy();
     expect(screen.getByText("可能承担承接上句的表达作用")).toBeTruthy();
     expect(screen.getByText("两次识别不一致，保持建议")).toBeTruthy();

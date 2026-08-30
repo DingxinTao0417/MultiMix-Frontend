@@ -114,7 +114,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             ref={assignRef}
             src={src}
             poster={posterSrc || undefined}
-            preload="metadata"
+            preload="auto"
             playsInline
             onLoadedMetadata={(event) => {
               const video = event.currentTarget;
@@ -131,7 +131,6 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
               setBufferedPercent(Math.min(100, Math.max(0, (end / video.duration) * 100)));
             }}
             onCanPlay={() => setReady(true)}
-            onWaiting={() => setReady(false)}
             onTimeUpdate={(event) => {
               const time = event.currentTarget.currentTime;
               setCurrentTime(time);

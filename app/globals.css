@@ -2942,16 +2942,17 @@ button:disabled {
   gap: 10px;
   min-width: 220px;
   min-height: 160px;
-  color: #ffffff;
+  color: var(--sp-text);
+  background: #ffffff;
   padding: 20px;
   text-align: center;
 }
 
 .shadcn-prototype-preview-player-error button {
-  border: 1px solid rgba(255, 255, 255, 0.34);
+  border: 1px solid var(--sp-border-strong);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: var(--sp-card);
+  color: var(--sp-accent);
   padding: 6px 12px;
 }
 
@@ -8185,6 +8186,71 @@ label {
   display: grid;
   gap: 10px;
   padding: 13px 18px 15px;
+}
+
+.shadcn-prototype-confirm-cleanup {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 15px;
+}
+
+.shadcn-prototype-confirm-cleanup > label,
+.shadcn-prototype-confirm-cleanup-suggestions > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  color: var(--sp-text);
+  font-size: 12px;
+}
+
+.shadcn-prototype-confirm-cleanup label > span {
+  display: grid;
+  gap: 3px;
+}
+
+.shadcn-prototype-confirm-cleanup label strong,
+.shadcn-prototype-confirm-cleanup label em,
+.shadcn-prototype-confirm-cleanup label small {
+  font: inherit;
+}
+
+.shadcn-prototype-confirm-cleanup label em {
+  color: var(--sp-accent);
+  font-weight: 650;
+  font-style: normal;
+}
+
+.shadcn-prototype-confirm-cleanup label strong {
+  font-weight: 650;
+}
+
+.shadcn-prototype-confirm-cleanup label small {
+  color: var(--sp-subtle);
+}
+
+.shadcn-prototype-confirm-cleanup-more {
+  display: grid;
+  gap: 10px;
+}
+
+.shadcn-prototype-confirm-cleanup-more > button {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: var(--sp-accent);
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.shadcn-prototype-confirm-cleanup-suggestions {
+  display: grid;
+  gap: 10px;
+  border-top: 1px dashed var(--sp-border);
+  padding-top: 10px;
 }
 
 .shadcn-prototype-confirm-row,

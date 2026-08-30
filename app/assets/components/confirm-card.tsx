@@ -69,6 +69,7 @@ export default function ConfirmCard({
   const [selectedCleanupIds, setSelectedCleanupIds] = useState<Set<string>>(
     () => new Set(cleanupItems.filter((item) => item.selected).map((item) => item.id))
   );
+  const [showSuggestedCleanupItems, setShowSuggestedCleanupItems] = useState(false);
   const audioTrackOptions = plan.audioTrackOptions ?? [];
   const subtitleOptions = plan.subtitleOptions ?? [];
   const [selectedSubtitleMode, setSelectedSubtitleMode] = useState(
@@ -111,6 +112,53 @@ export default function ConfirmCard({
         return field;
       })
     : plan.fields;
+  const selectedCleanupItems = cleanupItems.filter((item) => (
+    item.state !== "suggested" || item.locked || selectedCleanupIds.has(item.id)
+  ));
+  const suggestedCleanupItems = cleanupItems.filter((item) => (
+    item.state === "suggested" && !item.locked && !selectedCleanupIds.has(item.id)
+  ));
+  const renderCleanupItem = (item: (typeof cleanupItems)[number]) => {
+    const checked = selectedCleanupIds.has(item.id);
+    const decisionLabel = item.decisionLabel ?? {
+      auto: "自动处理",
+      suggested: "建议确认",
+      protected: "已保护",
+    }[item.state];
+    const decisionReason = item.decisionReason || item.reason;
+    return (
+      <label key={item.id} data-state={item.state}>
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled || plan.requiresClarification}
+          onChange={() => setSelectedCleanupIds((current) => {
+            const next = new Set(current);
+            if (next.has(item.id)) next.delete(item.id);
+            else next.add(item.id);
+            return next;
+          })}
+        />
+        <span>
+          <strong>{item.spokenText || item.category}</strong>
+          <em>{decisionLabel}</em>
+          <small>{decisionReason}</small>
+          {item.reason && item.reason !== decisionReason ? <small>候选判断：{item.reason}</small> : null}
+          {item.secondaryRecognition ? (
+            <>
+              <small>{item.secondaryRecognition.label}</small>
+              {item.secondaryRecognition.model ? (
+                <small>交叉识别模型：{item.secondaryRecognition.model}</small>
+              ) : null}
+            </>
+          ) : null}
+          <small>预计缩短 {item.estimatedSavingSeconds.toFixed(1)} 秒</small>
+          <small>音频风险 {item.audioRisk} · 跳切风险 {item.visualJumpRisk}</small>
+          {item.protectionReasons.length ? <em>保护：{item.protectionReasons.join("、")}</em> : null}
+        </span>
+      </label>
+    );
+  };
 
   if (plan.status === "confirmed" || optimisticallyConfirmed) {
     const summary = plan.status === "confirmed" && plan.summaryFields?.length
@@ -146,47 +194,25 @@ export default function ConfirmCard({
       </div>
       {cleanupItems.length ? (
         <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">
-          {cleanupItems.map((item) => {
-            const checked = selectedCleanupIds.has(item.id);
-            const decisionLabel = item.decisionLabel ?? {
-              auto: "自动处理",
-              suggested: "建议确认",
-              protected: "已保护",
-            }[item.state];
-            const decisionReason = item.decisionReason || item.reason;
-            return (
-              <label key={item.id} data-state={item.state}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={disabled || plan.requiresClarification}
-                  onChange={() => setSelectedCleanupIds((current) => {
-                    const next = new Set(current);
-                    if (next.has(item.id)) next.delete(item.id);
-                    else next.add(item.id);
-                    return next;
-                  })}
-                />
-                <span>
-                  <strong>{item.spokenText || item.category}</strong>
-                  <em>{decisionLabel}</em>
-                  <small>{decisionReason}</small>
-                  {item.reason && item.reason !== decisionReason ? <small>候选判断：{item.reason}</small> : null}
-                  {item.secondaryRecognition ? (
-                    <>
-                      <small>{item.secondaryRecognition.label}</small>
-                      {item.secondaryRecognition.model ? (
-                        <small>交叉识别模型：{item.secondaryRecognition.model}</small>
-                      ) : null}
-                    </>
-                  ) : null}
-                  <small>预计缩短 {item.estimatedSavingSeconds.toFixed(1)} 秒</small>
-                  <small>音频风险 {item.audioRisk} · 跳切风险 {item.visualJumpRisk}</small>
-                  {item.protectionReasons.length ? <em>保护：{item.protectionReasons.join("、")}</em> : null}
-                </span>
-              </label>
-            );
-          })}
+          {selectedCleanupItems.map(renderCleanupItem)}
+          {suggestedCleanupItems.length ? (
+            <div className="shadcn-prototype-confirm-cleanup-more">
+              <button
+                type="button"
+                aria-expanded={showSuggestedCleanupItems}
+                onClick={() => setShowSuggestedCleanupItems((visible) => !visible)}
+              >
+                {showSuggestedCleanupItems
+                  ? `收起其余 ${suggestedCleanupItems.length} 条建议`
+                  : `查看其余 ${suggestedCleanupItems.length} 条建议（默认不处理）`}
+              </button>
+              {showSuggestedCleanupItems ? (
+                <div className="shadcn-prototype-confirm-cleanup-suggestions">
+                  {suggestedCleanupItems.map(renderCleanupItem)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {audioTrackOptions.length ? (

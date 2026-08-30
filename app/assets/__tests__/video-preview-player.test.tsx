@@ -83,6 +83,23 @@ describe("video preview player", () => {
     expect(play).toHaveBeenCalledOnce();
   });
 
+  it("preloads the first playable buffer and keeps controls usable through later buffering", () => {
+    const { container } = render(
+      <VideoPreviewPlayer src="/demo.mp4" label="成片播放器" ratioClassName="ratio-landscape" />,
+    );
+    const video = container.querySelector("video")!;
+
+    expect(video).toHaveAttribute("preload", "auto");
+    Object.defineProperty(video, "duration", { configurable: true, value: 30 });
+    fireEvent.loadedMetadata(video);
+    fireEvent.canPlay(video);
+    fireEvent.waiting(video);
+
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeEnabled();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeEnabled();
+  });
+
   it("shows the actual buffered percentage while the video is loading", () => {
     const { container } = render(
       <VideoPreviewPlayer src="/demo.mp4" label="成片播放器" ratioClassName="ratio-landscape" />,
