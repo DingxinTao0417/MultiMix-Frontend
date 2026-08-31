@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
-import type { ContentAsset } from "../../../lib/api";
+import type { AssetConversationResponse, ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
 // Minimal fallback product for conversationFromPersisted (kept off the wire).
@@ -17,6 +17,24 @@ const newConversationProduct = {
   timeline: [],
   actions: []
 } as AssetProduct;
+
+describe("project conversation mapping", () => {
+  it("keeps the server-owned project state on detail reloads", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-project-state",
+      title: "门店讲解视频",
+      status: "active",
+      metadata: {},
+      project_state: { code: "generating" },
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:01:00Z",
+      products: [],
+      messages: [],
+    } as AssetConversationResponse, newConversationProduct);
+
+    expect(conversation.projectState).toBe("generating");
+  });
+});
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {

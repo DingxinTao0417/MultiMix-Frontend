@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>MultiMix · 终稿 · 新建对话</title>
+<title>MultiMix · 终稿 · 新建项目</title>
 <style>
 :root{
   --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
@@ -216,7 +216,7 @@ body.side-collapsed .expand-btn{display:grid}
 
 <!-- 顶栏 -->
 <div class="topbar">
-  <span class="crumb"><b>新建对话</b></span>
+  <span class="crumb"><b>新建项目</b></span>
   <button class="diag" onclick="toast('LLM 诊断面板（管理员入口）')">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1.8 8h3l1.6-4.2L9.6 12l1.6-4h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     诊断
@@ -230,7 +230,7 @@ body.side-collapsed .expand-btn{display:grid}
   <button class="ico-sm" id="btnExpand" title="展开侧边栏">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M9 6.5 10.5 8 9 9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
-  <button class="ico-sm plus" title="新建对话" onclick="toast('已在新建对话页')">
+  <button class="ico-sm plus" title="新建项目" onclick="toast('已在新建项目页')">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
   </button>
   <button class="ico-sm" title="资产库" onclick="toast('资产库')"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
@@ -258,7 +258,7 @@ body.side-collapsed .expand-btn{display:grid}
   </div>
   <button class="new-btn">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-    新建对话
+    新建项目
   </button>
   <div class="search">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -271,7 +271,7 @@ body.side-collapsed .expand-btn{display:grid}
     <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>视频库</a>
   </nav>
   <div class="convs">
-    <div class="sec-label">对话列表<span class="cnt">5</span></div>
+    <div class="sec-label">项目列表<span class="cnt">5</span></div>
     <div class="conv-list">
       <a class="conv"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
       <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
@@ -358,8 +358,8 @@ body.side-collapsed .expand-btn{display:grid}
 </div><!-- /.app -->
 
 <div class="cmenu" id="cmenu">
-  <button onclick="toast('重命名对话（demo）')">重命名</button>
-  <button class="danger" onclick="toast('删除对话（demo 不真删）')">删除对话</button>
+  <button onclick="toast('重命名项目（demo）')">重命名</button>
+  <button class="danger" onclick="toast('删除项目（demo 不真删）')">删除项目</button>
 </div>
 <div id="toast"></div>
 

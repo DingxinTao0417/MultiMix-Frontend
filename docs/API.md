@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-29
+> Last verified: 2026-08-31
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -51,6 +51,8 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | `app/assets/components/product-workspace.tsx` | UI | 展示区容器：标题、详情抽屉、操作按钮、时间轴 |
 | `app/assets/components/product-preview.tsx` | UI | 按 `product.mode` 分发的预览 |
 | `app/assets/components/library-workshop.tsx` | UI | 资产库 / 文案库 / 视频库视图 |
+| `app/assets/components/project-resources-drawer.tsx` | UI | 项目内素材、文案、封面和视频的按需分页抽屉 |
+| `app/assets/components/project-target-picker.tsx` | UI | 从全局资源库加入素材时显式选择目标项目 |
 | `app/assets/lib/asset-workspace-types.ts` | 数据 | 所有数据类型定义 |
 | `app/assets/lib/asset-workspace-empty-data.ts` | 数据 | 未配置或加载前使用的空结构，不含演示内容 |
 | `app/assets/lib/asset-workspace-adapter.ts` | 数据 | 数据访问接口（后端接入点） |
@@ -68,7 +70,7 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | 分组 | 当前主要接口 |
 | --- | --- |
 | 工作台展示 | `listConversations`、`getNewConversation`、`getWorkshop`、`getProductText` |
-| 对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、`sendMessage`、`reconcileMessage`、生成任务查询/重试、Agent 动作查询/重试、产物保存和版本恢复 |
+| 项目、对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、项目资源分页/加入/移出、`sendMessage`、`reconcileMessage`、生成任务查询/重试、Agent 动作查询/重试、产物保存、版本预览和版本继续 |
 | 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
 | 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
@@ -98,9 +100,14 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 
 #### 对话摘要缓存与按需详情
 
-- `GET /v1/assets/conversations/summaries` 只返回 `id/title/status/metadata/created_at/updated_at`，不返回消息和产物。
-- 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。
-- `GET /v1/assets/conversations/{conversation_id}` 在用户选中对话后加载完整消息、产物和版本。
+- `GET /v1/assets/conversations/summaries` 返回轻量项目列表字段及 `project_state.code`；不返回消息、正文、完整产物或版本。状态只允许是 `needs_input / script_review / generating / ready / needs_attention`，前端只负责中文展示。
+- 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。旧缓存缺少 `project_state` 时直接失效，不在浏览器猜测状态。
+- `GET /v1/assets/conversations/{conversation_id}` 在用户选中项目后加载消息、产物和 `project_resource_summary`。新客户端传 `include_project_resource_items=false`，不再把完整项目资源塞进详情首屏。
+- `GET /v1/assets/conversations/{conversation_id}/resources?kind=&scope=&offset=&limit=` 按需分页读取项目资源；`source` 支持 `active / history / all`，文案、封面和视频使用 `all`。默认 20 条，最多 50 条。
+- `PUT /v1/assets/conversations/{conversation_id}/sources/{asset_id}` 与同路径 `DELETE` 立即持久化加入/移出。重复操作幂等；项目和素材都必须属于当前用户。
+- “移出项目”只改变今后生成使用的素材集合，不回写历史消息、历史产物、`video_plan`、分镜 `asset_reference` 或视频工程。已被旧版本使用的素材进入“历史使用”；从未被使用的素材移出后不伪造历史记录。
+- `GET /v1/assets/{asset_id}/versions/{version_id}/preview` 只读预览历史版本；`POST .../restore` 在 UI 中表达为“基于此版本继续”，继续追加新版本，不覆盖历史版本。
+- 过渡期 `project_resources` 保留为服务端兼容投影；前端不得用当前产物自行猜测或补造项目资源。
 - `loadConversations` 保留给任务完成刷新与幂等 reconciliation，不再作为首屏列表请求。
 
 #### `listConversations(): AssetConversation[]`
@@ -266,6 +273,12 @@ type AssetConversation = {
   product: AssetProduct;          // 必有的单产物（兜底）
   products?: AssetProduct[];      // 可选多产物；非空优先
   sourceIds?: string[];           // 关联来源 id；★ UI 未渲染
+  projectResources?: {            // 服务端项目资源读模型；缺失时不显示摘要
+    sources: Array<{ id: string; title: string }>;
+    copies: Array<{ id: string; title: string }>;
+    covers: Array<{ id: string; title: string }>;
+    videos: Array<{ id: string; title: string }>;
+  };
 };
 ```
 

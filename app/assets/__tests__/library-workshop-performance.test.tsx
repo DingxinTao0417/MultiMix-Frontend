@@ -131,7 +131,7 @@ describe("library workshop performance boundaries", () => {
     await waitFor(() => expect(listLibrary).toHaveBeenCalledTimes(2));
   });
 
-  it("can add a saved image to the current conversation", async () => {
+  it("can start adding a saved image to a project", async () => {
     const row = imageRow();
     const onAddAssetToConversation = vi.fn();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
@@ -151,7 +151,7 @@ describe("library workshop performance boundaries", () => {
     const grid = await screen.findByLabelText("图片库列表");
     fireEvent.click(within(grid).getByRole("button"));
     const dialog = await screen.findByRole("dialog", { name: "已保存场景图详情" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "加入对话" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "加入项目…" }));
 
     expect(onAddAssetToConversation).toHaveBeenCalledWith(row);
   });

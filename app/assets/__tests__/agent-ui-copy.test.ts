@@ -1286,6 +1286,17 @@ describe("conversation execution timeline state", () => {
 });
 
 describe("agent conversation UI copy", () => {
+  it("uses project language and one server-owned progress label in the sidebar", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+
+    expect(workspaceClient).toContain("新建项目");
+    expect(workspaceClient).toContain("项目列表");
+    expect(workspaceClient).toContain("删除项目");
+    expect(workspaceClient).toContain("projectStateLabel(conversation.projectState)");
+    expect(workspaceClient).not.toContain(">新建对话<");
+    expect(workspaceClient).not.toContain(">对话列表<");
+  });
+
   it("does not use explicit generating text placeholders", () => {
     const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
@@ -1457,12 +1468,13 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain('initialConversationId === "new"');
     expect(authApp).toContain("登录你的 AI 短视频创作工作台");
     expect(authApp).toContain("上传素材，说出需求，生成可编辑的短视频");
-    expect(conversationStart).toContain("今天想做什么短视频？");
-    expect(conversationStart).toContain("上传素材，说出需求，生成可编辑的短视频");
+    expect(conversationStart).toContain("新建视频项目");
+    expect(conversationStart).toContain("选择一种创作方式，随后可在同一对话里持续补素材、改文案和生成视频");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 · 视频请先上传到视频素材库");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
-    expect(conversationStart).toContain("AI 自动编导并匹配画面");
+    expect(conversationStart).toContain("制作讲解型视频");
+    expect(conversationStart).toContain("优化真人口播视频");
     expect(materialsReady).toContain("你的素材可以开始做视频了");
     expect(backgroundStatus).toContain("AI 正在理解素材");
     expect(backgroundStatus).toContain("完成后可用于视频创作");
@@ -1623,9 +1635,9 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("detailLoadError={conversationDetailErrorId === selectedConversation.id}");
     expect(workspaceClient).toContain("onRetryDetail={() => setConversationDetailRetryRevision");
     expect(workspaceClient).not.toContain("useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations())");
-    expect(workspaceClient).toContain("正在加载你的对话");
-    expect(workspaceClient).toContain("还没有对话");
-    expect(workspaceClient).toContain("对话加载失败");
+    expect(workspaceClient).toContain("正在加载你的项目");
+    expect(workspaceClient).toContain("还没有项目");
+    expect(workspaceClient).toContain("项目加载失败");
     expect(workspaceClient).toContain("未连接后端");
     expect(workspaceClient).toContain("重新加载");
     expect(workspaceClient).not.toContain("显示本地样例数据");

@@ -247,6 +247,19 @@ body.side-collapsed .expand-btn{display:grid}
 .modal-mask.open{display:flex}
 .modal{width:560px;max-height:84vh;overflow:auto;background:var(--surface);border-radius:var(--radius);
   box-shadow:0 30px 80px rgba(32,31,30,.3);display:grid}
+.project-picker{width:420px;padding:20px;gap:16px}
+.project-picker .picker-title{font-size:16px;font-weight:650}
+.project-picker .picker-help{font-size:12.5px;line-height:1.6;color:var(--ink-3)}
+.project-list{display:grid;gap:8px}
+.project-option{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start;width:100%;padding:12px;
+  text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:11px;color:var(--ink);cursor:pointer}
+.project-option:hover,.project-option.selected{border-color:var(--ink-2);background:var(--surface-2)}
+.project-option .radio{width:15px;height:15px;margin-top:2px;border:1px solid var(--line-strong);border-radius:50%}
+.project-option.selected .radio{border:4px solid var(--ink)}
+.project-option b{display:block;font-size:13px}.project-option span{font-size:11.5px;color:var(--ink-3)}
+.picker-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.picker-actions .right{display:flex;gap:8px}
+.picker-actions button:disabled{opacity:.42;cursor:not-allowed}
 .md-head{display:flex;align-items:flex-start;gap:10px;padding:18px 20px 0}
 .md-head .tx{display:grid;gap:2px;min-width:0}
 .md-head .t{font-size:15.5px;font-weight:650}
@@ -285,7 +298,7 @@ body.side-collapsed .expand-btn{display:grid}
   <button class="ico-sm" id="btnExpand" title="展开侧边栏">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M9 6.5 10.5 8 9 9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </button>
-  <button class="ico-sm plus" title="新建对话" onclick="toast('新建对话')">
+  <button class="ico-sm plus" title="新建项目" onclick="toast('新建项目')">
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
   </button>
   <button class="ico-sm rl" data-view="assets" title="资产库"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
@@ -337,7 +350,7 @@ body.side-collapsed .expand-btn{display:grid}
   </div>
   <div class="ai-status">
     <div class="t"><span class="gdot"></span>AI 正在后台工作</div>
-    <div class="s">正在理解 <b>「施工过程记录 #1」</b>，完成后可直接在对话中引用。</div>
+    <div class="s">正在理解 <b>「施工过程记录 #1」</b>，完成后可加入指定项目。</div>
   </div>
   <div class="user">
     <div class="avatar">陈</div>
@@ -385,6 +398,31 @@ body.side-collapsed .expand-btn{display:grid}
     </div>
     <div class="md-body" id="mdBody"></div>
     <div class="md-acts" id="mdActs"></div>
+  </div>
+</div>
+
+<!-- 加入项目：必须先明确选择目标项目 -->
+<div class="modal-mask" id="projectPickerMask">
+  <div class="modal project-picker" role="dialog" aria-modal="true" aria-labelledby="projectPickerTitle">
+    <div>
+      <div class="picker-title" id="projectPickerTitle">加入项目</div>
+      <div class="picker-help">选择一个目标项目。确认后立即保存，不会自动选择最近使用的项目。</div>
+    </div>
+    <div class="project-list" id="projectOptions">
+      <button class="project-option" data-project="门窗安装讲解视频">
+        <span class="radio"></span><span><b>门窗安装讲解视频</b><span>编导稿待确认 · 10 分钟前更新</span></span>
+      </button>
+      <button class="project-option" data-project="秋季产品真人口播">
+        <span class="radio"></span><span><b>秋季产品真人口播</b><span>需要补充信息 · 昨天更新</span></span>
+      </button>
+    </div>
+    <div class="picker-actions">
+      <button class="hbtn ghost" onclick="toast('新建项目后再加入当前资源')">＋ 新建项目</button>
+      <div class="right">
+        <button class="hbtn ghost" id="cancelProjectPicker">取消</button>
+        <button class="hbtn" id="confirmProjectPicker" disabled>确认加入</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -557,9 +595,33 @@ function renderView(){
 
 function actBtns(list){
   return list.map(function(b){
-    return '<button class="hbtn '+(b[2]||'ghost')+'" onclick="toast(\''+b[1]+'\')">'+b[0]+'</button>';
+    var action = b[0] === '加入项目…' ? 'openProjectPicker()' : "toast('"+b[1]+"')";
+    return '<button class="hbtn '+(b[2]||'ghost')+'" onclick="'+action+'">'+b[0]+'</button>';
   }).join('');
 }
+
+var projectPickerMask = document.getElementById('projectPickerMask');
+var selectedProject = '';
+function openProjectPicker(){
+  selectedProject = '';
+  document.querySelectorAll('.project-option').forEach(function(option){ option.classList.remove('selected'); });
+  document.getElementById('confirmProjectPicker').disabled = true;
+  projectPickerMask.classList.add('open');
+}
+document.querySelectorAll('.project-option').forEach(function(option){
+  option.addEventListener('click', function(){
+    selectedProject = option.getAttribute('data-project');
+    document.querySelectorAll('.project-option').forEach(function(item){ item.classList.toggle('selected', item === option); });
+    document.getElementById('confirmProjectPicker').disabled = false;
+  });
+});
+document.getElementById('cancelProjectPicker').addEventListener('click', function(){ projectPickerMask.classList.remove('open'); });
+document.getElementById('confirmProjectPicker').addEventListener('click', function(){
+  if(!selectedProject) return;
+  projectPickerMask.classList.remove('open');
+  mask.classList.remove('open');
+  toast('已加入项目「'+selectedProject+'」并保存');
+});
 
 function renderModal(){
   var html = '', acts = '';
@@ -581,7 +643,7 @@ function renderModal(){
         + '<div class="l" style="font-size:11.5px;color:var(--ink-3)">完成后会自动生成画面描述、可用场景和检索关键词</div></div></div>';
     }
     html += '<div class="d-sec"><div class="d-label">使用记录</div><div class="d-usage">'+a.usage.replace(/「(.+?)」/g,'<b>「$1」</b>')+'</div></div>';
-    acts = actBtns([['在对话中使用','已加入当前对话，可直接引用',''],['用于创作','用这张图开始新的创作…'],
+    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['用于创作','用这张图开始新的创作…'],
       ['重新解析','已重新排队解析这张素材'],['重新生成','基于这张图重新生成变体…'],
       ['下载','已开始下载原图'],['删除','删除需二次确认（demo 不真删）','danger']]);
   } else if(view === 'copy'){
@@ -597,7 +659,7 @@ function renderModal(){
         + '<span class="ab-t" id="abT">00:00 / 00:30</span></div></div>';
     }
     html += '<div class="d-sec"><div class="d-label">来源</div><div class="d-usage">'+c.usage+'</div></div>';
-    acts = actBtns([['在对话中使用','已加入当前对话，可基于它继续改',''],['复制全文','已复制全文'],
+    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['复制全文','已复制全文'],
       ['导出','已导出 Markdown'],['删除','删除需二次确认（demo 不真删）','danger']]);
   } else if(view === 'video'){
     var v = VIDEOS[selected];
@@ -607,10 +669,10 @@ function renderModal(){
       + '<div class="d-sec"><div class="d-label">规格</div><div class="d-usage">'+v.meta+'</div></div>';
     if(v.cat === '数字人视频'){
       html += '<div class="d-sec"><div class="d-label">口播文稿</div><div class="d-understand">'+v.script+'</div></div>';
-      acts = actBtns([['在对话中使用','已加入当前对话',''],['改口播文稿','回到对话说想怎么改，AI 会重新配播'],
+      acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['改口播文稿','回到项目对话说想怎么改，AI 会重新配播'],
         ['导出','正在导出 MP4…'],['删除','删除需二次确认（demo 不真删）','danger']]);
     } else {
-      acts = actBtns([['在对话中使用','已加入当前对话',''],['在剪辑器中打开','正在打开剪辑器…'],
+      acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['在剪辑器中打开','正在打开剪辑器…'],
         ['导出','正在导出 MP4…'],['删除','删除需二次确认（demo 不真删）','danger']]);
     }
   } else {
@@ -626,7 +688,7 @@ function renderModal(){
       html = '<div class="d-sec"><div class="d-label">AI 解析</div>'
         + '<div class="d-pending"><div class="l"><span class="gdot"></span>AI 正在解析这份资料…</div><div class="bar"></div></div></div>';
     }
-    acts = actBtns([['在对话中引用','已加入当前对话，可作为生成依据',''],['重新解析','已重新排队解析'],
+    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['重新解析','已重新排队解析'],
       ['下载原件','已开始下载'],['删除','删除需二次确认（demo 不真删）','danger']]);
   }
   document.getElementById('mdBody').innerHTML = html;

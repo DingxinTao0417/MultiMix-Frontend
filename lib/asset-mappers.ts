@@ -1230,7 +1230,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       label: `v${version.version}`,
       savedAt: relativeTimeLabel(version.created_at),
       status: version.edit_intent === "restore"
-        ? "恢复版本"
+        ? "基于旧版生成"
         : version.instruction
           ? `修订：${version.instruction}`
           : "初始版本"
@@ -1346,11 +1346,27 @@ export function conversationFromPersisted(
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.text ?? "";
   const lastAssistantMessage = [...messages].reverse().find((message) => message.role === "assistant")?.text ?? "";
   const lastAsset = row.products[defaultProductIndex];
+  const projectResources = {
+    sources: (row.project_resources?.sources ?? []).map((asset) => ({ id: String(asset.id), title: asset.title })),
+    copies: (row.project_resources?.copies ?? []).map((asset) => ({ id: String(asset.id), title: asset.title })),
+    covers: (row.project_resources?.covers ?? []).map((asset) => ({ id: String(asset.id), title: asset.title })),
+    videos: (row.project_resources?.videos ?? []).map((asset) => ({ id: String(asset.id), title: asset.title })),
+  };
+  const projectResourceSummary = row.project_resource_summary
+    ? {
+        sources: row.project_resource_summary.sources,
+        historicalSources: row.project_resource_summary.historical_sources,
+        copies: row.project_resource_summary.copies,
+        covers: row.project_resource_summary.covers,
+        videos: row.project_resource_summary.videos,
+      }
+    : undefined;
   return {
     id: row.id,
     title: row.title || product.title,
     type: "llm-generation",
     updatedAt: relativeTimeLabel(row.updated_at),
+    projectState: row.project_state?.code,
     assetLabel: lastAsset ? assetLabelFromProduct(lastAsset) : "对话历史",
     status: lastAsset ? statusLabelFromProduct(lastAsset) : row.status,
     prompt: lastUserMessage,
@@ -1367,7 +1383,9 @@ export function conversationFromPersisted(
     activeAgentAction: hasReadyVideoProject ? undefined : publicActiveAction,
     product,
     products: fallbackProduct && !products.some((item) => item.id === fallbackProduct.id) ? [...products, fallbackProduct] : products,
-    sourceIds: Array.from(new Set(row.products.flatMap((asset) => asset.linked_asset_ids.map((id) => String(id)))))
+    sourceIds: Array.from(new Set(row.products.flatMap((asset) => asset.linked_asset_ids.map((id) => String(id))))),
+    projectResources,
+    projectResourceSummary,
   };
 }
 

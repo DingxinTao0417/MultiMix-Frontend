@@ -250,6 +250,7 @@ export default function ConversationStudio({
   liveAgentActionsById,
   onRetryAgentAction,
   diagnosticsSlot = null,
+  onOpenProjectResources,
   detailLoadError = false,
   onRetryDetail,
   readonly = false,
@@ -301,6 +302,7 @@ export default function ConversationStudio({
   liveAgentActionsById?: Record<string, AgentActionRunResponse>;
   onRetryAgentAction?: (actionRunId: string) => void;
   diagnosticsSlot?: ReactNode;
+  onOpenProjectResources?: () => void;
   detailLoadError?: boolean;
   onRetryDetail?: () => void;
   readonly?: boolean;
@@ -818,6 +820,13 @@ export default function ConversationStudio({
       .map((message) => message.metadata?.retry_of_asset_generation_job_id)
       .filter((id): id is string => typeof id === "string" && Boolean(id)),
   );
+  const projectResourceCounts: Array<[string, number]> = [
+    ["素材", selectedConversation.projectResourceSummary?.sources ?? selectedConversation.projectResources?.sources.length ?? 0],
+    ["文案", selectedConversation.projectResourceSummary?.copies ?? selectedConversation.projectResources?.copies.length ?? 0],
+    ["封面", selectedConversation.projectResourceSummary?.covers ?? selectedConversation.projectResources?.covers.length ?? 0],
+    ["视频", selectedConversation.projectResourceSummary?.videos ?? selectedConversation.projectResources?.videos.length ?? 0],
+  ];
+  const visibleProjectResourceCounts = projectResourceCounts.filter(([, count]) => count > 0);
 
   return (
     <section
@@ -836,6 +845,19 @@ export default function ConversationStudio({
         <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
         {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
       </header>
+      {visibleProjectResourceCounts.length || onOpenProjectResources ? (
+        <button
+          type="button"
+          className="shadcn-prototype-project-resources"
+          aria-label="项目资源"
+          onClick={onOpenProjectResources}
+        >
+          <span>项目资源</span>
+          {visibleProjectResourceCounts.map(([label, count]) => (
+            <em key={label}>{label} {count}</em>
+          ))}
+        </button>
+      ) : null}
       {selectedConversation.agentTasks ? (
         <AgentTaskStrip
           tasks={selectedConversation.agentTasks}

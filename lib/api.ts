@@ -228,13 +228,73 @@ export type AssetConversationMessageItemResponse = {
   created_at: string;
 };
 
+export type AssetConversationProjectResourcesResponse = {
+  sources: ContentAsset[];
+  copies: ContentAsset[];
+  covers: ContentAsset[];
+  videos: ContentAsset[];
+};
+
+export type ProjectProgressCode =
+  | "needs_input"
+  | "script_review"
+  | "generating"
+  | "ready"
+  | "needs_attention";
+
+export type ProjectResourceSummaryResponse = {
+  sources: number;
+  historical_sources: number;
+  copies: number;
+  covers: number;
+  videos: number;
+};
+
+export type ProjectResourceKind = "source" | "copy" | "cover" | "video";
+export type ProjectResourceScope = "active" | "history" | "all";
+
+export type ProjectResourceItemResponse = {
+  id: number;
+  title: string;
+  kind: ProjectResourceKind;
+  membership_state: "active" | "removed" | null;
+  historical_reference_count: number;
+  status: string;
+  asset_kind: string;
+  content_type: string;
+  source_type: string;
+  updated_at: string;
+};
+
+export type ProjectResourcePageResponse = {
+  items: ProjectResourceItemResponse[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type ProjectSourceMembershipResponse = {
+  conversation_id: string;
+  asset_id: number;
+  state: "active" | "removed";
+  active_source_count: number;
+  historical_reference_count: number;
+  notice: string;
+};
+
 export type AssetConversationResponse = {
   id: string;
   title: string;
   status: string;
   metadata: Record<string, unknown>;
+  project_state?: { code: ProjectProgressCode };
   messages: AssetConversationMessageItemResponse[];
   products: ContentAsset[];
+  // A server-owned project view of the material and deliverables associated
+  // with this conversation. Older servers may omit it while a detail reload
+  // is in flight, in which case the UI keeps the project summary hidden.
+  project_resources?: AssetConversationProjectResourcesResponse;
+  project_resource_summary?: ProjectResourceSummaryResponse;
   agent_tasks?: AgentTaskCollectionResponse;
   active_agent_action?: AgentActionRunResponse | null;
   created_at: string;
@@ -246,6 +306,7 @@ export type AssetConversationSummaryResponse = {
   title: string;
   status: string;
   metadata: Record<string, unknown>;
+  project_state?: { code: ProjectProgressCode };
   created_at: string;
   updated_at: string;
 };
@@ -587,6 +648,63 @@ export async function getAssetGenerationJob(
     `/assets/generation-jobs/${encodeURIComponent(jobId)}`,
     token,
     { signal, cache: "no-store" },
+  );
+}
+
+export async function getProjectResources(
+  token: string,
+  conversationId: string,
+  kind: ProjectResourceKind,
+  scope: ProjectResourceScope,
+  offset = 0,
+  limit = 20,
+): Promise<ProjectResourcePageResponse> {
+  const query = new URLSearchParams({
+    kind,
+    scope,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return api<ProjectResourcePageResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/resources?${query.toString()}`,
+    token,
+    { cache: "no-store" },
+  );
+}
+
+export async function addProjectSource(
+  token: string,
+  conversationId: string,
+  assetId: number,
+): Promise<ProjectSourceMembershipResponse> {
+  return api<ProjectSourceMembershipResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/sources/${assetId}`,
+    token,
+    { method: "PUT" },
+  );
+}
+
+export async function removeProjectSource(
+  token: string,
+  conversationId: string,
+  assetId: number,
+): Promise<ProjectSourceMembershipResponse> {
+  return api<ProjectSourceMembershipResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/sources/${assetId}`,
+    token,
+    { method: "DELETE" },
+  );
+}
+
+export async function getContentAssetVersionPreview(
+  token: string,
+  assetId: number,
+  versionId: number,
+): Promise<ContentAsset> {
+  return api<ContentAsset>(
+    `/assets/${assetId}/versions/${versionId}/preview`,
+    token,
+    { cache: "no-store" },
   );
 }
 

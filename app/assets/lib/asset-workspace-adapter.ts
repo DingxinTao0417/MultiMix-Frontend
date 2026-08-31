@@ -631,6 +631,7 @@ export function conversationFromSummary(
     updatedAt: relativeTimeLabel(row.updated_at),
     assetLabel: "对话历史",
     status: row.status,
+    projectState: row.project_state?.code,
     prompt: "",
     response: "",
     canvasTitle: row.title,
@@ -1109,6 +1110,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
             ...existing,
             title: summary.title,
             status: summary.status,
+            projectState: summary.project_state?.code,
             updatedAt: relativeTimeLabel(summary.updated_at),
           };
         }
@@ -1118,7 +1120,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     async loadConversationDetail(token, conversationId) {
       const row = await retryConversationDetailLoad(
         () => api<AssetConversationResponse>(
-          `/assets/conversations/${encodeURIComponent(conversationId)}`,
+          `/assets/conversations/${encodeURIComponent(conversationId)}?include_project_resource_items=false`,
           token,
         ),
       );
