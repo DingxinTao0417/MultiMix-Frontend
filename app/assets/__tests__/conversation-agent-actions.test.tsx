@@ -203,6 +203,15 @@ describe("Conversation Agent actions", () => {
         { value: "bilingual", label: "中英双语" },
       ],
       subtitleDefault: "translated_zh",
+      bgmCatalogVersion: "v1",
+      bgmOptions: [{
+        id: "track-b",
+        title: "Clean Motion",
+        reason: "匹配品牌调性。",
+        selectionMode: "semantic_structured",
+      }],
+      bgmDefault: "track-b",
+      bgmEnabledDefault: true,
     };
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -228,6 +237,11 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[5]).toBeUndefined();
     expect(onSendMessage.mock.calls[0]?.[13]).toBe(1194);
     expect(onSendMessage.mock.calls[0]?.[14]).toBeUndefined();
+    expect(onSendMessage.mock.calls[0]?.[15]).toEqual({
+      catalogVersion: "v1",
+      enabled: true,
+      catalogId: "track-b",
+    });
   });
 
   it("submits an explicit source subtitle choice on the initial video confirmation", async () => {

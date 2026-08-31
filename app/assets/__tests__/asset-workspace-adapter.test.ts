@@ -250,6 +250,38 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes the reviewed BGM choice as structured video project confirmation", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: true,
+        catalogId: "track-b",
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: true,
+        catalog_id: "track-b",
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: false,
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: false,
+      },
+    });
+  });
+
   it("serializes presenter direction as an explicit id instead of embedding it in prose", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

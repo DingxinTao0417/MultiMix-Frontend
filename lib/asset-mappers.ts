@@ -13,6 +13,7 @@ import type {
   AssetConversation,
   AssetConversationMessage,
   AssetMessagePlan,
+  AssetPlanBgmOption,
   AssetPlanField,
   AssetPresenterDirectionOption,
   AssetPresenterCleanupItem,
@@ -27,6 +28,7 @@ import type {
   AssetProductSourceRef,
   AssetProductSourceSummary,
   AssetSuggestionAction,
+  AssetVisualPreviewPlan,
 } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
@@ -222,6 +224,85 @@ function planFieldsValue(value: unknown): AssetPlanField[] {
   });
 }
 
+function planBgmOptionsValue(value: unknown): AssetPlanBgmOption[] {
+  if (!Array.isArray(value)) return [];
+  const identifiers = new Set<string>();
+  return value.slice(0, 3).flatMap((item): AssetPlanBgmOption[] => {
+    if (!isRecord(item)) return [];
+    const id = stringValue(item.id);
+    const title = stringValue(item.title);
+    const reason = stringValue(item.reason);
+    const selectionMode = stringValue(item.selection_mode);
+    if (
+      !id
+      || !title
+      || !reason
+      || identifiers.has(id)
+      || !["semantic_structured", "stable_fallback"].includes(selectionMode)
+    ) return [];
+    identifiers.add(id);
+    return [{
+      id,
+      title,
+      reason,
+      selectionMode: selectionMode as AssetPlanBgmOption["selectionMode"],
+    }];
+  });
+}
+
+function planVisualPreviewsValue(value: unknown): AssetVisualPreviewPlan | undefined {
+  if (!isRecord(value) || value.schema_version !== "visual_preview_plan:v1") return undefined;
+  if (!Array.isArray(value.scenes)) return undefined;
+  const scenes = value.scenes.flatMap((scene): AssetVisualPreviewPlan["scenes"] => {
+    if (!isRecord(scene) || !Array.isArray(scene.frames)) return [];
+    const sceneId = stringValue(scene.scene_id);
+    const title = stringValue(scene.title);
+    const sceneIndex = positiveIntegerValue(scene.scene_index);
+    if (!sceneId || !title || !sceneIndex) return [];
+    const frames = scene.frames.slice(0, 4).flatMap((frame): AssetVisualPreviewPlan["scenes"][number]["frames"] => {
+      if (!isRecord(frame)) return [];
+      const frameId = stringValue(frame.frame_id);
+      const timeRole = stringValue(frame.time_role);
+      const label = stringValue(frame.label);
+      const visualState = stringValue(frame.visual_state);
+      const previewKind = stringValue(frame.preview_kind);
+      const fidelity = stringValue(frame.fidelity);
+      const sourceStatus = stringValue(frame.source_status);
+      const limitation = stringValue(frame.limitation);
+      if (
+        !frameId
+        || !["opening", "change", "closing"].includes(timeRole)
+        || !label
+        || !visualState
+        || !["exact_asset", "public_candidate", "generation_intent"].includes(previewKind)
+        || !["exact", "candidate", "schematic"].includes(fidelity)
+        || !sourceStatus
+        || !limitation
+      ) return [];
+      return [{
+        frameId,
+        timeRole: timeRole as "opening" | "change" | "closing",
+        label,
+        visualState,
+        previewKind: previewKind as "exact_asset" | "public_candidate" | "generation_intent",
+        fidelity: fidelity as "exact" | "candidate" | "schematic",
+        sourceStatus,
+        previewUrl: planThumbnailUrl(stringValue(frame.preview_url)),
+        sourceAssetId: positiveIntegerValue(frame.source_asset_id),
+        limitation,
+      }];
+    });
+    if (!frames.length) return [];
+    return [{ sceneId, sceneIndex, title, frames }];
+  });
+  if (!scenes.length) return undefined;
+  return {
+    schemaVersion: "visual_preview_plan:v1",
+    sceneCount: positiveIntegerValue(value.scene_count) ?? scenes.length,
+    scenes,
+  };
+}
+
 // Structured confirmation plan from an assistant message's metadata (spec §5.2).
 // Returns undefined when the payload is missing or has no usable fields so the
 // UI falls back to plain message + suggestion chips (spec §12 降级规则).
@@ -240,6 +321,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const subtitleOptions = planRatioOptionsValue(value.subtitle_options)
     .filter((option) => ["translated_zh", "source", "bilingual"].includes(option.value)) as AssetMessagePlan["subtitleOptions"];
   const subtitleDefault = stringValue(value.subtitle_default);
+  const visualPreviews = planVisualPreviewsValue(value.visual_previews);
+  const bgmOptions = planBgmOptionsValue(value.bgm_options);
   const planKind = stringValue(value.kind);
   return {
     kind: planKind === "video_parameter_confirmation"
@@ -287,6 +370,13 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     subtitleOptions: subtitleOptions?.length ? subtitleOptions : undefined,
     subtitleDefault: subtitleDefault === "translated_zh" || subtitleDefault === "source" || subtitleDefault === "bilingual"
       ? subtitleDefault
+      : undefined,
+    visualPreviews,
+    bgmCatalogVersion: stringValue(value.bgm_catalog_version) || undefined,
+    bgmOptions: bgmOptions.length ? bgmOptions : undefined,
+    bgmDefault: stringValue(value.bgm_default) || undefined,
+    bgmEnabledDefault: typeof value.bgm_enabled_default === "boolean"
+      ? value.bgm_enabled_default
       : undefined,
   };
 }

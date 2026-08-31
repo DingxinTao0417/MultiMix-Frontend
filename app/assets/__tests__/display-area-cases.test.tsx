@@ -5,7 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import ProductPreview from "../components/product-preview";
+import ProductPreview, { browseBgmSummary } from "../components/product-preview";
 import ProductWorkspace from "../components/product-workspace";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { VideoQualityReport } from "../lib/video-quality";
@@ -137,7 +137,12 @@ describe("display-area eight-case matrix", () => {
               ...(product.metadata?.video_project as Record<string, unknown>),
               media: [{ id: "media-bgm-tech", type: "audio", file_path: "bgm://bgm-tech-01", name: "科技向前" }],
               metadata: {
-                bgm_choice: { enabled: true, catalog_id: "bgm-tech-01", selected_by: "auto" },
+                bgm_choice: {
+                  enabled: true,
+                  catalog_id: "bgm-tech-01",
+                  selected_by: "auto",
+                  selection_mode: "semantic_structured",
+                },
               },
             },
           },
@@ -148,7 +153,29 @@ describe("display-area eight-case matrix", () => {
 
     fireEvent.click(screen.getByText("详情", { exact: true }));
     expect(screen.getByText("本片素材", { exact: true })).toBeInTheDocument();
-    expect(screen.getByText("背景音乐：科技向前 · AI 匹配", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("背景音乐：科技向前 · 智能推荐", { exact: true })).toBeInTheDocument();
+  });
+
+  it("labels a deterministic fallback as automatic rather than AI matching", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    expect(browseBgmSummary({
+      ...product,
+      metadata: {
+        ...product.metadata,
+        video_project: {
+          ...(product.metadata?.video_project as Record<string, unknown>),
+          media: [{ id: "media-bgm-tech", type: "audio", file_path: "bgm://bgm-tech-01", name: "科技向前" }],
+          metadata: {
+            bgm_choice: {
+              enabled: true,
+              catalog_id: "bgm-tech-01",
+              selected_by: "auto",
+              selection_mode: "stable_fallback",
+            },
+          },
+        },
+      },
+    })).toBe("科技向前 · 自动选择");
   });
 
   it("seeks the finished video when a storyboard card is selected", () => {

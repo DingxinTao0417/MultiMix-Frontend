@@ -335,6 +335,91 @@ describe("asset product mapper", () => {
     });
   });
 
+  it("maps visual review and BGM recommendations into the confirmation card contract", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-director-review",
+      title: "产品介绍",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-31T00:00:00Z",
+      updated_at: "2026-08-31T00:01:00Z",
+      products: [asset({ id: 31 })],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "请审查视频方案。",
+        asset_id: 31,
+        metadata: {
+          plan: {
+            kind: "video_project_confirmation",
+            title: "视频方案",
+            status: "pending",
+            fields: [{ key: "duration", label: "时长", value: "约 30 秒" }],
+            visual_previews: {
+              schema_version: "visual_preview_plan:v1",
+              scene_count: 1,
+              scenes: [{
+                scene_id: "scene-1",
+                scene_index: 1,
+                title: "产品开场",
+                frames: [{
+                  frame_id: "scene-1:opening",
+                  time_role: "opening",
+                  label: "起始画面",
+                  visual_state: "产品实拍居中",
+                  preview_kind: "exact_asset",
+                  fidelity: "exact",
+                  source_status: "persisted",
+                  preview_url: "https://preview.test/product.jpg",
+                  source_asset_id: 7,
+                  limitation: "最终裁切与动效以生成结果为准。",
+                }],
+              }],
+            },
+            bgm_catalog_version: "v1",
+            bgm_default: "track-a",
+            bgm_enabled_default: true,
+            bgm_options: [{
+              id: "track-a",
+              title: "Clean Motion",
+              reason: "匹配可信品牌调性。",
+              selection_mode: "semantic_structured",
+            }],
+          },
+        },
+        created_at: "2026-08-31T00:00:01Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      bgmCatalogVersion: "v1",
+      bgmDefault: "track-a",
+      bgmEnabledDefault: true,
+      bgmOptions: [{
+        id: "track-a",
+        title: "Clean Motion",
+        reason: "匹配可信品牌调性。",
+        selectionMode: "semantic_structured",
+      }],
+      visualPreviews: {
+        schemaVersion: "visual_preview_plan:v1",
+        sceneCount: 1,
+        scenes: [{
+          sceneId: "scene-1",
+          sceneIndex: 1,
+          title: "产品开场",
+          frames: [{
+            frameId: "scene-1:opening",
+            previewKind: "exact_asset",
+            fidelity: "exact",
+            previewUrl: "https://preview.test/product.jpg",
+            sourceAssetId: 7,
+          }],
+        }],
+      },
+    });
+  });
+
   it("keeps a new-video parameter confirmation visible beside an existing ready project", () => {
     const readyProject = asset({
       id: 120,

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
+import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
   assetWorkspaceAdapter,
   createLibraryCreationDraftConversation,
@@ -33,12 +34,14 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetLongFormAction,
+  AssetPlanBgmCatalog,
   AssetPresenterDirectionConfirmation,
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetPresenterAudioSelectionConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
 } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
@@ -553,6 +556,17 @@ export default function AssetsWorkspaceClient({
     hasToken: Boolean(token),
     connectionState: runtimeWriteConnectionState,
   }), [backendConfigured, runtimeWriteConnectionState, token]);
+  const handleLoadBgmCatalog = useCallback(async (assetId: number): Promise<AssetPlanBgmCatalog> => {
+    const catalog = await getProjectBGMCatalog(String(assetId), token);
+    return {
+      catalogVersion: catalog.catalog_version,
+      tracks: catalog.tracks.map((track) => ({
+        id: track.id,
+        title: track.title,
+        previewUrl: track.preview_url,
+      })),
+    };
+  }, [token]);
   const deletingConversationIdsRef = useRef(new Set<string>());
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
@@ -2021,6 +2035,7 @@ export default function AssetsWorkspaceClient({
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2091,6 +2106,7 @@ export default function AssetsWorkspaceClient({
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
+        videoProjectConfirmation,
         agentConfirmationId,
         longFormAction: effectiveLongFormAction,
         videoSceneReplacement,
@@ -2706,6 +2722,7 @@ export default function AssetsWorkspaceClient({
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
+                onLoadBgmCatalog={handleLoadBgmCatalog}
               />
               <div
                 className="shadcn-prototype-resize-handle"

@@ -28,6 +28,7 @@ import type {
   AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
+  AssetPlanBgmCatalog,
   AssetPlanConfirmationValues,
   AssetPresenterAudioSelectionConfirmation,
   AssetPresenterDirectionConfirmation,
@@ -35,6 +36,7 @@ import type {
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
 } from "../lib/asset-workspace-types";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
@@ -271,6 +273,7 @@ export default function ConversationStudio({
   readonly = false,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
+  onLoadBgmCatalog,
 }: {
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
@@ -300,6 +303,7 @@ export default function ConversationStudio({
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
@@ -323,6 +327,7 @@ export default function ConversationStudio({
   readonly?: boolean;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
+  onLoadBgmCatalog?: (assetId: number) => Promise<AssetPlanBgmCatalog>;
 }) {
   const products = getConversationProducts(selectedConversation);
   const [composerValue, setComposerValue] = useState("");
@@ -433,6 +438,7 @@ export default function ConversationStudio({
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -487,6 +493,7 @@ export default function ConversationStudio({
         presenterAudioSelectionConfirmation,
         confirmationProductId,
         sourceSubtitleMode,
+        videoProjectConfirmation,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -533,6 +540,7 @@ export default function ConversationStudio({
   ) => {
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+    const isVideoProjectConfirmation = plan.kind === "video_project_confirmation";
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
     const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
     const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
@@ -610,6 +618,26 @@ export default function ConversationStudio({
       setSendError("原声音轨确认信息不完整，请刷新后重试。");
       return;
     }
+    const bgmConfirmationRequired = isVideoProjectConfirmation
+      && Boolean(plan.bgmCatalogVersion)
+      && (plan.bgmOptions?.length ?? 0) > 0;
+    const bgmEnabled = values?.bgmEnabled;
+    const videoProjectConfirmation = (
+      bgmConfirmationRequired
+      && plan.bgmCatalogVersion
+      && typeof bgmEnabled === "boolean"
+      && (!bgmEnabled || Boolean(values?.bgmCatalogId))
+    ) ? {
+        catalogVersion: plan.bgmCatalogVersion,
+        enabled: bgmEnabled,
+        ...(bgmEnabled && values?.bgmCatalogId
+          ? { catalogId: values.bgmCatalogId }
+          : {}),
+      } : undefined;
+    if (bgmConfirmationRequired && !videoProjectConfirmation) {
+      setSendError("配乐确认信息不完整，请刷新后重试。");
+      return;
+    }
     const planKey = confirmationPlanKey(plan);
     setConfirmingPlanKey(planKey);
     try {
@@ -654,6 +682,7 @@ export default function ConversationStudio({
       presenterAudioSelectionConfirmation,
        confirmationProductId,
        sourceSubtitleMode,
+       videoProjectConfirmation,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
@@ -953,6 +982,8 @@ export default function ConversationStudio({
               {message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
+                  assetId={message.assetId ?? undefined}
+                  loadBgmCatalog={onLoadBgmCatalog}
                   optimisticallyConfirmed={
                     confirmingPlanKey === confirmationPlanKey(message.plan)
                     || (
