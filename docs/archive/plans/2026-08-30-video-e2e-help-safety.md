@@ -1,6 +1,6 @@
 # 视频 E2E 帮助命令安全修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-30
 
