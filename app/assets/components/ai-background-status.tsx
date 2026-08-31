@@ -19,12 +19,12 @@ export default function AiBackgroundStatus({ tasks }: { tasks: AiBackgroundTask[
     <div className="shadcn-prototype-ai-status" aria-live="polite">
       <div className="shadcn-prototype-ai-status-head">
         <span className="shadcn-prototype-ai-status-dot" aria-hidden="true" />
-        AI 正在后台工作
+        AI 正在理解素材
       </div>
       <p className="shadcn-prototype-ai-status-body">
         正在理解 <b>「{primary.title}」</b>
         {extra > 0 ? ` 等 ${tasks.length} 项` : ""}
-        {primary.note ? `，${primary.note}` : "。"}
+        {primary.note ? `，${primary.note}` : "，完成后可用于视频创作。"}
       </p>
     </div>
   );

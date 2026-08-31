@@ -11,7 +11,7 @@ const scenario = {
 } as ScenarioDefinition;
 
 describe("scoreInitialPlan", () => {
-  it("fails R7 when a distractor is selected", () => {
+  it("fails R3 when a distractor is selected", () => {
     const checks = scoreInitialPlan(scenario, {
       imageIds: [11],
       distractorIds: [99],
@@ -19,7 +19,7 @@ describe("scoreInitialPlan", () => {
       scenes: [{ narration: "厨房测量", asset_reference: { status: "matched", chosen_asset_id: 99, match_confidence: 0.91 }, mg_decision: { mode: "overlay", needed: false, status: "not_needed" } }],
     });
 
-    expect(checks.find((check) => check.code === "R7")).toMatchObject({ status: "failed", severity: "P0" });
+    expect(checks.find((check) => check.code === "R3")).toMatchObject({ status: "failed", severity: "P0" });
   });
 
   it("passes R4 when stock fallback retains no_asset_hit", () => {

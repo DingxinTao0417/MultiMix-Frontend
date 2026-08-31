@@ -20,7 +20,6 @@ export function scoreInitialPlan(scenario: ScenarioDefinition, input: InitialPla
     check("R4", stockViolations.length === 0, "P0", 0, stockViolations.length),
     check("R5", scenario.thresholds.noAssetHitMinimum === undefined || noAssetHits >= scenario.thresholds.noAssetHitMinimum, "P0", scenario.thresholds.noAssetHitMinimum ?? "not applicable", noAssetHits),
     check("R6", input.scenes.every((scene) => Boolean(scene.asset_reference?.status)), "P1", "canonical asset_reference", input.scenes.length),
-    check("R7", distractorHits.length === 0, "P0", 0, distractorHits.length, distractorHits),
     check("M1", mgNeeded.length >= 1, "P1", ">=1 overlay decision", mgNeeded.length),
     check("M3", input.scenes.every((scene) => scene.mg_decision?.mode === undefined || scene.mg_decision.mode === "overlay"), "P0", "overlay only", input.scenes.map((scene) => scene.mg_decision?.mode)),
     check("C1", forbiddenHits.length === 0, "P0", 0, forbiddenHits.length, forbiddenHits),

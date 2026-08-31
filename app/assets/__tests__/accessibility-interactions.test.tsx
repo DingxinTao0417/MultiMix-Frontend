@@ -199,7 +199,6 @@ describe("email-only authentication copy", () => {
     const paths = [
       "app/multimix-app.tsx",
       "docs/specs/ui/prototypes/current/screens/login.html",
-      "e2e/pdf-video-quality.spec.ts",
       "e2e/video-pipeline-production.spec.ts",
     ];
     const sources = paths.map((path) => readFileSync(resolve(process.cwd(), path), "utf8"));
@@ -211,6 +210,5 @@ describe("email-only authentication copy", () => {
     expect(sources[0]).toContain('type="email"');
     expect(sources[1]).toContain("<label>邮箱</label>");
     expect(sources[2]).toContain('getByLabel("邮箱")');
-    expect(sources[3]).toContain('getByLabel("邮箱")');
   });
 });

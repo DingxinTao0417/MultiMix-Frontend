@@ -9,7 +9,8 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
-import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
+import { createE2ERunLifecycle, finalizeE2ERun } from "./e2e-run-lifecycle.mjs";
+import { createOfflineE2EEnv } from "./offline-e2e-env.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
@@ -33,6 +34,7 @@ const pythonCommand = process.env.PYTHON ?? path.join(
   "Scripts",
   process.platform === "win32" ? "python.exe" : "python",
 );
+const offlineEnv = createOfflineE2EEnv(process.env);
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -152,7 +154,7 @@ try {
   await createSyntheticMedia();
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const backendEnv = {
-    ...process.env,
+    ...offlineEnv,
     MULTIMIX_ENV: "local",
     MULTIMIX_AUTH_PROVIDER: "local",
     MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
@@ -233,6 +235,8 @@ try {
   for (const { log } of children) log.end();
   fs.rmSync(path.join(frontendRoot, nextDistDir), { recursive: true, force: true });
   restoreFiles(snapshots);
-  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
-  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- video-bgm/${runId} --confirm`);
+  const finalization = finalizeE2ERun({ lifecycle, failed: Boolean(runError) });
+  if (finalization.retained) {
+    console.log(`Failed E2E runtime retained: ${lifecycle.runDir}. Clean with npm run e2e:cleanup -- video-bgm/${runId} --confirm`);
+  } else console.log(`Passed E2E runtime cleaned: ${finalization.runDir}`);
 }

@@ -382,6 +382,35 @@ describe("useAssetGenerationJobs", () => {
     });
   });
 
+  it("keeps the failed job visible when the retry API rejects", async () => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
+    vi.spyOn(assetWorkspaceAdapter, "retryGenerationJob")
+      .mockRejectedValue(new Error("retry rejected"));
+    const failedJob = generationJob({
+      status: "failed",
+      error_message: "生成超时，可以重试。",
+    });
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1",
+      conversations: [],
+      onConversationRefreshed: vi.fn(),
+      onConversationRefreshError: vi.fn(),
+    }));
+    act(() => {
+      result.current.registerJob("conversation-1", failedJob);
+    });
+
+    await expect(result.current.retryJob("asset-generation-job-1")).rejects.toThrow(
+      "retry rejected",
+    );
+
+    expect(result.current.jobsByConversation["conversation-1"]).toEqual({
+      conversationId: "conversation-1",
+      job: failedJob,
+      run: 0,
+    });
+  });
+
   it("cancels an active job and stops treating it as pollable", async () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const cancelledJob = generationJob({

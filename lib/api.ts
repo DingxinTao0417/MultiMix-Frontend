@@ -27,12 +27,19 @@ function notifyAuthExpired(): void {
   }
 }
 
-type ApiError = Error & { retryable?: boolean };
+type ApiError = Error & { retryable?: boolean; status?: number };
 
-function nonRetryableError(message: string): ApiError {
+function nonRetryableError(message: string, status?: number): ApiError {
   const error = new Error(message) as ApiError;
   error.retryable = false;
+  error.status = status;
   return error;
+}
+
+export function apiErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object" || !("status" in error)) return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }
 
 function isConnectionError(error: Error): boolean {
@@ -93,7 +100,7 @@ export async function api<T>(path: string, token: string | null, init: RequestIn
     ) {
       throw new Error(API_CONNECTION_ERROR);
     }
-    throw nonRetryableError(responseErrorMessage(body, response.statusText));
+    throw nonRetryableError(responseErrorMessage(body, response.statusText), response.status);
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
     if (init.signal?.aborted || err.name === "AbortError") throw err;
@@ -473,6 +480,39 @@ export type AuthResponse = {
   message: string | null;
 };
 
+export type AdminProductMetrics = {
+  window_days: 7 | 30 | 90;
+  generated_at: string;
+  totals: {
+    registered_users: number;
+    workspace_users: number;
+    activated_users: number;
+    editable_video_users: number;
+    modified_video_users: number;
+    exported_video_users: number;
+  };
+  funnel: Array<{ key: string; label: string; users: number }>;
+  rates: {
+    activation_rate: number;
+    editable_video_rate: number;
+    modified_video_rate: number;
+    exported_video_rate: number;
+    saved_asset_scene_rate: number;
+    source_evidence_open_rate: number;
+    recommendation_select_rate: number;
+  };
+  durations: {
+    time_to_first_editable_video_seconds_median: number | null;
+    time_to_first_editable_video_seconds_p75: number | null;
+  };
+  daily: Array<{
+    date: string;
+    registered_users: number;
+    activated_users: number;
+    editable_video_users: number;
+  }>;
+};
+
 // Local auth (MULTIMIX_AUTH_PROVIDER=local). Email verification is off by default.
 export async function authLogin(email: string, password: string): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/login", null, {
@@ -490,6 +530,17 @@ export async function authRegister(email: string, password: string): Promise<Aut
 
 export async function authLocalDevAdmin(): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/local-dev-admin", null);
+}
+
+export async function getAdminProductMetrics(
+  token: string,
+  windowDays: 7 | 30 | 90 = 30,
+): Promise<AdminProductMetrics> {
+  return api<AdminProductMetrics>(
+    `/admin/product-metrics?window_days=${windowDays}`,
+    token,
+    { cache: "no-store" },
+  );
 }
 
 export async function getAssetLlmDiagnostics(token: string, probe = true): Promise<AssetLlmDiagnosticsRead> {

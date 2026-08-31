@@ -6,6 +6,139 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("shows exact, candidate, and schematic keyframe review truth before generation", () => {
+    const plan = {
+      kind: "video_project_confirmation",
+      title: "视频方案",
+      status: "pending",
+      fields: [{ key: "duration", label: "时长", value: "约 30 秒" }],
+      visualPreviews: {
+        schemaVersion: "visual_preview_plan:v1",
+        sceneCount: 2,
+        scenes: [
+          {
+            sceneId: "scene-1",
+            sceneIndex: 1,
+            title: "产品开场",
+            frames: [{
+              frameId: "scene-1:opening",
+              timeRole: "opening",
+              label: "起始画面",
+              visualState: "产品实拍居中",
+              previewKind: "exact_asset",
+              fidelity: "exact",
+              sourceStatus: "persisted",
+              previewUrl: "https://preview.test/product.jpg",
+              limitation: "最终裁切与动效以生成结果为准。",
+            }],
+          },
+          {
+            sceneId: "scene-2",
+            sceneIndex: 2,
+            title: "流程说明",
+            frames: [{
+              frameId: "scene-2:opening",
+              timeRole: "opening",
+              label: "起始画面",
+              visualState: "三步流程从左到右出现",
+              previewKind: "generation_intent",
+              fidelity: "schematic",
+              sourceStatus: "planned",
+              limitation: "示意画面尚未生成，不代表最终像素、素材或动效。",
+            }],
+          },
+        ],
+      },
+    };
+
+    render(<ConfirmCard plan={plan as never} />);
+
+    expect(screen.getByRole("region", { name: "关键帧预览" })).toBeTruthy();
+    expect(screen.getByAltText("产品开场 · 起始画面").getAttribute("src")).toBe(
+      "https://preview.test/product.jpg",
+    );
+    expect(screen.getByText("素材预览")).toBeTruthy();
+    expect(screen.getByText("画面示意")).toBeTruthy();
+    expect(screen.getByText("三步流程从左到右出现")).toBeTruthy();
+    expect(screen.getByText("示意画面尚未生成，不代表最终像素、素材或动效。")).toBeTruthy();
+  });
+
+  it("loads signed BGM previews and submits the reviewed music choice", async () => {
+    const onConfirm = vi.fn();
+    const loadBgmCatalog = vi.fn().mockResolvedValue({
+      catalogVersion: "v1",
+      tracks: [
+        { id: "track-a", title: "Clean Motion", previewUrl: "https://preview.test/a.m4a" },
+        { id: "track-b", title: "Warm Steps", previewUrl: "https://preview.test/b.m4a" },
+      ],
+    });
+    const plan = {
+      kind: "video_project_confirmation",
+      title: "视频方案",
+      status: "pending",
+      fields: [{ key: "duration", label: "时长", value: "约 30 秒" }],
+      bgmCatalogVersion: "v1",
+      bgmDefault: "track-a",
+      bgmEnabledDefault: true,
+      bgmOptions: [
+        { id: "track-a", title: "Clean Motion", reason: "匹配可信品牌调性。", selectionMode: "semantic_structured" },
+        { id: "track-b", title: "Warm Steps", reason: "匹配产品介绍用途。", selectionMode: "semantic_structured" },
+      ],
+      confirmLabel: "确认并生成视频",
+    };
+    const props = {
+      plan,
+      assetId: 17,
+      loadBgmCatalog,
+      onConfirm,
+    } as unknown as Parameters<typeof ConfirmCard>[0];
+
+    render(<ConfirmCard {...props} />);
+
+    expect(screen.getByRole("radiogroup", { name: "背景音乐" })).toBeTruthy();
+    expect(screen.getByText("智能推荐 · 可试听")).toBeTruthy();
+    expect(loadBgmCatalog).toHaveBeenCalledWith(17);
+    const second = screen.getByRole("radio", { name: "Warm Steps" });
+    fireEvent.click(second);
+    expect((await screen.findByLabelText("试听 Warm Steps")).getAttribute("src")).toBe(
+      "https://preview.test/b.m4a",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "确认并生成视频" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      bgmCatalogId: "track-b",
+      bgmCatalogVersion: "v1",
+      bgmEnabled: true,
+    });
+  });
+
+  it("allows confirming no background music without loading a preview", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "video_project_confirmation",
+      title: "视频方案",
+      status: "pending",
+      fields: [{ key: "duration", label: "时长", value: "约 30 秒" }],
+      bgmCatalogVersion: "v1",
+      bgmDefault: "track-a",
+      bgmEnabledDefault: true,
+      bgmOptions: [
+        { id: "track-a", title: "Clean Motion", reason: "匹配可信品牌调性。", selectionMode: "semantic_structured" },
+      ],
+      confirmLabel: "确认并生成视频",
+    };
+    const props = { plan, onConfirm } as unknown as Parameters<typeof ConfirmCard>[0];
+
+    render(<ConfirmCard {...props} />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "无配乐" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并生成视频" }));
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      bgmCatalogVersion: "v1",
+      bgmEnabled: false,
+    });
+  });
+
   it("does not show the video-project generation explanation", () => {
     render(
       <ConfirmCard
@@ -58,6 +191,12 @@ describe("ConfirmCard pending state", () => {
         { value: "9:16", label: "竖屏 9:16" },
       ],
       ratioDefault: "16:9",
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: true,
       durationSeconds: 30,
       durationMin: 5,
       durationMax: 120,
@@ -70,16 +209,18 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("横屏 16:9（默认）")).toBeTruthy();
     expect(screen.getByDisplayValue("30")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
+    fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
     fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "45" } });
     fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       ratio: "9:16",
       targetSeconds: 45,
+      aiVoiceEnabled: false,
     });
   });
 
-  it("compares presenter direction samples and submits one explicit direction", () => {
+  it("shows only the published presenter recommendation and submits it", () => {
     const onConfirm = vi.fn();
     const plan = {
       kind: "presenter_project_confirmation" as const,
@@ -88,7 +229,9 @@ describe("ConfirmCard pending state", () => {
       fields: [
         { key: "source_edit", label: "原话与删剪", value: "保留 42 秒 · 删除 1 段" },
       ],
-      confirmLabel: "选择方向并生成视频",
+      confirmLabel: "确认推荐方案并生成视频",
+      adjustLabel: "换个方向",
+      recommendationMode: "single_winner" as const,
       ratioOptions: [
         { value: "9:16", label: "竖屏 9:16" },
         { value: "16:9", label: "横屏 16:9" },
@@ -114,15 +257,6 @@ describe("ConfirmCard pending state", () => {
           sampleUrl: "/samples/a.mp4",
           durationSeconds: 8,
         },
-        {
-          id: "direction-b",
-          label: "产品演示交替",
-          concept: "人物与产品录屏交替解释",
-          reason: "适合更强的产品操作说明",
-          recommended: false,
-          sampleUrl: "/samples/b.mp4",
-          durationSeconds: 8,
-        },
       ],
     };
 
@@ -130,18 +264,65 @@ describe("ConfirmCard pending state", () => {
 
     expect(screen.getByText("推荐")).toBeTruthy();
     expect(screen.getByText("人物建立信任，证据短时接管")).toBeTruthy();
-    expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("radio", { name: /产品演示交替/ }));
+    expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(1);
+    expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));
     fireEvent.click(screen.getByRole("radio", { name: "中英双语" }));
     fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "43" } });
-    fireEvent.click(screen.getByRole("button", { name: "选择方向并生成视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认推荐方案并生成视频" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       ratio: "16:9",
       targetSeconds: 43,
-      directorCandidateId: "direction-b",
+      directorCandidateId: "direction-a",
       sourceSubtitleMode: "bilingual",
+    });
+  });
+
+  it("requires a ratio choice and blocks unavailable default AI voice", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "video_parameter_confirmation" as const,
+      title: "确认视频参数",
+      status: "pending" as const,
+      fields: [
+        { key: "ratio", label: "视频比例", value: "需要你选择" },
+        { key: "ai_voice", label: "AI 配音", value: "开启（默认）" },
+      ],
+      confirmLabel: "确认参数并生成编导稿",
+      ratioOptions: [
+        { value: "16:9", label: "横屏 16:9" },
+        { value: "9:16", label: "竖屏 9:16" },
+      ],
+      ratioConfirmationRequired: true,
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: false,
+      voiceBlockedUntilDisabled: true,
+      durationSeconds: 30,
+      pendingIntentId: "pending-conflict",
+      pendingIntentVersion: 1,
+    };
+
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("alert").textContent).toContain("AI 配音当前不可用");
+    expect(
+      screen.getByRole("button", { name: "确认参数并生成编导稿" }).hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
+    fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
+    expect(screen.queryByText("开启（默认）")).toBeNull();
+    expect(screen.getByText("关闭")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
+
+    expect(onConfirm).toHaveBeenCalledWith(plan, {
+      ratio: "9:16",
+      targetSeconds: 30,
+      aiVoiceEnabled: false,
     });
   });
 
@@ -220,6 +401,9 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("自动通过")).toBeTruthy();
     expect(screen.getByText("删除不改变原意、语气或逻辑关系")).toBeTruthy();
     expect(screen.getByText("第二次识别一致，已恢复自动处理")).toBeTruthy();
+    expect(screen.queryByText("降为建议")).toBeNull();
+    expect(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" }));
     expect(screen.getByText("降为建议")).toBeTruthy();
     expect(screen.getByText("可能承担承接上句的表达作用")).toBeTruthy();
     expect(screen.getByText("两次识别不一致，保持建议")).toBeTruthy();

@@ -54,6 +54,41 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("maps a completed generated image to the shared delivery state and media proxy", () => {
+    const product = contentAssetToProduct(asset({
+      id: 205,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"a".repeat(64)}.png`,
+      product_status: "completed",
+      metadata: { intent: { ratio: "9:16" } },
+    }));
+
+    expect(product.mode).toBe("image");
+    expect(product.productStatus).toBe("completed");
+    expect(product.status).toBe("完成");
+    expect(product.preview?.subtitle).toContain("图片已生成");
+    expect(product.metadata?.preview_url).toContain(
+      `/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fcontent-assets%2F1%2Fgeneration-jobs%2F77%2Fimages%2F${"a".repeat(64)}.png`,
+    );
+  });
+
+  it("does not issue a media request for an unvalidated generated-image path", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      original_ref: "local://content-assets/1/generation-jobs/77/images/user-controlled.png",
+      product_status: "completed",
+    }));
+
+    expect(product.metadata?.preview_url).toBeUndefined();
+  });
+
   it("uses only generating, completed, and failed for video products", () => {
     const baseProject = { timeline: { tracks: [], media: [] } };
     const generating = contentAssetToProduct(asset({
@@ -300,6 +335,91 @@ describe("asset product mapper", () => {
     });
   });
 
+  it("maps visual review and BGM recommendations into the confirmation card contract", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-director-review",
+      title: "产品介绍",
+      status: "active",
+      metadata: {},
+      created_at: "2026-08-31T00:00:00Z",
+      updated_at: "2026-08-31T00:01:00Z",
+      products: [asset({ id: 31 })],
+      messages: [{
+        id: 1,
+        role: "assistant",
+        text: "请审查视频方案。",
+        asset_id: 31,
+        metadata: {
+          plan: {
+            kind: "video_project_confirmation",
+            title: "视频方案",
+            status: "pending",
+            fields: [{ key: "duration", label: "时长", value: "约 30 秒" }],
+            visual_previews: {
+              schema_version: "visual_preview_plan:v1",
+              scene_count: 1,
+              scenes: [{
+                scene_id: "scene-1",
+                scene_index: 1,
+                title: "产品开场",
+                frames: [{
+                  frame_id: "scene-1:opening",
+                  time_role: "opening",
+                  label: "起始画面",
+                  visual_state: "产品实拍居中",
+                  preview_kind: "exact_asset",
+                  fidelity: "exact",
+                  source_status: "persisted",
+                  preview_url: "https://preview.test/product.jpg",
+                  source_asset_id: 7,
+                  limitation: "最终裁切与动效以生成结果为准。",
+                }],
+              }],
+            },
+            bgm_catalog_version: "v1",
+            bgm_default: "track-a",
+            bgm_enabled_default: true,
+            bgm_options: [{
+              id: "track-a",
+              title: "Clean Motion",
+              reason: "匹配可信品牌调性。",
+              selection_mode: "semantic_structured",
+            }],
+          },
+        },
+        created_at: "2026-08-31T00:00:01Z",
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      bgmCatalogVersion: "v1",
+      bgmDefault: "track-a",
+      bgmEnabledDefault: true,
+      bgmOptions: [{
+        id: "track-a",
+        title: "Clean Motion",
+        reason: "匹配可信品牌调性。",
+        selectionMode: "semantic_structured",
+      }],
+      visualPreviews: {
+        schemaVersion: "visual_preview_plan:v1",
+        sceneCount: 1,
+        scenes: [{
+          sceneId: "scene-1",
+          sceneIndex: 1,
+          title: "产品开场",
+          frames: [{
+            frameId: "scene-1:opening",
+            previewKind: "exact_asset",
+            fidelity: "exact",
+            previewUrl: "https://preview.test/product.jpg",
+            sourceAssetId: 7,
+          }],
+        }],
+      },
+    });
+  });
+
   it("keeps a new-video parameter confirmation visible beside an existing ready project", () => {
     const readyProject = asset({
       id: 120,
@@ -340,6 +460,15 @@ describe("asset product mapper", () => {
             title: "确认视频参数",
             status: "pending",
             fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+            ratio_confirmation_required: true,
+            voice_options: [
+              { value: true, label: "生成 AI 配音" },
+              { value: false, label: "不生成 AI 配音" },
+            ],
+            voice_default: true,
+            tts_available: false,
+            voice_blocked_until_disabled: true,
+            recommendation_mode: "single_winner",
           },
         },
         created_at: "2026-08-20T00:00:01Z",
@@ -353,6 +482,15 @@ describe("asset product mapper", () => {
     expect(conversation.messages?.[1]?.plan).toMatchObject({
       kind: "video_parameter_confirmation",
       status: "pending",
+      ratioConfirmationRequired: true,
+      voiceOptions: [
+        { value: true, label: "生成 AI 配音" },
+        { value: false, label: "不生成 AI 配音" },
+      ],
+      voiceDefault: true,
+      ttsAvailable: false,
+      voiceBlockedUntilDisabled: true,
+      recommendationMode: "single_winner",
     });
   });
 
@@ -1672,6 +1810,7 @@ describe("message plan mapping", () => {
               status: "pending",
               fields: [{ key: "source_edit", label: "原话与删剪", value: "保留 42 秒" }],
               direction_default: "direction-a",
+              recommendation_mode: "single_winner",
               direction_options: [{
                 id: "direction-a",
                 label: "观点与证据交替",
@@ -1691,6 +1830,7 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan).toMatchObject({
       kind: "presenter_project_confirmation",
       directionDefault: "direction-a",
+      recommendationMode: "single_winner",
       directionOptions: [{
         id: "direction-a",
         recommended: true,

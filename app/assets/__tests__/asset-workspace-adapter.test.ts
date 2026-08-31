@@ -5,6 +5,7 @@ import {
   assetWorkspaceAdapter,
   assertVideoWritesAvailable,
   buildConversationMessagePayload,
+  createLibraryCreationDraftConversation,
   conversationFromSummary,
   libraryCategoryForAsset,
   libraryKeywordsForAsset,
@@ -134,6 +135,24 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("creates an isolated draft id for a direct library creation request", () => {
+    const draft = createLibraryCreationDraftConversation(
+      assetWorkspaceAdapter.getNewConversation(),
+      "selected-video",
+    );
+
+    expect(draft.id).toBe("draft-library-selected-video");
+    expect(draft).not.toBe(assetWorkspaceAdapter.getNewConversation());
+    expect(buildConversationMessagePayload({
+      conversationId: draft.id,
+      instruction: "基于《真人口播原片》做成视频。",
+      linkedAssetIds: [91],
+    })).toMatchObject({
+      conversation_id: undefined,
+      linked_asset_ids: [91],
+    });
+  });
+
   it("blocks structured video writes during maintenance without blocking reads", () => {
     expect(() => assertVideoWritesAvailable(true)).toThrow("视频生成与修改暂时维护中");
     expect(() => assertVideoWritesAvailable(false)).not.toThrow();
@@ -231,6 +250,38 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes the reviewed BGM choice as structured video project confirmation", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: true,
+        catalogId: "track-b",
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: true,
+        catalog_id: "track-b",
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: false,
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: false,
+      },
+    });
+  });
+
   it("serializes presenter direction as an explicit id instead of embedding it in prose", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
@@ -253,6 +304,22 @@ describe("runtime data boundary", () => {
       },
     });
     expect(payload.instruction).not.toContain("direction-b");
+  });
+
+  it("requests a new presenter version only through the structured next-direction contract", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-presenter",
+      instruction: "换个方向",
+      selectedProductId: 92,
+      presenterDirectionRequest: {
+        currentCandidateId: "direction-a",
+      },
+    });
+
+    expect(payload.presenter_direction_request).toEqual({
+      current_candidate_id: "direction-a",
+    });
+    expect(payload.instruction).not.toContain("direction-a");
   });
 
   it("serializes presenter audio selection with exact track bindings", () => {
@@ -481,6 +548,29 @@ describe("runtime data boundary", () => {
     vi.unstubAllGlobals();
 
     expect(page.rows[0]?.previewUrl).toContain("/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png");
+  });
+
+  it("uses the shared completed delivery state for a generated image in the library", async () => {
+    const image = asset({
+      id: 74,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      product_status: "completed",
+      original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"b".repeat(64)}.png`,
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "image");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]?.statusLabel).toBe("完成");
+    expect(page.rows[0]?.meta).toContain("完成");
   });
 
   it("preserves the backend content type needed by long-form library actions", async () => {
@@ -1099,10 +1189,10 @@ describe("runtime data boundary", () => {
   it("keeps product starter prompts without restoring demo conversations", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
     expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([
-      "写一条小红书文案",
-      "生成 9:16 短视频脚本",
-      "做一张封面图",
-      "把好评截图变成种草帖"
+      "用已有素材生成短视频",
+      "用图片和视频做成片",
+      "把文档做成短视频",
+      "继续修改已有视频"
     ]);
   });
 });

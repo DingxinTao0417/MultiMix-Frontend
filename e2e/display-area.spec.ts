@@ -79,6 +79,11 @@ async function expectApprovedVideoPreviewShell(
   await expect(player).toHaveCSS("padding-bottom", "7px");
   await expect(player).toHaveCSS("padding-left", "7px");
   await expect(player).toHaveCSS("box-shadow", /rgba\(32, 31, 30, 0\.05\).*rgba\(32, 31, 30, 0\.07\)/);
+  await video.evaluate((node: HTMLVideoElement) => {
+    node.pause();
+    node.currentTime = 0;
+  });
+  await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.paused)).toBe(true);
   const screen = player.locator(".shadcn-prototype-preview-player-screen");
   const playIcon = screen.locator("svg");
   const progress = player.getByRole("slider", { name: "播放进度" });
@@ -88,10 +93,6 @@ async function expectApprovedVideoPreviewShell(
   await expect(progress).toHaveCSS("height", "3px");
   await expect(progress).toHaveCSS("appearance", "none");
   await expect(player.locator(".shadcn-prototype-project-preview-controls")).toHaveCSS("padding", "8px 6px 4px");
-  await video.evaluate((node: HTMLVideoElement) => {
-    node.pause();
-    node.currentTime = 0;
-  });
   await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeLessThan(0.1);
   await expect(player).toHaveScreenshot(environmentSnapshotName("video-preview-shell.png"), {
     animations: "disabled",
@@ -140,7 +141,7 @@ test("CASE-04 stays in progress after reload", async ({ page }) => {
 test("CASE-05 shows its stable failure and retry", async ({ page }) => {
   const workspace = await openCase(page, "case-05-project-failed");
   const failure = workspace.getByRole("alert");
-  await expect(failure.getByText("素材合成步骤失败", { exact: false })).toBeVisible();
+  await expect(failure.getByText("视频生成未能完成，请重试。", { exact: true })).toBeVisible();
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
 });
 

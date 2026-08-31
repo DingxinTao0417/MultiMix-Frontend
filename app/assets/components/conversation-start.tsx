@@ -6,30 +6,41 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, shouldSubmitCompo
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
+  CHAT_VIDEO_UPLOAD_ACCEPT,
   chatAttachmentRejectionMessage,
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
+import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
-import LongFormEntry from "./long-form-entry";
-import type { LongFormSourceReady } from "../lib/long-form-client";
+import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
 } from "../lib/runtime-write-capabilities";
+import {
+  getProductAnalyticsSessionId,
+  trackProductEvent,
+} from "../../../lib/product-analytics";
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
+const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
+const ATTACHMENT_HELP_TEXT = "图片会作为画面素材，PDF/文档会作为内容依据；添加视频后请先说明想怎么处理。";
 
 // Demo-final suggestion cards carry a hint line and a richer fill utterance;
 // unknown labels degrade to a title-only card (no invented copy).
 const SUGGESTION_PRESETS: Record<string, { hint?: string; fill?: string }> = {
-  "写一条小红书文案": { hint: "用已解析的案例图，真实风格", fill: "写一条小红书文案，用已解析的案例图，真实风格" },
-  "生成 9:16 短视频脚本": { hint: "30 秒，适配抖音和视频号", fill: "生成一条 9:16 的 30 秒短视频脚本，适配抖音和视频号" },
-  "做一张封面图": { hint: "从你的完工照片里选主图", fill: "做一张封面图，从我的完工照片里选主图" },
-  "把好评截图变成种草帖": { hint: "客户的话比广告更有说服力", fill: "把客户好评截图变成一条种草帖" }
+  "用已有素材生成短视频": { hint: "AI 自动编导并匹配画面", fill: "用我已有的素材生成一条可编辑的短视频" },
+  "用图片和视频做成片": { hint: "优先使用你的真实素材", fill: "用我已有的图片和视频生成一条 9:16 的 30 秒短视频" },
+  "把文档做成短视频": { hint: "关键内容保留来源", fill: "把我上传的文档做成一条可编辑的短视频，关键内容保留来源" },
+  "继续修改已有视频": { hint: "换画面、改文案或调整分镜", fill: "继续修改我已有的视频，先让我选择要修改的版本" }
+};
+const SUGGESTION_EVENT_KEYS: Record<string, string> = {
+  "用已有素材生成短视频": "saved-assets-video",
+  "用图片和视频做成片": "images-and-video",
+  "把文档做成短视频": "document-to-video",
+  "继续修改已有视频": "continue-editing-video",
 };
 
 function suggestionIcon(label: string): ReactNode {
@@ -58,9 +69,9 @@ export default function ConversationStart({
   onUploadImages,
   onRemoveImageAttachment,
   onRetryImageAttachment,
+  onImportVideoUrl,
   token,
   onOpenImageLibrary,
-  onLongFormSourceReady,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
 }: {
@@ -72,9 +83,9 @@ export default function ConversationStart({
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
   onRetryImageAttachment?: (attachmentId: string) => void;
+  onImportVideoUrl?: (url: string) => void;
   token?: string | null;
   onOpenImageLibrary?: () => void;
-  onLongFormSourceReady?: (source: LongFormSourceReady) => Promise<void>;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
 }) {
@@ -88,9 +99,11 @@ export default function ConversationStart({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
-  const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
+  const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canUpload = Boolean(onUploadImages) && writeCapabilities.canUpload;
   const canGenerate = Boolean(onSend) && writeCapabilities.canGenerate;
   const runtimeWriteStatusId = writeCapabilities.reason
@@ -114,13 +127,26 @@ export default function ConversationStart({
     }
   }, [composerValue]);
 
+  useEffect(() => {
+    void trackProductEvent(token, {
+      eventName: "workspace_opened",
+      sessionId: getProductAnalyticsSessionId(),
+      properties: { entry_surface: "new_conversation" },
+    });
+  }, [token]);
+
   const submit = async () => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
       setError(blockReason);
       return;
     }
-    const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const explicitInstruction = composerValue.trim();
+    if (hasReadyVideoAttachment && !explicitInstruction) {
+      setError("请先说明你想怎么处理这段内容。");
+      return;
+    }
+    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !canGenerate || !onSend || sending) return;
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -163,6 +189,11 @@ export default function ConversationStart({
     event.currentTarget.value = "";
   };
 
+  const handleVideoInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  };
+
   const handleDrop = (event: DragEvent) => {
     if (!canUpload) return;
     event.preventDefault();
@@ -201,11 +232,8 @@ export default function ConversationStart({
     >
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
-        <h1>今天想做什么内容？</h1>
-        <p className="shadcn-prototype-start-sub">从一句话开始，MultiMix 会带着你的素材一起创作</p>
-        {onLongFormSourceReady && canUpload && canGenerate ? (
-          <LongFormEntry token={token} onSourceReady={onLongFormSourceReady} />
-        ) : null}
+        <h1>今天想做什么短视频？</h1>
+        <p className="shadcn-prototype-start-sub">上传素材，说出需求，生成可编辑的短视频</p>
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
@@ -235,16 +263,24 @@ export default function ConversationStart({
               ))}
             </div>
           ) : null}
-          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片素材</div> : null}
+          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
+          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={fillComposer} /> : null}
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
-            placeholder="例如：把上周的安装案例做成一条小红书帖子…"
+            placeholder="例如：用我上周的安装素材，做一条 30 秒竖屏短视频…"
             rows={1}
             value={composerValue}
             disabled={!canGenerate}
             aria-describedby={runtimeWriteStatusId}
             onChange={(event) => setComposerValue(event.currentTarget.value)}
+            onPaste={(event) => {
+              const sourceUrl = supportedLongFormUrlFromText(event.clipboardData.getData("text"));
+              if (!sourceUrl || !canUpload || !onImportVideoUrl) return;
+              event.preventDefault();
+              setError(null);
+              onImportVideoUrl(sourceUrl);
+            }}
             onInput={(event) => resizeComposer(event.currentTarget)}
             onKeyDown={(event) => {
               if (shouldSubmitComposerOnEnter(event)) {
@@ -277,6 +313,27 @@ export default function ConversationStart({
               <ImageIcon size={16} aria-hidden="true" />
             </button>
             <input
+              ref={videoInputRef}
+              type="file"
+              accept={CHAT_VIDEO_UPLOAD_ACCEPT}
+              hidden
+              disabled={!canUpload}
+              onChange={handleVideoInputChange}
+            />
+            <button
+              className="shadcn-prototype-start-dock-attach"
+              type="button"
+              aria-label="上传视频素材"
+              title="上传视频素材"
+              disabled={!canUpload}
+              aria-describedby={runtimeWriteStatusId}
+              onClick={() => {
+                if (canUpload) videoInputRef.current?.click();
+              }}
+            >
+              <Video size={16} aria-hidden="true" />
+            </button>
+            <input
               ref={sourceInputRef}
               type="file"
               accept={CHAT_SOURCE_UPLOAD_ACCEPT}
@@ -298,7 +355,7 @@ export default function ConversationStart({
             >
               <FileText size={15} aria-hidden="true" />
             </button>
-            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么</span>
+            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 / 视频，也可粘贴视频链接</span>
             <button
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"
@@ -336,7 +393,7 @@ export default function ConversationStart({
         </p>
         {suggestions.length > 0 ? (
           <div className="shadcn-prototype-start-sugg-grid" aria-label="推荐指令">
-            {suggestions.map((suggestion) => {
+            {suggestions.map((suggestion, index) => {
               const preset = SUGGESTION_PRESETS[suggestion];
               return (
                 <button
@@ -344,7 +401,16 @@ export default function ConversationStart({
                   className="shadcn-prototype-start-sugg-card"
                   key={suggestion}
                   disabled={sending}
-                  onClick={() => fillComposer(preset?.fill ?? suggestion)}
+                  onClick={() => {
+                    void trackProductEvent(token, {
+                      eventName: "recommendation_selected",
+                      properties: {
+                        recommendation_key: SUGGESTION_EVENT_KEYS[suggestion]
+                          ?? `recommendation-${index + 1}`,
+                      },
+                    });
+                    fillComposer(preset?.fill ?? suggestion);
+                  }}
                 >
                   <span className="ic">{suggestionIcon(suggestion)}</span>
                   <span className="tx">

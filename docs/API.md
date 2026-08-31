@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-14
+> Last verified: 2026-08-31
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -480,7 +480,7 @@ function ConversationStudio({
 - **产物卡**：用 `getConversationProducts` 取列表，再按消息与产物关联关系插入消息流；点击时更新带 `conversation`、`product` 查询参数的路由并调用 `onSelectProduct`。
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
 - **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
-- **附件**：对话输入当前只支持图片和文档的上传、删除、失败重试与上传进度。视频不进入聊天附件；需要上传视频时使用视频库，底层视频上传能力继续保留。
+- **附件**：对话输入支持图片、文档和一个长视频来源的上传、删除、失败重试与上传进度；也支持导入 YouTube、Bilibili 和公开 MP4 链接。长视频继续走专用上传 / 导入接口，视频库原片也先作为 ready 附件带入对话。只添加来源不会发送消息或启动分析，只有用户明确提交处理需求后才启动长内容分析，并附带 `long_form_action=analyze`。
 - **任务与动作**：有效 `agentTasks` 在消息头下显示轻量任务条；Agent 动作确认复用
   `ConfirmCard`，执行状态复用唯一的 `AgentRunTimeline`。只有服务端
   `status === "succeeded"` 才显示完成，只有 `retryable === true` 才显示动作重试。
@@ -710,7 +710,8 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   "status": "pending",
   "fields": [
     { "key": "ratio", "label": "视频比例", "value": "横屏 16:9（默认）" },
-    { "key": "duration", "label": "目标时长", "value": "30 秒（默认）" }
+    { "key": "duration", "label": "目标时长", "value": "30 秒（默认）" },
+    { "key": "ai_voice", "label": "AI 配音", "value": "开启（默认）" }
   ],
   "confirm_label": "确认参数并生成编导稿",
   "adjust_label": "调整参数",
@@ -720,6 +721,15 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
     { "value": "1:1", "label": "方形 1:1" }
   ],
   "ratio_default": "16:9",
+  "ratio_confirmation_required": false,
+  "voice_options": [
+    { "value": true, "label": "生成 AI 配音" },
+    { "value": false, "label": "不生成 AI 配音" }
+  ],
+  "voice_default": true,
+  "tts_available": true,
+  "voice_blocked_until_disabled": false,
+  "recommendation_mode": "single_winner",
   "duration_seconds": 30,
   "duration_min": 5,
   "duration_max": 120,
@@ -738,12 +748,17 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
     "pending_intent_id": "pending-...",
     "version": 1,
     "ratio": "16:9",
-    "target_seconds": 30
+    "target_seconds": 30,
+    "ai_voice_enabled": true
   }
 }
 ```
 
-后端只接受当前 pending intent 的 ID 和版本。普通自然语言“确认”不会生成编导稿；缺省比例与时长分别为横屏 `16:9` 和 `30 秒`。
+后端只接受当前 pending intent 的 ID 和版本。普通自然语言“确认”不会生成编导稿。比例优先级是用户明确选择 > 权威主要上传视频原始比例 > 从头生成 `16:9`；多个上传视频比例冲突且没有主要视频时 `ratio_default=null`、`ratio_confirmation_required=true`，前端必须等待选择。声音优先级是用户明确选择 > 有有效口播时保留原声并关闭 AI 配音 > 从头生成或无口播时开启 AI 旁白；是否配置 TTS 不改变默认选择。`tts_available=false` 且 AI 配音开启时必须提示用户关闭配音，按钮保持禁用，不能提交半成品。缺省时长为 `30 秒`。
+
+待确认卡的字段摘要必须即时投影用户当前选择：调整比例、时长或 AI 配音后，原默认值不能继续显示。提交后的乐观“已确认”状态沿用本次提交值；收到服务端确认消息后再以服务端 `summary_fields` / `video_parameters` 为准。上传探测到普通音轨不等于有效口播，前端不得据此提前显示“保留原声”。
+
+新视频计划公开投影包含 `metadata.video_plan.video_parameters`，字段限定为 `schema_version`、比例及来源、时长及来源、AI 配音及声音来源、TTS 能力事实、`recommendation_mode` 和 `confirmed`；内部探测路径或 Provider 凭证不得透出。旧卡片缺少新增字段时继续按旧比例/时长契约读取，不追溯补值。
 
 第二道位于编导稿生成后。编导稿草稿（`video_workflow_stage == "director_script_draft"`）的 assistant 消息 `metadata` 挂载原有 `plan` 对象：
 
@@ -811,7 +826,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 多条内容一致的有效人声音轨也必须展示推荐、试听和明确选择；可以共享只读清理提案，但不能因数组顺序默认提交第 0 项。
 - 后端按 `cleanup_plan_id + cleanup_plan_hash` 拒绝过期卡片。确认成功后冻结删剪和已选音轨，再进入导演方向生成。
 
-第二步提交明确方向 ID：
+第二步只展示并确认服务端当前发布的一个推荐方向。内部可以有 2–3 个候选，但 `recommendation_mode=single_winner` 时前端不得渲染方向单选比较组，只显示 `published_candidate_id` 对应的推荐方案和样片：
 
 ```jsonc
 {
@@ -823,8 +838,22 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 ```
 
 - 前端不得把方向名称藏在自由文本中让后端用正则猜测。
-- 至少两个合格动态样片才能展示方向确认；单个候选失败只重试自身。
+- 初次只为当前胜出方向生成一个样片；其余内部候选不展示、不预渲染。用户明确点击“换个方向/再生成一版”时提交：
+
+```jsonc
+{
+  "content": "换个方向",
+  "selected_product_id": 501,
+  "presenter_direction_request": {
+    "current_candidate_id": "direction-current"
+  }
+}
+```
+
+- 后端校验当前发布 candidate 绑定后，才异步发布并渲染一个下一候选；陈旧 ID、没有未发布候选或重复请求不得回放当前方案伪装新版本。成功结果进入普通版本历史，可撤销、恢复。
+- 运行时间线中活动阶段的“用时”从该阶段最新 `occurred_at` 计算；整项任务总耗时只有在明确展示总时长的组件中才从 job `started_at` 计算。断连恢复不得把历史等待时间显示成当前阶段耗时。
 - 口播识别以 `metadata.video_plan.video_type == "presenter"` 为准，不读取顶层同名兼容字段。
+- Agent 修改已有口播文案时，`video.presenter.edit` 的 `correct_verbatim` 必须包含 `spoken_script_resolution=screen_text_only|ai_voice|reupload_recording`。缺失选择由 Agent 追问；AI 配音不可用或新录音尚未上传时不修改稳定工程。
 
 ### 12.3 统一分镜素材候选端点（三入口共用）
 

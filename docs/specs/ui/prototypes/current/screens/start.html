@@ -297,12 +297,12 @@ body.side-collapsed .expand-btn{display:grid}
   <div class="drop-hint" id="dropHint">释放以上传 PDF / 图片素材</div>
   <div class="hero">
     <div class="greet">下午好，陈老板</div>
-    <h1>今天想做什么内容？</h1>
-    <div class="sub">从一句话开始，MultiMix 会带着你的素材一起创作</div>
+    <h1>今天想做什么短视频？</h1>
+    <div class="sub">上传素材，说出需求，生成可编辑的短视频</div>
 
     <div class="input-card" id="inputCard">
       <div class="tray" id="tray"></div>
-      <textarea id="input" placeholder="例如：把上周的安装案例做成一条小红书帖子…"></textarea>
+      <textarea id="input" placeholder="例如：用我上周的安装素材，做一条 30 秒竖屏短视频…"></textarea>
       <div class="bar">
         <button class="icon-btn" title="上传图片素材" onclick="addAtt('img')">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -310,7 +310,7 @@ body.side-collapsed .expand-btn{display:grid}
         <button class="icon-btn" title="上传 PDF / 文档" onclick="addAtt('doc')">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
-        <span class="hint-eg">支持拖入 PDF / 图片素材 · 只上传资料时，AI 会先问你要做什么</span>
+        <span class="hint-eg">支持拖入 PDF / 图片 / 视频素材 · 只上传素材时，AI 会先理解再询问需求</span>
         <button class="send" id="btnSend">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.2M3.6 7.6 8 3.2l4.4 4.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
@@ -318,27 +318,27 @@ body.side-collapsed .expand-btn{display:grid}
     </div>
 
     <div class="sugg-grid">
-      <button class="sugg-card" data-fill="写一条小红书文案，用已解析的案例图，真实风格">
+      <button class="sugg-card" data-fill="用我已有的素材生成一条可编辑的短视频">
         <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
-        <span class="tx"><span class="t">写一条小红书文案</span><span class="s">用已解析的案例图，真实风格</span></span>
+        <span class="tx"><span class="t">用已有素材生成短视频</span><span class="s">AI 自动编导并匹配画面</span></span>
       </button>
-      <button class="sugg-card" data-fill="生成一条 9:16 的 30 秒短视频脚本，适配抖音和视频号">
+      <button class="sugg-card" data-fill="用我已有的图片和视频生成一条 9:16 的 30 秒短视频">
         <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">生成 9:16 短视频脚本</span><span class="s">30 秒，适配抖音和视频号</span></span>
+        <span class="tx"><span class="t">用图片和视频做成片</span><span class="s">优先使用你的真实素材</span></span>
       </button>
-      <button class="sugg-card" data-fill="做一张封面图，从我的完工照片里选主图">
+      <button class="sugg-card" data-fill="把我上传的文档做成一条可编辑的短视频，关键内容保留来源">
         <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">做一张封面图</span><span class="s">从你的完工照片里选主图</span></span>
+        <span class="tx"><span class="t">把文档做成短视频</span><span class="s">关键内容保留来源</span></span>
       </button>
-      <button class="sugg-card" data-fill="把客户好评截图变成一条种草帖">
+      <button class="sugg-card" data-fill="继续修改我已有的视频，先让我选择要修改的版本">
         <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 8.7V12a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5h3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m6.5 9.5 6.8-6.8M9.8 2.5h3.7v3.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">把好评截图变成种草帖</span><span class="s">客户的话比广告更有说服力</span></span>
+        <span class="tx"><span class="t">继续修改已有视频</span><span class="s">换画面、改文案或调整分镜</span></span>
       </button>
     </div>
 
     <div class="ready">
       <div class="tx">
-        <span class="t">你的素材已就绪
+        <span class="t">你的素材可以开始做视频了
           <span class="live-badge"><span class="gdot"></span>已理解</span>
         </span>
         <span class="s">23 张图片已解析 · 5 张处理中</span>

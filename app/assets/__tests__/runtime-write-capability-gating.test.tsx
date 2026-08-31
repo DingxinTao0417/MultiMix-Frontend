@@ -518,7 +518,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       />,
     );
 
-    expect(screen.getByText("正在连接后端，创作、上传和保存暂不可用。")).toHaveAttribute("role", "status");
+    expect(screen.getByText("正在连接后端，短视频创作、素材上传和保存暂不可用。")).toHaveAttribute("role", "status");
     expect(screen.getByRole("button", { name: "上传图片素材" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
 
@@ -577,7 +577,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     );
 
     expect(await screen.findByText("缓存中的真实对话")).toBeInTheDocument();
-    expect(await screen.findByText(/后端暂时不可用，创作、上传和保存暂不可用/)).toBeInTheDocument();
+    expect(await screen.findByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
@@ -596,14 +596,14 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     );
 
     expect(await screen.findByText("对话加载失败")).toBeInTheDocument();
-    expect(await screen.findByText(/后端暂时不可用，创作、上传和保存暂不可用/)).toBeInTheDocument();
+    expect(await screen.findByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
 
     await waitFor(() => expect(loadSummaries).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
-    expect(screen.queryByText(/后端暂时不可用，创作、上传和保存暂不可用/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).not.toBeInTheDocument();
   });
 
   it("closes subsequent write entry points after a live send connection failure", async () => {
@@ -626,7 +626,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalledOnce());
-    expect(await screen.findByText(/后端暂时不可用，创作、上传和保存暂不可用/)).toBeInTheDocument();
+    expect(await screen.findByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
@@ -651,7 +651,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
 
     await waitFor(() => expect(sendMessage).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
-    expect(screen.queryByText(/后端暂时不可用，创作、上传和保存暂不可用/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).not.toBeInTheDocument();
   });
 
   it("keeps running cancellation callable and marks a cancel connection failure unavailable", async () => {
@@ -709,6 +709,6 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       "cancel-outage-token",
       runningJob.id,
     ));
-    expect(await screen.findByText(/后端暂时不可用，创作、上传和保存暂不可用/)).toBeInTheDocument();
+    expect(await screen.findByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).toBeInTheDocument();
   });
 });

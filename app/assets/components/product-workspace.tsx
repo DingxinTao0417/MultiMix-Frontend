@@ -21,6 +21,7 @@ import ProductPreview, {
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VoiceoverDialog from "./voiceover-dialog";
+import { trackProductEvent } from "../../../lib/product-analytics";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -228,6 +229,16 @@ export default function ProductWorkspace({
   const recoverableExportJobRef = useRef<ExportFinalizeJob | null>(null);
   const onProductUpdatedRef = useRef(onProductUpdated);
   onProductUpdatedRef.current = onProductUpdated;
+  const handleSourceEvidenceClickCapture = useCallback((event: React.MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const summary = target?.closest("summary");
+    const sourceDetails = summary?.closest('details[aria-label="来源引用"]') as HTMLDetailsElement | null;
+    if (!sourceDetails || sourceDetails.open || !product.backendAssetId) return;
+    void trackProductEvent(token, {
+      eventName: "source_evidence_opened",
+      assetId: product.backendAssetId,
+    });
+  }, [product.backendAssetId, token]);
   const hasProductUpdateHandler = Boolean(onProductUpdated);
   const modeLabel = getProductModeLabel(product.mode);
   const editableTextArtifact = Boolean(
@@ -1113,7 +1124,11 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   return (
-    <section className={artifactClassName} aria-label="Current product workspace">
+    <section
+      className={artifactClassName}
+      aria-label="Current product workspace"
+      onClickCapture={handleSourceEvidenceClickCapture}
+    >
       <div className={hasVideoProject ? "shadcn-prototype-product video-project-mode" : "shadcn-prototype-product"}>
         <header className="shadcn-prototype-product-header">
           <div>

@@ -56,7 +56,11 @@ export function browseBgmSummary(product: ProductArtifact): string {
     || stringValue(item.metadata && isRecord(item.metadata) ? item.metadata.catalog_id : "") === catalogId
   ));
   const title = stringValue(selectedMedia?.name) || catalogId;
-  const selection = choice.selected_by === "auto" ? "AI 匹配" : "已选择";
+  const selection = choice.selected_by !== "auto"
+    ? "已选择"
+    : choice.selection_mode === "semantic_structured"
+      ? "智能推荐"
+      : "自动选择";
   return `${title} · ${selection}`;
 }
 

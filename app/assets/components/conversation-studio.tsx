@@ -7,9 +7,11 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationPr
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
+  CHAT_VIDEO_UPLOAD_ACCEPT,
   chatAttachmentRejectionMessage,
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
+import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import {
@@ -26,18 +28,22 @@ import type {
   AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
+  AssetPlanBgmCatalog,
   AssetPlanConfirmationValues,
   AssetPresenterAudioSelectionConfirmation,
   AssetPresenterDirectionConfirmation,
+  AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
 } from "../lib/asset-workspace-types";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -76,9 +82,9 @@ export type ChatImageAttachment = {
   error?: string;
 };
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
+const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
+const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -124,18 +130,6 @@ function conversationMessageKey(message: VisibleConversationMessage, index: numb
     : `${message.role}-${index}`;
 }
 
-function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "assistant" && !message.pending && !message.suggestions?.length && !message.suggestionActions?.length) return index;
-  }
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "assistant" && !message.pending) return index;
-  }
-  return -1;
-}
-
 function visibleSuggestions(message: VisibleConversationMessage) {
   if (message.suggestionActions?.length) {
     return message.suggestionActions.map((action) => ({
@@ -159,26 +153,50 @@ function visibleSuggestions(message: VisibleConversationMessage) {
   }));
 }
 
+type CreativeDraftPresentation = {
+  title: string;
+  message: string;
+  missingItems: string[];
+  releaseNote: string;
+};
+
+function creativeDraftPresentation(message: VisibleConversationMessage): CreativeDraftPresentation | null {
+  const value = message.metadata?.creative_draft;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const draft = value as Record<string, unknown>;
+  if (draft.status !== "needs_information") return null;
+  const title = typeof draft.title === "string" ? draft.title.trim() : "";
+  const detail = typeof draft.message === "string" ? draft.message.trim() : "";
+  const releaseNote = typeof draft.release_note === "string" ? draft.release_note.trim() : "";
+  const missingItems = Array.isArray(draft.missing_items)
+    ? draft.missing_items.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 3)
+    : [];
+  if (!title || !detail || !releaseNote || !missingItems.length) return null;
+  return { title, message: detail, missingItems, releaseNote };
+}
+
 function mapProductsToConversationMessages(messages: VisibleConversationMessage[], products: ProductArtifact[]): Map<number, ProductArtifact[]> {
   const result = new Map<number, ProductArtifact[]>();
-  const attachedProductIds = new Set<string>();
 
   messages.forEach((message, index) => {
     if (message.role !== "assistant" || !message.assetId) return;
     const matchedProducts = products.filter((product) => product.backendAssetId === message.assetId);
     if (!matchedProducts.length) return;
     result.set(index, matchedProducts);
-    matchedProducts.forEach((product) => attachedProductIds.add(product.id));
   });
-
-  const unattachedProducts = products.filter((product) => !attachedProductIds.has(product.id));
-  if (!unattachedProducts.length) return result;
-
-  const fallbackIndex = fallbackProductMessageIndex(messages);
-  if (fallbackIndex >= 0) {
-    result.set(fallbackIndex, [...(result.get(fallbackIndex) ?? []), ...unattachedProducts]);
-  }
   return result;
+}
+
+function hasReadyVideoProjectForDirectorScript(
+  products: ProductArtifact[],
+  directorScriptAssetId: number | null | undefined,
+): boolean {
+  if (!directorScriptAssetId) return false;
+  return products.some((product) => (
+    product.contentType === "video_project"
+    && product.videoProjectReady === true
+    && product.metadata?.director_script_asset_id === directorScriptAssetId
+  ));
 }
 
 export function resolveExecutionTimelineSteps(
@@ -237,6 +255,7 @@ export default function ConversationStudio({
   onUploadImages,
   onRemoveImageAttachment,
   onRetryImageAttachment,
+  onImportVideoUrl,
   pendingExchange = null,
   onPendingExchangeChange,
   onSendMessage,
@@ -254,6 +273,7 @@ export default function ConversationStudio({
   readonly = false,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
+  onLoadBgmCatalog,
 }: {
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
@@ -264,6 +284,7 @@ export default function ConversationStudio({
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
   onRetryImageAttachment?: (attachmentId: string) => void;
+  onImportVideoUrl?: (url: string) => void;
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
   onSendMessage?: (
@@ -277,10 +298,12 @@ export default function ConversationStudio({
     longFormAction?: AssetLongFormAction,
     videoSceneReplacement?: AssetVideoSceneReplacement,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
@@ -304,6 +327,7 @@ export default function ConversationStudio({
   readonly?: boolean;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
+  onLoadBgmCatalog?: (assetId: number) => Promise<AssetPlanBgmCatalog>;
 }) {
   const products = getConversationProducts(selectedConversation);
   const [composerValue, setComposerValue] = useState("");
@@ -321,11 +345,13 @@ export default function ConversationStudio({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const activeRequestRef = useRef<ActiveRequest | null>(null);
   const selectedConversationIdRef = useRef(selectedConversation.id);
   selectedConversationIdRef.current = selectedConversation.id;
-  const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
+  const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canSend = Boolean(onSendMessage) && !readonly && writeCapabilities.canGenerate;
   const canUpload = Boolean(onUploadImages) && !readonly && writeCapabilities.canUpload;
   const runtimeWriteStatusId = writeCapabilities.reason
@@ -353,6 +379,13 @@ export default function ConversationStudio({
   const visibleConversationMessages = useMemo<VisibleConversationMessage[]>(
     () => mergeVisibleConversationMessages(conversationMessages, optimisticExchange),
     [conversationMessages, optimisticExchange]
+  );
+  // Presenter cleanup is a bound, two-step confirmation.  A legacy generic
+  // `submit_message` suggestion may carry only "确认" and cannot include the
+  // cleanup plan ID/hash or selected cleanup items.  Keep that unbound shortcut
+  // out of the UI while the structured card is the active confirmation path.
+  const hasPendingPresenterCleanupConfirmation = visibleConversationMessages.some(
+    (message) => message.plan?.kind === "presenter_cleanup_confirmation" && message.plan.status === "pending",
   );
 
   const productCardsByMessageIndex = useMemo(
@@ -400,10 +433,12 @@ export default function ConversationStudio({
     agentConfirmationId?: string,
     videoSceneReplacement?: AssetVideoSceneReplacement,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
+    presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -453,10 +488,12 @@ export default function ConversationStudio({
         undefined,
         videoSceneReplacement,
         presenterDirectionConfirmation,
+        presenterDirectionRequest,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         confirmationProductId,
         sourceSubtitleMode,
+        videoProjectConfirmation,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -487,7 +524,12 @@ export default function ConversationStudio({
   };
 
   const submitInstruction = async () => {
-    const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const explicitInstruction = composerValue.trim();
+    if (hasReadyVideoAttachment && !explicitInstruction) {
+      setSendError("请先说明你想怎么处理这段内容。");
+      return;
+    }
+    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     await sendInstruction(instruction);
   };
 
@@ -498,6 +540,7 @@ export default function ConversationStudio({
   ) => {
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+    const isVideoProjectConfirmation = plan.kind === "video_project_confirmation";
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
     const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
     const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
@@ -514,17 +557,23 @@ export default function ConversationStudio({
       && values.sourceSubtitleMode !== plan.subtitleDefault
       ? values.sourceSubtitleMode
       : undefined;
+    const voiceChoiceRequired = (plan.voiceOptions?.length ?? 0) > 0;
+    const voiceChoiceValid = !voiceChoiceRequired || typeof values?.aiVoiceEnabled === "boolean";
     const videoParameterConfirmation = (
       isVideoParameterConfirmation
       && plan.pendingIntentId
       && plan.pendingIntentVersion
       && ratio
       && values?.targetSeconds
+      && voiceChoiceValid
     ) ? {
         pendingIntentId: plan.pendingIntentId,
         version: plan.pendingIntentVersion,
         ratio,
         targetSeconds: values.targetSeconds,
+        ...(typeof values.aiVoiceEnabled === "boolean"
+          ? { aiVoiceEnabled: values.aiVoiceEnabled }
+          : {}),
       } : undefined;
     if (isVideoParameterConfirmation && !videoParameterConfirmation) {
       setSendError("视频参数确认信息不完整，请刷新后重试。");
@@ -569,6 +618,26 @@ export default function ConversationStudio({
       setSendError("原声音轨确认信息不完整，请刷新后重试。");
       return;
     }
+    const bgmConfirmationRequired = isVideoProjectConfirmation
+      && Boolean(plan.bgmCatalogVersion)
+      && (plan.bgmOptions?.length ?? 0) > 0;
+    const bgmEnabled = values?.bgmEnabled;
+    const videoProjectConfirmation = (
+      bgmConfirmationRequired
+      && plan.bgmCatalogVersion
+      && typeof bgmEnabled === "boolean"
+      && (!bgmEnabled || Boolean(values?.bgmCatalogId))
+    ) ? {
+        catalogVersion: plan.bgmCatalogVersion,
+        enabled: bgmEnabled,
+        ...(bgmEnabled && values?.bgmCatalogId
+          ? { catalogId: values.bgmCatalogId }
+          : {}),
+      } : undefined;
+    if (bgmConfirmationRequired && !videoProjectConfirmation) {
+      setSendError("配乐确认信息不完整，请刷新后重试。");
+      return;
+    }
     const planKey = confirmationPlanKey(plan);
     setConfirmingPlanKey(planKey);
     try {
@@ -608,17 +677,43 @@ export default function ConversationStudio({
             ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
           }
         : undefined,
+      undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
-       plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
+       confirmationProductId,
        sourceSubtitleMode,
+       videoProjectConfirmation,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
     }
   };
 
-  const handleAdjustPlan = (plan: AssetMessagePlan) => {
+  const handleAdjustPlan = (plan: AssetMessagePlan, confirmationProductId?: number) => {
+    if (
+      plan.recommendationMode === "single_winner"
+      && plan.directionDefault
+      && confirmationProductId
+    ) {
+      void sendInstruction(
+        "换个方向",
+        {
+          assistantText: "正在准备下一个推荐方向。",
+          presentation: "execution_anchor",
+          confirmationPlanKey: confirmationPlanKey(plan),
+        },
+        globalThis.crypto.randomUUID(),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { currentCandidateId: plan.directionDefault },
+        undefined,
+        undefined,
+        confirmationProductId,
+      );
+      return;
+    }
     // A custom adjust label seeds the composer; the default "调整方向" carries no
     // instruction, so we show a guiding placeholder instead of an empty box —
     // otherwise the click just silently focuses and reads as a dead button.
@@ -656,6 +751,7 @@ export default function ConversationStudio({
           undefined,
           undefined,
           undefined,
+          undefined,
           detail?.confirmationProductId,
           detail?.sourceSubtitleMode,
         );
@@ -685,6 +781,11 @@ export default function ConversationStudio({
   };
 
   const handleSourceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  };
+
+  const handleVideoInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
     event.currentTarget.value = "";
   };
@@ -831,6 +932,9 @@ export default function ConversationStudio({
           const renderedGenerationJob = messageGenerationJob && liveGenerationJobsById.has(messageGenerationJob.id)
             ? liveGenerationJobsById.get(messageGenerationJob.id) ?? messageGenerationJob
             : messageGenerationJob;
+          const directorScriptUsedForVideoProject = renderedGenerationJob
+            && renderedGenerationJob.status === "completed"
+            && hasReadyVideoProjectForDirectorScript(products, message.assetId);
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(
@@ -840,6 +944,7 @@ export default function ConversationStudio({
             && message.pending === true
             && !ownsWorkflowCard
             && !message.text.trim();
+          const creativeDraft = creativeDraftPresentation(message);
           return (
             <div
               className="shadcn-prototype-message-group"
@@ -856,9 +961,29 @@ export default function ConversationStudio({
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
                 <p>{message.text}</p>
               ) : null}
+              {creativeDraft ? (
+                <div className="shadcn-prototype-confirm-card" aria-label="创意草稿状态">
+                  <div className="shadcn-prototype-confirm-head">
+                    <span className="shadcn-prototype-confirm-title">{creativeDraft.title}</span>
+                    <span className="shadcn-prototype-confirm-badge">
+                      <span className="shadcn-prototype-confirm-dot" aria-hidden="true" />
+                      待补信息
+                    </span>
+                  </div>
+                  <p className="shadcn-prototype-confirm-sub">{creativeDraft.message}</p>
+                  <p className="shadcn-prototype-confirm-sub">
+                    待补：{creativeDraft.missingItems.map((item, itemIndex) => (
+                      <span key={item}>{itemIndex ? "、" : ""}<span>{item}</span></span>
+                    ))}
+                  </p>
+                  <p className="shadcn-prototype-confirm-sub">{creativeDraft.releaseNote}</p>
+                </div>
+              ) : null}
               {message.plan ? (
                 <ConfirmCard
                   plan={message.plan}
+                  assetId={message.assetId ?? undefined}
+                  loadBgmCatalog={onLoadBgmCatalog}
                   optimisticallyConfirmed={
                     confirmingPlanKey === confirmationPlanKey(message.plan)
                     || (
@@ -885,7 +1010,7 @@ export default function ConversationStudio({
                       : undefined
                   }
                   onConfirm={(plan, values) => void handleConfirmPlan(plan, values, message.assetId ?? undefined)}
-                  onAdjust={(plan) => handleAdjustPlan(plan)}
+                  onAdjust={(plan) => handleAdjustPlan(plan, message.assetId ?? undefined)}
                 />
               ) : null}
               {timelineSteps.length ? (
@@ -915,13 +1040,22 @@ export default function ConversationStudio({
                   job={renderedGenerationJob}
                   onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
+                  completionLabel={directorScriptUsedForVideoProject
+                    ? "编导稿已确认，已用于生成视频工程"
+                    : undefined}
                 />
               ) : null}
               {renderProductCards(index)}
               {(() => {
-                const suggestions = visibleSuggestions(message)
+                const suggestions = (message.plan?.status === "confirmed" ? [] : visibleSuggestions(message))
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
-                  .filter(({ intent }) => !intent.hidden);
+                  .filter(({ intent }) => {
+                    if (intent.hidden) return false;
+                    const normalizedUtterance = intent.utterance.replace(/\s+/g, "");
+                    const isUnboundGenericConfirmation = intent.mode === "submit_message"
+                      && ["确认", "确认生成"].includes(normalizedUtterance);
+                    return !hasPendingPresenterCleanupConfirmation || !isUnboundGenericConfirmation;
+                  });
                 return suggestions.length ? (
                   <div className="shadcn-prototype-suggestion-row" aria-label="推荐调整指令">
                     {suggestions.map(({ suggestion, intent }) => {
@@ -1024,7 +1158,12 @@ export default function ConversationStudio({
               ))}
             </div>
           ) : null}
-          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片素材</div> : null}
+          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
+          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={(value) => {
+            setComposerValue(value);
+            setAdjustHint(false);
+            requestAnimationFrame(() => composerRef.current?.focus());
+          }} /> : null}
           <input
             ref={imageInputRef}
             type="file"
@@ -1046,6 +1185,27 @@ export default function ConversationStudio({
             }}
           >
             <ImageIcon size={16} aria-hidden="true" />
+          </button>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept={CHAT_VIDEO_UPLOAD_ACCEPT}
+            hidden
+            disabled={!canUpload}
+            onChange={handleVideoInputChange}
+          />
+          <button
+            className="shadcn-prototype-chat-attachment-button shadcn-prototype-chat-video-attachment-button"
+            type="button"
+            aria-label="上传视频素材"
+            title="上传视频素材"
+            disabled={!canUpload}
+            aria-describedby={runtimeWriteStatusId}
+            onClick={() => {
+              if (canUpload) videoInputRef.current?.click();
+            }}
+          >
+            <Video size={16} aria-hidden="true" />
           </button>
           <input
             ref={sourceInputRef}
@@ -1091,6 +1251,13 @@ export default function ConversationStudio({
             onChange={(event) => {
               setComposerValue(event.currentTarget.value);
               if (adjustHint) setAdjustHint(false);
+            }}
+            onPaste={(event) => {
+              const sourceUrl = supportedLongFormUrlFromText(event.clipboardData.getData("text"));
+              if (!sourceUrl || !canUpload || !onImportVideoUrl) return;
+              event.preventDefault();
+              setSendError(null);
+              onImportVideoUrl(sourceUrl);
             }}
             onInput={(event) => {
               resizeComposer(event.currentTarget);

@@ -25,14 +25,15 @@ test("local display coverage uses and cleans an isolated Next development direct
   assert.match(runnerSource, /NEXT_PUBLIC_MULTIMIX_AUTH_MODE:\s*"dev-admin"/);
 });
 
-test("display coverage retains an auditable isolated runtime and forwards snapshot updates", () => {
+test("display coverage retains failed runtime evidence, cleans passes, and forwards snapshot updates", () => {
   const runnerSource = fs.readFileSync(runner, "utf8");
 
   assert.match(runnerSource, /process\.env\.DISPLAY_COVERAGE_RUN_ID/);
   assert.match(runnerSource, /--update-snapshots/);
   assert.match(runnerSource, /createE2ERunLifecycle\(\{ suite: "display-coverage", runId, resultDir \}\)/);
-  assert.match(runnerSource, /passed_pending_cleanup/);
-  assert.match(runnerSource, /failed_retained/);
+  assert.match(runnerSource, /finalizeE2ERun\(\{ lifecycle, failed: Boolean\(runError\) \}\)/);
+  assert.match(runnerSource, /Failed E2E runtime retained/);
+  assert.match(runnerSource, /Passed E2E runtime cleaned/);
 });
 
 test("display coverage prewarms the editor before Playwright starts", () => {
@@ -62,7 +63,7 @@ test("export recovery mode restarts the API, resumes one durable job, and cleans
   assert.match(runnerSource, /app\.tests\.fixtures\.display_coverage\.export_recovery:app/);
   assert.match(runnerSource, /app\.tests\.fixtures\.display_coverage\.export_recovery/);
   assert.match(runnerSource, /stopChild\(backend\)[\s\S]*backend-restarted\.log/);
-  assert.match(runnerSource, /cleanupRetainedE2ERun/);
+  assert.match(runnerSource, /finalizeE2ERun/);
   assert.match(runnerSource, /DISPLAY_EXPORT_RECOVERY_SIGNAL_PATH/);
   assert.match(runnerSource, /DISPLAY_EXPORT_RECOVERY_RESULT_PATH/);
 

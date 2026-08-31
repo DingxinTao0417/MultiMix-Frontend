@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AssetGenerationJobCard } from "../components/asset-generation-job-card";
@@ -126,7 +126,34 @@ describe("AssetGenerationJobCard", () => {
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
   });
 
-  it("shows only body-free failure fields in technical details", () => {
+  it("blocks a second failed-job retry until the first request rejects", async () => {
+    let rejectRetry!: (reason?: unknown) => void;
+    const pendingRetry = new Promise<void>((_resolve, reject) => {
+      rejectRetry = reject;
+    });
+    const onRetry = vi.fn(() => pendingRetry);
+    render(
+      <AssetGenerationJobCard
+        job={job({ status: "failed" })}
+        onRetry={onRetry}
+      />,
+    );
+
+    const retryButton = screen.getByRole("button", { name: "重新执行此步骤" });
+    fireEvent.click(retryButton);
+
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "正在重试…" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "正在重试…" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    rejectRetry(new Error("retry rejected"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "重新执行此步骤" })).toHaveProperty("disabled", false);
+    });
+  });
+
+  it("keeps provider diagnostics out of the ordinary failure card", () => {
     render(
       <AssetGenerationJobCard
         job={job({
@@ -145,8 +172,8 @@ describe("AssetGenerationJobCard", () => {
       />,
     );
 
-    expect(screen.getByText("错误码：provider_rejected · 阶段：presenter_events · HTTP：400 · Provider：InvalidSchema · 指纹：sha256:body-free · 尝试：2 · Fallback：none")).not.toBeNull();
-    expect(screen.queryByText("内容生成服务拒绝了本次请求。")).toBeNull();
+    expect(screen.getByText("内容生成服务拒绝了本次请求。")).not.toBeNull();
+    expect(screen.queryByText(/provider_rejected|presenter_events|InvalidSchema|sha256:body-free/)).toBeNull();
   });
 
   it("keeps a historical failed job retryable when its saved progress is invalid", () => {

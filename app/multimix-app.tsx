@@ -334,8 +334,8 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
     <main className="multimix-auth-shell">
       <section className="multimix-auth-card">
         <MultiMixBrand />
-        <h1 className="multimix-auth-title">{mode === "login" ? "登录你的创作工作台" : "注册你的创作工作台"}</h1>
-        <p className="multimix-auth-sub">用真实素材，生成能直接发布的内容</p>
+        <h1 className="multimix-auth-title">{mode === "login" ? "登录你的 AI 短视频创作工作台" : "注册你的 AI 短视频创作工作台"}</h1>
+        <p className="multimix-auth-sub">上传素材，说出需求，生成可编辑的短视频</p>
 
         <form onSubmit={submit}>
           <label className="multimix-auth-field">

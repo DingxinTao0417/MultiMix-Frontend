@@ -6,9 +6,11 @@ import type {
   AssetProduct,
   AssetPresenterAudioSelectionConfirmation,
   AssetPresenterDirectionConfirmation,
+  AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
   AssetWorkspaceData,
   AssetWorkspaceView,
   AssetWorkshop,
@@ -274,10 +276,12 @@ export function buildConversationMessagePayload({
   linkedAssetIds,
   clientRequestId,
   videoParameterConfirmation,
+  videoProjectConfirmation,
   agentConfirmationId,
   longFormAction,
   videoSceneReplacement,
   presenterDirectionConfirmation,
+  presenterDirectionRequest,
   presenterCleanupConfirmation,
   presenterAudioSelectionConfirmation,
   sourceSubtitleMode,
@@ -288,10 +292,12 @@ export function buildConversationMessagePayload({
   linkedAssetIds?: number[];
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
+  videoProjectConfirmation?: AssetVideoProjectConfirmation;
   agentConfirmationId?: string;
   longFormAction?: AssetLongFormAction;
   videoSceneReplacement?: AssetVideoSceneReplacement;
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+  presenterDirectionRequest?: AssetPresenterDirectionRequest;
   presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
   presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -333,6 +339,11 @@ export function buildConversationMessagePayload({
         ...(presenterDirectionConfirmation.targetSeconds ? { target_seconds: presenterDirectionConfirmation.targetSeconds } : {}),
       },
     } : {}),
+    ...(presenterDirectionRequest ? {
+      presenter_direction_request: {
+        current_candidate_id: presenterDirectionRequest.currentCandidateId,
+      },
+    } : {}),
     ...(presenterCleanupConfirmation ? {
       presenter_cleanup_confirmation: {
         cleanup_plan_id: presenterCleanupConfirmation.cleanupPlanId,
@@ -357,8 +368,30 @@ export function buildConversationMessagePayload({
         version: videoParameterConfirmation.version,
         ratio: videoParameterConfirmation.ratio,
         target_seconds: videoParameterConfirmation.targetSeconds,
+        ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
+          ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
+          : {}),
       },
     } : {}),
+    ...(videoProjectConfirmation ? {
+      video_project_confirmation: {
+        catalog_version: videoProjectConfirmation.catalogVersion,
+        enabled: videoProjectConfirmation.enabled,
+        ...(videoProjectConfirmation.catalogId
+          ? { catalog_id: videoProjectConfirmation.catalogId }
+          : {}),
+      },
+    } : {}),
+  };
+}
+
+export function createLibraryCreationDraftConversation(
+  newConversation: AssetConversation,
+  nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+): AssetConversation {
+  return {
+    ...newConversation,
+    id: `draft-library-${nonce}`,
   };
 }
 
@@ -373,6 +406,9 @@ export function buildVideoParameterConfirmationHeaders(
     version: confirmation.version,
     ratio: confirmation.ratio,
     target_seconds: confirmation.targetSeconds,
+    ...(typeof confirmation.aiVoiceEnabled === "boolean"
+      ? { ai_voice_enabled: confirmation.aiVoiceEnabled }
+      : {}),
   };
   return {
     [VIDEO_PARAMETER_CONFIRMATION_HEADER]: `v1.${encodeURIComponent(JSON.stringify(payload))}`,
@@ -487,10 +523,12 @@ export type AssetWorkspaceAdapter = {
     linkedAssetIds?: number[];
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
+    videoProjectConfirmation?: AssetVideoProjectConfirmation;
     agentConfirmationId?: string;
     longFormAction?: AssetLongFormAction;
     videoSceneReplacement?: AssetVideoSceneReplacement;
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+    presenterDirectionRequest?: AssetPresenterDirectionRequest;
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -832,12 +870,13 @@ function statusLabel(status: string): string {
 }
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
+  if (asset.product_status === "completed") return "完成";
+  if (asset.product_status === "failed") return "失败";
+  if (asset.product_status === "generating") return "生成中";
   if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
     return asset.status === "failed" ? "失败" : "完成";
   }
   if (asset.content_type === "video_project") {
-    if (asset.product_status === "completed") return "完成";
-    if (asset.product_status === "failed") return "失败";
     return "生成中";
   }
   return null;
@@ -1148,16 +1187,18 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       linkedAssetIds,
       clientRequestId,
       videoParameterConfirmation,
+      videoProjectConfirmation,
       agentConfirmationId,
       longFormAction,
       videoSceneReplacement,
       presenterDirectionConfirmation,
+      presenterDirectionRequest,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
       sourceSubtitleMode,
       signal,
     }) {
-      if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1174,10 +1215,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           linkedAssetIds,
           clientRequestId,
           videoParameterConfirmation,
+          videoProjectConfirmation,
           agentConfirmationId,
           longFormAction,
           videoSceneReplacement,
           presenterDirectionConfirmation,
+          presenterDirectionRequest,
           presenterCleanupConfirmation,
           presenterAudioSelectionConfirmation,
           sourceSubtitleMode,

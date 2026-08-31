@@ -45,7 +45,7 @@ export default function MaterialsReadyStrip({
     <div className="shadcn-prototype-start-ready" aria-label="素材就绪状态">
       <div className="shadcn-prototype-start-ready-text">
         <span className="shadcn-prototype-start-ready-title">
-          你的素材已就绪
+          你的素材可以开始做视频了
           <span className="shadcn-prototype-start-ready-badge">
             <span className="dot" aria-hidden="true" />
             已理解

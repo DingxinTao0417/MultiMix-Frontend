@@ -1,12 +1,18 @@
 export const CHAT_IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp";
 export const CHAT_SOURCE_UPLOAD_ACCEPT = ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
+export const CHAT_VIDEO_UPLOAD_ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
 
 const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm|mkv)$/i;
 const SOURCE_EXTENSION_PATTERN = /\.(pdf|txt|md|markdown|html|htm|xlsx|xlsm)$/i;
+const SUPPORTED_VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-matroska",
+]);
 
 export type ChatAttachmentPartition = {
   acceptedFiles: File[];
-  rejectedVideoCount: number;
   rejectedUnsupportedCount: number;
 };
 
@@ -15,14 +21,16 @@ export function partitionChatAttachmentFiles(
 ): ChatAttachmentPartition {
   const partition: ChatAttachmentPartition = {
     acceptedFiles: [],
-    rejectedVideoCount: 0,
     rejectedUnsupportedCount: 0,
   };
 
   for (const file of Array.from(files)) {
-    if (file.type.startsWith("video/") || VIDEO_EXTENSION_PATTERN.test(file.name)) {
-      partition.rejectedVideoCount += 1;
-    } else if (file.type.startsWith("image/") || SOURCE_EXTENSION_PATTERN.test(file.name)) {
+    if (
+      file.type.startsWith("image/")
+      || SUPPORTED_VIDEO_MIME_TYPES.has(file.type.toLowerCase())
+      || VIDEO_EXTENSION_PATTERN.test(file.name)
+      || SOURCE_EXTENSION_PATTERN.test(file.name)
+    ) {
       partition.acceptedFiles.push(file);
     } else {
       partition.rejectedUnsupportedCount += 1;
@@ -36,9 +44,6 @@ export function chatAttachmentRejectionMessage(
   partition: ChatAttachmentPartition,
 ): string | null {
   const messages: string[] = [];
-  if (partition.rejectedVideoCount > 0) {
-    messages.push("对话暂不支持视频附件，请先上传到视频素材库。");
-  }
   if (partition.rejectedUnsupportedCount > 0) {
     messages.push("暂不支持该附件格式。");
   }

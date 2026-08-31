@@ -3,13 +3,17 @@ import type { AgentRunStep } from "./asset-workspace-types";
 
 export type GenerationProgressEvent = NonNullable<AssetGenerationJobResponse["progress_events"]>[number];
 
-export function generationElapsedLabel(job: Pick<AssetGenerationJobResponse, "created_at" | "started_at" | "status">, now = Date.now()): string | null {
-  if (job.status !== "running") return null;
-  const started = Date.parse(job.started_at || job.created_at);
+function elapsedLabelFrom(startedAt: string | undefined, now: number): string | null {
+  const started = Date.parse(startedAt ?? "");
   if (!Number.isFinite(started)) return null;
   const seconds = Math.max(0, Math.floor((now - started) / 1000));
   if (seconds < 60) return `已耗时 ${seconds} 秒`;
   return `已耗时 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+}
+
+export function generationElapsedLabel(job: Pick<AssetGenerationJobResponse, "created_at" | "started_at" | "status">, now = Date.now()): string | null {
+  if (job.status !== "running") return null;
+  return elapsedLabelFrom(job.started_at || job.created_at, now);
 }
 
 export function generationProgressEvents(job: AssetGenerationJobResponse): GenerationProgressEvent[] {
@@ -95,7 +99,7 @@ export function generationTimelineSteps(
       label: event.key === "source_staging" && event.detail ? event.detail : event.label,
       status: failed ? "fail" : running ? "run" : "done",
       elapsedSeconds: elapsedSeconds(event.occurred_at, nextTimestamp),
-      elapsedLabel: running ? generationElapsedLabel(job, now) ?? undefined : undefined,
+      elapsedLabel: running ? elapsedLabelFrom(event.occurred_at, now) ?? undefined : undefined,
       retryJobId: failed ? job.id : undefined,
     };
   });

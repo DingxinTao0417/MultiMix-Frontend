@@ -222,6 +222,13 @@ export type AssetVideoParameterConfirmation = {
   version: number;
   ratio: string;
   targetSeconds: number;
+  aiVoiceEnabled?: boolean;
+};
+
+export type AssetVideoProjectConfirmation = {
+  catalogVersion: string;
+  enabled: boolean;
+  catalogId?: string;
 };
 
 export type AssetLongFormAction =
@@ -238,6 +245,7 @@ export type AssetLongFormAction =
 export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;
+  aiVoiceEnabled?: boolean;
   directorCandidateId?: string;
   cleanupCandidateIds?: string[];
   protectedOverrideCandidateIds?: string[];
@@ -246,6 +254,51 @@ export type AssetPlanConfirmationValues = {
   audioFingerprint?: string;
   transcriptHash?: string;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+  bgmCatalogId?: string;
+  bgmCatalogVersion?: string;
+  bgmEnabled?: boolean;
+};
+
+export type AssetVisualPreviewFrame = {
+  frameId: string;
+  timeRole: "opening" | "change" | "closing";
+  label: string;
+  visualState: string;
+  previewKind: "exact_asset" | "public_candidate" | "generation_intent";
+  fidelity: "exact" | "candidate" | "schematic";
+  sourceStatus: string;
+  previewUrl?: string;
+  sourceAssetId?: number;
+  limitation: string;
+};
+
+export type AssetVisualPreviewScene = {
+  sceneId: string;
+  sceneIndex: number;
+  title: string;
+  frames: AssetVisualPreviewFrame[];
+};
+
+export type AssetVisualPreviewPlan = {
+  schemaVersion: "visual_preview_plan:v1";
+  sceneCount: number;
+  scenes: AssetVisualPreviewScene[];
+};
+
+export type AssetPlanBgmOption = {
+  id: string;
+  title: string;
+  reason: string;
+  selectionMode: "semantic_structured" | "stable_fallback";
+};
+
+export type AssetPlanBgmCatalog = {
+  catalogVersion: string;
+  tracks: Array<{
+    id: string;
+    title: string;
+    previewUrl: string;
+  }>;
 };
 
 export type AssetPlanSubtitleOption = {
@@ -258,6 +311,10 @@ export type AssetPresenterDirectionConfirmation = {
   ratio?: string;
   subtitleMode?: "translated_zh" | "source" | "bilingual";
   targetSeconds?: number;
+};
+
+export type AssetPresenterDirectionRequest = {
+  currentCandidateId: string;
 };
 
 export type AssetPresenterCleanupConfirmation = {
@@ -295,6 +352,12 @@ export type AssetMessagePlan = {
   // ratio is woven into the confirm instruction so the backend can honor it.
   ratioOptions?: AssetPlanRatioOption[];
   ratioDefault?: string;
+  ratioConfirmationRequired?: boolean;
+  voiceOptions?: AssetPlanVoiceOption[];
+  voiceDefault?: boolean;
+  ttsAvailable?: boolean;
+  voiceBlockedUntilDisabled?: boolean;
+  recommendationMode?: "single_winner";
   durationSeconds?: number;
   durationMin?: number;
   durationMax?: number;
@@ -311,6 +374,11 @@ export type AssetMessagePlan = {
   audioTrackDefault?: number;
   subtitleOptions?: AssetPlanSubtitleOption[];
   subtitleDefault?: "translated_zh" | "source" | "bilingual";
+  visualPreviews?: AssetVisualPreviewPlan;
+  bgmCatalogVersion?: string;
+  bgmOptions?: AssetPlanBgmOption[];
+  bgmDefault?: string;
+  bgmEnabledDefault?: boolean;
 };
 
 export type AssetPresenterCleanupItem = {
@@ -356,6 +424,11 @@ export type AssetPlanRatioOption = {
   // Canonical ratio the backend parses ("9:16" | "16:9" | "1:1").
   value: string;
   // Merchant-facing chip label, e.g. "横屏 16:9".
+  label: string;
+};
+
+export type AssetPlanVoiceOption = {
+  value: boolean;
   label: string;
 };
 

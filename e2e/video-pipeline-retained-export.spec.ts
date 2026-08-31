@@ -19,6 +19,7 @@ type RetainedExportSeed = {
   minimumDurationSeconds: number;
   maximumDurationSeconds: number;
   ratio: string;
+  videoType: string;
 };
 
 type ProjectAsset = {
@@ -35,7 +36,9 @@ type ProjectAsset = {
     video_project?: {
       media?: Array<Record<string, unknown>>;
       tracks?: Array<{
+        id?: string;
         type?: string;
+        name?: string;
         elements?: Array<Record<string, unknown>>;
       }>;
     };
@@ -367,6 +370,42 @@ function assertSourceClipIdentity(project: ProjectAsset) {
 }
 
 
+function assertPresenterSourceIdentity(project: ProjectAsset) {
+  const metadata = project.metadata ?? {};
+  const scenes = metadata.video_plan?.scenes ?? [];
+  const projectMedia = metadata.video_project?.media ?? [];
+  const projectTracks = metadata.video_project?.tracks ?? [];
+  const sourceScene = scenes.find((scene) => (
+    scene.audio_intent as { mode?: string } | undefined
+  )?.mode === "source_clip");
+  expect(sourceScene, "presenter source scene is missing").toBeTruthy();
+  const audioIntent = sourceScene!.audio_intent as Record<string, unknown>;
+  const assetReference = sourceScene!.asset_reference as Record<string, unknown>;
+  const primaryVisual = sourceScene!.primary_visual as Record<string, unknown>;
+  const sourceAssetId = audioIntent.source_asset_id;
+  expect(sourceAssetId, "presenter source asset is missing").toBeGreaterThan(0);
+  expect(assetReference.chosen_asset_id).toBe(sourceAssetId);
+  expect(primaryVisual.asset_id).toBe(sourceAssetId);
+  expect(
+    projectMedia.some((media) => (
+      media.type === "video" && media.file_path === primaryVisual.artifact_ref
+    )),
+    "presenter source video media is missing",
+  ).toBe(true);
+
+  const originalAudioTrack = projectTracks.find((track) => track.id === "track-audio");
+  expect(originalAudioTrack, "presenter original audio track is missing").toBeTruthy();
+  expect(originalAudioTrack?.type).toBe("audio");
+  expect(originalAudioTrack?.name).toBe("原声");
+  expect(originalAudioTrack?.elements).toHaveLength(1);
+  const sourceAudioMediaId = originalAudioTrack?.elements?.[0]?.mediaId;
+  expect(
+    projectMedia.some((media) => media.id === sourceAudioMediaId && media.type === "audio"),
+    "presenter source audio media is missing",
+  ).toBe(true);
+}
+
+
 async function exportButtonState(page: Page, button: ReturnType<Page["locator"]>) {
   const text = (await button.textContent())?.trim() ?? "";
   const error = page.getByText(/成片合成失败|当前无法导出|导出失败/).last();
@@ -429,7 +468,13 @@ test("opens and exports the completed retained video project", async ({ page }) 
   expect(project.product_status).toBe("completed");
   expect(project.metadata?.video_workflow_stage).toBe("video_project_ready");
   expect(project.metadata?.video_plan?.scenes).toHaveLength(activeSeed.expectedSceneCount);
-  assertSourceClipIdentity(project);
+  if (activeSeed.videoType === "source_excerpt") {
+    assertSourceClipIdentity(project);
+  } else if (activeSeed.videoType === "presenter") {
+    assertPresenterSourceIdentity(project);
+  } else {
+    assertSourceClipIdentity(project);
+  }
 
   const projectQualityResponse = await page.request.get(
     `${activeSeed.backendUrl}/v1/video/projects/${activeSeed.projectAssetId}/quality?stage=project`,
@@ -504,7 +549,7 @@ test("opens and exports the completed retained video project", async ({ page }) 
     `${JSON.stringify({
       projectAssetId: activeSeed.projectAssetId,
       videoJobId: activeSeed.videoJobId,
-      twoStageEnabled: true,
+      twoStageEnabled: activeSeed.videoType !== "presenter",
       assetManifestCoverage: 1,
       manifestProjectReferenceMatch: true,
       publicCandidateOnlyCount: 0,

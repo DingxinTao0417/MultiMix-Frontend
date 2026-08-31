@@ -1,0 +1,185 @@
+.shell {
+  min-height: 100vh;
+  padding: 48px 32px;
+  background:
+    radial-gradient(circle at top right, rgba(91, 69, 224, 0.09), transparent 36%),
+    var(--background);
+}
+
+.page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.header h1,
+.accessCard h1 {
+  margin: 8px 0;
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+.header p,
+.accessCard p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.header a,
+.accessCard a {
+  color: var(--accent-strong);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.brand {
+  color: var(--accent-strong);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.windowPicker {
+  display: inline-flex;
+  gap: 6px;
+  padding: 5px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-tight);
+}
+
+.windowPicker button {
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.windowPicker .activeWindow {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.funnel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.funnel article,
+.cards article,
+.durationPanel,
+.accessCard {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow-tight);
+}
+
+.funnel article,
+.cards article {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 128px;
+  padding: 20px;
+}
+
+.funnel span,
+.cards span,
+.durationPanel span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.funnel strong,
+.cards strong,
+.durationPanel strong {
+  font-size: 30px;
+}
+
+.funnel small {
+  color: var(--quiet);
+  line-height: 1.4;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.durationPanel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 16px;
+  padding: 24px;
+}
+
+.durationPanel div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.page footer {
+  padding: 18px 4px;
+  color: var(--quiet);
+  font-size: 13px;
+  text-align: right;
+}
+
+.accessCard {
+  width: min(520px, 100%);
+  margin: 15vh auto 0;
+  padding: 34px;
+}
+
+.accessCard a {
+  display: inline-block;
+  margin-top: 24px;
+}
+
+.loading {
+  width: min(520px, 100%);
+  margin: 20vh auto 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .funnel,
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .shell {
+    padding: 28px 18px;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .funnel,
+  .cards,
+  .durationPanel {
+    grid-template-columns: 1fr;
+  }
+}

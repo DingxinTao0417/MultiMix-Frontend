@@ -40,7 +40,7 @@ export function resolveRuntimeWriteCapabilities({
       canUpload: false,
       canGenerate: false,
       canPersist: false,
-      reason: "未连接后端。请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端，创作、上传和保存暂不可用。",
+      reason: "未连接后端。请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端，短视频创作、素材上传和保存暂不可用。",
       recovery: "restart",
     };
   }
@@ -50,7 +50,7 @@ export function resolveRuntimeWriteCapabilities({
       canUpload: false,
       canGenerate: false,
       canPersist: false,
-      reason: "正在连接后端，创作、上传和保存暂不可用。",
+      reason: "正在连接后端，短视频创作、素材上传和保存暂不可用。",
       recovery: null,
     };
   }
@@ -60,7 +60,7 @@ export function resolveRuntimeWriteCapabilities({
       canUpload: false,
       canGenerate: false,
       canPersist: false,
-      reason: "后端暂时不可用，创作、上传和保存暂不可用。请重新连接后再试。",
+      reason: "后端暂时不可用，短视频创作、素材上传和保存暂不可用。请重新连接后再试。",
       recovery: "retry",
     };
   }
