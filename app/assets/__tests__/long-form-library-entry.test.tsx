@@ -43,6 +43,10 @@ describe("long-form source entry from the video library", () => {
     const grid = await screen.findByLabelText("视频库列表");
     fireEvent.click(within(grid).getByRole("button"));
     const dialog = await screen.findByRole("dialog", { name: "访谈第 12 期详情" });
+    expect(within(dialog).getByRole("button", { name: "拆成短视频" })).toHaveAttribute(
+      "title",
+      "加入对话并说明想怎么处理这段内容",
+    );
     fireEvent.click(within(dialog).getByRole("button", { name: "拆成短视频" }));
 
     expect(onUseAsset).toHaveBeenCalledWith(row, "long-form");

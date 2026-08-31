@@ -18,7 +18,6 @@ describe("chat attachment policy", () => {
 
     expect(partitionChatAttachmentFiles([image, pdf])).toEqual({
       acceptedFiles: [image, pdf],
-      rejectedVideoCount: 0,
       rejectedUnsupportedCount: 0,
     });
     expect(CHAT_IMAGE_UPLOAD_ACCEPT).toBe("image/png,image/jpeg,image/webp");
@@ -33,14 +32,21 @@ describe("chat attachment policy", () => {
     ["clip.mov", ""],
     ["clip.webm", "application/octet-stream"],
     ["clip.mkv", ""],
-  ])("rejects chat video %s", (name, type) => {
-    const partition = partitionChatAttachmentFiles([file(name, type)]);
+  ])("accepts chat video %s", (name, type) => {
+    const video = file(name, type);
+    const partition = partitionChatAttachmentFiles([video]);
+
+    expect(partition.acceptedFiles).toEqual([video]);
+    expect(chatAttachmentRejectionMessage(partition)).toBeNull();
+  });
+
+  it("rejects video containers outside the supported long-form formats", () => {
+    const partition = partitionChatAttachmentFiles([
+      file("legacy.avi", "video/x-msvideo"),
+    ]);
 
     expect(partition.acceptedFiles).toEqual([]);
-    expect(partition.rejectedVideoCount).toBe(1);
-    expect(chatAttachmentRejectionMessage(partition)).toBe(
-      "对话暂不支持视频附件，请先上传到视频素材库。",
-    );
+    expect(chatAttachmentRejectionMessage(partition)).toBe("暂不支持该附件格式。");
   });
 
   it("keeps supported files from a mixed selection and reports every rejected class", () => {
@@ -51,9 +57,11 @@ describe("chat attachment policy", () => {
       file("archive.zip", "application/zip"),
     ]);
 
-    expect(partition.acceptedFiles).toEqual([image]);
+    expect(partition.acceptedFiles).toHaveLength(2);
+    expect(partition.acceptedFiles[0]).toBe(image);
+    expect(partition.acceptedFiles[1]?.name).toBe("clip.mp4");
     expect(chatAttachmentRejectionMessage(partition)).toBe(
-      "对话暂不支持视频附件，请先上传到视频素材库。 暂不支持该附件格式。",
+      "暂不支持该附件格式。",
     );
   });
 });

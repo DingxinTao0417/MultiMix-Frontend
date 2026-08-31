@@ -1,6 +1,6 @@
 # 长视频与播客统一对话入口设计
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-31
 

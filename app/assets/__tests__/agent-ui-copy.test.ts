@@ -1415,12 +1415,15 @@ describe("agent conversation UI copy", () => {
     const globals = readAssetFile("app/globals.css");
 
     expect(conversationStudio).toContain("shadcn-prototype-chat-image-attachment-button");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-video-attachment-button");
     expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
     for (const composer of [conversationStudio, conversationStart]) {
       expect(composer).toContain("CHAT_IMAGE_UPLOAD_ACCEPT");
       expect(composer).toContain("CHAT_SOURCE_UPLOAD_ACCEPT");
+      expect(composer).toContain("CHAT_VIDEO_UPLOAD_ACCEPT");
       expect(composer).toContain("partitionChatAttachmentFiles");
       expect(composer).toContain('aria-label="上传图片素材"');
+      expect(composer).toContain('aria-label="上传视频素材"');
       expect(composer).not.toContain(".mp4,.mov,.webm,.mkv");
       expect(composer).not.toContain("上传图片或视频素材");
     }
@@ -1437,11 +1440,12 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
     expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
-    expect(conversationStudio).toContain("只上传资料时，我会先询问要基于它做什么");
+    expect(conversationStudio).toContain("添加视频后请先说明想怎么处理");
     expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
     expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
     expect(globals).toContain(".shadcn-prototype-chat-drop-hint");
+    expect(globals).toContain(".shadcn-prototype-chat-video-attachment-button");
     expect(globals).toContain(".shadcn-prototype-chat-file-attachment-button");
     expect(globals).toContain(".shadcn-prototype-chat-upload-progress");
   });
@@ -1460,7 +1464,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("今天想做什么短视频？");
     expect(conversationStart).toContain("上传素材，说出需求，生成可编辑的短视频");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
-    expect(conversationStart).toContain("支持拖入 PDF / 图片 · 视频请先上传到视频素材库");
+    expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
     expect(conversationStart).toContain("AI 自动编导并匹配画面");
     expect(materialsReady).toContain("你的素材可以开始做视频了");

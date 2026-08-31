@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-29
+> Last verified: 2026-08-31
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -480,7 +480,7 @@ function ConversationStudio({
 - **产物卡**：用 `getConversationProducts` 取列表，再按消息与产物关联关系插入消息流；点击时更新带 `conversation`、`product` 查询参数的路由并调用 `onSelectProduct`。
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
 - **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
-- **附件**：对话输入当前只支持图片和文档的上传、删除、失败重试与上传进度。视频不进入聊天附件；需要上传视频时使用视频库，底层视频上传能力继续保留。
+- **附件**：对话输入支持图片、文档和一个长视频来源的上传、删除、失败重试与上传进度；也支持导入 YouTube、Bilibili 和公开 MP4 链接。长视频继续走专用上传 / 导入接口，视频库原片也先作为 ready 附件带入对话。只添加来源不会发送消息或启动分析，只有用户明确提交处理需求后才启动长内容分析，并附带 `long_form_action=analyze`。
 - **任务与动作**：有效 `agentTasks` 在消息头下显示轻量任务条；Agent 动作确认复用
   `ConfirmCard`，执行状态复用唯一的 `AgentRunTimeline`。只有服务端
   `status === "succeeded"` 才显示完成，只有 `retryable === true` 才显示动作重试。

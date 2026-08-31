@@ -1138,7 +1138,7 @@ function LibraryWorkshop({
                     <button
                       type="button"
                       disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate || selectedRow.statusLabel !== "已入库"}
-                      title={selectedRow.statusLabel === "已入库" ? "分析原片并推荐可发布的短视频片段" : "原片准备完成后即可拆条"}
+                      title={selectedRow.statusLabel === "已入库" ? "加入对话并说明想怎么处理这段内容" : "原片准备完成后即可拆条"}
                       onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "long-form"); }}
                     >
                       <Video size={14} aria-hidden="true" />拆成短视频

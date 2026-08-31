@@ -1733,7 +1733,7 @@ button:disabled {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 30px 30px minmax(0, 1fr) var(--shadcn-prototype-send-size);
+  grid-template-columns: 30px 30px 30px minmax(0, 1fr) var(--shadcn-prototype-send-size);
   column-gap: 4px;
   row-gap: 6px;
   min-height: 52px;
@@ -1774,7 +1774,7 @@ button:disabled {
 }
 
 .shadcn-prototype-composer-control textarea {
-  grid-column: 3;
+  grid-column: 4;
   height: 36px;
   min-height: 36px;
   max-height: 128px;
@@ -1814,7 +1814,7 @@ button:disabled {
 
 .shadcn-prototype-composer-control > button.primary {
   position: static;
-  grid-column: 4;
+  grid-column: 5;
   justify-self: end;
   width: var(--shadcn-prototype-send-size);
   height: var(--shadcn-prototype-send-size);
@@ -1890,8 +1890,12 @@ button:disabled {
   grid-column: 1;
 }
 
-.shadcn-prototype-chat-file-attachment-button {
+.shadcn-prototype-chat-video-attachment-button {
   grid-column: 2;
+}
+
+.shadcn-prototype-chat-file-attachment-button {
+  grid-column: 3;
 }
 
 .shadcn-prototype-chat-attachment-button:hover:not(:disabled) {
@@ -2013,6 +2017,44 @@ button:disabled {
 .shadcn-prototype-chat-attachment-tray button:hover {
   background: #eae7e1;
   color: #201f1e;
+}
+
+.shadcn-prototype-long-form-prompt {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  border-radius: 11px;
+  background: #f8f6f3;
+  padding: 9px 10px;
+}
+
+.shadcn-prototype-long-form-prompt p {
+  margin: 0;
+  color: var(--sp-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.shadcn-prototype-long-form-prompt > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shadcn-prototype-long-form-prompt button {
+  min-height: 28px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--sp-subtle);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-long-form-prompt button:hover {
+  border-color: rgba(124, 92, 255, 0.35);
+  color: var(--sp-accent);
 }
 
 .shadcn-prototype-chat-attachment-help {

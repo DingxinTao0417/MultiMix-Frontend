@@ -6,14 +6,15 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, shouldSubmitCompo
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
+  CHAT_VIDEO_UPLOAD_ACCEPT,
   chatAttachmentRejectionMessage,
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
+import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
-import LongFormEntry from "./long-form-entry";
-import type { LongFormSourceReady } from "../lib/long-form-client";
+import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -25,7 +26,7 @@ import {
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传素材时，我会先理解内容并询问这条视频想表达什么；图片会作为画面素材，PDF/文档会作为内容依据。视频请先上传到视频素材库。";
+const ATTACHMENT_HELP_TEXT = "图片会作为画面素材，PDF/文档会作为内容依据；添加视频后请先说明想怎么处理。";
 
 // Demo-final suggestion cards carry a hint line and a richer fill utterance;
 // unknown labels degrade to a title-only card (no invented copy).
@@ -68,9 +69,9 @@ export default function ConversationStart({
   onUploadImages,
   onRemoveImageAttachment,
   onRetryImageAttachment,
+  onImportVideoUrl,
   token,
   onOpenImageLibrary,
-  onLongFormSourceReady,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
 }: {
@@ -82,9 +83,9 @@ export default function ConversationStart({
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
   onRetryImageAttachment?: (attachmentId: string) => void;
+  onImportVideoUrl?: (url: string) => void;
   token?: string | null;
   onOpenImageLibrary?: () => void;
-  onLongFormSourceReady?: (source: LongFormSourceReady) => Promise<void>;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
 }) {
@@ -98,9 +99,11 @@ export default function ConversationStart({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
-  const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
+  const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canUpload = Boolean(onUploadImages) && writeCapabilities.canUpload;
   const canGenerate = Boolean(onSend) && writeCapabilities.canGenerate;
   const runtimeWriteStatusId = writeCapabilities.reason
@@ -138,7 +141,12 @@ export default function ConversationStart({
       setError(blockReason);
       return;
     }
-    const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const explicitInstruction = composerValue.trim();
+    if (hasReadyVideoAttachment && !explicitInstruction) {
+      setError("请先说明你想怎么处理这段内容。");
+      return;
+    }
+    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !canGenerate || !onSend || sending) return;
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -177,6 +185,11 @@ export default function ConversationStart({
   };
 
   const handleSourceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  };
+
+  const handleVideoInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
     event.currentTarget.value = "";
   };
@@ -221,9 +234,6 @@ export default function ConversationStart({
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>今天想做什么短视频？</h1>
         <p className="shadcn-prototype-start-sub">上传素材，说出需求，生成可编辑的短视频</p>
-        {onLongFormSourceReady && canUpload && canGenerate ? (
-          <LongFormEntry token={token} onSourceReady={onLongFormSourceReady} />
-        ) : null}
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
@@ -253,7 +263,8 @@ export default function ConversationStart({
               ))}
             </div>
           ) : null}
-          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片素材</div> : null}
+          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
+          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={fillComposer} /> : null}
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
@@ -263,6 +274,13 @@ export default function ConversationStart({
             disabled={!canGenerate}
             aria-describedby={runtimeWriteStatusId}
             onChange={(event) => setComposerValue(event.currentTarget.value)}
+            onPaste={(event) => {
+              const sourceUrl = supportedLongFormUrlFromText(event.clipboardData.getData("text"));
+              if (!sourceUrl || !canUpload || !onImportVideoUrl) return;
+              event.preventDefault();
+              setError(null);
+              onImportVideoUrl(sourceUrl);
+            }}
             onInput={(event) => resizeComposer(event.currentTarget)}
             onKeyDown={(event) => {
               if (shouldSubmitComposerOnEnter(event)) {
@@ -295,6 +313,27 @@ export default function ConversationStart({
               <ImageIcon size={16} aria-hidden="true" />
             </button>
             <input
+              ref={videoInputRef}
+              type="file"
+              accept={CHAT_VIDEO_UPLOAD_ACCEPT}
+              hidden
+              disabled={!canUpload}
+              onChange={handleVideoInputChange}
+            />
+            <button
+              className="shadcn-prototype-start-dock-attach"
+              type="button"
+              aria-label="上传视频素材"
+              title="上传视频素材"
+              disabled={!canUpload}
+              aria-describedby={runtimeWriteStatusId}
+              onClick={() => {
+                if (canUpload) videoInputRef.current?.click();
+              }}
+            >
+              <Video size={16} aria-hidden="true" />
+            </button>
+            <input
               ref={sourceInputRef}
               type="file"
               accept={CHAT_SOURCE_UPLOAD_ACCEPT}
@@ -316,7 +355,7 @@ export default function ConversationStart({
             >
               <FileText size={15} aria-hidden="true" />
             </button>
-            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 · 视频请先上传到视频素材库</span>
+            <span className="shadcn-prototype-start-dock-hint">支持拖入 PDF / 图片 / 视频，也可粘贴视频链接</span>
             <button
               className={sending ? "shadcn-prototype-start-dock-send stop" : "shadcn-prototype-start-dock-send"}
               type="button"

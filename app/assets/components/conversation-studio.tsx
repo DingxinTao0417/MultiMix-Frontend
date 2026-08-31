@@ -7,9 +7,11 @@ import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationPr
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
+  CHAT_VIDEO_UPLOAD_ACCEPT,
   chatAttachmentRejectionMessage,
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
+import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import {
@@ -39,6 +41,7 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -79,7 +82,7 @@ export type ChatImageAttachment = {
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "只上传资料时，我会先询问要基于它做什么；图片会作为素材，PDF/文档会作为来源资产。";
+const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -238,6 +241,7 @@ export default function ConversationStudio({
   onUploadImages,
   onRemoveImageAttachment,
   onRetryImageAttachment,
+  onImportVideoUrl,
   pendingExchange = null,
   onPendingExchangeChange,
   onSendMessage,
@@ -265,6 +269,7 @@ export default function ConversationStudio({
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
   onRetryImageAttachment?: (attachmentId: string) => void;
+  onImportVideoUrl?: (url: string) => void;
   pendingExchange?: OptimisticExchange | null;
   onPendingExchangeChange?: (conversationId: string, exchange: OptimisticExchange | null) => void;
   onSendMessage?: (
@@ -323,11 +328,13 @@ export default function ConversationStudio({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
+  const videoInputRef = useRef<HTMLInputElement | null>(null);
   const activeRequestRef = useRef<ActiveRequest | null>(null);
   const selectedConversationIdRef = useRef(selectedConversation.id);
   selectedConversationIdRef.current = selectedConversation.id;
-  const hasReadyImageAttachment = imageAttachments.some((attachment) => (attachment.fileKind === "image" || attachment.fileKind === "video") && attachment.status === "ready" && attachment.assetId);
+  const hasReadyImageAttachment = imageAttachments.some((attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId);
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
+  const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canSend = Boolean(onSendMessage) && !readonly && writeCapabilities.canGenerate;
   const canUpload = Boolean(onUploadImages) && !readonly && writeCapabilities.canUpload;
   const runtimeWriteStatusId = writeCapabilities.reason
@@ -498,7 +505,12 @@ export default function ConversationStudio({
   };
 
   const submitInstruction = async () => {
-    const instruction = composerValue.trim() || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const explicitInstruction = composerValue.trim();
+    if (hasReadyVideoAttachment && !explicitInstruction) {
+      setSendError("请先说明你想怎么处理这段内容。");
+      return;
+    }
+    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     await sendInstruction(instruction);
   };
 
@@ -728,6 +740,11 @@ export default function ConversationStudio({
   };
 
   const handleSourceInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  };
+
+  const handleVideoInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.currentTarget.files) handleAttachmentFiles(event.currentTarget.files);
     event.currentTarget.value = "";
   };
@@ -1073,7 +1090,12 @@ export default function ConversationStudio({
               ))}
             </div>
           ) : null}
-          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片素材</div> : null}
+          {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
+          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={(value) => {
+            setComposerValue(value);
+            setAdjustHint(false);
+            requestAnimationFrame(() => composerRef.current?.focus());
+          }} /> : null}
           <input
             ref={imageInputRef}
             type="file"
@@ -1095,6 +1117,27 @@ export default function ConversationStudio({
             }}
           >
             <ImageIcon size={16} aria-hidden="true" />
+          </button>
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept={CHAT_VIDEO_UPLOAD_ACCEPT}
+            hidden
+            disabled={!canUpload}
+            onChange={handleVideoInputChange}
+          />
+          <button
+            className="shadcn-prototype-chat-attachment-button shadcn-prototype-chat-video-attachment-button"
+            type="button"
+            aria-label="上传视频素材"
+            title="上传视频素材"
+            disabled={!canUpload}
+            aria-describedby={runtimeWriteStatusId}
+            onClick={() => {
+              if (canUpload) videoInputRef.current?.click();
+            }}
+          >
+            <Video size={16} aria-hidden="true" />
           </button>
           <input
             ref={sourceInputRef}
@@ -1140,6 +1183,13 @@ export default function ConversationStudio({
             onChange={(event) => {
               setComposerValue(event.currentTarget.value);
               if (adjustHint) setAdjustHint(false);
+            }}
+            onPaste={(event) => {
+              const sourceUrl = supportedLongFormUrlFromText(event.clipboardData.getData("text"));
+              if (!sourceUrl || !canUpload || !onImportVideoUrl) return;
+              event.preventDefault();
+              setSendError(null);
+              onImportVideoUrl(sourceUrl);
             }}
             onInput={(event) => {
               resizeComposer(event.currentTarget);
