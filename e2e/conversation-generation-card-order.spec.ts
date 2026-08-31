@@ -105,6 +105,109 @@ const conversation = {
   ],
 };
 
+const readyVideoProject = {
+  ...product,
+  id: 43,
+  library_kind: "video",
+  content_type: "video_project",
+  title: "daniel-vertical-english · 视频工程",
+  status: "ready",
+  generation_state: "video_project_ready",
+  content_hash: "sha256:card-order-ready-video-project",
+  body: "视频工程已生成，可立即编辑。",
+  metadata: {
+    capability: "video_project",
+    capability_label: "视频工程",
+    orchestration_pending: false,
+    video_workflow_stage: "video_project_ready",
+    director_script_asset_id: 42,
+    video_project: {
+      ratio: "9:16",
+      duration_seconds: 30,
+      timeline: { tracks: [], media: [] },
+    },
+  },
+};
+
+const postConfirmationConversation = {
+  ...conversation,
+  id: "conversation-confirmation-final-state-e2e",
+  title: "口播确认最终状态验收",
+  products: [
+    product,
+    readyVideoProject,
+    {
+      ...product,
+      id: 44,
+      title: "不应出现在末尾的旧编导稿",
+      content_hash: "sha256:card-order-orphaned-director-script",
+    },
+  ],
+  messages: [
+    {
+      id: 201,
+      role: "assistant",
+      text: "口播清理已确认。",
+      asset_id: 41,
+      metadata: {
+        plan: {
+          kind: "presenter_cleanup_confirmation",
+          title: "口播清理方案",
+          status: "confirmed",
+          fields: [{ key: "source_edit", label: "原话与删剪", value: "保留 30 秒" }],
+          confirm_label: "确认推荐方案",
+          adjust_label: "换个方向",
+        },
+        suggestions: ["确认推荐方案", "换个方向", "调整包装强度"],
+        suggestion_actions: [
+          {
+            id: "stale-confirm",
+            label: "确认推荐方案",
+            utterance: "确认推荐方案",
+            action_type: "submit_message",
+            enabled: true,
+          },
+          {
+            id: "stale-direction",
+            label: "换个方向",
+            utterance: "换个方向",
+            action_type: "fill_composer",
+            enabled: true,
+          },
+          {
+            id: "stale-packaging",
+            label: "调整包装强度",
+            utterance: "调整包装强度",
+            action_type: "fill_composer",
+            enabled: true,
+          },
+        ],
+      },
+      created_at: "2026-08-26T04:10:00Z",
+    },
+    {
+      id: 202,
+      role: "assistant",
+      text: "编导脚本已生成，可确认或修改。",
+      asset_id: 42,
+      metadata: {
+        asset_generation_job_id: "job-result-completed",
+        asset_generation_status: "completed",
+        product_id: 42,
+      },
+      created_at: "2026-08-26T04:20:00Z",
+    },
+    {
+      id: 203,
+      role: "assistant",
+      text: "视频工程已生成，可立即编辑。",
+      asset_id: 43,
+      metadata: { product_id: 43 },
+      created_at: "2026-08-26T04:30:00Z",
+    },
+  ],
+};
+
 const jobs = {
   "job-old-failed": {
     id: "job-old-failed",
@@ -142,12 +245,49 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, headers: corsHeaders, body: JSON.stringify(body) });
 }
 
-async function installFixtureApi(page: Page) {
+type FixtureConversation = {
+  id: string;
+  title: string;
+  status: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  products: unknown[];
+  messages: unknown[];
+};
+
+async function installFixtureApi(
+  page: Page,
+  fixtureConversation: FixtureConversation = conversation,
+) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("multimix_local_user", JSON.stringify({
+    const user = {
+      id: "00000000-0000-4000-8000-000000000042",
+      aud: "authenticated",
+      role: "authenticated",
       email: "browser-e2e@multimix.local",
-      token: "browser-e2e-token",
+      app_metadata: { provider: "email" },
+      user_metadata: {},
+      created_at: "2026-08-26T00:00:00Z",
+    };
+    const session = {
+      access_token: "browser-e2e-token",
+      refresh_token: "browser-e2e-refresh-token",
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      token_type: "bearer",
+      user,
+    };
+    window.localStorage.setItem("multimix_local_user", JSON.stringify({
+      email: user.email,
+      token: session.access_token,
     }));
+    // The local frontend currently uses Supabase auth. Seed its persisted
+    // session too so this isolated fixture does not fall back to the login UI.
+    window.localStorage.setItem(
+      "sb-mmangqstpsbkfaruwbgs-auth-token",
+      JSON.stringify(session),
+    );
   });
   await page.route("**/v1/**", async (route) => {
     const request = route.request();
@@ -158,17 +298,17 @@ async function installFixtureApi(page: Page) {
     }
     if (request.method() === "GET" && url.pathname === "/v1/assets/conversations/summaries") {
       await fulfillJson(route, [{
-        id: conversationId,
-        title: conversation.title,
-        status: conversation.status,
+        id: fixtureConversation.id,
+        title: fixtureConversation.title,
+        status: fixtureConversation.status,
         metadata: {},
-        created_at: conversation.created_at,
-        updated_at: conversation.updated_at,
+        created_at: fixtureConversation.created_at,
+        updated_at: fixtureConversation.updated_at,
       }]);
       return;
     }
-    if (request.method() === "GET" && url.pathname === `/v1/assets/conversations/${conversationId}`) {
-      await fulfillJson(route, conversation);
+    if (request.method() === "GET" && url.pathname === `/v1/assets/conversations/${fixtureConversation.id}`) {
+      await fulfillJson(route, fixtureConversation);
       return;
     }
     if (request.method() === "GET" && url.pathname.startsWith("/v1/assets/generation-jobs/")) {
@@ -238,4 +378,27 @@ test("generation cards stay ordered, avoid duplicate copy, and keep suggestions 
     await page.locator('[data-generation-job-id="job-result-completed"]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: screenshotPath, fullPage: true });
   }
+});
+
+async function expectFinalPresenterState(page: Page) {
+  const thread = page.getByRole("region", { name: "Content generation conversation" });
+  await expect(thread).toBeVisible();
+  await expect(thread.getByText("口播清理已确认。", { exact: true })).toBeVisible();
+  await expect(thread.getByRole("button", { name: "确认推荐方案" })).toHaveCount(0);
+  await expect(thread.getByRole("button", { name: "换个方向" })).toHaveCount(0);
+  await expect(thread.getByRole("button", { name: "调整包装强度" })).toHaveCount(0);
+  const directorJob = thread.locator('[data-generation-job-id="job-result-completed"]');
+  await expect(directorJob.getByRole("button", { name: /编导稿已确认，已用于生成视频工程/ })).toBeVisible();
+  await expect(directorJob.getByText("编导脚本已生成，可确认或修改", { exact: true })).toHaveCount(0);
+  await expect(thread.getByText("不应出现在末尾的旧编导稿", { exact: true })).toHaveCount(0);
+  await expect(thread.getByText("视频工程已生成，可立即编辑。", { exact: true })).toBeVisible();
+}
+
+test("confirmed Presenter cleanup stays closed after a ready video project is reloaded", async ({ page }) => {
+  await installFixtureApi(page, postConfirmationConversation);
+  await page.goto(`/app/assets?conversation=${postConfirmationConversation.id}`);
+  await expectFinalPresenterState(page);
+
+  await page.reload();
+  await expectFinalPresenterState(page);
 });
