@@ -54,6 +54,41 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
 }
 
 describe("asset product mapper", () => {
+  it("maps a completed generated image to the shared delivery state and media proxy", () => {
+    const product = contentAssetToProduct(asset({
+      id: 205,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"a".repeat(64)}.png`,
+      product_status: "completed",
+      metadata: { intent: { ratio: "9:16" } },
+    }));
+
+    expect(product.mode).toBe("image");
+    expect(product.productStatus).toBe("completed");
+    expect(product.status).toBe("完成");
+    expect(product.preview?.subtitle).toContain("图片已生成");
+    expect(product.metadata?.preview_url).toContain(
+      `/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fcontent-assets%2F1%2Fgeneration-jobs%2F77%2Fimages%2F${"a".repeat(64)}.png`,
+    );
+  });
+
+  it("does not issue a media request for an unvalidated generated-image path", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      original_ref: "local://content-assets/1/generation-jobs/77/images/user-controlled.png",
+      product_status: "completed",
+    }));
+
+    expect(product.metadata?.preview_url).toBeUndefined();
+  });
+
   it("uses only generating, completed, and failed for video products", () => {
     const baseProject = { timeline: { tracks: [], media: [] } };
     const generating = contentAssetToProduct(asset({

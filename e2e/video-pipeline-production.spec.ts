@@ -16,13 +16,14 @@ import {
   selectClosestDurationCandidate,
   selectProductionGeneratedRecomposeTarget,
 } from "../test-support/video-pipeline-production-helpers";
+import { writeVideoHumanReviewReport } from "../scripts/video-human-review-report.mjs";
 
 const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const timingPath = process.env.VIDEO_PIPELINE_TIMING_PATH;
 
-type ActiveVideoType = "explainer" | "demonstration" | "source_excerpt" | "presenter";
+type ActiveVideoType = "explainer" | "source_excerpt" | "presenter";
 
 function loadActiveVideoTypes(): string[] {
   const activationPath = path.resolve(
@@ -48,7 +49,6 @@ const activeVideoTypes = loadActiveVideoTypes();
 const configuredVideoType = process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? activeVideoTypes[0];
 const supportedVideoTypes = new Set<ActiveVideoType>([
   "explainer",
-  "demonstration",
   "source_excerpt",
   "presenter",
 ]);
@@ -114,6 +114,71 @@ async function assertExportHasNotFailed(
     );
   }
   return label;
+}
+
+const CANDIDATE_MP4_RANGE_CHUNK_BYTES = 1024 * 1024;
+const CANDIDATE_MP4_RANGE_TIMEOUT_MS = 60_000;
+
+async function downloadCandidateMp4ByRange(
+  page: Page,
+  apiBase: string,
+  headers: Record<string, string>,
+  mp4Ref: string,
+): Promise<Buffer> {
+  const mediaUrl = `${apiBase}/v1/video/media?ref=${encodeURIComponent(mp4Ref)}`;
+  const probeResponse = await page.request.get(mediaUrl, {
+    headers: { ...headers, range: "bytes=0-0" },
+    timeout: CANDIDATE_MP4_RANGE_TIMEOUT_MS,
+  });
+  if (probeResponse.status() !== 206) {
+    throw new Error(`candidate MP4 range probe failed (HTTP ${probeResponse.status()})`);
+  }
+  const totalMatch = probeResponse.headers()["content-range"]?.match(/^bytes\s+0-0\/(\d+)$/i);
+  if (!totalMatch) {
+    throw new Error("candidate MP4 range probe omitted Content-Range total size");
+  }
+  const totalBytes = Number(totalMatch[1]);
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0) {
+    throw new Error(`candidate MP4 range probe returned invalid total size: ${totalMatch[1]}`);
+  }
+  const probeBytes = await probeResponse.body();
+  if (probeBytes.length !== 1) {
+    throw new Error(`candidate MP4 range probe returned ${probeBytes.length} bytes instead of 1`);
+  }
+
+  const chunks: Buffer[] = [];
+  for (let start = 0; start < totalBytes; start += CANDIDATE_MP4_RANGE_CHUNK_BYTES) {
+    const end = Math.min(totalBytes - 1, start + CANDIDATE_MP4_RANGE_CHUNK_BYTES - 1);
+    const response = await page.request.get(mediaUrl, {
+      headers: { ...headers, range: `bytes=${start}-${end}` },
+      timeout: CANDIDATE_MP4_RANGE_TIMEOUT_MS,
+    });
+    if (response.status() !== 206) {
+      throw new Error(
+        `candidate MP4 range response ${start}-${end} failed (HTTP ${response.status()})`,
+      );
+    }
+    const contentRange = response.headers()["content-range"];
+    const expectedContentRange = `bytes ${start}-${end}/${totalBytes}`;
+    if (contentRange !== expectedContentRange) {
+      throw new Error(
+        `candidate MP4 range response ${start}-${end} returned ${contentRange ?? "no Content-Range"}; expected ${expectedContentRange}`,
+      );
+    }
+    const chunk = await response.body();
+    const expectedLength = end - start + 1;
+    if (chunk.length !== expectedLength) {
+      throw new Error(
+        `candidate MP4 range response ${start}-${end} returned ${chunk.length} bytes; expected ${expectedLength}`,
+      );
+    }
+    chunks.push(chunk);
+  }
+  const output = Buffer.concat(chunks);
+  if (output.length !== totalBytes) {
+    throw new Error(`candidate MP4 stitched size ${output.length} does not match ${totalBytes}`);
+  }
+  return output;
 }
 
 const directorTimingStageKeys = new Set([
@@ -220,10 +285,25 @@ if (!Number.isInteger(mediaUploadTimeoutMs) || mediaUploadTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS must be a positive integer");
 }
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
+const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
+const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"
+  || singleImageCreativeDraft;
+const supportedVideoExtensions = new Set([".mp4", ".mov", ".webm", ".mkv"]);
+const videoMimeTypeByExtension = new Map([
+  [".mp4", "video/mp4"],
+  [".mov", "video/quicktime"],
+  [".webm", "video/webm"],
+  [".mkv", "video/x-matroska"],
+]);
+const presenterSourceVideo = (process.env.VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO ?? "").trim();
+const presenterSourceApprovalRef = (
+  process.env.VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF ?? ""
+).trim();
 const requirePublicAsset =
   process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true" ||
   inputProfile === "explainer_public_broll";
-const demonstrationMediaFilesRaw = process.env.VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES;
+const savedLibraryMediaFilesRaw = process.env.VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES;
 const expectResume = process.env.VIDEO_PIPELINE_EXPECT_RESUME === "true";
 const expectTwoStage = process.env.VIDEO_PIPELINE_EXPECT_TWO_STAGE !== "false";
 const testRecompose = process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
@@ -243,8 +323,16 @@ const audioMixRatioTolerance = Number(
 
 type AssetRow = {
   id: number;
+  title?: string;
+  library_kind?: string;
   content_type: string;
   metadata?: Record<string, unknown>;
+};
+
+type PdfUploadMetadata = {
+  full_page_visuals_created?: boolean;
+  document_embedded_image_count?: number;
+  derived_visual_asset_ids?: number[];
 };
 
 type VideoProject = {
@@ -264,6 +352,10 @@ type VideoProject = {
       music_lufs?: number;
     };
     audio_mix_measurement_status?: string;
+    bgm_choice?: {
+      enabled?: boolean;
+      selection_reason?: string;
+    };
   };
   orchestration?: {
     tts_sample_gate?: {
@@ -475,6 +567,7 @@ async function confirmVideoParametersIfRequired(
   initialResponse: PlaywrightResponse,
   ratio: keyof typeof ratioAcceptance,
   payloadPatch: Record<string, unknown> = {},
+  linkedAssetIds: number[] = [],
 ) {
   type GenerationPayload = {
     generation_job?: { id?: string };
@@ -492,11 +585,12 @@ async function confirmVideoParametersIfRequired(
     await route.continue({
       postData: JSON.stringify({
         ...(request.postDataJSON() as Record<string, unknown>),
+        ...(linkedAssetIds.length > 0 ? { linked_asset_ids: linkedAssetIds } : {}),
         ...payloadPatch,
       }),
     });
   };
-  if (Object.keys(payloadPatch).length > 0) {
+  if (linkedAssetIds.length > 0 || Object.keys(payloadPatch).length > 0) {
     await page.route(messageRoute, applyPayloadPatch);
   }
 
@@ -582,7 +676,7 @@ async function confirmVideoParametersIfRequired(
     expect(payload.generation_job?.id, "generation confirmation must queue a job").toBeTruthy();
     return payload;
   } finally {
-    if (Object.keys(payloadPatch).length > 0) {
+    if (linkedAssetIds.length > 0 || Object.keys(payloadPatch).length > 0) {
       await page.unroute(messageRoute, applyPayloadPatch);
     }
   }
@@ -675,9 +769,17 @@ async function waitForGenerationJob(
     error_code?: string;
     error_message?: string;
   }) | undefined;
+  let consecutiveTransportErrors = 0;
   await expect
     .poll(
       async () => {
+        if (
+          await page.getByRole("heading", { name: "登录你的 AI 短视频创作工作台" })
+            .isVisible()
+            .catch(() => false)
+        ) {
+          throw new Error(`${stageLabel} generation polling lost authentication`);
+        }
         let response: APIResponse;
         try {
           response = await page.request.get(
@@ -685,7 +787,17 @@ async function waitForGenerationJob(
             { headers },
           );
         } catch (error) {
+          consecutiveTransportErrors += 1;
+          if (consecutiveTransportErrors >= 3) {
+            throw new Error(
+              `${stageLabel} generation polling stopped after ${consecutiveTransportErrors} consecutive transport errors: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
           return `transport-error:${error instanceof Error ? error.name : "unknown"}`;
+        }
+        consecutiveTransportErrors = 0;
+        if ([401, 403].includes(response.status())) {
+          throw new Error(`${stageLabel} generation polling lost authentication (HTTP ${response.status()})`);
         }
         if (!response.ok()) return `http-${response.status()}`;
         const job = (await response.json()) as GenerationJobTimingSource & {
@@ -920,7 +1032,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
 }) => {
   test.setTimeout(60 * 60_000);
   if (
-    inputProfile !== "explainer_saved_library_simple"
+    !savedLibraryInputProfile
     && (!sourceDocument || !fs.existsSync(sourceDocument))
   ) {
     throw new Error(
@@ -934,6 +1046,33 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     throw new Error(
       `VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO is missing: ${sourceExcerptVideo ?? ""}`,
     );
+  }
+  if (
+    qualityBaselineRun
+    && expectedVideoType === "explainer"
+    && savedLibraryInputProfile
+  ) {
+    throw new Error("quality baseline explainer cannot use a saved-library creative-draft profile");
+  }
+  if (singleImageCreativeDraft && expectedVideoType !== "explainer") {
+    throw new Error("explainer_single_image_draft requires VIDEO_PIPELINE_VIDEO_TYPE=explainer");
+  }
+  if (singleImageCreativeDraft && qualityBaselineRun) {
+    throw new Error("explainer_single_image_draft is creative-draft-only and cannot run as a quality baseline");
+  }
+  if (
+    qualityBaselineRun
+    && expectedVideoType === "presenter"
+    && (!presenterSourceVideo || !fs.existsSync(presenterSourceVideo))
+  ) {
+    throw new Error("quality baseline presenter requires an approved source video");
+  }
+  if (
+    qualityBaselineRun
+    && expectedVideoType === "presenter"
+    && !presenterSourceApprovalRef
+  ) {
+    throw new Error("quality baseline presenter requires a source approval reference");
   }
   if (!resultDir) throw new Error("VIDEO_PIPELINE_RESULT_DIR is required");
   fs.mkdirSync(resultDir, { recursive: true });
@@ -964,7 +1103,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   await measureE2EStage("workspace_entry", () => enterWorkspace(page));
   let apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   let headers: Record<string, string> = {};
-  if (inputProfile === "explainer_saved_library_simple") {
+  let pdfDerivedImageIds: number[] = [];
+  if (savedLibraryInputProfile) {
     const sessionSource = await page.evaluate(() =>
       window.localStorage.getItem("multimix_local_user")
     );
@@ -991,6 +1131,15 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     const authorization = uploadResponse.request().headers().authorization;
     apiBase = new URL(uploadResponse.url()).origin;
     headers = authorization ? { authorization } : {};
+    if (path.extname(sourceDocument!).toLowerCase() === ".pdf") {
+      const uploadedSource = (await uploadResponse.json()) as {
+        metadata?: PdfUploadMetadata;
+      };
+      expect(uploadedSource.metadata?.full_page_visuals_created).toBe(false);
+      expect(uploadedSource.metadata?.document_embedded_image_count).toBeGreaterThan(0);
+      pdfDerivedImageIds = uploadedSource.metadata?.derived_visual_asset_ids ?? [];
+      expect(pdfDerivedImageIds.length).toBeGreaterThan(0);
+    }
   }
 
   let sourceExcerptAssetId: number | undefined;
@@ -1025,35 +1174,52 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     sourceExcerptAssetId = sourceVideoAsset.id;
   }
 
-  const demonstrationLinkedAssetIds: number[] = [];
+  const requiredLinkedAssetIds: number[] = [];
   const savedLibraryMediaAssetIds: number[] = [];
   const savedLibraryVideoAssetIds: number[] = [];
+  const isQualityBaselinePresenter = qualityBaselineRun && expectedVideoType === "presenter";
+  const requiredSavedLibraryMediaCount = isQualityBaselinePresenter || singleImageCreativeDraft ? 1 : 3;
   if (
-    expectedVideoType === "demonstration"
-    || inputProfile === "explainer_saved_library_simple"
+    savedLibraryInputProfile
+    || isQualityBaselinePresenter
   ) {
-    const demonstrationMediaFiles = JSON.parse(demonstrationMediaFilesRaw ?? "[]") as Array<{
+    const savedLibraryMediaFiles = JSON.parse(savedLibraryMediaFilesRaw ?? "[]") as Array<{
       path?: string;
       name?: string;
     }>;
-    expect(
-      demonstrationMediaFiles.length,
-      "demonstration requires at least three saved operation/process/result media files",
-    ).toBeGreaterThanOrEqual(3);
-    for (const [index, entry] of demonstrationMediaFiles.entries()) {
+    if (isQualityBaselinePresenter) {
+      expect(
+        savedLibraryMediaFiles.length,
+        "quality-baseline presenter requires exactly one approved source video",
+      ).toBe(requiredSavedLibraryMediaCount);
+    } else if (singleImageCreativeDraft) {
+      expect(
+        savedLibraryMediaFiles.length,
+        "single-image creative draft requires exactly one user image",
+      ).toBe(requiredSavedLibraryMediaCount);
+    } else {
+      expect(
+        savedLibraryMediaFiles.length,
+        "saved-library explainer requires at least three media files",
+      ).toBeGreaterThanOrEqual(requiredSavedLibraryMediaCount);
+    }
+    for (const [index, entry] of savedLibraryMediaFiles.entries()) {
       const mediaPath = path.resolve(entry.path ?? "");
       expect(
         fs.existsSync(mediaPath),
-        `demonstration media is missing: ${mediaPath}`,
+        `saved-library media is missing: ${mediaPath}`,
       ).toBe(true);
       const extension = path.extname(mediaPath).toLowerCase();
-      const isVideo = extension === ".mp4";
+      const isVideo = supportedVideoExtensions.has(extension);
+      if (singleImageCreativeDraft && isVideo) {
+        throw new Error("single-image creative draft accepts one product image, not a video source");
+      }
       expect(
-        [".jpg", ".jpeg", ".png", ".mp4"],
-        `unsupported demonstration media: ${extension}`,
+        [".jpg", ".jpeg", ".png", ...supportedVideoExtensions],
+        `unsupported saved-library media: ${extension}`,
       ).toContain(extension);
       const mimeType = isVideo
-        ? "video/mp4"
+        ? videoMimeTypeByExtension.get(extension)!
         : extension === ".jpg" || extension === ".jpeg"
           ? "image/jpeg"
           : "image/png";
@@ -1075,7 +1241,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       );
       expect(
         mediaResponse.ok(),
-        `demonstration saved-media upload failed: ${mediaResponse.status()} ${await mediaResponse.text()}`,
+        `saved-library media upload failed: ${mediaResponse.status()} ${await mediaResponse.text()}`,
       ).toBe(true);
       const mediaAsset = (await mediaResponse.json()) as {
         id?: number;
@@ -1089,28 +1255,33 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       const understanding = mediaAsset.metadata?.understanding;
       expect(
         understanding?.status,
-        `demonstration source understanding failed: index=${index + 1} status=${understanding?.status ?? "missing"} code=${understanding?.error_code ?? "missing"}`,
+        `saved-library source understanding failed: index=${index + 1} status=${understanding?.status ?? "missing"} code=${understanding?.error_code ?? "missing"}`,
       ).toBe("ready");
       expect(
         typeof mediaAsset.id,
-        `demonstration source asset id is missing: index=${index + 1}`,
+        `saved-library source asset id is missing: index=${index + 1}`,
       ).toBe("number");
       if (typeof mediaAsset.id !== "number") {
-        throw new Error(`demonstration source asset id is missing: index=${index + 1}`);
+        throw new Error(`saved-library source asset id is missing: index=${index + 1}`);
       }
       savedLibraryMediaAssetIds.push(mediaAsset.id);
       if (isVideo) savedLibraryVideoAssetIds.push(mediaAsset.id);
-      if (expectedVideoType === "demonstration") {
-        demonstrationLinkedAssetIds.push(mediaAsset.id);
+      if (
+        (qualityBaselineRun && expectedVideoType === "presenter")
+        || singleImageCreativeDraft
+      ) {
+        requiredLinkedAssetIds.push(mediaAsset.id);
       }
     }
   }
 
   const generationInstruction =
-    expectedVideoType === "demonstration"
-      ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的 MultiMix 操作演示片。整条视频必须按“上传资料与素材 → 理解并组织已有素材 → 生成可编辑分镜与预览”的可观察操作顺序推进，不要改成只介绍概念和卖点的产品讲解。至少两个不同分镜必须使用两个不同的已审核产品界面：上传或进入工作区步骤使用工作区总览界面，生成可编辑分镜与预览步骤使用另一张分镜编辑或视频预览界面；两个操作界面都不得由装修素材替代。只有涉及 MultiMix 产品能力、操作结果或效果的文字才必须由产品资料支持。三段已选视频也都必须出现在主画面中：过程基线用于开场输入，步骤迭代用于理解和组织，结果与图形增强只用于展示画面中已经存在的区域标签和 KITCHEN FLOW / 服务流程文字，不作为产品结果证明；该镜不声称素材由系统完成了组织，不得使用“自动整理、自动标注、自动生成”等资料未逐字支持的能力表述。本轮只使用这三段已选素材和批准产品界面，不使用公共素材。刚上传的装修视频只作为被输入和组织的真实业务素材，不是 MultiMix 客户项目，也不能证明产品效果；不得把它们说成产品操作界面、客户案例、前后对比或效果证明。每个分镜必须承担不同且必要的操作、状态或结果，不能换一种说法重复前一镜。动态图解只能标注步骤关系，不能替代操作证据。先给出编导稿和${expectedSceneCount}个分镜，不要展示内部制作方式。`
+    expectedVideoType === "presenter"
+      ? `严格以刚上传、已确认可用的口播原片制作一条${targetSeconds}秒的真人口播视频。保持原片比例、人物画面、原声和原意；只允许必要的清理、字幕和包装，不得换成 AI 配音、公共素材讲解或其他人物画面。先给出单一推荐方案，不要展示内部制作方式。`
       : expectedVideoType === "source_excerpt"
         ? `从刚上传的长视频中忠实摘取一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的片段视频。保留来源原声、说话人和原意，选段必须有明确 source_range，不得用改写旁白替代原片，也不得拼接造成断章取义。先给出编导稿和候选选段，不要展示内部制作方式。`
+      : inputProfile === "explainer_single_image_draft"
+        ? `用我刚上传的一张产品图片，先生成一版${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的讲解型创意编导稿。图片中能看见的产品外观可以作为画面依据；未提供的品牌、型号、性能、案例和数据不得臆造。信息不足处保持为待补充，不得把本稿写成可公开发布的事实承诺。先给出编导稿和${expectedSceneCount}个分镜；不要展示内部制作方式。`
       : inputProfile === "explainer_saved_library_simple"
         ? `用我已有的家装素材，做一条家装服务宣传讲解视频${requireMgInstruction}`
       : inputProfile === "explainer_public_broll"
@@ -1195,7 +1366,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         : inputProfile === "explainer_saved_library_simple"
           ? " 不要背景音乐。"
           : " 本轮不使用背景音乐，bgm_plan.enabled 必须为 false。"}`,
-      demonstrationLinkedAssetIds,
+      requiredLinkedAssetIds,
       {},
     );
     const generationPayload = await confirmVideoParametersIfRequired(
@@ -1203,6 +1374,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       generationResponse,
       targetRatio as keyof typeof ratioAcceptance,
       {},
+      requiredLinkedAssetIds,
     );
     generationJobId = generationPayload.generation_job?.id;
   }
@@ -1299,17 +1471,17 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     `director selected wrong video type: expected=${expectedVideoType} actual=${directorVideoPlan.video_type ?? "missing"}`,
   ).toBe(expectedVideoType);
   if (
-    inputProfile === "explainer_saved_library_simple"
+    savedLibraryInputProfile
     && expectedVideoType !== "presenter"
   ) {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
     expect(
       expectedSceneCount,
-      "simple input must let the director choose a valid content-driven scene count",
+      "saved-library input must let the director choose a valid content-driven scene count",
     ).toBeGreaterThanOrEqual(4);
     expect(
       expectedSceneCount,
-      "simple input must stay within the automatic scene-count contract",
+      "saved-library input must stay within the automatic scene-count contract",
     ).toBeLessThanOrEqual(8);
     const matchedSavedPrimaryMediaIds = (directorVideoPlan.scenes ?? [])
       .filter(
@@ -1325,12 +1497,22 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       );
     expect(
       matchedSavedPrimaryMediaIds.length,
-      "simple saved-library request must use at least one understood home-renovation image",
+      "saved-library request must use at least one understood user image",
     ).toBeGreaterThan(0);
-    expect(
-      new Set(matchedSavedPrimaryMediaIds).size,
-      "one saved image must not become the primary visual of multiple scenes",
-    ).toBe(matchedSavedPrimaryMediaIds.length);
+    if (singleImageCreativeDraft) {
+      expect(
+        matchedSavedPrimaryMediaIds,
+        "single-image creative draft must keep its one user image as every scene's primary visual",
+      ).toHaveLength(expectedSceneCount);
+      expect(new Set(matchedSavedPrimaryMediaIds)).toEqual(
+        new Set(savedLibraryMediaAssetIds),
+      );
+    } else {
+      expect(
+        new Set(matchedSavedPrimaryMediaIds).size,
+        "one saved image must not become the primary visual of multiple scenes",
+      ).toBe(matchedSavedPrimaryMediaIds.length);
+    }
   }
   if (expectedVideoType === "presenter") {
     expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
@@ -1448,7 +1630,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   await expect(summary.getByText("待补素材")).toHaveCount(0);
   const visibleText = await page.locator("body").innerText();
   expect(visibleText).not.toMatch(
-    /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i,
+    /\bexplainer\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i,
   );
   expect(visibleText).not.toMatch(/待补素材|字幕\/标题卡占位/);
   if (expectedVideoType !== "presenter") {
@@ -1465,6 +1647,22 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   });
   expect(listResponse.ok()).toBe(true);
   const assets = (await listResponse.json()) as AssetRow[];
+  if (pdfDerivedImageIds.length > 0) {
+    const documentImages = assets.filter((asset) => pdfDerivedImageIds.includes(asset.id));
+    expect(documentImages).toHaveLength(pdfDerivedImageIds.length);
+    for (const image of documentImages) {
+      const metadata = image.metadata ?? {};
+      const understanding = (metadata.understanding ?? {}) as { tags?: string[] };
+      expect(image.library_kind).toBe("image");
+      expect(image.content_type).toBe("document_embedded_image");
+      expect(metadata.whole_page_visual).toBe(false);
+      expect(understanding.tags?.length).toBeGreaterThan(0);
+      expect(metadata.source_context_text).toBeTruthy();
+    }
+    const serializedAssets = JSON.stringify(assets);
+    expect(serializedAssets).not.toContain("/pdf-pages/");
+    expect(serializedAssets).not.toContain("pdf_page_visual");
+  }
   let projectAsset = assets
     .filter(
       (asset) =>
@@ -1596,6 +1794,12 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       )).toBe(true);
       expect(scene.asset_reference?.status).toMatch(/^(?:matched|no_asset_hit)$/);
     }
+    if (singleImageCreativeDraft) {
+      for (const scene of beforeScenes) {
+        expect(scene.asset_reference?.chosen_asset_id).toBe(savedLibraryMediaAssetIds[0]);
+        expect(scene.primary_visual?.source_type).toBe("saved_asset");
+      }
+    }
     if (expectedVideoType === "source_excerpt") {
       for (const scene of beforeScenes) {
         const authorityRange = scene.asset_reference?.source_range;
@@ -1656,53 +1860,6 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   if (expectedVideoType === "source_excerpt") {
     expect(new Set(primaryVisualRefs).size).toBe(1);
   }
-  if (expectedVideoType === "demonstration") {
-    const savedSourceIds = new Set(
-      beforeScenes
-        .filter(
-          (scene) => scene.primary_visual?.source_type === "saved_asset",
-        )
-        .map((scene) => scene.primary_visual?.provenance?.source_asset_id)
-        .filter(Boolean),
-    );
-    expect(
-      savedSourceIds.size,
-      "demonstration should consume all three already-ranked uploaded clips before generated fallback",
-    ).toBeGreaterThanOrEqual(3);
-    const productScenes = beforeScenes.filter(
-      (scene) => scene.primary_visual?.source_type === "product_asset",
-    );
-    expect(
-      productScenes.length,
-      "demonstration should persist at least two reviewed product operation scenes",
-    ).toBeGreaterThanOrEqual(2);
-    const distinctProductCatalogEntries = new Set(
-      productScenes
-        .map(
-          (scene) => scene.primary_visual?.provenance?.catalog_entry_id,
-        )
-        .filter(Boolean),
-    );
-    expect(
-      distinctProductCatalogEntries.size,
-      "the two distinct reviewed product captures must both be used",
-    ).toBeGreaterThanOrEqual(2);
-    const evidenceScenes = beforeScenes.filter(
-      (scene) => scene.asset_requirement?.evidence_required === true,
-    );
-    expect(
-      evidenceScenes.length,
-      "demonstration should include at least one grounded evidence scene",
-    ).toBeGreaterThan(0);
-    for (const scene of evidenceScenes) {
-      expect(scene.primary_visual?.source_type).not.toBe("public_asset");
-      if (scene.primary_visual?.source_type === "generated_scene") {
-        expect(scene.primary_visual.provenance?.grounding).toBe(
-          "confirmed_fact",
-        );
-      }
-    }
-  }
   for (const scene of beforeScenes) {
     const mediaResponse = await page.request.get(
       `${apiBase}/v1/video/media?ref=${encodeURIComponent(scene.primary_visual!.artifact_ref!)}`,
@@ -1750,6 +1907,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   if (
     expectedVideoType !== "source_excerpt"
     && expectedVideoType !== "presenter"
+    && !singleImageCreativeDraft
   ) {
     assertDistinctPersistedPrimaryVisualWindows(beforeScenes, videoProject);
   }
@@ -1918,6 +2076,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const bgmTrack = videoProject?.tracks?.find(
     (track) => track.id === "track-bgm",
   );
+  const bgmChoice = videoProject?.metadata?.bgm_choice;
   if (targetSeconds >= 45) {
     expect(Number(videoProject?.metadata?.closing_hold_seconds)).toBeGreaterThanOrEqual(
       1.5,
@@ -1938,6 +2097,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       bgmTrack,
       "intentional no-BGM degradation must not create a music track",
     ).toBeUndefined();
+    expect(
+      bgmChoice?.enabled,
+      "intentional no-BGM degradation must persist its explicit disabled state",
+    ).toBe(false);
+    expect(
+      bgmChoice?.selection_reason?.trim(),
+      "intentional no-BGM degradation must persist its selection reason",
+    ).toBeTruthy();
   }
 
   const beforeRefs = Object.fromEntries(
@@ -2181,6 +2348,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   });
   expect(projectQualityReport).toBeTruthy();
   let exportTaskId = "";
+  let terminalMp4Ref = "";
   const exportButton = await measureE2EStage("export_preview_ready", async () => {
     await page.reload();
     await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
@@ -2193,23 +2361,28 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .last();
     await expect(exportButton).toHaveText("导出视频", { timeout: 180_000 });
     await expect(exportButton).toBeEnabled();
+    const exportTaskResponsePaths = [
+      `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/register`,
+      `${apiBase}/v1/video/projects/${projectAsset!.id}/exports`,
+    ];
     const exportCreateResponse = page.waitForResponse(
       (response) =>
         response.request().method() === "POST"
-        && response.url().endsWith(`/v1/video/projects/${projectAsset!.id}/exports`),
+        && exportTaskResponsePaths.includes(response.url()),
       { timeout: 15 * 60_000 },
     );
     await exportButton.click();
-    await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
-    await expect
-      .poll(
-        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
-        { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
-      )
-      .toMatch(/^(正在合成视频|正在上传成片|正在检查成片|下载成片)/);
     const createResponse = await exportCreateResponse;
     expect(createResponse.status(), "export candidate upload must enqueue an async task").toBe(202);
-    const createdTask = (await createResponse.json()) as {
+    const currentTaskResponse = await page.request.get(
+      `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/current`,
+      { headers },
+    );
+    expect(
+      currentTaskResponse.ok(),
+      `current export task lookup failed: ${currentTaskResponse.status()}`,
+    ).toBe(true);
+    const createdTask = (await currentTaskResponse.json()) as {
       job_id?: string;
       status?: string;
       stage?: string;
@@ -2218,6 +2391,13 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(["queued", "running", "completed"]).toContain(createdTask.status);
     expect(["uploaded", "verifying", "publishing", "done"]).toContain(createdTask.stage);
     exportTaskId = createdTask.job_id!;
+    await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
+    await expect
+      .poll(
+        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
+        { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
+      )
+      .toMatch(/^(正在合成视频|正在上传成片|正在检查成片|下载成片)/);
     return exportButton;
   });
   await measureE2EStage("export_browser_render", async () => {
@@ -2242,13 +2422,24 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(terminalTask.stage).toBe("done");
     expect(terminalTask.mp4_ref).toBeTruthy();
     expect(terminalTask.quality_report?.blockers ?? []).toEqual([]);
+    terminalMp4Ref = terminalTask.mp4_ref!;
   });
   const candidateVideoPath = await measureE2EStage("export_download", async () => {
-    const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });
-    await exportButton.click();
-    const download = await downloadPromise;
+    await exportButton.click({ timeout: 30_000 });
+    await expect
+      .poll(
+        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
+        { timeout: 30_000, intervals: [500, 1000, 2500] },
+      )
+      .toBe("再次下载");
+    const candidateBytes = await downloadCandidateMp4ByRange(
+      page,
+      apiBase,
+      headers,
+      terminalMp4Ref,
+    );
     const outputPath = path.join(resultDir, "multimix-candidate.mp4");
-    await download.saveAs(outputPath);
+    fs.writeFileSync(outputPath, candidateBytes);
     expect(fs.statSync(outputPath).size).toBeGreaterThan(10_000);
     return outputPath;
   });
@@ -2312,6 +2503,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       {
       projectAssetId: projectAsset!.id,
       videoType: expectedVideoType,
+      creativeDraftOnly: singleImageCreativeDraft,
       twoStageEnabled: expectTwoStage,
       recomposeTested,
       targetSegmentId,
@@ -2365,17 +2557,20 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           ]),
       ),
         internalTermsVisible:
-          /\bexplainer\b|\bdemonstration\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
+          /\bexplainer\b|\bsource_excerpt\b|\bpresenter\b|\bVLM\b|\bProvider\b|\bRemotion\b/i.test(
             visibleText,
           ),
       qualityMetrics: projectQualityReport!.metrics,
       qualityWarnings: projectQualityReport!.warnings ?? [],
       artDirection: artDirectionSummary,
       humanReviewStatus: "pending",
+      humanReviewReport: "human-review.md",
       audioFinishing: {
         closingHoldSeconds: videoProject?.metadata?.closing_hold_seconds,
         ttsSampleGate: videoProject?.orchestration?.tts_sample_gate ?? null,
         bgmPresent: Boolean(bgmTrack),
+        bgmEnabled: bgmChoice?.enabled,
+        bgmSelectionReason: bgmChoice?.selection_reason,
       },
       resumeReuse,
       consoleErrors,
@@ -2385,6 +2580,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       2,
     ),
   );
+  const humanReviewReportPath = writeVideoHumanReviewReport({
+    resultDir,
+    candidateVideo: candidateVideoPath,
+    videoType: expectedVideoType,
+    creativeDraftOnly: singleImageCreativeDraft,
+    qualityWarnings: projectQualityReport!.warnings ?? [],
+  });
+  expect(fs.existsSync(humanReviewReportPath)).toBe(true);
   expect(
     actionableConsoleErrors,
     "browser console errors should be empty",

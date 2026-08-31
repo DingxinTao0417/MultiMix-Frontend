@@ -63,7 +63,7 @@ describe("hydrateAssetFiles", () => {
     const progress = vi.fn();
 
     const hydrated = hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia(), progress);
-    await vi.advanceTimersByTimeAsync(14_999);
+    await vi.advanceTimersByTimeAsync(59_999);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
     const assets = await hydrated;
@@ -81,6 +81,41 @@ describe("hydrateAssetFiles", () => {
         url: "https://example.test/stalled.mp4",
       }),
     );
+  });
+
+  it("hydrates a slow but valid WebM before allowing the export renderer to use it", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    let aborted = false;
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+      window.setTimeout(
+        () => resolve(new Response(new Blob(["slow-webm"], { type: "video/webm" }), { status: 200 })),
+        16_000,
+      );
+    })));
+
+    const slowWebm = {
+      id: "slow-webm",
+      type: "video" as const,
+      name: "slow.webm",
+      url: "https://example.test/slow.webm",
+    };
+    const project = {
+      ...projectWithMedia(),
+      media: [{ id: slowWebm.id, type: "video", name: slowWebm.name, file_path: slowWebm.url }],
+    } as BackendProject;
+
+    const hydrated = hydrateAssetFiles([slowWebm], project);
+    await vi.advanceTimersByTimeAsync(16_000);
+    const assets = await hydrated;
+
+    expect(aborted).toBe(false);
+    expect(assets[0].file).toBeInstanceOf(File);
+    expect(assets[0].file?.type).toBe("video/webm");
   });
 
   it("records response details and duration for every successfully downloaded asset", async () => {

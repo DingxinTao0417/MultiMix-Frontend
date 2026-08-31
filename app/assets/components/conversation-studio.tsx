@@ -80,7 +80,7 @@ export type ChatImageAttachment = {
   error?: string;
 };
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
+const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
 const COMPOSER_MIN_HEIGHT = 36;
@@ -128,18 +128,6 @@ function conversationMessageKey(message: VisibleConversationMessage, index: numb
     : `${message.role}-${index}`;
 }
 
-function fallbackProductMessageIndex(messages: VisibleConversationMessage[]): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "assistant" && !message.pending && !message.suggestions?.length && !message.suggestionActions?.length) return index;
-  }
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "assistant" && !message.pending) return index;
-  }
-  return -1;
-}
-
 function visibleSuggestions(message: VisibleConversationMessage) {
   if (message.suggestionActions?.length) {
     return message.suggestionActions.map((action) => ({
@@ -163,26 +151,50 @@ function visibleSuggestions(message: VisibleConversationMessage) {
   }));
 }
 
+type CreativeDraftPresentation = {
+  title: string;
+  message: string;
+  missingItems: string[];
+  releaseNote: string;
+};
+
+function creativeDraftPresentation(message: VisibleConversationMessage): CreativeDraftPresentation | null {
+  const value = message.metadata?.creative_draft;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const draft = value as Record<string, unknown>;
+  if (draft.status !== "needs_information") return null;
+  const title = typeof draft.title === "string" ? draft.title.trim() : "";
+  const detail = typeof draft.message === "string" ? draft.message.trim() : "";
+  const releaseNote = typeof draft.release_note === "string" ? draft.release_note.trim() : "";
+  const missingItems = Array.isArray(draft.missing_items)
+    ? draft.missing_items.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 3)
+    : [];
+  if (!title || !detail || !releaseNote || !missingItems.length) return null;
+  return { title, message: detail, missingItems, releaseNote };
+}
+
 function mapProductsToConversationMessages(messages: VisibleConversationMessage[], products: ProductArtifact[]): Map<number, ProductArtifact[]> {
   const result = new Map<number, ProductArtifact[]>();
-  const attachedProductIds = new Set<string>();
 
   messages.forEach((message, index) => {
     if (message.role !== "assistant" || !message.assetId) return;
     const matchedProducts = products.filter((product) => product.backendAssetId === message.assetId);
     if (!matchedProducts.length) return;
     result.set(index, matchedProducts);
-    matchedProducts.forEach((product) => attachedProductIds.add(product.id));
   });
-
-  const unattachedProducts = products.filter((product) => !attachedProductIds.has(product.id));
-  if (!unattachedProducts.length) return result;
-
-  const fallbackIndex = fallbackProductMessageIndex(messages);
-  if (fallbackIndex >= 0) {
-    result.set(fallbackIndex, [...(result.get(fallbackIndex) ?? []), ...unattachedProducts]);
-  }
   return result;
+}
+
+function hasReadyVideoProjectForDirectorScript(
+  products: ProductArtifact[],
+  directorScriptAssetId: number | null | undefined,
+): boolean {
+  if (!directorScriptAssetId) return false;
+  return products.some((product) => (
+    product.contentType === "video_project"
+    && product.videoProjectReady === true
+    && product.metadata?.director_script_asset_id === directorScriptAssetId
+  ));
 }
 
 export function resolveExecutionTimelineSteps(
@@ -640,7 +652,7 @@ export default function ConversationStudio({
       undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
-       plan.kind === "video_project_confirmation" ? confirmationProductId : undefined,
+       confirmationProductId,
        sourceSubtitleMode,
       );
     } finally {
@@ -891,6 +903,9 @@ export default function ConversationStudio({
           const renderedGenerationJob = messageGenerationJob && liveGenerationJobsById.has(messageGenerationJob.id)
             ? liveGenerationJobsById.get(messageGenerationJob.id) ?? messageGenerationJob
             : messageGenerationJob;
+          const directorScriptUsedForVideoProject = renderedGenerationJob
+            && renderedGenerationJob.status === "completed"
+            && hasReadyVideoProjectForDirectorScript(products, message.assetId);
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(
@@ -900,6 +915,7 @@ export default function ConversationStudio({
             && message.pending === true
             && !ownsWorkflowCard
             && !message.text.trim();
+          const creativeDraft = creativeDraftPresentation(message);
           return (
             <div
               className="shadcn-prototype-message-group"
@@ -915,6 +931,24 @@ export default function ConversationStudio({
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
                 <p>{message.text}</p>
+              ) : null}
+              {creativeDraft ? (
+                <div className="shadcn-prototype-confirm-card" aria-label="创意草稿状态">
+                  <div className="shadcn-prototype-confirm-head">
+                    <span className="shadcn-prototype-confirm-title">{creativeDraft.title}</span>
+                    <span className="shadcn-prototype-confirm-badge">
+                      <span className="shadcn-prototype-confirm-dot" aria-hidden="true" />
+                      待补信息
+                    </span>
+                  </div>
+                  <p className="shadcn-prototype-confirm-sub">{creativeDraft.message}</p>
+                  <p className="shadcn-prototype-confirm-sub">
+                    待补：{creativeDraft.missingItems.map((item, itemIndex) => (
+                      <span key={item}>{itemIndex ? "、" : ""}<span>{item}</span></span>
+                    ))}
+                  </p>
+                  <p className="shadcn-prototype-confirm-sub">{creativeDraft.releaseNote}</p>
+                </div>
               ) : null}
               {message.plan ? (
                 <ConfirmCard
@@ -975,11 +1009,14 @@ export default function ConversationStudio({
                   job={renderedGenerationJob}
                   onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
+                  completionLabel={directorScriptUsedForVideoProject
+                    ? "编导稿已确认，已用于生成视频工程"
+                    : undefined}
                 />
               ) : null}
               {renderProductCards(index)}
               {(() => {
-                const suggestions = visibleSuggestions(message)
+                const suggestions = (message.plan?.status === "confirmed" ? [] : visibleSuggestions(message))
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
                   .filter(({ intent }) => {
                     if (intent.hidden) return false;

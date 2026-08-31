@@ -857,12 +857,13 @@ function statusLabel(status: string): string {
 }
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
+  if (asset.product_status === "completed") return "完成";
+  if (asset.product_status === "failed") return "失败";
+  if (asset.product_status === "generating") return "生成中";
   if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
     return asset.status === "failed" ? "失败" : "完成";
   }
   if (asset.content_type === "video_project") {
-    if (asset.product_status === "completed") return "完成";
-    if (asset.product_status === "failed") return "失败";
     return "生成中";
   }
   return null;

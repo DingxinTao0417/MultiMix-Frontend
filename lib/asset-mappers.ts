@@ -178,7 +178,8 @@ function browserReadableMediaUrl(ref: string): string | undefined {
   if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
   if (/^[a-z0-9+.-]+:\/\//i.test(ref)) {
     const artifactPath = ref.split("://", 2)[1] ?? "";
-    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)) {
+    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)
+      && !/(?:^|\/)content-assets\/\d+\/generation-jobs\/\d+\/images\/[0-9a-f]{64}\.(?:png|jpe?g|webp)$/i.test(artifactPath)) {
       return undefined;
     }
     return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
@@ -866,7 +867,11 @@ function productLifecycleFromAsset(
 } | undefined {
   const isVideo = asset.content_type === "video_project";
   const isDirector = isVideoDirectorDraft(asset);
-  if (!isVideo && !isDirector) return undefined;
+  const isGeneratedImage = asset.asset_kind === "image"
+    && (asset.product_status === "generating"
+      || asset.product_status === "completed"
+      || asset.product_status === "failed");
+  if (!isVideo && !isDirector && !isGeneratedImage) return undefined;
   if (isDirector) return { status: "completed" };
   const status = asset.product_status;
   if (status !== "generating" && status !== "completed" && status !== "failed") return undefined;
@@ -1085,6 +1090,12 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const lifecycle = productLifecycleFromAsset(asset);
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
+  const renderedImagePreviewUrl = asset.asset_kind === "image"
+    ? imageThumbnailUrlFromRef(stringValue(asset.original_ref))
+    : undefined;
+  const productMetadata = renderedImagePreviewUrl
+    ? { ...metadata, preview_url: renderedImagePreviewUrl }
+    : metadata;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const unsupported = asset.generation_state === "preparation_only" && !videoProject;
   const mode = productModeFromAsset(asset, unsupported);
@@ -1094,6 +1105,10 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const templateMode = metadata.template_mode === true || metadata.grounding_status === "keyword_template";
   const mp4State = stringValue(videoProject?.mp4_state) || "";
   const directorDraft = isVideoDirectorDraft(asset);
+  const completedGeneratedImage = asset.asset_kind === "image"
+    && lifecycle?.status === "completed";
+  const generatingImage = asset.asset_kind === "image"
+    && lifecycle?.status === "generating";
   // Orchestration lifecycle: pending while the async job runs, failed when the
   // job died without producing a project (retryable from the workspace).
   const orchestrationFailed = lifecycle?.status === "failed";
@@ -1144,7 +1159,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
+      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
       status: productStatusLabel(lifecycle?.status) ?? (mp4Artifact ? "完成" : videoProject ? "完成" : unsupported ? "生成中" : directorDraft ? "完成" : "完成")
     },
     {
@@ -1200,7 +1215,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
     videoProductCompleted: asset.product_completed === true,
-    metadata,
+    metadata: productMetadata,
     mode,
     title: normalizeAssetTitle(asset.title),
     status,
@@ -1237,7 +1252,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeAssetTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : completedGeneratedImage ? "图片已生成，可作为视频封面或继续调整" : generatingImage ? "图片正在后台生成，完成后自动展示" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

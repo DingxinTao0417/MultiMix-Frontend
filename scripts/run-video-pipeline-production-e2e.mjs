@@ -18,6 +18,30 @@ import {
   probeProductMediaFile,
 } from "./product-media-file-probe.mjs";
 
+if (process.argv.slice(2).some((argument) => argument === "--help" || argument === "-h")) {
+  console.log(`Usage: npm run test:e2e:video-pipeline-production
+
+Optional arguments:
+  --recompose                 Verify one scene recomposition after project readiness.
+  --resume <run-id>           Resume an explicitly retained E2E run.
+
+Core environment variables:
+  VIDEO_PIPELINE_VIDEO_TYPE   One active type: explainer, source_excerpt, or presenter.
+  VIDEO_PIPELINE_QUALITY_BASELINE=true
+                              Require approved product inputs for a single explainer or presenter quality run.
+  VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO
+                              Required original presenter video when VIDEO_PIPELINE_QUALITY_BASELINE=true.
+  VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF
+                              Required approval record reference for that presenter source.
+  VIDEO_PIPELINE_RESULT_DIR   Directory for user-visible test evidence.
+  VIDEO_PIPELINE_RUN_ID       Explicit isolated run identifier.
+
+Safety:
+  A normal run creates an isolated SQLite database and artifact directory, and may call configured Providers.
+  This help command performs neither action.`);
+  process.exit(0);
+}
+
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
 const canonicalBackendRoot = process.env.MULTIMIX_CANONICAL_BACKEND_ROOT
@@ -26,9 +50,55 @@ const canonicalBackendRoot = process.env.MULTIMIX_CANONICAL_BACKEND_ROOT
 const backendRoot = process.env.MULTIMIX_BACKEND_ROOT
   ? path.resolve(process.env.MULTIMIX_BACKEND_ROOT)
   : canonicalBackendRoot;
+const dotenvReferencePattern = /\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/g;
+const dotenvReferenceMaxDepth = 8;
+
+function expandEnvReferences(value, referenceEnv, resolving = new Set(), depth = 0) {
+  if (depth >= dotenvReferenceMaxDepth) return value;
+  return value.replace(dotenvReferencePattern, (match, bracedName, bareName) => {
+    const name = bracedName ?? bareName;
+    if (!name || resolving.has(name)) return match;
+    const referencedValue = referenceEnv[name];
+    if (typeof referencedValue !== "string") return match;
+    const nextResolving = new Set(resolving);
+    nextResolving.add(name);
+    return expandEnvReferences(
+      referencedValue,
+      referenceEnv,
+      nextResolving,
+      depth + 1,
+    );
+  });
+}
+
+function parseEnvFile(filePath, inheritedEnv = process.env) {
+  if (!fs.existsSync(filePath)) return {};
+  const output = {};
+  for (const rawLine of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const index = line.indexOf("=");
+    if (index < 1) continue;
+    const key = line.slice(0, index).trim();
+    let value = line.slice(index + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    output[key] = value;
+  }
+  const referenceEnv = { ...inheritedEnv, ...output };
+  return Object.fromEntries(
+    Object.entries(output).map(([key, value]) => [
+      key,
+      expandEnvReferences(value, referenceEnv, new Set([key])),
+    ]),
+  );
+}
+
+const baseCanonicalEnv = parseEnvFile(path.join(canonicalBackendRoot, ".env"));
 const canonicalEnv = {
-  ...parseEnvFile(path.join(canonicalBackendRoot, ".env")),
-  ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local")),
+  ...baseCanonicalEnv,
+  ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local"), baseCanonicalEnv),
 };
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
@@ -106,6 +176,10 @@ if (activeVideoTypes.length === 0) {
 if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
   throw new Error("Resuming a retained run requires VIDEO_PIPELINE_VIDEO_TYPE");
 }
+const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
+if (qualityBaselineRun && !process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+  throw new Error("quality baseline requires one explicitly selected active video type");
+}
 if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   const matrixResultRoot = path.resolve(
     process.env.VIDEO_PIPELINE_RESULT_DIR
@@ -132,23 +206,11 @@ if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   }
   process.exit(0);
 }
-const requestedRunId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
-const defaultResultDir = path.resolve(
-  process.env.VIDEO_PIPELINE_RESULT_DIR
-    ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
-);
-const isResume = resumeArgIndex >= 0;
-const lifecycle = isResume
-  ? resumeRetainedE2ERunLifecycle({ suite: "video-pipeline-production", runId: resumeRunId })
-  : createE2ERunLifecycle({ suite: "video-pipeline-production", runId: requestedRunId, resultDir: defaultResultDir });
-const runId = lifecycle.runId;
-const { databasePath, artifactDir } = lifecycle;
-const resultDir = lifecycle.readState().resultDir;
-const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
 const expectedVideoType = process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? activeVideoTypes[0];
 if (!expectedVideoType || !activeVideoTypes.includes(expectedVideoType)) {
   throw new Error(`VIDEO_PIPELINE_VIDEO_TYPE is not active: ${expectedVideoType ?? "missing"}`);
 }
+const supportedVideoExtensions = new Set([".mp4", ".mov", ".webm", ".mkv"]);
 const sourceDocument = path.resolve(
   process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT
     ?? path.join(workspaceRoot, "MultiMix-商业计划.md"),
@@ -165,6 +227,15 @@ const sourceExcerptVideo = path.resolve(
       "input-original.mp4",
     ),
 );
+const presenterSourceVideoInput = (
+  process.env.VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO ?? ""
+).trim();
+const presenterSourceVideo = presenterSourceVideoInput
+  ? path.resolve(presenterSourceVideoInput)
+  : "";
+const presenterSourceApprovalRef = (
+  process.env.VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF ?? ""
+).trim();
 const targetSeconds = Number(process.env.VIDEO_PIPELINE_TARGET_SECONDS ?? 30);
 const targetRatio = process.env.VIDEO_PIPELINE_RATIO ?? "16:9";
 const outputSizeByRatio = {
@@ -215,7 +286,39 @@ const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFE
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
-const sourceDocumentFingerprint = inputProfile === "explainer_saved_library_simple"
+const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+if (singleImageCreativeDraft && expectedVideoType !== "explainer") {
+  throw new Error("explainer_single_image_draft requires VIDEO_PIPELINE_VIDEO_TYPE=explainer");
+}
+if (singleImageCreativeDraft && qualityBaselineRun) {
+  throw new Error("explainer_single_image_draft is creative-draft-only and cannot run as a quality baseline");
+}
+const qualityBaselineInputs = qualityBaselineRun
+  ? validateQualityBaselineInputs({
+    expectedVideoType,
+    inputProfile,
+    sourceDocument,
+    productMediaRaw: process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES,
+    presenterSourceVideo,
+    presenterSourceApprovalRef,
+  })
+  : null;
+const requestedRunId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
+const defaultResultDir = path.resolve(
+  process.env.VIDEO_PIPELINE_RESULT_DIR
+    ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
+);
+const isResume = resumeArgIndex >= 0;
+const lifecycle = isResume
+  ? resumeRetainedE2ERunLifecycle({ suite: "video-pipeline-production", runId: resumeRunId })
+  : createE2ERunLifecycle({ suite: "video-pipeline-production", runId: requestedRunId, resultDir: defaultResultDir });
+const runId = lifecycle.runId;
+const { databasePath, artifactDir } = lifecycle;
+const resultDir = lifecycle.readState().resultDir;
+const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
+const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"
+  || singleImageCreativeDraft;
+const sourceDocumentFingerprint = savedLibraryInputProfile
   ? null
   : fingerprintFile(sourceDocument);
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
@@ -223,7 +326,7 @@ if (expectedVideoType === "source_excerpt") expectBgm = false;
 const twoStageEnabled = expectedVideoType !== "presenter";
 const requirePublicAsset = process.env.VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET === "true"
   || inputProfile === "explainer_public_broll";
-const defaultDemonstrationMedia = [
+const defaultSavedLibraryMedia = [
   ["02-kitchen-renovation-v1", "过程基线.mp4"],
   ["05-kitchen-service-promo-v2", "步骤迭代.mp4"],
   ["07-kitchen-service-mg-v3", "结果与图形增强.mp4"],
@@ -239,8 +342,20 @@ const defaultDemonstrationMedia = [
   ),
   name,
 }));
-const demonstrationMediaFiles = process.env.VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES
-  ?? JSON.stringify(defaultDemonstrationMedia);
+const defaultSavedLibraryMediaFiles = JSON.stringify(defaultSavedLibraryMedia);
+const usesSavedLibraryMedia = savedLibraryInputProfile
+  || expectedVideoType === "presenter";
+if (singleImageCreativeDraft && !process.env.VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES) {
+  throw new Error("explainer_single_image_draft requires VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES");
+}
+const savedLibraryMediaFiles = usesSavedLibraryMedia
+  ? (qualityBaselineRun && expectedVideoType === "presenter"
+    ? JSON.stringify([{
+      path: presenterSourceVideo,
+      name: `用户确认口播原片${path.extname(presenterSourceVideo)}`,
+    }])
+    : (process.env.VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES ?? defaultSavedLibraryMediaFiles))
+  : "[]";
 const children = [];
 let providerProxy;
 let decisionAuditEnv;
@@ -300,24 +415,6 @@ function startProviderEgressProxy(allowedHosts) {
       });
     });
   });
-}
-
-function parseEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) return {};
-  const output = {};
-  for (const rawLine of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const index = line.indexOf("=");
-    if (index < 1) continue;
-    const key = line.slice(0, index).trim();
-    let value = line.slice(index + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    output[key] = value;
-  }
-  return output;
 }
 
 function run(command, args, options = {}) {
@@ -562,10 +659,69 @@ function configuredInputIncludesVideo(raw) {
   try {
     const values = JSON.parse(raw);
     return Array.isArray(values)
-      && values.some((value) => path.extname(String(value?.path ?? "")).toLowerCase() === ".mp4");
+      && values.some((value) => supportedVideoExtensions.has(path.extname(String(value?.path ?? "")).toLowerCase()));
   } catch {
     return false;
   }
+}
+
+function validateQualityBaselineInputs({
+  expectedVideoType,
+  inputProfile,
+  sourceDocument,
+  productMediaRaw,
+  presenterSourceVideo,
+  presenterSourceApprovalRef,
+}) {
+  if (expectedVideoType === "explainer") {
+    if (inputProfile === "explainer_saved_library_simple") {
+      throw new Error("quality baseline explainer cannot use explainer_saved_library_simple");
+    }
+    if (!fs.existsSync(sourceDocument)) {
+      throw new Error("quality baseline explainer requires an existing source document");
+    }
+    let productMedia;
+    try {
+      productMedia = JSON.parse(productMediaRaw ?? "");
+    } catch {
+      productMedia = null;
+    }
+    const approvedEntries = Array.isArray(productMedia)
+      ? productMedia.filter((entry) => {
+        const filePath = String(entry?.path ?? "").trim();
+        return (
+          filePath.length > 0
+          && fs.existsSync(path.resolve(filePath))
+          && Array.isArray(entry?.roles)
+          && entry.roles.length > 0
+          && String(entry?.approval_ref ?? "").trim().length > 0
+        );
+      })
+      : [];
+    if (approvedEntries.length < 2) {
+      throw new Error("quality baseline explainer requires approved product media");
+    }
+    return {
+      productMediaApprovalRefs: approvedEntries.map((entry) => String(entry.approval_ref).trim()),
+      presenterSource: null,
+    };
+  }
+  if (expectedVideoType === "presenter") {
+    if (!presenterSourceVideo || !fs.existsSync(presenterSourceVideo)) {
+      throw new Error("quality baseline presenter requires an approved source video");
+    }
+    if (!presenterSourceApprovalRef) {
+      throw new Error("quality baseline presenter requires a source approval reference");
+    }
+    return {
+      productMediaApprovalRefs: [],
+      presenterSource: {
+        ...fingerprintFile(presenterSourceVideo),
+        approval_ref: presenterSourceApprovalRef,
+      },
+    };
+  }
+  throw new Error("quality baseline supports explainer or presenter only");
 }
 
 function stageBgmCatalogIfAvailable() {
@@ -1096,6 +1252,9 @@ function assertResumeManifest() {
     expectedSceneCount,
     sourceDocument: sourceDocumentFingerprint,
     sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
+    qualityBaselineRun,
+    presenterSourceApprovalRef,
+    qualityBaselineInputs,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (JSON.stringify(original[key]) !== JSON.stringify(value)) {
@@ -1198,10 +1357,14 @@ async function writeQaReport() {
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
     + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- ${expectedSceneCount} 镜主轨：通过\n- 待补素材：未出现\n`
     + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
+    + `- 交付边界：${singleImageCreativeDraft ? "创意草稿（非公开、非黄金基线）" : "按本次验收模式"}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
     + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
     + `- 分镜关键帧：keyframes/keyframe-*.png\n\n`
-    + `## 覆盖范围\n\n- 本测试证明真实上传、对话、确认、worker、${expectedSceneCount} 镜落库和正式导出链路。\n`;
+    + `## 覆盖范围\n\n- 本测试证明真实上传、对话、确认、worker、${expectedSceneCount} 镜落库和正式导出链路。\n`
+    + (singleImageCreativeDraft
+      ? "- 单图结果仅证明创意草稿与技术链路可用；不证明素材多样性、事实完整性、授权完整性或可公开发布。\n"
+      : "");
   fs.writeFileSync(path.join(resultDir, "qa-report.md"), report);
   const evaluationReport = {
     twoStageEnabled: result.twoStageEnabled === true,
@@ -1291,10 +1454,7 @@ try {
     frontendPort,
     visionPort: usesExternalVisionService ? null : visionPort,
   });
-  if (
-    inputProfile !== "explainer_saved_library_simple"
-    && !fs.existsSync(sourceDocument)
-  ) {
+  if (!savedLibraryInputProfile && !fs.existsSync(sourceDocument)) {
     throw new Error(`Source document not found: ${sourceDocument}`);
   }
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
@@ -1315,7 +1475,7 @@ try {
   }
   const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
   const productMediaManifestRef = (
-    isResume || inputProfile === "explainer_saved_library_simple"
+    isResume || savedLibraryInputProfile || expectedVideoType === "presenter"
   )
     ? ""
     : stageApprovedProductMediaCatalog();
@@ -1369,6 +1529,7 @@ try {
       videoType: expectedVideoType,
       activeVideoTypes,
       inputProfile,
+      creativeDraftOnly: singleImageCreativeDraft,
       targetRatio,
       expectedOutputSize,
       twoStageEnabled,
@@ -1383,8 +1544,11 @@ try {
       sourceDocument: sourceDocumentFingerprint,
       sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
       visionServiceUrl,
+      qualityBaselineRun,
+      presenterSourceApprovalRef,
+      qualityBaselineInputs,
       productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
-      demonstrationMedia: configuredInputFingerprints(demonstrationMediaFiles),
+      savedLibraryMedia: configuredInputFingerprints(savedLibraryMediaFiles),
       llm: {
         baseUrl: effectiveLlmConfig.baseUrl,
         model: effectiveLlmConfig.model,
@@ -1394,7 +1558,7 @@ try {
   }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"
-    || configuredInputIncludesVideo(demonstrationMediaFiles);
+    || configuredInputIncludesVideo(savedLibraryMediaFiles);
   const remoteWriteLedgerPath = path.join(lifecycle.runDir, "remote-artifact-writes.ndjson");
   const backendEnv = {
     ...process.env,
@@ -1587,8 +1751,11 @@ try {
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
       VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
       VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
+      VIDEO_PIPELINE_QUALITY_BASELINE: qualityBaselineRun ? "true" : "false",
+      VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO: presenterSourceVideo,
+      VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF: presenterSourceApprovalRef,
       VIDEO_PIPELINE_REQUIRE_PUBLIC_ASSET: requirePublicAsset ? "true" : "false",
-      VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES: demonstrationMediaFiles,
+      VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES: savedLibraryMediaFiles,
       VIDEO_PIPELINE_EXPECT_RESUME: interruptAfterManifest ? "true" : "false",
       VIDEO_PIPELINE_TEST_RECOMPOSE: testRecompose ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",

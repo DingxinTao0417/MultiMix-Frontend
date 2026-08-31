@@ -19,10 +19,12 @@ export function AssetGenerationJobCard({
   job,
   onRetry,
   onCancel,
+  completionLabel,
 }: {
   job: AssetGenerationJobResponse;
   onRetry?: (jobId: string) => void | Promise<void>;
   onCancel?: (jobId: string) => void | Promise<void>;
+  completionLabel?: string;
 }) {
   const [stopping, setStopping] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -71,9 +73,9 @@ export function AssetGenerationJobCard({
         onRetry={onRetry ? (jobId) => { void retry(jobId); } : undefined}
         retrying={retrying}
         completionConfirmed={terminal}
-        completionLabel={isDirectorScriptGeneration
+        completionLabel={completionLabel ?? (isDirectorScriptGeneration
           ? "编导脚本已生成，可确认或修改"
-          : "内容已生成，可查看"}
+          : "内容已生成，可查看")}
         footer={canCancel && onCancel ? (
           <button
             type="button"

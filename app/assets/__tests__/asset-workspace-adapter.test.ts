@@ -518,6 +518,29 @@ describe("runtime data boundary", () => {
     expect(page.rows[0]?.previewUrl).toContain("/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png");
   });
 
+  it("uses the shared completed delivery state for a generated image in the library", async () => {
+    const image = asset({
+      id: 74,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      product_status: "completed",
+      original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"b".repeat(64)}.png`,
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "image");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]?.statusLabel).toBe("完成");
+    expect(page.rows[0]?.meta).toContain("完成");
+  });
+
   it("preserves the backend content type needed by long-form library actions", async () => {
     const source = asset({
       id: 91,

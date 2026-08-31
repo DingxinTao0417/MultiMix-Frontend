@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ConversationStudio from "../components/conversation-studio";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import type { ProductArtifact } from "../lib/asset-workspace-shared";
 import type {
   AgentActionRunResponse,
   AssetMessagePlan,
@@ -26,6 +27,54 @@ const queuedAction: AgentActionRunResponse = {
 };
 
 describe("Conversation Agent actions", () => {
+  it("shows a single-image creative draft as nonblocking and lets users fill missing details", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-single-image-creative-draft",
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: "已生成编导稿。",
+        assetId: 810,
+        metadata: {
+          creative_draft: {
+            status: "needs_information",
+            title: "创意草稿 · 待补信息",
+            message: "已按可见画面起草，可直接继续生成；补充信息后可提升准确性。",
+            missing_items: ["产品名称/型号", "核心卖点", "使用场景"],
+            release_status: "not_ready",
+            release_note: "补充信息并完成人工审阅前，不能作为公开发布依据。",
+          },
+        },
+        suggestionActions: [
+          { id: "creative-draft-name", label: "补充产品名称/型号", utterance: "补充产品名称/型号", actionType: "fill_composer", enabled: true, isAiPrimary: false, requiresConfirmation: false },
+          { id: "creative-draft-benefit", label: "补充核心卖点", utterance: "补充核心卖点", actionType: "fill_composer", enabled: true, isAiPrimary: false, requiresConfirmation: false },
+          { id: "creative-draft-scenario", label: "补充使用场景", utterance: "补充使用场景", actionType: "fill_composer", enabled: true, isAiPrimary: false, requiresConfirmation: false },
+        ],
+      }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByLabelText("创意草稿状态")).toHaveTextContent("创意草稿 · 待补信息");
+    expect(screen.getByText("产品名称/型号")).toBeInTheDocument();
+    expect(screen.getByText("核心卖点")).toBeInTheDocument();
+    expect(screen.getByText("使用场景")).toBeInTheDocument();
+    expect(screen.getByText(/可直接继续生成/)).toBeInTheDocument();
+    expect(screen.queryByText("可公开发布")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "补充核心卖点" }));
+    expect(screen.getByRole("textbox")).toHaveValue("补充核心卖点");
+  });
+
   it("renders a queued action as running and never as completed", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -327,7 +376,7 @@ describe("Conversation Agent actions", () => {
             requiresConfirmation: false,
           }],
         },
-        { role: "assistant" as const, text: "请确认清理方案。", plan: cleanupPlan },
+        { role: "assistant" as const, text: "请确认清理方案。", assetId: 501, plan: cleanupPlan },
       ],
     };
 
@@ -355,6 +404,133 @@ describe("Conversation Agent actions", () => {
       confirmProtectedOverride: false,
       audioStreamIndex: 1,
     });
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe(501);
+  });
+
+  it("hides obsolete suggestion actions from an already confirmed card", () => {
+    const confirmedCleanupPlan: AssetMessagePlan = {
+      kind: "presenter_cleanup_confirmation",
+      title: "口播清理",
+      status: "confirmed",
+      fields: [{ key: "cleanup", label: "自然精简", value: "已确认" }],
+      confirmLabel: "确认清理并进入导演方案",
+      cleanupPlanId: "cleanup-confirmed",
+      cleanupPlanHash: "b".repeat(64),
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-confirmed-presenter-cleanup",
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: "口播清理已确认。",
+        plan: confirmedCleanupPlan,
+        suggestionActions: [{
+          id: "stale-adjust",
+          label: "调整包装强度",
+          utterance: "调整包装强度",
+          actionType: "fill_composer",
+          enabled: true,
+          requiresConfirmation: false,
+        }],
+      }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "调整包装强度" })).not.toBeInTheDocument();
+  });
+
+  it("does not attach an unbound product to the last assistant message", () => {
+    const orphanedProduct = {
+      id: "orphaned-director-script",
+      backendAssetId: 902,
+      title: "旧编导稿",
+      phase: "编导脚本",
+      status: "完成",
+      version: "v1",
+      mode: "copy",
+    } as ProductArtifact;
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-orphaned-product",
+      detailsLoaded: true,
+      products: [orphanedProduct],
+      messages: [
+        { role: "assistant" as const, text: "已进入视频工程。", assetId: 903 },
+      ],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("旧编导稿")).not.toBeInTheDocument();
+  });
+
+  it("marks a director script as used only when its linked video project is ready", () => {
+    const readyProject: ProductArtifact = {
+      id: "ready-video-project",
+      backendAssetId: 903,
+      title: "已生成的视频工程",
+      phase: "视频",
+      status: "生成中",
+      version: "v1",
+      mode: "video",
+      contentType: "video_project",
+      videoProjectReady: true,
+      metadata: { director_script_asset_id: 901 },
+      summary: "视频工程已生成。",
+      ratio: "16:9",
+      duration: "30秒",
+      sections: [],
+      timeline: [],
+      actions: [],
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-director-script-used",
+      detailsLoaded: true,
+      products: [readyProject],
+      messages: [{
+        role: "assistant" as const,
+        text: "编导稿已生成。",
+        assetId: 901,
+        metadata: {
+          asset_generation_job_id: "director-script-job",
+          asset_generation_status: "completed",
+          asset_generation_progress: [
+            { key: "structuring_director_script", label: "正在整理编导稿", status: "completed", occurred_at: "2026-08-31T08:00:00Z" },
+            { key: "completed", label: "编导稿已生成", status: "completed", occurred_at: "2026-08-31T08:00:01Z" },
+          ],
+        },
+      }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/编导稿已确认，已用于生成视频工程/)).toBeInTheDocument();
+    expect(screen.queryByText(/编导脚本已生成，可确认或修改/)).not.toBeInTheDocument();
   });
 
   it("requests the next Presenter direction only after the explicit single-winner action", async () => {

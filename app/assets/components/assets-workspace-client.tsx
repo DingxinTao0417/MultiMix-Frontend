@@ -1738,7 +1738,7 @@ export default function AssetsWorkspaceClient({
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
       : intent === "regenerate-image"
-        ? `基于《${row.title}》做成图片。`
+        ? `基于《${row.title}》生成图片方案。`
         : `基于《${row.title}》做成文案。`;
     setConversationContextAssets((current) => ({
       ...current,

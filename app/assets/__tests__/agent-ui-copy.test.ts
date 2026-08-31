@@ -19,6 +19,18 @@ it("keeps internal production names out of generated-scene user surfaces", () =>
   expect(userSurface).not.toMatch(/animated[-_ ]explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b|\bpipeline\b/i);
 });
 
+it("keeps current entry copy within the editable-video and image-plan promise", () => {
+  const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+  const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+  const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+
+  expect(libraryWorkshop).toContain("生成图片方案");
+  expect(workspaceClient).toContain("生成图片方案");
+  expect(workspaceClient).not.toContain("做成图片。");
+  expect(conversationStart).toContain("封面方案");
+  expect(conversationStart).not.toContain("视频、文案还是封面。");
+});
+
 it("keeps V3 workspace UI as the only render path", () => {
   const sources = [
     "app/assets/components/conversation-studio.tsx",

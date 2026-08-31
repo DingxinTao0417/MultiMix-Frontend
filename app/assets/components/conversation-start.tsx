@@ -24,7 +24,7 @@ import {
   trackProductEvent,
 } from "../../../lib/product-analytics";
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做视频、文案还是封面。";
+const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "图片会作为画面素材，PDF/文档会作为内容依据；添加视频后请先说明想怎么处理。";
 

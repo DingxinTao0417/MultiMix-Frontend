@@ -8,10 +8,10 @@ import type { MediaAsset } from "@editor/lib/media/types";
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
 
-// A playable project must not wait indefinitely for one remote media
-// connection. This bounds only the optional Blob pre-download, not project
-// playback: on timeout the existing direct-media URL fallback remains usable.
-const MEDIA_HYDRATION_IDLE_TIMEOUT_MS = 15_000;
+// The canvas export renderer needs actual Blob/File objects, not only direct
+// playback URLs. Allow a bounded preparation window for a remote source file
+// before falling back to direct playback for the editor UI.
+const MEDIA_HYDRATION_PREPARATION_TIMEOUT_MS = 60_000;
 
 type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "timeout";
 
@@ -57,7 +57,7 @@ async function fetchMediaBlob(url: string): Promise<DownloadedMediaBlob> {
   const timeout = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, MEDIA_HYDRATION_IDLE_TIMEOUT_MS);
+  }, MEDIA_HYDRATION_PREPARATION_TIMEOUT_MS);
   try {
     const response = await fetch(url, { signal: controller.signal });
     const contentType = response.headers.get("content-type") || "unknown";
