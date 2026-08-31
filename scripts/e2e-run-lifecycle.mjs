@@ -7,6 +7,7 @@ const RUNTIME_ROOT = path.join(os.homedir(), "Desktop", "multimix-test-results",
 const RUN_ID = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,119}$/;
 const SUITE = /^[a-z][a-z0-9-]{0,79}$/;
 const RETAINED_RUN_STATUSES = new Set(["failed_retained", "passed_pending_cleanup"]);
+const SQLITE_HEADER = Buffer.from("SQLite format 3\0", "utf8");
 
 function assertSegment(value, expression, label) {
   if (typeof value !== "string" || !expression.test(value)) {
@@ -20,6 +21,27 @@ function writeJson(filePath, value) {
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+export function assertSqliteDatabaseUsable(databasePath) {
+  if (!fs.existsSync(databasePath)) {
+    throw new Error(`Retained E2E runtime is missing a valid SQLite database: ${databasePath}`);
+  }
+  const stat = fs.statSync(databasePath);
+  if (!stat.isFile() || stat.size < 100) {
+    throw new Error(`Retained E2E runtime is missing a valid SQLite database: ${databasePath}`);
+  }
+  const handle = fs.openSync(databasePath, "r");
+  try {
+    const header = Buffer.alloc(SQLITE_HEADER.length);
+    fs.readSync(handle, header, 0, header.length, 0);
+    if (!header.equals(SQLITE_HEADER)) {
+      throw new Error(`Retained E2E runtime is missing a valid SQLite database: ${databasePath}`);
+    }
+  } finally {
+    fs.closeSync(handle);
+  }
+  return databasePath;
 }
 
 function createStageTiming({ record, now = Date.now }) {
@@ -137,9 +159,13 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
   if (previous.suite !== suite || previous.runId !== runId || !RETAINED_RUN_STATUSES.has(previous.status)) {
     throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
   }
+  if (previous.resumeSupported === false) {
+    throw new Error(`E2E run ${suite}/${runId} is marked non-resumable.`);
+  }
   if (!fs.existsSync(previous.databasePath) || !fs.existsSync(previous.artifactDir)) {
     throw new Error(`E2E run ${suite}/${runId} is missing its retained SQLite or ArtifactStore.`);
   }
+  assertSqliteDatabaseUsable(previous.databasePath);
   const state = { ...previous, status: "active", resumedAt: new Date().toISOString() };
   writeJson(manifestPath, state);
   const ledgerPath = path.join(runDir, "run-ledger.ndjson");
@@ -208,4 +234,20 @@ export function cleanupRetainedE2ERun({ suite, runId, confirmed }) {
   writeJson(receiptPath, receipt);
   fs.rmSync(runDir, { recursive: true, force: false });
   return { runDir, receiptPath, databasePath: state.databasePath, artifactDir: state.artifactDir };
+}
+
+export function finalizeE2ERun({ lifecycle, failed, retainPassed = false, details = {} }) {
+  lifecycle.finish(failed ? "failed_retained" : "passed_pending_cleanup", {
+    ...details,
+    retainedForConfirmation: Boolean(failed || retainPassed),
+  });
+  if (failed || retainPassed) {
+    return { retained: true, runDir: lifecycle.runDir };
+  }
+  const cleaned = cleanupRetainedE2ERun({
+    suite: lifecycle.suite,
+    runId: lifecycle.runId,
+    confirmed: true,
+  });
+  return { retained: false, ...cleaned };
 }

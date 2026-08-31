@@ -19,5 +19,5 @@ jobs:
       - run: npm run check:agents
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run test
+      - run: npm run test:fast
       - run: npm run build

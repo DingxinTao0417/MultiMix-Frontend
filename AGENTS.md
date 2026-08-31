@@ -49,12 +49,15 @@ MultiMix 是一个内容生成工作台（content generation workspace），用�
 npm run dev -- --hostname 127.0.0.1 --port 3200   # 前端开发
 npm run typecheck     # tsc --noEmit（排除 editor-engine/vendor）
 npm run lint          # eslint .
-npm run test          # vitest run（app/assets/__tests__ + editor-engine/vendor/buildProject.test.ts）
+npm run test          # 仅 Vitest
+npm run test:scripts  # 全部 scripts/__tests__ runner/安全契约
+npm run test:fast     # 默认离线测试层：Vitest + demo 纯函数 + 全部脚本契约（CI 同入口）
 npm run build         # next build（含 /editor，glsl/worker/Tailwind v4 已配）
 npm run sync:agents   # 由 CLAUDE.md 重新生成 AGENTS.md
 npm run docs:check    # 检查根 docs 分类、状态头、旧路径和 UI 原型归档规则
 npm run test:docs-check # 单测 docs:check 的守门逻辑
-npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归集
+npm run e2e:runs      # 查看失败后保留的隔离 E2E runtime
+npm run e2e:cleanup -- <suite>/<run-id> --confirm # 显式清理保留 runtime
 ```
 
 后端（`../MultiMix-Backend`）：
@@ -65,7 +68,7 @@ npm run check:backend # 跨仓库快捷方式：跑后端 ruff + pytest 回归�
 .venv\Scripts\python -m ruff check --line-length 100 app/
 ```
 
-改完前端至少跑 `typecheck` + `lint` + `test` + `build`；改完后端跑相关 pytest + ruff。两个仓库都配了 GitHub Actions CI（`.github/workflows/ci.yml`），push/PR 会自动跑同样的检查。
+改完前端至少跑 `typecheck` + `lint` + `test:fast` + `build`；改完后端直接在后端仓库运行相关 pytest + ruff，不在前端复制后端测试清单。两个仓库都配了 GitHub Actions CI（`.github/workflows/ci.yml`），push/PR 会自动跑同样的检查。
 
 > 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 

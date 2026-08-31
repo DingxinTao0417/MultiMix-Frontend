@@ -11,12 +11,17 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
-import { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
+import {
+  assertSqliteDatabaseUsable,
+  createE2ERunLifecycle,
+  resumeRetainedE2ERunLifecycle,
+} from "./e2e-run-lifecycle.mjs";
 import { repairNextGeneratedTypeReferences } from "./next-generated-types.mjs";
 import {
   assertDeclaredProductMediaMetadata,
   probeProductMediaFile,
 } from "./product-media-file-probe.mjs";
+import { assertPaidE2EAllowed } from "./paid-e2e-gate.mjs";
 
 if (process.argv.slice(2).some((argument) => argument === "--help" || argument === "-h")) {
   console.log(`Usage: npm run test:e2e:video-pipeline-production
@@ -38,9 +43,16 @@ Core environment variables:
 
 Safety:
   A normal run creates an isolated SQLite database and artifact directory, and may call configured Providers.
+  Set MULTIMIX_ALLOW_PAID_E2E=true to acknowledge provider charges before a normal run.
   This help command performs neither action.`);
   process.exit(0);
 }
+
+assertPaidE2EAllowed({
+  suite: "video-pipeline-production",
+  env: process.env,
+  args: process.argv.slice(2),
+});
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = path.resolve(frontendRoot, "..");
@@ -285,6 +297,7 @@ const maxTruePeakDbfs = Number(process.env.VIDEO_PIPELINE_MAX_TRUE_PEAK_DBFS ?? 
 const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFEST === "true";
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
+const retainRemoteCheckpoint = process.env.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false";
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
 if (singleImageCreativeDraft && expectedVideoType !== "explainer") {
@@ -359,6 +372,7 @@ const savedLibraryMediaFiles = usesSavedLibraryMedia
 const children = [];
 let providerProxy;
 let decisionAuditEnv;
+let remoteCheckpointReady = false;
 
 function startProviderEgressProxy(allowedHosts) {
   const allowed = new Set(allowedHosts.map((host) => host.toLowerCase()));
@@ -1808,7 +1822,10 @@ try {
   let cleanupError;
   if (decisionAuditEnv) {
     try {
-      await checkpointRemoteArtifactWrites(decisionAuditEnv);
+      if (retainRemoteCheckpoint) {
+        await checkpointRemoteArtifactWrites(decisionAuditEnv);
+        remoteCheckpointReady = true;
+      }
       await cleanupRemoteArtifactWrites(decisionAuditEnv);
     } catch (error) {
       cleanupError = error;
@@ -1826,9 +1843,16 @@ try {
   } catch (error) {
     cleanupError ??= error;
   }
+  let localResumeReady = false;
+  try {
+    assertSqliteDatabaseUsable(databasePath);
+    localResumeReady = true;
+  } catch (error) {
+    console.warn(error instanceof Error ? error.message : String(error));
+  }
   lifecycle.finish(runError || cleanupError ? "failed_retained" : "passed_pending_cleanup", {
     retainedForConfirmation: true,
-    resumeSupported: true,
+    resumeSupported: retainRemoteCheckpoint && remoteCheckpointReady && localResumeReady,
   });
   const timingSummary = lifecycle.timingSummary();
   if (timingSummary.length > 0) {
@@ -1863,6 +1887,6 @@ try {
   if (browserTimingSummary.length > 0) {
     console.log(`Browser timing ledger: ${playwrightTimingPath}`);
   }
-  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- video-pipeline-production/${runId} --confirm`);
+  console.log(`E2E runtime retained: ${lifecycle.runDir}. Clean with npm run e2e:cleanup -- video-pipeline-production/${runId} --confirm`);
   if (cleanupError) throw cleanupError;
 }

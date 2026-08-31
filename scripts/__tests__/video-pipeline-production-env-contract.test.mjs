@@ -742,6 +742,23 @@ test("retained production E2E checkpoints remote artifacts before cleanup and re
   );
 });
 
+test("production video E2E can skip the remote checkpoint for a non-resumable acceptance run", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(
+    source,
+    /const retainRemoteCheckpoint = process\.env\.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false"/,
+  );
+  assert.match(
+    source,
+    /if \(retainRemoteCheckpoint\) \{\s*await checkpointRemoteArtifactWrites\(decisionAuditEnv\);\s*remoteCheckpointReady = true;\s*\}[\s\S]*?await cleanupRemoteArtifactWrites\(decisionAuditEnv\)/,
+  );
+  assert.match(
+    source,
+    /resumeSupported: retainRemoteCheckpoint && remoteCheckpointReady && localResumeReady/,
+  );
+});
+
 test("production video E2E reports durable director substage timings separately", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const specSource = fs.readFileSync(productionSpecPath, "utf8");
