@@ -11,15 +11,16 @@ const workspaceDesign = readFileSync(
 );
 
 describe("material-driven product positioning copy", () => {
-  test("does not promise video as a direct chat attachment", () => {
-    expect(conversationStart).not.toContain("PDF / 图片 / 视频素材");
-    expect(conversationStart).toContain("PDF / 图片");
-    expect(conversationStart).toContain("视频请先上传到视频素材库");
+  test("accepts long-form sources through the chat composer", () => {
+    expect(conversationStart).toContain("PDF / 图片 / 视频素材");
+    expect(conversationStart).toContain('aria-label="上传视频素材"');
+    expect(conversationStart).toContain("也可粘贴视频链接");
+    expect(conversationStart).not.toContain("视频请先上传到视频素材库");
   });
 
-  test("keeps the authority document consistent with the video-library entry", () => {
-    expect(workspaceDesign).not.toContain("用户可以在对话里上传图片、视频和文档");
-    expect(workspaceDesign).toContain("视频先上传到视频素材库，再加入对话或直接发起视频创作");
-    expect(workspaceDesign).toContain("对话附件当前支持 PDF、Excel、纯文本、Markdown、HTML 和图片，不支持 PPT / Word，也不接收视频");
+  test("documents the requirement gate for long-form analysis", () => {
+    expect(workspaceDesign).toContain("长视频文件和受支持的视频链接从对话输入框加入");
+    expect(workspaceDesign).toContain("只有用户明确提交处理需求后才启动长内容分析");
+    expect(workspaceDesign).not.toContain("视频先上传到视频素材库，再加入对话或直接发起视频创作");
   });
 });

@@ -93,7 +93,7 @@ describe("presenter segment review", () => {
     );
 
     expect(screen.getByText(/画面安排：文字强调/).textContent).toContain("先看");
-    expect(screen.getByText(/全屏素材/).textContent).toContain("发布必需");
+    expect(screen.getByText(/全屏素材/).textContent).toContain("成片必需");
     expect(screen.getByText("素材缺口：缺少产品录屏，当前保持人物画面")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "修改配音" })).toBeNull();
     expect(screen.queryByRole("button", { name: "换素材" })).toBeNull();

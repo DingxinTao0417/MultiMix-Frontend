@@ -13,6 +13,7 @@ import type {
   AssetConversation,
   AssetConversationMessage,
   AssetMessagePlan,
+  AssetPlanBgmOption,
   AssetPlanField,
   AssetPresenterDirectionOption,
   AssetPresenterCleanupItem,
@@ -27,6 +28,7 @@ import type {
   AssetProductSourceRef,
   AssetProductSourceSummary,
   AssetSuggestionAction,
+  AssetVisualPreviewPlan,
 } from "../app/assets/lib/asset-workspace-types";
 import { API_BASE, type AssetConversationResponse, type ContentAsset } from "./api";
 
@@ -178,7 +180,8 @@ function browserReadableMediaUrl(ref: string): string | undefined {
   if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
   if (/^[a-z0-9+.-]+:\/\//i.test(ref)) {
     const artifactPath = ref.split("://", 2)[1] ?? "";
-    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)) {
+    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)
+      && !/(?:^|\/)content-assets\/\d+\/generation-jobs\/\d+\/images\/[0-9a-f]{64}\.(?:png|jpe?g|webp)$/i.test(artifactPath)) {
       return undefined;
     }
     return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(ref)}`;
@@ -221,6 +224,85 @@ function planFieldsValue(value: unknown): AssetPlanField[] {
   });
 }
 
+function planBgmOptionsValue(value: unknown): AssetPlanBgmOption[] {
+  if (!Array.isArray(value)) return [];
+  const identifiers = new Set<string>();
+  return value.slice(0, 3).flatMap((item): AssetPlanBgmOption[] => {
+    if (!isRecord(item)) return [];
+    const id = stringValue(item.id);
+    const title = stringValue(item.title);
+    const reason = stringValue(item.reason);
+    const selectionMode = stringValue(item.selection_mode);
+    if (
+      !id
+      || !title
+      || !reason
+      || identifiers.has(id)
+      || !["semantic_structured", "stable_fallback"].includes(selectionMode)
+    ) return [];
+    identifiers.add(id);
+    return [{
+      id,
+      title,
+      reason,
+      selectionMode: selectionMode as AssetPlanBgmOption["selectionMode"],
+    }];
+  });
+}
+
+function planVisualPreviewsValue(value: unknown): AssetVisualPreviewPlan | undefined {
+  if (!isRecord(value) || value.schema_version !== "visual_preview_plan:v1") return undefined;
+  if (!Array.isArray(value.scenes)) return undefined;
+  const scenes = value.scenes.flatMap((scene): AssetVisualPreviewPlan["scenes"] => {
+    if (!isRecord(scene) || !Array.isArray(scene.frames)) return [];
+    const sceneId = stringValue(scene.scene_id);
+    const title = stringValue(scene.title);
+    const sceneIndex = positiveIntegerValue(scene.scene_index);
+    if (!sceneId || !title || !sceneIndex) return [];
+    const frames = scene.frames.slice(0, 4).flatMap((frame): AssetVisualPreviewPlan["scenes"][number]["frames"] => {
+      if (!isRecord(frame)) return [];
+      const frameId = stringValue(frame.frame_id);
+      const timeRole = stringValue(frame.time_role);
+      const label = stringValue(frame.label);
+      const visualState = stringValue(frame.visual_state);
+      const previewKind = stringValue(frame.preview_kind);
+      const fidelity = stringValue(frame.fidelity);
+      const sourceStatus = stringValue(frame.source_status);
+      const limitation = stringValue(frame.limitation);
+      if (
+        !frameId
+        || !["opening", "change", "closing"].includes(timeRole)
+        || !label
+        || !visualState
+        || !["exact_asset", "public_candidate", "generation_intent"].includes(previewKind)
+        || !["exact", "candidate", "schematic"].includes(fidelity)
+        || !sourceStatus
+        || !limitation
+      ) return [];
+      return [{
+        frameId,
+        timeRole: timeRole as "opening" | "change" | "closing",
+        label,
+        visualState,
+        previewKind: previewKind as "exact_asset" | "public_candidate" | "generation_intent",
+        fidelity: fidelity as "exact" | "candidate" | "schematic",
+        sourceStatus,
+        previewUrl: planThumbnailUrl(stringValue(frame.preview_url)),
+        sourceAssetId: positiveIntegerValue(frame.source_asset_id),
+        limitation,
+      }];
+    });
+    if (!frames.length) return [];
+    return [{ sceneId, sceneIndex, title, frames }];
+  });
+  if (!scenes.length) return undefined;
+  return {
+    schemaVersion: "visual_preview_plan:v1",
+    sceneCount: positiveIntegerValue(value.scene_count) ?? scenes.length,
+    scenes,
+  };
+}
+
 // Structured confirmation plan from an assistant message's metadata (spec §5.2).
 // Returns undefined when the payload is missing or has no usable fields so the
 // UI falls back to plain message + suggestion chips (spec §12 降级规则).
@@ -239,6 +321,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const subtitleOptions = planRatioOptionsValue(value.subtitle_options)
     .filter((option) => ["translated_zh", "source", "bilingual"].includes(option.value)) as AssetMessagePlan["subtitleOptions"];
   const subtitleDefault = stringValue(value.subtitle_default);
+  const visualPreviews = planVisualPreviewsValue(value.visual_previews);
+  const bgmOptions = planBgmOptionsValue(value.bgm_options);
   const planKind = stringValue(value.kind);
   return {
     kind: planKind === "video_parameter_confirmation"
@@ -286,6 +370,13 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     subtitleOptions: subtitleOptions?.length ? subtitleOptions : undefined,
     subtitleDefault: subtitleDefault === "translated_zh" || subtitleDefault === "source" || subtitleDefault === "bilingual"
       ? subtitleDefault
+      : undefined,
+    visualPreviews,
+    bgmCatalogVersion: stringValue(value.bgm_catalog_version) || undefined,
+    bgmOptions: bgmOptions.length ? bgmOptions : undefined,
+    bgmDefault: stringValue(value.bgm_default) || undefined,
+    bgmEnabledDefault: typeof value.bgm_enabled_default === "boolean"
+      ? value.bgm_enabled_default
       : undefined,
   };
 }
@@ -866,7 +957,11 @@ function productLifecycleFromAsset(
 } | undefined {
   const isVideo = asset.content_type === "video_project";
   const isDirector = isVideoDirectorDraft(asset);
-  if (!isVideo && !isDirector) return undefined;
+  const isGeneratedImage = asset.asset_kind === "image"
+    && (asset.product_status === "generating"
+      || asset.product_status === "completed"
+      || asset.product_status === "failed");
+  if (!isVideo && !isDirector && !isGeneratedImage) return undefined;
   if (isDirector) return { status: "completed" };
   const status = asset.product_status;
   if (status !== "generating" && status !== "completed" && status !== "failed") return undefined;
@@ -1085,6 +1180,12 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const lifecycle = productLifecycleFromAsset(asset);
   const videoProject = isEditorReadyVideoProject(asset, rawVideoProject) ? rawVideoProject : undefined;
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : undefined;
+  const renderedImagePreviewUrl = asset.asset_kind === "image"
+    ? imageThumbnailUrlFromRef(stringValue(asset.original_ref))
+    : undefined;
+  const productMetadata = renderedImagePreviewUrl
+    ? { ...metadata, preview_url: renderedImagePreviewUrl }
+    : metadata;
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const unsupported = asset.generation_state === "preparation_only" && !videoProject;
   const mode = productModeFromAsset(asset, unsupported);
@@ -1094,6 +1195,10 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const templateMode = metadata.template_mode === true || metadata.grounding_status === "keyword_template";
   const mp4State = stringValue(videoProject?.mp4_state) || "";
   const directorDraft = isVideoDirectorDraft(asset);
+  const completedGeneratedImage = asset.asset_kind === "image"
+    && lifecycle?.status === "completed";
+  const generatingImage = asset.asset_kind === "image"
+    && lifecycle?.status === "generating";
   // Orchestration lifecycle: pending while the async job runs, failed when the
   // job died without producing a project (retryable from the workspace).
   const orchestrationFailed = lifecycle?.status === "failed";
@@ -1144,7 +1249,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
+      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
       status: productStatusLabel(lifecycle?.status) ?? (mp4Artifact ? "完成" : videoProject ? "完成" : unsupported ? "生成中" : directorDraft ? "完成" : "完成")
     },
     {
@@ -1200,7 +1305,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
     videoProductCompleted: asset.product_completed === true,
-    metadata,
+    metadata: productMetadata,
     mode,
     title: normalizeAssetTitle(asset.title),
     status,
@@ -1237,7 +1342,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeAssetTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : completedGeneratedImage ? "图片已生成，可作为视频封面或继续调整" : generatingImage ? "图片正在后台生成，完成后自动展示" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

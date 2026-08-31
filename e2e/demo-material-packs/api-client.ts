@@ -43,4 +43,26 @@ export class DemoApiClient {
     }
     throw new Error(`Timed out waiting for understanding of asset ${id}`);
   }
+  async waitForGenerationJob(id: string, timeoutMs = 20 * 60_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const response = await this.request.get(
+        `${this.baseUrl}/v1/assets/generation-jobs/${encodeURIComponent(id)}`,
+        { headers: this.headers() },
+      );
+      if (!response.ok()) throw new Error(`Generation job read failed ${response.status()}`);
+      const job = await response.json() as {
+        status?: string;
+        result_asset_id?: number | null;
+        error_code?: string | null;
+        error_message?: string | null;
+      };
+      if (job.status === "failed") {
+        throw new Error(`Generation job failed (${job.error_code ?? "unknown"}): ${job.error_message ?? "unknown error"}`);
+      }
+      if (job.status === "completed" && job.result_asset_id) return job.result_asset_id;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    throw new Error(`Timed out waiting for generation job ${id}`);
+  }
 }

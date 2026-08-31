@@ -1137,7 +1137,7 @@ function LibraryWorkshop({
                     <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "regenerate-image"); }}><ImageIcon size={14} aria-hidden="true" />重新生成</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "regenerate-image"); }}><ImageIcon size={14} aria-hidden="true" />生成图片方案</button>
                   <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               ) : view === "video" ? (
@@ -1148,7 +1148,7 @@ function LibraryWorkshop({
                     <button
                       type="button"
                       disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate || selectedRow.statusLabel !== "已入库"}
-                      title={selectedRow.statusLabel === "已入库" ? "分析原片并推荐可发布的短视频片段" : "原片准备完成后即可拆条"}
+                      title={selectedRow.statusLabel === "已入库" ? "加入对话并说明想怎么处理这段内容" : "原片准备完成后即可拆条"}
                       onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "long-form"); }}
                     >
                       <Video size={14} aria-hidden="true" />拆成短视频

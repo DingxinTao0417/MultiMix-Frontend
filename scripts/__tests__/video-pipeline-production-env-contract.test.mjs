@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+
+import { cleanupRetainedE2ERun } from "../e2e-run-lifecycle.mjs";
 
 const scriptsRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -11,6 +15,71 @@ const scriptsRoot = path.resolve(
 const runnerPath = path.join(scriptsRoot, "run-video-pipeline-production-e2e.mjs");
 const productionSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-production.spec.ts");
 const retainedExportSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-retained-export.spec.ts");
+
+function loadRunnerEnvParser() {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const functionSource = source.match(
+    /const dotenvReferencePattern[\s\S]*?\r?\n}\r?\n\r?\nconst baseCanonicalEnv/,
+  )?.[0].replace(/\r?\n\r?\nconst baseCanonicalEnv$/, "");
+
+  assert.ok(functionSource, "production E2E env parser is missing");
+  return new Function("fs", `"use strict"; ${functionSource}; return parseEnvFile;`)(fs);
+}
+
+test("production video E2E help exits before creating an isolated run", () => {
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "multimix-video-e2e-help-"),
+  );
+  const backendRoot = path.join(temporaryRoot, "backend");
+  const runId = `help-${Date.now()}-${process.pid}`;
+  const runtimeRunDir = path.join(
+    os.homedir(),
+    "Desktop",
+    "multimix-test-results",
+    "e2e-runtime",
+    "video-pipeline-production",
+    runId,
+  );
+
+  fs.mkdirSync(
+    path.join(backendRoot, "app", "video_pipelines", "unified"),
+    { recursive: true },
+  );
+  fs.writeFileSync(
+    path.join(backendRoot, "app", "video_pipelines", "unified", "activation.yaml"),
+    "active_versions:\n  explainer: v1\n",
+    "utf8",
+  );
+
+  try {
+    const result = spawnSync(process.execPath, [runnerPath, "--help"], {
+      cwd: scriptsRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        MULTIMIX_CANONICAL_BACKEND_ROOT: backendRoot,
+        MULTIMIX_BACKEND_ROOT: backendRoot,
+        VIDEO_PIPELINE_VIDEO_TYPE: "explainer",
+        VIDEO_PIPELINE_RUN_ID: runId,
+        VIDEO_PIPELINE_RESULT_DIR: path.join(temporaryRoot, "results"),
+        VIDEO_PIPELINE_VISION_SERVICE_URL: "http://127.0.0.1:1",
+      },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Usage:/);
+    assert.equal(fs.existsSync(runtimeRunDir), false);
+  } finally {
+    if (fs.existsSync(runtimeRunDir)) {
+      cleanupRetainedE2ERun({
+        suite: "video-pipeline-production",
+        runId,
+        confirmed: true,
+      });
+    }
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
 
 test("production video E2E does not hard-code semantic rejection of a particular saved asset", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
@@ -60,7 +129,7 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.match(source, /const stagedBgm = !isResume && expectBgm/);
   assert.match(
     source,
-    /const productMediaManifestRef = \(\s*isResume \|\| inputProfile === "explainer_saved_library_simple"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
+    /const productMediaManifestRef = \(\s*isResume \|\| savedLibraryInputProfile \|\| expectedVideoType === "presenter"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
   );
   assert.doesNotMatch(source, /stagedBgm\.manifestRef/);
   assert.doesNotMatch(source, /stagedBgm\.defaultCatalogId/);
@@ -68,13 +137,60 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.match(source, /MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID:\s*effectiveBgm\.defaultCatalogId/);
 });
 
-test("production video E2E validates BGM through the public project track", () => {
+test("production video E2E records explicit no-BGM state alongside the public project track", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.doesNotMatch(source, /videoProject\?\.metadata\?\.bgm_choice/);
   assert.match(source, /const bgmTrack = videoProject\?\.tracks\?\.find/);
   assert.match(source, /expect\(bgmTrack\?\.type\)\.toBe\("audio"\)/);
   assert.match(source, /intentional no-BGM degradation must not create a music track/);
+  assert.match(source, /const bgmChoice = videoProject\?\.metadata\?\.bgm_choice/);
+  assert.match(source, /intentional no-BGM degradation must persist its explicit disabled state/);
+  assert.match(source, /intentional no-BGM degradation must persist its selection reason/);
+  assert.match(source, /bgmEnabled: bgmChoice\?\.enabled/);
+  assert.match(source, /bgmSelectionReason: bgmChoice\?\.selection_reason/);
+});
+
+test("production video E2E resolves safe dotenv references before forwarding provider settings", () => {
+  const temporaryRoot = fs.mkdtempSync(
+    path.join(os.tmpdir(), "multimix-video-e2e-env-"),
+  );
+  const envPath = path.join(temporaryRoot, ".env.local");
+  fs.writeFileSync(
+    envPath,
+    [
+      "MULTIMIX_EMBEDDING_API_KEY=resolved-provider-key",
+      "MULTIMIX_QWEN_FALLBACK_API_KEY=${MULTIMIX_EMBEDDING_API_KEY}",
+      "UNRESOLVED=${MISSING_PROVIDER_KEY}",
+      "NON_EXECUTABLE=$(whoami)",
+      "PLAIN_VALUE=unchanged",
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    const parseEnvFile = loadRunnerEnvParser();
+    const parsed = parseEnvFile(envPath);
+
+    assert.equal(parsed.MULTIMIX_QWEN_FALLBACK_API_KEY, "resolved-provider-key");
+    assert.equal(parsed.UNRESOLVED, "${MISSING_PROVIDER_KEY}");
+    assert.equal(parsed.NON_EXECUTABLE, "$(whoami)");
+    assert.equal(parsed.PLAIN_VALUE, "unchanged");
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("production video E2E initializes dotenv reference support before loading canonical settings", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const resolverInitialization = source.indexOf("const dotenvReferencePattern");
+  const canonicalSettingsLoad = source.indexOf("const baseCanonicalEnv");
+
+  assert.ok(resolverInitialization > -1, "dotenv reference resolver is missing");
+  assert.ok(canonicalSettingsLoad > -1, "canonical settings load is missing");
+  assert.ok(
+    resolverInitialization < canonicalSettingsLoad,
+    "dotenv reference resolver must initialize before canonical settings are loaded",
+  );
 });
 
 test("production video E2E writes a timing ledger for runner and browser stages", () => {
@@ -226,13 +342,187 @@ test("production video E2E warns but does not reject a final MP4 for duration dr
   assert.doesNotMatch(source, /failures\.push\([\s\S]{0,120}?duration_seconds=/);
 });
 
-test("simple saved-library E2E does not inject an unrelated source document", () => {
+test("saved-library E2E profiles do not inject an unrelated source document", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const browserSource = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.match(browserSource, /inputProfile !== "explainer_saved_library_simple"[\s\S]*?VIDEO_PIPELINE_SOURCE_DOCUMENT is missing/);
-  assert.match(browserSource, /inputProfile === "explainer_saved_library_simple"[\s\S]*?multimix_local_user/);
-  assert.match(runnerSource, /inputProfile === "explainer_saved_library_simple"\s*\? null\s*:\s*fingerprintFile\(sourceDocument\)/);
+  assert.match(browserSource, /const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"\s*\|\| singleImageCreativeDraft/);
+  assert.match(browserSource, /!savedLibraryInputProfile[\s\S]*?VIDEO_PIPELINE_SOURCE_DOCUMENT is missing/);
+  assert.match(browserSource, /if \(savedLibraryInputProfile\)[\s\S]*?multimix_local_user/);
+  assert.match(runnerSource, /const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"\s*\|\| singleImageCreativeDraft/);
+  assert.match(runnerSource, /const sourceDocumentFingerprint = savedLibraryInputProfile\s*\? null\s*:\s*fingerprintFile\(sourceDocument\)/);
+});
+
+test("quality-baseline E2E fails closed without approved product or presenter inputs", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(runnerSource, /const qualityBaselineRun = process\.env\.VIDEO_PIPELINE_QUALITY_BASELINE === "true"/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF/);
+  assert.match(runnerSource, /quality baseline explainer requires approved product media/);
+  assert.match(runnerSource, /quality baseline presenter requires an approved source video/);
+  assert.match(runnerSource, /qualityBaselineRun,/);
+  assert.match(runnerSource, /presenterSourceApprovalRef,/);
+  assert.ok(
+    runnerSource.indexOf("const qualityBaselineInputs =")
+      < runnerSource.indexOf("const lifecycle ="),
+    "quality-baseline preflight must run before creating its isolated runtime",
+  );
+  assert.match(browserSource, /const qualityBaselineRun = process\.env\.VIDEO_PIPELINE_QUALITY_BASELINE === "true"/);
+  assert.match(browserSource, /quality baseline explainer cannot use a saved-library creative-draft profile/);
+  assert.match(runnerSource, /explainer_single_image_draft is creative-draft-only and cannot run as a quality baseline/);
+  assert.match(browserSource, /quality baseline presenter requires a source approval reference/);
+  assert.match(browserSource, /VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO/);
+});
+
+test("quality-baseline presenter accepts one approved original from the neutral saved-library input", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    source,
+    /const isQualityBaselinePresenter = qualityBaselineRun && expectedVideoType === "presenter"/,
+  );
+  assert.match(
+    source,
+    /const requiredSavedLibraryMediaCount = isQualityBaselinePresenter \|\| singleImageCreativeDraft \? 1 : 3/,
+  );
+  assert.match(
+    source,
+    /savedLibraryMediaFiles\.length,[\s\S]*?requiredSavedLibraryMediaCount/,
+  );
+  assert.match(source, /quality-baseline presenter requires exactly one approved source video/);
+});
+
+test("quality-baseline presenter keeps the source video extension in its upload filename", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(
+    source,
+    /name:\s*`用户确认口播原片\$\{path\.extname\(presenterSourceVideo\)\}`/,
+  );
+});
+
+test("quality-baseline presenter accepts every API-supported source video format and preserves WebM MIME", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  for (const source of [runnerSource, browserSource]) {
+    assert.match(
+      source,
+      /const supportedVideoExtensions = new Set\(\["\.mp4", "\.mov", "\.webm", "\.mkv"\]\)/,
+    );
+  }
+  assert.match(browserSource, /const isVideo = supportedVideoExtensions\.has\(extension\)/);
+  assert.match(browserSource, /"\.webm", "video\/webm"/);
+  assert.match(
+    runnerSource,
+    /supportedVideoExtensions\.has\(path\.extname\(String\(value\?\.path \?\? ""\)\)\.toLowerCase\(\)\)/,
+  );
+});
+
+test("quality-baseline explainer records only the product inputs it actually passes on", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(
+    source,
+    /const usesSavedLibraryMedia = savedLibraryInputProfile\s*\|\| expectedVideoType === "presenter"/,
+  );
+  assert.match(
+    source,
+    /const savedLibraryMediaFiles = usesSavedLibraryMedia\s*\?\s*\(qualityBaselineRun && expectedVideoType === "presenter"[\s\S]*?: "\[\]";/,
+  );
+  assert.match(source, /savedLibraryMedia: configuredInputFingerprints\(savedLibraryMediaFiles\)/);
+  assert.match(source, /const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"\s*\|\| configuredInputIncludesVideo\(savedLibraryMediaFiles\)/);
+});
+
+test("single-image creative-draft E2E is explicit, non-baseline, and user-material-only", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(runnerSource, /const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft"/);
+  assert.match(runnerSource, /explainer_single_image_draft requires VIDEO_PIPELINE_VIDEO_TYPE=explainer/);
+  assert.match(runnerSource, /explainer_single_image_draft requires VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES/);
+  assert.match(runnerSource, /creativeDraftOnly: singleImageCreativeDraft/);
+  assert.match(runnerSource, /创意草稿（非公开、非黄金基线）/);
+  assert.match(browserSource, /const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft"/);
+  assert.match(browserSource, /single-image creative draft requires exactly one user image/);
+  assert.match(browserSource, /single-image creative draft accepts one product image, not a video source/);
+  assert.match(browserSource, /\|\| singleImageCreativeDraft[\s\S]*?requiredLinkedAssetIds\.push\(mediaAsset\.id\)/);
+  assert.match(browserSource, /不得把本稿写成可公开发布的事实承诺/);
+  assert.match(browserSource, /creativeDraftOnly: singleImageCreativeDraft/);
+  assert.match(browserSource, /single-image creative draft must keep its one user image as every scene's primary visual/);
+  assert.match(browserSource, /expectedVideoType !== "presenter"\s*&& !singleImageCreativeDraft[\s\S]*?assertDistinctPersistedPrimaryVisualWindows/);
+});
+
+test("quality-baseline presenter asks to preserve the source ratio without forcing an output ratio", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const generationInstructionStart = source.indexOf("const generationInstruction");
+  const branchStart = source.indexOf(
+    'expectedVideoType === "presenter"',
+    generationInstructionStart,
+  );
+  const branchEnd = source.indexOf('expectedVideoType === "source_excerpt"', branchStart);
+  const presenterInstruction = source.slice(branchStart, branchEnd);
+
+  assert.ok(generationInstructionStart >= 0 && branchStart >= 0 && branchEnd > branchStart);
+  assert.match(presenterInstruction, /保持原片比例/);
+  assert.doesNotMatch(presenterInstruction, /targetRatioAcceptance\.instructionLabel/);
+});
+
+test("production video E2E keeps the browser download action separate from candidate retrieval", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /await exportButton\.click\(\{ timeout: 30_000 \}\);/);
+  assert.match(source, /toBe\("再次下载"\)/);
+  assert.match(
+    source,
+    /\/v1\/video\/media\?ref=\$\{encodeURIComponent\(mp4Ref\)\}/,
+  );
+  assert.match(source, /async function downloadCandidateMp4ByRange/);
+  assert.match(source, /const CANDIDATE_MP4_RANGE_CHUNK_BYTES = 1024 \* 1024;/);
+  assert.match(source, /const CANDIDATE_MP4_RANGE_TIMEOUT_MS = 60_000;/);
+  assert.match(source, /range: "bytes=0-0"/);
+  assert.match(source, /range: `bytes=\$\{start\}-\$\{end\}`/);
+  assert.match(source, /Content-Range.*total size|candidate MP4 range response/i);
+  assert.match(source, /timeout: CANDIDATE_MP4_RANGE_TIMEOUT_MS/);
+  assert.match(source, /Buffer\.concat\(chunks\)/);
+  assert.doesNotMatch(source, /const candidateBytes = await candidateResponse\.body\(\);/);
+  assert.doesNotMatch(source, /page\.waitForEvent\("download"/);
+  assert.doesNotMatch(source, /download\.saveAs\(/);
+});
+
+test("production video E2E observes both supported asynchronous export task responses", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(source, /const exportTaskResponsePaths = \[/);
+  assert.match(
+    source,
+    /`\$\{apiBase\}\/v1\/video\/projects\/\$\{projectAsset!\.id\}\/exports\/register`/,
+  );
+  assert.match(
+    source,
+    /`\$\{apiBase\}\/v1\/video\/projects\/\$\{projectAsset!\.id\}\/exports`/,
+  );
+  assert.match(source, /exportTaskResponsePaths\.includes\(response\.url\(\)\)/);
+});
+
+test("production video E2E reads the persisted export task before long render polling", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const stageStart = source.indexOf('measureE2EStage("export_preview_ready"');
+  const stageEnd = source.indexOf('measureE2EStage("export_browser_render"', stageStart);
+  const exportStage = source.slice(stageStart, stageEnd);
+  const responseWait = exportStage.indexOf("const createResponse = await exportCreateResponse;");
+  const currentTaskRead = exportStage.indexOf("/exports/current", responseWait);
+  const renderPolling = exportStage.indexOf("assertExportHasNotFailed(page, exportButton");
+
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+  assert.ok(responseWait >= 0 && currentTaskRead > responseWait);
+  assert.doesNotMatch(exportStage, /createResponse\.json\(/);
+  assert.ok(
+    renderPolling > currentTaskRead,
+    "the persisted task must be read before long render polling starts",
+  );
 });
 
 test("production video browser flow records its major user-visible pipeline waits", () => {
@@ -252,6 +542,25 @@ test("production video browser flow records its major user-visible pipeline wait
   ]) {
     assert.match(source, new RegExp(`measureE2EStage\\("${stage}"`));
   }
+});
+
+test("production video E2E writes a pending human review only after its candidate MP4 exists", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const candidateWrite = source.indexOf('fs.writeFileSync(outputPath, candidateBytes)');
+  const resultWrite = source.indexOf('path.join(resultDir, "browser-result.json")');
+  const reviewWrite = source.indexOf("const humanReviewReportPath = writeVideoHumanReviewReport");
+
+  assert.ok(candidateWrite > -1, "candidate MP4 must be written before review evidence");
+  assert.ok(resultWrite > candidateWrite, "browser result must follow the candidate file");
+  assert.ok(reviewWrite > resultWrite, "human review must follow the candidate and result record");
+  assert.match(source, /import \{ writeVideoHumanReviewReport \} from "\.\.\/scripts\/video-human-review-report\.mjs"/);
+  assert.match(source, /humanReviewStatus:\s*"pending"/);
+  assert.match(source, /humanReviewReport:\s*"human-review\.md"/);
+  assert.match(
+    source,
+    /writeVideoHumanReviewReport\(\{[\s\S]*?candidateVideo:\s*candidateVideoPath,[\s\S]*?videoType:\s*expectedVideoType,[\s\S]*?creativeDraftOnly:\s*singleImageCreativeDraft,[\s\S]*?qualityWarnings:\s*projectQualityReport!\.warnings \?\? \[\]/,
+  );
+  assert.match(source, /expect\(fs\.existsSync\(humanReviewReportPath\)\)\.toBe\(true\)/);
 });
 
 test("production video E2E discovers active video types and asserts the server plan contract", () => {
@@ -284,7 +593,7 @@ test("production video E2E discovers active video types and asserts the server p
 
 test("production video E2E fails before confirmation when required understanding or routing is wrong", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
-  const understandingGate = source.indexOf("demonstration source understanding failed");
+  const understandingGate = source.indexOf("saved-library source understanding failed");
   const generationInstruction = source.indexOf("const generationInstruction");
   const routeGate = source.indexOf("director selected wrong video type");
   const confirmationClick = source.indexOf("await confirmButton.click()");
@@ -295,26 +604,16 @@ test("production video E2E fails before confirmation when required understanding
   assert.match(source, /directorVideoPlan\.video_type/);
 });
 
-test("demonstration E2E asks for an observable operation sequence instead of a generic explainer", () => {
-  const source = fs.readFileSync(productionSpecPath, "utf8");
+test("production E2E no longer exposes the retired demonstration type or input contract", () => {
+  const specSource = fs.readFileSync(productionSpecPath, "utf8");
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
 
-  assert.match(source, /上传资料与素材 → 理解并组织已有素材 → 生成可编辑分镜与预览/);
-  assert.match(source, /至少两个不同分镜必须使用两个不同的已审核产品界面/);
-  assert.match(source, /只有涉及 MultiMix 产品能力、操作结果或效果的文字才必须由产品资料支持/);
-  assert.match(source, /装修视频只作为被输入和组织的真实业务素材/);
-  assert.match(source, /每个分镜必须承担不同且必要的操作、状态或结果/);
-  assert.doesNotMatch(source, /商家内容制作示范片/);
-});
-
-test("demonstration E2E links the explicitly uploaded operation clips to the generation request", () => {
-  const source = fs.readFileSync(productionSpecPath, "utf8");
-
-  assert.match(source, /demonstrationLinkedAssetIds\.push\(mediaAsset\.id\)/);
-  assert.match(source, /linked_asset_ids:\s*linkedAssetIds/);
-  assert.match(
-    source,
-    /postConversation\([\s\S]*?generationInstruction[\s\S]*?demonstrationLinkedAssetIds/,
-  );
+  assert.doesNotMatch(specSource, /\bdemonstration\b/i);
+  assert.doesNotMatch(runnerSource, /\bdemonstration\b/i);
+  assert.doesNotMatch(specSource, /VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES/);
+  assert.doesNotMatch(runnerSource, /VIDEO_PIPELINE_DEMONSTRATION_MEDIA_FILES/);
+  assert.match(specSource, /VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES/);
 });
 
 test("source excerpt E2E uses the dedicated analyze and candidate-selection flow", () => {
@@ -350,10 +649,10 @@ test("saved-library video E2E uses the same isolated remote storage for cloud AS
   const source = fs.readFileSync(runnerPath, "utf8");
 
   assert.match(source, /function configuredInputIncludesVideo/);
-  assert.match(source, /path\.extname\(.*\)\.toLowerCase\(\) === "\.mp4"/);
+  assert.match(source, /supportedVideoExtensions\.has\(path\.extname\(String\(value\?\.path \?\? ""\)\)\.toLowerCase\(\)\)/);
   assert.match(
     source,
-    /const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"\s*\|\| configuredInputIncludesVideo\(demonstrationMediaFiles\)/,
+    /const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"\s*\|\| configuredInputIncludesVideo\(savedLibraryMediaFiles\)/,
   );
   assert.match(source, /MULTIMIX_SUPABASE_URL: usesRemoteArtifactStorage/);
   assert.match(source, /MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: usesRemoteArtifactStorage/);
@@ -403,11 +702,11 @@ test("production E2E treats presenter as an active type and confirms its single 
   assert.match(specSource, /fill\(String\(targetSeconds\)\)/);
   assert.doesNotMatch(
     specSource,
-    /inputProfile === "explainer_saved_library_simple"\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?multimix_local_user/,
+    /savedLibraryInputProfile\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?multimix_local_user/,
   );
   assert.match(
     specSource,
-    /inputProfile === "explainer_saved_library_simple"\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?simple input must let the director choose/,
+    /savedLibraryInputProfile\s*&& expectedVideoType !== "presenter"[\s\S]{0,300}?saved-library input must let the director choose/,
   );
   assert.match(
     specSource,
@@ -443,18 +742,21 @@ test("retained production E2E checkpoints remote artifacts before cleanup and re
   );
 });
 
-test("demonstration E2E gives every selected clip an observable role without public fallback", () => {
-  const source = fs.readFileSync(productionSpecPath, "utf8");
+test("production video E2E can skip the remote checkpoint for a non-resumable acceptance run", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
 
-  assert.match(source, /过程基线用于开场输入/);
-  assert.match(source, /步骤迭代用于理解和组织/);
-  assert.match(source, /结果与图形增强只用于展示画面中已经存在的区域标签和 KITCHEN FLOW \/ 服务流程文字/);
-  assert.match(source, /不使用公共素材/);
-  assert.match(source, /不得使用“自动整理、自动标注、自动生成”/);
-  assert.match(source, /不声称素材由系统完成了组织/);
-  assert.match(source, /两个操作界面都不得由装修素材替代/);
-  assert.match(source, /只有涉及 MultiMix 产品能力、操作结果或效果的文字才必须由产品资料支持/);
-  assert.doesNotMatch(source, /每一步都必须使用批准的产品界面或忠于资料的事实证据/);
+  assert.match(
+    source,
+    /const retainRemoteCheckpoint = process\.env\.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false"/,
+  );
+  assert.match(
+    source,
+    /if \(retainRemoteCheckpoint\) \{\s*await checkpointRemoteArtifactWrites\(decisionAuditEnv\);\s*remoteCheckpointReady = true;\s*\}[\s\S]*?await cleanupRemoteArtifactWrites\(decisionAuditEnv\)/,
+  );
+  assert.match(
+    source,
+    /resumeSupported: retainRemoteCheckpoint && remoteCheckpointReady && localResumeReady/,
+  );
 });
 
 test("production video E2E reports durable director substage timings separately", () => {
@@ -468,26 +770,6 @@ test("production video E2E reports durable director substage timings separately"
   assert.match(runnerSource, /Director substage timings \(slowest first\)/);
   assert.match(runnerSource, /Director per-scene timings \(slowest first\)/);
   assert.match(runnerSource, /director_phase_/);
-});
-
-test("demonstration E2E requires distinct reviewed product captures for observable product operations", () => {
-  const source = fs.readFileSync(productionSpecPath, "utf8");
-
-  assert.match(source, /productPresentation/);
-  assert.match(source, /productSceneCount/);
-  assert.match(source, /工作区总览界面/);
-  assert.match(source, /分镜编辑或视频预览界面/);
-  assert.match(source, /reviewed product operation scenes/);
-  assert.match(source, /distinct reviewed product captures/);
-  assert.match(source, /catalog_entry_id/);
-  assert.doesNotMatch(
-    source,
-    /previousVisual\?\.source_type === "product_asset"[\s\S]*?continue;/,
-  );
-  assert.match(source, /assertDistinctPersistedPrimaryVisualWindows/);
-  assert.match(source, /trimStart/);
-  assert.match(source, /source windows must not overlap/);
-  assert.doesNotMatch(source, /every scene must use a distinct persisted main visual/);
 });
 
 test("production video E2E keeps project metrics separate from export preflight", () => {

@@ -1733,7 +1733,7 @@ button:disabled {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 30px 30px minmax(0, 1fr) var(--shadcn-prototype-send-size);
+  grid-template-columns: 30px 30px 30px minmax(0, 1fr) var(--shadcn-prototype-send-size);
   column-gap: 4px;
   row-gap: 6px;
   min-height: 52px;
@@ -1774,7 +1774,7 @@ button:disabled {
 }
 
 .shadcn-prototype-composer-control textarea {
-  grid-column: 3;
+  grid-column: 4;
   height: 36px;
   min-height: 36px;
   max-height: 128px;
@@ -1814,7 +1814,7 @@ button:disabled {
 
 .shadcn-prototype-composer-control > button.primary {
   position: static;
-  grid-column: 4;
+  grid-column: 5;
   justify-self: end;
   width: var(--shadcn-prototype-send-size);
   height: var(--shadcn-prototype-send-size);
@@ -1890,8 +1890,12 @@ button:disabled {
   grid-column: 1;
 }
 
-.shadcn-prototype-chat-file-attachment-button {
+.shadcn-prototype-chat-video-attachment-button {
   grid-column: 2;
+}
+
+.shadcn-prototype-chat-file-attachment-button {
+  grid-column: 3;
 }
 
 .shadcn-prototype-chat-attachment-button:hover:not(:disabled) {
@@ -2013,6 +2017,44 @@ button:disabled {
 .shadcn-prototype-chat-attachment-tray button:hover {
   background: #eae7e1;
   color: #201f1e;
+}
+
+.shadcn-prototype-long-form-prompt {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  border-radius: 11px;
+  background: #f8f6f3;
+  padding: 9px 10px;
+}
+
+.shadcn-prototype-long-form-prompt p {
+  margin: 0;
+  color: var(--sp-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.shadcn-prototype-long-form-prompt > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shadcn-prototype-long-form-prompt button {
+  min-height: 28px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--sp-subtle);
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-long-form-prompt button:hover {
+  border-color: rgba(124, 92, 255, 0.35);
+  color: var(--sp-accent);
 }
 
 .shadcn-prototype-chat-attachment-help {
@@ -8386,6 +8428,183 @@ label {
   display: grid;
   gap: 10px;
   padding: 13px 18px 15px;
+}
+
+.shadcn-prototype-confirm-visual-review,
+.shadcn-prototype-confirm-bgm {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--sp-border);
+  padding: 14px 18px 16px;
+}
+
+.shadcn-prototype-confirm-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.shadcn-prototype-confirm-section-head strong {
+  color: var(--sp-text);
+  font-size: 13px;
+}
+
+.shadcn-prototype-confirm-section-head span {
+  color: var(--sp-faint);
+  font-size: 11px;
+}
+
+.shadcn-prototype-confirm-preview-scenes {
+  display: grid;
+  gap: 12px;
+}
+
+.shadcn-prototype-confirm-preview-scenes > article {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.shadcn-prototype-confirm-preview-scenes > article > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sp-subtle);
+  font-size: 11.5px;
+}
+
+.shadcn-prototype-confirm-preview-scenes > article > header > span {
+  color: var(--sp-accent);
+  font-weight: 700;
+}
+
+.shadcn-prototype-confirm-preview-frames {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.shadcn-prototype-confirm-preview-frame {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.shadcn-prototype-confirm-preview-frame > strong,
+.shadcn-prototype-confirm-preview-frame > span,
+.shadcn-prototype-confirm-preview-frame > small {
+  overflow-wrap: anywhere;
+}
+
+.shadcn-prototype-confirm-preview-frame > strong {
+  color: var(--sp-text);
+  font-size: 11.5px;
+}
+
+.shadcn-prototype-confirm-preview-frame > span,
+.shadcn-prototype-confirm-preview-frame > small {
+  color: var(--sp-faint);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.shadcn-prototype-confirm-preview-canvas {
+  position: relative;
+  display: grid;
+  min-height: 86px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--sp-border);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(124, 92, 255, 0.07), rgba(0, 168, 142, 0.06)),
+    var(--sp-card);
+}
+
+.shadcn-prototype-confirm-preview-canvas[data-fidelity="schematic"] > span {
+  padding: 18px 12px;
+  color: var(--sp-subtle);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.shadcn-prototype-confirm-preview-canvas img {
+  width: 100%;
+  height: 100%;
+  min-height: 86px;
+  object-fit: cover;
+}
+
+.shadcn-prototype-confirm-preview-canvas em {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  color: var(--sp-accent);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(32, 31, 30, 0.1);
+}
+
+.shadcn-prototype-confirm-bgm-options {
+  display: grid;
+  gap: 7px;
+}
+
+.shadcn-prototype-confirm-bgm-options > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(132px, 38%);
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--sp-border);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: var(--sp-card);
+}
+
+.shadcn-prototype-confirm-bgm-options > label[data-selected="true"] {
+  border-color: color-mix(in srgb, var(--sp-accent) 45%, var(--sp-border));
+  background: var(--sp-accent-soft);
+}
+
+.shadcn-prototype-confirm-bgm-options > label > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.shadcn-prototype-confirm-bgm-options strong {
+  color: var(--sp-text);
+  font-size: 12px;
+}
+
+.shadcn-prototype-confirm-bgm-options small,
+.shadcn-prototype-confirm-bgm > p {
+  margin: 0;
+  color: var(--sp-faint);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.shadcn-prototype-confirm-bgm-options audio {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+}
+
+@media (max-width: 560px) {
+  .shadcn-prototype-confirm-bgm-options > label {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .shadcn-prototype-confirm-bgm-options audio {
+    grid-column: 2;
+  }
 }
 
 .shadcn-prototype-confirm-cleanup {

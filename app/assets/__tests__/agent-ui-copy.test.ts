@@ -19,6 +19,18 @@ it("keeps internal production names out of generated-scene user surfaces", () =>
   expect(userSurface).not.toMatch(/animated[-_ ]explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b|\bpipeline\b/i);
 });
 
+it("keeps current entry copy within the editable-video and image-plan promise", () => {
+  const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+  const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+  const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
+
+  expect(libraryWorkshop).toContain("生成图片方案");
+  expect(workspaceClient).toContain("生成图片方案");
+  expect(workspaceClient).not.toContain("做成图片。");
+  expect(conversationStart).toContain("封面方案");
+  expect(conversationStart).not.toContain("视频、文案还是封面。");
+});
+
 it("keeps V3 workspace UI as the only render path", () => {
   const sources = [
     "app/assets/components/conversation-studio.tsx",
@@ -1426,12 +1438,15 @@ describe("agent conversation UI copy", () => {
     const globals = readAssetFile("app/globals.css");
 
     expect(conversationStudio).toContain("shadcn-prototype-chat-image-attachment-button");
+    expect(conversationStudio).toContain("shadcn-prototype-chat-video-attachment-button");
     expect(conversationStudio).toContain("shadcn-prototype-chat-file-attachment-button");
     for (const composer of [conversationStudio, conversationStart]) {
       expect(composer).toContain("CHAT_IMAGE_UPLOAD_ACCEPT");
       expect(composer).toContain("CHAT_SOURCE_UPLOAD_ACCEPT");
+      expect(composer).toContain("CHAT_VIDEO_UPLOAD_ACCEPT");
       expect(composer).toContain("partitionChatAttachmentFiles");
       expect(composer).toContain('aria-label="上传图片素材"');
+      expect(composer).toContain('aria-label="上传视频素材"');
       expect(composer).not.toContain(".mp4,.mov,.webm,.mkv");
       expect(composer).not.toContain("上传图片或视频素材");
     }
@@ -1448,11 +1463,12 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
     expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
-    expect(conversationStudio).toContain("只上传资料时，我会先询问要基于它做什么");
+    expect(conversationStudio).toContain("添加视频后请先说明想怎么处理");
     expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
     expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
     expect(globals).toContain(".shadcn-prototype-chat-drop-hint");
+    expect(globals).toContain(".shadcn-prototype-chat-video-attachment-button");
     expect(globals).toContain(".shadcn-prototype-chat-file-attachment-button");
     expect(globals).toContain(".shadcn-prototype-chat-upload-progress");
   });
@@ -1471,7 +1487,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("新建视频项目");
     expect(conversationStart).toContain("选择一种创作方式，随后可在同一对话里持续补素材、改文案和生成视频");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
-    expect(conversationStart).toContain("支持拖入 PDF / 图片 · 视频请先上传到视频素材库");
+    expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
     expect(conversationStart).toContain("制作讲解型视频");
     expect(conversationStart).toContain("优化真人口播视频");

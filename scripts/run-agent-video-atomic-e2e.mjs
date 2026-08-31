@@ -11,7 +11,8 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
-import { createE2ERunLifecycle } from "./e2e-run-lifecycle.mjs";
+import { createE2ERunLifecycle, finalizeE2ERun } from "./e2e-run-lifecycle.mjs";
+import { createOfflineE2EEnv } from "./offline-e2e-env.mjs";
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
 const workspaceRoot = resolveWorkspaceRoot(frontendRoot);
@@ -45,6 +46,7 @@ const rqCommand = process.env.RQ_COMMAND ?? path.join(
   process.platform === "win32" ? "rq.exe" : "rq",
 );
 const redisServerCommand = process.env.REDIS_SERVER_COMMAND ?? "redis-server";
+const offlineEnv = createOfflineE2EEnv(process.env);
 const snapshots = snapshotFiles([
   path.join(frontendRoot, "next-env.d.ts"),
   path.join(frontendRoot, "tsconfig.json"),
@@ -528,7 +530,7 @@ try {
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const fakeProviderBaseUrl = `http://127.0.0.1:${fakeProviderPort}/v1`;
   backendEnv = {
-    ...process.env,
+    ...offlineEnv,
     MULTIMIX_ENV: "local",
     MULTIMIX_AUTH_PROVIDER: "local",
     MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
@@ -682,6 +684,8 @@ try {
     ...(redisPort ? [assertPortEventuallyFree(redisPort)] : []),
     ...(fakeProviderPort ? [assertPortEventuallyFree(fakeProviderPort)] : []),
   ]);
-  lifecycle.finish(runError ? "failed_retained" : "passed_pending_cleanup", { retainedForConfirmation: true });
-  console.log(`E2E runtime retained: ${lifecycle.runDir}. Confirm cleanup with npm run test:e2e:cleanup-run -- agent-video-atomic/${runId} --confirm`);
+  const finalization = finalizeE2ERun({ lifecycle, failed: Boolean(runError) });
+  if (finalization.retained) {
+    console.log(`Failed E2E runtime retained: ${lifecycle.runDir}. Clean with npm run e2e:cleanup -- agent-video-atomic/${runId} --confirm`);
+  } else console.log(`Passed E2E runtime cleaned: ${finalization.runDir}`);
 }

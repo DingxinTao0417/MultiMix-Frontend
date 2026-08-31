@@ -46,11 +46,12 @@ export default function LongFormCandidateSet({
     () => new Map(analysis.candidates.map((candidate) => [candidate.id, candidate])),
     [analysis.candidates],
   );
-  const topCandidates = analysis.top_candidate_ids
+  const recommendedCandidates = analysis.top_candidate_ids
     .map((id) => candidatesById.get(id))
-    .filter((item): item is LongFormCandidate => Boolean(item?.grounded))
-    .slice(0, 5);
-  const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(topCandidates[0]?.id ?? null);
+    .filter((item): item is LongFormCandidate => Boolean(item?.grounded));
+  const [previewCandidateId, setPreviewCandidateId] = useState<string | null>(
+    recommendedCandidates[0]?.id ?? null,
+  );
   const previewCandidate = previewCandidateId ? candidatesById.get(previewCandidateId) : undefined;
 
   useEffect(() => {
@@ -66,8 +67,12 @@ export default function LongFormCandidateSet({
           <strong>{chapterCount ?? analysis.chapters.length} 个章节</strong>
         </div>
         <div>
-          <span>默认推荐</span>
-          <strong>{topCandidates.length} 条优先候选</strong>
+          <span>拆条建议</span>
+          <strong>
+            {recommendedCandidates.length
+              ? `找到 ${recommendedCandidates.length} 个值得发布的片段`
+              : "暂无合格片段"}
+          </strong>
         </div>
       </header>
 
@@ -118,9 +123,13 @@ export default function LongFormCandidateSet({
             </button>
           </div>
         </article>
-        {topCandidates.map((candidate, index) => (
+        {recommendedCandidates.length === 0 ? (
+          <article className={styles.card} role="status">
+            <p>暂未找到足够完整、可独立发布的片段</p>
+          </article>
+        ) : null}
+        {recommendedCandidates.map((candidate) => (
           <article key={candidate.id} className={styles.card}>
-            <div className={styles.rank}>Top {index + 1}</div>
             <div className={styles.cardTitle}>
               <h3>{candidate.title}</h3>
               {candidate.visual_completeness === "incomplete" ? <span>画面信息不完整</span> : null}

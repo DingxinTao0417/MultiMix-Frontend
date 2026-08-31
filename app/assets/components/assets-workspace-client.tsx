@@ -31,6 +31,7 @@ import {
   type AssetLlmDiagnosticsRead,
 } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
+import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
   assetWorkspaceAdapter,
   createLibraryCreationDraftConversation,
@@ -42,12 +43,14 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetLongFormAction,
+  AssetPlanBgmCatalog,
   AssetPresenterDirectionConfirmation,
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetPresenterAudioSelectionConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
 } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
@@ -93,8 +96,11 @@ import {
   getLongFormCandidateContext,
   longFormAnalysisFromMetadata,
   type LongFormSourceAction,
-  type LongFormSourceReady,
 } from "../lib/long-form-client";
+import {
+  prepareLongFormComposerSource,
+  resolveLongFormAnalyzeAction,
+} from "../lib/long-form-composer-source";
 import {
   mergeConversationContextAssets,
   type ConversationContextAsset,
@@ -168,7 +174,8 @@ type PendingConversationExchange = {
 };
 
 type ChatImageUpload = ChatImageAttachment & {
-  file: File;
+  file?: File;
+  sourceUrl?: string;
   idempotencyKey: string;
 };
 
@@ -588,6 +595,17 @@ export default function AssetsWorkspaceClient({
     hasToken: Boolean(token),
     connectionState: runtimeWriteConnectionState,
   }), [backendConfigured, runtimeWriteConnectionState, token]);
+  const handleLoadBgmCatalog = useCallback(async (assetId: number): Promise<AssetPlanBgmCatalog> => {
+    const catalog = await getProjectBGMCatalog(String(assetId), token);
+    return {
+      catalogVersion: catalog.catalog_version,
+      tracks: catalog.tracks.map((track) => ({
+        id: track.id,
+        title: track.title,
+        previewUrl: track.preview_url,
+      })),
+    };
+  }, [token]);
   const deletingConversationIdsRef = useRef(new Set<string>());
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
@@ -653,6 +671,7 @@ export default function AssetsWorkspaceClient({
   const [libraryTargetProjectId, setLibraryTargetProjectId] = useState<string | null>(null);
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
+  const longFormSourceControllersRef = useRef(new Map<string, AbortController>());
   const inFlightSourceAttachmentReconciliationsRef = useRef(new Set<string>());
   const inFlightLongFormCandidateContextsRef = useRef(new Set<number>());
   // Live per-asset video job status (public workflow state + error) fed by the
@@ -778,8 +797,13 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     workspaceMountedRef.current = true;
+    const sourceControllers = longFormSourceControllersRef.current;
     return () => {
       workspaceMountedRef.current = false;
+      for (const controller of sourceControllers.values()) {
+        controller.abort();
+      }
+      sourceControllers.clear();
     };
   }, []);
 
@@ -1803,30 +1827,34 @@ export default function AssetsWorkspaceClient({
     const linkedAsset = { id: row.assetId, title: row.title };
     const newConversation = assetWorkspaceAdapter.getNewConversation();
     if (intent === "long-form") {
+      if ((chatImageUploadsRef.current[newConversation.id] ?? []).some((item) => item.fileKind === "video")) {
+        toast.error("每次请只添加一个长视频来源。");
+        return;
+      }
+      const upload: ChatImageUpload = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        idempotencyKey: createUploadIdempotencyKey(),
+        fileName: row.title,
+        fileKind: "video",
+        title: row.title,
+        status: "ready",
+        uploadProgress: 100,
+        assetId: row.assetId,
+      };
+      setChatImageUploads((current) => ({
+        ...current,
+        [newConversation.id]: [...(current[newConversation.id] ?? []), upload],
+      }));
       setSelectedConversationId(newConversation.id);
       setActiveView("conversation");
-      try {
-        await handleSendConversationMessage(
-          newConversation,
-          `分析《${row.title}》，整理完整章节并给我最值得发布的 Top 5`,
-          undefined,
-          [],
-          undefined,
-          undefined,
-          undefined,
-          { kind: "analyze", sourceAssetId: row.assetId },
-        );
-        toast.success("已开始理解原片并整理拆条候选。");
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "发起长视频分析失败。");
-      }
+      toast.success("已加入对话，请先说明想怎么处理这段内容。");
       return;
     }
     const targetConversation = createLibraryCreationDraftConversation(newConversation);
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
       : intent === "regenerate-image"
-        ? `基于《${row.title}》做成图片。`
+        ? `基于《${row.title}》生成图片方案。`
         : `基于《${row.title}》做成文案。`;
     setConversationContextAssets((current) => ({
       ...current,
@@ -1851,8 +1879,14 @@ export default function AssetsWorkspaceClient({
     const currentUploads = chatImageUploads[targetConversationId] ?? [];
     const imageCount = files.filter((file) => chatAttachmentFileKind(file) === "image").length;
     const currentImageCount = currentUploads.filter((upload) => upload.fileKind === "image").length;
+    const videoCount = files.filter((file) => chatAttachmentFileKind(file) === "video").length;
+    const currentVideoCount = currentUploads.filter((upload) => upload.fileKind === "video").length;
     if (currentImageCount + imageCount > 20) {
       toast.error("上传图片不能超过 20 张。");
+      return;
+    }
+    if (currentVideoCount + videoCount > 1) {
+      toast.error("每次请只添加一个长视频来源。");
       return;
     }
     if (currentUploads.length + files.length > 24) {
@@ -1930,25 +1964,47 @@ export default function AssetsWorkspaceClient({
 
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
+    const controller = new AbortController();
+    if (upload.fileKind === "video") {
+      longFormSourceControllersRef.current.set(upload.id, controller);
+    }
     try {
-      const asset = await assetWorkspaceAdapter.uploadAsset(
-        token,
-        upload.file,
-        upload.fileKind === "source" ? "assets" : upload.fileKind,
-        (uploadProgress) => {
-          setChatImageUploads((current) => ({
-            ...current,
-            [conversationId]: (current[conversationId] ?? []).map((item) => (
-              item.id === upload.id ? { ...item, uploadProgress } : item
-            ))
-          }));
-        },
-        upload.idempotencyKey,
-      );
+      const onProgress = (uploadProgress: number | null) => {
+        setChatImageUploads((current) => ({
+          ...current,
+          [conversationId]: (current[conversationId] ?? []).map((item) => (
+            item.id === upload.id ? { ...item, uploadProgress } : item
+          ))
+        }));
+      };
+      let asset;
+      if (upload.fileKind === "video") {
+        const input = upload.sourceUrl
+          ? { kind: "url" as const, url: upload.sourceUrl }
+          : upload.file
+            ? { kind: "file" as const, file: upload.file }
+            : null;
+        if (!input) throw new Error("没有可上传的视频来源。");
+        asset = await prepareLongFormComposerSource({
+          token,
+          input,
+          signal: controller.signal,
+          onProgress,
+        });
+      } else {
+        if (!upload.file) throw new Error("没有可上传的资料。");
+        asset = await assetWorkspaceAdapter.uploadAsset(
+          token,
+          upload.file,
+          upload.fileKind === "source" ? "assets" : upload.fileKind,
+          onProgress,
+          upload.idempotencyKey,
+        );
+      }
       const acceptedUpload: Pick<ChatImageAttachment, "assetId" | "fileKind" | "status"> = {
         assetId: asset.id,
         fileKind: upload.fileKind,
-        status: asset.status === "ready" ? "ready" : "processing",
+        status: upload.fileKind === "video" || !("status" in asset) || asset.status === "ready" ? "ready" : "processing",
       };
       setChatImageUploads((current) => ({
         ...current,
@@ -1958,7 +2014,7 @@ export default function AssetsWorkspaceClient({
               ...item,
               assetId: asset.id,
               title: asset.title || item.fileName,
-              status: asset.status === "ready" ? "ready" : "processing",
+              status: acceptedUpload.status,
               uploadProgress: 100,
               error: undefined
             }
@@ -1970,6 +2026,7 @@ export default function AssetsWorkspaceClient({
       }
       setLibraryRefreshKey((value) => value + 1);
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
       reportRuntimeWriteFailure(error);
       const msg = error instanceof Error ? error.message : "资料上传失败。";
       setChatImageUploads((current) => ({
@@ -1978,6 +2035,10 @@ export default function AssetsWorkspaceClient({
           item.id === upload.id ? { ...item, status: "failed", error: msg } : item
         )
       }));
+    } finally {
+      if (upload.fileKind === "video") {
+        longFormSourceControllersRef.current.delete(upload.id);
+      }
     }
   };
 
@@ -1992,6 +2053,8 @@ export default function AssetsWorkspaceClient({
   }, [chatImageUploads, token, waitForUploadedSourceReady]);
 
   const handleRemoveChatImage = (attachmentId: string) => {
+    longFormSourceControllersRef.current.get(attachmentId)?.abort();
+    longFormSourceControllersRef.current.delete(attachmentId);
     setChatImageUploads((current) => ({
       ...current,
       [selectedConversation.id]: (current[selectedConversation.id] ?? []).filter((item) => item.id !== attachmentId)
@@ -2009,6 +2072,35 @@ export default function AssetsWorkspaceClient({
     }));
     void uploadChatImage(selectedConversation.id, upload);
   };
+
+  const handleImportVideoUrl = useStableCallback((sourceUrl: string) => {
+    if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      toast.error("请先登录并配置后端后再添加视频链接。");
+      return;
+    }
+    const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
+    if ((chatImageUploadsRef.current[targetConversationId] ?? []).some((item) => item.fileKind === "video")) {
+      toast.error("每次请只添加一个长视频来源。");
+      return;
+    }
+    const upload: ChatImageUpload = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      idempotencyKey: createUploadIdempotencyKey(),
+      sourceUrl,
+      fileName: "网络视频链接",
+      fileKind: "video",
+      title: "网络视频",
+      status: "uploading",
+      uploadProgress: null,
+    };
+    setChatImageUploads((current) => ({
+      ...current,
+      [targetConversationId]: [...(current[targetConversationId] ?? []), upload],
+    }));
+    setSelectedConversationId(targetConversationId);
+    setActiveView("conversation");
+    void uploadChatImage(targetConversationId, upload);
+  });
 
   const materialPackageAsset = async (conversationId: string): Promise<ConversationContextAsset | null> => {
     if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) return null;
@@ -2045,6 +2137,7 @@ export default function AssetsWorkspaceClient({
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
+    videoProjectConfirmation?: AssetVideoProjectConfirmation,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2052,7 +2145,11 @@ export default function AssetsWorkspaceClient({
     if (!runtimeWriteCapabilities.canGenerate || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
-    const selectedBackendAssetId = longFormAction?.kind === "analyze"
+    const effectiveLongFormAction = longFormAction ?? resolveLongFormAnalyzeAction(
+      chatImageUploads[conversation.id] ?? [],
+      instruction,
+    );
+    const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
       ? undefined
       : confirmationProductId ?? selectedProduct?.backendAssetId;
     let assetsForSend = linkedAssets;
@@ -2111,8 +2208,9 @@ export default function AssetsWorkspaceClient({
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
+        videoProjectConfirmation,
         agentConfirmationId,
-        longFormAction,
+        longFormAction: effectiveLongFormAction,
         videoSceneReplacement,
         presenterDirectionConfirmation,
         presenterDirectionRequest,
@@ -2268,19 +2366,6 @@ export default function AssetsWorkspaceClient({
     } catch (error) {
       toast.error(formatComposerError(error));
     }
-  });
-
-  const handleLongFormSourceReady = useStableCallback(async (source: LongFormSourceReady) => {
-    await handleSendConversationMessage(
-      selectedConversation,
-      `分析《${source.title}》，整理完整章节并给我最值得发布的 Top 5`,
-      undefined,
-      [],
-      undefined,
-      undefined,
-      undefined,
-      { kind: "analyze", sourceAssetId: source.id },
-    );
   });
 
   const handleUploadClick = () => {
@@ -2761,10 +2846,10 @@ export default function AssetsWorkspaceClient({
               onUploadImages={handleChatImageUpload}
               onRemoveImageAttachment={handleRemoveChatImage}
               onRetryImageAttachment={handleRetryChatImage}
+              onImportVideoUrl={handleImportVideoUrl}
               onSend={handleSendConversationMessage}
               token={token}
               onOpenImageLibrary={() => setActiveView("image")}
-              onLongFormSourceReady={handleLongFormSourceReady}
               writeCapabilities={runtimeWriteCapabilities}
               onRetryWriteAvailability={handleRetryWriteAvailability}
             />
@@ -2780,6 +2865,7 @@ export default function AssetsWorkspaceClient({
                 onUploadImages={handleChatImageUpload}
                 onRemoveImageAttachment={handleRemoveChatImage}
                 onRetryImageAttachment={handleRetryChatImage}
+                onImportVideoUrl={handleImportVideoUrl}
                 pendingExchange={pendingConversationExchanges[selectedConversation.id] ?? null}
                 onPendingExchangeChange={(conversationId, exchange) => {
                   setPendingConversationExchanges((current) => {
@@ -2807,6 +2893,7 @@ export default function AssetsWorkspaceClient({
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
+                onLoadBgmCatalog={handleLoadBgmCatalog}
               />
               <div
                 className="shadcn-prototype-resize-handle"

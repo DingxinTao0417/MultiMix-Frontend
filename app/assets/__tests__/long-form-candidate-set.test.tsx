@@ -49,7 +49,7 @@ const analysis = {
 };
 
 describe("long-form candidate set", () => {
-  it("shows the real chapter and Top count without padding", () => {
+  it("shows the real chapter and recommendation count without ranking language", () => {
     render(
       <LongFormCandidateSet
         analysisAssetId={92}
@@ -58,10 +58,43 @@ describe("long-form candidate set", () => {
     );
 
     expect(screen.getByText("2 个章节")).toBeInTheDocument();
-    expect(screen.getByText("2 条优先候选")).toBeInTheDocument();
+    expect(screen.getByText("找到 2 个值得发布的片段")).toBeInTheDocument();
+    expect(screen.queryByText(/推荐\s*\d+/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "别只看收入" })).toBeInTheDocument();
     expect(screen.getByText("画面信息不完整")).toBeInTheDocument();
     expect(screen.queryByText("候选 3")).not.toBeInTheDocument();
+  });
+
+  it("renders every recommended candidate instead of truncating at five", () => {
+    const expandedCandidates = Array.from({ length: 6 }, (_, index) => ({
+      ...analysis.candidates[0],
+      id: `cand_${String(index + 1).padStart(2, "0")}`,
+      title: `片段 ${index + 1}`,
+    }));
+    const expandedAnalysis = {
+      ...analysis,
+      top_candidate_ids: expandedCandidates.map((candidate) => candidate.id),
+      candidates: expandedCandidates,
+    };
+
+    render(<LongFormCandidateSet analysisAssetId={92} analysis={expandedAnalysis} />);
+
+    expect(screen.getByText("找到 6 个值得发布的片段")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "片段 6" })).toBeInTheDocument();
+    expect(screen.queryByText(/推荐\s*\d+/)).not.toBeInTheDocument();
+  });
+
+  it("shows an honest empty state when the agent finds no publishable segment", () => {
+    render(
+      <LongFormCandidateSet
+        analysisAssetId={92}
+        analysis={{ ...analysis, top_candidate_ids: [], candidates: [] }}
+      />,
+    );
+
+    expect(screen.getByText("暂无合格片段")).toBeInTheDocument();
+    expect(screen.getByText("暂未找到足够完整、可独立发布的片段")).toBeInTheDocument();
+    expect(screen.queryByText(/推荐\s*\d+/)).not.toBeInTheDocument();
   });
 
   it("sends conservative cleanup directly for the default short-video choice", () => {

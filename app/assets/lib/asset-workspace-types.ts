@@ -225,6 +225,12 @@ export type AssetVideoParameterConfirmation = {
   aiVoiceEnabled?: boolean;
 };
 
+export type AssetVideoProjectConfirmation = {
+  catalogVersion: string;
+  enabled: boolean;
+  catalogId?: string;
+};
+
 export type AssetLongFormAction =
   | { kind: "analyze"; sourceAssetId: number }
   | { kind: "revise"; analysisAssetId: number }
@@ -248,6 +254,51 @@ export type AssetPlanConfirmationValues = {
   audioFingerprint?: string;
   transcriptHash?: string;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+  bgmCatalogId?: string;
+  bgmCatalogVersion?: string;
+  bgmEnabled?: boolean;
+};
+
+export type AssetVisualPreviewFrame = {
+  frameId: string;
+  timeRole: "opening" | "change" | "closing";
+  label: string;
+  visualState: string;
+  previewKind: "exact_asset" | "public_candidate" | "generation_intent";
+  fidelity: "exact" | "candidate" | "schematic";
+  sourceStatus: string;
+  previewUrl?: string;
+  sourceAssetId?: number;
+  limitation: string;
+};
+
+export type AssetVisualPreviewScene = {
+  sceneId: string;
+  sceneIndex: number;
+  title: string;
+  frames: AssetVisualPreviewFrame[];
+};
+
+export type AssetVisualPreviewPlan = {
+  schemaVersion: "visual_preview_plan:v1";
+  sceneCount: number;
+  scenes: AssetVisualPreviewScene[];
+};
+
+export type AssetPlanBgmOption = {
+  id: string;
+  title: string;
+  reason: string;
+  selectionMode: "semantic_structured" | "stable_fallback";
+};
+
+export type AssetPlanBgmCatalog = {
+  catalogVersion: string;
+  tracks: Array<{
+    id: string;
+    title: string;
+    previewUrl: string;
+  }>;
 };
 
 export type AssetPlanSubtitleOption = {
@@ -323,6 +374,11 @@ export type AssetMessagePlan = {
   audioTrackDefault?: number;
   subtitleOptions?: AssetPlanSubtitleOption[];
   subtitleDefault?: "translated_zh" | "source" | "bilingual";
+  visualPreviews?: AssetVisualPreviewPlan;
+  bgmCatalogVersion?: string;
+  bgmOptions?: AssetPlanBgmOption[];
+  bgmDefault?: string;
+  bgmEnabledDefault?: boolean;
 };
 
 export type AssetPresenterCleanupItem = {

@@ -250,6 +250,38 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes the reviewed BGM choice as structured video project confirmation", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: true,
+        catalogId: "track-b",
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: true,
+        catalog_id: "track-b",
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认，生成视频工程",
+      videoProjectConfirmation: {
+        catalogVersion: "v1",
+        enabled: false,
+      },
+    })).toMatchObject({
+      video_project_confirmation: {
+        catalog_version: "v1",
+        enabled: false,
+      },
+    });
+  });
+
   it("serializes presenter direction as an explicit id instead of embedding it in prose", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
@@ -516,6 +548,29 @@ describe("runtime data boundary", () => {
     vi.unstubAllGlobals();
 
     expect(page.rows[0]?.previewUrl).toContain("/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png");
+  });
+
+  it("uses the shared completed delivery state for a generated image in the library", async () => {
+    const image = asset({
+      id: 74,
+      library_kind: "image",
+      asset_kind: "image",
+      content_type: "cover_image",
+      status: "ready",
+      generation_state: "image_ready",
+      product_status: "completed",
+      original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"b".repeat(64)}.png`,
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "image");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]?.statusLabel).toBe("完成");
+    expect(page.rows[0]?.meta).toContain("完成");
   });
 
   it("preserves the backend content type needed by long-form library actions", async () => {

@@ -11,6 +11,7 @@ import {
   stopChild,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
+import { createOfflineE2EEnv } from "./offline-e2e-env.mjs";
 
 
 const frontendRoot = path.resolve(import.meta.dirname, "..");
@@ -117,15 +118,7 @@ const workspaceFileSnapshots = snapshotWorkspaceFiles([
   path.join(frontendRoot, "next-env.d.ts"),
   path.join(frontendRoot, "tsconfig.json"),
 ]);
-const clearedExternalEnv = {
-  MULTIMIX_SUPABASE_URL: "",
-  MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
-  MULTIMIX_OPENAI_API_KEY: "",
-  OPENAI_API_KEY: "",
-  ELEVENLABS_API_KEY: "",
-  PEXELS_API_KEY: "",
-  PIXABAY_API_KEY: "",
-};
+const offlineEnv = createOfflineE2EEnv(process.env);
 
 let runError;
 try {
@@ -143,8 +136,7 @@ try {
 
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
   const backendEnv = {
-    ...process.env,
-    ...clearedExternalEnv,
+    ...offlineEnv,
     MULTIMIX_ENV: "local",
     MULTIMIX_AUTH_PROVIDER: "local",
     MULTIMIX_DATABASE_URL: databaseUrl,

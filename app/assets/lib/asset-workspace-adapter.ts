@@ -10,6 +10,7 @@ import type {
   AssetPresenterCleanupConfirmation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
+  AssetVideoProjectConfirmation,
   AssetWorkspaceData,
   AssetWorkspaceView,
   AssetWorkshop,
@@ -275,6 +276,7 @@ export function buildConversationMessagePayload({
   linkedAssetIds,
   clientRequestId,
   videoParameterConfirmation,
+  videoProjectConfirmation,
   agentConfirmationId,
   longFormAction,
   videoSceneReplacement,
@@ -290,6 +292,7 @@ export function buildConversationMessagePayload({
   linkedAssetIds?: number[];
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
+  videoProjectConfirmation?: AssetVideoProjectConfirmation;
   agentConfirmationId?: string;
   longFormAction?: AssetLongFormAction;
   videoSceneReplacement?: AssetVideoSceneReplacement;
@@ -367,6 +370,15 @@ export function buildConversationMessagePayload({
         target_seconds: videoParameterConfirmation.targetSeconds,
         ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
           ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
+          : {}),
+      },
+    } : {}),
+    ...(videoProjectConfirmation ? {
+      video_project_confirmation: {
+        catalog_version: videoProjectConfirmation.catalogVersion,
+        enabled: videoProjectConfirmation.enabled,
+        ...(videoProjectConfirmation.catalogId
+          ? { catalog_id: videoProjectConfirmation.catalogId }
           : {}),
       },
     } : {}),
@@ -511,6 +523,7 @@ export type AssetWorkspaceAdapter = {
     linkedAssetIds?: number[];
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
+    videoProjectConfirmation?: AssetVideoProjectConfirmation;
     agentConfirmationId?: string;
     longFormAction?: AssetLongFormAction;
     videoSceneReplacement?: AssetVideoSceneReplacement;
@@ -858,12 +871,13 @@ function statusLabel(status: string): string {
 }
 
 function videoProjectStatusLabel(asset: ContentAsset): string | null {
+  if (asset.product_status === "completed") return "完成";
+  if (asset.product_status === "failed") return "失败";
+  if (asset.product_status === "generating") return "生成中";
   if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") {
     return asset.status === "failed" ? "失败" : "完成";
   }
   if (asset.content_type === "video_project") {
-    if (asset.product_status === "completed") return "完成";
-    if (asset.product_status === "failed") return "失败";
     return "生成中";
   }
   return null;
@@ -1175,6 +1189,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       linkedAssetIds,
       clientRequestId,
       videoParameterConfirmation,
+      videoProjectConfirmation,
       agentConfirmationId,
       longFormAction,
       videoSceneReplacement,
@@ -1185,7 +1200,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       sourceSubtitleMode,
       signal,
     }) {
-      if (videoParameterConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1202,6 +1217,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           linkedAssetIds,
           clientRequestId,
           videoParameterConfirmation,
+          videoProjectConfirmation,
           agentConfirmationId,
           longFormAction,
           videoSceneReplacement,
