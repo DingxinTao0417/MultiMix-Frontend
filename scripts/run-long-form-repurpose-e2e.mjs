@@ -46,6 +46,7 @@ function run(command, args, options = {}) {
 const runId = crypto.randomUUID().replaceAll("-", "");
 const nextDistDir = `.next-long-form-e2e-${runId}`;
 const frontendLog = path.join(os.tmpdir(), `multimix-long-form-browser-${runId}.log`);
+const backendDatabase = path.join(os.tmpdir(), `multimix-long-form-e2e-${runId}.sqlite3`);
 const frontendSnapshots = ["next-env.d.ts", "tsconfig.json"].map((relativePath) => {
   const filePath = path.join(frontendRoot, relativePath);
   return {
@@ -56,7 +57,8 @@ const frontendSnapshots = ["next-env.d.ts", "tsconfig.json"].map((relativePath) 
 });
 const backendEnv = {
   ...process.env,
-  MULTIMIX_TEST_DATABASE_URL: `sqlite:///file:multimix-long-form-e2e-${runId}?mode=memory&cache=shared&uri=true`,
+  MULTIMIX_TEST_DATABASE_URL: "",
+  MULTIMIX_TEST_DATABASE_PATH: backendDatabase,
   MULTIMIX_SUPABASE_URL: "",
   MULTIMIX_SUPABASE_SERVICE_ROLE_KEY: "",
   MULTIMIX_S3_ENDPOINT_URL: "",
@@ -81,73 +83,81 @@ function restoreFrontendSnapshots() {
   }
 }
 
-await run(
-  python,
-  [
-    "-m",
-    "pytest",
-    "app/tests/test_source_clip_media_integration.py",
-    "app/tests/test_long_form_api.py",
-    "app/tests/test_long_form_conversation.py",
-    "app/tests/test_long_form_generation_job.py",
-    "app/tests/test_video_project_consistency.py",
-    "app/tests/test_video_project_confirmation.py",
-    "-q",
-  ],
-  { cwd: backendRoot, env: backendEnv },
-);
+function cleanupBackendDatabase() {
+  for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+    fs.rmSync(`${backendDatabase}${suffix}`, { force: true });
+  }
+}
 
-await run(python, ["-m", "ruff", "check", "app", "vision_service"], {
-  cwd: backendRoot,
-  env: backendEnv,
-});
-
-await run(
-  npmCommand,
-  [
-    ...npmPrefixArgs,
-    "test",
-    "--",
-    "--run",
-    "app/assets/__tests__/long-form-entry.test.tsx",
-    "app/assets/__tests__/long-form-library-entry.test.tsx",
-    "app/assets/__tests__/long-form-candidate-set.test.tsx",
-    "app/assets/__tests__/long-form-client.test.ts",
-    "app/assets/__tests__/chat-attachment-policy.test.ts",
-    "app/assets/__tests__/asset-workspace-adapter.test.ts",
-  ],
-  { cwd: frontendRoot, env: process.env },
-);
-
-await run(npmCommand, [...npmPrefixArgs, "run", "typecheck"], { cwd: frontendRoot, env: process.env });
-await run(npmCommand, [...npmPrefixArgs, "run", "lint"], { cwd: frontendRoot, env: process.env });
-await run(npmCommand, [...npmPrefixArgs, "run", "check:video-preview-contract"], {
-  cwd: frontendRoot,
-  env: process.env,
-});
-await run(npmCommand, [...npmPrefixArgs, "run", "test:product-stage-style"], {
-  cwd: frontendRoot,
-  env: process.env,
-});
-
-const frontendPort = await findFreePort();
-if ([3117, 3200].includes(frontendPort)) throw new Error("Browser E2E selected a protected development port");
-const frontendEnv = {
-  ...process.env,
-  NEXT_DEV_DIST_DIR: nextDistDir,
-  NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:9",
-  NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local",
-  NEXT_PUBLIC_SUPABASE_URL: "",
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
-};
-const started = startLogged(
-  npmCommand,
-  [...npmPrefixArgs, "run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
-  { cwd: frontendRoot, env: frontendEnv, logPath: frontendLog },
-);
+let started;
 try {
+  await run(
+    python,
+    [
+      "-m",
+      "pytest",
+      "app/tests/test_source_clip_media_integration.py",
+      "app/tests/test_long_form_api.py",
+      "app/tests/test_long_form_conversation.py",
+      "app/tests/test_long_form_generation_job.py",
+      "app/tests/test_video_project_consistency.py",
+      "app/tests/test_video_project_confirmation.py",
+      "-q",
+    ],
+    { cwd: backendRoot, env: backendEnv },
+  );
+
+  await run(python, ["-m", "ruff", "check", "app", "vision_service"], {
+    cwd: backendRoot,
+    env: backendEnv,
+  });
+
+  await run(
+    npmCommand,
+    [
+      ...npmPrefixArgs,
+      "test",
+      "--",
+      "--run",
+      "app/assets/__tests__/long-form-entry.test.tsx",
+      "app/assets/__tests__/long-form-library-entry.test.tsx",
+      "app/assets/__tests__/long-form-candidate-set.test.tsx",
+      "app/assets/__tests__/long-form-client.test.ts",
+      "app/assets/__tests__/chat-attachment-policy.test.ts",
+      "app/assets/__tests__/asset-workspace-adapter.test.ts",
+    ],
+    { cwd: frontendRoot, env: process.env },
+  );
+
+  await run(npmCommand, [...npmPrefixArgs, "run", "typecheck"], { cwd: frontendRoot, env: process.env });
+  await run(npmCommand, [...npmPrefixArgs, "run", "lint"], { cwd: frontendRoot, env: process.env });
+  await run(npmCommand, [...npmPrefixArgs, "run", "check:video-preview-contract"], {
+    cwd: frontendRoot,
+    env: process.env,
+  });
+  await run(npmCommand, [...npmPrefixArgs, "run", "test:product-stage-style"], {
+    cwd: frontendRoot,
+    env: process.env,
+  });
+
+  const frontendPort = await findFreePort();
+  if ([3117, 3200].includes(frontendPort)) throw new Error("Browser E2E selected a protected development port");
+  const frontendEnv = {
+    ...process.env,
+    NEXT_DEV_DIST_DIR: nextDistDir,
+    NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:9",
+    NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "local",
+    NEXT_PUBLIC_SUPABASE_URL: "",
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "",
+  };
+  started = startLogged(
+    npmCommand,
+    [...npmPrefixArgs, "run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+    { cwd: frontendRoot, env: frontendEnv, logPath: frontendLog },
+  );
   console.log(`Long-form browser E2E frontend port: ${frontendPort}`);
-  console.log("No browser E2E database is created; API calls use Playwright route fixtures.");
+  console.log(`Backend pytest database: ${backendDatabase}`);
+  console.log("Browser API calls use Playwright route fixtures.");
   await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, started.child, 180_000);
   await run(
     npmCommand,
@@ -165,11 +175,14 @@ try {
   if (fs.existsSync(frontendLog)) process.stderr.write(fs.readFileSync(frontendLog, "utf8"));
   throw error;
 } finally {
-  await stopChild(started.child);
-  started.log.end();
+  if (started) {
+    await stopChild(started.child);
+    started.log.end();
+  }
   fs.rmSync(path.join(frontendRoot, nextDistDir), { recursive: true, force: true });
   fs.rmSync(path.join(os.tmpdir(), `multimix-long-form-playwright-${runId}`), { recursive: true, force: true });
   fs.rmSync(frontendLog, { force: true });
+  cleanupBackendDatabase();
   restoreFrontendSnapshots();
 }
 
