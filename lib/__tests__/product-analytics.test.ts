@@ -15,9 +15,9 @@ describe("product analytics", () => {
   });
 
   it("drops unknown properties before sending", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
-      new Response(null, { status: 201 })
-    ));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 201 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await trackProductEvent("token", {
@@ -35,9 +35,9 @@ describe("product analytics", () => {
   });
 
   it("does not send unknown events or requests without a token", async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
-      new Response(null, { status: 201 })
-    ));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 201 }),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await trackProductEvent(null, { eventName: "workspace_opened" });
