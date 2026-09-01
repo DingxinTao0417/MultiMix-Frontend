@@ -47,7 +47,7 @@ describe("video library creation actions", () => {
     expect(onUseAsset).toHaveBeenCalledWith(row, "video");
   });
 
-  it("can add a saved video to the current conversation", async () => {
+  it("can start adding a saved video to a project", async () => {
     const onAddAssetToConversation = vi.fn();
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
     vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [row], nextOffset: null });
@@ -61,7 +61,7 @@ describe("video library creation actions", () => {
     );
 
     const dialog = await openVideoDetails();
-    fireEvent.click(within(dialog).getByRole("button", { name: "加入对话" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "加入项目…" }));
 
     expect(onAddAssetToConversation).toHaveBeenCalledWith(row);
   });

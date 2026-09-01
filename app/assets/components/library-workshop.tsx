@@ -298,6 +298,8 @@ function LibraryWorkshop({
   uploading = false,
   onUseAsset,
   onAddAssetToConversation,
+  targetProjectTitle,
+  onExitProjectTarget,
   refreshRevision = 0,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
@@ -309,6 +311,8 @@ function LibraryWorkshop({
   uploading?: boolean;
   onUseAsset?: (row: LibraryRow, intent: LibraryActionIntent) => Promise<void>;
   onAddAssetToConversation?: (row: LibraryRow) => void;
+  targetProjectTitle?: string | null;
+  onExitProjectTarget?: () => void;
   refreshRevision?: number;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
@@ -718,6 +722,12 @@ function LibraryWorkshop({
   return (
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
       <div className="shadcn-prototype-workshop-body">
+        {targetProjectTitle ? (
+          <div className="shadcn-prototype-library-project-target" role="status">
+            <span>正在为项目「{targetProjectTitle}」添加素材</span>
+            <button type="button" onClick={onExitProjectTarget}>完成</button>
+          </div>
+        ) : null}
         <div className="shadcn-prototype-library-toolbar">
           <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
             {FILTERS[view].map((filter) => (
@@ -1122,7 +1132,7 @@ function LibraryWorkshop({
               ) : view === "image" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
                   {isReparsableMedia(selectedRow) ? (
                     <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
@@ -1133,7 +1143,7 @@ function LibraryWorkshop({
               ) : view === "video" ? (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
                   {selectedRow.contentTypeCode === "long_form_video_source" ? (
                     <button
                       type="button"
@@ -1162,7 +1172,7 @@ function LibraryWorkshop({
               ) : (
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入对话</button>
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
                   <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
                   {selectedRow.statusLabel === "解析失败" ? (

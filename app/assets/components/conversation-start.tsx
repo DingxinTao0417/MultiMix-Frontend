@@ -28,19 +28,21 @@ const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "图片会作为画面素材，PDF/文档会作为内容依据；添加视频后请先说明想怎么处理。";
 
-// Demo-final suggestion cards carry a hint line and a richer fill utterance;
-// unknown labels degrade to a title-only card (no invented copy).
+// Primary task cards fill a bounded user intent. Unknown labels degrade to a
+// title-only card so the client never invents a creation instruction.
 const SUGGESTION_PRESETS: Record<string, { hint?: string; fill?: string }> = {
-  "用已有素材生成短视频": { hint: "AI 自动编导并匹配画面", fill: "用我已有的素材生成一条可编辑的短视频" },
-  "用图片和视频做成片": { hint: "优先使用你的真实素材", fill: "用我已有的图片和视频生成一条 9:16 的 30 秒短视频" },
-  "把文档做成短视频": { hint: "关键内容保留来源", fill: "把我上传的文档做成一条可编辑的短视频，关键内容保留来源" },
-  "继续修改已有视频": { hint: "换画面、改文案或调整分镜", fill: "继续修改我已有的视频，先让我选择要修改的版本" }
+  "制作讲解型视频": {
+    hint: "把概念、过程或结果讲清楚",
+    fill: "制作一条讲解型视频，先根据我的素材和目标确认比例、时长与配音。",
+  },
+  "优化真人口播视频": {
+    hint: "保留原声，优化节奏和画面包装",
+    fill: "优化一条真人口播视频，保留原声；我会上传需要处理的口播视频。",
+  },
 };
 const SUGGESTION_EVENT_KEYS: Record<string, string> = {
-  "用已有素材生成短视频": "saved-assets-video",
-  "用图片和视频做成片": "images-and-video",
-  "把文档做成短视频": "document-to-video",
-  "继续修改已有视频": "continue-editing-video",
+  "制作讲解型视频": "explainer-video",
+  "优化真人口播视频": "presenter-video",
 };
 
 function suggestionIcon(label: string): ReactNode {
@@ -232,8 +234,8 @@ export default function ConversationStart({
     >
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
-        <h1>今天想做什么短视频？</h1>
-        <p className="shadcn-prototype-start-sub">上传素材，说出需求，生成可编辑的短视频</p>
+        <h1>新建视频项目</h1>
+        <p className="shadcn-prototype-start-sub">选择一种创作方式，随后可在同一对话里持续补素材、改文案和生成视频</p>
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">

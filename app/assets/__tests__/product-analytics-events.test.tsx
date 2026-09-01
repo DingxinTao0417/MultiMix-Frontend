@@ -28,7 +28,7 @@ describe("product analytics event points", () => {
     const product = displayProducts["case-02-saved-asset-match"];
     render(
       <ConversationStart
-        suggestions={["用已有素材生成短视频"]}
+        suggestions={["制作讲解型视频"]}
         conversation={conversationForDisplayProduct(product)}
         token="token"
       />,
@@ -39,14 +39,14 @@ describe("product analytics event points", () => {
       sessionId: "test-session",
       properties: { entry_surface: "new_conversation" },
     }));
-    fireEvent.click(screen.getByRole("button", { name: /用已有素材生成短视频/ }));
+    fireEvent.click(screen.getByRole("button", { name: /制作讲解型视频/ }));
 
     expect(trackProductEvent).toHaveBeenCalledWith("token", {
       eventName: "recommendation_selected",
-      properties: { recommendation_key: "saved-assets-video" },
+      properties: { recommendation_key: "explainer-video" },
     });
     expect(JSON.stringify(vi.mocked(trackProductEvent).mock.calls)).not.toContain(
-      "用我已有的素材生成一条可编辑的短视频",
+      "制作一条讲解型视频，先根据我的素材和目标确认比例、时长与配音。",
     );
   });
 

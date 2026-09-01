@@ -19,6 +19,7 @@ const summary = {
   id: "asset-conversation-480",
   title: "MultiMix 产品介绍短视频",
   status: "active",
+  project_state: { code: "ready" as const },
   metadata: { video_workflow_stage: "video_project_ready" },
   created_at: "2026-07-12T08:00:00Z",
   updated_at: "2026-07-12T09:00:00Z",
@@ -45,9 +46,27 @@ describe("conversation summary cache", () => {
 
   it("ignores and removes malformed cache entries", () => {
     const storage = memoryStorage();
-    storage.setItem("multimix:conversation-summaries:v1:first%40example.com", "not-json");
+    storage.setItem("multimix:conversation-summaries:v2:first%40example.com", "not-json");
 
     expect(readConversationSummaryCache(storage, "first@example.com", 2_000)).toEqual([]);
-    expect(storage.getItem("multimix:conversation-summaries:v1:first%40example.com")).toBeNull();
+    expect(storage.getItem("multimix:conversation-summaries:v2:first%40example.com")).toBeNull();
+  });
+
+  it("drops cached rows that predate the server-owned project state", () => {
+    const storage = memoryStorage();
+    storage.setItem("multimix:conversation-summaries:v2:first%40example.com", JSON.stringify({
+      savedAt: 1_000,
+      summaries: [{
+        id: "asset-conversation-legacy",
+        title: "旧缓存项目",
+        status: "active",
+        metadata: {},
+        created_at: "2026-07-12T08:00:00Z",
+        updated_at: "2026-07-12T09:00:00Z",
+      }],
+    }));
+
+    expect(readConversationSummaryCache(storage, "first@example.com", 2_000)).toEqual([]);
+    expect(storage.getItem("multimix:conversation-summaries:v2:first%40example.com")).toBeNull();
   });
 });

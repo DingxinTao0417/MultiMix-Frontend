@@ -20,7 +20,16 @@ import {
   Trash2,
   Video
 } from "lucide-react";
-import { API_CONNECTION_ERROR, formatComposerError, getAssetLlmDiagnostics, MESSAGE_NOT_SUBMITTED_ERROR, type AssetLlmDiagnosticsRead } from "../../../lib/api";
+import {
+  API_CONNECTION_ERROR,
+  addProjectSource,
+  formatComposerError,
+  getAssetLlmDiagnostics,
+  getProjectResources,
+  MESSAGE_NOT_SUBMITTED_ERROR,
+  removeProjectSource,
+  type AssetLlmDiagnosticsRead,
+} from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
@@ -33,6 +42,7 @@ import {
 import type {
   AgentActionRunResponse,
   AgentRunStep,
+  AssetCreativeDirectionSelection,
   AssetLongFormAction,
   AssetPlanBgmCatalog,
   AssetPresenterDirectionConfirmation,
@@ -58,6 +68,12 @@ import ConversationStart from "./conversation-start";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
 import type { LibraryActionIntent } from "./library-workshop";
+import ProjectResourcesDrawer, {
+  type ProjectResourceItem,
+  type ProjectResourceKind,
+  type ProjectResourceScope,
+} from "./project-resources-drawer";
+import ProjectTargetPicker from "./project-target-picker";
 import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "./library-workspace-state";
 import {
   readConversationSummaryCache,
@@ -109,6 +125,30 @@ const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false
 
 type SidebarState = "auto" | "collapsed" | "expanded";
 type ConversationLoadState = "unconfigured" | "loading" | "ready" | "error";
+const PROJECT_STATE_LABELS: Record<NonNullable<Conversation["projectState"]>, string> = {
+  needs_input: "待完善需求",
+  script_review: "编导稿待确认",
+  generating: "生成中",
+  ready: "可继续编辑",
+  needs_attention: "需要处理",
+};
+
+function projectStateLabel(state: Conversation["projectState"]): string {
+  return state ? PROJECT_STATE_LABELS[state] : "待完善需求";
+}
+
+function mergeProjectConversationDetail(
+  previous: Conversation | undefined,
+  next: Conversation,
+): Conversation {
+  if (!previous) return next;
+  return {
+    ...next,
+    projectState: next.projectState ?? previous.projectState,
+    projectResourceSummary:
+      next.projectResourceSummary ?? previous.projectResourceSummary,
+  };
+}
 type DiagnosticsState = {
   open: boolean;
   loading: boolean;
@@ -602,7 +642,9 @@ export default function AssetsWorkspaceClient({
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingConversationExchanges, setPendingConversationExchanges] = useState<Record<string, PendingConversationExchange>>({});
   const onAssetGenerationConversationRefreshed = useStableCallback((detail: Conversation) => {
-    setConversations((items) => items.map((item) => item.id === detail.id ? detail : item));
+    setConversations((items) => items.map((item) => (
+      item.id === detail.id ? mergeProjectConversationDetail(item, detail) : item
+    )));
   });
   const onAssetGenerationConversationRefreshError = useStableCallback(() => {
     toast.error("内容已生成，但对话刷新失败，请重新打开这条对话。");
@@ -626,6 +668,10 @@ export default function AssetsWorkspaceClient({
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
+  const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
+  const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
+  const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
+  const [libraryTargetProjectId, setLibraryTargetProjectId] = useState<string | null>(null);
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
   const longFormSourceControllersRef = useRef(new Map<string, AbortController>());
@@ -670,6 +716,24 @@ export default function AssetsWorkspaceClient({
   const selectedAssetGenerationJobs = assetGenerationJobsForConversation(selectedConversation.id)
     .map((live) => live.job);
   const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
+  const projectResourceSummary = selectedConversation.projectResourceSummary ?? {
+    sources: selectedConversation.projectResources?.sources.length ?? 0,
+    historicalSources: 0,
+    copies: selectedConversation.projectResources?.copies.length ?? 0,
+    covers: selectedConversation.projectResources?.covers.length ?? 0,
+    videos: selectedConversation.projectResources?.videos.length ?? 0,
+  };
+  const projectTargetOptions = visibleConversationRows
+    .filter((conversation) => conversation.id !== "new" && !conversation.readonly)
+    .map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      stateLabel: projectStateLabel(conversation.projectState),
+      updatedAt: conversation.updatedAt,
+    }));
+  const libraryTargetProjectTitle = libraryTargetProjectId
+    ? visibleConversationRows.find((conversation) => conversation.id === libraryTargetProjectId)?.title ?? null
+    : null;
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
@@ -899,11 +963,11 @@ export default function AssetsWorkspaceClient({
         setRuntimeWriteConnectionState("unavailable");
         if (conversationsRef.current.length) {
           setConversationLoadState("ready");
-          toast.error("无法刷新对话列表，正在显示上次记录。");
+          toast.error("无法刷新项目列表，正在显示上次记录。");
         } else {
           setConversations([]);
           setConversationLoadState("error");
-          toast.error("无法加载对话历史，请重新加载。");
+          toast.error("无法加载项目，请重新加载。");
         }
       });
     return () => {
@@ -933,7 +997,9 @@ export default function AssetsWorkspaceClient({
           if (existing?.detailsLoaded === true) return current;
           if (existing) {
             return current.map((conversation) => (
-              conversation.id === snapshot.id ? snapshot : conversation
+              conversation.id === snapshot.id
+                ? mergeProjectConversationDetail(conversation, snapshot)
+                : conversation
             ));
           }
           return [snapshot, ...current];
@@ -950,7 +1016,9 @@ export default function AssetsWorkspaceClient({
         setConversations((current) => {
           if (current.some((conversation) => conversation.id === detail.id)) {
             return current.map((conversation) => (
-              conversation.id === detail.id ? detail : conversation
+              conversation.id === detail.id
+                ? mergeProjectConversationDetail(conversation, detail)
+                : conversation
             ));
           }
           return [detail, ...current];
@@ -959,7 +1027,7 @@ export default function AssetsWorkspaceClient({
       .catch(() => {
         if (conversationDetailGenerationRef.current === generation) {
           setConversationDetailErrorId(selectedConversationId);
-          toast.error("无法加载这条对话的完整内容，请重试。");
+          toast.error("无法加载这个项目的完整内容，请重试。");
         }
       });
   }, [conversationDetailRetryRevision, selectedConversationId, selectedPersistedConversation, token]);
@@ -1030,7 +1098,9 @@ export default function AssetsWorkspaceClient({
             );
             if (cancelled) return;
             setConversations((items) => items.map((item) => (
-              item.id === detail.id ? detail : item
+              item.id === detail.id
+                ? mergeProjectConversationDetail(item, detail)
+                : item
             )));
             setSelectedProductIds((currentIds) => {
               if (
@@ -1667,7 +1737,7 @@ export default function AssetsWorkspaceClient({
 
   const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
     if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      toast.error("请先登录并配置后端后再恢复版本。");
+      toast.error("请先登录并配置后端后再基于历史版本继续。");
       return;
     }
     try {
@@ -1677,10 +1747,10 @@ export default function AssetsWorkspaceClient({
         ...current,
         [result.product.id]: result.product.version ?? result.diffSummary
       }));
-      toast.success(result.assistantMessage || "已恢复版本");
+      toast.success(result.assistantMessage || "已基于历史版本生成新版本");
     } catch (error) {
       reportRuntimeWriteFailure(error);
-      toast.error("恢复失败，请稍后重试。");
+      toast.error("基于历史版本继续失败，请稍后重试。");
     }
   };
 
@@ -1694,6 +1764,41 @@ export default function AssetsWorkspaceClient({
     router.replace(`${url.pathname}${url.search}${url.hash}`);
   };
 
+  const refreshProjectConversation = async (projectId: string) => {
+    if (!token) return;
+    const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, projectId);
+    setConversations((current) => current.map((conversation) => (
+      conversation.id === projectId
+        ? mergeProjectConversationDetail(conversation, refreshed)
+        : conversation
+    )));
+  };
+
+  const persistLibraryAssetToProject = async (row: LibraryRow, projectId: string) => {
+    if (!token || !row.assetId) return;
+    setSubmittingProjectId(projectId);
+    try {
+      await addProjectSource(token, projectId, row.assetId);
+      if (projectId === selectedConversation.id) {
+        setConversationContextAssets((current) => ({
+          ...current,
+          [projectId]: mergeConversationContextAssets(
+            current[projectId] ?? [],
+            [{ id: row.assetId!, title: row.title }],
+          ),
+        }));
+      }
+      await refreshProjectConversation(projectId);
+      setProjectTargetRow(null);
+      toast.success(`已加入项目，并立即保存。`);
+    } catch (error) {
+      reportRuntimeWriteFailure(error);
+      toast.error(error instanceof Error ? error.message : "加入项目失败，请重试。");
+    } finally {
+      setSubmittingProjectId(null);
+    }
+  };
+
   const handleAddAssetToConversation = (row: LibraryRow) => {
     if (!runtimeWriteCapabilities.canGenerate) {
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能发起创作。");
@@ -1703,17 +1808,15 @@ export default function AssetsWorkspaceClient({
       toast.error("这个条目还没有后端资产 ID。");
       return;
     }
-    const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
-    setConversationContextAssets((current) => ({
-      ...current,
-      [targetConversationId]: mergeConversationContextAssets(
-        current[targetConversationId] ?? [],
-        [{ id: row.assetId!, title: row.title }],
-      )
-    }));
-    setSelectedConversationId(targetConversationId);
-    setActiveView("conversation");
-    toast.success("已加入当前对话引用。");
+    if (!token) {
+      toast.error("当前未连接项目服务。");
+      return;
+    }
+    if (libraryTargetProjectId) {
+      void persistLibraryAssetToProject(row, libraryTargetProjectId);
+      return;
+    }
+    setProjectTargetRow(row);
   };
 
   const handleUseLibraryAsset = async (row: LibraryRow, intent: LibraryActionIntent) => {
@@ -2039,6 +2142,7 @@ export default function AssetsWorkspaceClient({
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
     videoProjectConfirmation?: AssetVideoProjectConfirmation,
+    creativeDirectionSelection?: AssetCreativeDirectionSelection,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2071,7 +2175,7 @@ export default function AssetsWorkspaceClient({
         ...baseConversation,
         id: optimisticConversationId,
         readonly: false,
-        title: instruction.slice(0, 36) || "新建对话",
+        title: instruction.slice(0, 36) || "新建项目",
         updatedAt: "刚刚",
         assetLabel: "生成中",
         status: "生成中",
@@ -2115,6 +2219,7 @@ export default function AssetsWorkspaceClient({
         videoSceneReplacement,
         presenterDirectionConfirmation,
         presenterDirectionRequest,
+        creativeDirectionSelection,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
@@ -2235,6 +2340,37 @@ export default function AssetsWorkspaceClient({
     setConversationLoadRevision((value) => value + 1);
   };
 
+  const handleApplyCreativeDirection = useStableCallback(async (
+    product: ProductArtifact,
+    selection: AssetCreativeDirectionSelection,
+  ) => {
+    const conversation = conversationsRef.current.find(
+      (item) => item.id === selectedConversationIdRef.current,
+    );
+    if (!conversation || !product.backendAssetId) {
+      throw new Error("当前编导稿已切换，请在最新版本中重新选择方向。");
+    }
+    await handleSendConversationMessage(
+      conversation,
+      "应用此方向",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      product.backendAssetId,
+      undefined,
+      undefined,
+      selection,
+    );
+  });
+
   const handleLongFormSelect = useStableCallback(async (action: LongFormSourceAction) => {
     const conversation = conversationsRef.current.find(
       (item) => item.id === selectedConversationIdRef.current,
@@ -2318,6 +2454,71 @@ export default function AssetsWorkspaceClient({
   const stableHandleUploadClick = useStableCallback(handleUploadClick);
   const stableHandleUseLibraryAsset = useStableCallback(handleUseLibraryAsset);
   const stableHandleAddAssetToConversation = useStableCallback(handleAddAssetToConversation);
+  const loadSelectedProjectResources = useCallback(async (
+    kind: ProjectResourceKind,
+    scope: ProjectResourceScope,
+    offset: number,
+    limit: number,
+  ) => {
+    if (!token || selectedConversation.id === "new") {
+      throw new Error("当前项目尚未保存。");
+    }
+    const page = await getProjectResources(
+      token,
+      selectedConversation.id,
+      kind,
+      scope,
+      offset,
+      limit,
+    );
+    return {
+      ...page,
+      items: page.items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        kind: item.kind,
+        membershipState: item.membership_state,
+        historicalReferenceCount: item.historical_reference_count,
+        status: item.status,
+        assetKind: item.asset_kind,
+        contentType: item.content_type,
+        sourceType: item.source_type,
+        updatedAt: item.updated_at,
+      })),
+    };
+  }, [selectedConversation.id, token]);
+
+  const changeSelectedProjectSource = async (assetId: number, action: "add" | "remove") => {
+    if (!token || selectedConversation.id === "new") return;
+    if (action === "add") {
+      await addProjectSource(token, selectedConversation.id, assetId);
+    } else {
+      await removeProjectSource(token, selectedConversation.id, assetId);
+      setConversationContextAssets((current) => ({
+        ...current,
+        [selectedConversation.id]: (current[selectedConversation.id] ?? []).filter((asset) => asset.id !== assetId),
+      }));
+    }
+    await refreshProjectConversation(selectedConversation.id);
+  };
+
+  const handleOpenProjectResource = (item: ProjectResourceItem) => {
+    if (item.kind === "source") {
+      setLibraryTargetProjectId(selectedConversation.id);
+      setActiveView(item.assetKind === "video" ? "video" : "image");
+    } else {
+      const product = (selectedConversation.products ?? []).find((candidate) => (
+        candidate.backendAssetId === item.id
+      ));
+      if (product) {
+        setSelectedProductIds((current) => ({
+          ...current,
+          [selectedConversation.id]: product.id,
+        }));
+      }
+    }
+    setProjectResourcesOpen(false);
+  };
 
   const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
 
@@ -2428,8 +2629,8 @@ export default function AssetsWorkspaceClient({
             <button
               className={activeView === "conversation" && selectedConversation.id === "new" ? "shadcn-prototype-collapsed-rail-button active accent" : "shadcn-prototype-collapsed-rail-button accent"}
               type="button"
-              aria-label="新建对话"
-              title="新建对话"
+              aria-label="新建项目"
+              title="新建项目"
               onClick={() => {
                 void handleStartConversation();
               }}
@@ -2490,7 +2691,7 @@ export default function AssetsWorkspaceClient({
           }}
         >
           <Plus size={15} aria-hidden="true" />
-          新建对话
+          新建项目
         </button>
 
         <nav className="shadcn-prototype-nav" aria-label="Primary">
@@ -2514,12 +2715,12 @@ export default function AssetsWorkspaceClient({
 
         <div className="shadcn-prototype-conversation-section">
           <div className="shadcn-prototype-section-title">
-            <span>对话列表</span>
+            <span>项目列表</span>
             {conversationLoadState === "ready" ? <em>{visibleConversationRows.length}</em> : null}
           </div>
           <div className="shadcn-prototype-conversation-list">
             {conversationLoadState === "loading" ? (
-              <div className="shadcn-prototype-conversation-state" role="status">正在加载你的对话…</div>
+              <div className="shadcn-prototype-conversation-state" role="status">正在加载你的项目…</div>
             ) : conversationLoadState === "unconfigured" ? (
               <div className="shadcn-prototype-conversation-state">
                 <strong>未连接后端</strong>
@@ -2527,14 +2728,14 @@ export default function AssetsWorkspaceClient({
               </div>
             ) : conversationLoadState === "error" ? (
               <div className="shadcn-prototype-conversation-state" role="alert">
-                <strong>对话加载失败</strong>
+                <strong>项目加载失败</strong>
                 <span>没有展示本地样例，避免与真实数据混淆。</span>
                 <button type="button" onClick={() => setConversationLoadRevision((value) => value + 1)}>重新加载</button>
               </div>
             ) : visibleConversationRows.length === 0 ? (
               <div className="shadcn-prototype-conversation-state">
-                <strong>还没有对话</strong>
-                <span>从“新建对话”开始第一次创作。</span>
+                <strong>还没有项目</strong>
+                <span>从“新建项目”开始第一次创作。</span>
               </div>
             ) : null}
             {visibleConversationRows.map((conversation) => (
@@ -2547,7 +2748,7 @@ export default function AssetsWorkspaceClient({
                     <input
                       autoFocus
                       className="shadcn-prototype-conversation-rename-input"
-                      aria-label="重命名对话"
+                      aria-label="重命名项目"
                       value={renameDraft}
                       onChange={(event) => setRenameDraft(event.currentTarget.value)}
                       onClick={(event) => event.stopPropagation()}
@@ -2576,6 +2777,9 @@ export default function AssetsWorkspaceClient({
                   >
                     <strong title={conversation.title}>{conversation.title}</strong>
                     <span>{conversation.updatedAt}</span>
+                    <small className={`shadcn-prototype-project-state ${conversation.projectState ?? "needs_input"}`}>
+                      {projectStateLabel(conversation.projectState)}
+                    </small>
                   </Link>
                 )}
                 <button
@@ -2598,7 +2802,7 @@ export default function AssetsWorkspaceClient({
                     </button>
                     <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleDeleteConversation(conversation.id)}>
                       <Trash2 size={13} aria-hidden="true" />
-                      删除对话
+                      删除项目
                     </button>
                   </div>
                 ) : null}
@@ -2719,7 +2923,8 @@ export default function AssetsWorkspaceClient({
                 onRetryExecution={handleRetryExecution}
                 liveAgentActionsById={liveAgentActionsById}
                 onRetryAgentAction={handleRetryAgentAction}
-                diagnosticsSlot={renderDiagnostics()}
+                 diagnosticsSlot={renderDiagnostics()}
+                 onOpenProjectResources={() => setProjectResourcesOpen(true)}
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
@@ -2750,7 +2955,7 @@ export default function AssetsWorkspaceClient({
                     ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
                     : handleSaveProduct}
                   onRestoreVersion={isConversationSnapshot
-                    ? async () => { toast.info("完整对话仍在加载，请稍后再恢复版本。"); }
+                    ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
                     : handleRestoreProductVersion}
                   onProductUpdated={(updatedProduct) => {
                     setConversations((current) => current.map((conversation) => {
@@ -2782,6 +2987,11 @@ export default function AssetsWorkspaceClient({
                     }));
                   }}
                   onLongFormAction={(action) => void handleLongFormSelect(action)}
+                  onApplyCreativeDirection={
+                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                      ? undefined
+                      : (selection) => handleApplyCreativeDirection(selectedProduct, selection)
+                  }
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
@@ -2801,7 +3011,12 @@ export default function AssetsWorkspaceClient({
                 onUploadClick={stableHandleUploadClick}
                 uploading={uploading}
                 onUseAsset={stableHandleUseLibraryAsset}
-                onAddAssetToConversation={stableHandleAddAssetToConversation}
+                 onAddAssetToConversation={stableHandleAddAssetToConversation}
+                 targetProjectTitle={libraryTargetProjectTitle}
+                 onExitProjectTarget={() => {
+                   setLibraryTargetProjectId(null);
+                   setActiveView("conversation");
+                 }}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onWriteAvailabilityChange={handleWriteAvailabilityChange}
@@ -2810,6 +3025,35 @@ export default function AssetsWorkspaceClient({
           )}
         </div>
       </section>
+      <ProjectResourcesDrawer
+        open={projectResourcesOpen && selectedConversation.id !== "new"}
+        projectTitle={selectedConversation.title}
+        summary={projectResourceSummary}
+        loadResources={loadSelectedProjectResources}
+        onClose={() => setProjectResourcesOpen(false)}
+        onAddSource={() => {
+          setLibraryTargetProjectId(selectedConversation.id);
+          setProjectResourcesOpen(false);
+          setActiveView("assets");
+          toast.info(`正在为项目「${selectedConversation.title}」添加素材。`);
+        }}
+        onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
+        onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
+        onOpenResource={handleOpenProjectResource}
+      />
+      <ProjectTargetPicker
+        open={Boolean(projectTargetRow)}
+        projects={projectTargetOptions}
+        submittingProjectId={submittingProjectId}
+        onSelect={(projectId) => {
+          if (projectTargetRow) void persistLibraryAssetToProject(projectTargetRow, projectId);
+        }}
+        onClose={() => setProjectTargetRow(null)}
+        onCreateProject={() => {
+          setProjectTargetRow(null);
+          handleStartConversation();
+        }}
+      />
     </main>
   );
 }

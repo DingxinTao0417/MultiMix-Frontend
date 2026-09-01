@@ -560,6 +560,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       id: "cached-conversation",
       title: "缓存中的真实对话",
       status: "ready",
+      project_state: { code: "ready" },
       metadata: {},
       created_at: "2026-08-24T08:00:00Z",
       updated_at: "2026-08-25T08:00:00Z",
@@ -595,7 +596,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       />,
     );
 
-    expect(await screen.findByText("对话加载失败")).toBeInTheDocument();
+    expect(await screen.findByText("项目加载失败")).toBeInTheDocument();
     expect(await screen.findByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
 

@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { videoJobStageLabel } from "../../../lib/asset-mappers";
+import { getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
-import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import type { AssetConversationMessage, AssetCreativeDirectionSelection, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { ExportFinalizeJob } from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
+import CreativeDirectionSelector from "./creative-direction-selector";
 import ProductPreview, {
   browseBgmSummary,
   persistedVideoExportMatchesCurrentProject,
@@ -165,6 +167,7 @@ export default function ProductWorkspace({
   onRetryVideoJob,
   onOpenLongFormCandidates,
   onLongFormAction,
+  onApplyCreativeDirection,
   product,
   savedVersion,
   selectedConversation,
@@ -179,6 +182,7 @@ export default function ProductWorkspace({
   onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
+  onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -186,6 +190,9 @@ export default function ProductWorkspace({
   videoJobLive?: VideoJobLiveStatus | null;
 }) {
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
+  const [historicalPreview, setHistoricalPreview] = useState<ContentAsset | null>(null);
+  const [historicalPreviewError, setHistoricalPreviewError] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
@@ -229,6 +236,30 @@ export default function ProductWorkspace({
   const recoverableExportJobRef = useRef<ExportFinalizeJob | null>(null);
   const onProductUpdatedRef = useRef(onProductUpdated);
   onProductUpdatedRef.current = onProductUpdated;
+
+  useEffect(() => {
+    setHistoricalPreview(null);
+    setHistoricalPreviewError("");
+    setPreviewingVersionId(null);
+  }, [product.backendAssetId]);
+
+  const previewHistoricalVersion = useCallback(async (versionId: string) => {
+    const assetId = product.backendAssetId;
+    const parsedVersionId = Number(versionId);
+    if (!token || !assetId || !Number.isInteger(parsedVersionId) || parsedVersionId < 1) {
+      setHistoricalPreviewError("当前历史版本暂时无法预览。");
+      return;
+    }
+    setPreviewingVersionId(versionId);
+    setHistoricalPreviewError("");
+    try {
+      setHistoricalPreview(await getContentAssetVersionPreview(token, assetId, parsedVersionId));
+    } catch (error) {
+      setHistoricalPreviewError(error instanceof Error ? error.message : "历史版本读取失败，请重试。");
+    } finally {
+      setPreviewingVersionId(null);
+    }
+  }, [product.backendAssetId, token]);
   const handleSourceEvidenceClickCapture = useCallback((event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null;
     const summary = target?.closest("summary");
@@ -255,6 +286,9 @@ export default function ProductWorkspace({
     && typeof productMetadata.video_plan === "object"
     && !Array.isArray(productMetadata.video_plan)
     ? productMetadata.video_plan as Record<string, unknown>
+    : null;
+  const creativeDirection = isDirectorText && presenterVideoPlan?.video_type === "explainer"
+    ? presenterVideoPlan.creative_direction
     : null;
   const hasSpeechTimeline = product.mode === "video"
     && presenterVideoPlan?.video_type === "presenter"
@@ -1234,6 +1268,19 @@ export default function ProductWorkspace({
                 {product.versions && product.versions.length > 0 ? (
                   <section className="shadcn-prototype-detail-section">
                     <h4>版本历史</h4>
+                    {historicalPreview ? (
+                      <div className="rounded-xl border border-[#e5e0d8] bg-[#faf8f4] p-3" aria-label="历史版本预览">
+                        <div className="flex items-center justify-between gap-3">
+                          <strong className="text-sm">历史版本预览</strong>
+                          <button type="button" onClick={() => setHistoricalPreview(null)}>退出预览</button>
+                        </div>
+                        <p className="mt-2 text-sm font-medium">{historicalPreview.title}</p>
+                        <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-[#736e67]">
+                          {historicalPreview.body || "此版本没有可显示的正文。"}
+                        </p>
+                      </div>
+                    ) : null}
+                    {historicalPreviewError ? <p role="alert">{historicalPreviewError}</p> : null}
                     <div className="shadcn-prototype-version-list">
                       {product.versions.map((version) => {
                         const isCurrent = version.label === product.version;
@@ -1244,6 +1291,13 @@ export default function ProductWorkspace({
                               <span>{version.status}</span>
                               <em>{version.savedAt}</em>
                             </div>
+                            <button
+                              type="button"
+                              disabled={isCurrent || previewingVersionId === version.id || !token || !product.backendAssetId}
+                              onClick={() => void previewHistoricalVersion(version.id)}
+                            >
+                              {previewingVersionId === version.id ? "读取中..." : "预览"}
+                            </button>
                             <button
                               type="button"
                               disabled={isCurrent || !onRestoreVersion || restoringVersionId === version.id}
@@ -1257,7 +1311,7 @@ export default function ProductWorkspace({
                                 }
                               }}
                             >
-                              {isCurrent ? "当前" : restoringVersionId === version.id ? "恢复中..." : "恢复"}
+                              {isCurrent ? "当前" : restoringVersionId === version.id ? "正在继续..." : "基于此版本继续"}
                             </button>
                           </article>
                         );
@@ -1443,6 +1497,13 @@ export default function ProductWorkspace({
         ) : null}
         {canAuditSourceExcerpt && sourceExcerptAuditState === "error" ? (
           <p className="mx-5 mb-3 text-sm text-[#a43b32]" role="alert">{sourceExcerptAuditError}</p>
+        ) : null}
+
+        {!isTextEditing && creativeDirection ? (
+          <CreativeDirectionSelector
+            direction={creativeDirection}
+            onApply={onApplyCreativeDirection}
+          />
         ) : null}
 
         {isTextEditing ? (

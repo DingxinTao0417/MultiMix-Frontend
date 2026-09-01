@@ -5,8 +5,12 @@ import {
   API_CONNECTION_ERROR,
   apiForm,
   formatComposerError,
+  addProjectSource,
+  getContentAssetVersionPreview,
   getAssetGenerationJob,
   getConversationAgentAction,
+  getProjectResources,
+  removeProjectSource,
 } from "./api";
 
 describe("api", () => {
@@ -61,6 +65,48 @@ describe("api", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("/agent-actions/action-1"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  it("uses explicit project resource targets for reads and membership writes", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], total: 0, offset: 0, limit: 20 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ conversation_id: "project-1", asset_id: 42, state: "active" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ conversation_id: "project-1", asset_id: 42, state: "removed" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getProjectResources("token", "project-1", "source", "history", 20, 20);
+    await addProjectSource("token", "project-1", 42);
+    await removeProjectSource("token", "project-1", 42);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("/assets/conversations/project-1/resources?kind=source&scope=history&offset=20&limit=20"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/assets/conversations/project-1/sources/42"),
+      expect.objectContaining({ method: "PUT" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("/assets/conversations/project-1/sources/42"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("loads a historical version as a read-only preview", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ id: 42, title: "历史版本" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getContentAssetVersionPreview("token", 42, 7);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/assets/42/versions/7/preview"),
       expect.objectContaining({ cache: "no-store" }),
     );
   });

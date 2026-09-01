@@ -319,6 +319,11 @@ export type AssetPresenterDirectionRequest = {
   currentCandidateId: string;
 };
 
+export type AssetCreativeDirectionSelection = {
+  candidateId: string;
+  creativeDirectionFingerprint: string;
+};
+
 export type AssetPresenterCleanupConfirmation = {
   cleanupPlanId: string;
   cleanupPlanHash: string;
@@ -534,6 +539,33 @@ export type AssetSuggestionAction = {
   requiresConfirmation: boolean;
 };
 
+export type AssetProjectResource = {
+  id: string;
+  title: string;
+};
+
+export type AssetConversationProjectResources = {
+  sources: AssetProjectResource[];
+  copies: AssetProjectResource[];
+  covers: AssetProjectResource[];
+  videos: AssetProjectResource[];
+};
+
+export type ProjectProgressCode =
+  | "needs_input"
+  | "script_review"
+  | "generating"
+  | "ready"
+  | "needs_attention";
+
+export type AssetProjectResourceSummary = {
+  sources: number;
+  historicalSources: number;
+  copies: number;
+  covers: number;
+  videos: number;
+};
+
 export type AssetConversation = {
   id: string;
   detailsLoaded?: boolean;
@@ -544,6 +576,7 @@ export type AssetConversation = {
   updatedAt: string;
   assetLabel: string;
   status: string;
+  projectState?: ProjectProgressCode;
   prompt: string;
   response: string;
   canvasTitle: string;
@@ -559,6 +592,8 @@ export type AssetConversation = {
   product: AssetProduct;
   products?: AssetProduct[];
   sourceIds?: string[];
+  projectResources?: AssetConversationProjectResources;
+  projectResourceSummary?: AssetProjectResourceSummary;
 };
 
 export type AssetWorkshop = {

@@ -30,10 +30,8 @@ const newConversation: AssetConversation = {
   action: "",
   delivery: "",
   suggestions: [
-    "用已有素材生成短视频",
-    "用图片和视频做成片",
-    "把文档做成短视频",
-    "继续修改已有视频",
+    "制作讲解型视频",
+    "优化真人口播视频",
   ],
   messages: [],
   product: emptyProduct,

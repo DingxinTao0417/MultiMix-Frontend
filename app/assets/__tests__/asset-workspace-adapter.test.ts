@@ -322,6 +322,28 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("direction-a");
   });
 
+  it("serializes a generic creative direction selection with its candidate-set fingerprint", () => {
+    const fingerprint = `sha256:${"a".repeat(64)}`;
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-direction",
+      instruction: "应用此方向",
+      selectedProductId: 93,
+      creativeDirectionSelection: {
+        candidateId: "direction-b",
+        creativeDirectionFingerprint: fingerprint,
+      },
+    });
+
+    expect(payload).toMatchObject({
+      selected_product_id: 93,
+      creative_direction_selection: {
+        candidate_id: "direction-b",
+        creative_direction_fingerprint: fingerprint,
+      },
+    });
+    expect(payload.instruction).not.toContain("direction-b");
+  });
+
   it("serializes presenter audio selection with exact track bindings", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
@@ -1117,6 +1139,7 @@ describe("runtime data boundary", () => {
       title: "MultiMix 产品介绍短视频",
       status: "active",
       metadata: {},
+      project_state: { code: "script_review" },
       created_at: "2026-07-12T08:00:00Z",
       updated_at: "2026-07-12T09:00:00Z",
     };
@@ -1126,6 +1149,7 @@ describe("runtime data boundary", () => {
     expect(conversation.id).toBe(summary.id);
     expect(conversation.title).toBe(summary.title);
     expect(conversation.detailsLoaded).toBe(false);
+    expect(conversation.projectState).toBe("script_review");
     expect(conversation.messages).toEqual([]);
     expect(conversation.products).toEqual([]);
   });
@@ -1186,13 +1210,11 @@ describe("runtime data boundary", () => {
     expect(mappers).not.toContain("function normalizeProductTitle");
   });
 
-  it("keeps product starter prompts without restoring demo conversations", () => {
+  it("keeps the two primary video-task starters without restoring demo conversations", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
     expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([
-      "用已有素材生成短视频",
-      "用图片和视频做成片",
-      "把文档做成短视频",
-      "继续修改已有视频"
+      "制作讲解型视频",
+      "优化真人口播视频",
     ]);
   });
 });
