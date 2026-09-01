@@ -2992,7 +2992,7 @@ export default function AssetsWorkspaceClient({
         onAddSource={() => {
           setLibraryTargetProjectId(selectedConversation.id);
           setProjectResourcesOpen(false);
-          setActiveView("image");
+          setActiveView("assets");
           toast.info(`正在为项目「${selectedConversation.title}」添加素材。`);
         }}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}

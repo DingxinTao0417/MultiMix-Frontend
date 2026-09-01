@@ -1427,6 +1427,12 @@ button:disabled {
   background: #ffffff;
 }
 
+.shadcn-prototype-chat-context {
+  display: grid;
+  grid-auto-rows: max-content;
+  min-height: 0;
+}
+
 .shadcn-prototype-thread {
   display: grid;
   align-content: start;

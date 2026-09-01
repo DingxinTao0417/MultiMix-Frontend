@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AssetConversationResponse } from "../../../lib/api";
@@ -102,6 +102,42 @@ describe("conversation project resources", () => {
     expect(screen.getByText("文案 1")).toBeInTheDocument();
     expect(screen.getByText("封面 1")).toBeInTheDocument();
     expect(screen.getByText("视频 1")).toBeInTheDocument();
+  });
+
+  it("keeps optional project context in one natural-height row above the message thread", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "asset-conversation-project",
+      title: "产品讲解视频",
+      detailsLoaded: true,
+      projectResources: {
+        sources: [{ id: "11", title: "产品实拍" }],
+        copies: [],
+        covers: [],
+        videos: [],
+      },
+      agentTasks: {
+        active: { goal: "生成讲解编导稿", status: "running" },
+        paused: [],
+      },
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+      />,
+    );
+
+    const studio = screen.getByLabelText("Content generation conversation");
+    expect(studio.children).toHaveLength(3);
+    expect(studio.children[0]).toHaveClass("shadcn-prototype-chat-context");
+    expect(within(studio.children[0] as HTMLElement).getByRole("button", { name: "项目资源" })).toBeInTheDocument();
+    expect(within(studio.children[0] as HTMLElement).getByRole("complementary", { name: "Agent 任务状态" })).toBeInTheDocument();
+    expect(studio.children[1]).toHaveClass("shadcn-prototype-thread");
+    expect(studio.children[2]).toHaveClass("shadcn-prototype-composer");
   });
 
   it("keeps historical version preview read-only until the user continues from it", () => {

@@ -899,30 +899,32 @@ export default function ConversationStudio({
       onDragLeave={() => setIsDraggingUpload(false)}
       onDrop={handleDrop}
     >
-      <header className="shadcn-prototype-chat-head">
-        <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-        {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
-      </header>
-      {visibleProjectResourceCounts.length || onOpenProjectResources ? (
-        <button
-          type="button"
-          className="shadcn-prototype-project-resources"
-          aria-label="项目资源"
-          onClick={onOpenProjectResources}
-        >
-          <span>项目资源</span>
-          {visibleProjectResourceCounts.map(([label, count]) => (
-            <em key={label}>{label} {count}</em>
-          ))}
-        </button>
-      ) : null}
-      {selectedConversation.agentTasks ? (
-        <AgentTaskStrip
-          tasks={selectedConversation.agentTasks}
-          disabled={!canSend || sending}
-          onResume={(goal) => void sendInstruction(`继续“${goal}”`)}
-        />
-      ) : null}
+      <div className="shadcn-prototype-chat-context">
+        <header className="shadcn-prototype-chat-head">
+          <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
+          {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
+        </header>
+        {visibleProjectResourceCounts.length || onOpenProjectResources ? (
+          <button
+            type="button"
+            className="shadcn-prototype-project-resources"
+            aria-label="项目资源"
+            onClick={onOpenProjectResources}
+          >
+            <span>项目资源</span>
+            {visibleProjectResourceCounts.map(([label, count]) => (
+              <em key={label}>{label} {count}</em>
+            ))}
+          </button>
+        ) : null}
+        {selectedConversation.agentTasks ? (
+          <AgentTaskStrip
+            tasks={selectedConversation.agentTasks}
+            disabled={!canSend || sending}
+            onResume={(goal) => void sendInstruction(`继续“${goal}”`)}
+          />
+        ) : null}
+      </div>
       <div className="shadcn-prototype-thread">
         {selectedConversation.detailsLoaded === false ? (
           detailLoadError ? (
