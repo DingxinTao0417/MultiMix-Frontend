@@ -67,6 +67,35 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
 // ---------------------------------------------------------------------------
 
 describe('buildProject - overlay/hasAlpha logic', () => {
+  it('preserves a backend-authored transform for a safe-region MG video', () => {
+    const transform = {
+      scaleX: 0.42,
+      scaleY: 0.42,
+      position: { x: 480, y: -248 },
+      rotate: 0,
+    };
+    const { project } = buildProject(makeProject({
+      media: [makeMedia({ id: 'presenter-mg', hasAlpha: true })],
+      tracks: [{
+        id: 'track-presenter-graphic-media',
+        type: 'video',
+        name: '图形媒体',
+        overlay: true,
+        elements: [{
+          id: 'presenter-mg-element',
+          type: 'video',
+          startTime: 2,
+          duration: 3,
+          mediaId: 'presenter-mg',
+          safeRegion: { x: 0.58, y: 0.12, width: 0.34, height: 0.42 },
+          transform,
+        }],
+      }],
+    } as BackendProject));
+
+    expect(project.scenes[0].tracks[0].elements[0].transform).toEqual(transform);
+  });
+
   it('preserves backend-authored video retime for generated primary-scene alignment', () => {
     const { project } = buildProject(makeProject({
       media: [makeMedia({ id: 'generated-scene' })],
