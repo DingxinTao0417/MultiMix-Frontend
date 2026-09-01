@@ -16,6 +16,78 @@ afterEach(() => {
 });
 
 describe("video browse actions", () => {
+  it("sends an optional Presenter material failure back to the script instead of issuing a fake retry", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    const product = {
+      ...base,
+      operationStatus: "failed" as const,
+      operationFailureReason: "部分可选素材视觉事件未能完成，人物视频仍可继续编辑；请补充素材后重新生成。",
+      operationFailureAction: "modify_script" as const,
+    };
+    const composerFocus = vi.fn();
+    window.addEventListener("multimix:composer-focus", composerFocus);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(screen.getByText(product.operationFailureReason)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "补充素材或修改编导脚本" }));
+    expect(composerFocus).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "重试本次修改" })).not.toBeInTheDocument();
+    window.removeEventListener("multimix:composer-focus", composerFocus);
+  });
+
+  it("retries an optional Presenter MG render through the server-issued child job", async () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    const product = {
+      ...base,
+      operationStatus: "failed" as const,
+      operationFailureReason: "部分可选图形动效未能完成，人物视频仍可继续编辑；可重试补齐。",
+      operationFailureAction: "retry" as const,
+    };
+    const onRetryVideoJob = vi.fn(async () => undefined);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={onRetryVideoJob}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+        videoJobLive={{
+          jobId: "main-1",
+          status: "completed",
+          workflowStage: "done",
+          steps: [
+            { key: "create_job", label: "创建视频工程", status: "done", retryJobId: null },
+            { key: "mg_overlay", label: "生成并添加 MG 动效", status: "fail", retryJobId: "mg-child-1" },
+          ],
+          errorMessage: null,
+          completionConfirmed: true,
+          productStatus: "completed",
+          productCompleted: true,
+          operationStatus: "failed",
+          operationFailureReason: product.operationFailureReason,
+          operationFailureAction: "retry",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "重试本次修改" }));
+    await waitFor(() => expect(onRetryVideoJob).toHaveBeenCalledWith(product, "mg-child-1"));
+  });
+
   it("does not expose editing or export until the server confirms product completion", () => {
     const base = displayProducts["case-07-project-ready-mp4"];
     const product = {

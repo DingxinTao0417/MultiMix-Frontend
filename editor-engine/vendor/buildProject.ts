@@ -48,6 +48,51 @@ export interface BackendTransition {
   duration: number;
 }
 
+/**
+ * Renderer-owned primitives registered by the backend's Presenter visual
+ * system.  The director can choose a named style pack, but it never sends
+ * arbitrary CSS through to the editor.
+ */
+export interface BackendPresenterVisualSystem {
+  stylePackRef: string;
+  motionIntensity: string;
+}
+
+export interface BackendPresenterNativeRender {
+  schema_version: "presenter-native-event-render:v1";
+  surface: "outline" | "panel" | "accent_band";
+  border_width: number;
+  surface_opacity: number;
+  accent_opacity: number;
+  motion_seconds: number;
+  motion_treatment: "inherit" | "accent" | "support" | "takeover";
+  foreground_color: string;
+  surface_color: string;
+  accent_color: string;
+}
+
+export interface BackendPresenterReframeExecution {
+  schema_version: "presenter-reframe-execution:v1";
+  transform: BackendTransform;
+  entrance_seconds: number;
+  exit_seconds: number;
+}
+
+/**
+ * Track-owned events do not have a timeline element of their own.  Reframe
+ * events are projected onto the retained source video when the editor builds
+ * its animation channels, while this exact backend contract remains the
+ * persistence source of truth.
+ */
+export interface BackendPresenterTrackEvent {
+  eventId: string;
+  eventType: string;
+  startTime: number;
+  duration: number;
+  presenterReframe?: BackendPresenterReframeExecution;
+  [key: string]: unknown;
+}
+
 export interface BackendElement {
   id: string;
   type: "video" | "image" | "audio" | "text";
@@ -85,6 +130,13 @@ export interface BackendElement {
   exit?: string;
   requiredForPublish?: boolean;
   specHash?: string;
+  compositionId?: string;
+  motionTreatment?: string;
+  presenterVisualSystem?: BackendPresenterVisualSystem;
+  presenterNativeRender?: BackendPresenterNativeRender;
+  presenterReframe?: BackendPresenterReframeExecution;
+  assetId?: string | number;
+  fullFrame?: boolean;
   subtitlePresentation?: "static_phrase" | "word_highlight" | "karaoke";
   subtitleTokens?: Array<{ text: string; startOffset: number; endOffset: number }>;
   subtitleBackground?: { enabled: boolean; color: string };
@@ -105,6 +157,7 @@ export interface BackendTrack {
   elements: BackendElement[];
   overlay?: boolean;    // MG overlay track: composited above the main video, isMain=false
   logicalLayer?: string;
+  presenterEvents?: BackendPresenterTrackEvent[];
 }
 export interface BackendProject {
   metadata: {
@@ -493,11 +546,22 @@ export const presenterEventByElementId: Record<string, {
   eventId: string;
   eventType?: string;
   presenterSceneId?: string;
+  compositionId?: string;
+  motionTreatment?: string;
+  presenterVisualSystem?: BackendPresenterVisualSystem;
+  presenterNativeRender?: BackendPresenterNativeRender;
+  assetId?: string | number;
+  fullFrame?: boolean;
   enter?: string;
   exit?: string;
   requiredForPublish: boolean;
   specHash?: string;
 }> = {};
+// Reframe is a track-owned execution contract.  Keep it separate from the
+// derived OpenCut keyframes so loading and saving never turns a renderer
+// projection into the persistence source of truth.
+export const presenterEventsByTrackId: Record<string, BackendPresenterTrackEvent[]> = {};
+export const derivedPresenterReframeByElementId: Record<string, true> = {};
 export const logicalLayerByTrackId: Record<string, string> = {};
 
 // Timeline split keeps the left clip id but assigns a new id to the right
@@ -524,6 +588,7 @@ export function copyElementPersistenceMetadata(
   copy(editDecisionByElementId);
   copy(textRoleByElementId);
   copy(presenterEventByElementId);
+  copy(derivedPresenterReframeByElementId);
 }
 
 function validatedSplitSupport(
@@ -713,6 +778,64 @@ function vectorMotionChannel(
   };
 }
 
+const PRESENTER_HEX_COLOR = /^#[0-9a-fA-F]{6}$/u;
+
+function presenterNativeRenderForElement(
+  element: BackendElement,
+): BackendPresenterNativeRender | undefined {
+  const render = element.presenterNativeRender;
+  if (!render || render.schema_version !== "presenter-native-event-render:v1") return undefined;
+  if (!(["outline", "panel", "accent_band"] as const).includes(render.surface)) {
+    return undefined;
+  }
+  if (!(["inherit", "accent", "support", "takeover"] as const)
+    .includes(render.motion_treatment)) {
+    return undefined;
+  }
+  if (
+    !Number.isFinite(render.border_width)
+    || !Number.isFinite(render.surface_opacity)
+    || !Number.isFinite(render.accent_opacity)
+    || !Number.isFinite(render.motion_seconds)
+    || render.border_width < 0
+    || render.surface_opacity < 0
+    || render.surface_opacity > 1
+    || render.accent_opacity < 0
+    || render.accent_opacity > 1
+    || render.motion_seconds <= 0
+    || render.motion_seconds > 0.5
+    || !PRESENTER_HEX_COLOR.test(render.foreground_color)
+    || !PRESENTER_HEX_COLOR.test(render.surface_color)
+    || !PRESENTER_HEX_COLOR.test(render.accent_color)
+  ) {
+    return undefined;
+  }
+  return render;
+}
+
+function hexWithOpacity(hex: string, opacity: number): string {
+  const alpha = Math.round(clamp(opacity, 0, 1) * 255)
+    .toString(16)
+    .padStart(2, "0")
+    .toUpperCase();
+  return `${hex}${alpha}`;
+}
+
+function presenterMotionOffsets(
+  treatment: BackendPresenterNativeRender["motion_treatment"] | undefined,
+): { entrance: number; exit: number } {
+  switch (treatment) {
+    case "accent":
+      return { entrance: 16, exit: 8 };
+    case "support":
+      return { entrance: 10, exit: 5 };
+    case "takeover":
+      return { entrance: 6, exit: 3 };
+    default:
+      return { entrance: 12, exit: 6 };
+  }
+}
+
 function presenterEventAnimations(
   element: BackendElement,
   position: { x: number; y: number },
@@ -723,8 +846,14 @@ function presenterEventAnimations(
   const hasEntrance = element.enter !== "cut";
   const hasExit = element.exit !== "cut";
   if (!hasEntrance && !hasExit) return undefined;
-  const entranceEnd = Math.min(0.22, duration * 0.18);
-  const exitStart = Math.max(entranceEnd, duration - Math.min(0.18, duration * 0.18));
+  const nativeRender = presenterNativeRenderForElement(element);
+  const motionSeconds = nativeRender?.motion_seconds ?? 0.22;
+  const entranceEnd = Math.min(motionSeconds, duration * 0.18);
+  const exitStart = Math.max(
+    entranceEnd,
+    duration - Math.min(motionSeconds, duration * 0.18),
+  );
+  const offsets = presenterMotionOffsets(nativeRender?.motion_treatment);
   const opacityKeyframes = [
     { id: `${element.id}-opacity-start`, time: 0, value: hasEntrance ? 0 : 1, interpolation: "linear" as const },
     { id: `${element.id}-opacity-in`, time: entranceEnd, value: 1, interpolation: "linear" as const },
@@ -735,7 +864,10 @@ function presenterEventAnimations(
     {
       id: `${element.id}-position-start`,
       time: 0,
-      value: { x: position.x, y: position.y + (hasEntrance ? 12 : 0) },
+      value: {
+        x: position.x,
+        y: position.y + (hasEntrance ? offsets.entrance : 0),
+      },
       interpolation: "linear" as const,
     },
     {
@@ -753,7 +885,10 @@ function presenterEventAnimations(
     {
       id: `${element.id}-position-end`,
       time: duration,
-      value: { x: position.x, y: position.y - (hasExit ? 6 : 0) },
+      value: {
+        x: position.x,
+        y: position.y - (hasExit ? offsets.exit : 0),
+      },
       interpolation: "linear" as const,
     },
   ];
@@ -832,6 +967,7 @@ function presenterEventTextElement(
 ): TextElement {
   const region = element.safeRegion ?? { x: 0.08, y: 0.12, width: 0.32, height: 0.24 };
   const graphic = element.textRole === "presenter_graphic";
+  const nativeRender = presenterNativeRenderForElement(element);
   const paddingX = Math.max(10, Math.round(settings.width * 0.012));
   const paddingY = Math.max(8, Math.round(settings.height * 0.012));
   const preferredFontPx = Math.min(
@@ -862,11 +998,22 @@ function presenterEventTextElement(
     trimEnd: element.trimEnd ?? 0,
     fontSize: Math.max(2, (layout.fontPx * 90) / settings.height),
     fontFamily: subtitleStyle.fontFamily,
-    color: "#ffffff",
+    color: nativeRender?.foreground_color ?? "#ffffff",
     background: {
       enabled: true,
-      color: graphic ? "#171b26ee" : "#111827cc",
-      cornerRadius: graphic ? 16 : 12,
+      color: nativeRender
+        ? hexWithOpacity(
+            nativeRender.surface === "accent_band"
+              ? nativeRender.accent_color
+              : nativeRender.surface_color,
+            nativeRender.surface === "accent_band"
+              ? nativeRender.accent_opacity
+              : nativeRender.surface_opacity,
+          )
+        : graphic ? "#171b26ee" : "#111827cc",
+      cornerRadius: nativeRender
+        ? 12 + Math.round(nativeRender.border_width)
+        : graphic ? 16 : 12,
       paddingX,
       paddingY,
     },
@@ -1087,12 +1234,166 @@ function clampOverlayElementToSegment(
   return { ...element, startTime, duration: Math.max(0, endTime - startTime) };
 }
 
+function clonePresenterTrackEvents(
+  events: BackendPresenterTrackEvent[],
+): BackendPresenterTrackEvent[] {
+  return events.map((event) => ({
+    ...event,
+    ...(event.presenterReframe
+      ? {
+          presenterReframe: {
+            ...event.presenterReframe,
+            transform: {
+              ...event.presenterReframe.transform,
+              position: { ...event.presenterReframe.transform.position },
+            },
+          },
+        }
+      : {}),
+  }));
+}
+
+function validReframeTransform(
+  transform: BackendTransform | undefined,
+): transform is BackendTransform {
+  return Boolean(
+    transform
+    && Number.isFinite(transform.scaleX)
+    && Number.isFinite(transform.scaleY)
+    && Number.isFinite(transform.position?.x)
+    && Number.isFinite(transform.position?.y)
+    && Number.isFinite(transform.rotate),
+  );
+}
+
+function presenterReframeAnimationsForElement(
+  element: BackendElement,
+  presenterEvents: BackendPresenterTrackEvent[] | undefined,
+  baseTransform: BackendTransform,
+): ElementAnimations | undefined {
+  if (!presenterEvents?.length || !Number.isFinite(element.duration) || element.duration <= 0) {
+    return undefined;
+  }
+  const elementStart = element.startTime;
+  const elementEnd = elementStart + element.duration;
+  const reframeEvents = presenterEvents
+    .filter((event) => {
+      const reframe = event.eventType === "presenter_reframe"
+        ? event.presenterReframe
+        : undefined;
+      return Boolean(
+        reframe
+        && reframe.schema_version === "presenter-reframe-execution:v1"
+        && Number.isFinite(event.startTime)
+        && Number.isFinite(event.duration)
+        && event.duration > 0
+        && Number.isFinite(reframe.entrance_seconds)
+        && Number.isFinite(reframe.exit_seconds)
+        && reframe.entrance_seconds >= 0
+        && reframe.exit_seconds >= 0
+        && validReframeTransform(reframe.transform)
+        && event.startTime < elementEnd
+        && event.startTime + event.duration > elementStart,
+      );
+    })
+    .sort((left, right) => left.startTime - right.startTime);
+  if (!reframeEvents.length) return undefined;
+
+  const positionKeyframes: Array<{
+    id: string;
+    time: number;
+    value: { x: number; y: number };
+    interpolation: "linear";
+  }> = [];
+  const scaleXKeyframes: Array<{
+    id: string;
+    time: number;
+    value: number;
+    interpolation: "linear";
+  }> = [];
+  const scaleYKeyframes: Array<{
+    id: string;
+    time: number;
+    value: number;
+    interpolation: "linear";
+  }> = [];
+  const addKeyframe = (
+    eventId: string,
+    phase: string,
+    time: number,
+    transform: BackendTransform,
+  ) => {
+    positionKeyframes.push({
+      id: `${element.id}-${eventId}-position-${phase}`,
+      time,
+      value: { ...transform.position },
+      interpolation: "linear",
+    });
+    scaleXKeyframes.push({
+      id: `${element.id}-${eventId}-scale-x-${phase}`,
+      time,
+      value: transform.scaleX,
+      interpolation: "linear",
+    });
+    scaleYKeyframes.push({
+      id: `${element.id}-${eventId}-scale-y-${phase}`,
+      time,
+      value: transform.scaleY,
+      interpolation: "linear",
+    });
+  };
+
+  for (const event of reframeEvents) {
+    const reframe = event.presenterReframe!;
+    const eventStart = clamp(event.startTime - elementStart, 0, element.duration);
+    const eventEnd = clamp(
+      event.startTime + event.duration - elementStart,
+      eventStart,
+      element.duration,
+    );
+    if (eventEnd <= eventStart) continue;
+    const entranceEnd = Math.min(
+      eventEnd,
+      eventStart + Math.min(reframe.entrance_seconds, event.duration * 0.18),
+    );
+    const exitStart = Math.max(
+      entranceEnd,
+      eventEnd - Math.min(reframe.exit_seconds, event.duration * 0.18),
+    );
+    addKeyframe(event.eventId, "before", eventStart, baseTransform);
+    addKeyframe(event.eventId, "in", entranceEnd, reframe.transform);
+    addKeyframe(event.eventId, "out", exitStart, reframe.transform);
+    addKeyframe(event.eventId, "after", eventEnd, baseTransform);
+  }
+
+  if (!positionKeyframes.length) return undefined;
+  return {
+    channels: {
+      "transform.position": {
+        valueKind: "vector",
+        keyframes: positionKeyframes,
+      },
+      "transform.scaleX": {
+        valueKind: "number",
+        keyframes: scaleXKeyframes,
+      },
+      "transform.scaleY": {
+        valueKind: "number",
+        keyframes: scaleYKeyframes,
+      },
+    },
+  };
+}
+
 function buildTracks(bp: BackendProject): TimelineTrack[] {
   const tracks: TimelineTrack[] = [];
   const segmentWindows = buildSegmentWindows(bp.tracks);
 
   for (const t of bp.tracks) {
     if (t.logicalLayer) logicalLayerByTrackId[t.id] = t.logicalLayer;
+    if (t.presenterEvents?.length) {
+      presenterEventsByTrackId[t.id] = clonePresenterTrackEvents(t.presenterEvents);
+    }
     const sourceElements = t.overlay
       ? t.elements.map((element) => clampOverlayElementToSegment(element, segmentWindows))
       : t.elements;
@@ -1109,6 +1410,16 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           eventId: e.eventId,
           ...(e.eventType ? { eventType: e.eventType } : {}),
           ...(e.presenterSceneId ? { presenterSceneId: e.presenterSceneId } : {}),
+          ...(e.compositionId ? { compositionId: e.compositionId } : {}),
+          ...(e.motionTreatment ? { motionTreatment: e.motionTreatment } : {}),
+          ...(e.presenterVisualSystem
+            ? { presenterVisualSystem: { ...e.presenterVisualSystem } }
+            : {}),
+          ...(e.presenterNativeRender
+            ? { presenterNativeRender: { ...e.presenterNativeRender } }
+            : {}),
+          ...(e.assetId !== undefined ? { assetId: e.assetId } : {}),
+          ...(e.fullFrame === true ? { fullFrame: true } : {}),
           ...(e.enter ? { enter: e.enter } : {}),
           ...(e.exit ? { exit: e.exit } : {}),
           requiredForPublish: e.requiredForPublish === true,
@@ -1120,6 +1431,12 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       const elements = sourceElements.map((e): VideoElement | ImageElement => {
         if (e.segmentText) segmentTextByElementId[e.id] = e.segmentText;
         const transition = transitionForElement(e);
+        const transform = e.transform
+          ? {
+              ...e.transform,
+              position: { ...e.transform.position },
+            }
+          : mediaTransformForDecision(e.editDecision, bp.settings.width);
         const base = {
           id: e.id,
           name: e.name || e.segmentText?.slice(0, 20) || "clip",
@@ -1127,12 +1444,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           startTime: e.startTime,
           trimStart: e.trimStart ?? 0,
           trimEnd: e.trimEnd ?? 0,
-          transform: e.transform
-            ? {
-                ...e.transform,
-                position: { ...e.transform.position },
-              }
-            : mediaTransformForDecision(e.editDecision, bp.settings.width),
+          transform,
           opacity: 1,
           ...(transition ? { transition } : {}),
         };
@@ -1153,11 +1465,20 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         // Stock video clips carry their own voices/music. Narration lives on the
         // audio track, so mute the clip's source audio unless the backend
         // explicitly kept it (e.g. a user-provided clip meant to be heard).
+        const animations = e.animations ?? presenterReframeAnimationsForElement(
+          e,
+          t.presenterEvents,
+          transform,
+        );
+        if (animations && !e.animations) {
+          derivedPresenterReframeByElementId[e.id] = true;
+        }
         return {
           ...base,
           type: "video",
           mediaId: e.mediaId || "",
           muted: e.muted !== false,
+          ...(animations ? { animations } : {}),
           ...(e.retime && Number.isFinite(e.retime.rate) && e.retime.rate > 0
             ? { retime: e.retime }
             : {}),
@@ -1300,6 +1621,8 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     editDecisionByElementId,
     textRoleByElementId,
     presenterEventByElementId,
+    presenterEventsByTrackId,
+    derivedPresenterReframeByElementId,
     logicalLayerByTrackId,
   ]) {
     for (const key of Object.keys(map)) delete map[key];

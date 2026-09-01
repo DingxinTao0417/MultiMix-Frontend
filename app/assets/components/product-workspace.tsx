@@ -176,7 +176,7 @@ export default function ProductWorkspace({
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
   onProductUpdated?: (product: ProductArtifact) => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
-  onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
+  onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
   product: ProductArtifact;
@@ -311,6 +311,18 @@ export default function ProductWorkspace({
   const operationFailureDetail = videoJobLive?.operationFailureReason
     || product.operationFailureReason
     || "本次修改未能完成，已保留上一版工程。";
+  const operationFailureAction = videoJobLive?.operationFailureAction
+    || product.operationFailureAction
+    || "retry";
+  // An optional MG render failure is retried through its child job.  Do not
+  // fall back to the completed main job here: that would render a convincing
+  // but invalid retry button.  The backend publishes this server-issued ID in
+  // the aggregate job steps.
+  const operationRetryJobId = operationFailureAction === "retry"
+    ? videoJobLive?.steps.find((step) => (
+      step.status === "fail" && Boolean(step.retryJobId)
+    ))?.retryJobId ?? null
+    : null;
   const videoProductCompleted = videoJobLive?.productCompleted ?? product.videoProductCompleted === true;
   const liveVideoJobFailed = !videoProductCompleted && effectiveProductStatus === "failed";
   const orchestrationPending = !videoProductCompleted && (effectiveProductStatus === "generating" || (!effectiveProductStatus && (Boolean(
@@ -1521,7 +1533,17 @@ export default function ProductWorkspace({
               <div className="shadcn-prototype-video-failed" role="alert">
                 <strong>本次修改失败，已保留上一版</strong>
                 <p>{operationFailureDetail}</p>
-                {onRetryVideoJob ? (
+                {operationFailureAction === "modify_script" ? (
+                  <div className="shadcn-prototype-video-failed-actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
+                    >
+                      补充素材或修改编导脚本
+                    </button>
+                  </div>
+                ) : onRetryVideoJob && operationRetryJobId ? (
                   <div className="shadcn-prototype-video-failed-actions">
                     <button
                       type="button"
@@ -1530,7 +1552,7 @@ export default function ProductWorkspace({
                       onClick={async () => {
                         setRetrying(true);
                         try {
-                          await onRetryVideoJob(product);
+                          await onRetryVideoJob(product, operationRetryJobId);
                         } finally {
                           setRetrying(false);
                         }
@@ -1539,6 +1561,8 @@ export default function ProductWorkspace({
                       {retrying ? "正在重试…" : "重试本次修改"}
                     </button>
                   </div>
+                ) : operationFailureAction === "retry" ? (
+                  <p>重试入口正在同步到执行记录。</p>
                 ) : null}
               </div>
             ) : null}

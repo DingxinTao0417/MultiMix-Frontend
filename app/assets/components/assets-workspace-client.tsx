@@ -446,10 +446,12 @@ export async function retryExecutionJob<T>({
 
 export async function dispatchProductVideoJobRetry({
   product,
+  retryJobId,
   retryExecution,
   onMissingJob,
 }: {
   product: ProductArtifact;
+  retryJobId?: string;
   retryExecution: (retryJobId: string, executionJobId: string) => Promise<void>;
   onMissingJob: () => void;
 }): Promise<boolean> {
@@ -461,7 +463,7 @@ export async function dispatchProductVideoJobRetry({
     onMissingJob();
     return false;
   }
-  await retryExecution(jobId, jobId);
+  await retryExecution(retryJobId || jobId, jobId);
   return true;
 }
 
@@ -1414,13 +1416,14 @@ export default function AssetsWorkspaceClient({
     });
   };
 
-  const handleRetryVideoJob = async (product: ProductArtifact) => {
+  const handleRetryVideoJob = async (product: ProductArtifact, retryJobId?: string) => {
     if (!runtimeWriteCapabilities.canGenerate) {
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能重试视频任务。");
       return;
     }
     await dispatchProductVideoJobRetry({
       product,
+      retryJobId,
       retryExecution: handleRetryExecution,
       onMissingJob: () => toast.error("找不到可重试的任务。"),
     });

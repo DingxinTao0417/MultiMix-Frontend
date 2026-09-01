@@ -1189,6 +1189,7 @@ describe("video execution polling decisions", () => {
   it("awaits product retry through the unified execution path with the main ID twice", async () => {
     const dispatchProductVideoJobRetry = loadWorkspaceDecision<(args: {
       product: { metadata?: Record<string, unknown> };
+      retryJobId?: string;
       retryExecution: (retryJobId: string, executionJobId: string) => Promise<void>;
       onMissingJob: () => void;
     }) => Promise<boolean>>("dispatchProductVideoJobRetry");
@@ -1218,11 +1219,25 @@ describe("video execution polling decisions", () => {
     expect(settled).toBe(true);
 
     await expect(dispatchProductVideoJobRetry({
+      product: { metadata: { latest_job_public_id: "main-1" } },
+      retryJobId: "mg-child-1",
+      retryExecution: async (...ids) => { calls.push(ids); },
+      onMissingJob: () => { missingCalls += 1; },
+    })).resolves.toBe(true);
+    expect(calls).toEqual([
+      ["main-1", "main-1"],
+      ["mg-child-1", "main-1"],
+    ]);
+
+    await expect(dispatchProductVideoJobRetry({
       product: { metadata: {} },
       retryExecution: async (...ids) => { calls.push(ids); },
       onMissingJob: () => { missingCalls += 1; },
     })).resolves.toBe(false);
-    expect(calls).toEqual([["main-1", "main-1"]]);
+    expect(calls).toEqual([
+      ["main-1", "main-1"],
+      ["mg-child-1", "main-1"],
+    ]);
     expect(missingCalls).toBe(1);
   });
 });

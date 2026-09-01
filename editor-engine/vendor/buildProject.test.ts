@@ -96,6 +96,87 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(project.scenes[0].tracks[0].elements[0].transform).toEqual(transform);
   });
 
+  it('uses the backend-registered Presenter native render contract for text and motion', () => {
+    const { project } = buildProject(makeProject({
+      tracks: [{
+        id: 'track-presenter-graphics',
+        type: 'text',
+        name: '图形',
+        elements: [{
+          id: 'presenter-text-1',
+          type: 'text',
+          content: '关键结论',
+          startTime: 0,
+          duration: 2,
+          textRole: 'presenter_emphasis',
+          enter: 'fade_up',
+          exit: 'fade_out',
+          safeRegion: { x: 0.08, y: 0.1, width: 0.4, height: 0.2 },
+          presenterVisualSystem: { stylePackRef: 'evidence@evidence:v1', motionIntensity: 'dynamic' },
+          presenterNativeRender: {
+            schema_version: 'presenter-native-event-render:v1',
+            surface: 'panel',
+            border_width: 6,
+            surface_opacity: 0.61,
+            accent_opacity: 0.96,
+            motion_seconds: 0.11,
+            motion_treatment: 'accent',
+            foreground_color: '#F8FAFC',
+            surface_color: '#102A43',
+            accent_color: '#38BDF8',
+          },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      color: string;
+      background: { enabled: boolean; color: string; cornerRadius: number };
+      animations?: { channels: Record<string, { keyframes: Array<{ time: number }> } | undefined> };
+    };
+    expect(element.color).toBe('#F8FAFC');
+    expect(element.background).toMatchObject({ enabled: true, color: '#102A439C', cornerRadius: 18 });
+    expect(element.animations?.channels.opacity?.keyframes[1]?.time).toBe(0.11);
+  });
+
+  it('turns a Presenter reframe event into source-video transform keyframes', () => {
+    const { project } = buildProject(makeProject({
+      media: [makeMedia({ id: 'presenter-source' })],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '人物视频',
+        elements: [{
+          id: 'presenter-source-1',
+          type: 'video',
+          startTime: 0,
+          duration: 4,
+          mediaId: 'presenter-source',
+        }],
+        presenterEvents: [{
+          eventId: 'reframe-1',
+          eventType: 'presenter_reframe',
+          startTime: 1,
+          duration: 2,
+          presenterReframe: {
+            schema_version: 'presenter-reframe-execution:v1',
+            transform: { scaleX: 1.12, scaleY: 1.12, position: { x: -96, y: 72 }, rotate: 0 },
+            entrance_seconds: 0.16,
+            exit_seconds: 0.16,
+          },
+        }],
+      }],
+    } as BackendProject));
+
+    const element = project.scenes[0].tracks[0].elements[0] as {
+      animations?: { channels: Record<string, { keyframes: Array<{ value: unknown }> } | undefined> };
+    };
+    expect(element.animations?.channels['transform.position']?.keyframes)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ value: { x: -96, y: 72 } })]));
+    expect(element.animations?.channels['transform.scaleX']?.keyframes)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ value: 1.12 })]));
+  });
+
   it('preserves backend-authored video retime for generated primary-scene alignment', () => {
     const { project } = buildProject(makeProject({
       media: [makeMedia({ id: 'generated-scene' })],

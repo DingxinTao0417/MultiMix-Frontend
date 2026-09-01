@@ -256,6 +256,12 @@ describe("ConfirmCard pending state", () => {
           recommended: true,
           sampleUrl: "/samples/a.mp4",
           durationSeconds: 8,
+          visualSystem: {
+            stylePackRef: "evidence@evidence:v1",
+            label: "证据说明",
+            motionIntensity: "dynamic" as const,
+            motionLabel: "动感",
+          },
         },
       ],
     };
@@ -264,6 +270,7 @@ describe("ConfirmCard pending state", () => {
 
     expect(screen.getByText("推荐")).toBeTruthy();
     expect(screen.getByText("人物建立信任，证据短时接管")).toBeTruthy();
+    expect(screen.getByText("视觉语言：证据说明 · 动感动效")).toBeTruthy();
     expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(1);
     expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));

@@ -12,6 +12,8 @@ import {
   focusTextByElementId,
   logicalLayerByTrackId,
   presenterEventByElementId,
+  presenterEventsByTrackId,
+  derivedPresenterReframeByElementId,
   safeRegionByElementId,
   segmentIdByElementId,
   segmentTextByElementId,
@@ -69,6 +71,8 @@ function serializeElement(el: {
     trimEnd: el.trimEnd ?? 0,
   };
   if (el.mediaId) out.mediaId = el.mediaId;
+  const visual = el.type === "video" || el.type === "image";
+  const presenterEvent = presenterEventByElementId[el.id];
   if (el.type === "text") {
     out.content = el.content || "";
     if (typeof el.fontSize === "number" && Number.isFinite(el.fontSize)) {
@@ -81,7 +85,15 @@ function serializeElement(el: {
     out.volume = el.volume ?? 1;
     if (el.animations) out.animations = el.animations;
   }
-  const visual = el.type === "video" || el.type === "image";
+  if (visual && presenterEvent) {
+    if (el.transform) out.transform = el.transform;
+    // Presenter reframes are projected into OpenCut only for preview.  The
+    // backend contract on the source track is canonical, so avoid persisting
+    // a second, stale copy of those generated keyframes.
+    if (el.animations && !derivedPresenterReframeByElementId[el.id]) {
+      out.animations = el.animations;
+    }
+  }
   const transition = visual ? normalizedEditorTransition(el.transition) : undefined;
   if (transition) out.transition = transition;
   const segmentId = segmentIdByElementId[el.id];
@@ -109,7 +121,6 @@ function serializeElement(el: {
   }
   const textRole = el.textRole ?? textRoleByElementId[el.id];
   if (textRole) out.textRole = textRole;
-  const presenterEvent = presenterEventByElementId[el.id];
   if (presenterEvent) Object.assign(out, presenterEvent);
   return out;
 }
@@ -165,6 +176,23 @@ export function serializeBackendProject(editor: EditorCore): RawProject {
     if (t.type === "video" && t.isMain === false) track.overlay = true;
     const logicalLayer = logicalLayerByTrackId[t.id];
     if (logicalLayer) track.logicalLayer = logicalLayer;
+    const presenterEvents = presenterEventsByTrackId[t.id];
+    if (presenterEvents?.length) {
+      track.presenterEvents = presenterEvents.map((event) => ({
+        ...event,
+        ...(event.presenterReframe
+          ? {
+              presenterReframe: {
+                ...event.presenterReframe,
+                transform: {
+                  ...event.presenterReframe.transform,
+                  position: { ...event.presenterReframe.transform.position },
+                },
+              },
+            }
+          : {}),
+      }));
+    }
     return track;
   });
 

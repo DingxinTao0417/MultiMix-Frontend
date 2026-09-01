@@ -79,6 +79,8 @@ describe("presenter segment review", () => {
           purpose: "展示产品",
           statusLabel: "生成失败",
           requiredForPublish: true,
+          failureReason: "该素材事件缺少已保存且可用的素材绑定。",
+          retryable: true,
         },
       ],
       presenterMaterialGap: "缺少产品录屏，当前保持人物画面",
@@ -94,6 +96,8 @@ describe("presenter segment review", () => {
 
     expect(screen.getByText(/画面安排：文字强调/).textContent).toContain("先看");
     expect(screen.getByText(/全屏素材/).textContent).toContain("成片必需");
+    expect(screen.getByText(/全屏素材/).textContent).toContain("该素材事件缺少已保存且可用的素材绑定。");
+    expect(screen.getByText(/全屏素材/).textContent).toContain("可重试");
     expect(screen.getByText("素材缺口：缺少产品录屏，当前保持人物画面")).not.toBeNull();
     expect(screen.queryByRole("button", { name: "修改配音" })).toBeNull();
     expect(screen.queryByRole("button", { name: "换素材" })).toBeNull();
