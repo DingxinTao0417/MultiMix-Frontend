@@ -102,6 +102,8 @@ export type AssetPresenterVisualEvent = {
   purpose?: string;
   statusLabel: "待生成" | "生成中" | "已完成" | "生成失败" | "待更新";
   requiredForPublish: boolean;
+  failureReason?: string;
+  retryable?: boolean;
 };
 
 // A single material candidate shown in the picker. Every selectable row carries
@@ -437,6 +439,13 @@ export type AssetPlanVoiceOption = {
   label: string;
 };
 
+export type AssetPresenterVisualSystemSummary = {
+  stylePackRef: string;
+  label: string;
+  motionIntensity: "restrained" | "balanced" | "dynamic";
+  motionLabel: string;
+};
+
 export type AssetPresenterDirectionOption = {
   id: string;
   label: string;
@@ -445,6 +454,7 @@ export type AssetPresenterDirectionOption = {
   recommended: boolean;
   sampleUrl: string;
   durationSeconds: number;
+  visualSystem?: AssetPresenterVisualSystemSummary;
 };
 
 export type AssetMessagePresentation = "standard" | "hidden_confirmation" | "execution_anchor";

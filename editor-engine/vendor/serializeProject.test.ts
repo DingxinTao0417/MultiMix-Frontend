@@ -314,6 +314,92 @@ describe('BGM editor round-trip', () => {
       textAlign: 'left',
     });
   });
+
+  it('round-trips Presenter visual event execution fields and reframe contracts', () => {
+    const nativeRender = {
+      schema_version: 'presenter-native-event-render:v1',
+      surface: 'panel',
+      border_width: 6,
+      surface_opacity: 0.61,
+      accent_opacity: 0.96,
+      motion_seconds: 0.11,
+      motion_treatment: 'accent',
+      foreground_color: '#F8FAFC',
+      surface_color: '#102A43',
+      accent_color: '#38BDF8',
+    };
+    const reframe = {
+      eventId: 'reframe-1',
+      eventType: 'presenter_reframe',
+      presenterSceneId: 'scene-1',
+      startTime: 1,
+      duration: 2,
+      compositionId: 'proof',
+      motionTreatment: 'support',
+      presenterReframe: {
+        schema_version: 'presenter-reframe-execution:v1',
+        transform: { scaleX: 1.12, scaleY: 1.12, position: { x: -96, y: 72 }, rotate: 0 },
+        entrance_seconds: 0.16,
+        exit_seconds: 0.16,
+      },
+    };
+    const backend = {
+      metadata: { title: 'Presenter event round trip', duration: 4 },
+      settings: { fps: 30, width: 1080, height: 1920 },
+      media: [{ id: 'source', type: 'video', file_path: 'local://presenter/source.mp4', name: 'source' }],
+      tracks: [
+        {
+          id: 'track-video',
+          type: 'video',
+          name: '人物视频',
+          elements: [{ id: 'source-1', type: 'video', startTime: 0, duration: 4, mediaId: 'source' }],
+          presenterEvents: [reframe],
+        },
+        {
+          id: 'track-presenter-graphics',
+          type: 'text',
+          name: '图形',
+          elements: [{
+            id: 'event-text-1',
+            type: 'text',
+            content: '关键结论',
+            startTime: 1,
+            duration: 2,
+            textRole: 'presenter_emphasis',
+            eventId: 'text-1',
+            eventType: 'text_emphasis',
+            presenterSceneId: 'scene-1',
+            compositionId: 'proof',
+            motionTreatment: 'accent',
+            presenterVisualSystem: { stylePackRef: 'evidence@evidence:v1', motionIntensity: 'dynamic' },
+            presenterNativeRender: nativeRender,
+            enter: 'fade_up',
+            exit: 'fade_out',
+            requiredForPublish: true,
+            specHash: 'spec-text-1',
+            safeRegion: { x: 0.08, y: 0.1, width: 0.4, height: 0.2 },
+          }],
+        },
+      ],
+    } as BackendProject;
+    prepareEditorRoundTrip(backend);
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const videoTrack = serialized.tracks.find((track) => track.id === 'track-video') as Record<string, unknown>;
+    const text = serialized.tracks.find((track) => track.id === 'track-presenter-graphics')!.elements[0] as Record<string, unknown>;
+
+    expect(videoTrack.presenterEvents).toEqual([reframe]);
+    expect(text).toMatchObject({
+      eventId: 'text-1',
+      eventType: 'text_emphasis',
+      presenterSceneId: 'scene-1',
+      compositionId: 'proof',
+      motionTreatment: 'accent',
+      presenterVisualSystem: { stylePackRef: 'evidence@evidence:v1', motionIntensity: 'dynamic' },
+      presenterNativeRender: nativeRender,
+      specHash: 'spec-text-1',
+    });
+  });
 });
 
 describe('scene transition editor round-trip', () => {

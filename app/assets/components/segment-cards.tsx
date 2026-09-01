@@ -13,6 +13,8 @@ function presenterEventSummary(segment: AssetProductSegment): string | null {
     `${event.label}${event.spokenText ? `「${event.spokenText}」` : ""}`,
     event.purpose,
     event.statusLabel,
+    event.failureReason,
+    event.retryable ? "可重试" : "",
     event.requiredForPublish ? "成片必需" : "",
   ].filter(Boolean).join(" · ")).join("；");
 }

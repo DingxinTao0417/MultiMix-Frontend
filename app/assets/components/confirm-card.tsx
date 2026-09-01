@@ -402,6 +402,11 @@ export default function ConfirmCard({
                   {option.recommended ? <span>推荐</span> : null}
                   <span>{option.concept}</span>
                   <small>{option.reason}</small>
+                  {option.visualSystem ? (
+                    <small>
+                      视觉语言：{option.visualSystem.label} · {option.visualSystem.motionLabel}动效
+                    </small>
+                  ) : null}
                 </span>
                 </>
               );

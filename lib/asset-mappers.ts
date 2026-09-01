@@ -16,6 +16,7 @@ import type {
   AssetPlanBgmOption,
   AssetPlanField,
   AssetPresenterDirectionOption,
+  AssetPresenterVisualSystemSummary,
   AssetPresenterCleanupItem,
   AssetPresenterAudioTrackOption,
   AssetPresenterVisualEvent,
@@ -466,6 +467,7 @@ function planDirectionOptionsValue(value: unknown): AssetPresenterDirectionOptio
       ? item.duration_seconds
       : undefined;
     if (!id || !label || !concept || !reason || !sampleUrl || !durationSeconds || durationSeconds <= 0) return [];
+    const visualSystem = presenterVisualSystemSummaryValue(item.visual_system);
     return [{
       id,
       label,
@@ -474,8 +476,29 @@ function planDirectionOptionsValue(value: unknown): AssetPresenterDirectionOptio
       recommended: item.recommended === true,
       sampleUrl,
       durationSeconds,
+      ...(visualSystem ? { visualSystem } : {}),
     }];
   });
+}
+
+function presenterVisualSystemSummaryValue(value: unknown): AssetPresenterVisualSystemSummary | undefined {
+  if (!isRecord(value)) return undefined;
+  const stylePackRef = stringValue(value.style_pack_ref);
+  const label = stringValue(value.label);
+  const motionIntensity = stringValue(value.motion_intensity);
+  const motionLabel = stringValue(value.motion_label);
+  if (
+    !stylePackRef
+    || !label
+    || !motionLabel
+    || !["restrained", "balanced", "dynamic"].includes(motionIntensity)
+  ) return undefined;
+  return {
+    stylePackRef,
+    label,
+    motionIntensity: motionIntensity as AssetPresenterVisualSystemSummary["motionIntensity"],
+    motionLabel,
+  };
 }
 
 // Video-size options for the confirm card's ratio toggle (spec §5.2). Each entry
@@ -694,14 +717,19 @@ function presenterEventsFromScene(
     const label = PRESENTER_EVENT_LABELS[type];
     const id = stringValue(event.event_id);
     if (!label || !id) return [];
+    const status = stringValue(event.status);
     return [{
       id,
       type,
       label,
       spokenText: presenterSpokenText(event, words, wordPositions),
       purpose: stringValue(event.purpose) || undefined,
-      statusLabel: PRESENTER_EVENT_STATUS_LABELS[stringValue(event.status)] || "待生成",
+      statusLabel: PRESENTER_EVENT_STATUS_LABELS[status] || "待生成",
       requiredForPublish: event.required_for_publish === true,
+      ...(status === "failed" && stringValue(event.last_error)
+        ? { failureReason: stringValue(event.last_error) }
+        : {}),
+      ...(status === "failed" && event.retryable === true ? { retryable: true } : {}),
     } satisfies AssetPresenterVisualEvent];
   });
   return events.length ? events : undefined;
