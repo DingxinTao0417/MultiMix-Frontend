@@ -7,12 +7,13 @@ import { getContentAssetVersionPreview, type ContentAsset } from "../../../lib/a
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
-import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import type { AssetConversationMessage, AssetCreativeDirectionSelection, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import type { ExportFinalizeJob } from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
+import CreativeDirectionSelector from "./creative-direction-selector";
 import ProductPreview, {
   browseBgmSummary,
   persistedVideoExportMatchesCurrentProject,
@@ -166,6 +167,7 @@ export default function ProductWorkspace({
   onRetryVideoJob,
   onOpenLongFormCandidates,
   onLongFormAction,
+  onApplyCreativeDirection,
   product,
   savedVersion,
   selectedConversation,
@@ -180,6 +182,7 @@ export default function ProductWorkspace({
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
+  onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -283,6 +286,9 @@ export default function ProductWorkspace({
     && typeof productMetadata.video_plan === "object"
     && !Array.isArray(productMetadata.video_plan)
     ? productMetadata.video_plan as Record<string, unknown>
+    : null;
+  const creativeDirection = isDirectorText && presenterVideoPlan?.video_type === "explainer"
+    ? presenterVideoPlan.creative_direction
     : null;
   const hasSpeechTimeline = product.mode === "video"
     && presenterVideoPlan?.video_type === "presenter"
@@ -1479,6 +1485,13 @@ export default function ProductWorkspace({
         ) : null}
         {canAuditSourceExcerpt && sourceExcerptAuditState === "error" ? (
           <p className="mx-5 mb-3 text-sm text-[#a43b32]" role="alert">{sourceExcerptAuditError}</p>
+        ) : null}
+
+        {!isTextEditing && creativeDirection ? (
+          <CreativeDirectionSelector
+            direction={creativeDirection}
+            onApply={onApplyCreativeDirection}
+          />
         ) : null}
 
         {isTextEditing ? (

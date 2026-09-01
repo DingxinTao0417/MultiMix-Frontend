@@ -2,6 +2,7 @@ import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
 import type {
   AgentActionRunResponse,
   AssetConversation,
+  AssetCreativeDirectionSelection,
   AssetLongFormAction,
   AssetProduct,
   AssetPresenterAudioSelectionConfirmation,
@@ -282,6 +283,7 @@ export function buildConversationMessagePayload({
   videoSceneReplacement,
   presenterDirectionConfirmation,
   presenterDirectionRequest,
+  creativeDirectionSelection,
   presenterCleanupConfirmation,
   presenterAudioSelectionConfirmation,
   sourceSubtitleMode,
@@ -298,6 +300,7 @@ export function buildConversationMessagePayload({
   videoSceneReplacement?: AssetVideoSceneReplacement;
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
   presenterDirectionRequest?: AssetPresenterDirectionRequest;
+  creativeDirectionSelection?: AssetCreativeDirectionSelection;
   presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
   presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -342,6 +345,12 @@ export function buildConversationMessagePayload({
     ...(presenterDirectionRequest ? {
       presenter_direction_request: {
         current_candidate_id: presenterDirectionRequest.currentCandidateId,
+      },
+    } : {}),
+    ...(creativeDirectionSelection ? {
+      creative_direction_selection: {
+        candidate_id: creativeDirectionSelection.candidateId,
+        creative_direction_fingerprint: creativeDirectionSelection.creativeDirectionFingerprint,
       },
     } : {}),
     ...(presenterCleanupConfirmation ? {
@@ -529,6 +538,7 @@ export type AssetWorkspaceAdapter = {
     videoSceneReplacement?: AssetVideoSceneReplacement;
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
     presenterDirectionRequest?: AssetPresenterDirectionRequest;
+    creativeDirectionSelection?: AssetCreativeDirectionSelection;
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
@@ -1195,12 +1205,13 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       videoSceneReplacement,
       presenterDirectionConfirmation,
       presenterDirectionRequest,
+      creativeDirectionSelection,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
       sourceSubtitleMode,
       signal,
     }) {
-      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
@@ -1223,6 +1234,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           videoSceneReplacement,
           presenterDirectionConfirmation,
           presenterDirectionRequest,
+          creativeDirectionSelection,
           presenterCleanupConfirmation,
           presenterAudioSelectionConfirmation,
           sourceSubtitleMode,

@@ -317,6 +317,11 @@ export type AssetPresenterDirectionRequest = {
   currentCandidateId: string;
 };
 
+export type AssetCreativeDirectionSelection = {
+  candidateId: string;
+  creativeDirectionFingerprint: string;
+};
+
 export type AssetPresenterCleanupConfirmation = {
   cleanupPlanId: string;
   cleanupPlanHash: string;

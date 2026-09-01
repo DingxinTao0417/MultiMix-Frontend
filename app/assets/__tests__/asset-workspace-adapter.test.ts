@@ -322,6 +322,28 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("direction-a");
   });
 
+  it("serializes a generic creative direction selection with its candidate-set fingerprint", () => {
+    const fingerprint = `sha256:${"a".repeat(64)}`;
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-direction",
+      instruction: "应用此方向",
+      selectedProductId: 93,
+      creativeDirectionSelection: {
+        candidateId: "direction-b",
+        creativeDirectionFingerprint: fingerprint,
+      },
+    });
+
+    expect(payload).toMatchObject({
+      selected_product_id: 93,
+      creative_direction_selection: {
+        candidate_id: "direction-b",
+        creative_direction_fingerprint: fingerprint,
+      },
+    });
+    expect(payload.instruction).not.toContain("direction-b");
+  });
+
   it("serializes presenter audio selection with exact track bindings", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

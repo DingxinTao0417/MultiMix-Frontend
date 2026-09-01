@@ -42,6 +42,7 @@ import {
 import type {
   AgentActionRunResponse,
   AgentRunStep,
+  AssetCreativeDirectionSelection,
   AssetLongFormAction,
   AssetPlanBgmCatalog,
   AssetPresenterDirectionConfirmation,
@@ -2138,6 +2139,7 @@ export default function AssetsWorkspaceClient({
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
     videoProjectConfirmation?: AssetVideoProjectConfirmation,
+    creativeDirectionSelection?: AssetCreativeDirectionSelection,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2214,6 +2216,7 @@ export default function AssetsWorkspaceClient({
         videoSceneReplacement,
         presenterDirectionConfirmation,
         presenterDirectionRequest,
+        creativeDirectionSelection,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
@@ -2333,6 +2336,37 @@ export default function AssetsWorkspaceClient({
     }
     setConversationLoadRevision((value) => value + 1);
   };
+
+  const handleApplyCreativeDirection = useStableCallback(async (
+    product: ProductArtifact,
+    selection: AssetCreativeDirectionSelection,
+  ) => {
+    const conversation = conversationsRef.current.find(
+      (item) => item.id === selectedConversationIdRef.current,
+    );
+    if (!conversation || !product.backendAssetId) {
+      throw new Error("当前编导稿已切换，请在最新版本中重新选择方向。");
+    }
+    await handleSendConversationMessage(
+      conversation,
+      "应用此方向",
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      product.backendAssetId,
+      undefined,
+      undefined,
+      selection,
+    );
+  });
 
   const handleLongFormSelect = useStableCallback(async (action: LongFormSourceAction) => {
     const conversation = conversationsRef.current.find(
@@ -2950,6 +2984,11 @@ export default function AssetsWorkspaceClient({
                     }));
                   }}
                   onLongFormAction={(action) => void handleLongFormSelect(action)}
+                  onApplyCreativeDirection={
+                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                      ? undefined
+                      : (selection) => handleApplyCreativeDirection(selectedProduct, selection)
+                  }
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}

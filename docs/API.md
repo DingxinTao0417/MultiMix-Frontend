@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-08-31
+> Last verified: 2026-09-01
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -95,6 +95,25 @@ HTTP `503`、`code=database_temporarily_unavailable`、`request_id`，以及
 
 Agent 原子修改确认使用同一消息接口的可选 `agent_confirmation_id`。该 ID 必须来自当前
 assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不发送此字段。
+
+通用讲解型编导稿的公开 `video_plan.creative_direction` 包含 1–5 个由模型按输入自主决定的
+候选、`recommended_id`、`selected_id`、选择理由和候选集 `fingerprint`。前端默认只展示
+当前采用项；展开候选是纯浏览动作，不发送请求。只有用户点击“应用此方向”时，adapter 才向
+同一消息接口发送：
+
+```json
+{
+  "selected_product_id": 93,
+  "creative_direction_selection": {
+    "candidate_id": "direction-b",
+    "creative_direction_fingerprint": "sha256:..."
+  }
+}
+```
+
+服务端校验候选属于当前编导稿及 fingerprint 未过期后，将其作为同一编导稿的异步修订排队，
+继续返回现有 `generation_job`，不新增工作流状态。Presenter 不使用此字段，继续走
+`presenter_direction_request` / `presenter_direction_confirmation` 的单赢家合同。
 
 ### 2.2 方法详解
 
