@@ -25,6 +25,8 @@ it("keeps current entry copy within the editable-video and image-plan promise", 
   const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
 
   expect(libraryWorkshop).toContain("生成图片方案");
+  expect(libraryWorkshop).toContain("加入对话并说明想怎么处理这段内容");
+  expect(libraryWorkshop).not.toContain("可发布的短视频片段");
   expect(workspaceClient).toContain("生成图片方案");
   expect(workspaceClient).not.toContain("做成图片。");
   expect(conversationStart).toContain("封面方案");
