@@ -289,7 +289,7 @@ function usageText(row: LibraryRow): string | null {
   return row.referenceCount > 0 ? `已被引用 ${row.referenceCount} 次。` : "尚未被使用。";
 }
 
-export type LibraryActionIntent = "create" | "video" | "regenerate-image" | "long-form";
+export type LibraryActionIntent = "create" | "video" | "regenerate-image";
 
 function LibraryWorkshop({
   view,
@@ -1144,16 +1144,6 @@ function LibraryWorkshop({
                 <>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  {selectedRow.contentTypeCode === "long_form_video_source" ? (
-                    <button
-                      type="button"
-                      disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate || selectedRow.statusLabel !== "已入库"}
-                      title={selectedRow.statusLabel === "已入库" ? "加入对话并说明想怎么处理这段内容" : "原片准备完成后即可拆条"}
-                      onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "long-form"); }}
-                    >
-                      <Video size={14} aria-hidden="true" />拆成短视频
-                    </button>
-                  ) : null}
                   {isReparsableMedia(selectedRow) ? (
                     <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}

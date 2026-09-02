@@ -100,7 +100,6 @@ import {
 } from "../lib/long-form-client";
 import {
   prepareLongFormComposerSource,
-  resolveLongFormAnalyzeAction,
 } from "../lib/long-form-composer-source";
 import {
   resolveChatVideoAttachmentPurpose,
@@ -1835,30 +1834,6 @@ export default function AssetsWorkspaceClient({
     }
     const linkedAsset = { id: row.assetId, title: row.title };
     const newConversation = assetWorkspaceAdapter.getNewConversation();
-    if (intent === "long-form") {
-      if ((chatImageUploadsRef.current[newConversation.id] ?? []).some((item) => item.fileKind === "video")) {
-        toast.error("每次请只添加一个长视频来源。");
-        return;
-      }
-      const upload: ChatImageUpload = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        idempotencyKey: createUploadIdempotencyKey(),
-        fileName: row.title,
-        fileKind: "video",
-        title: row.title,
-        status: "ready",
-        uploadProgress: 100,
-        assetId: row.assetId,
-      };
-      setChatImageUploads((current) => ({
-        ...current,
-        [newConversation.id]: [...(current[newConversation.id] ?? []), upload],
-      }));
-      setSelectedConversationId(newConversation.id);
-      setActiveView("conversation");
-      toast.success("已加入对话，请先说明想怎么处理这段内容。");
-      return;
-    }
     const targetConversation = createLibraryCreationDraftConversation(newConversation);
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
@@ -1900,9 +1875,7 @@ export default function AssetsWorkspaceClient({
     }
     if (currentVideoCount + videoCount > 1) {
       toast.error(
-        videoPurpose === "visual_material"
-          ? "每次请只添加一个视频素材。"
-          : "每次请只添加一个长视频来源。",
+        "每次请只添加一个视频。",
       );
       return;
     }
@@ -2018,7 +1991,7 @@ export default function AssetsWorkspaceClient({
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
     const controller = new AbortController();
-    const videoPurpose = upload.videoPurpose ?? "long_form_source";
+    const videoPurpose = upload.videoPurpose ?? "creation_source";
     const isVisualMaterialVideo = upload.fileKind === "video" && videoPurpose === "visual_material";
     if (upload.fileKind === "video" && !isVisualMaterialVideo) {
       longFormSourceControllersRef.current.set(upload.id, controller);
@@ -2156,7 +2129,7 @@ export default function AssetsWorkspaceClient({
     }
     const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
     if ((chatImageUploadsRef.current[targetConversationId] ?? []).some((item) => item.fileKind === "video")) {
-      toast.error("每次请只添加一个长视频来源。");
+      toast.error("每次请只添加一个视频。");
       return;
     }
     const upload: ChatImageUpload = {
@@ -2165,7 +2138,7 @@ export default function AssetsWorkspaceClient({
       sourceUrl,
       fileName: "网络视频链接",
       fileKind: "video",
-      videoPurpose: "long_form_source",
+      videoPurpose: "creation_source",
       title: "网络视频",
       status: "uploading",
       uploadProgress: null,
@@ -2223,13 +2196,7 @@ export default function AssetsWorkspaceClient({
     if (!runtimeWriteCapabilities.canGenerate || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
-    const longFormSourceAttachments = (chatImageUploads[conversation.id] ?? []).filter(
-      (upload) => upload.videoPurpose !== "visual_material",
-    );
-    const effectiveLongFormAction = longFormAction ?? resolveLongFormAnalyzeAction(
-      longFormSourceAttachments,
-      instruction,
-    );
+    const effectiveLongFormAction = longFormAction;
     const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
       ? undefined
       : confirmationProductId ?? selectedProduct?.backendAssetId;

@@ -76,7 +76,7 @@ describe("chat video attachments", () => {
     expect(screen.getByRole("button", { name: "上传图片素材" })).toBeInTheDocument();
   });
 
-  it("asks for a requirement before sending a ready video from a new conversation", async () => {
+  it("does not force a long-form choice after a ready video in a new conversation", async () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
     render(
       <ConversationStart
@@ -89,11 +89,12 @@ describe("chat video attachments", () => {
     );
 
     expect(screen.getByRole("button", { name: "上传视频素材" })).toBeInTheDocument();
-    expect(screen.getByLabelText("长视频处理需求")).toBeInTheDocument();
+    expect(screen.queryByLabelText("长视频处理需求")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "找出值得发布的片段" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(onSend).not.toHaveBeenCalled());
-    expect(screen.getByRole("alert")).toHaveTextContent("请先说明你想怎么处理这段内容。");
+    expect(screen.getByRole("alert")).toHaveTextContent("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
   });
 
   it("turns a supported pasted video URL into an attachment request", () => {
@@ -116,7 +117,7 @@ describe("chat video attachments", () => {
     expect(screen.getByLabelText("输入对话内容")).toHaveValue("");
   });
 
-  it("asks for a requirement before sending a ready video from an existing conversation", async () => {
+  it("does not force a long-form choice after a ready video in an existing conversation", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     render(
       <ConversationStudio
@@ -132,10 +133,11 @@ describe("chat video attachments", () => {
     );
 
     expect(screen.getByRole("button", { name: "上传视频素材" })).toBeInTheDocument();
-    expect(screen.getByLabelText("长视频处理需求")).toBeInTheDocument();
+    expect(screen.queryByLabelText("长视频处理需求")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "找出值得发布的片段" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(onSendMessage).not.toHaveBeenCalled());
-    expect(screen.getByRole("alert")).toHaveTextContent("请先说明你想怎么处理这段内容。");
+    expect(screen.getByRole("alert")).toHaveTextContent("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
   });
 });

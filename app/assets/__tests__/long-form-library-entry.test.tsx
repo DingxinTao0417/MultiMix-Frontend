@@ -29,7 +29,7 @@ function sourceRow(contentTypeCode = "long_form_video_source"): LibraryRow {
 }
 
 describe("long-form source entry from the video library", () => {
-  it("offers a dedicated repurpose action for a saved long-form source", async () => {
+  it("does not offer a dedicated repurpose action while long-form creation is out of scope", async () => {
     const row = sourceRow();
     const onUseAsset = vi.fn().mockResolvedValue(undefined);
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
@@ -43,13 +43,9 @@ describe("long-form source entry from the video library", () => {
     const grid = await screen.findByLabelText("视频库列表");
     fireEvent.click(within(grid).getByRole("button"));
     const dialog = await screen.findByRole("dialog", { name: "访谈第 12 期详情" });
-    expect(within(dialog).getByRole("button", { name: "拆成短视频" })).toHaveAttribute(
-      "title",
-      "加入对话并说明想怎么处理这段内容",
-    );
-    fireEvent.click(within(dialog).getByRole("button", { name: "拆成短视频" }));
-
-    expect(onUseAsset).toHaveBeenCalledWith(row, "long-form");
+    expect(within(dialog).queryByRole("button", { name: "拆成短视频" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "用于创作" })).toBeInTheDocument();
+    expect(onUseAsset).not.toHaveBeenCalled();
   });
 
   it("does not offer repurposing for an ordinary rendered video", async () => {

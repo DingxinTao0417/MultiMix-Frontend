@@ -43,7 +43,6 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
-import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -528,7 +527,7 @@ export default function ConversationStudio({
   const submitInstruction = async () => {
     const explicitInstruction = composerValue.trim();
     if (hasReadyVideoAttachment && !explicitInstruction) {
-      setSendError("请先说明你想怎么处理这段内容。");
+      setSendError("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
       return;
     }
     const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
@@ -1183,11 +1182,6 @@ export default function ConversationStudio({
             </div>
           ) : null}
           {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
-          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={(value) => {
-            setComposerValue(value);
-            setAdjustHint(false);
-            requestAnimationFrame(() => composerRef.current?.focus());
-          }} /> : null}
           <input
             ref={imageInputRef}
             type="file"

@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   prepareLongFormComposerSource,
-  resolveLongFormAnalyzeAction,
   supportedLongFormUrlFromText,
 } from "../lib/long-form-composer-source";
 import {
@@ -85,22 +84,5 @@ describe("long-form composer source", () => {
     })).resolves.toEqual({ id: 93, title: "网络视频" });
 
     expect(waitReadyMock).toHaveBeenCalledWith("token", 93, signal);
-  });
-});
-
-describe("long-form analysis submit contract", () => {
-  const readyVideo = { assetId: 91, fileKind: "video" as const, status: "ready" as const };
-
-  it("requires exactly one ready video and a submitted requirement", () => {
-    expect(resolveLongFormAnalyzeAction([], "找出值得发布的片段")).toBeUndefined();
-    expect(resolveLongFormAnalyzeAction([readyVideo], "")).toBeUndefined();
-    expect(resolveLongFormAnalyzeAction([
-      readyVideo,
-      { assetId: 92, fileKind: "video", status: "ready" },
-    ], "找出值得发布的片段")).toBeUndefined();
-    expect(resolveLongFormAnalyzeAction([readyVideo], "找出值得发布的片段")).toEqual({
-      kind: "analyze",
-      sourceAssetId: 91,
-    });
   });
 });

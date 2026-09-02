@@ -1,6 +1,6 @@
 import type { AssetConversation } from "./asset-workspace-types";
 
-export type ChatVideoAttachmentPurpose = "visual_material" | "long_form_source";
+export type ChatVideoAttachmentPurpose = "visual_material" | "creation_source";
 
 function isExplainerProduct(conversation: AssetConversation): boolean {
   const products = conversation.products?.length
@@ -30,5 +30,5 @@ export function resolveChatVideoAttachmentPurpose(
   ) {
     return "visual_material";
   }
-  return "long_form_source";
+  return "creation_source";
 }

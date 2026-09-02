@@ -43,10 +43,11 @@ function run(command, args, options = {}) {
   });
 }
 
-const runId = crypto.randomUUID().replaceAll("-", "");
+const requestedRunId = process.env.MULTIMIX_E2E_RUN_ID?.replaceAll(/[^a-zA-Z0-9]/g, "");
+const runId = requestedRunId || crypto.randomUUID().replaceAll("-", "");
 const nextDistDir = `.next-long-form-e2e-${runId}`;
 const frontendLog = path.join(os.tmpdir(), `multimix-long-form-browser-${runId}.log`);
-const backendDatabase = path.join(os.tmpdir(), `multimix-long-form-e2e-${runId}.sqlite3`);
+const backendDatabase = path.join(os.tmpdir(), `multimix-${runId}.sqlite3`);
 const frontendSnapshots = ["next-env.d.ts", "tsconfig.json"].map((relativePath) => {
   const filePath = path.join(frontendRoot, relativePath);
   return {
@@ -119,8 +120,9 @@ try {
       "test",
       "--",
       "--run",
-      "app/assets/__tests__/long-form-entry.test.tsx",
       "app/assets/__tests__/long-form-library-entry.test.tsx",
+      "app/assets/__tests__/chat-video-attachment-routing.test.ts",
+      "app/assets/__tests__/chat-video-attachment-rejection.test.tsx",
       "app/assets/__tests__/long-form-candidate-set.test.tsx",
       "app/assets/__tests__/long-form-client.test.ts",
       "app/assets/__tests__/chat-attachment-policy.test.ts",

@@ -82,7 +82,7 @@ test("new conversation keeps long-form sources inside the composer", async ({ pa
   await expect(page.getByText("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接")).toBeVisible();
 });
 
-test("saved long-form source waits for a requirement before structured analysis", async ({ page }) => {
+test("saved video source stays in ordinary video creation without a long-form action", async ({ page }) => {
   const messageRequests = await installFixtureApi(page);
   await page.goto("/app/assets?view=video");
 
@@ -92,26 +92,15 @@ test("saved long-form source waits for a requirement before structured analysis"
   const dialog = page.getByRole("dialog", { name: "访谈第 12 期详情" });
   await expect(dialog).toBeVisible();
 
-  await dialog.getByRole("button", { name: "拆成短视频" }).click();
+  await expect(dialog.getByRole("button", { name: "拆成短视频" })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "用于创作" }).click();
 
-  const tray = page.getByLabel("本次上传资料");
-  await expect(tray.getByText("访谈第 12 期")).toBeVisible();
-  await expect(page.getByText("你想怎么处理这段内容？")).toBeVisible();
-  expect(messageRequests).toHaveLength(0);
-
-  const instruction = "找出这段内容中值得发布的片段";
-  await page.getByLabel("输入对话内容").fill(instruction);
-  await page.getByRole("button", { name: "发送" }).click();
   await expect.poll(() => messageRequests.length).toBe(1);
   const payload = messageRequests[0]!.postDataJSON() as Record<string, unknown>;
 
   expect(payload).toMatchObject({
-    instruction,
+    instruction: "基于《访谈第 12 期》做成视频。",
     linked_asset_ids: [91],
-    long_form_action: {
-      kind: "analyze",
-      source_asset_id: 91,
-    },
   });
-  expect(payload).not.toHaveProperty("selected_product_id");
+  expect(payload).not.toHaveProperty("long_form_action");
 });

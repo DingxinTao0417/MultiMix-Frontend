@@ -1,5 +1,3 @@
-import type { ChatAttachmentFileKind, ChatAttachmentStatus } from "./asset-workspace-shared";
-import type { AssetLongFormAction } from "./asset-workspace-types";
 import {
   importLongFormSourceUrl,
   uploadLongFormSource,
@@ -22,12 +20,6 @@ const LONG_FORM_VIDEO_HOSTS = new Set([
 export type LongFormComposerSourceInput =
   | { kind: "file"; file: File }
   | { kind: "url"; url: string };
-
-export type LongFormComposerAttachment = {
-  assetId?: number;
-  fileKind: ChatAttachmentFileKind;
-  status: ChatAttachmentStatus;
-};
 
 export function supportedLongFormUrlFromText(text: string): string | null {
   const trimmed = text.trim();
@@ -68,18 +60,4 @@ export async function prepareLongFormComposerSource({
     await waitForLongFormSourceReady(token, imported.asset_id, signal);
   }
   return { id: imported.asset_id, title: "网络视频" };
-}
-
-export function resolveLongFormAnalyzeAction(
-  attachments: readonly LongFormComposerAttachment[],
-  instruction: string,
-): AssetLongFormAction | undefined {
-  const readyVideos = attachments.filter((attachment) => (
-    attachment.fileKind === "video"
-    && attachment.status === "ready"
-    && typeof attachment.assetId === "number"
-  ));
-  const sourceAssetId = readyVideos.length === 1 ? readyVideos[0]?.assetId : undefined;
-  if (typeof sourceAssetId !== "number" || !instruction.trim()) return undefined;
-  return { kind: "analyze", sourceAssetId };
 }

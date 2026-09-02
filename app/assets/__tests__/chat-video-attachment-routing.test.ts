@@ -21,8 +21,8 @@ describe("chat video attachment routing", () => {
   });
 
   it("does not build a long-form analysis action from an explainer visual material", () => {
-    expect(workspaceClient).toContain("longFormSourceAttachments");
-    expect(workspaceClient).toContain('upload.videoPurpose !== "visual_material"');
+    expect(workspaceClient).not.toContain("resolveLongFormAnalyzeAction");
+    expect(workspaceClient).toContain("const effectiveLongFormAction = longFormAction;");
   });
 
   it("waits for video understanding before saving the material into the project", () => {
@@ -47,13 +47,13 @@ describe("chat video attachment routing", () => {
     expect(resolveChatVideoAttachmentPurpose(conversation)).toBe("visual_material");
   });
 
-  it("keeps a project without an explainer state on the long-form source path", () => {
+  it("keeps a project without an established type on the neutral creation-source path", () => {
     const conversation = {
       product: { contentType: undefined, metadata: {} },
       products: [],
       messages: [],
     } as unknown as AssetConversation;
 
-    expect(resolveChatVideoAttachmentPurpose(conversation)).toBe("long_form_source");
+    expect(resolveChatVideoAttachmentPurpose(conversation)).toBe("creation_source");
   });
 });

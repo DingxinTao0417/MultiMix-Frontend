@@ -512,7 +512,7 @@ function ConversationStudio({
 - **产物卡**：用 `getConversationProducts` 取列表，再按消息与产物关联关系插入消息流；点击时更新带 `conversation`、`product` 查询参数的路由并调用 `onSelectProduct`。
 - **suggestions 按钮**：点击把该建议填入输入框并聚焦、自适应高度。
 - **输入框与发送**：输入框初始为空；Enter 或发送按钮通过 `onSendMessage` 提交。生成中按钮用于停止当前浏览器请求；附件未就绪、只读或正在发送时，发送门会阻止重复提交。
-- **附件**：对话输入支持图片、文档和一个长视频来源的上传、删除、失败重试与上传进度；也支持导入 YouTube、Bilibili 和公开 MP4 链接。长视频继续走专用上传 / 导入接口，视频库原片也先作为 ready 附件带入对话。只添加来源不会发送消息或启动分析，只有用户明确提交处理需求后才启动长内容分析，并附带 `long_form_action=analyze`。
+- **附件**：对话输入支持图片、文档和一个视频的上传、删除、失败重试与上传进度；也支持导入 YouTube、Bilibili 和公开 MP4 链接。底层可继续复用大文件上传 / 导入能力，但视频只作为 ready 创作来源带入对话。普通发送不得根据“存在视频附件”自动附加 `long_form_action=analyze`；用户原始指令决定它进入讲解视频素材链路还是口播原片链路。当前不开放新的长视频拆条入口，历史拆条产物的显式操作仅作兼容。
 - **任务与动作**：有效 `agentTasks` 在消息头下显示轻量任务条；Agent 动作确认复用
   `ConfirmCard`，执行状态复用唯一的 `AgentRunTimeline`。只有服务端
   `status === "succeeded"` 才显示完成，只有 `retryable === true` 才显示动作重试。

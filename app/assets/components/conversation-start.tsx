@@ -14,7 +14,6 @@ import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
-import LongFormComposerPrompt from "./long-form-composer-prompt";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -26,7 +25,7 @@ import {
 
 const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
-const ATTACHMENT_HELP_TEXT = "图片会作为画面素材，PDF/文档会作为内容依据；添加视频后请先说明想怎么处理。";
+const ATTACHMENT_HELP_TEXT = "图片和视频会作为创作素材，PDF/文档会作为内容依据；视频也可以作为需要优化的口播原片。";
 
 // Primary task cards fill a bounded user intent. Unknown labels degrade to a
 // title-only card so the client never invents a creation instruction.
@@ -145,7 +144,7 @@ export default function ConversationStart({
     }
     const explicitInstruction = composerValue.trim();
     if (hasReadyVideoAttachment && !explicitInstruction) {
-      setError("请先说明你想怎么处理这段内容。");
+      setError("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
       return;
     }
     const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
@@ -266,7 +265,6 @@ export default function ConversationStart({
             </div>
           ) : null}
           {isDraggingUpload ? <div className="shadcn-prototype-chat-drop-hint">释放以上传 PDF / 图片 / 视频素材</div> : null}
-          {hasReadyVideoAttachment ? <LongFormComposerPrompt onFill={fillComposer} /> : null}
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
