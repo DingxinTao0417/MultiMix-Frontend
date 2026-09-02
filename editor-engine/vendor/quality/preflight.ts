@@ -148,7 +148,7 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
   const overlays = project.tracks
     .filter((track) => track.type === "video" && track.overlay)
     .flatMap((track) => track.elements)
-    .filter((element) => Boolean(element.safeRegion));
+    .filter((element) => element.eventType !== "media_takeover" && Boolean(element.safeRegion));
   for (const overlay of overlays) {
     for (const subtitle of subtitles) {
       if (

@@ -169,6 +169,55 @@ describe("inspectEditorProject", () => {
     );
   });
 
+  it("does not treat a presenter media takeover as an MG/subtitle collision", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      tracks: [
+        {
+          id: "track-video",
+          type: "video",
+          name: "口播主画面",
+          elements: [{ id: "v1", type: "video", mediaId: "m1", startTime: 0, duration: 10, segmentId: "scene-1" }],
+        },
+        {
+          id: "track-text",
+          type: "text",
+          name: "字幕",
+          elements: [{
+            id: "subtitle-1",
+            type: "text",
+            content: "口播字幕",
+            startTime: 0,
+            duration: 10,
+            segmentId: "scene-1",
+            textRole: "subtitle",
+            safeRegion: { x: 0.08, y: 0.76, width: 0.84, height: 0.18 },
+          }],
+        },
+        {
+          id: "track-presenter-media",
+          type: "video",
+          name: "口播素材增强",
+          overlay: true,
+          logicalLayer: "media_enhancement",
+          elements: [{
+            id: "takeover-1",
+            type: "video",
+            mediaId: "m1",
+            startTime: 2,
+            duration: 4,
+            segmentId: "scene-1",
+            eventType: "media_takeover",
+            fullFrame: true,
+            safeRegion: { x: 0, y: 0, width: 1, height: 1 },
+          }],
+        },
+      ],
+    });
+
+    expect(report.blockers.map((item) => item.code)).not.toContain("overlay_subtitle_collision");
+  });
+
   it("checks subtitle roles without treating presentation support as captions", () => {
     const report = inspectEditorProject({
       ...baseProject,
