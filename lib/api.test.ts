@@ -36,6 +36,32 @@ describe("api", () => {
     })).rejects.toThrow(API_CONNECTION_ERROR);
   });
 
+  it("keeps presenter delivery conflicts as a user-visible validation error", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({
+        detail: {
+          code: "presenter_delivery_contract_conflict",
+          message: "当前方案的交付参数不一致，请刷新方案后重新确认。",
+        },
+      }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      })
+    ));
+
+    const error = await api("/assets/conversations/messages", "token", {
+      method: "POST",
+      body: JSON.stringify({ instruction: "确认" }),
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({
+      message: "当前方案的交付参数不一致，请刷新方案后重新确认。",
+      retryable: false,
+      status: 409,
+    });
+    expect((error as Error).message).not.toBe(API_CONNECTION_ERROR);
+  });
+
   it("never exposes an English provider read timeout", () => {
     expect(formatComposerError(
       new Error("AI generation service failed: The read operation timed out"),
