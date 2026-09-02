@@ -103,6 +103,10 @@ import {
   resolveLongFormAnalyzeAction,
 } from "../lib/long-form-composer-source";
 import {
+  resolveChatVideoAttachmentPurpose,
+  type ChatVideoAttachmentPurpose,
+} from "../lib/chat-video-attachment-routing";
+import {
   mergeConversationContextAssets,
   type ConversationContextAsset,
 } from "../lib/conversation-context-assets";
@@ -178,6 +182,7 @@ type ChatImageUpload = ChatImageAttachment & {
   file?: File;
   sourceUrl?: string;
   idempotencyKey: string;
+  videoPurpose?: ChatVideoAttachmentPurpose;
 };
 
 const CHAT_UPLOAD_BATCH_CONCURRENCY = 3;
@@ -1879,7 +1884,11 @@ export default function AssetsWorkspaceClient({
       toast.error("请先登录并配置后端后再上传资料。");
       return;
     }
-    const targetConversationId = selectedConversation.readonly ? "new" : selectedConversation.id;
+    const targetConversation = selectedConversation.readonly
+      ? assetWorkspaceAdapter.getNewConversation()
+      : selectedConversation;
+    const targetConversationId = targetConversation.id;
+    const videoPurpose = resolveChatVideoAttachmentPurpose(targetConversation);
     const currentUploads = chatImageUploads[targetConversationId] ?? [];
     const imageCount = files.filter((file) => chatAttachmentFileKind(file) === "image").length;
     const currentImageCount = currentUploads.filter((upload) => upload.fileKind === "image").length;
@@ -1890,7 +1899,11 @@ export default function AssetsWorkspaceClient({
       return;
     }
     if (currentVideoCount + videoCount > 1) {
-      toast.error("每次请只添加一个长视频来源。");
+      toast.error(
+        videoPurpose === "visual_material"
+          ? "每次请只添加一个视频素材。"
+          : "每次请只添加一个长视频来源。",
+      );
       return;
     }
     if (currentUploads.length + files.length > 24) {
@@ -1903,6 +1916,7 @@ export default function AssetsWorkspaceClient({
       file,
       fileName: file.name,
       fileKind: chatAttachmentFileKind(file),
+      videoPurpose: chatAttachmentFileKind(file) === "video" ? videoPurpose : undefined,
       title: file.name,
       status: "uploading",
       uploadProgress: 0,
@@ -1925,6 +1939,31 @@ export default function AssetsWorkspaceClient({
     })();
   };
 
+  const persistReadyVisualMaterial = useCallback(async (
+    conversationId: string,
+    assetId: number,
+    title: string,
+  ) => {
+    if (!token || conversationId === "new") return;
+    await addProjectSource(token, conversationId, assetId);
+    setConversationContextAssets((current) => ({
+      ...current,
+      [conversationId]: mergeConversationContextAssets(
+        current[conversationId] ?? [],
+        [{ id: assetId, title }],
+      ),
+    }));
+    const refreshed = await assetWorkspaceAdapter.loadConversationDetail(
+      token,
+      conversationId,
+    );
+    setConversations((current) => current.map((conversation) => (
+      conversation.id === conversationId
+        ? mergeProjectConversationDetail(conversation, refreshed)
+        : conversation
+    )));
+  }, [token]);
+
   const waitForUploadedSourceReady = useCallback(async (
     conversationId: string,
     uploadId: string,
@@ -1941,6 +1980,16 @@ export default function AssetsWorkspaceClient({
       try {
         const job = await assetWorkspaceAdapter.getLatestAssetIngestJob(token, assetId);
         if (job.status === "completed") {
+          const trackedUpload = (
+            chatImageUploadsRef.current[conversationId] ?? []
+          ).find((item) => item.id === uploadId && item.assetId === assetId);
+          if (trackedUpload?.videoPurpose === "visual_material") {
+            await persistReadyVisualMaterial(
+              conversationId,
+              assetId,
+              trackedUpload.title || trackedUpload.fileName,
+            );
+          }
           setChatImageUploads((current) => ({
             ...current,
             [conversationId]: (current[conversationId] ?? []).map((item) =>
@@ -1964,12 +2013,14 @@ export default function AssetsWorkspaceClient({
       firstPoll = false;
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
     }
-  }, [token]);
+  }, [persistReadyVisualMaterial, token]);
 
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
     const controller = new AbortController();
-    if (upload.fileKind === "video") {
+    const videoPurpose = upload.videoPurpose ?? "long_form_source";
+    const isVisualMaterialVideo = upload.fileKind === "video" && videoPurpose === "visual_material";
+    if (upload.fileKind === "video" && !isVisualMaterialVideo) {
       longFormSourceControllersRef.current.set(upload.id, controller);
     }
     try {
@@ -1982,7 +2033,7 @@ export default function AssetsWorkspaceClient({
         }));
       };
       let asset;
-      if (upload.fileKind === "video") {
+      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
         const input = upload.sourceUrl
           ? { kind: "url" as const, url: upload.sourceUrl }
           : upload.file
@@ -1997,19 +2048,40 @@ export default function AssetsWorkspaceClient({
         });
       } else {
         if (!upload.file) throw new Error("没有可上传的资料。");
-        asset = await assetWorkspaceAdapter.uploadAsset(
-          token,
-          upload.file,
-          upload.fileKind === "source" ? "assets" : upload.fileKind,
-          onProgress,
-          upload.idempotencyKey,
-        );
+        if (isVisualMaterialVideo) {
+          asset = await assetWorkspaceAdapter.uploadAsset(
+            token,
+            upload.file,
+            "video",
+            onProgress,
+            upload.idempotencyKey,
+          );
+        } else {
+          asset = await assetWorkspaceAdapter.uploadAsset(
+            token,
+            upload.file,
+            upload.fileKind === "source" ? "assets" : upload.fileKind,
+            onProgress,
+            upload.idempotencyKey,
+          );
+        }
       }
       const acceptedUpload: Pick<ChatImageAttachment, "assetId" | "fileKind" | "status"> = {
         assetId: asset.id,
         fileKind: upload.fileKind,
-        status: upload.fileKind === "video" || !("status" in asset) || asset.status === "ready" ? "ready" : "processing",
+        status: (
+          (upload.fileKind === "video" && !isVisualMaterialVideo)
+          || !("status" in asset)
+          || asset.status === "ready"
+        ) ? "ready" : "processing",
       };
+      if (isVisualMaterialVideo && acceptedUpload.status === "ready") {
+        await persistReadyVisualMaterial(
+          conversationId,
+          asset.id,
+          asset.title || upload.fileName,
+        );
+      }
       setChatImageUploads((current) => ({
         ...current,
         [conversationId]: (current[conversationId] ?? []).map((item) =>
@@ -2040,7 +2112,7 @@ export default function AssetsWorkspaceClient({
         )
       }));
     } finally {
-      if (upload.fileKind === "video") {
+      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
         longFormSourceControllersRef.current.delete(upload.id);
       }
     }
@@ -2093,6 +2165,7 @@ export default function AssetsWorkspaceClient({
       sourceUrl,
       fileName: "网络视频链接",
       fileKind: "video",
+      videoPurpose: "long_form_source",
       title: "网络视频",
       status: "uploading",
       uploadProgress: null,
@@ -2150,8 +2223,11 @@ export default function AssetsWorkspaceClient({
     if (!runtimeWriteCapabilities.canGenerate || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       throw new Error("请先登录并配置后端后再使用 AI 生成。");
     }
+    const longFormSourceAttachments = (chatImageUploads[conversation.id] ?? []).filter(
+      (upload) => upload.videoPurpose !== "visual_material",
+    );
     const effectiveLongFormAction = longFormAction ?? resolveLongFormAnalyzeAction(
-      chatImageUploads[conversation.id] ?? [],
+      longFormSourceAttachments,
       instruction,
     );
     const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
