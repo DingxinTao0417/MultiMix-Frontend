@@ -8415,47 +8415,7 @@ label {
   padding: 0 18px 15px;
 }
 
-.shadcn-prototype-confirm-cleanup > label,
-.shadcn-prototype-confirm-cleanup-suggestions > label {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
-  color: var(--sp-text);
-  font-size: 12px;
-}
-
-.shadcn-prototype-confirm-cleanup label > span {
-  display: grid;
-  gap: 3px;
-}
-
-.shadcn-prototype-confirm-cleanup label strong,
-.shadcn-prototype-confirm-cleanup label em,
-.shadcn-prototype-confirm-cleanup label small {
-  font: inherit;
-}
-
-.shadcn-prototype-confirm-cleanup label em {
-  color: var(--sp-accent);
-  font-weight: 650;
-  font-style: normal;
-}
-
-.shadcn-prototype-confirm-cleanup label strong {
-  font-weight: 650;
-}
-
-.shadcn-prototype-confirm-cleanup label small {
-  color: var(--sp-subtle);
-}
-
-.shadcn-prototype-confirm-cleanup-more {
-  display: grid;
-  gap: 10px;
-}
-
-.shadcn-prototype-confirm-cleanup-more > button {
+.shadcn-prototype-confirm-cleanup-toggle {
   justify-self: start;
   border: 0;
   background: transparent;
@@ -8467,11 +8427,102 @@ label {
   cursor: pointer;
 }
 
-.shadcn-prototype-confirm-cleanup-suggestions {
+.shadcn-prototype-confirm-cleanup-editor,
+.shadcn-prototype-confirm-cleanup-list {
   display: grid;
   gap: 10px;
+}
+
+.shadcn-prototype-confirm-cleanup-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.shadcn-prototype-confirm-cleanup-groups button {
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
+  background: var(--sp-surface);
+  color: var(--sp-subtle);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-confirm-cleanup-groups button[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--sp-accent) 48%, var(--sp-border));
+  background: color-mix(in srgb, var(--sp-accent) 7%, var(--sp-surface));
+  color: var(--sp-accent);
+}
+
+.shadcn-prototype-confirm-cleanup-groups button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.shadcn-prototype-confirm-cleanup-list {
   border-top: 1px dashed var(--sp-border);
   padding-top: 10px;
+}
+
+.shadcn-prototype-confirm-cleanup-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  color: var(--sp-text);
+  font-size: 12px;
+}
+
+.shadcn-prototype-confirm-cleanup-item > div,
+.shadcn-prototype-confirm-cleanup-item label,
+.shadcn-prototype-confirm-cleanup-item details > div {
+  display: grid;
+  gap: 3px;
+}
+
+.shadcn-prototype-confirm-cleanup-item label {
+  cursor: pointer;
+}
+
+.shadcn-prototype-confirm-cleanup-item label > span {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.shadcn-prototype-confirm-cleanup-item strong,
+.shadcn-prototype-confirm-cleanup-item em,
+.shadcn-prototype-confirm-cleanup-item small,
+.shadcn-prototype-confirm-cleanup-item summary {
+  font: inherit;
+}
+
+.shadcn-prototype-confirm-cleanup-item em {
+  color: var(--sp-accent);
+  font-weight: 650;
+  font-style: normal;
+}
+
+.shadcn-prototype-confirm-cleanup-item strong {
+  font-weight: 650;
+}
+
+.shadcn-prototype-confirm-cleanup-item small {
+  color: var(--sp-subtle);
+}
+
+.shadcn-prototype-confirm-cleanup-item summary {
+  width: max-content;
+  color: var(--sp-faint);
+  cursor: pointer;
+}
+
+.shadcn-prototype-confirm-cleanup-item details > div {
+  margin-top: 5px;
+  padding-left: 2px;
 }
 
 .shadcn-prototype-confirm-row,

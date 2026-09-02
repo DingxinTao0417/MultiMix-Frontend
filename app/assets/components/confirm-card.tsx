@@ -7,8 +7,50 @@ import type {
   AssetPlanBgmCatalog,
   AssetPlanConfirmationValues,
   AssetPlanField,
+  AssetPresenterCleanupItem,
   AssetVisualPreviewFrame,
 } from "../lib/asset-workspace-types";
+
+type CleanupDisplayGroup = NonNullable<AssetPresenterCleanupItem["displayGroup"]>;
+
+const CLEANUP_DISPLAY_GROUPS: { id: CleanupDisplayGroup; label: string }[] = [
+  { id: "pause", label: "停顿太长" },
+  { id: "fluency", label: "说话不顺" },
+  { id: "repetition", label: "内容重复" },
+  { id: "noise_operation", label: "杂音或拍摄操作" },
+];
+
+const CLEANUP_GROUP_BY_LEGACY_CATEGORY: Record<string, CleanupDisplayGroup> = {
+  leading_silence: "pause",
+  trailing_silence: "pause",
+  overlong_silence: "pause",
+  pause_compression: "pause",
+  non_lexical_filler: "fluency",
+  lexical_filler: "fluency",
+  stutter_or_truncated_word: "fluency",
+  false_start: "fluency",
+  self_corrected_incomplete_expression: "fluency",
+  immediate_repetition: "repetition",
+  phrase_repetition: "repetition",
+  complete_retake: "repetition",
+  removable_non_speech_sound: "noise_operation",
+  device_operation: "noise_operation",
+};
+
+function cleanupDisplayGroup(item: AssetPresenterCleanupItem): CleanupDisplayGroup | undefined {
+  return item.displayGroup ?? CLEANUP_GROUP_BY_LEGACY_CATEGORY[item.category];
+}
+
+function cleanupClockLabel(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds - minutes * 60;
+  return `${String(minutes).padStart(2, "0")}:${remaining.toFixed(1).padStart(4, "0")}`;
+}
+
+function cleanupSelectionChanged(initial: Set<string>, current: Set<string>): boolean {
+  if (initial.size !== current.size) return true;
+  return [...initial].some((id) => !current.has(id));
+}
 
 // Two-state confirmation card (spec §5.2 / decision demo final/workspace-copy.html).
 // Pending: gradient-bordered card with two-column fields + confirm/adjust buttons.
@@ -123,10 +165,14 @@ export default function ConfirmCard({
     () => plan.directionDefault ?? directionOptions[0]?.id ?? ""
   );
   const cleanupItems = plan.cleanupItems ?? [];
+  const [initialCleanupIds] = useState<Set<string>>(
+    () => new Set(cleanupItems.filter((item) => item.selected).map((item) => item.id))
+  );
   const [selectedCleanupIds, setSelectedCleanupIds] = useState<Set<string>>(
     () => new Set(cleanupItems.filter((item) => item.selected).map((item) => item.id))
   );
-  const [showSuggestedCleanupItems, setShowSuggestedCleanupItems] = useState(false);
+  const [showCleanupEditor, setShowCleanupEditor] = useState(false);
+  const [expandedCleanupGroup, setExpandedCleanupGroup] = useState<CleanupDisplayGroup>();
   const audioTrackOptions = plan.audioTrackOptions ?? [];
   const subtitleOptions = plan.subtitleOptions ?? [];
   const [selectedSubtitleMode, setSelectedSubtitleMode] = useState(
@@ -204,12 +250,10 @@ export default function ConfirmCard({
         return field;
       })
     : plan.fields;
-  const selectedCleanupItems = cleanupItems.filter((item) => (
-    item.state !== "suggested" || item.locked || selectedCleanupIds.has(item.id)
-  ));
-  const suggestedCleanupItems = cleanupItems.filter((item) => (
-    item.state === "suggested" && !item.locked && !selectedCleanupIds.has(item.id)
-  ));
+  const hasCleanupSelectionChanged = cleanupSelectionChanged(
+    initialCleanupIds,
+    selectedCleanupIds,
+  );
   const renderCleanupItem = (item: (typeof cleanupItems)[number]) => {
     const checked = selectedCleanupIds.has(item.id);
     const decisionLabel = item.decisionLabel ?? {
@@ -218,9 +262,16 @@ export default function ConfirmCard({
       protected: "已保护",
     }[item.state];
     const decisionReason = item.decisionReason || item.reason;
+    const effectLabel = item.effectLabel || (
+      ["delete", "shorten"].includes(item.action) && item.estimatedSavingSeconds > 0
+        ? `预计缩短 ${item.estimatedSavingSeconds.toFixed(1)} 秒`
+        : "保持原样"
+    );
+    const inputId = `presenter-cleanup-${item.id}`;
     return (
-      <label key={item.id} data-state={item.state}>
+      <div className="shadcn-prototype-confirm-cleanup-item" key={item.id} data-state={item.state}>
         <input
+          id={inputId}
           type="checkbox"
           checked={checked}
           disabled={disabled || plan.requiresClarification}
@@ -231,24 +282,38 @@ export default function ConfirmCard({
             return next;
           })}
         />
-        <span>
-          <strong>{item.spokenText || item.category}</strong>
-          <em>{decisionLabel}</em>
-          <small>{decisionReason}</small>
-          {item.reason && item.reason !== decisionReason ? <small>候选判断：{item.reason}</small> : null}
-          {item.secondaryRecognition ? (
-            <>
-              <small>{item.secondaryRecognition.label}</small>
-              {item.secondaryRecognition.model ? (
-                <small>交叉识别模型：{item.secondaryRecognition.model}</small>
+        <div>
+          <label htmlFor={inputId}>
+            <span>
+              <strong>{item.spokenText || item.category}</strong>
+              <em>{effectLabel}</em>
+            </span>
+            {item.sourceRange ? (
+              <small>
+                {cleanupClockLabel(item.sourceRange.startSeconds)}–{cleanupClockLabel(item.sourceRange.endSeconds)}
+              </small>
+            ) : null}
+          </label>
+          <details>
+            <summary>为什么这样处理</summary>
+            <div>
+              <em>{decisionLabel}</em>
+              <small>{decisionReason}</small>
+              {item.reason && item.reason !== decisionReason ? <small>候选判断：{item.reason}</small> : null}
+              {item.secondaryRecognition ? (
+                <>
+                  <small>{item.secondaryRecognition.label}</small>
+                  {item.secondaryRecognition.model ? (
+                    <small>交叉识别模型：{item.secondaryRecognition.model}</small>
+                  ) : null}
+                </>
               ) : null}
-            </>
-          ) : null}
-          <small>预计缩短 {item.estimatedSavingSeconds.toFixed(1)} 秒</small>
-          <small>音频风险 {item.audioRisk} · 跳切风险 {item.visualJumpRisk}</small>
-          {item.protectionReasons.length ? <em>保护：{item.protectionReasons.join("、")}</em> : null}
-        </span>
-      </label>
+              <small>音频风险 {item.audioRisk} · 跳切风险 {item.visualJumpRisk}</small>
+              {item.protectionReasons.length ? <em>保护：{item.protectionReasons.join("、")}</em> : null}
+            </div>
+          </details>
+        </div>
+      </div>
     );
   };
 
@@ -341,21 +406,40 @@ export default function ConfirmCard({
       ) : null}
       {cleanupItems.length ? (
         <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">
-          {selectedCleanupItems.map(renderCleanupItem)}
-          {suggestedCleanupItems.length ? (
-            <div className="shadcn-prototype-confirm-cleanup-more">
-              <button
-                type="button"
-                aria-expanded={showSuggestedCleanupItems}
-                onClick={() => setShowSuggestedCleanupItems((visible) => !visible)}
-              >
-                {showSuggestedCleanupItems
-                  ? `收起其余 ${suggestedCleanupItems.length} 条建议`
-                  : `查看其余 ${suggestedCleanupItems.length} 条建议（默认不处理）`}
-              </button>
-              {showSuggestedCleanupItems ? (
-                <div className="shadcn-prototype-confirm-cleanup-suggestions">
-                  {suggestedCleanupItems.map(renderCleanupItem)}
+          <button
+            type="button"
+            className="shadcn-prototype-confirm-cleanup-toggle"
+            aria-expanded={showCleanupEditor}
+            onClick={() => setShowCleanupEditor((visible) => !visible)}
+          >
+            {showCleanupEditor ? "收起调整" : "自己调整"}
+          </button>
+          {showCleanupEditor ? (
+            <div className="shadcn-prototype-confirm-cleanup-editor">
+              <div className="shadcn-prototype-confirm-cleanup-groups" aria-label="清理内容分类">
+                {CLEANUP_DISPLAY_GROUPS.map((group) => {
+                  const groupItems = cleanupItems.filter(
+                    (item) => cleanupDisplayGroup(item) === group.id,
+                  );
+                  const expanded = expandedCleanupGroup === group.id;
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      aria-expanded={expanded}
+                      disabled={!groupItems.length}
+                      onClick={() => setExpandedCleanupGroup(expanded ? undefined : group.id)}
+                    >
+                      {group.label}（{groupItems.length}）
+                    </button>
+                  );
+                })}
+              </div>
+              {expandedCleanupGroup ? (
+                <div className="shadcn-prototype-confirm-cleanup-list">
+                  {cleanupItems
+                    .filter((item) => cleanupDisplayGroup(item) === expandedCleanupGroup)
+                    .map(renderCleanupItem)}
                 </div>
               ) : null}
             </div>
@@ -583,7 +667,9 @@ export default function ConfirmCard({
           }}
         >
           <Check size={14} aria-hidden="true" />
-          {plan.confirmLabel ?? "确认"}
+          {isPresenterCleanupConfirmation
+            ? hasCleanupSelectionChanged ? "按当前选择继续" : "按推荐方案继续"
+            : plan.confirmLabel ?? "确认"}
         </button>
         <button
           type="button"
@@ -591,7 +677,7 @@ export default function ConfirmCard({
           disabled={disabled || !onAdjust}
           onClick={() => onAdjust?.(plan)}
         >
-          {plan.adjustLabel ?? "调整方向"}
+          {isPresenterCleanupConfirmation ? "直接告诉我怎么改" : plan.adjustLabel ?? "调整方向"}
         </button>
       </div>
       {maintenanceMessage ? <p role="status">{maintenanceMessage}</p> : null}

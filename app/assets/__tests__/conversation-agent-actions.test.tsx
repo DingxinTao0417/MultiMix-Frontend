@@ -405,7 +405,7 @@ describe("Conversation Agent actions", () => {
     );
 
     expect(screen.queryByRole("button", { name: "确认生成" })).not.toBeInTheDocument();
-    const confirmButton = screen.getByRole("button", { name: "确认清理并进入导演方案" });
+    const confirmButton = screen.getByRole("button", { name: "按推荐方案继续" });
     expect(confirmButton).toBeEnabled();
     fireEvent.click(confirmButton);
 

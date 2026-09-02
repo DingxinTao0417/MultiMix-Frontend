@@ -339,7 +339,7 @@ describe("ConfirmCard pending state", () => {
       kind: "presenter_cleanup_confirmation" as const,
       title: "口播清理",
       status: "pending" as const,
-      fields: [{ key: "cleanup", label: "自然精简", value: "自动 1 项 · 建议 1 项" }],
+      fields: [{ key: "cleanup", label: "自然精简", value: "预计处理 1 处 · 缩短约 0.4 秒" }],
       confirmLabel: "确认清理并进入导演方案",
       cleanupPlanId: "cleanup-1",
       cleanupPlanHash: "a".repeat(64),
@@ -348,10 +348,14 @@ describe("ConfirmCard pending state", () => {
           id: "auto-1",
           state: "auto" as const,
           category: "non_lexical_filler",
+          displayGroup: "fluency" as const,
           spokenText: "嗯",
           action: "delete",
           reason: "孤立口癖",
           estimatedSavingSeconds: 0.4,
+          executionEffectStatus: "actionable" as const,
+          effectLabel: "删除，预计缩短 0.4 秒",
+          sourceRange: { startSeconds: 1.2, endSeconds: 1.6 },
           risk: "low",
           audioRisk: "low",
           visualJumpRisk: "medium",
@@ -374,10 +378,14 @@ describe("ConfirmCard pending state", () => {
           id: "suggested-1",
           state: "suggested" as const,
           category: "phrase_repetition",
+          displayGroup: "repetition" as const,
           spokenText: "再说一次",
           action: "delete",
           reason: "较长重说",
           estimatedSavingSeconds: 1.2,
+          executionEffectStatus: "actionable" as const,
+          effectLabel: "删除，预计缩短 1.2 秒",
+          sourceRange: { startSeconds: 3.0, endSeconds: 4.2 },
           risk: "medium",
           audioRisk: "low",
           visualJumpRisk: "high",
@@ -405,18 +413,31 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
 
+    expect(screen.getByText("预计处理 1 处 · 缩短约 0.4 秒")).toBeTruthy();
+    expect(screen.queryByText("嗯")).toBeNull();
+    expect(screen.queryByText("自动通过")).toBeNull();
+    expect(screen.getByRole("button", { name: "按推荐方案继续" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "直接告诉我怎么改" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "自己调整" }));
+    expect(screen.getByRole("button", { name: "停顿太长（0）" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "说话不顺（1）" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "内容重复（1）" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "杂音或拍摄操作（0）" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "说话不顺（1）" }));
+    expect(screen.getByText("嗯")).toBeTruthy();
+    expect(screen.getByText("00:01.2–00:01.6")).toBeTruthy();
+    expect(screen.getByText("删除，预计缩短 0.4 秒")).toBeTruthy();
+    const safetyDetails = screen.getByText("为什么这样处理").closest("details");
+    expect(safetyDetails?.open).toBe(false);
+    fireEvent.click(screen.getByText("为什么这样处理"));
+    expect(safetyDetails?.open).toBe(true);
     expect(screen.getByText("自动通过")).toBeTruthy();
-    expect(screen.getByText("删除不改变原意、语气或逻辑关系")).toBeTruthy();
-    expect(screen.getByText("第二次识别一致，已恢复自动处理")).toBeTruthy();
-    expect(screen.queryByText("降为建议")).toBeNull();
-    expect(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "查看其余 1 条建议（默认不处理）" }));
-    expect(screen.getByText("降为建议")).toBeTruthy();
-    expect(screen.getByText("可能承担承接上句的表达作用")).toBeTruthy();
-    expect(screen.getByText("两次识别不一致，保持建议")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "内容重复（1）" }));
+    expect(screen.getByText("再说一次")).toBeTruthy();
     fireEvent.click(screen.getByText("再说一次"));
+    expect(screen.getByRole("button", { name: "按当前选择继续" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "人声轨 2" }));
-    fireEvent.click(screen.getByRole("button", { name: "确认清理并进入导演方案" }));
+    fireEvent.click(screen.getByRole("button", { name: "按当前选择继续" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
       cleanupCandidateIds: ["auto-1", "suggested-1"],
