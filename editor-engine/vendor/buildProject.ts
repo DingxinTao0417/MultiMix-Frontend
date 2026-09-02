@@ -40,8 +40,19 @@ export interface BackendEditDecision {
   layout?: string;
   motion?: string;
   transition?: string;
+  overlays?: Array<{ kind: string; text: string }>;
   presentation_support?: BackendPresentationSupport;
   [key: string]: unknown;
+}
+export interface BackendEditExecution {
+  schema_version: "edit_decision_execution:v2";
+  compiler_version: string;
+  scene_id: string;
+  layout: string;
+  motion: string;
+  transition: string;
+  overlay_kind?: string;
+  auxiliary_slot?: string;
 }
 export interface BackendTransition {
   type: string;
@@ -114,15 +125,18 @@ export interface BackendElement {
   muted?: boolean;      // stock video clips are muted so their source audio doesn't talk over narration
   volume?: number;
   volumeUnit?: "db" | "linear";
-  animations?: ElementAnimations;
-  transition?: BackendTransition;
+  animations?: ElementAnimations | null;
+  transition?: BackendTransition | null;
   editDecision?: BackendEditDecision;
+  editExecution?: BackendEditExecution;
+  editOverlayKind?: string;
   textRole?:
     | "subtitle"
     | "presentation_support"
     | "brand_cta"
     | "presenter_emphasis"
-    | "presenter_graphic";
+    | "presenter_graphic"
+    | "edit_overlay";
   eventId?: string;
   eventType?: string;
   presenterSceneId?: string;
@@ -169,6 +183,12 @@ export interface BackendProject {
       min_seconds: number;
       max_seconds: number;
     };
+    edit_decision_execution?: {
+      schema_version: string;
+      compiler_version: string;
+      scene_ids: string[];
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   };
   settings: { fps: number; width: number; height: number };
@@ -178,6 +198,14 @@ export interface BackendProject {
 }
 
 const IDENTITY_TRANSFORM = { scaleX: 1, scaleY: 1, position: { x: 0, y: 0 }, rotate: 0 };
+export const EDIT_LAYOUTS = ["full", "split", "pip", "collage", "product_focus", "comparison"] as const;
+export const EDIT_MOTIONS = ["static", "zoom_in", "zoom_out", "pan_left", "pan_right", "ken_burns", "drift_up", "drift_down", "parallax"] as const;
+export const EDIT_OVERLAYS = ["title", "subtitle", "callout", "flow", "data", "evidence", "value", "cta"] as const;
+export const EDIT_TRANSITIONS = ["cut", "dissolve", "push", "wipe"] as const;
+const EDIT_LAYOUT_SET = new Set<string>(EDIT_LAYOUTS);
+const EDIT_MOTION_SET = new Set<string>(EDIT_MOTIONS);
+const EDIT_OVERLAY_SET = new Set<string>(EDIT_OVERLAYS);
+const EDIT_TRANSITION_SET = new Set<string>(EDIT_TRANSITIONS);
 const DEFAULT_SCENE_TRANSITION_SECONDS = 0.5;
 const EDITOR_TRANSITION_BY_SEMANTIC: Record<string, string> = {
   dissolve: "dissolve",
@@ -541,6 +569,8 @@ export const safeRegionByElementId: Record<string, SafeRegion> = {};
 export const displayTextByElementId: Record<string, string> = {};
 export const focusTextByElementId: Record<string, string> = {};
 export const editDecisionByElementId: Record<string, BackendEditDecision> = {};
+export const editExecutionByElementId: Record<string, BackendEditExecution> = {};
+export const editOverlayKindByElementId: Record<string, string> = {};
 export const textRoleByElementId: Record<string, NonNullable<BackendElement["textRole"]>> = {};
 export const presenterEventByElementId: Record<string, {
   eventId: string;
@@ -586,6 +616,8 @@ export function copyElementPersistenceMetadata(
   copy(displayTextByElementId);
   copy(focusTextByElementId);
   copy(editDecisionByElementId);
+  copy(editExecutionByElementId);
+  copy(editOverlayKindByElementId);
   copy(textRoleByElementId);
   copy(presenterEventByElementId);
   copy(derivedPresenterReframeByElementId);
@@ -746,6 +778,105 @@ function supportCardTextElement(
     opacity: 1,
     textRole: element.textRole,
   };
+}
+
+const EDIT_OVERLAY_BACKGROUND: Record<string, string> = {
+  title: "#101828e6",
+  subtitle: "#111827d9",
+  callout: "#123b35e6",
+  flow: "#172554e6",
+  data: "#312e81e6",
+  evidence: "#1f2937e6",
+  value: "#14532de6",
+  cta: "#9a3412e6",
+};
+
+function editOverlayTextElement(
+  element: BackendElement,
+  settings: BackendProject["settings"],
+): TextElement {
+  const kind = element.editOverlayKind || "callout";
+  const region = element.safeRegion ?? { x: 0.1, y: 0.2, width: 0.4, height: 0.2 };
+  const preferredFontPx = kind === "data"
+    ? Math.min(64, Math.max(36, settings.height * 0.06))
+    : Math.min(48, Math.max(28, settings.height * 0.042));
+  const minimumFontPx = Math.max(20, preferredFontPx * 0.7);
+  const laidOut = layoutCaption(element.content || "", {
+    availableWidth: settings.width * region.width,
+    preferredFontPx,
+    minimumFontPx,
+    fontFamily: subtitleStyle.fontFamily,
+    maxLineChars: kind === "title" || kind === "cta" ? 18 : 24,
+  });
+  const position = {
+    x: Math.round(settings.width * (region.x + region.width / 2 - 0.5)),
+    y: Math.round(settings.height * (region.y + region.height / 2 - 0.5)),
+  };
+  return {
+    id: element.id,
+    name: element.name || "信息层",
+    type: "text",
+    content: laidOut.text,
+    duration: element.duration,
+    startTime: element.startTime,
+    trimStart: element.trimStart ?? 0,
+    trimEnd: element.trimEnd ?? 0,
+    fontSize: Math.max(2, (laidOut.fontPx * 90) / settings.height),
+    fontFamily: subtitleStyle.fontFamily,
+    color: "#ffffff",
+    background: {
+      enabled: true,
+      color: EDIT_OVERLAY_BACKGROUND[kind] ?? EDIT_OVERLAY_BACKGROUND.callout,
+      cornerRadius: kind === "subtitle" ? 8 : 14,
+      paddingX: Math.max(12, Math.round(settings.width * 0.012)),
+      paddingY: Math.max(8, Math.round(settings.height * 0.01)),
+    },
+    textAlign: "center",
+    fontWeight: "bold",
+    fontStyle: "normal",
+    textDecoration: "none",
+    lineHeight: 1.25,
+    transform: element.transform ?? { ...IDENTITY_TRANSFORM, position },
+    opacity: 1,
+    ...(element.animations ? { animations: element.animations } : {}),
+    textRole: "edit_overlay",
+  };
+}
+
+function assertSupportedEditAtoms(project: BackendProject): void {
+  for (const track of project.tracks) {
+    for (const element of track.elements) {
+      const decision = element.editDecision;
+      if (decision?.layout && !EDIT_LAYOUT_SET.has(decision.layout)) {
+        throw new Error(`unsupported edit decision layout: ${decision.layout}`);
+      }
+      if (decision?.motion && !EDIT_MOTION_SET.has(decision.motion)) {
+        throw new Error(`unsupported edit decision motion: ${decision.motion}`);
+      }
+      if (decision?.transition && !EDIT_TRANSITION_SET.has(decision.transition)) {
+        throw new Error(`unsupported edit decision transition: ${decision.transition}`);
+      }
+      for (const overlay of decision?.overlays ?? []) {
+        if (!EDIT_OVERLAY_SET.has(overlay.kind)) {
+          throw new Error(`unsupported edit decision overlay: ${overlay.kind}`);
+        }
+      }
+      if (element.editOverlayKind && !EDIT_OVERLAY_SET.has(element.editOverlayKind)) {
+        throw new Error(`unsupported edit decision overlay: ${element.editOverlayKind}`);
+      }
+      const execution = element.editExecution;
+      if (!execution) continue;
+      if (
+        execution.schema_version !== "edit_decision_execution:v2"
+        || !EDIT_LAYOUT_SET.has(execution.layout)
+        || !EDIT_MOTION_SET.has(execution.motion)
+        || !EDIT_TRANSITION_SET.has(execution.transition)
+        || (execution.overlay_kind && !EDIT_OVERLAY_SET.has(execution.overlay_kind))
+      ) {
+        throw new Error(`unsupported edit decision execution: ${element.id}`);
+      }
+    }
+  }
 }
 
 function numberMotionChannel(
@@ -1404,6 +1535,8 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       if (e.displayText) displayTextByElementId[e.id] = e.displayText;
       if (e.focusText) focusTextByElementId[e.id] = e.focusText;
       if (e.editDecision) editDecisionByElementId[e.id] = e.editDecision;
+      if (e.editExecution) editExecutionByElementId[e.id] = e.editExecution;
+      if (e.editOverlayKind) editOverlayKindByElementId[e.id] = e.editOverlayKind;
       if (e.textRole) textRoleByElementId[e.id] = e.textRole;
       if (e.eventId) {
         presenterEventByElementId[e.id] = {
@@ -1449,12 +1582,14 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           ...(transition ? { transition } : {}),
         };
         if (e.type === "image") {
-          const animations = e.animations ?? imageMotionForDecision(
-            e.id,
-            e.editDecision,
-            e.duration,
-            bp.settings.width,
-          );
+          const animations = Object.prototype.hasOwnProperty.call(e, "animations")
+            ? (e.animations ?? undefined)
+            : imageMotionForDecision(
+                e.id,
+                e.editDecision,
+                e.duration,
+                bp.settings.width,
+              );
           return {
             ...base,
             type: "image",
@@ -1465,11 +1600,13 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         // Stock video clips carry their own voices/music. Narration lives on the
         // audio track, so mute the clip's source audio unless the backend
         // explicitly kept it (e.g. a user-provided clip meant to be heard).
-        const animations = e.animations ?? presenterReframeAnimationsForElement(
-          e,
-          t.presenterEvents,
-          transform,
-        );
+        const animations = Object.prototype.hasOwnProperty.call(e, "animations")
+          ? (e.animations ?? undefined)
+          : presenterReframeAnimationsForElement(
+              e,
+              t.presenterEvents,
+              transform,
+            );
         if (animations && !e.animations) {
           derivedPresenterReframeByElementId[e.id] = true;
         }
@@ -1504,7 +1641,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         volume: e.volumeUnit === "linear"
           ? linearGainToEditorDb(e.volume ?? 1)
           : (e.volume ?? 1),
-        animations: audioAnimationsForEditor(e.animations, e.volumeUnit),
+        animations: audioAnimationsForEditor(e.animations ?? undefined, e.volumeUnit),
         ...(e.retime && Number.isFinite(e.retime.rate) && e.retime.rate > 0
           ? { retime: e.retime }
           : {}),
@@ -1523,6 +1660,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
         }
         if (e.textRole === "brand_cta") {
           return brandCtaTextElement(e, bp.settings);
+        }
+        if (e.textRole === "edit_overlay") {
+          return editOverlayTextElement(e, bp.settings);
         }
         const profile = e.textRole === "subtitle" ? e.subtitleStyle : undefined;
         const style: SubtitleStyle = profile
@@ -1611,6 +1751,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
 }
 
 export function buildProject(bp: BackendProject): { project: TProject; assets: MediaAsset[] } {
+  assertSupportedEditAtoms(bp);
   for (const map of [
     filePathByMediaId,
     segmentIdByElementId,
@@ -1619,6 +1760,8 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     displayTextByElementId,
     focusTextByElementId,
     editDecisionByElementId,
+    editExecutionByElementId,
+    editOverlayKindByElementId,
     textRoleByElementId,
     presenterEventByElementId,
     presenterEventsByTrackId,

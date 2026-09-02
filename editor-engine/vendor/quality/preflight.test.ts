@@ -20,6 +20,74 @@ const baseProject: BackendProject = {
 };
 
 describe("inspectEditorProject", () => {
+  it("blocks unknown edit atoms instead of exporting an unchanged picture", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      tracks: [{
+        id: "track-video",
+        type: "video",
+        name: "素材",
+        elements: [{
+          id: "v1",
+          type: "video",
+          mediaId: "m1",
+          startTime: 0,
+          duration: 10,
+          segmentId: "scene-1",
+          editDecision: { layout: "hologram", motion: "static", transition: "cut" },
+        }],
+      }],
+    });
+
+    expect(report.blockers.map((item) => item.code)).toContain("edit_decision_atom_unsupported");
+  });
+
+  it("keeps compiled information layers outside the subtitle safe region", () => {
+    const report = inspectEditorProject({
+      ...baseProject,
+      tracks: [
+        {
+          id: "track-video",
+          type: "video",
+          name: "素材",
+          elements: [{ id: "v1", type: "video", mediaId: "m1", startTime: 0, duration: 10, segmentId: "scene-1" }],
+        },
+        {
+          id: "track-edit-overlays",
+          type: "text",
+          name: "信息层",
+          elements: [{
+            id: "value-1",
+            type: "text",
+            content: "已确认价值",
+            startTime: 0,
+            duration: 5,
+            segmentId: "scene-1",
+            textRole: "edit_overlay",
+            editOverlayKind: "value",
+            safeRegion: { x: 0.58, y: 0.46, width: 0.34, height: 0.16 },
+          }],
+        },
+        {
+          id: "track-text",
+          type: "text",
+          name: "字幕",
+          elements: [{
+            id: "subtitle-1",
+            type: "text",
+            content: "完整字幕",
+            startTime: 0,
+            duration: 5,
+            segmentId: "scene-1",
+            textRole: "subtitle",
+            safeRegion: { x: 0.08, y: 0.74, width: 0.84, height: 0.22 },
+          }],
+        },
+      ],
+    });
+
+    expect(report.blockers.map((item) => item.code)).not.toContain("edit_overlay_subtitle_collision");
+  });
   it("reports duration outside the contract as a warning without blocking export", () => {
     const report = inspectEditorProject({
       ...baseProject,

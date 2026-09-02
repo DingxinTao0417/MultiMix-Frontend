@@ -1,5 +1,16 @@
 import type { VideoQualityIssue, VideoQualityReport } from "../../../app/assets/lib/video-quality";
+import {
+  EDIT_LAYOUTS,
+  EDIT_MOTIONS,
+  EDIT_OVERLAYS,
+  EDIT_TRANSITIONS,
+} from "../buildProject";
 import type { BackendElement, BackendProject, SafeRegion } from "../buildProject";
+
+const EDIT_LAYOUT_SET = new Set<string>(EDIT_LAYOUTS);
+const EDIT_MOTION_SET = new Set<string>(EDIT_MOTIONS);
+const EDIT_OVERLAY_SET = new Set<string>(EDIT_OVERLAYS);
+const EDIT_TRANSITION_SET = new Set<string>(EDIT_TRANSITIONS);
 
 function issue(
   code: string,
@@ -84,6 +95,29 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
   const mediaIds = new Set(project.media.map((media) => media.id));
   for (const track of project.tracks) {
     for (const element of track.elements) {
+      const decision = element.editDecision;
+      const execution = element.editExecution;
+      if (
+        (decision?.layout && !EDIT_LAYOUT_SET.has(decision.layout))
+        || (decision?.motion && !EDIT_MOTION_SET.has(decision.motion))
+        || (decision?.transition && !EDIT_TRANSITION_SET.has(decision.transition))
+        || (decision?.overlays ?? []).some((overlay) => !EDIT_OVERLAY_SET.has(overlay.kind))
+        || (element.editOverlayKind && !EDIT_OVERLAY_SET.has(element.editOverlayKind))
+        || (execution && (
+          execution.schema_version !== "edit_decision_execution:v2"
+          || !EDIT_LAYOUT_SET.has(execution.layout)
+          || !EDIT_MOTION_SET.has(execution.motion)
+          || !EDIT_TRANSITION_SET.has(execution.transition)
+          || Boolean(execution.overlay_kind && !EDIT_OVERLAY_SET.has(execution.overlay_kind))
+        ))
+      ) {
+        blockers.push(issue(
+          "edit_decision_atom_unsupported",
+          "当前工程包含无法执行的剪辑决定。",
+          element,
+          "edit_decision",
+        ));
+      }
       if (element.type !== "text" && (!element.mediaId || !mediaIds.has(element.mediaId))) {
         blockers.push(issue(
           "missing_media_reference",
@@ -126,6 +160,27 @@ export function inspectEditorProject(project: BackendProject): VideoQualityRepor
           "MG 动效与字幕安全区重叠。",
           overlay,
           "mg_overlay",
+        ));
+        break;
+      }
+    }
+  }
+
+  const editOverlays = project.tracks
+    .filter((track) => track.type === "text")
+    .flatMap((track) => track.elements)
+    .filter((element) => element.textRole === "edit_overlay" && Boolean(element.safeRegion));
+  for (const overlay of editOverlays) {
+    for (const subtitle of subtitles) {
+      if (
+        overlapsInTime(overlay, subtitle)
+        && overlaps(overlay.safeRegion!, subtitle.safeRegion!)
+      ) {
+        blockers.push(issue(
+          "edit_overlay_subtitle_collision",
+          "信息层与字幕安全区重叠。",
+          overlay,
+          "edit_overlay",
         ));
         break;
       }

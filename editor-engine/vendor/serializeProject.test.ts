@@ -451,6 +451,125 @@ describe('scene transition editor round-trip', () => {
   });
 });
 
+describe('edit decision execution v2 round-trip', () => {
+  it('keeps a user visual override through save and reopen', () => {
+    const execution = {
+      schema_version: 'edit_decision_execution:v2' as const,
+      compiler_version: 'video_timeline_compiler:v2',
+      scene_id: 'scene-1',
+      layout: 'product_focus',
+      motion: 'zoom_in',
+      transition: 'dissolve',
+    };
+    const backend: BackendProject = {
+      metadata: {
+        title: 'Explicit edit execution',
+        duration: 5,
+        edit_decision_execution: {
+          schema_version: 'edit_decision_execution:v2',
+          compiler_version: 'video_timeline_compiler:v2',
+          scene_ids: ['scene-1'],
+        },
+      },
+      settings: { fps: 30, width: 1920, height: 1080 },
+      media: [{
+        id: 'media-1',
+        type: 'video',
+        file_path: 'local://assets/one.mp4',
+        name: 'one.mp4',
+      }],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'visual-1',
+          type: 'video',
+          mediaId: 'media-1',
+          startTime: 0,
+          duration: 5,
+          segmentId: 'scene-1',
+          transform: { scaleX: 1.14, scaleY: 1.14, position: { x: 0, y: 0 }, rotate: 0 },
+          animations: null,
+          transition: { type: 'dissolve', duration: 0.5 },
+          editDecision: { layout: 'product_focus', motion: 'zoom_in', transition: 'dissolve' },
+          editExecution: execution,
+        }],
+      }],
+    };
+    const project = prepareEditorRoundTrip(backend);
+    const live = project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    live.transform = {
+      scaleX: 0.82,
+      scaleY: 0.82,
+      position: { x: 120, y: -48 },
+      rotate: 0,
+    };
+    live.animations = {
+      channels: {
+        'transform.position': {
+          valueKind: 'vector',
+          keyframes: [
+            { id: 'manual-start', time: 0, value: { x: 120, y: -48 }, interpolation: 'linear' },
+            { id: 'manual-end', time: 5, value: { x: -80, y: 20 }, interpolation: 'linear' },
+          ],
+        },
+      },
+    };
+    live.transition = { type: 'wipe_left', duration: 0.35 };
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    const saved = serialized.tracks[0].elements[0];
+    expect(saved.transform).toEqual(live.transform);
+    expect(saved.animations).toEqual(live.animations);
+    expect(saved.transition).toEqual({ type: 'wipe_left', duration: 0.35 });
+    expect(saved.editExecution).toEqual(execution);
+
+    const reopened = buildProject(serialized).project.scenes[0].tracks[0]
+      .elements[0] as Record<string, unknown>;
+    expect(reopened.transform).toEqual(live.transform);
+    expect(reopened.animations).toEqual(live.animations);
+    expect(reopened.transition).toEqual({ type: 'wipe_left', duration: 0.35 });
+  });
+
+  it('persists removal of automatic motion instead of recreating it on reopen', () => {
+    const backend = {
+      metadata: { title: 'Remove motion', duration: 5 },
+      settings: { fps: 30, width: 1920, height: 1080 },
+      media: [{ id: 'media-1', type: 'image', file_path: 'local://assets/one.png', name: 'one.png' }],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'visual-1',
+          type: 'image',
+          mediaId: 'media-1',
+          startTime: 0,
+          duration: 5,
+          editDecision: { layout: 'full', motion: 'zoom_in', transition: 'cut' },
+          editExecution: {
+            schema_version: 'edit_decision_execution:v2',
+            compiler_version: 'video_timeline_compiler:v2',
+            scene_id: 'scene-1',
+            layout: 'full',
+            motion: 'zoom_in',
+            transition: 'cut',
+          },
+        }],
+      }],
+    } as BackendProject;
+    const project = prepareEditorRoundTrip(backend);
+    const live = project.scenes[0].tracks[0].elements[0] as Record<string, any>;
+    delete live.animations;
+
+    const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+    expect(serialized.tracks[0].elements[0].animations).toBeNull();
+    expect(buildProject(serialized).project.scenes[0].tracks[0].elements[0])
+      .not.toHaveProperty('animations');
+  });
+});
+
 describe('split element persistence', () => {
   it('keeps the backend segment metadata on the new right-hand clip', () => {
     const backend: BackendProject = {

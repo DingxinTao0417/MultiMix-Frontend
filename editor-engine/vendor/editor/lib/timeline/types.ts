@@ -175,7 +175,8 @@ export interface TextElement extends BaseVisualElement {
 		| "presentation_support"
 		| "brand_cta"
 		| "presenter_emphasis"
-		| "presenter_graphic";
+		| "presenter_graphic"
+		| "edit_overlay";
 	subtitlePresentation?: SubtitlePresentation;
 	fontSize: number;
 	fontFamily: string;

@@ -8,6 +8,8 @@ import type { ElementAnimations } from "@editor/lib/animation/types";
 import {
   displayTextByElementId,
   editDecisionByElementId,
+  editExecutionByElementId,
+  editOverlayKindByElementId,
   filePathByMediaId,
   focusTextByElementId,
   logicalLayerByTrackId,
@@ -46,7 +48,8 @@ function serializeElement(el: {
     | "presentation_support"
     | "brand_cta"
     | "presenter_emphasis"
-    | "presenter_graphic";
+    | "presenter_graphic"
+    | "edit_overlay";
   fontSize?: number;
   transform?: {
     scaleX: number;
@@ -85,17 +88,25 @@ function serializeElement(el: {
     out.volume = el.volume ?? 1;
     if (el.animations) out.animations = el.animations;
   }
+  const editExecution = editExecutionByElementId[el.id];
+  if (visual && el.transform) out.transform = el.transform;
   if (visual && presenterEvent) {
-    if (el.transform) out.transform = el.transform;
     // Presenter reframes are projected into OpenCut only for preview.  The
     // backend contract on the source track is canonical, so avoid persisting
     // a second, stale copy of those generated keyframes.
     if (el.animations && !derivedPresenterReframeByElementId[el.id]) {
       out.animations = el.animations;
     }
+  } else if (visual && el.animations) {
+    out.animations = el.animations;
+  } else if (visual && editExecution) {
+    // A saved null is intentional: it records that the user removed the
+    // compiler-authored motion, so reload must not derive it again.
+    out.animations = null;
   }
   const transition = visual ? normalizedEditorTransition(el.transition) : undefined;
   if (transition) out.transition = transition;
+  else if (visual && editExecution) out.transition = null;
   const segmentId = segmentIdByElementId[el.id];
   if (segmentId) out.segmentId = segmentId;
   const segmentText = segmentTextByElementId[el.id];
@@ -119,6 +130,9 @@ function serializeElement(el: {
         }
       : editDecision;
   }
+  if (editExecution) out.editExecution = editExecution;
+  const editOverlayKind = editOverlayKindByElementId[el.id];
+  if (editOverlayKind) out.editOverlayKind = editOverlayKind;
   const textRole = el.textRole ?? textRoleByElementId[el.id];
   if (textRole) out.textRole = textRole;
   if (presenterEvent) Object.assign(out, presenterEvent);
