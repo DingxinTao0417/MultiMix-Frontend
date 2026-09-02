@@ -22,6 +22,7 @@ const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const timingPath = process.env.VIDEO_PIPELINE_TIMING_PATH;
+const qaGenerationInstructionOverride = (process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? "").trim();
 
 type ActiveVideoType = "explainer" | "source_excerpt" | "presenter";
 
@@ -117,7 +118,15 @@ async function assertExportHasNotFailed(
 }
 
 const CANDIDATE_MP4_RANGE_CHUNK_BYTES = 1024 * 1024;
-const CANDIDATE_MP4_RANGE_TIMEOUT_MS = 60_000;
+const CANDIDATE_MP4_RANGE_TIMEOUT_MS = Number(
+  process.env.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS ?? 60_000,
+);
+if (
+  !Number.isInteger(CANDIDATE_MP4_RANGE_TIMEOUT_MS)
+  || CANDIDATE_MP4_RANGE_TIMEOUT_MS < 1
+) {
+  throw new Error("VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS must be a positive integer");
+}
 
 async function downloadCandidateMp4ByRange(
   page: Page,
@@ -489,7 +498,7 @@ async function enterWorkspace(page: Page) {
     name: "登录你的 AI 短视频创作工作台",
   });
   const workspaceHeading = page.getByRole("heading", {
-    name: "今天想做什么短视频？",
+    name: "新建视频项目",
   });
   const entry = await Promise.race([
     loginHeading
@@ -1269,6 +1278,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       if (
         (qualityBaselineRun && expectedVideoType === "presenter")
         || singleImageCreativeDraft
+        || (
+          inputProfile === "explainer_saved_library_simple"
+          && Boolean(qaGenerationInstructionOverride)
+        )
       ) {
         requiredLinkedAssetIds.push(mediaAsset.id);
       }
@@ -1283,7 +1296,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       : inputProfile === "explainer_single_image_draft"
         ? `用我刚上传的一张产品图片，先生成一版${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的讲解型创意编导稿。图片中能看见的产品外观可以作为画面依据；未提供的品牌、型号、性能、案例和数据不得臆造。信息不足处保持为待补充，不得把本稿写成可公开发布的事实承诺。先给出编导稿和${expectedSceneCount}个分镜；不要展示内部制作方式。`
       : inputProfile === "explainer_saved_library_simple"
-        ? `用我已有的家装素材，做一条家装服务宣传讲解视频${requireMgInstruction}`
+        ? qaGenerationInstructionOverride
+          ? qaGenerationInstructionOverride
+          : `用我已有的家装素材，做一条家装服务宣传讲解视频${requireMgInstruction}`
       : inputProfile === "explainer_public_broll"
         ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : inputProfile === "explainer_data_process"

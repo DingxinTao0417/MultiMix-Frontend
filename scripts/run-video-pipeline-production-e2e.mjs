@@ -40,6 +40,12 @@ Core environment variables:
                               Required approval record reference for that presenter source.
   VIDEO_PIPELINE_RESULT_DIR   Directory for user-visible test evidence.
   VIDEO_PIPELINE_RUN_ID       Explicit isolated run identifier.
+  VIDEO_PIPELINE_GENERATION_INSTRUCTION
+                              Optional fixed plain-language instruction for explainer_saved_library_simple QA.
+  VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS
+                              Optional positive integer applied only to the isolated backend.
+  VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS
+                              Optional positive integer for each candidate MP4 range request.
 
 Safety:
   A normal run creates an isolated SQLite database and artifact directory, and may call configured Providers.
@@ -141,6 +147,15 @@ const effectiveVisionModel = (
   ?? canonicalEnv.VISION_QWEN_MODEL
   ?? "qwen3-vl-flash"
 ).trim();
+const visionTimeoutSecondsOverride = (
+  process.env.VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS ?? ""
+).trim();
+if (
+  visionTimeoutSecondsOverride
+  && (!/^\d+$/.test(visionTimeoutSecondsOverride) || Number(visionTimeoutSecondsOverride) < 1)
+) {
+  throw new Error("VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS must be a positive integer");
+}
 if (!usesExternalVisionService && !effectiveVisionApiKey) {
   throw new Error(
     "Local vision service requires a configured Qwen/DashScope API key",
@@ -269,6 +284,9 @@ const expectedSceneCount = Number(
 const videoJobTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
 );
+const candidateRangeTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS ?? 60_000,
+);
 if (!Number.isFinite(targetSeconds) || targetSeconds <= 0) {
   throw new Error("VIDEO_PIPELINE_TARGET_SECONDS must be a positive number");
 }
@@ -285,6 +303,9 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
 }
+if (!Number.isInteger(candidateRangeTimeoutMs) || candidateRangeTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS must be a positive integer");
+}
 const minimumDurationSeconds = targetSeconds * (1 - durationToleranceRatio);
 const maximumDurationSeconds = targetSeconds * (1 + durationToleranceRatio);
 const pythonCommand = process.env.PYTHON
@@ -300,6 +321,17 @@ const testRecompose = process.argv.includes("--recompose")
 const retainRemoteCheckpoint = process.env.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false";
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+const generationInstructionOverride = (
+  process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? ""
+).trim();
+if (
+  generationInstructionOverride
+  && (expectedVideoType !== "explainer" || inputProfile !== "explainer_saved_library_simple")
+) {
+  throw new Error(
+    "VIDEO_PIPELINE_GENERATION_INSTRUCTION is supported only for explainer_saved_library_simple QA",
+  );
+}
 if (singleImageCreativeDraft && expectedVideoType !== "explainer") {
   throw new Error("explainer_single_image_draft requires VIDEO_PIPELINE_VIDEO_TYPE=explainer");
 }
@@ -1269,6 +1301,11 @@ function assertResumeManifest() {
     qualityBaselineRun,
     presenterSourceApprovalRef,
     qualityBaselineInputs,
+    generationInstruction: generationInstructionOverride || null,
+    generationInstructionSha256: generationInstructionOverride
+      ? crypto.createHash("sha256").update(generationInstructionOverride).digest("hex")
+      : null,
+    visionTimeoutSecondsOverride: visionTimeoutSecondsOverride || null,
   };
   for (const [key, value] of Object.entries(expected)) {
     if (JSON.stringify(original[key]) !== JSON.stringify(value)) {
@@ -1561,6 +1598,11 @@ try {
       qualityBaselineRun,
       presenterSourceApprovalRef,
       qualityBaselineInputs,
+      generationInstruction: generationInstructionOverride || null,
+      generationInstructionSha256: generationInstructionOverride
+        ? crypto.createHash("sha256").update(generationInstructionOverride).digest("hex")
+        : null,
+      visionTimeoutSecondsOverride: visionTimeoutSecondsOverride || null,
       productMedia: configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
       savedLibraryMedia: configuredInputFingerprints(savedLibraryMediaFiles),
       llm: {
@@ -1577,6 +1619,8 @@ try {
   const backendEnv = {
     ...process.env,
     ...canonicalEnv,
+    MULTIMIX_VISION_TIMEOUT_SECONDS:
+      visionTimeoutSecondsOverride || canonicalEnv.MULTIMIX_VISION_TIMEOUT_SECONDS,
     MULTIMIX_ENV: "local",
     MULTIMIX_AUTH_PROVIDER: "local",
     MULTIMIX_AUTH_EMAIL_VERIFICATION_REQUIRED: "false",
@@ -1763,8 +1807,10 @@ try {
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
       VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
+      VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS: String(candidateRangeTimeoutMs),
       VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
       VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
+      VIDEO_PIPELINE_GENERATION_INSTRUCTION: generationInstructionOverride,
       VIDEO_PIPELINE_QUALITY_BASELINE: qualityBaselineRun ? "true" : "false",
       VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO: presenterSourceVideo,
       VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF: presenterSourceApprovalRef,

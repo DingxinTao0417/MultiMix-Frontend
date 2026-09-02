@@ -81,6 +81,84 @@ test("production video E2E help exits before creating an isolated run", () => {
   }
 });
 
+test("production video E2E exposes a fixed plain-language generation instruction for saved-library A/B runs", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(runnerSource, /VIDEO_PIPELINE_GENERATION_INSTRUCTION/);
+  assert.match(
+    runnerSource,
+    /generationInstructionSha256:\s*generationInstructionOverride\s*\?\s*crypto\.createHash\("sha256"\)/,
+  );
+  assert.match(
+    runnerSource,
+    /generationInstruction:\s*generationInstructionOverride \|\| null/,
+  );
+  assert.match(
+    runnerSource,
+    /VIDEO_PIPELINE_GENERATION_INSTRUCTION:\s*generationInstructionOverride/,
+  );
+  assert.match(
+    browserSource,
+    /const qaGenerationInstructionOverride = \(process\.env\.VIDEO_PIPELINE_GENERATION_INSTRUCTION \?\? ""\)\.trim\(\)/,
+  );
+  assert.match(
+    browserSource,
+    /inputProfile === "explainer_saved_library_simple"\s*\? qaGenerationInstructionOverride/,
+  );
+});
+
+test("production video E2E can widen only the isolated backend vision timeout", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(runnerSource, /VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS/);
+  assert.match(
+    runnerSource,
+    /MULTIMIX_VISION_TIMEOUT_SECONDS:\s*visionTimeoutSecondsOverride\s*\|\|\s*canonicalEnv\.MULTIMIX_VISION_TIMEOUT_SECONDS/,
+  );
+  assert.match(
+    runnerSource,
+    /visionTimeoutSecondsOverride:\s*visionTimeoutSecondsOverride \|\| null/,
+  );
+});
+
+test("production video E2E can widen only the candidate MP4 range download timeout", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(runnerSource, /VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS/);
+  assert.match(
+    runnerSource,
+    /VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS:\s*String\(candidateRangeTimeoutMs\)/,
+  );
+  assert.match(
+    browserSource,
+    /process\.env\.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS \?\? 60_000/,
+  );
+  assert.match(
+    browserSource,
+    /VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS must be a positive integer/,
+  );
+});
+
+test("saved-library A/B instruction override preserves the existing default conversation", () => {
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    browserSource,
+    /qaGenerationInstructionOverride\s*\? qaGenerationInstructionOverride\s*:\s*`用我已有的家装素材，做一条家装服务宣传讲解视频\$\{requireMgInstruction\}`/,
+  );
+});
+
+test("saved-library A/B instruction links the uploaded media to the plain-language request", () => {
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    browserSource,
+    /inputProfile === "explainer_saved_library_simple"\s*&&\s*Boolean\(qaGenerationInstructionOverride\)[\s\S]{0,240}?requiredLinkedAssetIds\.push\(mediaAsset\.id\)/,
+  );
+});
+
 test("production video E2E does not hard-code semantic rejection of a particular saved asset", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
@@ -481,7 +559,7 @@ test("production video E2E keeps the browser download action separate from candi
   );
   assert.match(source, /async function downloadCandidateMp4ByRange/);
   assert.match(source, /const CANDIDATE_MP4_RANGE_CHUNK_BYTES = 1024 \* 1024;/);
-  assert.match(source, /const CANDIDATE_MP4_RANGE_TIMEOUT_MS = 60_000;/);
+  assert.match(source, /process\.env\.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS \?\? 60_000/);
   assert.match(source, /range: "bytes=0-0"/);
   assert.match(source, /range: `bytes=\$\{start\}-\$\{end\}`/);
   assert.match(source, /Content-Range.*total size|candidate MP4 range response/i);

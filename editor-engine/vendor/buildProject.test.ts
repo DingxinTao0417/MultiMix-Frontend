@@ -16,6 +16,10 @@ import {
   buildProject,
   buildMediaAssets,
   displayTextByElementId,
+  EDIT_LAYOUTS,
+  EDIT_MOTIONS,
+  EDIT_OVERLAYS,
+  EDIT_TRANSITIONS,
   editDecisionByElementId,
   layoutCaption,
   subtitlePositionOffset,
@@ -61,6 +65,122 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
   const track = result.project.scenes[0].tracks[0];
   return (track as Record<string, unknown>).isMain;
 }
+
+describe('edit decision execution v2', () => {
+  it('exposes the exact current atom catalog consumed by the editor', () => {
+    expect([...EDIT_LAYOUTS].sort()).toEqual([
+      'collage', 'comparison', 'full', 'pip', 'product_focus', 'split',
+    ]);
+    expect([...EDIT_MOTIONS].sort()).toEqual([
+      'drift_down', 'drift_up', 'ken_burns', 'pan_left', 'pan_right',
+      'parallax', 'static', 'zoom_in', 'zoom_out',
+    ]);
+    expect([...EDIT_OVERLAYS].sort()).toEqual([
+      'callout', 'cta', 'data', 'evidence', 'flow', 'subtitle', 'title', 'value',
+    ]);
+    expect([...EDIT_TRANSITIONS].sort()).toEqual([
+      'cut', 'dissolve', 'push', 'wipe',
+    ]);
+  });
+
+  it('uses explicit video motion and renders a compiled information layer', () => {
+    const animations = {
+      channels: {
+        'transform.scaleX': {
+          valueKind: 'number' as const,
+          keyframes: [
+            { id: 'start', time: 0, value: 1, interpolation: 'linear' as const },
+            { id: 'end', time: 5, value: 1.08, interpolation: 'linear' as const },
+          ],
+        },
+      },
+    };
+    const transform = {
+      scaleX: 1,
+      scaleY: 1,
+      position: { x: 0, y: 0 },
+      rotate: 0,
+    };
+    const execution = {
+      schema_version: 'edit_decision_execution:v2' as const,
+      compiler_version: 'video_timeline_compiler:v2',
+      scene_id: 'scene-1',
+      layout: 'full',
+      motion: 'zoom_in',
+      transition: 'dissolve',
+    };
+    const result = buildProject(makeProject({
+      media: [makeMedia()],
+      tracks: [
+        {
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'visual-1',
+            type: 'video',
+            mediaId: 'media-1',
+            startTime: 0,
+            duration: 5,
+            segmentId: 'scene-1',
+            transform,
+            animations,
+            transition: { type: 'dissolve', duration: 0.5 },
+            editDecision: { layout: 'full', motion: 'zoom_in', transition: 'dissolve' },
+            editExecution: execution,
+          }],
+        },
+        {
+          id: 'track-edit-overlays',
+          type: 'text',
+          name: '信息层',
+          elements: [{
+            id: 'overlay-1',
+            type: 'text',
+            content: '已确认价值',
+            startTime: 0,
+            duration: 5,
+            segmentId: 'scene-1',
+            textRole: 'edit_overlay',
+            editOverlayKind: 'value',
+            safeRegion: { x: 0.58, y: 0.46, width: 0.34, height: 0.16 },
+            editExecution: { ...execution, overlay_kind: 'value' },
+          }],
+        },
+      ],
+    } as BackendProject));
+
+    const video = result.project.scenes[0].tracks[0].elements[0] as Record<string, unknown>;
+    const overlay = result.project.scenes[0].tracks[1].elements[0] as Record<string, unknown>;
+    expect(video.transform).toEqual(transform);
+    expect(video.animations).toEqual(animations);
+    expect(video.transition).toEqual({ type: 'dissolve', duration: 0.5 });
+    expect(overlay).toMatchObject({
+      textRole: 'edit_overlay',
+      color: '#ffffff',
+      background: { enabled: true },
+    });
+  });
+
+  it('fails closed when a project contains an unknown edit atom', () => {
+    expect(() => buildProject(makeProject({
+      media: [makeMedia({ type: 'image', file_path: '/test/image.png' })],
+      tracks: [{
+        id: 'track-video',
+        type: 'video',
+        name: '素材',
+        elements: [{
+          id: 'visual-1',
+          type: 'image',
+          mediaId: 'media-1',
+          startTime: 0,
+          duration: 5,
+          editDecision: { layout: 'full', motion: 'orbit', transition: 'cut' },
+        }],
+      }],
+    } as BackendProject))).toThrow(/unsupported edit decision motion/i);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -226,9 +346,6 @@ describe('buildProject - overlay/hasAlpha logic', () => {
   });
 
   it.each([
-    ['pan', 'transform.position'],
-    ['slow_push', 'transform.scaleX'],
-    ['zoom', 'transform.scaleX'],
     ['zoom_in', 'transform.scaleX'],
     ['zoom_out', 'transform.scaleX'],
     ['pan_left', 'transform.position'],
@@ -261,7 +378,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(element.animations?.channels[channel]?.keyframes).toHaveLength(2);
   });
 
-  it.each(['none', 'static', 'freeze', 'speed_ramp', 'unknown_motion'])(
+  it.each(['static'])(
     'does not invent static-image animation for %s',
     (motion) => {
       const { project } = buildProject(makeProject({
@@ -285,6 +402,28 @@ describe('buildProject - overlay/hasAlpha logic', () => {
         animations?: unknown;
       };
       expect(element.animations).toBeUndefined();
+    },
+  );
+
+  it.each(['none', 'pan', 'slow_push', 'zoom', 'freeze', 'speed_ramp', 'unknown_motion'])(
+    'fails closed for a motion without a current production consumer: %s',
+    (motion) => {
+      expect(() => buildProject(makeProject({
+        media: [makeMedia({ id: 'static-scene', type: 'image' })],
+        tracks: [{
+          id: 'track-video',
+          type: 'video',
+          name: '素材',
+          elements: [{
+            id: 'static-scene-element',
+            type: 'image',
+            startTime: 0,
+            duration: 4,
+            mediaId: 'static-scene',
+            editDecision: { motion },
+          }],
+        }],
+      } as BackendProject))).toThrow(/unsupported edit decision motion/i);
     },
   );
 
@@ -1320,11 +1459,7 @@ describe('buildProject - overlay/hasAlpha logic', () => {
         }],
       });
 
-      const element = buildProject(bp).project.scenes[0].tracks[0].elements[0] as {
-        transition?: { type: string; duration: number };
-      };
-
-      expect(element.transition).toBeUndefined();
+      expect(() => buildProject(bp)).toThrow(/unsupported edit decision transition/i);
     });
 
     it('prefers a valid saved editor transition over the original semantic decision', () => {
