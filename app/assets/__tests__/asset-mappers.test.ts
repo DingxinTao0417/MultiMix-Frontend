@@ -1787,6 +1787,7 @@ describe("message plan mapping", () => {
                 id: "candidate-filler",
                 state: "auto",
                 category: "non_lexical_filler",
+                display_group: "fluency",
                 spoken_text: "嗯",
                 action: "delete",
                 reason: "孤立口癖",
@@ -1802,6 +1803,12 @@ describe("message plan mapping", () => {
                   model: "paraformer-v2",
                 },
                 estimated_saving_seconds: 0.3,
+                execution_effect_status: "actionable",
+                effect_label: "删除，预计缩短 0.3 秒",
+                source_range: {
+                  start_seconds: 1.2,
+                  end_seconds: 1.5,
+                },
                 risk: "low",
                 audio_risk: "low",
                 visual_jump_risk: "low",
@@ -1819,6 +1826,13 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan?.cleanupItems?.[0]).toMatchObject({
       decisionLabel: "自动通过",
       decisionReason: "删除不改变原意、语气或逻辑关系",
+      displayGroup: "fluency",
+      executionEffectStatus: "actionable",
+      effectLabel: "删除，预计缩短 0.3 秒",
+      sourceRange: {
+        startSeconds: 1.2,
+        endSeconds: 1.5,
+      },
       semanticReview: {
         verdict: "approve",
         reason: "删除不改变原意、语气或逻辑关系",

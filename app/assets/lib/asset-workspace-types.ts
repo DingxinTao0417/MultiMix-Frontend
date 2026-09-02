@@ -392,6 +392,7 @@ export type AssetPresenterCleanupItem = {
   id: string;
   state: "auto" | "suggested" | "protected";
   category: string;
+  displayGroup?: "pause" | "fluency" | "repetition" | "noise_operation";
   spokenText: string;
   action: string;
   reason: string;
@@ -407,6 +408,12 @@ export type AssetPresenterCleanupItem = {
     model?: string;
   };
   estimatedSavingSeconds: number;
+  executionEffectStatus?: "actionable" | "no_effect";
+  effectLabel?: string;
+  sourceRange?: {
+    startSeconds: number;
+    endSeconds: number;
+  };
   risk: string;
   audioRisk: string;
   visualJumpRisk: string;

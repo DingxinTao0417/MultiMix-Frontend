@@ -410,10 +410,33 @@ function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
           model: stringValue(secondaryValue?.model) || undefined,
         }
       : undefined;
+    const displayGroupValue = stringValue(item.display_group);
+    const displayGroup = ["pause", "fluency", "repetition", "noise_operation"].includes(displayGroupValue)
+      ? displayGroupValue as AssetPresenterCleanupItem["displayGroup"]
+      : undefined;
+    const executionEffectStatusValue = stringValue(item.execution_effect_status);
+    const executionEffectStatus = ["actionable", "no_effect"].includes(executionEffectStatusValue)
+      ? executionEffectStatusValue as AssetPresenterCleanupItem["executionEffectStatus"]
+      : undefined;
+    const sourceRangeValue = isRecord(item.source_range) ? item.source_range : undefined;
+    const sourceStartSeconds = sourceRangeValue?.start_seconds;
+    const sourceEndSeconds = sourceRangeValue?.end_seconds;
+    const sourceRange = typeof sourceStartSeconds === "number"
+      && Number.isFinite(sourceStartSeconds)
+      && sourceStartSeconds >= 0
+      && typeof sourceEndSeconds === "number"
+      && Number.isFinite(sourceEndSeconds)
+      && sourceEndSeconds > sourceStartSeconds
+      ? {
+          startSeconds: sourceStartSeconds,
+          endSeconds: sourceEndSeconds,
+        }
+      : undefined;
     return [{
       id,
       state: state as AssetPresenterCleanupItem["state"],
       category: stringValue(item.category),
+      displayGroup,
       spokenText: stringValue(item.spoken_text),
       action: stringValue(item.action),
       reason: stringValue(item.reason),
@@ -424,6 +447,9 @@ function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
       estimatedSavingSeconds: typeof item.estimated_saving_seconds === "number"
         ? item.estimated_saving_seconds
         : 0,
+      executionEffectStatus,
+      effectLabel: stringValue(item.effect_label) || undefined,
+      sourceRange,
       risk: stringValue(item.risk),
       audioRisk: stringValue(item.audio_risk),
       visualJumpRisk: stringValue(item.visual_jump_risk),
