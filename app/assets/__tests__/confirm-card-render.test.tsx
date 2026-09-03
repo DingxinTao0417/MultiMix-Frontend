@@ -403,6 +403,24 @@ describe("ConfirmCard pending state", () => {
           selected: false,
           locked: false,
         },
+        {
+          id: "fake-keep",
+          state: "auto" as const,
+          category: "removable_non_speech_sound",
+          displayGroup: "noise_operation" as const,
+          spokenText: "模型",
+          action: "keep",
+          reason: "没有实际可执行效果",
+          estimatedSavingSeconds: 0,
+          executionEffectStatus: "no_effect" as const,
+          effectLabel: "保持原样",
+          risk: "low",
+          audioRisk: "low",
+          visualJumpRisk: "low",
+          protectionReasons: [],
+          selected: true,
+          locked: false,
+        },
       ],
       audioTrackDefault: 1,
       audioTrackOptions: [
@@ -423,6 +441,7 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByRole("button", { name: "说话不顺（1）" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "内容重复（1）" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "杂音或拍摄操作（0）" })).toBeTruthy();
+    expect(screen.queryByText("模型")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "说话不顺（1）" }));
     expect(screen.getByText("嗯")).toBeTruthy();
     expect(screen.getByText("00:01.2–00:01.6")).toBeTruthy();

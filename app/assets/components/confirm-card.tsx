@@ -164,7 +164,11 @@ export default function ConfirmCard({
   const [selectedDirection, setSelectedDirection] = useState(
     () => plan.directionDefault ?? directionOptions[0]?.id ?? ""
   );
-  const cleanupItems = plan.cleanupItems ?? [];
+  const cleanupItems = (plan.cleanupItems ?? []).filter((item) => (
+    ["delete", "shorten"].includes(item.action)
+    && item.executionEffectStatus !== "no_effect"
+    && item.estimatedSavingSeconds > 0
+  ));
   const [initialCleanupIds] = useState<Set<string>>(
     () => new Set(cleanupItems.filter((item) => item.selected).map((item) => item.id))
   );
