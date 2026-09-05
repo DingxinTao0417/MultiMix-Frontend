@@ -38,8 +38,14 @@ Core environment variables:
                               Required original presenter video when VIDEO_PIPELINE_QUALITY_BASELINE=true.
   VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF
                               Required approval record reference for that presenter source.
+  VIDEO_PIPELINE_PRESENTER_SUPPORT_IMAGE_FILES
+                              Optional JSON array of {path, approval_ref, name?} for approved PNG/JPEG support images.
   VIDEO_PIPELINE_RESULT_DIR   Directory for user-visible test evidence.
   VIDEO_PIPELINE_RUN_ID       Explicit isolated run identifier.
+  VIDEO_PIPELINE_MG_MODAL_APP_NAME
+                              Explicit test render app, overriding canonical backend configuration.
+  VIDEO_PIPELINE_MODAL_ENVIRONMENT
+                              Explicit Modal environment for the isolated backend.
   VIDEO_PIPELINE_GENERATION_INSTRUCTION
                               Optional fixed plain-language instruction for explainer_saved_library_simple QA.
   VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS
@@ -118,6 +124,22 @@ const canonicalEnv = {
   ...baseCanonicalEnv,
   ...parseEnvFile(path.join(canonicalBackendRoot, ".env.local"), baseCanonicalEnv),
 };
+function resolveMgTestTarget(env) {
+  const result = {};
+  for (const [input, output] of [
+    ["VIDEO_PIPELINE_MG_MODAL_APP_NAME", "MULTIMIX_MG_MODAL_APP_NAME"],
+    ["VIDEO_PIPELINE_MODAL_ENVIRONMENT", "MODAL_ENVIRONMENT"],
+  ]) {
+    if (env[input] === undefined) continue;
+    const value = env[input].trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value)) {
+      throw new Error(`${input} must be a non-empty deployment identifier`);
+    }
+    result[output] = value;
+  }
+  return result;
+}
+const mgTestTarget = resolveMgTestTarget(process.env);
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
 const visionPort = Number(process.env.VIDEO_PIPELINE_VISION_PORT ?? 8428);
@@ -346,6 +368,7 @@ const qualityBaselineInputs = qualityBaselineRun
     productMediaRaw: process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES,
     presenterSourceVideo,
     presenterSourceApprovalRef,
+    presenterSupportImageFilesRaw: process.env.VIDEO_PIPELINE_PRESENTER_SUPPORT_IMAGE_FILES,
   })
   : null;
 const requestedRunId = (process.env.VIDEO_PIPELINE_RUN_ID ?? crypto.randomUUID()).replace(/[^a-zA-Z0-9-]/g, "-");
@@ -398,7 +421,9 @@ const savedLibraryMediaFiles = usesSavedLibraryMedia
     ? JSON.stringify([{
       path: presenterSourceVideo,
       name: `用户确认口播原片${path.extname(presenterSourceVideo)}`,
-    }])
+      approval_ref: presenterSourceApprovalRef,
+      sha256: qualityBaselineInputs.presenterSource.sha256,
+    }, ...qualityBaselineInputs.presenterSupportImages])
     : (process.env.VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES ?? defaultSavedLibraryMediaFiles))
   : "[]";
 const children = [];
@@ -718,6 +743,7 @@ function validateQualityBaselineInputs({
   productMediaRaw,
   presenterSourceVideo,
   presenterSourceApprovalRef,
+  presenterSupportImageFilesRaw,
 }) {
   if (expectedVideoType === "explainer") {
     if (inputProfile === "explainer_saved_library_simple") {
@@ -759,12 +785,53 @@ function validateQualityBaselineInputs({
     if (!presenterSourceApprovalRef) {
       throw new Error("quality baseline presenter requires a source approval reference");
     }
+    const presenterSource = {
+      ...fingerprintFile(presenterSourceVideo),
+      approval_ref: presenterSourceApprovalRef,
+    };
+    let supportImages;
+    try {
+      supportImages = JSON.parse(presenterSupportImageFilesRaw ?? "[]");
+    } catch {
+      throw new Error("presenter support images must be a JSON array");
+    }
+    if (!Array.isArray(supportImages)) {
+      throw new Error("presenter support images must be a JSON array");
+    }
+    const supportedImageExtensions = new Set([".png", ".jpg", ".jpeg"]);
+    const seenFingerprints = new Set([presenterSource.sha256]);
+    const presenterSupportImages = supportImages.map((entry, index) => {
+      if (typeof entry?.path !== "string" || !entry.path.trim()) {
+        throw new Error("presenter support image requires a file path");
+      }
+      if (typeof entry.approval_ref !== "string" || !entry.approval_ref.trim()) {
+        throw new Error("presenter support image approval reference is required");
+      }
+      const imagePath = path.resolve(entry.path.trim());
+      const extension = path.extname(imagePath);
+      if (!supportedImageExtensions.has(extension.toLowerCase())) {
+        throw new Error("presenter support image must use PNG or JPEG format");
+      }
+      if (!fs.existsSync(imagePath) || !fs.statSync(imagePath).isFile() || fs.statSync(imagePath).size === 0) {
+        throw new Error("presenter support image must be an existing non-empty file");
+      }
+      const fingerprint = fingerprintFile(imagePath);
+      if (seenFingerprints.has(fingerprint.sha256)) {
+        throw new Error("presenter support image must not duplicate the source or another image");
+      }
+      seenFingerprints.add(fingerprint.sha256);
+      return {
+        ...fingerprint,
+        approval_ref: entry.approval_ref.trim(),
+        name: typeof entry.name === "string" && entry.name.trim()
+          ? entry.name.trim()
+          : `用户确认辅助图片${index + 1}${extension}`,
+      };
+    });
     return {
       productMediaApprovalRefs: [],
-      presenterSource: {
-        ...fingerprintFile(presenterSourceVideo),
-        approval_ref: presenterSourceApprovalRef,
-      },
+      presenterSource,
+      presenterSupportImages,
     };
   }
   throw new Error("quality baseline supports explainer or presenter only");
@@ -1595,6 +1662,12 @@ try {
       sourceDocument: sourceDocumentFingerprint,
       sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
       visionServiceUrl,
+      mgModalTarget: {
+        appName: mgTestTarget.MULTIMIX_MG_MODAL_APP_NAME
+          ?? canonicalEnv.MULTIMIX_MG_MODAL_APP_NAME ?? process.env.MULTIMIX_MG_MODAL_APP_NAME ?? null,
+        environment: mgTestTarget.MODAL_ENVIRONMENT
+          ?? canonicalEnv.MODAL_ENVIRONMENT ?? process.env.MODAL_ENVIRONMENT ?? null,
+      },
       qualityBaselineRun,
       presenterSourceApprovalRef,
       qualityBaselineInputs,
@@ -1677,6 +1750,7 @@ try {
     MULTIMIX_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
     MULTIMIX_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
     MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
+    ...mgTestTarget,
   };
   if (!usesRemoteArtifactStorage) delete backendEnv.MULTIMIX_ARTIFACT_WRITE_LEDGER_PATH;
   decisionAuditEnv = backendEnv;

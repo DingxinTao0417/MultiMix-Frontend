@@ -6,8 +6,23 @@ vi.mock("@editor/core", () => ({
 vi.mock("./buildProject", () => ({ buildProject: vi.fn() }));
 vi.mock("./api", () => ({ mediaUrl: (path: string) => path }));
 
-import { hydrateAssetFiles } from "./bootstrap";
+import * as bootstrap from "./bootstrap";
 import type { BackendProject } from "./buildProject";
+
+const { hydrateAssetFiles } = bootstrap;
+
+type ExportHydrator = (
+  assets: Array<typeof stalledMedia & { file: File }>,
+  project: BackendProject,
+  options?: { chunkBytes?: number; requestTimeoutMs?: number; totalTimeoutMs?: number },
+) => Promise<Array<typeof stalledMedia & { file: File }>>;
+
+function exportHydrator(): ExportHydrator {
+  const candidate = (bootstrap as unknown as { hydrateAssetFilesForExport?: ExportHydrator })
+    .hydrateAssetFilesForExport;
+  expect(candidate, "export hydration must be a separate strict contract from preview hydration").toBeTypeOf("function");
+  return candidate!;
+}
 
 const stalledMedia = {
   id: "stalled-video",
@@ -163,5 +178,106 @@ describe("hydrateAssetFiles", () => {
       "media hydration failed",
       expect.objectContaining({ assetId: readyMedia.id, contentType: "text/plain", reason: "mime", status: 200 }),
     );
+  });
+});
+
+describe("hydrateAssetFilesForExport", () => {
+  it("assembles a zero-byte video from contiguous byte-range responses", async () => {
+    vi.stubGlobal("window", globalThis);
+    const source = new TextEncoder().encode("abcdefghij");
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const range = new Headers(init?.headers).get("range") || "";
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range);
+      expect(match).not.toBeNull();
+      const start = Number(match![1]);
+      const requestedEnd = Number(match![2]);
+      const end = Math.min(requestedEnd, source.byteLength - 1);
+      const body = source.slice(start, end + 1);
+      return Promise.resolve(new Response(body, {
+        status: 206,
+        headers: {
+          "content-type": "video/mp4",
+          "content-length": String(body.byteLength),
+          "content-range": `bytes ${start}-${end}/${source.byteLength}`,
+        },
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const asset = { ...stalledMedia, file: new File([], stalledMedia.name) };
+
+    const hydrated = await exportHydrator()([asset], projectWithMedia(), { chunkBytes: 4 });
+
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("range"))).toEqual([
+      "bytes=0-3",
+      "bytes=4-7",
+      "bytes=8-11",
+    ]);
+    expect(hydrated[0].file.size).toBe(source.byteLength);
+    expect(new Uint8Array(await hydrated[0].file.arrayBuffer())).toEqual(source);
+    expect(hydrated[0].file.type).toBe("video/mp4");
+  });
+
+  it("rejects a partial response whose Content-Range is not the requested contiguous range", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("bc", {
+      status: 206,
+      headers: {
+        "content-type": "video/mp4",
+        "content-length": "2",
+        "content-range": "bytes 1-2/4",
+      },
+    })));
+    const asset = { ...stalledMedia, file: new File([], stalledMedia.name) };
+
+    await expect(exportHydrator()([asset], projectWithMedia(), { chunkBytes: 4 })).rejects.toThrow(
+      /Content-Range|range/i,
+    );
+  });
+
+  it("accepts a complete HTTP 200 response as a compatibility fallback", async () => {
+    vi.stubGlobal("window", globalThis);
+    const source = new TextEncoder().encode("complete-video");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(source, {
+      status: 200,
+      headers: {
+        "content-type": "video/mp4",
+        "content-length": String(source.byteLength),
+      },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const asset = { ...stalledMedia, file: new File([], stalledMedia.name) };
+
+    const hydrated = await exportHydrator()([asset], projectWithMedia(), { chunkBytes: 4 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new Uint8Array(await hydrated[0].file.arrayBuffer())).toEqual(source);
+  });
+
+  it("aborts a stalled export range with an explicit timeout error", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    let aborted = false;
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })));
+    const asset = { ...stalledMedia, file: new File([], stalledMedia.name) };
+
+    const hydration = exportHydrator()([asset], projectWithMedia(), {
+      chunkBytes: 4,
+      requestTimeoutMs: 25,
+      totalTimeoutMs: 100,
+    });
+    const capturedError = hydration.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(await capturedError).toBeInstanceOf(Error);
+    expect((await capturedError as Error).message).toMatch(/timed out|超时/i);
+    expect(aborted).toBe(true);
   });
 });

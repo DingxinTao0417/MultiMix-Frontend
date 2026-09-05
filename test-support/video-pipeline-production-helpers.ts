@@ -16,6 +16,39 @@ export type DurationCandidate = {
   target_seconds?: unknown;
 };
 
+type RoundTripTrack = {
+  id?: unknown;
+  elements?: readonly Record<string, unknown>[];
+  [key: string]: unknown;
+};
+
+function withoutDisplayLineBreaks(value: string): string {
+  return value.replace(/\r?\n/g, "");
+}
+
+export function normalizePresenterRoundTripTrack<Track extends RoundTripTrack>(
+  track: Track,
+): Track {
+  if (track.id !== "track-text" || !Array.isArray(track.elements)) {
+    return track;
+  }
+  return {
+    ...track,
+    elements: track.elements.map((element) => {
+      const content = element.content;
+      const displayText = element.displayText;
+      if (
+        typeof content !== "string"
+        || typeof displayText !== "string"
+        || withoutDisplayLineBreaks(content) !== withoutDisplayLineBreaks(displayText)
+      ) {
+        return element;
+      }
+      return { ...element, content: displayText };
+    }),
+  } as Track;
+}
+
 export function selectClosestDurationCandidate(
   candidates: readonly DurationCandidate[],
   groundedTopCandidateIds: readonly string[],

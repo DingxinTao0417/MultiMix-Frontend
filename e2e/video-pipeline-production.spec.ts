@@ -13,10 +13,21 @@ import {
 
 import {
   PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION,
+  normalizePresenterRoundTripTrack,
   selectClosestDurationCandidate,
   selectProductionGeneratedRecomposeTarget,
 } from "../test-support/video-pipeline-production-helpers";
 import { writeVideoHumanReviewReport } from "../scripts/video-human-review-report.mjs";
+import {
+  getMgReadiness,
+  plannedMgExecutions,
+  type MgDecisionExecution,
+} from "../test-support/video-pipeline-mg-readiness";
+import {
+  assessPresenterEventExecution,
+  freezePresenterPublicEventSelection,
+  type FrozenPresenterSelection,
+} from "../test-support/presenter-event-acceptance";
 
 const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
@@ -27,10 +38,14 @@ const qaGenerationInstructionOverride = (process.env.VIDEO_PIPELINE_GENERATION_I
 type ActiveVideoType = "explainer" | "source_excerpt" | "presenter";
 
 function loadActiveVideoTypes(): string[] {
-  const activationPath = path.resolve(
-    process.cwd(),
-    "..",
-    "MultiMix-Backend",
+  const configuredBackendRoot = (
+    process.env.MULTIMIX_CANONICAL_BACKEND_ROOT ?? ""
+  ).trim();
+  const backendRoot = configuredBackendRoot
+    ? path.resolve(configuredBackendRoot)
+    : path.resolve(process.cwd(), "..", "MultiMix-Backend");
+  const activationPath = path.join(
+    backendRoot,
     "app",
     "video_pipelines",
     "unified",
@@ -115,6 +130,58 @@ async function assertExportHasNotFailed(
     );
   }
   return label;
+}
+
+async function waitForExportTaskResponseOrFailure(
+  page: Page,
+  exportButton: ReturnType<Page["locator"]>,
+  exportTaskResponsePaths: string[],
+  assetId: number,
+  videoJobId: string,
+  timeoutMs: number,
+): Promise<PlaywrightResponse> {
+  return new Promise<PlaywrightResponse>((resolve, reject) => {
+    let settled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      page.off("response", onResponse);
+      if (pollTimer) clearTimeout(pollTimer);
+      if (deadlineTimer) clearTimeout(deadlineTimer);
+    };
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const onResponse = (response: PlaywrightResponse) => {
+      if (
+        response.request().method() === "POST"
+        && exportTaskResponsePaths.includes(response.url())
+      ) {
+        finish(() => resolve(response));
+      }
+    };
+    const pollFailure = async () => {
+      if (settled) return;
+      try {
+        await assertExportHasNotFailed(page, exportButton, assetId, videoJobId);
+      } catch (error) {
+        finish(() => reject(error));
+        return;
+      }
+      if (settled) return;
+      pollTimer = setTimeout(() => void pollFailure(), 1_000);
+    };
+
+    page.on("response", onResponse);
+    const deadlineTimer = setTimeout(
+      () => finish(() => reject(new Error(`timed out waiting ${timeoutMs}ms for export task creation`))),
+      timeoutMs,
+    );
+    void pollFailure();
+  });
 }
 
 const CANDIDATE_MP4_RANGE_CHUNK_BYTES = 1024 * 1024;
@@ -436,6 +503,7 @@ type SceneRow = {
     status?: string;
     overlay_ref?: string;
     last_error?: string;
+    items?: MgDecisionExecution[];
   };
   primary_visual_strategy?: {
     mode?: string;
@@ -460,6 +528,16 @@ type SceneRow = {
       warning_code?: string;
     };
   };
+  visual_events?: Array<{
+    type?: string;
+    status?: string;
+    artifact_ref?: string;
+    asset_binding?: {
+      asset_id?: number;
+      artifact_ref?: string;
+      binding_source?: string;
+    } | null;
+  }>;
 };
 
 type QualityReport = {
@@ -708,8 +786,9 @@ async function confirmPresenterCleanupIfRequired(
     headers: Record<string, string>;
   },
 ) {
-  const cleanupButton = page.getByRole("button", {
-    name: "确认清理并进入导演方案",
+  const cleanupCard = page.getByLabel("口播清理 · 待确认").last();
+  const cleanupButton = cleanupCard.getByRole("button", {
+    name: /按(?:推荐方案|当前选择)继续/,
   });
   const directionCard = videoProjectConfirmationCard(page);
   let nextStep: "cleanup" | "direction" | null = null;
@@ -743,20 +822,27 @@ async function confirmPresenterCleanupIfRequired(
     `presenter cleanup confirmation failed: ${response.status()} ${responseText}`,
   ).toBe(true);
   const payload = JSON.parse(responseText) as {
+    conversation_id?: string;
     generation_job?: { id?: string };
   };
+  const conversationId = payload.conversation_id;
+  expect(
+    conversationId,
+    "presenter cleanup confirmation must retain its conversation identity",
+  ).toBeTruthy();
   const jobId = payload.generation_job?.id;
   expect(
     jobId,
     "presenter cleanup confirmation must queue a director job",
   ).toBeTruthy();
-  return measureE2EStage("presenter_director_generation", () =>
+  const job = await measureE2EStage("presenter_director_generation", () =>
     waitForGenerationJob(page, {
       apiBase,
       headers,
       jobId: jobId!,
       stageLabel: "presenter director generation",
     }));
+  return { job, conversationId: conversationId! };
 }
 
 async function waitForGenerationJob(
@@ -993,17 +1079,6 @@ function assertDistinctPersistedPrimaryVisualWindows(
   }
 }
 
-function mgDiagnostic(scenes: SceneRow[]) {
-  return scenes
-    .map((scene) => {
-      const decision = scene.mg_decision;
-      return `${scene.id}:${decision?.status ?? "missing"}${
-        decision?.last_error ? `(${decision.last_error})` : ""
-      }`;
-    })
-    .join(",");
-}
-
 function hasValidPresentationSupport(
   support: { headline?: string; items?: string[] } | undefined,
 ) {
@@ -1195,12 +1270,40 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     const savedLibraryMediaFiles = JSON.parse(savedLibraryMediaFilesRaw ?? "[]") as Array<{
       path?: string;
       name?: string;
+      approval_ref?: string;
+      sha256?: string;
     }>;
+    const approvedPresenterBuffers = new Map<string, Buffer>();
     if (isQualityBaselinePresenter) {
+      const presenterSources = savedLibraryMediaFiles.filter((entry) =>
+        supportedVideoExtensions.has(path.extname(entry.path ?? "").toLowerCase()),
+      );
       expect(
-        savedLibraryMediaFiles.length,
+        presenterSources,
         "quality-baseline presenter requires exactly one approved source video",
-      ).toBe(requiredSavedLibraryMediaCount);
+      ).toHaveLength(1);
+      expect(path.resolve(presenterSources[0].path ?? "")).toBe(path.resolve(presenterSourceVideo));
+      const approvedHashes = new Set<string>();
+      for (const entry of savedLibraryMediaFiles) {
+        const mediaPath = path.resolve(entry.path ?? "");
+        const isSource = mediaPath === path.resolve(presenterSourceVideo);
+        if (!isSource) {
+          expect([".png", ".jpg", ".jpeg"]).toContain(path.extname(mediaPath).toLowerCase());
+          expect(
+            typeof entry.approval_ref === "string" && entry.approval_ref.trim().length > 0,
+            "Presenter supporting image requires its own approval reference",
+          ).toBe(true);
+        } else {
+          expect(entry.approval_ref).toBe(presenterSourceApprovalRef);
+        }
+        const mediaBuffer = fs.readFileSync(mediaPath);
+        expect(mediaBuffer.length, "Presenter input must not be empty").toBeGreaterThan(0);
+        const actualSha256 = crypto.createHash("sha256").update(mediaBuffer).digest("hex");
+        expect(actualSha256, "Presenter upload changed after approved input preflight").toBe(entry.sha256);
+        expect(approvedHashes.has(actualSha256), "Presenter inputs must be distinct files").toBe(false);
+        approvedHashes.add(actualSha256);
+        approvedPresenterBuffers.set(mediaPath, mediaBuffer);
+      }
     } else if (singleImageCreativeDraft) {
       expect(
         savedLibraryMediaFiles.length,
@@ -1241,7 +1344,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
             file: {
               name: entry.name ?? `真实门店与过程素材${index + 1}${extension}`,
               mimeType,
-              buffer: fs.readFileSync(mediaPath),
+              buffer: isQualityBaselinePresenter
+                ? approvedPresenterBuffers.get(mediaPath)!
+                : fs.readFileSync(mediaPath),
             },
             target_kind: mediaKind,
           },
@@ -1305,6 +1410,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的数据与流程讲解视频。至少三个分镜分别用数据总结、步骤流程和结构关系来解释资料中已经明确的产品闭环；只使用资料里有依据的信息，不虚构数字、案例或产品界面。MG 可以承担结构化解释，但不能替代真实证据或审核产品截图。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`;
   let generationJobId: string | undefined;
+  let activeConversationId: string | undefined;
   if (expectedVideoType === "source_excerpt") {
     expect(sourceExcerptAssetId, "source excerpt requires a dedicated source asset").toBeTruthy();
     const analysisResponse = await postConversation(
@@ -1370,8 +1476,10 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       },
     );
     const selectionPayload = (await selectionResponse.json()) as {
+      conversation_id?: string;
       generation_job?: { id?: string };
     };
+    activeConversationId = selectionPayload.conversation_id;
     generationJobId = selectionPayload.generation_job?.id;
   } else {
     const generationResponse = await postConversation(
@@ -1391,6 +1499,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       {},
       requiredLinkedAssetIds,
     );
+    activeConversationId = (generationPayload as { conversation_id?: string }).conversation_id;
     generationJobId = generationPayload.generation_job?.id;
   }
   expect(
@@ -1432,13 +1541,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   } finally {
     recordDirectorSubstageTimings(latestGenerationJob);
   }
-  const presenterDirectorJob = await confirmPresenterCleanupIfRequired(page, {
+  const presenterDirectorResult = await confirmPresenterCleanupIfRequired(page, {
     apiBase,
     headers,
   });
-  if (presenterDirectorJob) {
-    latestGenerationJob = presenterDirectorJob;
-    recordDirectorSubstageTimings(presenterDirectorJob);
+  if (presenterDirectorResult) {
+    latestGenerationJob = presenterDirectorResult.job;
+    activeConversationId = presenterDirectorResult.conversationId;
+    recordDirectorSubstageTimings(presenterDirectorResult.job);
   }
   const narrationBlocked = page
     .getByText(/口播质检未通过|当前不能确认生成视频工程/)
@@ -1453,6 +1563,33 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   // user action must be the distinct video-project confirmation card.
   const pendingCard = videoProjectConfirmationCard(page);
   await expect(pendingCard).toBeVisible({ timeout: 180_000 });
+  let frozenPresenterSelection: FrozenPresenterSelection | null = null;
+  if (isQualityBaselinePresenter) {
+    expect(
+      activeConversationId,
+      "Presenter confirmation must retain the active conversation identity",
+    ).toBeTruthy();
+    const conversationResponse = await page.request.get(
+      `${apiBase}/v1/assets/conversations/${activeConversationId}?include_project_resource_items=false`,
+      { headers },
+    );
+    expect(conversationResponse.ok()).toBe(true);
+    const conversation = await conversationResponse.json() as {
+      messages?: Array<{ role?: string; metadata?: { plan?: unknown } }>;
+    };
+    const confirmationPlan = (conversation.messages ?? [])
+      .filter((message) => message.role === "assistant")
+      .map((message) => message.metadata?.plan)
+      .filter((plan): plan is Record<string, unknown> => Boolean(
+        plan
+        && typeof plan === "object"
+        && !Array.isArray(plan)
+        && (plan as Record<string, unknown>).kind === "presenter_project_confirmation"
+        && (plan as Record<string, unknown>).status === "pending",
+      ))
+      .at(-1);
+    frozenPresenterSelection = freezePresenterPublicEventSelection(confirmationPlan);
+  }
   const directorAssetsResponse = await page.request.get(`${apiBase}/v1/assets`, {
     headers,
   });
@@ -1572,6 +1709,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     confirmationResponse.ok(),
     `confirmation failed: ${confirmationResponse.status()} ${confirmationText}`,
   ).toBe(true);
+  if (frozenPresenterSelection) {
+    const submitted = confirmationResponse.request().postDataJSON() as {
+      presenter_direction_confirmation?: { director_candidate_id?: string };
+    };
+    expect(submitted.presenter_direction_confirmation?.director_candidate_id).toBe(
+      frozenPresenterSelection.candidateId,
+    );
+  }
   const confirmationPayload = JSON.parse(confirmationText) as {
     product?: {
       metadata?: { latest_job_public_id?: string };
@@ -1710,36 +1855,21 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
           } catch (error) {
             return `transport-error:${error instanceof Error ? error.message : String(error)}`;
           }
-    if (!response.ok()) return `http-${response.status()}`;
+          if (!response.ok()) return `http-${response.status()}`;
           const current = ((await response.json()) as AssetRow[]).find(
-      (asset) => asset.id === projectAsset!.id,
-    );
-    if (!current) return "asset-missing";
-    const plannedMgScenes = scenesFromAsset(current).filter(
-      (scene) => scene.mg_decision?.needed === true,
-    );
-    if (plannedMgScenes.length === 0) {
-      projectAsset = current;
-      return "not-needed";
-    }
-    const notDispatched = plannedMgScenes.filter((scene) =>
-      new Set(["planned", "stale", "missing"]).has(
-        scene.mg_decision?.status ?? "missing",
-      ),
-    );
-    return notDispatched.length > 0
-      ? `mg-not-dispatched:${mgDiagnostic(notDispatched)}`
-      : "dispatched";
+            (asset) => asset.id === projectAsset!.id,
+          );
+          if (!current) return "asset-missing";
+          projectAsset = current;
+          return getMgReadiness(scenesFromAsset(current), "dispatch");
         },
         { timeout: 90_000, intervals: [1000, 2500, 5000] },
       )
       .toMatch(/^(?:dispatched|not-needed)$/);
-    const plannedMgScenes = scenesFromAsset(projectAsset!).filter(
-      (scene) => scene.mg_decision?.needed === true,
-    );
+    const plannedMgItems = plannedMgExecutions(scenesFromAsset(projectAsset!));
     if (requireMg) {
       expect(
-        plannedMgScenes.length,
+        plannedMgItems.length,
         "director ignored the explicit request for at least one MG scene",
       ).toBeGreaterThan(0);
     }
@@ -1757,25 +1887,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
             (asset) => asset.id === projectAsset!.id,
           );
           if (!current) return "asset-missing";
-          const plannedMgScenes = scenesFromAsset(current).filter(
-            (scene) => scene.mg_decision?.needed === true,
-          );
-          if (plannedMgScenes.length === 0) {
-            projectAsset = current;
-            return "not-needed";
-          }
-          const pending = plannedMgScenes.filter(
-            (scene) => !new Set(["rendered", "failed"]).has(scene.mg_decision?.status ?? ""),
-          );
-          if (pending.length > 0) return `mg-in-flight:${mgDiagnostic(pending)}`;
-          const rendered = plannedMgScenes.filter(
-            (scene) => scene.mg_decision?.status === "rendered",
-          );
-          if (rendered.length === 0) {
-            throw new Error(`all enabled MG scenes reached a failed terminal state: ${mgDiagnostic(plannedMgScenes)}`);
-          }
           projectAsset = current;
-          return "ready";
+          return getMgReadiness(scenesFromAsset(current), "terminal", expectedVideoType === "presenter");
         },
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
@@ -1905,10 +2018,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   if (expectedVideoType === "presenter") {
     const videoParameters = finalVideoPlan.video_parameters;
     expect(videoParameters?.ratio).toBe(targetRatio);
-    expect(videoParameters?.ratio_source).toBe("source_video");
-    expect(savedLibraryVideoAssetIds).toContain(
-      videoParameters?.ratio_source_asset_id,
-    );
+    expect(videoParameters?.ratio_source).toBe("explicit");
+    expect(videoParameters?.ratio_source_asset_id).toBeNull();
     expect(videoParameters?.ai_voice_enabled).toBe(false);
     expect(videoParameters?.voice_source).toBe("source_audio");
     expect(savedLibraryVideoAssetIds).toContain(
@@ -1916,6 +2027,41 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     );
     expect(videoParameters?.recommendation_mode).toBe("single_winner");
     expect(videoParameters?.confirmed).toBe(true);
+    if (isQualityBaselinePresenter) {
+      const presenterEventAcceptance = assessPresenterEventExecution(frozenPresenterSelection!, beforeScenes);
+      if (resultDir) {
+        fs.mkdirSync(resultDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(resultDir, "presenter-selected-event-acceptance.json"),
+          JSON.stringify(presenterEventAcceptance, null, 2),
+        );
+      }
+      expect(presenterEventAcceptance.errors,
+        "quality-baseline Presenter must fully execute its frozen selected events",
+      ).toEqual([]);
+      const presenterSourceAssetIds = new Set(savedLibraryVideoAssetIds);
+      for (const scene of beforeScenes) {
+        for (const event of scene.visual_events ?? []) {
+          if (!new Set(["media_overlay", "media_takeover"]).has(event.type ?? "")) {
+            continue;
+          }
+          const bindingAssetId = event.asset_binding?.asset_id;
+          const bindingRef = event.artifact_ref ?? event.asset_binding?.artifact_ref;
+          const reusesPresenterSource =
+            (bindingAssetId !== undefined && presenterSourceAssetIds.has(bindingAssetId))
+            || (
+              Boolean(bindingRef)
+              && bindingRef === scene.primary_visual?.artifact_ref
+              && scene.primary_visual?.asset_id !== undefined
+              && presenterSourceAssetIds.has(scene.primary_visual.asset_id)
+            );
+          expect(
+            reusesPresenterSource,
+            "quality-baseline Presenter media event must not reuse the Presenter source",
+          ).toBe(false);
+        }
+      }
+    }
   }
   const videoProject = projectAsset!.metadata?.video_project as
     VideoProject | undefined;
@@ -2362,6 +2508,63 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }
   });
   expect(projectQualityReport).toBeTruthy();
+  if (qualityBaselineRun && expectedVideoType === "presenter") {
+    await measureE2EStage("presenter_editor_round_trip", async () => {
+      const initialMainCount = mainTrack?.elements?.length ?? 0;
+      const stableTracks = videoProject?.tracks?.filter((track) => track.id !== "track-video") ?? [];
+      const readCurrentAsset = async () => {
+        const response = await page.request.get(`${apiBase}/v1/assets`, { headers });
+        expect(response.ok()).toBe(true);
+        const rows = await response.json() as AssetRow[];
+        const current = rows.find((asset) => asset.id === projectAsset!.id);
+        expect(current).toBeTruthy();
+        return current!;
+      };
+      await page.getByRole("button", { name: "编辑", exact: true }).click();
+      const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+      const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+      await expect(clips).toHaveCount(initialMainCount, { timeout: 90_000 });
+      await clips.first().click();
+      const saveResponsePromise = page.waitForResponse((response) =>
+        response.request().method() === "PUT"
+        && new URL(response.url()).pathname === `/v1/video/projects/${projectAsset!.id}`,
+      { timeout: 90_000 });
+      // Split only: no source speech or visual event is deleted or fabricated.
+      await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+      const saveResponse = await saveResponsePromise;
+      expect(saveResponse.status(), "actual editor serialization must save successfully").toBe(200);
+      await expect(clips).toHaveCount(initialMainCount + 1);
+      await page.getByRole("button", { name: "完成编辑", exact: true }).click();
+      await expect(page.getByTitle("视频剪辑器")).toHaveCount(0, { timeout: 90_000 });
+      await page.reload();
+      const reopenedAsset = await readCurrentAsset();
+      expect(scenesFromAsset(reopenedAsset).map((scene) => scene.visual_events)).toEqual(
+        beforeScenes.map((scene) => scene.visual_events),
+      );
+      const reopenedProject = reopenedAsset.metadata?.video_project as VideoProject;
+      for (const track of stableTracks) {
+        const saved = reopenedProject.tracks?.find((candidate) => candidate.id === track.id);
+        expect(saved?.elements).toHaveLength(track.elements?.length ?? 0);
+        expect(
+          normalizePresenterRoundTripTrack(saved ?? {}),
+          `save/reopen must preserve ${track.id}`,
+        ).toMatchObject(normalizePresenterRoundTripTrack(track));
+      }
+      await page.getByRole("button", { name: "编辑", exact: true }).click();
+      await expect(clips).toHaveCount(initialMainCount + 1, { timeout: 90_000 });
+      if (resultDir) {
+        await page.screenshot({ path: path.join(resultDir, "presenter-editor-reopened.png"), fullPage: true });
+        fs.writeFileSync(path.join(resultDir, "presenter-editor-round-trip.json"), JSON.stringify({
+          assetId: reopenedAsset.id, saveStatus: saveResponse.status(),
+          mainClipsBefore: initialMainCount, mainClipsAfter: initialMainCount + 1,
+          preservedTrackIds: stableTracks.map((track) => track.id),
+          visualEventsPreserved: true, reopenedInActualEditor: true,
+        }, null, 2));
+      }
+      await page.getByRole("button", { name: "完成编辑", exact: true }).click();
+      await expect(page.getByTitle("视频剪辑器")).toHaveCount(0, { timeout: 90_000 });
+    });
+  }
   let exportTaskId = "";
   let terminalMp4Ref = "";
   const exportButton = await measureE2EStage("export_preview_ready", async () => {
@@ -2380,11 +2583,13 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/register`,
       `${apiBase}/v1/video/projects/${projectAsset!.id}/exports`,
     ];
-    const exportCreateResponse = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST"
-        && exportTaskResponsePaths.includes(response.url()),
-      { timeout: 15 * 60_000 },
+    const exportCreateResponse = waitForExportTaskResponseOrFailure(
+      page,
+      exportButton,
+      exportTaskResponsePaths,
+      projectAsset!.id,
+      videoJobId!,
+      15 * 60_000,
     );
     await exportButton.click();
     const createResponse = await exportCreateResponse;
