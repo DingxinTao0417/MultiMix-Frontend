@@ -13,6 +13,7 @@ import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import type { VideoQualityReport } from "../lib/video-quality";
+import reviewStyles from "./video-film-review-panel.module.css";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -253,6 +254,7 @@ export type ProductPreviewHandle = {
 };
 
 type ProductPreviewProps = {
+  footer?: import("react").ReactNode;
   product: ProductArtifact;
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
@@ -272,6 +274,7 @@ type ProductPreviewProps = {
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
   product,
+  footer,
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
@@ -458,7 +461,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
     const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
     return (
-      <div className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface" aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
+      <div className={`shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface${footer ? ` ${reviewStyles.withReview}` : ""}`} aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
         <div className="shadcn-prototype-product-video">
           {showFullVideo ? (
             <VideoPreviewPlayer
@@ -535,6 +538,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
         {(product.sourceSummary || animationSummary(planSummary)) ? (
           <SourceRefBlock summary={product.sourceSummary} animation={animationSummary(planSummary)} />
         ) : null}
+        {footer}
       </div>
     );
   }
@@ -643,6 +647,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
       ) : null}
 
       {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
+      {footer}
     </>
   );
 });

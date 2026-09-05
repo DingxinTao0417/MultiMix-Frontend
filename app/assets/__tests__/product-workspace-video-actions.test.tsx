@@ -9,6 +9,14 @@ import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import ProductWorkspace from "../components/product-workspace";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
+// The independent advisory panel owns its own API tests; keep these playback
+// and editing tests' ordered fetch fixtures scoped to the operation under test.
+vi.mock("../../../lib/video-project-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/video-project-client")>(),
+  getFilmReviews: vi.fn(async () => ({ can_review: false, unavailable_reason: null,
+    script_review: null, reviews: [] })),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

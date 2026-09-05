@@ -11,6 +11,12 @@ import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { VideoQualityReport } from "../lib/video-quality";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
+vi.mock("../../../lib/video-project-client", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/video-project-client")>(),
+  getFilmReviews: vi.fn(async () => ({ can_review: false, unavailable_reason: null,
+    script_review: null, reviews: [] })),
+}));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
