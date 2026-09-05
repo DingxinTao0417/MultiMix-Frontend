@@ -2,9 +2,84 @@ import { describe, expect, it } from "vitest";
 
 import {
   PRODUCTION_GENERATED_RECOMPOSE_INSTRUCTION,
+  normalizePresenterRoundTripTrack,
   selectClosestDurationCandidate,
   selectProductionGeneratedRecomposeTarget,
 } from "../video-pipeline-production-helpers";
+
+describe("normalizePresenterRoundTripTrack", () => {
+  const subtitleTrack = {
+    id: "track-text",
+    type: "text",
+    elements: [
+      {
+        id: "subtitle-1",
+        content: "我们的项目是一个生产力AI应用。",
+        displayText: "我们的项目是一个生产力AI应用。",
+        startTime: 3.2,
+        duration: 3.92,
+      },
+    ],
+  };
+
+  it("accepts editor-authored line wrapping when semantic subtitle text is unchanged", () => {
+    const reopened = {
+      ...subtitleTrack,
+      elements: [
+        {
+          ...subtitleTrack.elements[0],
+          content: "我们的项目是一\n个生产力AI应用。",
+        },
+      ],
+    };
+
+    expect(normalizePresenterRoundTripTrack(reopened)).toEqual(
+      normalizePresenterRoundTripTrack(subtitleTrack),
+    );
+  });
+
+  it("does not hide changed words, timing drift, or missing subtitle elements", () => {
+    const changedWord = {
+      ...subtitleTrack,
+      elements: [
+        {
+          ...subtitleTrack.elements[0],
+          content: "我们的项目是一个娱乐AI应用。",
+        },
+      ],
+    };
+    const changedTiming = {
+      ...subtitleTrack,
+      elements: [
+        {
+          ...subtitleTrack.elements[0],
+          startTime: 4.2,
+        },
+      ],
+    };
+    const missingElement = { ...subtitleTrack, elements: [] };
+
+    expect(normalizePresenterRoundTripTrack(changedWord)).not.toEqual(
+      normalizePresenterRoundTripTrack(subtitleTrack),
+    );
+    expect(normalizePresenterRoundTripTrack(changedTiming)).not.toEqual(
+      normalizePresenterRoundTripTrack(subtitleTrack),
+    );
+    expect(normalizePresenterRoundTripTrack(missingElement)).not.toEqual(
+      normalizePresenterRoundTripTrack(subtitleTrack),
+    );
+  });
+
+  it("keeps non-subtitle tracks byte-for-byte strict", () => {
+    const mediaTrack = {
+      id: "track-presenter-media",
+      type: "video",
+      elements: [{ id: "event-1", startTime: 2, duration: 1 }],
+    };
+
+    expect(normalizePresenterRoundTripTrack(mediaTrack)).toEqual(mediaTrack);
+  });
+});
 
 describe("selectClosestDurationCandidate", () => {
   it("selects the grounded top candidate closest to the requested duration", () => {

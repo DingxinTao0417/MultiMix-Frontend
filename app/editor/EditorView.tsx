@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   disposeEditor,
+  hydrateAssetFilesForExport,
   initEditorWithProject,
   updateEditorProject,
 } from "@/editor-engine/vendor/bootstrap";
@@ -21,6 +22,7 @@ import { rememberRawProject, serializeBackendProject } from "@/editor-engine/ven
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
 import { getExportMimeType } from "@editor/lib/export";
+import { videoCache } from "@editor/services/video-cache/service";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
@@ -322,7 +324,18 @@ export default function EditorView({
       : null;
     if (!candidate) {
       hooks.onStart?.();
-      const result = await EditorCore.getInstance().renderer.exportProject({
+      const editor = EditorCore.getInstance();
+      const currentAssets = editor.media.getAssets();
+      const hydratedAssets = await hydrateAssetFilesForExport(currentAssets, currentProject);
+      for (let index = 0; index < currentAssets.length; index += 1) {
+        const previous = currentAssets[index];
+        const hydrated = hydratedAssets[index];
+        if (previous.type === "video" && previous.file.size === 0 && hydrated.file.size > 0) {
+          videoCache.clearVideo({ mediaId: previous.id });
+        }
+      }
+      editor.media.setAssets({ assets: hydratedAssets });
+      const result = await editor.renderer.exportProject({
         options: { format: "mp4", quality: "high", includeAudio: true },
         onProgress: ({ progress }) => hooks.onProgress?.(progress),
       });

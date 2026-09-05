@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +17,37 @@ const runnerPath = path.join(scriptsRoot, "run-video-pipeline-production-e2e.mjs
 const productionSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-production.spec.ts");
 const retainedExportSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-retained-export.spec.ts");
 
+function loadMgTargetResolver() {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const start = source.indexOf("function resolveMgTestTarget(");
+  const end = source.indexOf("const mgTestTarget =", start);
+  assert.ok(start >= 0 && end > start, "isolated MG target resolver must exist");
+  return new Function(`${source.slice(start, end)}; return resolveMgTestTarget;`)();
+}
+
+test("Presenter isolated MG target wins over canonical deployment", () => {
+  const resolve = loadMgTargetResolver();
+  const env = { VIDEO_PIPELINE_MG_MODAL_APP_NAME: "multimix-presenter-remotion-e2e-r8", VIDEO_PIPELINE_MODAL_ENVIRONMENT: "main" };
+  const actual = { MULTIMIX_MG_MODAL_APP_NAME: "multimix-remotion", MODAL_ENVIRONMENT: "other", ...resolve(env) };
+  assert.deepEqual(actual, { MULTIMIX_MG_MODAL_APP_NAME: env.VIDEO_PIPELINE_MG_MODAL_APP_NAME, MODAL_ENVIRONMENT: "main" });
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const backendBlock = source.slice(source.indexOf("const backendEnv = {"), source.indexOf("decisionAuditEnv = backendEnv"));
+  assert.ok(backendBlock.lastIndexOf("...mgTestTarget") > backendBlock.indexOf("...canonicalEnv"));
+  assert.match(source, /mgModalTarget:/);
+});
+
+test("Presenter absent isolated MG override preserves existing environment exactly", () => {
+  const original = { MULTIMIX_MG_MODAL_APP_NAME: "multimix-remotion", MODAL_ENVIRONMENT: "main" };
+  assert.deepEqual({ ...original, ...loadMgTargetResolver()({}) }, original);
+});
+
+test("Presenter isolated MG override rejects blank or malformed names", () => {
+  for (const value of ["", " ", "name/production", "name with spaces"]) {
+    assert.throws(() => loadMgTargetResolver()({ VIDEO_PIPELINE_MG_MODAL_APP_NAME: value }), /VIDEO_PIPELINE_MG_MODAL_APP_NAME/);
+  }
+  assert.throws(() => loadMgTargetResolver()({ VIDEO_PIPELINE_MODAL_ENVIRONMENT: "" }), /VIDEO_PIPELINE_MODAL_ENVIRONMENT/);
+});
+
 function loadRunnerEnvParser() {
   const source = fs.readFileSync(runnerPath, "utf8");
   const functionSource = source.match(
@@ -24,6 +56,53 @@ function loadRunnerEnvParser() {
 
   assert.ok(functionSource, "production E2E env parser is missing");
   return new Function("fs", `"use strict"; ${functionSource}; return parseEnvFile;`)(fs);
+}
+
+test("Presenter quality E2E saves and reopens the actual editor before export", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const start = source.indexOf('measureE2EStage("presenter_editor_round_trip"');
+  const end = source.indexOf('measureE2EStage("export_preview_ready"');
+  assert.ok(start > 0 && end > start, "real editor round-trip must precede export");
+  const block = source.slice(start, end);
+  assert.match(block, /saveResponse\.status\(\)/);
+  assert.match(block, /page\.reload\(\)/);
+  assert.match(block, /scenesFromAsset\(reopenedAsset/);
+  assert.match(block, /presenter-editor-round-trip\.json/);
+  assert.doesNotMatch(block, /page\.route\(/);
+});
+
+function loadQualityBaselineInputValidator() {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const fingerprintStart = source.indexOf("function fingerprintFile(");
+  const fingerprintEnd = source.indexOf("function configuredInputFingerprints(", fingerprintStart);
+  const validatorStart = source.indexOf("function validateQualityBaselineInputs(");
+  const validatorEnd = source.indexOf("function stageBgmCatalogIfAvailable(", validatorStart);
+  assert.ok(fingerprintStart >= 0 && fingerprintEnd > fingerprintStart);
+  assert.ok(validatorStart >= 0 && validatorEnd > validatorStart);
+  return new Function("fs", "path", "crypto", `"use strict";
+    ${source.slice(fingerprintStart, fingerprintEnd)}
+    ${source.slice(validatorStart, validatorEnd)}
+    return validateQualityBaselineInputs;
+  `)(fs, path, crypto);
+}
+
+function withPresenterInputFiles(callback) {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-presenter-inputs-"));
+  const sourcePath = path.join(temporaryRoot, "source.mp4");
+  const imagePath = path.join(temporaryRoot, "support.png");
+  // These bytes exercise file identity only, not media decoding or visual quality.
+  fs.writeFileSync(sourcePath, "presenter source fingerprint fixture");
+  fs.writeFileSync(imagePath, "independent supporting image fingerprint fixture");
+  const input = {
+    expectedVideoType: "presenter",
+    presenterSourceVideo: sourcePath,
+    presenterSourceApprovalRef: "test-source-approval",
+  };
+  try {
+    callback({ temporaryRoot, sourcePath, imagePath, input, validate: loadQualityBaselineInputValidator() });
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
 }
 
 test("production video E2E help exits before creating an isolated run", () => {
@@ -454,7 +533,89 @@ test("quality-baseline E2E fails closed without approved product or presenter in
   assert.match(browserSource, /VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO/);
 });
 
-test("quality-baseline presenter accepts one approved original from the neutral saved-library input", () => {
+test("quality-baseline presenter preserves approved supporting image fingerprints", () => {
+  withPresenterInputFiles(({ sourcePath, imagePath, input, validate }) => {
+    const result = validate({
+      ...input,
+      presenterSupportImageFilesRaw: JSON.stringify([
+        { path: imagePath, approval_ref: " test-image-approval ", name: "衣架参考.png" },
+      ]),
+    });
+    assert.deepEqual(result.presenterSource, {
+      path: sourcePath,
+      sha256: crypto.createHash("sha256").update(fs.readFileSync(sourcePath)).digest("hex"),
+      approval_ref: "test-source-approval",
+    });
+    assert.deepEqual(result.presenterSupportImages, [{
+      path: imagePath,
+      sha256: crypto.createHash("sha256").update(fs.readFileSync(imagePath)).digest("hex"),
+      approval_ref: "test-image-approval",
+      name: "衣架参考.png",
+    }]);
+  });
+});
+
+test("quality-baseline presenter keeps the source-only input when no supporting image is supplied", () => {
+  withPresenterInputFiles(({ input, validate }) => {
+    assert.deepEqual(validate(input).presenterSupportImages, []);
+  });
+});
+
+for (const raw of ["invalid-json", "null", "{}", "[null]"]) {
+  test(`quality-baseline presenter rejects malformed support image input: ${raw}`, () => {
+    withPresenterInputFiles(({ input, validate }) => {
+      assert.throws(() => validate({ ...input, presenterSupportImageFilesRaw: raw }), /support image/i);
+    });
+  });
+}
+
+for (const approvalRef of [undefined, " ", true, 123]) {
+  test(`quality-baseline presenter rejects invalid support image approval: ${String(approvalRef)}`, () => {
+    withPresenterInputFiles(({ imagePath, input, validate }) => {
+      assert.throws(() => validate({
+        ...input,
+        presenterSupportImageFilesRaw: JSON.stringify([{ path: imagePath, approval_ref: approvalRef }]),
+      }), /support image approval reference/);
+    });
+  });
+}
+
+for (const invalidKind of ["missing", "empty", "directory", "video", "source-copy", "duplicate"]) {
+  test(`quality-baseline presenter rejects ${invalidKind} supporting media`, () => {
+    withPresenterInputFiles(({ temporaryRoot, sourcePath, imagePath, input, validate }) => {
+      let candidatePath = imagePath;
+      if (invalidKind === "missing") candidatePath = path.join(temporaryRoot, "missing.png");
+      if (invalidKind === "empty") fs.writeFileSync(imagePath, "");
+      if (invalidKind === "directory") {
+        candidatePath = path.join(temporaryRoot, "folder.png");
+        fs.mkdirSync(candidatePath);
+      }
+      if (invalidKind === "video") candidatePath = sourcePath;
+      if (invalidKind === "source-copy") fs.copyFileSync(sourcePath, imagePath);
+      const entries = [{ path: candidatePath, approval_ref: "test-image-approval" }];
+      if (invalidKind === "duplicate") {
+        const duplicatePath = path.join(temporaryRoot, "another.png");
+        fs.copyFileSync(imagePath, duplicatePath);
+        entries.push({ path: duplicatePath, approval_ref: "second-approval" });
+      }
+      assert.throws(() => validate({
+        ...input, presenterSupportImageFilesRaw: JSON.stringify(entries),
+      }), /support image/i);
+    });
+  });
+}
+
+test("quality-baseline presenter passes supporting images through the saved-library upload list", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+  assert.match(runnerSource, /presenterSupportImageFilesRaw: process\.env\.VIDEO_PIPELINE_PRESENTER_SUPPORT_IMAGE_FILES/);
+  assert.match(runnerSource, /\.\.\.qualityBaselineInputs\.presenterSupportImages/);
+  assert.match(runnerSource, /sha256: qualityBaselineInputs\.presenterSource\.sha256/);
+  assert.match(browserSource, /Presenter upload changed after approved input preflight/);
+  assert.match(browserSource, /Presenter supporting image requires its own approval reference/);
+});
+
+test("quality-baseline presenter accepts exactly one source video plus approved supporting images", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
   assert.match(
@@ -467,9 +628,29 @@ test("quality-baseline presenter accepts one approved original from the neutral 
   );
   assert.match(
     source,
-    /savedLibraryMediaFiles\.length,[\s\S]*?requiredSavedLibraryMediaCount/,
+    /presenterSources[\s\S]{0,800}?\.toHaveLength\(1\)/,
   );
+  assert.match(source, /path\.resolve\(presenterSources\[0\]\.path \?\? ""\)\)\.toBe\(path\.resolve\(presenterSourceVideo\)\)/);
   assert.match(source, /quality-baseline presenter requires exactly one approved source video/);
+});
+
+test("quality-baseline presenter checks the frozen selected plan, not a five-type quota", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  assert.equal(source.includes("requiredPresenterEventTypes"), false,
+    "natural Presenter acceptance must not require five types in one video");
+  const freeze = source.indexOf("freezePresenterPublicEventSelection(confirmationPlan)");
+  const confirm = source.indexOf("await confirmButton.click()", freeze);
+  const assess = source.indexOf("assessPresenterEventExecution(frozenPresenterSelection!, beforeScenes)");
+  assert.ok(freeze >= 0 && confirm > freeze && assess > confirm,
+    "freeze the public recommended candidate before confirmation, then assess project events");
+  assert.equal(source.includes("freezePresenterEventSelection(directorVideoPlan)"), false,
+    "public assets must not be treated as if they exposed the private director plan");
+  assert.match(source, /presenter-selected-event-acceptance\.json/);
+  assert.match(source, /expect\(presenterEventAcceptance\.errors[\s\S]{0,250}?\.toEqual\(\[\]\)/);
+  assert.match(
+    source,
+    /quality-baseline Presenter media event must not reuse the Presenter source/,
+  );
 });
 
 test("quality-baseline presenter keeps the source video extension in its upload filename", () => {
@@ -583,6 +764,41 @@ test("production video E2E observes both supported asynchronous export task resp
     /`\$\{apiBase\}\/v1\/video\/projects\/\$\{projectAsset!\.id\}\/exports`/,
   );
   assert.match(source, /exportTaskResponsePaths\.includes\(response\.url\(\)\)/);
+});
+
+test("production video E2E fails fast when export preparation reports a visible error", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const stageStart = source.indexOf('measureE2EStage("export_preview_ready"');
+  const stageEnd = source.indexOf('measureE2EStage("export_browser_render"', stageStart);
+  const exportStage = source.slice(stageStart, stageEnd);
+  const helperStart = source.indexOf("async function waitForExportTaskResponseOrFailure");
+  const helperEnd = source.indexOf("\nasync function", helperStart + 20);
+  const helper = source.slice(helperStart, helperEnd);
+
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  assert.match(exportStage, /waitForExportTaskResponseOrFailure\(/);
+  assert.doesNotMatch(exportStage, /page\.waitForResponse\(/);
+  assert.match(helper, /page\.on\("response"/);
+  assert.match(helper, /assertExportHasNotFailed\(/);
+});
+
+test("verified editor export hydrates missing media bytes before rendering", () => {
+  const source = fs.readFileSync(
+    path.resolve(scriptsRoot, "..", "app", "editor", "EditorView.tsx"),
+    "utf8",
+  );
+  const exportStart = source.indexOf("const performVerifiedExport");
+  const exportEnd = source.indexOf("const handleEmbeddedExport", exportStart);
+  const verifiedExport = source.slice(exportStart, exportEnd);
+  const hydration = verifiedExport.indexOf("hydrateAssetFilesForExport(");
+  const cacheReset = verifiedExport.indexOf("videoCache.clearVideo(", hydration);
+  const render = verifiedExport.indexOf("renderer.exportProject(", cacheReset);
+
+  assert.ok(exportStart >= 0 && exportEnd > exportStart);
+  assert.ok(hydration >= 0, "export must strictly rehydrate missing media files");
+  assert.ok(cacheReset > hydration, "rehydrated video must invalidate the stale decoded-video cache");
+  assert.ok(render > cacheReset, "rendering must start only after hydration and cache invalidation");
 });
 
 test("production video E2E reads the persisted export task before long render polling", () => {
@@ -751,7 +967,8 @@ test("saved-library video E2E continues the presenter cleanup confirmation befor
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
   assert.match(source, /async function confirmPresenterCleanupIfRequired/);
-  assert.match(source, /确认清理并进入导演方案/);
+  assert.match(source, /getByLabel\("口播清理 · 待确认"\)\.last\(\)/);
+  assert.match(source, /name: \/按\(\?:推荐方案\|当前选择\)继续\//);
   assert.match(source, /presenter cleanup confirmation must queue a director job/);
   assert.match(source, /await confirmPresenterCleanupIfRequired\(/);
 });
@@ -763,7 +980,18 @@ test("production E2E treats presenter as an active type and confirms its single 
   assert.match(specSource, /type ActiveVideoType = [^;]*"presenter"/);
   assert.match(specSource, /function videoProjectConfirmationCard/);
   assert.match(specSource, /getByLabel\("口播型方案 · 待确认"\)/);
-  assert.match(specSource, /videoParameters\?\.ratio_source\)\.toBe\("source_video"\)/);
+  assert.match(
+    specSource,
+    /const directorVideoPlan =[\s\S]{0,3000}?videoParameters\?\.ratio_source\)\.toBe\("source_video"\)/,
+  );
+  assert.match(
+    specSource,
+    /const finalVideoPlan =[\s\S]{0,1200}?videoParameters\?\.ratio_source\)\.toBe\("explicit"\)/,
+  );
+  assert.match(
+    specSource,
+    /const finalVideoPlan =[\s\S]{0,1400}?videoParameters\?\.ratio_source_asset_id\)\.toBeNull\(\)/,
+  );
   assert.match(specSource, /videoParameters\?\.voice_source\)\.toBe\("source_audio"\)/);
   assert.match(specSource, /videoParameters\?\.ai_voice_enabled\)\.toBe\(false\)/);
   assert.match(specSource, /expect\(narrationTrack\?\.type\)\.toBe\("audio"\)/);
@@ -876,7 +1104,7 @@ test("production video E2E treats narration as the full visible subtitle", () =>
 
 test("production video E2E retries a transient transport failure while waiting for MG", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
-  const pendingIndex = source.indexOf("const pending = plannedMgScenes.filter");
+  const pendingIndex = source.indexOf('return getMgReadiness(scenesFromAsset(current), "terminal"');
   const pollStart = source.lastIndexOf("await expect", pendingIndex);
   const mgTerminalPoll = source.slice(pollStart, pendingIndex);
 
@@ -932,14 +1160,18 @@ test("production video E2E only requires an MG quantity for an explicit opt-in r
   assert.match(source, /图纸核对区[^"\n]*不得出现在旁白和字幕/);
   assert.match(
     source,
-    /if \(requireMg\) \{\s*expect\(\s*plannedMgScenes\.length,[\s\S]*director ignored the explicit request for at least one MG scene[\s\S]*\)\.toBeGreaterThan\(0\);\s*\}/,
+    /if \(requireMg\) \{\s*expect\(\s*plannedMgItems\.length,[\s\S]*director ignored the explicit request for at least one MG scene[\s\S]*\)\.toBeGreaterThan\(0\);\s*\}/,
   );
   assert.match(
     source,
-    /if \(plannedMgScenes\.length === 0\) \{\s*projectAsset = current;\s*return "not-needed";/s,
+    /const plannedMgItems = plannedMgExecutions\(scenesFromAsset\(projectAsset!\)\)/,
   );
-  assert.match(source, /mg-not-dispatched:/);
-  assert.match(source, /all enabled MG scenes reached a failed terminal state:/);
+  assert.match(source, /projectAsset = current;\s*return getMgReadiness\(scenesFromAsset\(current\), "dispatch"\)/);
+  assert.match(source, /projectAsset = current;\s*return getMgReadiness\(scenesFromAsset\(current\), "terminal", expectedVideoType === "presenter"\)/);
+  // Runtime helper tests cover not-needed, per-item pending and all-failed.
+  // Here protect its actual E2E wiring and the unchanged bounded wait budget.
+  assert.match(source, /timeout: 90_000/);
+  assert.match(source, /timeout: 15 \* 60_000/);
   assert.doesNotMatch(
     source,
     /expect\(mgOverlayTrack\?\.elements\?\.length\)\.toBeGreaterThan\(0\)/,

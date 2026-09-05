@@ -394,7 +394,7 @@ test("video library renders one bounded page without eager video elements", asyn
   await expect(shell).not.toHaveClass(/sidebar-collapsed/);
 
   await page.getByRole("button", { name: "加载更多" }).click();
-  await expect(cards).toHaveCount(61);
+  await expect(cards).toHaveCount(65);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);
@@ -470,10 +470,51 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 
-test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }) => {
+test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }, testInfo) => {
   const workspace = await openCase(page, "case-08-mg-failed-project-ready");
+  const thread = page.getByRole("region", { name: "Content generation conversation" });
   const failure = workspace.getByRole("alert");
   await expect(failure.getByText("第 2 镜动效未能完成", { exact: false })).toBeVisible();
   await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(thread.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
+  await expect(page.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
+  await testInfo.attach("lly-32-case-08-full-page", {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
+});
+
+for (const scenario of [
+  { id: "case-10-required-media-optional-compile-failed", text: "补充或重新选择素材", pending: false },
+  { id: "case-11-non-retryable-reframe-failed", text: "请调整编导脚本后重新生成", pending: false },
+  { id: "case-13-required-native-pending", text: "视频生成中", pending: true },
+]) {
+  test(`${scenario.id} blocks completion and keeps recovery consistent after reload`, async ({ page }, testInfo) => {
+    const workspace = await openCase(page, scenario.id);
+    for (const reload of [false, true]) {
+      if (reload) await page.reload();
+      const notice = workspace.getByRole(scenario.pending ? "status" : "alert").filter({ hasText: scenario.text });
+      await expect(notice).toBeVisible();
+      await expect(page.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
+      await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
+      await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
+      if (!scenario.pending) {
+        await expect(notice.getByRole("button", { name: "修改编导脚本", exact: true })).toBeVisible();
+        await expect(workspace.getByRole("button", { name: /重试/ })).toHaveCount(0);
+      }
+    }
+    await testInfo.attach(scenario.id, { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+  });
+}
+
+test("case-12-only-optional-compile-failed remains editable with a warning after reload", async ({ page }, testInfo) => {
+  const workspace = await openCase(page, "case-12-only-optional-compile-failed");
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toBeVisible();
+    await expect(workspace.getByText("部分可选图形动效未能完成", { exact: false })).toBeVisible();
+  }
+  await testInfo.attach("case-12-only-optional-compile-failed", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 });
