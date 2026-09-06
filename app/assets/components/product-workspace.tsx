@@ -22,6 +22,7 @@ import ProductPreview, {
 } from "./product-preview";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
+import VideoFilmReviewPanel from "./video-film-review-panel";
 import VoiceoverDialog from "./voiceover-dialog";
 import { trackProductEvent } from "../../../lib/product-analytics";
 
@@ -1169,6 +1170,32 @@ export default function ProductWorkspace({
     showGeneratingVisuals ? "generating" : ""
   ].filter(Boolean).join(" ");
 
+  const reviewPlan = product.metadata?.video_plan;
+  const reviewVideoType = String(recordValue(reviewPlan)?.video_type ?? "");
+  const filmReviewPanel = token && product.backendAssetId && !isTextEditing
+          && ["", "explainer", "presenter"].includes(reviewVideoType)
+          && (hasVideoProject || product.contentType === "video_script") ? (
+          <VideoFilmReviewPanel
+            token={token}
+            assetId={product.backendAssetId}
+            revisionKey={`${product.contentHash ?? product.version ?? ""}:${String(videoProjectMetadata?.mp4_ref ?? "")}:${projectEditedSinceExport}:${materialJobId}`}
+            disabled={hasVideoProject && (projectEditedSinceExport || editorSaveState !== "saved")}
+            onLocate={(issue) => locateQualityIssue(issue.scene_id, "main_track")}
+            onRevise={(issue, action) => {
+              const segment = product.segments?.find((item) => item.id === issue.scene_id);
+              if (action === "material" && segment) openBrowseMaterialPicker(segment);
+              else if (action === "voice" && segment) setVoiceoverSegment(segment);
+              else locateQualityIssue(issue.scene_id, "main_track");
+            }}
+            onEditScript={editableTextArtifact ? () => {
+              setTextEditBody(product.markdownBody ?? "");
+              setTextEditError("");
+              setStructuralChange(null);
+              setIsTextEditing(true);
+            } : undefined}
+          />
+        ) : null;
+
   return (
     <section
       className={artifactClassName}
@@ -1630,6 +1657,7 @@ export default function ProductWorkspace({
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
+              footer={filmReviewPanel}
               onLongFormAction={onLongFormAction}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
@@ -1757,7 +1785,7 @@ export default function ProductWorkspace({
         ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
-              <ProductPreview product={product} onLongFormAction={onLongFormAction} />
+              <ProductPreview product={product} onLongFormAction={onLongFormAction} footer={filmReviewPanel} />
             </div>
           </div>
         ) : null}
@@ -1768,10 +1796,12 @@ export default function ProductWorkspace({
           <p className="shadcn-prototype-material-recompose-error" role="alert">{materialError}</p>
         ) : null}
 
+
+
         <AssetPicker
           open={Boolean(materialPickerSegment)}
           title={`为分镜 #${materialPickerSegment?.index ?? "-"} 换素材`}
-          subtitle="替换后只更新当前分镜，不影响其他分镜。"
+          subtitle="替换当前分镜素材，并复核相邻镜头的衔接。"
           ratio={product.ratio}
           current={materialCandidates.current}
           recommended={materialCandidates.recommended}

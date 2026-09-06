@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-01
+> Last verified: 2026-09-04
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -1126,3 +1126,21 @@ npm run test:display-coverage
 - `publicReplacementNote`: 原公开素材永久失效并透明采用已预检备选时显示
 
 普通工作台不得展示 `pipeline_code` 或把内部 `mg_scene` 名称作为用户可见呈现方式。图形主画面和 MG overlay 必须分别显示为主画面方式与增强层，避免用户误认为同一动画叠加了两次。
+
+## 14. 编导与成片审阅
+
+`lib/video-project-client.ts` 提供以下认证接口；当前覆盖 explainer / presenter 及兼容的历史工程。
+
+| 接口 | 行为 |
+| --- | --- |
+| `GET /v1/video/projects/{asset_id}/reviews` | 返回最终文稿审阅、声音强调执行覆盖、最近 20 次成片审阅及其 `is_current`。 |
+| `POST /v1/video/projects/{asset_id}/reviews` | 创建独立 `film_review` 后台任务，返回 202；相同用户、工程、当前成片版本幂等复用，失败或无观测报告可重试。 |
+| `POST /v1/video/projects/{asset_id}/reviews/{review_id}/issues/{issue_id}/repair` | 校验归属、当前版本与问题 ID，只登记修订意向；返回后由用户在素材、口播或剪辑界面确认修改。 |
+
+成片审阅必须绑定已验证导出的工程指纹与成片引用，并记录实际读取文件的 SHA-256。后台读取冻结快照，完成时只写任务报告，不覆盖可编辑工程；并发编辑后旧报告展示为过期，禁止基于旧报告提交修订意向。
+
+报告包含 `findings`、`evidence`、`follow_up` 和 `coverage`。画面为每镜三个时间点抽样；复转写来自实际成片；音频只测量解码和剪口。证据包含镜头、时间范围和可读观察；未覆盖的能力显示未完成，不等同于通过。`follow_up` 的 `resolved` 必须由不同版本的匹配证据支持，缺少证据时保留 `unverified`。
+
+审阅建议不阻断生成和导出，不自动改稿或换素材。最终文稿审阅在口播适配、手动保存和局部重合成后执行，失败不阻断原操作，下次保存或生成时重试。用户修订后需重新导出、重新审阅，才能得到本版复验结论；同一成片已有有效报告时不重复消耗模型调用。
+
+隔离浏览器验证：`node scripts/run-video-film-review-e2e.mjs`，使用独立 8397 / 3297 端口、一次性 SQLite 和受控审阅响应；真实接口权限、任务幂等、失败恢复及并发版本绑定由后端 HTTP/数据库测试覆盖。该验证不代表真实模型的语义质量验收。

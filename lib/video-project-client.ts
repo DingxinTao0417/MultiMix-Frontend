@@ -122,3 +122,78 @@ export async function getVideoProjectJob(args: {
   if (!response.ok) throw new Error(await errorMessage(response));
   return response.json() as Promise<VideoProjectJobResponse>;
 }
+
+export type FilmReviewFinding = {
+  id: string;
+  scene_id: string;
+  category: string;
+  severity: "P1" | "P2";
+  reason: string;
+  suggestion: string;
+  start_seconds: number;
+  end_seconds: number;
+  evidence_ids: string[];
+};
+
+export type FilmReviewReport = {
+  mode: "script" | "film";
+  status: "reviewed" | "partial" | "unavailable";
+  is_current?: boolean;
+  summary: string;
+  coverage: Record<string, string>;
+  notes?: string[];
+  findings: FilmReviewFinding[];
+  follow_up: Array<{
+    issue_id: string;
+    issue: FilmReviewFinding;
+    status: "open" | "resolved" | "unverified";
+    evidence_ids: string[];
+  }>;
+  evidence?: Array<{ id: string; kind: string; description: unknown; display_text?: string }>;
+};
+
+export type FilmReviewJob = {
+  id: string;
+  status: string;
+  is_current: boolean;
+  report: FilmReviewReport | null;
+  error: string | null;
+  created_at: string | null;
+  requested_repairs: string[];
+};
+
+export type FilmReviewState = {
+  audio_direction?: Record<string, { emphasis: string; status: string }>;
+  can_review: boolean;
+  unavailable_reason: string | null;
+  script_review: FilmReviewReport | null;
+  reviews: FilmReviewJob[];
+};
+
+type FilmReviewArgs = { token: string | null | undefined; projectAssetId: string | number };
+
+export async function getFilmReviews(args: FilmReviewArgs & { signal?: AbortSignal }): Promise<FilmReviewState> {
+  const response = await fetch(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(String(args.projectAssetId))}/reviews`,
+    { headers: headers(args.token), signal: args.signal },
+  );
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json() as Promise<FilmReviewState>;
+}
+
+export async function startFilmReview(args: FilmReviewArgs): Promise<FilmReviewJob> {
+  const response = await fetch(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(String(args.projectAssetId))}/reviews`,
+    { method: "POST", headers: headers(args.token) },
+  );
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.json() as Promise<FilmReviewJob>;
+}
+
+export async function requestFilmReviewRepair(args: FilmReviewArgs & { reviewId: string; issueId: string }): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/v1/video/projects/${encodeURIComponent(String(args.projectAssetId))}/reviews/${encodeURIComponent(args.reviewId)}/issues/${encodeURIComponent(args.issueId)}/repair`,
+    { method: "POST", headers: headers(args.token) },
+  );
+  if (!response.ok) throw new Error(await errorMessage(response));
+}
