@@ -25,6 +25,10 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetConversationMessage,
+  AssetCreativeDirectionSelection,
+  AssetImageGenerationConfirmation,
+  AssetImageGenerationRequest,
+  AssetImageGenerationTarget,
   AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
@@ -272,6 +276,7 @@ export default function ConversationStudio({
   onRetryDetail,
   readonly = false,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
+  imageGenerationEnabled = true,
   onRetryWriteAvailability,
   onLoadBgmCatalog,
 }: {
@@ -304,6 +309,9 @@ export default function ConversationStudio({
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
     videoProjectConfirmation?: AssetVideoProjectConfirmation,
+    creativeDirectionSelection?: AssetCreativeDirectionSelection,
+    imageGenerationRequest?: AssetImageGenerationRequest,
+    imageGenerationConfirmation?: AssetImageGenerationConfirmation,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
@@ -327,6 +335,7 @@ export default function ConversationStudio({
   onRetryDetail?: () => void;
   readonly?: boolean;
   writeCapabilities?: RuntimeWriteCapabilities;
+  imageGenerationEnabled?: boolean;
   onRetryWriteAvailability?: () => void;
   onLoadBgmCatalog?: (assetId: number) => Promise<AssetPlanBgmCatalog>;
 }) {
@@ -354,6 +363,13 @@ export default function ConversationStudio({
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
   const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canSend = Boolean(onSendMessage) && !readonly && writeCapabilities.canGenerate;
+  const coverTarget: AssetImageGenerationTarget | null = (() => {
+    const assetId = selectedProduct?.backendAssetId;
+    const versionId = Number(selectedProduct?.versions?.at(-1)?.id);
+    return typeof assetId === "number" && assetId > 0 && Number.isSafeInteger(versionId) && versionId > 0
+      ? { kind: "cover", assetId, versionId }
+      : null;
+  })();
   const canUpload = Boolean(onUploadImages) && !readonly && writeCapabilities.canUpload;
   const runtimeWriteStatusId = writeCapabilities.reason
     ? "multimix-studio-runtime-write-status"
@@ -440,6 +456,9 @@ export default function ConversationStudio({
     confirmationProductId?: number,
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
     videoProjectConfirmation?: AssetVideoProjectConfirmation,
+    creativeDirectionSelection?: AssetCreativeDirectionSelection,
+    imageGenerationRequest?: AssetImageGenerationRequest,
+    imageGenerationConfirmation?: AssetImageGenerationConfirmation,
   ) => {
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
@@ -495,6 +514,9 @@ export default function ConversationStudio({
         confirmationProductId,
         sourceSubtitleMode,
         videoProjectConfirmation,
+        undefined,
+        imageGenerationRequest,
+        imageGenerationConfirmation,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -534,6 +556,59 @@ export default function ConversationStudio({
     await sendInstruction(instruction);
   };
 
+  const requestImageGeneration = async ({
+    capability = "image_asset",
+    target = { kind: "project" },
+    defaultInstruction = "基于这张参考图生成可用于带货视频的关键画面。",
+  }: {
+    capability?: AssetImageGenerationRequest["capability"];
+    target?: AssetImageGenerationTarget;
+    defaultInstruction?: string;
+  } = {}) => {
+    const reference = imageAttachments.find(
+      (attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId,
+    );
+    if (!reference?.assetId) {
+      setSendError("请先上传一张已完成处理的参考图。");
+      return;
+    }
+    const instruction = composerValue.trim() || defaultInstruction;
+    await sendInstruction(
+      instruction,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        capability,
+        target,
+        referenceAssetIds: [reference.assetId],
+        userInstruction: instruction,
+      },
+    );
+  };
+
+  const requestCoverGeneration = async () => {
+    if (!coverTarget) {
+      setSendError("请先选择一个已保存的作品，再生成封面候选。");
+      return;
+    }
+    await requestImageGeneration({
+      capability: "cover_image",
+      target: coverTarget,
+      defaultInstruction: "基于这张参考图为当前作品生成封面候选。",
+    });
+  };
+
   const handleConfirmPlan = async (
     plan: AssetMessagePlan,
     values?: AssetPlanConfirmationValues,
@@ -545,6 +620,7 @@ export default function ConversationStudio({
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
     const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
     const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
+    const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
     const ratio = values?.ratio;
     const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
     const confirmationDetails = [
@@ -582,6 +658,21 @@ export default function ConversationStudio({
     }
     if (isAgentActionConfirmation && !plan.confirmationId) {
       setSendError("视频修改确认信息已失效，请刷新后重试。");
+      return;
+    }
+    const imageGenerationConfirmation = (
+      isImageGenerationConfirmation
+      && plan.proposalId
+      && plan.planHash
+      && plan.proposalVersion
+    ) ? {
+        proposalId: plan.proposalId,
+        planHash: plan.planHash,
+        proposalVersion: plan.proposalVersion,
+        clientRequestId: globalThis.crypto.randomUUID(),
+      } : undefined;
+    if (isImageGenerationConfirmation && !imageGenerationConfirmation) {
+      setSendError("图片生成方案已失效，请刷新后重试。");
       return;
     }
     const presenterCleanupConfirmation = (
@@ -645,6 +736,8 @@ export default function ConversationStudio({
       await sendInstruction(instruction, {
         assistantText: isVideoParameterConfirmation
           ? "参数已确认，正在生成编导稿。"
+          : isImageGenerationConfirmation
+            ? "已确认，正在生成图片。"
           : isAgentActionConfirmation
             ? "已确认，正在执行视频修改。"
             : isPresenterAudioSelectionConfirmation
@@ -684,6 +777,9 @@ export default function ConversationStudio({
        confirmationProductId,
        sourceSubtitleMode,
        videoProjectConfirmation,
+       undefined,
+       undefined,
+       imageGenerationConfirmation,
       );
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
@@ -1204,6 +1300,28 @@ export default function ConversationStudio({
           >
             <ImageIcon size={16} aria-hidden="true" />
           </button>
+          {hasReadyImageAttachment && imageGenerationEnabled ? (
+            <>
+              <button
+                type="button"
+                className="shadcn-prototype-chat-image-generate-button"
+                disabled={!canSend || sending}
+                onClick={() => void requestImageGeneration()}
+              >
+                生成图片
+              </button>
+              {coverTarget ? (
+                <button
+                  type="button"
+                  className="shadcn-prototype-chat-image-generate-button"
+                  disabled={!canSend || sending}
+                  onClick={() => void requestCoverGeneration()}
+                >
+                  生成封面
+                </button>
+              ) : null}
+            </>
+          ) : null}
           <input
             ref={videoInputRef}
             type="file"

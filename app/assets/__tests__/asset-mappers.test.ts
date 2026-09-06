@@ -19,6 +19,13 @@ const newConversationProduct = {
 } as AssetProduct;
 
 describe("project conversation mapping", () => {
+  it("counts generated images rather than paragraphs in the direction plan", () => {
+    const mapped = contentAssetToProduct(asset({ asset_kind: "image", library_kind: "image",
+      content_type: "storyboard_image", generation_state: "image_ready", metadata: {
+        generated_images: [{ frame_id: "F01" }, { frame_id: "F02" }, { frame_id: "F03" }],
+      }, body: "第一段\n\n第二段\n\n第三段\n\n第四段\n\n第五段" }));
+    expect(mapped.duration).toBe("3 张");
+  });
   it("keeps the server-owned project state on detail reloads", () => {
     const conversation = conversationFromPersisted({
       id: "asset-conversation-project-state",
@@ -1657,6 +1664,59 @@ describe("message plan mapping", () => {
       durationMax: 120,
       pendingIntentId: "pending-1",
       pendingIntentVersion: 2,
+    });
+  });
+
+  it("maps the four public FLUX image states without leaking provider details", () => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-image-generation",
+        title: "商品图片",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-09-06T00:00:00Z",
+        updated_at: "2026-09-06T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "确认后开始生成。",
+          asset_id: null,
+          created_at: "2026-09-06T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "image_generation_confirmation",
+              title: "确认图片生成",
+              status: "awaiting_selection",
+              fields: [{ key: "count", label: "生成数量", value: "5 张" }],
+              proposal_id: "image-proposal-1",
+              proposal_version: 1,
+              plan_hash: "a".repeat(64),
+              reference_asset_id: 73,
+              count: 5,
+              ratio: "9:16",
+              target_kind: "project",
+              estimated_cost_usd: 0.24,
+              candidate_asset_ids: [201, 202],
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    );
+
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      kind: "image_generation_confirmation",
+      status: "awaiting_selection",
+      proposalId: "image-proposal-1",
+      proposalVersion: 1,
+      planHash: "a".repeat(64),
+      referenceAssetId: 73,
+      count: 5,
+      ratio: "9:16",
+      targetKind: "project",
+      estimatedCostUsd: 0.24,
+      candidateAssetIds: [201, 202],
     });
   });
 

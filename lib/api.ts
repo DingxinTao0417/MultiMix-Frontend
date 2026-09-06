@@ -608,6 +608,14 @@ export async function getAssetLlmDiagnostics(token: string, probe = true): Promi
   return api<AssetLlmDiagnosticsRead>(`/assets/llm/diagnostics?probe=${probe ? "true" : "false"}`, token);
 }
 
+export type AssetFeatureAvailabilityRead = {
+  flux_image_user_entry_enabled: boolean;
+};
+
+export async function getAssetFeatureAvailability(token: string): Promise<AssetFeatureAvailabilityRead> {
+  return api<AssetFeatureAvailabilityRead>("/assets/features", token);
+}
+
 // Turn an arbitrary send/generation error into a user-facing Chinese message.
 export function formatComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";

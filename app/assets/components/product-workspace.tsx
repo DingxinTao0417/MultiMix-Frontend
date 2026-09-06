@@ -20,6 +20,7 @@ import ProductPreview, {
   playableVideoUrl,
   type ProductPreviewHandle,
 } from "./product-preview";
+import type { GeneratedImageGalleryApplication } from "./generated-image-gallery";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VideoFilmReviewPanel from "./video-film-review-panel";
@@ -169,6 +170,8 @@ export default function ProductWorkspace({
   onOpenLongFormCandidates,
   onLongFormAction,
   onApplyCreativeDirection,
+  onApplyGeneratedImage,
+  onGenerateKeyframe,
   product,
   savedVersion,
   selectedConversation,
@@ -184,6 +187,8 @@ export default function ProductWorkspace({
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
   onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
+  onApplyGeneratedImage?: (application: GeneratedImageGalleryApplication) => Promise<void>;
+  onGenerateKeyframe?: (product: ProductArtifact, segment: AssetProductSegment) => Promise<void> | void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -1659,6 +1664,8 @@ export default function ProductWorkspace({
               product={product}
               footer={filmReviewPanel}
               onLongFormAction={onLongFormAction}
+              onApplyGeneratedImage={onApplyGeneratedImage}
+              onGenerateKeyframe={onGenerateKeyframe ? (segment) => onGenerateKeyframe(product, segment) : undefined}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
               onEditVoiceover={
