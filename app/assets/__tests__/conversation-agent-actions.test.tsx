@@ -180,7 +180,7 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[6]).toBe("agent-confirm-exact");
   });
 
-  it("lets a user explicitly request an image plan from a ready reference image", async () => {
+  it("uses normal chat for an explicit reference-image request without exposing generic image actions", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -209,97 +209,13 @@ describe("Conversation Agent actions", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "输入对话内容" }), {
       target: { value: "生成 5 个带货视频关键画面" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "生成图片" }));
+    expect(screen.queryByRole("button", { name: "生成图片" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "生成封面" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
     expect(onSendMessage.mock.calls[0]?.[1]).toBe("生成 5 个带货视频关键画面");
-    expect(onSendMessage.mock.calls[0]?.[17]).toEqual({
-      capability: "image_asset",
-      target: { kind: "project" },
-      referenceAssetIds: [73],
-      userInstruction: "生成 5 个带货视频关键画面",
-    });
-  });
-
-  it("hides the paid image entry while the server feature switch is off", () => {
-    const conversation = {
-      ...assetWorkspaceAdapter.getNewConversation(),
-      id: "conversation-image-entry-off",
-      detailsLoaded: true,
-    };
-
-    render(
-      <ConversationStudio
-        basePath="/app/assets"
-        selectedConversation={conversation}
-        selectedProduct={null}
-        onSelectProduct={vi.fn()}
-        onSendMessage={vi.fn().mockResolvedValue(undefined)}
-        imageGenerationEnabled={false}
-        imageAttachments={[{
-          id: "reference-image-off",
-          fileName: "shoe.png",
-          title: "鞋子参考图",
-          fileKind: "image",
-          status: "ready",
-          assetId: 73,
-        }]}
-      />,
-    );
-
-    expect(screen.queryByRole("button", { name: "生成图片" })).not.toBeInTheDocument();
-  });
-
-  it("binds a cover request to the currently selected product version", async () => {
-    const onSendMessage = vi.fn().mockResolvedValue(undefined);
-    const conversation = {
-      ...assetWorkspaceAdapter.getNewConversation(),
-      id: "conversation-cover-request",
-      detailsLoaded: true,
-    };
-    const selectedProduct = {
-      id: "script-product",
-      mode: "copy",
-      title: "秋季商品脚本",
-      status: "已完成",
-      summary: "商品介绍",
-      ratio: "9:16",
-      duration: "30s",
-      phase: "编导稿",
-      sections: [],
-      timeline: [],
-      actions: [],
-      backendAssetId: 88,
-      versions: [{ id: "311", label: "v2", savedAt: "刚刚", status: "已保存" }],
-    } as ProductArtifact;
-
-    render(
-      <ConversationStudio
-        basePath="/app/assets"
-        selectedConversation={conversation}
-        selectedProduct={selectedProduct}
-        onSelectProduct={vi.fn()}
-        onSendMessage={onSendMessage}
-        imageAttachments={[{
-          id: "cover-reference-image",
-          fileName: "product.png",
-          title: "商品参考图",
-          fileKind: "image",
-          status: "ready",
-          assetId: 74,
-        }]}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "生成封面" }));
-
-    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
-    expect(onSendMessage.mock.calls[0]?.[17]).toEqual({
-      capability: "cover_image",
-      target: { kind: "cover", assetId: 88, versionId: 311 },
-      referenceAssetIds: [74],
-      userInstruction: "基于这张参考图为当前作品生成封面候选。",
-    });
+    expect(onSendMessage.mock.calls[0]?.[17]).toBeUndefined();
   });
 
   it("confirms an image plan with the frozen server binding", async () => {

@@ -92,6 +92,15 @@ export type AssetProductSegment = {
   isPresenter?: boolean;
   presenterEvents?: AssetPresenterVisualEvent[];
   presenterMaterialGap?: string;
+  imageGenerationRecommendation?: {
+    recommendationId: string;
+    fingerprint: string;
+    referenceAssetId: number;
+    count: number;
+    ratio: "9:16" | "16:9" | "1:1";
+    reason: string;
+    riskFlags: string[];
+  };
 };
 
 export type AssetPresenterVisualEvent = {
@@ -256,6 +265,13 @@ export type AssetImageGenerationConfirmation = {
   proposalId: string;
   planHash: string;
   proposalVersion: number;
+  clientRequestId: string;
+};
+
+export type AssetImageGenerationRecommendationAcceptance = {
+  recommendationId: string;
+  fingerprint: string;
+  target: AssetImageGenerationTarget;
   clientRequestId: string;
 };
 

@@ -60,7 +60,11 @@ export default function SegmentCards({
           const presenterEvents = presenterEventSummary(segment);
           const canEditVoiceover = Boolean(onEditVoiceover && !segment.isPresenter);
           const canReplaceMaterial = Boolean(onReplaceMaterial && !segment.isPresenter);
-          const canGenerateKeyframe = Boolean(onGenerateKeyframe && !segment.isPresenter);
+          const canGenerateKeyframe = Boolean(
+            onGenerateKeyframe
+            && !segment.isPresenter
+            && segment.imageGenerationRecommendation,
+          );
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
           const secondaryCopy = mgStatus && segment.subLine
             ? segment.subLine
@@ -147,6 +151,11 @@ export default function SegmentCards({
                     素材缺口：{segment.presenterMaterialGap}
                   </span>
                 ) : null}
+                {segment.imageGenerationRecommendation ? (
+                  <span className="shadcn-prototype-segment-line2">
+                    建议生成 {segment.imageGenerationRecommendation.count} 张关键帧：{segment.imageGenerationRecommendation.reason}
+                  </span>
+                ) : null}
               </span>
               {canReplaceMaterial || canEditVoiceover || canGenerateKeyframe ? (
                 <span className="shadcn-prototype-segment-actions">
@@ -189,7 +198,7 @@ export default function SegmentCards({
                         onGenerateKeyframe?.(segment);
                       }}
                     >
-                      生成关键帧
+                      采纳关键帧建议
                     </button>
                   ) : null}
                 </span>

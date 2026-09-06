@@ -289,7 +289,7 @@ function usageText(row: LibraryRow): string | null {
   return row.referenceCount > 0 ? `已被引用 ${row.referenceCount} 次。` : "尚未被使用。";
 }
 
-export type LibraryActionIntent = "create" | "video" | "regenerate-image";
+export type LibraryActionIntent = "create" | "video";
 
 function LibraryWorkshop({
   view,
@@ -302,7 +302,6 @@ function LibraryWorkshop({
   onExitProjectTarget,
   refreshRevision = 0,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
-  imageGenerationEnabled = true,
   onRetryWriteAvailability,
   onWriteAvailabilityChange,
 }: {
@@ -316,7 +315,6 @@ function LibraryWorkshop({
   onExitProjectTarget?: () => void;
   refreshRevision?: number;
   writeCapabilities?: RuntimeWriteCapabilities;
-  imageGenerationEnabled?: boolean;
   onRetryWriteAvailability?: () => void;
   onWriteAvailabilityChange?: (state: RuntimeWriteConnectionState) => void;
 }) {
@@ -1139,9 +1137,6 @@ function LibraryWorkshop({
                     <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                   ) : null}
                   <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  {imageGenerationEnabled ? (
-                    <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "regenerate-image"); }}><ImageIcon size={14} aria-hidden="true" />生成图片方案</button>
-                  ) : null}
                   <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                 </>
               ) : view === "video" ? (

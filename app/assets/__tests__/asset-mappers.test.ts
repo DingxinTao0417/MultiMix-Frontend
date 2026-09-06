@@ -1082,6 +1082,44 @@ describe("asset product mapper", () => {
     expect(product.sourceSummary?.headline).toBe("基于 1 个已保存素材生成");
   });
 
+  it("maps a server-owned reference-image recommendation only onto its matching scene", () => {
+    const product = contentAssetToProduct(asset({
+      metadata: {
+        capability: "video_script",
+        video_workflow_stage: "director_script_draft",
+        video_plan: {
+          scenes: [
+            { id: "scene-recommended", title: "产品近景", asset_reference: { status: "no_asset_hit" } },
+            { id: "scene-other", title: "使用场景", asset_reference: { status: "no_asset_hit" } },
+          ],
+          image_generation_recommendations: [{
+            recommendation_id: "flux-scene-scene-recommended-abcdef1234567890",
+            fingerprint: "a".repeat(64),
+            scene_id: "scene-recommended",
+            reference_asset_id: 72,
+            capability: "storyboard_image",
+            count: 3,
+            ratio: "9:16",
+            reason: "缺少主画面，且该参考图可保持产品细节。",
+            risk_flags: ["text_detail"],
+            requires_confirmation: true,
+          }],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]?.imageGenerationRecommendation).toEqual({
+      recommendationId: "flux-scene-scene-recommended-abcdef1234567890",
+      fingerprint: "a".repeat(64),
+      referenceAssetId: 72,
+      count: 3,
+      ratio: "9:16",
+      reason: "缺少主画面，且该参考图可保持产品细节。",
+      riskFlags: ["text_detail"],
+    });
+    expect(product.segments?.[1]?.imageGenerationRecommendation).toBeUndefined();
+  });
+
   it("maps a persisted generated primary visual as available scene media", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",

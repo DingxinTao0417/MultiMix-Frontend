@@ -798,6 +798,35 @@ function presenterEventsFromScene(
 // Storyboard summary for the segment cards. Reads the semantic layer in
 // priority order: video_project.segments → video_segments → video_plan.scenes.
 // asset_reference / mg_decision are authoritative; stock is fallback only.
+function imageGenerationRecommendationValue(
+  value: unknown,
+): AssetProductSegment["imageGenerationRecommendation"] | undefined {
+  if (!isRecord(value)) return undefined;
+  const recommendationId = stringValue(value.recommendation_id);
+  const fingerprint = stringValue(value.fingerprint);
+  const referenceAssetId = positiveIntegerValue(value.reference_asset_id);
+  const count = positiveIntegerValue(value.count);
+  const ratio = stringValue(value.ratio);
+  const reason = stringValue(value.reason);
+  if (
+    !recommendationId
+    || !/^[0-9a-f]{64}$/.test(fingerprint)
+    || !referenceAssetId
+    || !count
+    || !reason
+    || !["9:16", "16:9", "1:1"].includes(ratio)
+  ) return undefined;
+  return {
+    recommendationId,
+    fingerprint,
+    referenceAssetId,
+    count,
+    ratio: ratio as "9:16" | "16:9" | "1:1",
+    reason,
+    riskFlags: stringListValue(value.risk_flags) ?? [],
+  };
+}
+
 function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProductSegment[] | undefined {
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const projectTimings = segmentTimingsFromProject(videoProject);
@@ -805,6 +834,16 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   const planScenes = Array.isArray(videoPlan?.scenes) ? videoPlan.scenes.filter(isRecord) : [];
   const planScenesById = new Map(
     planScenes.map((scene) => [stringValue(scene.id), scene] as const).filter(([id]) => id),
+  );
+  const imageGenerationRecommendationsByScene = new Map(
+    (Array.isArray(videoPlan?.image_generation_recommendations)
+      ? videoPlan.image_generation_recommendations
+      : [])
+      .flatMap((recommendation) => {
+        const normalized = imageGenerationRecommendationValue(recommendation);
+        const sceneId = isRecord(recommendation) ? stringValue(recommendation.scene_id) : "";
+        return normalized && sceneId ? [[sceneId, normalized] as const] : [];
+      }),
   );
   const isPresenter = stringValue(videoPlan?.video_type) === "presenter";
   const transcript = isRecord(videoPlan?.transcript) ? videoPlan.transcript : undefined;
@@ -824,7 +863,9 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   const records = rawSegments.filter(isRecord);
   if (!records.length) return undefined;
   return records.map((segment, index) => {
-    const planScene = planScenesById.get(stringValue(segment.id));
+    const sceneId = stringValue(segment.id);
+    const planScene = planScenesById.get(sceneId);
+    const imageGenerationRecommendation = imageGenerationRecommendationsByScene.get(sceneId);
     const reference = isRecord(segment.asset_reference) ? segment.asset_reference : null;
     const snapshot = reference && isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
     const decision = isRecord(segment.mg_decision) ? segment.mg_decision : null;
@@ -933,6 +974,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       presenterMaterialGap: isPresenter
         ? stringValue(materialGap?.message) || undefined
         : undefined,
+      imageGenerationRecommendation,
     };
   });
 }

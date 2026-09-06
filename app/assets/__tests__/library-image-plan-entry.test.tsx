@@ -28,8 +28,8 @@ function imageRow(): LibraryRow {
   };
 }
 
-describe("image library plan entry", () => {
-  it("labels the follow-up as an image plan instead of a rendered image", async () => {
+describe("image library entry", () => {
+  it("does not expose a generic image-generation action from the library", async () => {
     const row = imageRow();
     const onUseAsset = vi.fn().mockResolvedValue(undefined);
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
@@ -43,8 +43,8 @@ describe("image library plan entry", () => {
     const grid = await screen.findByLabelText("图片库列表");
     fireEvent.click(within(grid).getByRole("button"));
     const dialog = await screen.findByRole("dialog", { name: "品牌主视觉详情" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "生成图片方案" }));
+    expect(within(dialog).queryByRole("button", { name: "生成图片方案" })).toBeNull();
 
-    expect(onUseAsset).toHaveBeenCalledWith(row, "regenerate-image");
+    expect(onUseAsset).not.toHaveBeenCalled();
   });
 });

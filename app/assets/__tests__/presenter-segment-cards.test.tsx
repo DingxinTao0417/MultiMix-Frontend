@@ -53,7 +53,7 @@ describe("presenter segment review", () => {
     expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
-  it("lets a non-presenter director scene request keyframes without selecting the card", () => {
+  it("lets a non-presenter director scene adopt an LLM keyframe recommendation without selecting the card", () => {
     const onSelect = vi.fn();
     const onGenerateKeyframe = vi.fn();
     const segment = {
@@ -62,6 +62,15 @@ describe("presenter segment review", () => {
       title: "产品细节分镜",
       isFallback: false,
       isPresenter: false,
+      imageGenerationRecommendation: {
+        recommendationId: "flux-scene-scene-keyframe-abcdef1234567890",
+        fingerprint: "a".repeat(64),
+        referenceAssetId: 73,
+        count: 3,
+        ratio: "9:16",
+        reason: "该镜缺少可用主画面。",
+        riskFlags: [],
+      },
     } as AssetProductSegment;
 
     render(
@@ -72,10 +81,29 @@ describe("presenter segment review", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "生成关键帧" }));
+    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
 
     expect(onGenerateKeyframe).toHaveBeenCalledWith(segment);
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("does not expose a generic keyframe action without a server recommendation", () => {
+    const segment = {
+      id: "scene-no-recommendation",
+      index: 4,
+      title: "普通产品分镜",
+      isFallback: false,
+      isPresenter: false,
+    } as AssetProductSegment;
+
+    render(
+      <SegmentCards
+        segments={[segment]}
+        onGenerateKeyframe={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).toBeNull();
   });
 
   it("shows the event arrangement, publish requirement and material gap", () => {

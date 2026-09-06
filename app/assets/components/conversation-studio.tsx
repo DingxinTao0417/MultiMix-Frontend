@@ -28,7 +28,6 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationConfirmation,
   AssetImageGenerationRequest,
-  AssetImageGenerationTarget,
   AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
@@ -276,7 +275,6 @@ export default function ConversationStudio({
   onRetryDetail,
   readonly = false,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
-  imageGenerationEnabled = true,
   onRetryWriteAvailability,
   onLoadBgmCatalog,
 }: {
@@ -335,7 +333,6 @@ export default function ConversationStudio({
   onRetryDetail?: () => void;
   readonly?: boolean;
   writeCapabilities?: RuntimeWriteCapabilities;
-  imageGenerationEnabled?: boolean;
   onRetryWriteAvailability?: () => void;
   onLoadBgmCatalog?: (assetId: number) => Promise<AssetPlanBgmCatalog>;
 }) {
@@ -363,13 +360,6 @@ export default function ConversationStudio({
   const hasReadySourceAttachment = imageAttachments.some((attachment) => attachment.fileKind === "source" && attachment.status === "ready" && attachment.assetId);
   const hasReadyVideoAttachment = imageAttachments.some((attachment) => attachment.fileKind === "video" && attachment.status === "ready" && attachment.assetId);
   const canSend = Boolean(onSendMessage) && !readonly && writeCapabilities.canGenerate;
-  const coverTarget: AssetImageGenerationTarget | null = (() => {
-    const assetId = selectedProduct?.backendAssetId;
-    const versionId = Number(selectedProduct?.versions?.at(-1)?.id);
-    return typeof assetId === "number" && assetId > 0 && Number.isSafeInteger(versionId) && versionId > 0
-      ? { kind: "cover", assetId, versionId }
-      : null;
-  })();
   const canUpload = Boolean(onUploadImages) && !readonly && writeCapabilities.canUpload;
   const runtimeWriteStatusId = writeCapabilities.reason
     ? "multimix-studio-runtime-write-status"
@@ -554,59 +544,6 @@ export default function ConversationStudio({
     }
     const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
     await sendInstruction(instruction);
-  };
-
-  const requestImageGeneration = async ({
-    capability = "image_asset",
-    target = { kind: "project" },
-    defaultInstruction = "基于这张参考图生成可用于带货视频的关键画面。",
-  }: {
-    capability?: AssetImageGenerationRequest["capability"];
-    target?: AssetImageGenerationTarget;
-    defaultInstruction?: string;
-  } = {}) => {
-    const reference = imageAttachments.find(
-      (attachment) => attachment.fileKind === "image" && attachment.status === "ready" && attachment.assetId,
-    );
-    if (!reference?.assetId) {
-      setSendError("请先上传一张已完成处理的参考图。");
-      return;
-    }
-    const instruction = composerValue.trim() || defaultInstruction;
-    await sendInstruction(
-      instruction,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      {
-        capability,
-        target,
-        referenceAssetIds: [reference.assetId],
-        userInstruction: instruction,
-      },
-    );
-  };
-
-  const requestCoverGeneration = async () => {
-    if (!coverTarget) {
-      setSendError("请先选择一个已保存的作品，再生成封面候选。");
-      return;
-    }
-    await requestImageGeneration({
-      capability: "cover_image",
-      target: coverTarget,
-      defaultInstruction: "基于这张参考图为当前作品生成封面候选。",
-    });
   };
 
   const handleConfirmPlan = async (
@@ -1300,28 +1237,6 @@ export default function ConversationStudio({
           >
             <ImageIcon size={16} aria-hidden="true" />
           </button>
-          {hasReadyImageAttachment && imageGenerationEnabled ? (
-            <>
-              <button
-                type="button"
-                className="shadcn-prototype-chat-image-generate-button"
-                disabled={!canSend || sending}
-                onClick={() => void requestImageGeneration()}
-              >
-                生成图片
-              </button>
-              {coverTarget ? (
-                <button
-                  type="button"
-                  className="shadcn-prototype-chat-image-generate-button"
-                  disabled={!canSend || sending}
-                  onClick={() => void requestCoverGeneration()}
-                >
-                  生成封面
-                </button>
-              ) : null}
-            </>
-          ) : null}
           <input
             ref={videoInputRef}
             type="file"

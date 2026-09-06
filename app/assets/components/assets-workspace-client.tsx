@@ -24,7 +24,6 @@ import {
   API_CONNECTION_ERROR,
   addProjectSource,
   formatComposerError,
-  getAssetFeatureAvailability,
   getAssetLlmDiagnostics,
   getProjectResources,
   MESSAGE_NOT_SUBMITTED_ERROR,
@@ -46,6 +45,7 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
   AssetImageGenerationConfirmation,
+  AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
   AssetProductSegment,
   AssetLongFormAction,
@@ -603,7 +603,6 @@ export default function AssetsWorkspaceClient({
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
   const [runtimeWriteConnectionState, setRuntimeWriteConnectionState] = useState<RuntimeWriteConnectionState>("checking");
-  const [imageGenerationEntryEnabled, setImageGenerationEntryEnabled] = useState(false);
   const runtimeWriteCapabilities = useMemo(() => resolveRuntimeWriteCapabilities({
     backendConfigured,
     hasToken: Boolean(token),
@@ -917,26 +916,20 @@ export default function AssetsWorkspaceClient({
   useEffect(() => {
     if (!backendConfigured) {
       setRuntimeWriteConnectionState("checking");
-      setImageGenerationEntryEnabled(false);
       setConversationLoadState("unconfigured");
       setConversations([]);
       return;
     }
     if (!token) {
       setRuntimeWriteConnectionState("checking");
-      setImageGenerationEntryEnabled(false);
       setConversationLoadState("loading");
       return;
     }
     let cancelled = false;
     if (!conversationsRef.current.length) setConversationLoadState("loading");
-    void Promise.all([
-      assetWorkspaceAdapter.loadConversationSummaries(token),
-      getAssetFeatureAvailability(token).catch(() => ({ flux_image_user_entry_enabled: false })),
-    ])
-      .then(([summaries, featureAvailability]) => {
+    void assetWorkspaceAdapter.loadConversationSummaries(token)
+      .then((summaries) => {
         if (cancelled) return;
-        setImageGenerationEntryEnabled(featureAvailability.flux_image_user_entry_enabled);
         try {
           writeConversationSummaryCache(window.localStorage, accountEmail, summaries);
         } catch {
@@ -1840,10 +1833,6 @@ export default function AssetsWorkspaceClient({
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能发起创作。");
       return;
     }
-    if (intent === "regenerate-image" && !imageGenerationEntryEnabled) {
-      toast.info("图片生成当前未开放。");
-      return;
-    }
     if (!row.assetId) {
       toast.error("这个条目还没有后端资产 ID。");
       return;
@@ -1853,17 +1842,7 @@ export default function AssetsWorkspaceClient({
     const targetConversation = createLibraryCreationDraftConversation(newConversation);
     const instruction = intent === "video"
       ? `基于《${row.title}》做成视频。`
-      : intent === "regenerate-image"
-        ? `基于《${row.title}》生成图片方案。`
-        : `基于《${row.title}》做成文案。`;
-    const imageGenerationRequest = intent === "regenerate-image"
-      ? {
-          capability: "image_asset" as const,
-          target: { kind: "project" as const },
-          referenceAssetIds: [row.assetId],
-          userInstruction: instruction,
-        }
-      : undefined;
+      : `基于《${row.title}》做成文案。`;
     setConversationContextAssets((current) => ({
       ...current,
       [targetConversation.id]: [linkedAsset]
@@ -1871,26 +1850,7 @@ export default function AssetsWorkspaceClient({
     setSelectedConversationId(targetConversation.id);
     setActiveView("conversation");
     try {
-      await handleSendConversationMessage(
-        targetConversation,
-        instruction,
-        undefined,
-        [linkedAsset],
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        imageGenerationRequest,
-      );
+      await handleSendConversationMessage(targetConversation, instruction, undefined, [linkedAsset]);
       toast.success("已基于资产发起创作。");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "发起创作失败。");
@@ -1944,30 +1904,27 @@ export default function AssetsWorkspaceClient({
     if (!Number.isSafeInteger(currentVersionId) || currentVersionId <= 0) {
       throw new Error("当前编导稿版本尚未就绪，请稍后重试。");
     }
-    const reference = (chatImageUploads[selectedConversation.id] ?? []).find((upload) => (
-      upload.fileKind === "image" && upload.status === "ready" && typeof upload.assetId === "number"
-    ));
-    if (!reference?.assetId) {
-      toast.info("先在对话框上传并等待处理一张参考图，再为该分镜生成关键帧。");
+    const recommendation = segment.imageGenerationRecommendation;
+    if (!recommendation) {
       return;
     }
-    const instruction = `基于《${reference.title || reference.fileName}》为第 ${segment.index} 镜生成关键帧。`;
-    const imageGenerationRequest: AssetImageGenerationRequest = {
-      capability: "storyboard_image",
+    const instruction = `采纳第 ${segment.index} 镜的关键帧建议。`;
+    const imageGenerationRecommendationAcceptance: AssetImageGenerationRecommendationAcceptance = {
+      recommendationId: recommendation.recommendationId,
+      fingerprint: recommendation.fingerprint,
+      clientRequestId: globalThis.crypto.randomUUID(),
       target: {
         kind: "director_scene",
         assetId: product.backendAssetId,
         versionId: currentVersionId,
         sceneIds: [segment.id],
       },
-      referenceAssetIds: [reference.assetId],
-      userInstruction: instruction,
     };
     await handleSendConversationMessage(
       selectedConversation,
       instruction,
       undefined,
-      [{ id: reference.assetId, title: reference.title || reference.fileName }],
+      [],
       undefined,
       undefined,
       undefined,
@@ -1981,7 +1938,10 @@ export default function AssetsWorkspaceClient({
       undefined,
       undefined,
       undefined,
-      imageGenerationRequest,
+      undefined,
+      undefined,
+      undefined,
+      imageGenerationRecommendationAcceptance,
     );
   };
 
@@ -2323,6 +2283,7 @@ export default function AssetsWorkspaceClient({
     imageGenerationRequest?: AssetImageGenerationRequest,
     imageGenerationConfirmation?: AssetImageGenerationConfirmation,
     imageGenerationApplication?: AssetImageGenerationApplication,
+    imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2400,6 +2361,7 @@ export default function AssetsWorkspaceClient({
         imageGenerationRequest,
         imageGenerationConfirmation,
         imageGenerationApplication,
+        imageGenerationRecommendationAcceptance,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
@@ -3109,7 +3071,6 @@ export default function AssetsWorkspaceClient({
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
                 writeCapabilities={runtimeWriteCapabilities}
-                imageGenerationEnabled={imageGenerationEntryEnabled}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onLoadBgmCatalog={handleLoadBgmCatalog}
               />
@@ -3179,7 +3140,7 @@ export default function AssetsWorkspaceClient({
                       : handleApplyGeneratedImage
                   }
                   onGenerateKeyframe={
-                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot || !imageGenerationEntryEnabled
+                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
                       ? undefined
                       : handleGenerateDirectorSceneKeyframe
                   }
@@ -3209,7 +3170,6 @@ export default function AssetsWorkspaceClient({
                    setActiveView("conversation");
                  }}
                 writeCapabilities={runtimeWriteCapabilities}
-                imageGenerationEnabled={imageGenerationEntryEnabled}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onWriteAvailabilityChange={handleWriteAvailabilityChange}
               />

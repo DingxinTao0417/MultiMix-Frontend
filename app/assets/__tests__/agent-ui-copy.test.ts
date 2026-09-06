@@ -19,16 +19,21 @@ it("keeps internal production names out of generated-scene user surfaces", () =>
   expect(userSurface).not.toMatch(/animated[-_ ]explainer|\bhybrid\b|\bVLM\b|\bProvider\b|\bRemotion\b|\bpipeline\b/i);
 });
 
-it("keeps current entry copy within the editable-video and image-plan promise", () => {
+it("keeps image generation scoped to reference requests or server recommendations", () => {
   const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
+  const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
   const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
   const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
 
-  expect(libraryWorkshop).toContain("生成图片方案");
+  expect(libraryWorkshop).not.toContain("生成图片方案");
+  expect(conversationStudio).not.toContain("requestImageGeneration");
+  expect(conversationStudio).not.toContain("requestCoverGeneration");
+  expect(conversationStudio).not.toContain("imageGenerationEnabled");
   expect(libraryWorkshop).not.toContain("拆成短视频");
   expect(libraryWorkshop).not.toContain("加入对话并说明想怎么处理这段内容");
   expect(libraryWorkshop).not.toContain("可发布的短视频片段");
-  expect(workspaceClient).toContain("生成图片方案");
+  expect(workspaceClient).toContain("采纳第 ${segment.index} 镜的关键帧建议。");
+  expect(workspaceClient).not.toContain("生成图片方案");
   expect(workspaceClient).not.toContain("做成图片。");
   expect(conversationStart).toContain("封面方案");
   expect(conversationStart).not.toContain("视频、文案还是封面。");

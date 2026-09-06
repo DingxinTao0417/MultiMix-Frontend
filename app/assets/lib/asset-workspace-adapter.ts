@@ -5,6 +5,7 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
   AssetImageGenerationConfirmation,
+  AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
   AssetLongFormAction,
   AssetProduct,
@@ -291,6 +292,7 @@ export function buildConversationMessagePayload({
   presenterAudioSelectionConfirmation,
   imageGenerationRequest,
   imageGenerationConfirmation,
+  imageGenerationRecommendationAcceptance,
   imageGenerationApplication,
   sourceSubtitleMode,
 }: {
@@ -311,6 +313,7 @@ export function buildConversationMessagePayload({
   presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
   imageGenerationRequest?: AssetImageGenerationRequest;
   imageGenerationConfirmation?: AssetImageGenerationConfirmation;
+  imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance;
   imageGenerationApplication?: AssetImageGenerationApplication;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
 }) {
@@ -401,6 +404,19 @@ export function buildConversationMessagePayload({
         plan_hash: imageGenerationConfirmation.planHash,
         proposal_version: imageGenerationConfirmation.proposalVersion,
         client_request_id: imageGenerationConfirmation.clientRequestId,
+      },
+    } : {}),
+    ...(imageGenerationRecommendationAcceptance ? {
+      image_generation_recommendation_acceptance: {
+        recommendation_id: imageGenerationRecommendationAcceptance.recommendationId,
+        fingerprint: imageGenerationRecommendationAcceptance.fingerprint,
+        client_request_id: imageGenerationRecommendationAcceptance.clientRequestId,
+        target: {
+          kind: imageGenerationRecommendationAcceptance.target.kind,
+          ...(imageGenerationRecommendationAcceptance.target.assetId ? { asset_id: imageGenerationRecommendationAcceptance.target.assetId } : {}),
+          ...(imageGenerationRecommendationAcceptance.target.versionId ? { version_id: imageGenerationRecommendationAcceptance.target.versionId } : {}),
+          ...(imageGenerationRecommendationAcceptance.target.sceneIds?.length ? { scene_ids: imageGenerationRecommendationAcceptance.target.sceneIds } : {}),
+        },
       },
     } : {}),
     ...(imageGenerationApplication ? {
@@ -588,6 +604,7 @@ export type AssetWorkspaceAdapter = {
     presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
     imageGenerationRequest?: AssetImageGenerationRequest;
     imageGenerationConfirmation?: AssetImageGenerationConfirmation;
+    imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance;
     imageGenerationApplication?: AssetImageGenerationApplication;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
     signal?: AbortSignal;
@@ -1258,6 +1275,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       presenterAudioSelectionConfirmation,
       imageGenerationRequest,
       imageGenerationConfirmation,
+      imageGenerationRecommendationAcceptance,
       imageGenerationApplication,
       sourceSubtitleMode,
       signal,
@@ -1290,6 +1308,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           presenterAudioSelectionConfirmation,
           imageGenerationRequest,
           imageGenerationConfirmation,
+          imageGenerationRecommendationAcceptance,
           imageGenerationApplication,
           sourceSubtitleMode,
         }))
