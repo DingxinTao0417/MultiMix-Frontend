@@ -250,6 +250,72 @@ describe("runtime data boundary", () => {
     })).not.toHaveProperty("agent_confirmation_id");
   });
 
+  it("serializes the bound FLUX image request and confirmation separately", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "为这件商品生成带货视频关键画面",
+      imageGenerationRequest: {
+        capability: "image_asset",
+        target: { kind: "project" },
+        referenceAssetIds: [73],
+        userInstruction: "为这件商品生成带货视频关键画面",
+      },
+    })).toMatchObject({
+      image_generation_request: {
+        capability: "image_asset",
+        target: { kind: "project" },
+        reference_asset_ids: [73],
+        user_instruction: "为这件商品生成带货视频关键画面",
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "确认生成图片",
+      imageGenerationConfirmation: {
+        proposalId: "image-proposal-1",
+        planHash: "a".repeat(64),
+        proposalVersion: 1,
+        clientRequestId: "5f33871f-6dc4-4248-9d2b-bc6e15a1d0cd",
+      },
+    })).toMatchObject({
+      image_generation_confirmation: {
+        proposal_id: "image-proposal-1",
+        plan_hash: "a".repeat(64),
+        proposal_version: 1,
+        client_request_id: "5f33871f-6dc4-4248-9d2b-bc6e15a1d0cd",
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "应用这张图片",
+      imageGenerationApplication: {
+        candidateAssetId: 201,
+        expectedCandidateSetHash: "b".repeat(64),
+        clientRequestId: "601a967a-c058-449f-8ba9-bf714c5015db",
+        target: {
+          kind: "director_scene",
+          assetId: 91,
+          versionId: 22,
+          sceneIds: ["scene-2"],
+        },
+      },
+    })).toMatchObject({
+      image_generation_application: {
+        candidate_asset_id: 201,
+        expected_candidate_set_hash: "b".repeat(64),
+        client_request_id: "601a967a-c058-449f-8ba9-bf714c5015db",
+        target: {
+          kind: "director_scene",
+          asset_id: 91,
+          version_id: 22,
+          scene_ids: ["scene-2"],
+        },
+      },
+    });
+  });
+
   it("serializes the reviewed BGM choice as structured video project confirmation", () => {
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

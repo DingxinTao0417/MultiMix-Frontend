@@ -36,12 +36,14 @@ export default function SegmentCards({
   onSelect,
   onReplaceMaterial,
   onEditVoiceover,
+  onGenerateKeyframe,
 }: {
   segments: AssetProductSegment[];
   activeId?: string | null;
   onSelect?: (segment: AssetProductSegment) => void;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
+  onGenerateKeyframe?: (segment: AssetProductSegment) => void;
 }) {
   if (segments.length === 0) return null;
   return (
@@ -58,6 +60,7 @@ export default function SegmentCards({
           const presenterEvents = presenterEventSummary(segment);
           const canEditVoiceover = Boolean(onEditVoiceover && !segment.isPresenter);
           const canReplaceMaterial = Boolean(onReplaceMaterial && !segment.isPresenter);
+          const canGenerateKeyframe = Boolean(onGenerateKeyframe && !segment.isPresenter);
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
           const secondaryCopy = mgStatus && segment.subLine
             ? segment.subLine
@@ -145,7 +148,7 @@ export default function SegmentCards({
                   </span>
                 ) : null}
               </span>
-              {canReplaceMaterial || canEditVoiceover ? (
+              {canReplaceMaterial || canEditVoiceover || canGenerateKeyframe ? (
                 <span className="shadcn-prototype-segment-actions">
                   {canEditVoiceover ? (
                     <button
@@ -173,6 +176,20 @@ export default function SegmentCards({
                       }}
                     >
                       换素材
+                    </button>
+                  ) : null}
+                  {canGenerateKeyframe ? (
+                    <button
+                      type="button"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onGenerateKeyframe?.(segment);
+                      }}
+                    >
+                      生成关键帧
                     </button>
                   ) : null}
                 </span>

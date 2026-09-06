@@ -47,6 +47,18 @@ function positiveIntegerValue(value: unknown): number | undefined {
     : undefined;
 }
 
+function nonNegativeNumberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function positiveIntegerArrayValue(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.map(positiveIntegerValue);
+  return values.every((item): item is number => item !== undefined) ? values : undefined;
+}
+
 function optionalPositiveIntegerValue(value: unknown): number | null {
   return positiveIntegerValue(value) ?? null;
 }
@@ -312,7 +324,14 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const title = stringValue(value.title);
   const fields = planFieldsValue(value.fields);
   if (!title || !fields.length) return undefined;
-  const status = stringValue(value.status) === "confirmed" ? "confirmed" : "pending";
+  const rawStatus = stringValue(value.status);
+  const status = rawStatus === "confirmed"
+    || rawStatus === "awaiting_confirmation"
+    || rawStatus === "generating"
+    || rawStatus === "awaiting_selection"
+    || rawStatus === "applied"
+    ? rawStatus
+    : "pending";
   const summaryFields = planFieldsValue(value.summary_fields);
   const ratioOptions = planRatioOptionsValue(value.ratio_options);
   const voiceOptions = planVoiceOptionsValue(value.voice_options);
@@ -332,6 +351,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
       || planKind === "presenter_cleanup_confirmation"
       || planKind === "presenter_project_confirmation"
       || planKind === "agent_action_confirmation"
+      || planKind === "image_generation_confirmation"
       ? planKind
       : undefined,
     title,
@@ -379,6 +399,20 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     bgmEnabledDefault: typeof value.bgm_enabled_default === "boolean"
       ? value.bgm_enabled_default
       : undefined,
+    proposalId: stringValue(value.proposal_id) || undefined,
+    proposalVersion: positiveIntegerValue(value.proposal_version),
+    planHash: stringValue(value.plan_hash) || undefined,
+    referenceAssetId: positiveIntegerValue(value.reference_asset_id),
+    count: positiveIntegerValue(value.count),
+    ratio: value.ratio === "9:16" || value.ratio === "16:9" || value.ratio === "1:1"
+      ? value.ratio
+      : undefined,
+    targetKind: value.target_kind === "project" || value.target_kind === "cover"
+      || value.target_kind === "director_scene" || value.target_kind === "video_scene"
+      ? value.target_kind
+      : undefined,
+    estimatedCostUsd: nonNegativeNumberValue(value.estimated_cost_usd),
+    candidateAssetIds: positiveIntegerArrayValue(value.candidate_asset_ids),
   };
 }
 
@@ -1291,7 +1325,9 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     || ratioFromVideoProjectGeometry(videoProject);
   const ratio = normalizeRatioLabel(rawRatio) || (mode === "copy" ? "Markdown" : "按指令");
   const timelineDurationSeconds = durationFromVideoProjectTimeline(videoProject);
-  const duration = videoProject?.duration_seconds
+  const duration = mode === "image" && Array.isArray(metadata.generated_images) && metadata.generated_images.length
+    ? `${metadata.generated_images.length} 张`
+    : videoProject?.duration_seconds
     ? `${videoProject.duration_seconds}秒`
     : mp4Artifact?.duration_seconds
       ? `${mp4Artifact.duration_seconds}秒`

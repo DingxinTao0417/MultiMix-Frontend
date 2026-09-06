@@ -6,6 +6,25 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("shows a concise generation state without another confirm action", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "image_generation_confirmation",
+          title: "确认图片生成",
+          status: "generating",
+          fields: [{ key: "count", label: "生成数量", value: "5 张" }],
+        } as never}
+        onConfirm={vi.fn()}
+        onAdjust={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("确认图片生成 · 生成中").textContent).toContain("生成中");
+    expect(screen.queryByRole("button", { name: "确认" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "调整方向" })).toBeNull();
+  });
+
   it("shows exact, candidate, and schematic keyframe review truth before generation", () => {
     const plan = {
       kind: "video_project_confirmation",

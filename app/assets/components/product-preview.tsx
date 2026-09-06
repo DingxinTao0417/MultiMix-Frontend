@@ -3,8 +3,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
 import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
-import type { AssetProductSegment } from "../lib/asset-workspace-types";
+import type { AssetImageGenerationTarget, AssetProductSegment } from "../lib/asset-workspace-types";
 import MarkdownProductDocument from "./markdown-product-document";
+import GeneratedImageGallery, { type GeneratedImageGalleryApplication } from "./generated-image-gallery";
 import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock, { type GenerationAnimationSummary } from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
@@ -259,6 +260,7 @@ type ProductPreviewProps = {
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
+  onGenerateKeyframe?: (segment: AssetProductSegment) => void;
   onPreviewReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
@@ -270,6 +272,7 @@ type ProductPreviewProps = {
   onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
   onExportError?: (message: string) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
+  onApplyGeneratedImage?: (application: GeneratedImageGalleryApplication) => Promise<void> | void;
 };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
@@ -278,6 +281,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
+  onGenerateKeyframe,
   onPreviewReadyChange,
   onExportStart,
   onExportProgress,
@@ -289,6 +293,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onExportSuccess,
   onExportError,
   onLongFormAction,
+  onApplyGeneratedImage,
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -341,6 +346,35 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   }
 
   if (product.mode === "image") {
+    if (Array.isArray(product.metadata?.generated_images) && product.metadata.generated_images.length) {
+      const metadata = isRecord(product.metadata) ? product.metadata : {};
+      const rawTarget = isRecord(metadata.image_generation_target)
+        ? metadata.image_generation_target
+        : null;
+      const target: AssetImageGenerationTarget | undefined = rawTarget && (
+        rawTarget.kind === "project"
+        || rawTarget.kind === "cover"
+        || rawTarget.kind === "director_scene"
+        || rawTarget.kind === "video_scene"
+      ) ? {
+          kind: rawTarget.kind as AssetImageGenerationTarget["kind"],
+          ...(typeof rawTarget.asset_id === "number" && rawTarget.asset_id > 0 ? { assetId: rawTarget.asset_id } : {}),
+          ...(typeof rawTarget.version_id === "number" && rawTarget.version_id > 0 ? { versionId: rawTarget.version_id } : {}),
+          ...(Array.isArray(rawTarget.scene_ids)
+            ? { sceneIds: rawTarget.scene_ids.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) }
+            : {}),
+        } : undefined;
+      const candidateSetHash = stringValue(metadata.image_generation_candidate_set_hash);
+      return <GeneratedImageGallery
+        key={product.id}
+        images={product.metadata.generated_images}
+        candidateAssetId={product.backendAssetId}
+        candidateSetHash={candidateSetHash || undefined}
+        target={target}
+        applied={metadata.image_generation_applied === true}
+        onApply={onApplyGeneratedImage}
+      />;
+    }
     // Hero image card + caption + source block (spec §5.6 / demo workspace-copy
     // 图片产物形态). Variant thumbnails come from preview.frames when present.
     const heroUrl = isRecord(product.metadata) ? stringValue(product.metadata.preview_url) || stringValue(product.metadata.thumbnail_url) : "";
@@ -633,7 +667,12 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
           ) : null}
         </section>
       ) : null}
-      {product.segments?.length ? <SegmentCards segments={product.segments} /> : null}
+      {product.segments?.length ? (
+        <SegmentCards
+          segments={product.segments}
+          onGenerateKeyframe={onGenerateKeyframe}
+        />
+      ) : null}
 
       {visualPreviewFrames.length ? (
         <div className="shadcn-prototype-image-strip" aria-label="视觉预览">

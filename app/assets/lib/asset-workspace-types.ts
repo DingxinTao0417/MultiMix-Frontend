@@ -233,6 +233,39 @@ export type AssetVideoProjectConfirmation = {
   catalogId?: string;
 };
 
+// The image plan itself is created and frozen by the server.  The client sends
+// only a user-selected reference / destination, then echoes that binding on
+// the paid confirmation step.
+export type AssetImageGenerationTarget = {
+  kind: "project" | "cover" | "director_scene" | "video_scene";
+  assetId?: number;
+  versionId?: number;
+  sceneIds?: string[];
+};
+
+export type AssetImageGenerationRequest = {
+  capability: "image_asset" | "cover_image" | "storyboard_image";
+  target: AssetImageGenerationTarget;
+  referenceAssetIds: number[];
+  count?: number;
+  ratio?: "9:16" | "16:9" | "1:1";
+  userInstruction: string;
+};
+
+export type AssetImageGenerationConfirmation = {
+  proposalId: string;
+  planHash: string;
+  proposalVersion: number;
+  clientRequestId: string;
+};
+
+export type AssetImageGenerationApplication = {
+  candidateAssetId: number;
+  expectedCandidateSetHash: string;
+  clientRequestId: string;
+  target: AssetImageGenerationTarget;
+};
+
 export type AssetLongFormAction =
   | { kind: "analyze"; sourceAssetId: number }
   | { kind: "revise"; analysisAssetId: number }
@@ -341,11 +374,11 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
-  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation";
+  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation" | "image_generation_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.
-  status: "pending" | "confirmed";
+  status: "pending" | "confirmed" | "awaiting_confirmation" | "generating" | "awaiting_selection" | "applied";
   subtitle?: string;
   fields: AssetPlanField[];
   // Compact summary rows shown once confirmed; falls back to fields when absent.
@@ -386,6 +419,15 @@ export type AssetMessagePlan = {
   bgmOptions?: AssetPlanBgmOption[];
   bgmDefault?: string;
   bgmEnabledDefault?: boolean;
+  proposalId?: string;
+  proposalVersion?: number;
+  planHash?: string;
+  referenceAssetId?: number;
+  count?: number;
+  ratio?: "9:16" | "16:9" | "1:1";
+  targetKind?: "project" | "cover" | "director_scene" | "video_scene";
+  estimatedCostUsd?: number;
+  candidateAssetIds?: number[];
 };
 
 export type AssetPresenterCleanupItem = {

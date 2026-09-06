@@ -195,6 +195,7 @@ export default function ConfirmCard({
   const [bgmCatalog, setBgmCatalog] = useState<AssetPlanBgmCatalog | null>(null);
   const [bgmCatalogError, setBgmCatalogError] = useState(false);
   const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+  const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
   const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
   const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
   const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
@@ -320,6 +321,34 @@ export default function ConfirmCard({
       </div>
     );
   };
+
+  if (
+    isImageGenerationConfirmation
+    && (optimisticallyConfirmed || (plan.status !== "awaiting_confirmation" && plan.status !== "pending"))
+  ) {
+    const statusLabel = {
+      pending: "待确认",
+      awaiting_confirmation: "待确认",
+      generating: "生成中",
+      awaiting_selection: "待选择",
+      applied: "已应用",
+      confirmed: "已确认",
+    }[optimisticallyConfirmed ? "generating" : plan.status] ?? "生成中";
+    return (
+      <div className="shadcn-prototype-confirm-card confirmed" aria-label={`${plan.title} · ${statusLabel}`}>
+        <div className="shadcn-prototype-confirm-done-head">
+          <strong>{plan.title}</strong>
+          <span className="shadcn-prototype-confirm-ok">
+            <Check size={11} aria-hidden="true" />
+            {statusLabel}
+          </span>
+        </div>
+        <div className="shadcn-prototype-confirm-summary">
+          <PlanFieldRows fields={plan.summaryFields?.length ? plan.summaryFields : currentFields} compact />
+        </div>
+      </div>
+    );
+  }
 
   if (plan.status === "confirmed" || optimisticallyConfirmed) {
     const summary = plan.status === "confirmed" && plan.summaryFields?.length
@@ -675,14 +704,16 @@ export default function ConfirmCard({
             ? hasCleanupSelectionChanged ? "按当前选择继续" : "按推荐方案继续"
             : plan.confirmLabel ?? "确认"}
         </button>
-        <button
-          type="button"
-          className="shadcn-prototype-confirm-ghost"
-          disabled={disabled || !onAdjust}
-          onClick={() => onAdjust?.(plan)}
-        >
-          {isPresenterCleanupConfirmation ? "直接告诉我怎么改" : plan.adjustLabel ?? "调整方向"}
-        </button>
+        {!isImageGenerationConfirmation ? (
+          <button
+            type="button"
+            className="shadcn-prototype-confirm-ghost"
+            disabled={disabled || !onAdjust}
+            onClick={() => onAdjust?.(plan)}
+          >
+            {isPresenterCleanupConfirmation ? "直接告诉我怎么改" : plan.adjustLabel ?? "调整方向"}
+          </button>
+        ) : null}
       </div>
       {maintenanceMessage ? <p role="status">{maintenanceMessage}</p> : null}
     </div>

@@ -53,6 +53,31 @@ describe("presenter segment review", () => {
     expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
+  it("lets a non-presenter director scene request keyframes without selecting the card", () => {
+    const onSelect = vi.fn();
+    const onGenerateKeyframe = vi.fn();
+    const segment = {
+      id: "scene-keyframe",
+      index: 3,
+      title: "产品细节分镜",
+      isFallback: false,
+      isPresenter: false,
+    } as AssetProductSegment;
+
+    render(
+      <SegmentCards
+        segments={[segment]}
+        onSelect={onSelect}
+        onGenerateKeyframe={onGenerateKeyframe}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "生成关键帧" }));
+
+    expect(onGenerateKeyframe).toHaveBeenCalledWith(segment);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("shows the event arrangement, publish requirement and material gap", () => {
     const segment = {
       id: "scene-1",
