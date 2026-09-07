@@ -15,6 +15,10 @@ import {
 
 import { formatPreviewTime } from "./video-preview-player";
 import type { VideoQualityReport } from "../lib/video-quality";
+import {
+  BRAND_SHOWCASE_SPEC_VERSION,
+  type ExportVariant,
+} from "../../../lib/brand-showcase";
 
 type EditorPreviewMessage = {
   source?: string;
@@ -28,11 +32,13 @@ type EditorPreviewMessage = {
   report?: VideoQualityReport;
   blob?: Blob;
   previewChannel?: string;
+  exportVariant?: ExportVariant;
+  brandSpecVersion?: string | null;
 };
 
 export type VideoProjectPreviewHandle = {
   seekAndPlay: (time: number) => void;
-  export: () => boolean;
+  export: (exportVariant: ExportVariant) => boolean;
 };
 
 export type VideoProjectPreviewProps = {
@@ -115,13 +121,17 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       setIframeRevision((revision) => revision + 1);
     }, [durationSeconds]);
 
-    const postCommand = useCallback((type: string, time?: number) => {
+    const postCommand = useCallback((type: string, time?: number, exportVariant?: ExportVariant) => {
       const target = iframeRef.current?.contentWindow;
       if (!target || typeof window === "undefined") return;
       target.postMessage({
         source: "multimix-workspace",
         type,
         ...(typeof time === "number" ? { time } : {}),
+        ...(exportVariant ? {
+          exportVariant,
+          brandSpecVersion: exportVariant === "brand_showcase" ? BRAND_SHOWCASE_SPEC_VERSION : null,
+        } : {}),
       }, window.location.origin);
     }, []);
 
@@ -154,9 +164,9 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       seekAndPlay(time: number) {
         seekAndPlay(time);
       },
-      export() {
+      export(exportVariant) {
         if (!ready || failed) return false;
-        postCommand("multimix-editor-export");
+        postCommand("multimix-editor-export", undefined, exportVariant);
         return true;
       },
     }), [failed, postCommand, ready, seekAndPlay]);

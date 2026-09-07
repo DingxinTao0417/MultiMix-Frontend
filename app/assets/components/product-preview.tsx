@@ -18,6 +18,7 @@ import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-pro
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import type { VideoQualityReport } from "../lib/video-quality";
 import reviewStyles from "./video-film-review-panel.module.css";
+import type { ExportVariant } from "../../../lib/brand-showcase";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -254,7 +255,7 @@ function activeSegmentAtTime(segments: ProductArtifact["segments"], time: number
 }
 
 export type ProductPreviewHandle = {
-  export: () => boolean;
+  export: (exportVariant: ExportVariant) => boolean;
 };
 
 type ProductPreviewProps = {
@@ -279,6 +280,7 @@ type ProductPreviewProps = {
   onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void> | void;
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
+  exportRequestVariant?: ExportVariant | null;
 };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
@@ -303,6 +305,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onApplyGeneratedImageSet,
   selectedImageFrameId,
   onSelectedImageFrameChange,
+  exportRequestVariant,
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -320,7 +323,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   }, [exportedVideoUrl, product.id]);
 
   useImperativeHandle(forwardedRef, () => ({
-    export: () => projectPreviewRef.current?.export() ?? false,
+    export: (exportVariant) => projectPreviewRef.current?.export(exportVariant) ?? false,
   }), []);
 
   if (product.status.startsWith("工程异常")) {
@@ -504,7 +507,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   // With a real MP4 the player is playable; before export it shows the poster
   // skeleton (demo .screen) — never the legacy phone + meta-text layout.
   if (hasVideoProject) {
-    const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed);
+    const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed && !exportRequestVariant);
     const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
     return (
       <div className={`shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface${footer ? ` ${reviewStyles.withReview}` : ""}`} aria-label={showFullVideo ? "成片预览" : "分镜预览"}>

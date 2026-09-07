@@ -23,6 +23,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function chooseVideoExport(variant: "原始成片" | "品牌展示版" = "原始成片") {
+  fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: variant }));
+}
+
 describe("video browse actions", () => {
   it("sends an optional Presenter material failure back to the script instead of issuing a fake retry", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
@@ -264,10 +269,8 @@ describe("video browse actions", () => {
       />,
     );
 
-    const downloadButton = screen.getByRole("button", { name: "下载成片" });
-    expect(downloadButton).toBeEnabled();
-
-    fireEvent.click(downloadButton);
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+    chooseVideoExport();
 
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
     expect(getVideoQuality).not.toHaveBeenCalled();
@@ -329,10 +332,15 @@ describe("video browse actions", () => {
       },
     }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+    await screen.findByRole("button", { name: "导出视频" });
+    chooseVideoExport();
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-export" },
+      expect.objectContaining({
+        source: "multimix-workspace",
+        type: "multimix-editor-export",
+        exportVariant: "original",
+      }),
       window.location.origin,
     ));
     expect(downloadFetch).not.toHaveBeenCalled();
@@ -524,7 +532,7 @@ describe("video browse actions", () => {
         progress: 0.42,
       },
     }));
-    expect(await screen.findByRole("button", { name: "正在合成视频 42%" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在合成 42%" })).toBeDisabled();
 
     window.dispatchEvent(new MessageEvent("message", {
       origin: window.location.origin,
@@ -537,19 +545,19 @@ describe("video browse actions", () => {
       },
     }));
 
-    const downloadButton = await screen.findByRole("button", { name: "下载成片" });
+    const downloadButton = await screen.findByRole("button", { name: "导出视频" });
     expect(downloadButton).toBeEnabled();
     postMessage.mockClear();
 
-    fireEvent.click(downloadButton);
+    chooseVideoExport();
 
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
     expect(downloadedHref).toBe("blob:fresh-export");
     expect(postMessage).not.toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-export" },
+      expect.objectContaining({ source: "multimix-workspace", type: "multimix-editor-export" }),
       window.location.origin,
     );
-    expect(screen.getByRole("button", { name: "再次下载" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
   });
 
   it("shows distinct upload and server verification phases", async () => {
@@ -573,7 +581,7 @@ describe("video browse actions", () => {
         type: "multimix-editor-export-uploading",
       },
     }));
-    expect(await screen.findByRole("button", { name: "正在上传成片" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在上传" })).toBeDisabled();
 
     window.dispatchEvent(new MessageEvent("message", {
       origin: window.location.origin,
@@ -583,7 +591,7 @@ describe("video browse actions", () => {
         type: "multimix-editor-export-verifying",
       },
     }));
-    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在检查" })).toBeDisabled();
   });
 
   it("resumes a running export task after the workspace remounts", async () => {
@@ -631,7 +639,7 @@ describe("video browse actions", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在检查" })).toBeDisabled();
     finish({
       id: "video-export-1",
       assetId: product.backendAssetId!,
@@ -676,8 +684,8 @@ describe("video browse actions", () => {
       />,
     );
 
-    expect(await screen.findByRole("button", { name: "正在检查成片" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "正在上传成片" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在检查" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "原始成片 · 正在上传" })).not.toBeInTheDocument();
   });
 
   it("does not abort export recovery when the parent replaces its update callback", async () => {
@@ -696,7 +704,7 @@ describe("video browse actions", () => {
     }) => void;
     let recoverySignal: AbortSignal | undefined;
     vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockImplementation(
-      (_token, _assetId, signal) => new Promise((resolve, reject) => {
+      (_token, _assetId, _variant, signal) => new Promise((resolve, reject) => {
         recoverySignal = signal;
         finishCurrent = resolve;
         signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
@@ -753,7 +761,7 @@ describe("video browse actions", () => {
       brandSpecVersion: null,
     };
     const getCurrent = vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport")
-      .mockImplementationOnce((_token, _assetId, signal) => new Promise((_resolve, reject) => {
+      .mockImplementationOnce((_token, _assetId, _variant, signal) => new Promise((_resolve, reject) => {
         signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
       }))
       .mockResolvedValueOnce(completed);
@@ -812,6 +820,14 @@ describe("video browse actions", () => {
     vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
       conversationForDisplayProduct(product) as never,
     );
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new TextEncoder().encode("mp4"), { status: 200 }),
+    ));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:retried-export"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const onProductUpdated = vi.fn();
 
     render(
@@ -826,7 +842,8 @@ describe("video browse actions", () => {
       />,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "导出失败，重试" }));
+    await screen.findByRole("button", { name: "导出视频" });
+    chooseVideoExport();
     await waitFor(() => expect(retry).toHaveBeenCalledWith(
       "token",
       product.backendAssetId,
@@ -834,6 +851,52 @@ describe("video browse actions", () => {
     ));
     await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
     expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+  });
+
+  it("downloads the current branded job without using the original project MP4", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const brandJob = {
+      id: "video-export-brand-current",
+      assetId: product.backendAssetId!,
+      status: "completed" as const,
+      stage: "done" as const,
+      retryable: false,
+      errorMessage: null,
+      qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
+      mp4Ref: "supabase://exports/brand-current.mp4",
+      exportVariant: "brand_showcase" as const,
+      brandSpecVersion: "multimix-brand-showcase:v1",
+    };
+    const getCurrent = vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue(brandJob);
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new TextEncoder().encode("brand-mp4"), { status: 200 }),
+    ));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:brand-current"),
+      revokeObjectURL: vi.fn(),
+    });
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    chooseVideoExport("品牌展示版");
+
+    await waitFor(() => expect(getCurrent).toHaveBeenCalledWith(
+      "token",
+      product.backendAssetId,
+      "brand_showcase",
+    ));
+    await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("brand-current.mp4"));
   });
 
   it("reveals retry when a live failed job overrides stale pending metadata", () => {

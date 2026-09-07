@@ -188,7 +188,8 @@ export default function EditorView({
     phase: "idle",
     progress: 0,
   });
-  const [standaloneExportBlob, setStandaloneExportBlob] = useState<Blob | null>(null);
+  const [activeStandaloneExportVariant, setActiveStandaloneExportVariant] = useState<ExportVariant>("original");
+  const [standaloneExportBlobs, setStandaloneExportBlobs] = useState<Partial<Record<ExportVariant, Blob>>>({});
   const [standaloneExportError, setStandaloneExportError] = useState("");
   const tokenRef = useRef(token);
   const startedRef = useRef(false);
@@ -196,7 +197,7 @@ export default function EditorView({
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
   const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
-  const recoverableStandaloneExportRef = useRef<ExportFinalizeJob | null>(null);
+  const recoverableStandaloneExportsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const activeExportAbortRef = useRef<AbortController | null>(null);
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const previewOnly = mode === "preview";
@@ -488,9 +489,55 @@ export default function EditorView({
     }
   }, [performVerifiedExport, postToParent]);
 
-  const handleStandaloneExport = useCallback(async () => {
-    const recoverableJob = recoverableStandaloneExportRef.current;
+  const handleStandaloneExport = useCallback(async (exportVariant: ExportVariant) => {
+    setActiveStandaloneExportVariant(exportVariant);
+    let recoverableJob = recoverableStandaloneExportsRef.current.get(exportVariant);
     const currentToken = getExportToken();
+    if (!recoverableJob && exportVariant === "brand_showcase" && assetId && currentToken) {
+      setStandaloneExportState({ phase: "verifying", progress: 1 });
+      setStandaloneExportError("");
+      try {
+        const current = await getCurrentExportJob({
+          apiBase: API_BASE,
+          assetId,
+          token: currentToken,
+          getToken: getExportToken,
+          refreshToken: refreshExportToken,
+          exportVariant,
+          brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
+        });
+        if (current?.status === "queued" || current?.status === "running") {
+          const terminal = await waitForExportJob({
+            apiBase: API_BASE,
+            assetId,
+            token: currentToken,
+            getToken: getExportToken,
+            refreshToken: refreshExportToken,
+            initialJob: current,
+          });
+          if (terminal.status === "completed") {
+            const downloadToken = await refreshExportToken() || getExportToken();
+            const blob = await downloadPublishedExport(terminal, downloadToken);
+            setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: blob }));
+            setStandaloneExportState({ phase: "completed", progress: 1 });
+            return;
+          }
+          recoverableJob = terminal.retryable ? terminal : undefined;
+        } else if (current?.status === "completed") {
+          const downloadToken = await refreshExportToken() || getExportToken();
+          const blob = await downloadPublishedExport(current, downloadToken);
+          setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: blob }));
+          setStandaloneExportState({ phase: "completed", progress: 1 });
+          return;
+        } else if (current?.retryable) {
+          recoverableJob = current;
+        }
+      } catch (cause) {
+        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
+        return;
+      }
+    }
     if (recoverableJob?.retryable && assetId && currentToken) {
       setStandaloneExportState({ phase: "verifying", progress: 1 });
       setStandaloneExportError("");
@@ -512,12 +559,14 @@ export default function EditorView({
           initialJob: retried,
         });
         if (terminal.status === "failed") {
-          recoverableStandaloneExportRef.current = terminal.retryable ? terminal : null;
+          if (terminal.retryable) recoverableStandaloneExportsRef.current.set(exportVariant, terminal);
+          else recoverableStandaloneExportsRef.current.delete(exportVariant);
           throw new Error(terminal.errorMessage || "成片检查未完成");
         }
-        recoverableStandaloneExportRef.current = null;
+        recoverableStandaloneExportsRef.current.delete(exportVariant);
         const downloadToken = await refreshExportToken() || getExportToken();
-        setStandaloneExportBlob(await downloadPublishedExport(terminal, downloadToken));
+        const blob = await downloadPublishedExport(terminal, downloadToken);
+        setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: blob }));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
         setStandaloneExportState({ phase: "error", progress: 0 });
@@ -525,12 +574,16 @@ export default function EditorView({
       }
       return;
     }
-    recoverableStandaloneExportRef.current = null;
+    recoverableStandaloneExportsRef.current.delete(exportVariant);
     let blockerMessage = "";
     setStandaloneExportError("");
-    setStandaloneExportBlob(null);
+    setStandaloneExportBlobs((previous) => {
+      const next = { ...previous };
+      delete next[exportVariant];
+      return next;
+    });
     try {
-      const result = await performVerifiedExport("original", {
+      const result = await performVerifiedExport(exportVariant, {
         onStart: () => setStandaloneExportState({ phase: "rendering", progress: 0 }),
         onProgress: (progress) => setStandaloneExportState({ phase: "rendering", progress }),
         onPreparing: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
@@ -543,7 +596,7 @@ export default function EditorView({
       });
       if (!result && blockerMessage) throw new Error(blockerMessage);
       if (result) {
-        setStandaloneExportBlob(result.blob);
+        setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: result.blob }));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } else {
         setStandaloneExportState({ phase: "idle", progress: 0 });
@@ -556,7 +609,8 @@ export default function EditorView({
 
   const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse) => {
     candidateBlobRef.current = null;
-    recoverableStandaloneExportRef.current = null;
+    recoverableStandaloneExportsRef.current.clear();
+    setStandaloneExportBlobs({});
     rememberRawProject(result.project);
     const project = unwrapProject(result.project);
     loadedProjectRef.current = project;
@@ -570,7 +624,8 @@ export default function EditorView({
     try {
       await persistCurrentProject();
       candidateBlobRef.current = null;
-      recoverableStandaloneExportRef.current = null;
+      recoverableStandaloneExportsRef.current.clear();
+      setStandaloneExportBlobs({});
       postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
       setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 2000);
@@ -599,7 +654,8 @@ export default function EditorView({
       try {
         const loadedProject = await fetchProject(endpoint, getExportToken());
         candidateBlobRef.current = null;
-        recoverableStandaloneExportRef.current = null;
+        recoverableStandaloneExportsRef.current.clear();
+        setStandaloneExportBlobs({});
         loadedProjectRef.current = loadedProject.project;
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
@@ -629,6 +685,7 @@ export default function EditorView({
           token: currentToken,
           getToken: getExportToken,
           refreshToken: refreshExportToken,
+          exportVariant: "original",
           signal: controller.signal,
         });
         if (!current) return;
@@ -646,16 +703,16 @@ export default function EditorView({
           });
         }
         if (terminal.status === "failed") {
-          recoverableStandaloneExportRef.current = terminal.retryable ? terminal : null;
+          if (terminal.retryable) recoverableStandaloneExportsRef.current.set("original", terminal);
+          else recoverableStandaloneExportsRef.current.delete("original");
           setStandaloneExportState({ phase: "error", progress: 0 });
           setStandaloneExportError(terminal.errorMessage || "成片检查未完成");
           return;
         }
-        recoverableStandaloneExportRef.current = null;
+        recoverableStandaloneExportsRef.current.delete("original");
         const downloadToken = await refreshExportToken() || getExportToken();
-        setStandaloneExportBlob(
-          await downloadPublishedExport(terminal, downloadToken, controller.signal),
-        );
+        const blob = await downloadPublishedExport(terminal, downloadToken, controller.signal);
+        setStandaloneExportBlobs((previous) => ({ ...previous, original: blob }));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
         if (controller.signal.aborted) return;
@@ -792,7 +849,8 @@ export default function EditorView({
               <ExportButton
                 onExport={handleStandaloneExport}
                 exportState={standaloneExportState}
-                verifiedBlob={standaloneExportBlob}
+                activeExportVariant={activeStandaloneExportVariant}
+                verifiedBlobs={standaloneExportBlobs}
                 errorText={standaloneExportError}
               />
             ) : null}

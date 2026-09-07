@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ProductPreview, { browseBgmSummary } from "../components/product-preview";
 import ProductWorkspace from "../components/product-workspace";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import * as brandImageExport from "../lib/brand-image-export";
 import type { VideoQualityReport } from "../lib/video-quality";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
@@ -20,6 +21,7 @@ vi.mock("../../../lib/video-project-client", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function renderWorkspace(caseId: keyof typeof displayProducts) {
@@ -54,6 +56,11 @@ function dispatchPreviewMessage(
       ...data,
     },
   }));
+}
+
+function chooseVideoExport(variant: "原始成片" | "品牌展示版" = "原始成片") {
+  fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: variant }));
 }
 
 describe("display-area eight-case matrix", () => {
@@ -430,10 +437,11 @@ describe("display-area eight-case matrix", () => {
     const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
     dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
-    fireEvent.click(await screen.findByRole("button", { name: "导出视频" }));
+    await screen.findByRole("button", { name: "导出视频" });
+    chooseVideoExport();
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-export" },
+      expect.objectContaining({ source: "multimix-workspace", type: "multimix-editor-export", exportVariant: "original" }),
       window.location.origin,
     ));
     expect(getVideoQuality).not.toHaveBeenCalled();
@@ -484,12 +492,12 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
     const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
     const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
-    fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
+    chooseVideoExport();
 
     dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
 
     await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
-      { source: "multimix-workspace", type: "multimix-editor-export" },
+      expect.objectContaining({ source: "multimix-workspace", type: "multimix-editor-export", exportVariant: "original" }),
       window.location.origin,
     ));
   });
@@ -543,7 +551,7 @@ describe("display-area eight-case matrix", () => {
       });
     });
 
-    expect(screen.getByRole("button", { name: "正在合成视频 42%" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "原始成片 · 正在合成 42%" })).toBeDisabled();
   });
 
   it("requires a fresh user click to download the verified export without rendering again", async () => {
@@ -560,7 +568,157 @@ describe("display-area eight-case matrix", () => {
       });
     });
 
-    expect(screen.getByRole("button", { name: "下载成片" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "再次导出" })).not.toBeInTheDocument();
+    const downloadMenu = screen.getByRole("button", { name: "导出视频" });
+    expect(downloadMenu).toBeEnabled();
+    fireEvent.click(downloadMenu);
+    expect(screen.getByRole("menuitem", { name: "原始成片" })).toBeEnabled();
+  });
+
+  it("offers original and branded image downloads with original focused first", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      id: "image-export-menu",
+      backendAssetId: 9200,
+      mode: "image" as const,
+      contentType: "generated_image",
+      videoProjectReady: false,
+      videoProductCompleted: false,
+      metadata: { preview_url: "/generated-cover.png" },
+    };
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    const original = screen.getByRole("menuitem", { name: "下载原图" });
+    expect(original).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "下载品牌展示版" })).toBeVisible();
+    expect(screen.getByRole("menuitem", { name: "下载 MultiMix 品牌包" }))
+      .toHaveAttribute("href", "/brand/multimix-brand-kit.zip");
+    await waitFor(() => expect(original).toHaveFocus());
+  });
+
+  it("fetches an image once while keeping original and branded downloads separate", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      id: "image-export-downloads",
+      title: "campaign-cover.png",
+      backendAssetId: 9201,
+      mode: "image" as const,
+      contentType: "generated_image",
+      videoProjectReady: false,
+      videoProductCompleted: false,
+      metadata: { preview_url: "/generated-cover.png" },
+    };
+    const sourceBlob = new Blob(["original"], { type: "image/png" });
+    const brandedBlob = new Blob(["branded"], { type: "image/png" });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(sourceBlob, {
+      status: 200,
+      headers: { "content-type": "image/png" },
+    }));
+    const createBranded = vi.spyOn(brandImageExport, "createBrandedImageBlob").mockResolvedValue(brandedBlob);
+    const filenames: string[] = [];
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn((blob: Blob) => blob === sourceBlob ? "blob:original" : "blob:branded"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function captureFilename(this: HTMLAnchorElement) {
+      filenames.push(this.download);
+    });
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载原图" }));
+    await waitFor(() => expect(filenames).toContain("campaign-cover.png"));
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载品牌展示版" }));
+    await waitFor(() => expect(filenames).toContain("campaign-cover-multimix-brand.png"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(createBranded).toHaveBeenCalledWith(expect.any(Blob), { sourceType: "image/png" });
+  });
+
+  it("keeps the original image available when branded composition fails", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      id: "image-export-failure",
+      backendAssetId: 9202,
+      mode: "image" as const,
+      contentType: "generated_image",
+      videoProjectReady: false,
+      videoProductCompleted: false,
+      metadata: { preview_url: "/generated-cover.png" },
+    };
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new Blob(["original"], { type: "image/png" }), { status: 200 }),
+    ));
+    vi.spyOn(brandImageExport, "createBrandedImageBlob")
+      .mockRejectedValue(new Error("品牌展示版生成失败，请重试。"));
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载品牌展示版" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("品牌展示版生成失败，请重试。");
+
+    fireEvent.click(screen.getByRole("button", { name: "下载" }));
+    expect(screen.getByRole("menuitem", { name: "下载原图" })).toBeEnabled();
+  });
+
+  it("passes the selected branded video variant through the preview bridge", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue(null);
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="test-token"
+      />,
+    );
+
+    const frame = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    const postMessage = vi.spyOn(frame.contentWindow!, "postMessage");
+    dispatchPreviewMessage(frame, product.backendAssetId, { type: "multimix-editor-ready" });
+    chooseVideoExport("品牌展示版");
+
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "multimix-workspace",
+        type: "multimix-editor-export",
+        exportVariant: "brand_showcase",
+      }),
+      window.location.origin,
+    ));
   });
 });

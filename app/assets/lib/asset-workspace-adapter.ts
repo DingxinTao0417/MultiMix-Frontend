@@ -65,6 +65,10 @@ import {
   waitForExportJob,
   type ExportFinalizeJob,
 } from "../../editor/video-export-client";
+import {
+  BRAND_SHOWCASE_SPEC_VERSION,
+  type ExportVariant,
+} from "../../../lib/brand-showcase";
 
 export type LibraryRow = {
   assetId?: number;
@@ -668,7 +672,12 @@ export type AssetWorkspaceAdapter = {
   retryVideoJob(token: string, jobId: string): Promise<VideoJobResult>;
   getVideoQuality(token: string, projectAssetId: number): Promise<VideoQualityReport>;
   getSourceExcerptAudit(token: string, projectAssetId: number): Promise<SourceExcerptAudit>;
-  getCurrentVideoExport(token: string, projectAssetId: number, signal?: AbortSignal): Promise<ExportFinalizeJob | null>;
+  getCurrentVideoExport(
+    token: string,
+    projectAssetId: number,
+    exportVariant?: ExportVariant,
+    signal?: AbortSignal,
+  ): Promise<ExportFinalizeJob | null>;
   retryVideoExport(
     token: string,
     projectAssetId: number,
@@ -1461,11 +1470,13 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         token,
       ));
     },
-    async getCurrentVideoExport(token, projectAssetId, signal) {
+    async getCurrentVideoExport(token, projectAssetId, exportVariant = "original", signal) {
       return getCurrentExportJob({
         apiBase: API_BASE,
         assetId: String(projectAssetId),
         token,
+        exportVariant,
+        brandSpecVersion: exportVariant === "brand_showcase" ? BRAND_SHOWCASE_SPEC_VERSION : null,
         signal,
       });
     },

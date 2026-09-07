@@ -123,6 +123,7 @@ describe("editor layout constraints", () => {
 
 	it("keeps brand export identity in the editor bridge and candidate cache", () => {
 		const view = readProjectFile("app/editor/EditorView.tsx");
+		const exportButton = readProjectFile("editor-engine/vendor/ExportButton.tsx");
 		const renderer = readProjectFile(
 			"editor-engine/vendor/editor/core/managers/renderer-manager.ts",
 		);
@@ -134,6 +135,9 @@ describe("editor layout constraints", () => {
 		expect(view).toContain("createBrandShowcaseFrameDecorator()");
 		expect(view).toContain("exportVariant,");
 		expect(renderer).toContain("frameDecorator: options.frameDecorator");
+		expect(exportButton).toContain('label: "原始成片"');
+		expect(exportButton).toContain('label: "品牌展示版"');
+		expect(exportButton).toContain("onExport(variant)");
 	});
 
 	it("uses bounded polling for material replacement and does not expose manual MG generation", () => {

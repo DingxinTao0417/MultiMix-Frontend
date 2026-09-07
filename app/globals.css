@@ -2398,6 +2398,89 @@ button:disabled {
   transform: none;
 }
 
+.multimix-export-variant-menu {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.multimix-export-variant-menu > button {
+  display: inline-flex;
+  height: 30px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.shadcn-prototype-product-actions .multimix-export-variant-menu > button.primary {
+  border-color: var(--sp-text);
+  background: var(--sp-text);
+  color: #ffffff;
+}
+
+.multimix-export-variant-menu > button:hover:not(:disabled) {
+  box-shadow: var(--sp-shadow);
+  transform: translateY(-1px);
+}
+
+.multimix-export-variant-popover {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 176px;
+  padding: 5px;
+  border: 1px solid #e5e0d8;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(32, 31, 30, 0.05), 0 16px 40px rgba(32, 31, 30, 0.12);
+}
+
+.multimix-export-variant-popover > button,
+.multimix-export-variant-popover > a {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #4d4944;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.multimix-export-variant-popover > button:hover,
+.multimix-export-variant-popover > button:focus-visible,
+.multimix-export-variant-popover > a:hover,
+.multimix-export-variant-popover > a:focus-visible {
+  outline: none;
+  background: #f5f3ef;
+  color: #201f1e;
+}
+
+.multimix-export-variant-popover > a {
+  margin-top: 4px;
+  border-top: 1px solid #eae7e1;
+  border-radius: 0 0 8px 8px;
+  color: #6e6a64;
+  font-weight: 500;
+}
+
 .shadcn-prototype-editor-host {
   align-self: start;
   width: 100%;
