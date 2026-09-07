@@ -21,6 +21,14 @@ async function openCase(page: Page, caseId: string) {
   return workspace;
 }
 
+async function chooseVideoExport(
+  workspace: ReturnType<Page["locator"]>,
+  variant: "原始成片" | "品牌展示版" = "原始成片",
+) {
+  await workspace.getByRole("button", { name: "导出视频", exact: true }).click();
+  await workspace.getByRole("menuitem", { name: variant, exact: true }).click();
+}
+
 async function resizeProductPaneAndExpectRatio(page: Page, surface: ReturnType<Page["locator"]>, expectedRatio: number) {
   await expect(surface).toBeVisible();
   const before = await surface.evaluate((node) => {
@@ -115,6 +123,42 @@ test("CASE-01 shows a director draft without project controls", async ({ page })
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
+});
+
+test("CASE-14 exports distinct original and branded images and downloads the brand kit", async ({ page }) => {
+  const workspace = await openCase(page, "case-14-image-export");
+  const downloadMenu = workspace.getByRole("button", { name: "下载", exact: true });
+  await expect(downloadMenu).toBeEnabled();
+
+  const originalDownloadPromise = page.waitForEvent("download");
+  await downloadMenu.click();
+  await workspace.getByRole("menuitem", { name: "下载原图", exact: true }).click();
+  const originalDownload = await originalDownloadPromise;
+  expect(originalDownload.suggestedFilename()).toBe("CASE-14 已生成图片.png");
+  const originalPath = await originalDownload.path();
+  expect(originalPath).not.toBeNull();
+  const originalBytes = await readFile(originalPath!);
+
+  const brandDownloadPromise = page.waitForEvent("download");
+  await downloadMenu.click();
+  await workspace.getByRole("menuitem", { name: "下载品牌展示版", exact: true }).click();
+  const brandDownload = await brandDownloadPromise;
+  expect(brandDownload.suggestedFilename()).toBe("CASE-14 已生成图片-multimix-brand.png");
+  const brandPath = await brandDownload.path();
+  expect(brandPath).not.toBeNull();
+  const brandBytes = await readFile(brandPath!);
+  expect(brandBytes.equals(originalBytes)).toBe(false);
+
+  const kitDownloadPromise = page.waitForEvent("download");
+  await downloadMenu.click();
+  await workspace.getByRole("menuitem", { name: "下载 MultiMix 品牌包", exact: true }).click();
+  const kitDownload = await kitDownloadPromise;
+  expect(kitDownload.suggestedFilename()).toBe("multimix-brand-kit.zip");
+  const kitPath = await kitDownload.path();
+  expect(kitPath).not.toBeNull();
+  const kitBytes = await readFile(kitPath!);
+  expect([...kitBytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  expect(kitBytes.includes(Buffer.from("multimix-brand-kit/README.md"))).toBe(true);
 });
 
 test("CASE-02 shows the saved asset reference", async ({ page }) => {
@@ -298,12 +342,12 @@ test("CASE-07 recovers the same export after API and worker restart", async ({ p
     return response.request().method() === "POST"
       && url.pathname === `/v1/video/projects/${assetId}/exports`;
   });
-  await exportButton.click();
+  await chooseVideoExport(workspace);
   const exportResponse = await exportResponsePromise;
   expect(exportResponse.status()).toBe(202);
   const createdJob = await exportResponse.json() as { job_id?: string };
   expect(createdJob.job_id).toMatch(/^video-export-/);
-  await expect(workspace.getByRole("button", { name: "正在检查成片", exact: true })).toBeDisabled();
+  await expect(workspace.getByRole("button", { name: "原始成片 · 正在检查", exact: true })).toBeDisabled();
 
   const currentResponsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -316,11 +360,11 @@ test("CASE-07 recovers the same export after API and worker restart", async ({ p
   const recoveredJob = await currentResponse.json() as { job_id?: string };
   expect(recoveredJob.job_id).toBe(createdJob.job_id);
   const recoveredWorkspace = page.getByRole("region", { name: "Current product workspace" });
-  await expect(recoveredWorkspace.getByRole("button", { name: "正在检查成片", exact: true })).toBeDisabled();
+  await expect(recoveredWorkspace.getByRole("button", { name: "原始成片 · 正在检查", exact: true })).toBeDisabled();
 
   await writeFile(signalPath, JSON.stringify({ assetId, jobId: createdJob.job_id }), "utf8");
 
-  const downloadButton = recoveredWorkspace.getByRole("button", { name: "下载成片", exact: true });
+  const downloadButton = recoveredWorkspace.getByRole("button", { name: "导出视频", exact: true });
   await expect(downloadButton).toBeEnabled({ timeout: 180_000 });
   await expect.poll(async () => {
     try {
@@ -348,7 +392,7 @@ test("CASE-07 recovers the same export after API and worker restart", async ({ p
   });
 
   const downloadPromise = page.waitForEvent("download");
-  await downloadButton.click();
+  await chooseVideoExport(recoveredWorkspace);
   const download = await downloadPromise;
   const downloadPath = await download.path();
   expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
@@ -452,21 +496,88 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
       exportRequests.push({ method: request.method(), pathname: url.pathname, search: url.search });
     }
   });
-  await exportButton.click();
-  const downloadButton = workspace.getByRole("button", { name: "下载成片", exact: true });
-  await expect(downloadButton).toBeEnabled({ timeout: 180_000 });
+  const originalExportResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST"
+      && url.pathname === `/v1/video/projects/${assetId}/exports`;
+  });
+  await chooseVideoExport(workspace);
+  const originalExportResponse = await originalExportResponsePromise;
+  expect(originalExportResponse.status()).toBe(202);
+  const originalJob = await originalExportResponse.json() as {
+    job_id?: string;
+    export_variant?: string;
+    brand_spec_version?: string | null;
+  };
+  expect(originalJob).toMatchObject({ export_variant: "original", brand_spec_version: null });
+  await expect(workspace.getByRole("button", { name: /^原始成片 · 正在/ })).toBeDisabled({ timeout: 30_000 });
+  await expect(exportButton).toBeEnabled({ timeout: 180_000 });
 
   const downloadPromise = page.waitForEvent("download");
-  await downloadButton.click();
+  await chooseVideoExport(workspace);
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
+  expect(download.suggestedFilename()).not.toContain("-multimix-brand");
   const downloadPath = await download.path();
   expect(downloadPath).not.toBeNull();
   if (downloadPath) expect((await stat(downloadPath)).size).toBeGreaterThan(0);
 
-  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(1);
-  expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(1);
-  expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports"))).toHaveLength(1);
+  const brandExportResponsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST"
+      && url.pathname === `/v1/video/projects/${assetId}/exports`
+      && url.searchParams.get("export_variant") === "brand_showcase";
+  });
+  await chooseVideoExport(workspace, "品牌展示版");
+  const brandExportResponse = await brandExportResponsePromise;
+  expect(brandExportResponse.status()).toBe(202);
+  const brandJob = await brandExportResponse.json() as {
+    job_id?: string;
+    export_variant?: string;
+    brand_spec_version?: string | null;
+  };
+  expect(brandJob).toMatchObject({
+    export_variant: "brand_showcase",
+    brand_spec_version: "multimix-brand-showcase:v1",
+  });
+  expect(brandJob.job_id).not.toBe(originalJob.job_id);
+  await expect(workspace.getByRole("button", { name: /^品牌展示版 · 正在/ })).toBeDisabled({ timeout: 30_000 });
+  await expect(exportButton).toBeEnabled({ timeout: 180_000 });
+
+  const brandDownloadPromise = page.waitForEvent("download");
+  await chooseVideoExport(workspace, "品牌展示版");
+  const brandDownload = await brandDownloadPromise;
+  expect(brandDownload.suggestedFilename()).toMatch(/-multimix-brand\.mp4$/i);
+  const brandDownloadPath = await brandDownload.path();
+  expect(brandDownloadPath).not.toBeNull();
+  if (brandDownloadPath) expect((await stat(brandDownloadPath)).size).toBeGreaterThan(0);
+
+  const storedUser = await page.evaluate(() => JSON.parse(
+    window.localStorage.getItem("multimix_local_user") ?? "{}",
+  ) as { token?: string });
+  expect(storedUser.token).toBeTruthy();
+  const backendUrl = `http://127.0.0.1:${process.env.DISPLAY_COVERAGE_BACKEND_PORT}`;
+  const headers = { Authorization: `Bearer ${storedUser.token}` };
+  const [currentOriginalResponse, currentBrandResponse] = await Promise.all([
+    page.request.get(`${backendUrl}/v1/video/projects/${assetId}/exports/current?export_variant=original`, { headers }),
+    page.request.get(
+      `${backendUrl}/v1/video/projects/${assetId}/exports/current?export_variant=brand_showcase&brand_spec_version=multimix-brand-showcase%3Av1`,
+      { headers },
+    ),
+  ]);
+  expect(currentOriginalResponse.status()).toBe(200);
+  expect(currentBrandResponse.status()).toBe(200);
+  const currentOriginal = await currentOriginalResponse.json() as { job_id?: string; mp4_ref?: string };
+  const currentBrand = await currentBrandResponse.json() as { job_id?: string; mp4_ref?: string };
+  expect(currentOriginal.job_id).toBe(originalJob.job_id);
+  expect(currentBrand.job_id).toBe(brandJob.job_id);
+  expect(currentOriginal.mp4_ref).toBeTruthy();
+  expect(currentBrand.mp4_ref).toBeTruthy();
+  expect(currentBrand.mp4_ref).not.toBe(currentOriginal.mp4_ref);
+
+  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(2);
+  expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(2);
+  expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports"))).toHaveLength(2);
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 

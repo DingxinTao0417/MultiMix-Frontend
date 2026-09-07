@@ -1,0 +1,25 @@
+{
+  "version": "multimix-brand-showcase:v1",
+  "name": "MultiMix Brand Kit",
+  "colors": {
+    "black": "#151515",
+    "white": "#FFFFFF"
+  },
+  "watermark": {
+    "preferred": "bottom-right",
+    "widthAt1080ShortEdge": 160,
+    "marginAt1080ShortEdge": 28
+  },
+  "files": [
+    "README.md",
+    "multimix-logo-horizontal-black.svg",
+    "multimix-logo-horizontal-white.svg",
+    "multimix-logo-horizontal-black.png",
+    "multimix-logo-horizontal-white.png",
+    "multimix-logo-icon-black.svg",
+    "multimix-logo-icon-white.svg",
+    "multimix-logo-icon-black.png",
+    "multimix-logo-icon-white.png",
+    "multimix-logo-preview.png"
+  ]
+}

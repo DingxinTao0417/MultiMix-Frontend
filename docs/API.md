@@ -704,7 +704,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - `stage=project` 只在主工程发布或用户保存了变化后的工程时运行；通过后后端保存
   `video_project_quality_approval` 指纹。相同工程重复保存复用批准，不重新执行内容审查。
-- 点击导出后，编辑器先保存当前序列，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
+- 用户从导出菜单选择“原始成片”或“品牌展示版”后，编辑器先保存当前序列，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
   该阶段只核对批准指纹和 MG 等异步状态，不重新审查主画面、证据、字幕或时间线内容。
 - `stage=project` 时，`mg_failed`、`mg_not_ready`、`mg_stale` 只记录内部 warning，允许主工程先持久化以供恢复。
 - `stage=export_preflight` 时，上述 overlay 状态均为 blocker；用户可见视频在未完成时为“生成中”、失败时为“失败”，不能编辑或导出。
@@ -712,19 +712,51 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - `mg_primary_blank` 不取消内部 `ready`，前端显示可见 warning；只要占位画面有效并连续覆盖主轨，它本身不阻断导出。
 - 空白占位未持久化、归属不正确或主轨不连续时，后端返回 blocker，前端按主工程失败处理。
 - 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
-- 浏览器完成 MP4 编码后，调用 `POST /v1/video/projects/{asset_id}/exports` 上传候选文件。该请求只做
-  工程与上传边界检查、持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测
-  和最终发布由现有视频 worker 继续执行。
-- 导出按钮依次显示“正在合成视频 N%”“正在上传成片”“正在检查成片”“下载成片”。这些是导出内部
-  阶段，不改变视频工程的“生成中 / 完成 / 失败”主状态。
-- `GET /v1/video/projects/{asset_id}/exports/current` 返回当前工程指纹对应的最新任务；没有可恢复任务时
-  返回 `404`。`GET /v1/video/projects/{asset_id}/exports/{job_public_id}` 用于轮询指定任务。
+- 导出版本枚举固定为 `original | brand_showcase`。缺少 `export_variant` 时按 `original` 处理；
+  `brand_showcase` 必须携带 `brand_spec_version: "multimix-brand-showcase:v1"`，原始版将版本归一为 `null`。
+- 浏览器完成编码后，先调用 `POST /v1/video/projects/{asset_id}/exports/uploads` 申请上传会话。请求示例：
+
+```json
+{
+  "sha256": "<64-char-lowercase-hex>",
+  "size_bytes": 1048576,
+  "format": "mp4",
+  "export_variant": "brand_showcase",
+  "brand_spec_version": "multimix-brand-showcase:v1"
+}
+```
+
+- 直传模式完成后调用 `POST /v1/video/projects/{asset_id}/exports/register`，并在上述字段之外携带
+  `project_fingerprint`；本地兼容模式使用上传会话返回的带版本查询参数的
+  `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址。两条路径都只做工程与上传边界检查、
+  持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测和最终发布由现有
+  视频 worker 继续执行。
+- 导出任务响应包含以下版本字段；其他已有状态字段保持不变：
+
+```json
+{
+  "job_id": "<public-job-id>",
+  "asset_id": 123,
+  "status": "queued",
+  "stage": "uploaded",
+  "export_variant": "brand_showcase",
+  "brand_spec_version": "multimix-brand-showcase:v1"
+}
+```
+
+- 导出按钮按版本显示“品牌展示版 · 正在合成 N%”“品牌展示版 · 正在上传”“品牌展示版 · 正在检查”等状态；
+  原始版使用同样格式。这些是导出内部阶段，不改变视频工程的“生成中 / 完成 / 失败”主状态。
+- `GET /v1/video/projects/{asset_id}/exports/current?export_variant=brand_showcase&brand_spec_version=multimix-brand-showcase%3Av1`
+  返回当前工程指纹与指定版本对应的最新任务；省略查询参数时读取 `original`，没有可恢复任务时返回 `404`。
+  `GET /v1/video/projects/{asset_id}/exports/{job_public_id}` 用于轮询指定任务。
 - 页面刷新或连接中断后，前端先读取 current：`queued/running` 继续轮询，`completed` 刷新工程并恢复
   下载，`failed` 显示任务错误。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
   返回可重试失败，前端调用现有 `POST /v1/video/jobs/{job_public_id}/retry` 复用服务端候选文件，刷新
   页面后也不重新合成。
-- 任务只有在质量检查通过且发布时工程指纹仍一致后，才原子写入 `mp4_ref`；质量失败或工程已变化均
-  不覆盖当前工程，也不把视频工程主状态改为失败。
+- 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、
+  `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
+  `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖
+  当前工程，也不把视频工程主状态改为失败。
 - `POST /v1/video/projects/{asset_id}/exports/finalize` 现返回 `410 Gone`；
   `POST /v1/video/projects/{asset_id}/mp4` 和 `POST /v1/video/projects/{asset_id}/exports/verify`
   同样是已退役路径，不能用于正常导出或绕过验证。

@@ -101,11 +101,11 @@ describe("video project browse-player contract", () => {
     expect(workspace).toContain("{exportButtonLabel}");
     expect(workspace).toContain("canBrowseVideo ? (");
     expect(workspace).toContain("{!isTextEditing && showEditorEmbed ? (");
-    expect(workspace).toContain("pendingExportRef.current = true");
+    expect(workspace).toContain("pendingExportRef.current = exportVariant");
     expect(workspace).toContain('setExportState("preparing")');
-    expect(workspace).toContain("projectPreviewRef.current?.export()");
-    expect(preview).toContain("export: () => boolean");
-    expect(projectPreview).toContain('postCommand("multimix-editor-export")');
+    expect(workspace).toContain("projectPreviewRef.current?.export(exportVariant)");
+    expect(preview).toContain("export: (exportVariant: ExportVariant) => boolean");
+    expect(projectPreview).toContain('postCommand("multimix-editor-export", undefined, exportVariant)');
     expect(editorView).toContain('message.type === "multimix-editor-ready-ack"');
     expect(editorView).toContain("uploadExportCandidate");
     expect(editorView).toContain("waitForExportJob");
@@ -116,9 +116,11 @@ describe("video project browse-player contract", () => {
     expect(editorExportButton).not.toContain('/exports/verify');
     expect(editorExportButton).not.toContain('/mp4');
     expect(editorExportButton).not.toContain("保存到产物");
-    expect(editorExportButton).toContain("正在合成视频");
-    expect(editorExportButton).toContain("正在上传成片");
-    expect(editorExportButton).toContain("正在检查成片");
+    expect(editorExportButton).toContain('label: "原始成片"');
+    expect(editorExportButton).toContain('label: "品牌展示版"');
+    expect(editorExportButton).toContain("正在合成");
+    expect(editorExportButton).toContain("正在上传");
+    expect(editorExportButton).toContain("正在检查");
     expect(workspace).not.toContain("{hasVideoProject && !mgOverlayPending ? (");
   });
 

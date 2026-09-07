@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { chromium } from "@playwright/test";
@@ -40,6 +40,26 @@ test("the forward arrow keeps visible negative space from the M", async () => {
     svg,
     /<path data-part="forward-arrow" d="M164 63l20 33-20 33" stroke-width="12"\/>/,
   );
+});
+
+test("brand kit manifest and archive publish the approved reusable assets", async () => {
+  const manifest = JSON.parse(
+    await readFile(path.join(brandDir, "brand-kit-manifest.json"), "utf8"),
+  );
+  assert.equal(manifest.version, "multimix-brand-showcase:v1");
+  assert.deepEqual(manifest.colors, { black: "#151515", white: "#FFFFFF" });
+  assert.deepEqual(manifest.watermark, {
+    preferred: "bottom-right",
+    widthAt1080ShortEdge: 160,
+    marginAt1080ShortEdge: 28,
+  });
+  for (const filename of manifest.files) await access(path.join(brandDir, filename));
+
+  const zip = await readFile(path.join(brandDir, "multimix-brand-kit.zip"));
+  assert.deepEqual([...zip.subarray(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+  for (const filename of manifest.files) {
+    assert.ok(zip.includes(Buffer.from(filename)), `${filename} must be present in the brand kit`);
+  }
 });
 
 test("PNG exports have exact dimensions and transparent corners", async () => {
