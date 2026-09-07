@@ -1736,6 +1736,12 @@ describe("message plan mapping", () => {
               target_kind: "project",
               estimated_cost_usd: 0.24,
               candidate_asset_ids: [201, 202],
+              preservation_summary: {
+                must_keep: ["方形底座", "主体保持可见"],
+                must_avoid: ["不得增加额外印记"],
+                frame_change: "产品开场",
+                prompt_audit_status: "audited",
+              },
             },
           },
         }],
@@ -1755,6 +1761,12 @@ describe("message plan mapping", () => {
       targetKind: "project",
       estimatedCostUsd: 0.24,
       candidateAssetIds: [201, 202],
+      preservationSummary: {
+        mustKeep: ["方形底座", "主体保持可见"],
+        mustAvoid: ["不得增加额外印记"],
+        frameChange: "产品开场",
+        promptAuditStatus: "audited",
+      },
     });
   });
 

@@ -9,8 +9,8 @@ type Frame = { frame_id: string; intent: string; storage_ref: string; review_sta
   quality_review?: { status?: string; checks?: Record<string, Finding> } };
 const CHECK_LABELS: Record<string, string> = { structure: "结构", quantity: "数量", color: "颜色",
   text_marks: "文字与印记", shot: "镜头表达", diversity: "相邻帧丰富性" };
-const REVIEW_LABELS: Record<string, string> = { no_issue_detected: "AI 初检未见明显问题",
-  flagged: "发现问题", needs_review: "待人工复核", unreviewed: "未完成检查 · 待检查商品细节" };
+const REVIEW_LABELS: Record<string, string> = { no_issue_detected: "可选择 · 仍需人工检查",
+  flagged: "需调整", needs_review: "需调整", unreviewed: "待人工检查" };
 
 function reviewLabel(frame: Frame) {
   return REVIEW_LABELS[frame.review_status ?? ""] ?? REVIEW_LABELS.unreviewed;

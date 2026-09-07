@@ -382,6 +382,28 @@ export default function ConfirmCard({
       <div className="shadcn-prototype-confirm-fields">
         <PlanFieldRows fields={currentFields} />
       </div>
+      {isImageGenerationConfirmation && plan.preservationSummary ? (
+        <section className="shadcn-prototype-confirm-preservation" aria-label="商品保真条件">
+          <div className="shadcn-prototype-confirm-section-head">
+            <strong>商品保真条件</strong>
+            <span>已完成提示词自检</span>
+          </div>
+          <div className="shadcn-prototype-confirm-preservation-grid">
+            <div>
+              <strong>必须保持</strong>
+              <ul>{plan.preservationSummary.mustKeep.map((item) => <li key={item}>{item}</li>)}</ul>
+            </div>
+            <div>
+              <strong>不得发生</strong>
+              <ul>{plan.preservationSummary.mustAvoid.map((item) => <li key={item}>{item}</li>)}</ul>
+            </div>
+            <div>
+              <strong>本帧变化</strong>
+              <p>{plan.preservationSummary.frameChange}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
       <VisualPreviewReview plan={plan} />
       {bgmOptions.length ? (
         <section className="shadcn-prototype-confirm-bgm" aria-label="背景音乐">

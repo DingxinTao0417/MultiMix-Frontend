@@ -6,6 +6,33 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("shows the image preservation contract before the user confirms", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "image_generation_confirmation",
+          title: "确认图片生成",
+          status: "awaiting_confirmation",
+          fields: [{ key: "count", label: "生成数量", value: "2 张" }],
+          preservationSummary: {
+            mustKeep: ["方形底座", "主体保持可见"],
+            mustAvoid: ["不得增加额外印记"],
+            frameChange: "产品开场",
+            promptAuditStatus: "audited",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "商品保真条件" })).toBeTruthy();
+    expect(screen.getByText("必须保持")).toBeTruthy();
+    expect(screen.getByText("方形底座")).toBeTruthy();
+    expect(screen.getByText("不得发生")).toBeTruthy();
+    expect(screen.getByText("不得增加额外印记")).toBeTruthy();
+    expect(screen.getByText("本帧变化")).toBeTruthy();
+    expect(screen.getByText("产品开场")).toBeTruthy();
+  });
+
   it("shows a concise generation state without another confirm action", () => {
     render(
       <ConfirmCard

@@ -444,6 +444,12 @@ export type AssetMessagePlan = {
   targetKind?: "project" | "cover" | "director_scene" | "video_scene";
   estimatedCostUsd?: number;
   candidateAssetIds?: number[];
+  preservationSummary?: {
+    mustKeep: string[];
+    mustAvoid: string[];
+    frameChange: string;
+    promptAuditStatus: "audited";
+  };
 };
 
 export type AssetPresenterCleanupItem = {

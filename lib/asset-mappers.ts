@@ -59,6 +59,17 @@ function positiveIntegerArrayValue(value: unknown): number[] | undefined {
   return values.every((item): item is number => item !== undefined) ? values : undefined;
 }
 
+function boundedTextArrayValue(value: unknown, maxItems = 16): string[] {
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  for (const item of value) {
+    const text = stringValue(item);
+    if (text && !result.includes(text)) result.push(text);
+    if (result.length >= maxItems) break;
+  }
+  return result;
+}
+
 function optionalPositiveIntegerValue(value: unknown): number | null {
   return positiveIntegerValue(value) ?? null;
 }
@@ -344,6 +355,21 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const visualPreviews = planVisualPreviewsValue(value.visual_previews);
   const bgmOptions = planBgmOptionsValue(value.bgm_options);
   const planKind = stringValue(value.kind);
+  const rawPreservationSummary = isRecord(value.preservation_summary)
+    ? value.preservation_summary
+    : undefined;
+  const mustKeep = boundedTextArrayValue(rawPreservationSummary?.must_keep);
+  const mustAvoid = boundedTextArrayValue(rawPreservationSummary?.must_avoid);
+  const frameChange = stringValue(rawPreservationSummary?.frame_change);
+  const preservationSummary = mustKeep.length && mustAvoid.length && frameChange
+    && rawPreservationSummary?.prompt_audit_status === "audited"
+    ? {
+        mustKeep,
+        mustAvoid,
+        frameChange,
+        promptAuditStatus: "audited" as const,
+      }
+    : undefined;
   return {
     kind: planKind === "video_parameter_confirmation"
       || planKind === "video_project_confirmation"
@@ -413,6 +439,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
       : undefined,
     estimatedCostUsd: nonNegativeNumberValue(value.estimated_cost_usd),
     candidateAssetIds: positiveIntegerArrayValue(value.candidate_asset_ids),
+    preservationSummary,
   };
 }
 

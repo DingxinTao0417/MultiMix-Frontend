@@ -8233,11 +8233,43 @@ label {
 }
 
 .shadcn-prototype-confirm-visual-review,
-.shadcn-prototype-confirm-bgm {
+.shadcn-prototype-confirm-bgm,
+.shadcn-prototype-confirm-preservation {
   display: grid;
   gap: 10px;
   border-top: 1px solid var(--sp-border);
   padding: 14px 18px 16px;
+}
+
+.shadcn-prototype-confirm-preservation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shadcn-prototype-confirm-preservation-grid > div {
+  min-width: 0;
+  border: 1px solid var(--sp-border);
+  border-radius: 9px;
+  padding: 8px 9px;
+}
+
+.shadcn-prototype-confirm-preservation-grid strong {
+  color: var(--sp-text);
+  font-size: 11px;
+}
+
+.shadcn-prototype-confirm-preservation-grid ul,
+.shadcn-prototype-confirm-preservation-grid p {
+  margin: 5px 0 0;
+  padding-left: 15px;
+  color: var(--sp-subtle);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.shadcn-prototype-confirm-preservation-grid p {
+  padding-left: 0;
 }
 
 .shadcn-prototype-confirm-section-head {
@@ -8400,6 +8432,10 @@ label {
 }
 
 @media (max-width: 560px) {
+  .shadcn-prototype-confirm-preservation-grid {
+    grid-template-columns: 1fr;
+  }
+
   .shadcn-prototype-confirm-bgm-options > label {
     grid-template-columns: auto minmax(0, 1fr);
   }

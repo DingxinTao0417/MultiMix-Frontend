@@ -13,7 +13,7 @@ describe("generated image gallery", () => {
     expect(screen.getAllByRole("button")).toHaveLength(5);
     fireEvent.click(screen.getByRole("button", { name: "查看 F05 镜头5" }));
     expect(screen.getByRole("img", { name: "F05 镜头5 大图" }).getAttribute("src")).toContain("555555");
-    expect(screen.getByText(/待检查商品细节/)).toBeTruthy();
+    expect(screen.getAllByText(/待人工检查/).length).toBeGreaterThan(0);
   });
   it("does not render an arbitrary storage path", () => {
     render(<GeneratedImageGallery images={[{ frame_id: "F01", intent: "test", storage_ref: "local://secrets.txt" }]} />);
@@ -25,7 +25,7 @@ describe("generated image gallery", () => {
       quality_review: { status: "flagged", checks: { quantity: { status: "mismatch", evidence: "多了一个盖子。" } } },
     }]} />);
     expect(screen.getByText("数量：多了一个盖子。")).toBeTruthy();
-    expect(screen.getAllByText(/发现问题/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/需调整/).length).toBeGreaterThan(0);
     expect(screen.queryByText("商业验收通过")).toBeNull();
   });
   it("keeps a generated candidate unselected until the user applies it to a scene", async () => {
