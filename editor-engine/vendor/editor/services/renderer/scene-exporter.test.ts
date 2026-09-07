@@ -17,6 +17,7 @@ vi.mock("./webgl/webgl-effect-renderer", () => ({
 
 import {
   assertAudioBufferForExport,
+  renderExportFrame,
   resolveBrowserExportFormat,
 } from "./scene-exporter";
 import { buildScene } from "./scene-builder";
@@ -67,6 +68,34 @@ describe("resolveBrowserExportFormat", () => {
       shouldIncludeAudio: true,
       audioBuffer: undefined,
     })).toThrow("Source audio could not be decoded");
+  });
+});
+
+describe("renderExportFrame", () => {
+  it("awaits the brand decorator after scene rendering and before encoding", async () => {
+    const order: string[] = [];
+    const canvas = { width: 320, height: 180 } as OffscreenCanvas;
+    const renderer = {
+      canvas,
+      render: vi.fn(async () => {
+        order.push("render");
+      }),
+    };
+    const frameDecorator = vi.fn(async () => {
+      order.push("decorate");
+    });
+
+    await renderExportFrame({
+      renderer,
+      rootNode: {} as never,
+      time: 0,
+      frameDecorator,
+    });
+    order.push("encode");
+
+    expect(order).toEqual(["render", "decorate", "encode"]);
+    expect(frameDecorator).toHaveBeenCalledOnce();
+    expect(frameDecorator).toHaveBeenCalledWith(canvas);
   });
 });
 

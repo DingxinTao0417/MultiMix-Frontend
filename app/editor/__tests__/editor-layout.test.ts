@@ -121,6 +121,21 @@ describe("editor layout constraints", () => {
 		expect(view).toContain("refreshToken: refreshExportToken");
 	});
 
+	it("keeps brand export identity in the editor bridge and candidate cache", () => {
+		const view = readProjectFile("app/editor/EditorView.tsx");
+		const renderer = readProjectFile(
+			"editor-engine/vendor/editor/core/managers/renderer-manager.ts",
+		);
+
+		expect(view).toContain('message.exportVariant === "brand_showcase"');
+		expect(view).toContain("performVerifiedExport(exportVariant");
+		expect(view).toContain("candidateBlobRef.current?.exportVariant === exportVariant");
+		expect(view).toContain("brandSpecVersion");
+		expect(view).toContain("createBrandShowcaseFrameDecorator()");
+		expect(view).toContain("exportVariant,");
+		expect(renderer).toContain("frameDecorator: options.frameDecorator");
+	});
+
 	it("uses bounded polling for material replacement and does not expose manual MG generation", () => {
 		const panel = readProjectFile("editor-engine/vendor/ReplacePanel.tsx");
 		const api = readProjectFile("editor-engine/vendor/api.ts");

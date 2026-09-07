@@ -21,6 +21,11 @@ import type { BGMChoice, BGMUpdateResponse } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
+import {
+  BRAND_SHOWCASE_SPEC_VERSION,
+  createBrandShowcaseFrameDecorator,
+  type ExportVariant,
+} from "@/lib/brand-showcase";
 import { getExportMimeType } from "@editor/lib/export";
 import { videoCache } from "@editor/services/video-cache/service";
 import FilmStrip from "./FilmStrip";
@@ -90,6 +95,8 @@ type CachedExportCandidate = {
   projectFingerprint: string;
   blob: Blob;
   format: ExportCandidateFormat;
+  exportVariant: ExportVariant;
+  brandSpecVersion: string | null;
 };
 
 const EMBED_READY_RETRY_MS = 1000;
@@ -280,7 +287,13 @@ export default function EditorView({
     loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
   }, [assetId, getExportToken]);
 
-  const performVerifiedExport = useCallback(async (hooks: VerifiedExportHooks) => {
+  const performVerifiedExport = useCallback(async (
+    exportVariant: ExportVariant,
+    hooks: VerifiedExportHooks,
+  ) => {
+    const brandSpecVersion = exportVariant === "brand_showcase"
+      ? BRAND_SHOWCASE_SPEC_VERSION
+      : null;
     const serialized = serializeBackendProject(EditorCore.getInstance());
     const projectFingerprint = JSON.stringify(serialized);
     const currentProject = (
@@ -320,6 +333,8 @@ export default function EditorView({
     }
 
     let candidate = candidateBlobRef.current?.projectFingerprint === projectFingerprint
+      && candidateBlobRef.current?.exportVariant === exportVariant
+      && candidateBlobRef.current?.brandSpecVersion === brandSpecVersion
       ? candidateBlobRef.current
       : null;
     if (!candidate) {
@@ -336,7 +351,14 @@ export default function EditorView({
       }
       editor.media.setAssets({ assets: hydratedAssets });
       const result = await editor.renderer.exportProject({
-        options: { format: "mp4", quality: "high", includeAudio: true },
+        options: {
+          format: "mp4",
+          quality: "high",
+          includeAudio: true,
+          frameDecorator: exportVariant === "brand_showcase"
+            ? createBrandShowcaseFrameDecorator()
+            : undefined,
+        },
         onProgress: ({ progress }) => hooks.onProgress?.(progress),
       });
       if (!result.success || !result.buffer) {
@@ -344,7 +366,13 @@ export default function EditorView({
       }
       const format = (result.format ?? "mp4") as ExportCandidateFormat;
       const blob = new Blob([result.buffer], { type: getExportMimeType({ format }) });
-      candidate = { projectFingerprint, blob, format };
+      candidate = {
+        projectFingerprint,
+        blob,
+        format,
+        exportVariant,
+        brandSpecVersion,
+      };
       candidateBlobRef.current = candidate;
     }
 
@@ -360,6 +388,8 @@ export default function EditorView({
         refreshToken: refreshExportToken,
         blob: candidate.blob,
         format: candidate.format,
+        exportVariant,
+        brandSpecVersion,
         signal: controller.signal,
         onStage: (stage) => {
           if (stage === "hashing") hooks.onPreparing?.();
@@ -405,18 +435,29 @@ export default function EditorView({
     }
   }, [assetId, getExportToken, persistCurrentProject, refreshExportToken]);
 
-  const handleEmbeddedExport = useCallback(async () => {
+  const handleEmbeddedExport = useCallback(async (exportVariant: ExportVariant) => {
     if (exportBusyRef.current) return;
     exportBusyRef.current = true;
+    const brandSpecVersion = exportVariant === "brand_showcase"
+      ? BRAND_SHOWCASE_SPEC_VERSION
+      : null;
+    const postExportUpdate = (payload: Record<string, unknown>) => postToParent({
+      ...payload,
+      exportVariant,
+      brandSpecVersion,
+    });
     try {
-      const result = await performVerifiedExport({
-        onStart: () => postToParent({ type: "multimix-editor-export-start" }),
-        onProgress: (progress) => postToParent({ type: "multimix-editor-export-progress", progress }),
-        onPreparing: () => postToParent({ type: "multimix-editor-export-preparing" }),
-        onUploading: () => postToParent({ type: "multimix-editor-export-uploading" }),
-        onRegistering: () => postToParent({ type: "multimix-editor-export-registering" }),
-        onVerifying: () => postToParent({ type: "multimix-editor-export-verifying" }),
-        onQualityReport: (report) => postToParent({
+      const result = await performVerifiedExport(exportVariant, {
+        onStart: () => postExportUpdate({ type: "multimix-editor-export-start" }),
+        onProgress: (progress) => postExportUpdate({
+          type: "multimix-editor-export-progress",
+          progress,
+        }),
+        onPreparing: () => postExportUpdate({ type: "multimix-editor-export-preparing" }),
+        onUploading: () => postExportUpdate({ type: "multimix-editor-export-uploading" }),
+        onRegistering: () => postExportUpdate({ type: "multimix-editor-export-registering" }),
+        onVerifying: () => postExportUpdate({ type: "multimix-editor-export-verifying" }),
+        onQualityReport: (report) => postExportUpdate({
           type: "multimix-editor-export-quality-report",
           report,
         }),
@@ -424,7 +465,7 @@ export default function EditorView({
       if (result) {
         // The original click's browser activation expires during rendering and
         // verification, so the parent exposes a fresh explicit download action.
-        postToParent({
+        postExportUpdate({
           type: "multimix-editor-export-success",
           report: result.report,
           blob: result.blob,
@@ -433,9 +474,12 @@ export default function EditorView({
       }
     } catch (cause) {
       if (cause instanceof ProjectSaveError && cause.qualityReport) {
-        postToParent({ type: "multimix-editor-export-quality-report", report: cause.qualityReport });
+        postExportUpdate({
+          type: "multimix-editor-export-quality-report",
+          report: cause.qualityReport,
+        });
       }
-      postToParent({
+      postExportUpdate({
         type: "multimix-editor-export-error",
         message: cause instanceof Error ? cause.message : String(cause),
       });
@@ -486,7 +530,7 @@ export default function EditorView({
     setStandaloneExportError("");
     setStandaloneExportBlob(null);
     try {
-      const result = await performVerifiedExport({
+      const result = await performVerifiedExport("original", {
         onStart: () => setStandaloneExportState({ phase: "rendering", progress: 0 }),
         onProgress: (progress) => setStandaloneExportState({ phase: "rendering", progress }),
         onPreparing: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
@@ -629,7 +673,15 @@ export default function EditorView({
       const data = event.data;
       if (!data || typeof data !== "object") return;
       if ((data as { source?: string }).source !== "multimix-workspace") return;
-      const message = data as { type?: string; time?: number; requestId?: string };
+      const message = data as {
+        type?: string;
+        time?: number;
+        requestId?: string;
+        exportVariant?: unknown;
+      };
+      const exportVariant: ExportVariant = message.exportVariant === "brand_showcase"
+        ? "brand_showcase"
+        : "original";
       if (message.type === "multimix-editor-ready-ack") {
         readyAcknowledgedRef.current = true;
         return;
@@ -669,13 +721,17 @@ export default function EditorView({
       }
       if (state !== "ready") {
         if (message.type === "multimix-editor-export") {
-          postToParent({ type: "multimix-editor-export-error", message: "剪辑器尚未准备完成" });
+          postToParent({
+            type: "multimix-editor-export-error",
+            message: "剪辑器尚未准备完成",
+            exportVariant,
+          });
         }
         return;
       }
       const editor = EditorCore.getInstance();
       if (message.type === "multimix-editor-export") {
-        void handleEmbeddedExport();
+        void handleEmbeddedExport(exportVariant);
       } else if (previewOnly && message.type === "multimix-editor-preview-seek" && typeof message.time === "number") {
         editor.playback.seek({ time: message.time });
       } else if (previewOnly && message.type === "multimix-editor-preview-toggle") {

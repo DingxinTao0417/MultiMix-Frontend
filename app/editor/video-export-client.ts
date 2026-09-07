@@ -1,5 +1,10 @@
 import { Upload } from "tus-js-client";
 
+import {
+  BRAND_SHOWCASE_SPEC_VERSION,
+  type ExportVariant,
+} from "@/lib/brand-showcase";
+
 export const EXPORT_JOB_POLL_INTERVAL_MS = 2_000;
 const EXPORT_JOB_MAX_CONSECUTIVE_NETWORK_ERRORS = 3;
 const SUPABASE_TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
@@ -14,6 +19,8 @@ export type ExportFinalizeJob = {
   errorMessage: string | null;
   qualityReport: Record<string, unknown> | null;
   mp4Ref: string | null;
+  exportVariant: ExportVariant;
+  brandSpecVersion: string | null;
 };
 
 type ExportClientBase = {
@@ -34,6 +41,8 @@ type ExportUploadSession = {
   uploadUrl: string;
   uploadMethod: "PUT" | "POST";
   projectFingerprint: string;
+  exportVariant: ExportVariant;
+  brandSpecVersion: string | null;
 };
 
 type ResumableUploadOptions = {
@@ -80,6 +89,8 @@ type WireExportFinalizeJob = {
   error_message?: unknown;
   quality_report?: unknown;
   mp4_ref?: unknown;
+  export_variant?: unknown;
+  brand_spec_version?: unknown;
 };
 
 export class ExportJobHttpError extends Error {
@@ -101,6 +112,24 @@ function ensureNotAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw abortError();
 }
 
+function normalizeExportContract(
+  exportVariant: ExportVariant | undefined,
+  brandSpecVersion: string | null | undefined,
+): { exportVariant: ExportVariant; brandSpecVersion: string | null } {
+  const normalizedVariant = exportVariant ?? "original";
+  if (normalizedVariant === "original") {
+    return { exportVariant: "original", brandSpecVersion: null };
+  }
+  const normalizedVersion = brandSpecVersion ?? BRAND_SHOWCASE_SPEC_VERSION;
+  if (normalizedVersion !== BRAND_SHOWCASE_SPEC_VERSION) {
+    throw new Error("当前客户端不支持这个 MultiMix 品牌规范版本");
+  }
+  return {
+    exportVariant: "brand_showcase",
+    brandSpecVersion: normalizedVersion,
+  };
+}
+
 function parseExportJob(payload: unknown): ExportFinalizeJob {
   if (!payload || typeof payload !== "object") {
     throw new Error("成片任务返回了无效数据");
@@ -118,6 +147,16 @@ function parseExportJob(payload: unknown): ExportFinalizeJob {
   ) {
     throw new Error("成片任务返回了无效状态");
   }
+  const exportVariant = wire.export_variant == null
+    ? "original"
+    : wire.export_variant;
+  if (exportVariant !== "original" && exportVariant !== "brand_showcase") {
+    throw new Error("成片任务返回了无效版本");
+  }
+  const contract = normalizeExportContract(
+    exportVariant,
+    typeof wire.brand_spec_version === "string" ? wire.brand_spec_version : null,
+  );
   return {
     id: wire.job_id,
     assetId: wire.asset_id,
@@ -129,6 +168,8 @@ function parseExportJob(payload: unknown): ExportFinalizeJob {
       ? wire.quality_report as Record<string, unknown>
       : null,
     mp4Ref: typeof wire.mp4_ref === "string" ? wire.mp4_ref : null,
+    exportVariant: contract.exportVariant,
+    brandSpecVersion: contract.brandSpecVersion,
   };
 }
 
@@ -214,7 +255,10 @@ async function sha256Hex(blob: Blob): Promise<string> {
     .join("");
 }
 
-function parseUploadSession(payload: unknown): ExportUploadSession {
+function parseUploadSession(
+  payload: unknown,
+  expected: { exportVariant: ExportVariant; brandSpecVersion: string | null },
+): ExportUploadSession {
   if (!payload || typeof payload !== "object") throw new Error("成片上传会话返回了无效数据");
   const wire = payload as Record<string, unknown>;
   if (
@@ -226,11 +270,29 @@ function parseUploadSession(payload: unknown): ExportUploadSession {
   ) {
     throw new Error("成片上传会话返回了无效状态");
   }
+  const responseVariant = wire.export_variant == null
+    ? "original"
+    : wire.export_variant;
+  if (responseVariant !== "original" && responseVariant !== "brand_showcase") {
+    throw new Error("成片上传会话返回了无效版本");
+  }
+  const contract = normalizeExportContract(
+    responseVariant,
+    typeof wire.brand_spec_version === "string" ? wire.brand_spec_version : null,
+  );
+  if (
+    contract.exportVariant !== expected.exportVariant
+    || contract.brandSpecVersion !== expected.brandSpecVersion
+  ) {
+    throw new Error("成片上传会话与请求的导出版本不一致");
+  }
   return {
     mode: wire.mode,
     uploadUrl: wire.upload_url,
     uploadMethod: wire.upload_method,
     projectFingerprint: wire.project_fingerprint,
+    exportVariant: contract.exportVariant,
+    brandSpecVersion: contract.brandSpecVersion,
   };
 }
 
@@ -337,7 +399,13 @@ async function uploadDirectCandidateResumably(
 }
 
 async function createUploadSession(
-  args: ExportClientBase & { sha256: string; sizeBytes: number; format: ExportCandidateFormat },
+  args: ExportClientBase & {
+    sha256: string;
+    sizeBytes: number;
+    format: ExportCandidateFormat;
+    exportVariant: ExportVariant;
+    brandSpecVersion: string | null;
+  },
 ): Promise<ExportUploadSession> {
   const response = await fetchAuthenticated(
     args,
@@ -351,6 +419,8 @@ async function createUploadSession(
         sha256: args.sha256,
         size_bytes: args.sizeBytes,
         format: args.format,
+        export_variant: args.exportVariant,
+        brand_spec_version: args.brandSpecVersion,
       }),
       signal: args.signal,
     },
@@ -363,19 +433,25 @@ async function createUploadSession(
       payload,
     );
   }
-  return parseUploadSession(payload);
+  return parseUploadSession(payload, args);
 }
 
 export async function uploadExportCandidate(
   args: ExportClientBase & {
     blob: Blob;
     format?: ExportCandidateFormat;
+    exportVariant?: ExportVariant;
+    brandSpecVersion?: string | null;
     onStage?: (stage: ExportCandidateStage) => void;
     resumableUploadFactory?: ResumableUploadFactory;
   },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
   const format = args.format ?? "mp4";
+  const exportContract = normalizeExportContract(
+    args.exportVariant,
+    args.brandSpecVersion,
+  );
   args.onStage?.("hashing");
   const sha256 = await sha256Hex(args.blob);
   ensureNotAborted(args.signal);
@@ -384,6 +460,7 @@ export async function uploadExportCandidate(
       sha256,
       sizeBytes: args.blob.size,
       format,
+      ...exportContract,
   });
 
   args.onStage?.("uploading");
@@ -410,6 +487,8 @@ export async function uploadExportCandidate(
           size_bytes: args.blob.size,
           format,
           project_fingerprint: session.projectFingerprint,
+          export_variant: session.exportVariant,
+          brand_spec_version: session.brandSpecVersion,
         }),
         signal: args.signal,
       },
@@ -433,12 +512,21 @@ export async function uploadExportCandidate(
 }
 
 export async function getCurrentExportJob(
-  args: ExportClientBase,
+  args: ExportClientBase & {
+    exportVariant?: ExportVariant;
+    brandSpecVersion?: string | null;
+  },
 ): Promise<ExportFinalizeJob | null> {
   ensureNotAborted(args.signal);
+  const contract = normalizeExportContract(args.exportVariant, args.brandSpecVersion);
+  const query = new URLSearchParams({ export_variant: contract.exportVariant });
+  if (contract.brandSpecVersion) {
+    query.set("brand_spec_version", contract.brandSpecVersion);
+  }
   const response = await fetchAuthenticated(
     args,
-    `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/current`,
+    `${args.apiBase}/v1/video/projects/${encodeURIComponent(args.assetId)}/exports/current`
+      + `?${query.toString()}`,
     {
       signal: args.signal,
     },

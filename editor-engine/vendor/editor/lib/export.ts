@@ -11,12 +11,16 @@ export const EXPORT_FORMAT_VALUES = ["mp4", "webm"] as const;
 
 export type ExportFormat = (typeof EXPORT_FORMAT_VALUES)[number];
 export type ExportQuality = (typeof EXPORT_QUALITY_VALUES)[number];
+export type ExportFrameDecorator = (
+	canvas: OffscreenCanvas | HTMLCanvasElement,
+) => void | Promise<void>;
 
 export interface ExportOptions {
 	format: ExportFormat;
 	quality: ExportQuality;
 	fps?: number;
 	includeAudio?: boolean;
+	frameDecorator?: ExportFrameDecorator;
 }
 
 export interface ExportResult {

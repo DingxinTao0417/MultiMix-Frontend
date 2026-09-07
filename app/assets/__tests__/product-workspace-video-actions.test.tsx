@@ -597,6 +597,8 @@ describe("video browse actions", () => {
       errorMessage: null;
       qualityReport: { stage: string; status: string; blockers: never[]; warnings: never[] };
       mp4Ref: string;
+      exportVariant: "original";
+      brandSpecVersion: null;
     }) => void;
     const terminal = new Promise<Parameters<typeof finish>[0]>((resolve) => { finish = resolve; });
     vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue({
@@ -608,6 +610,8 @@ describe("video browse actions", () => {
       errorMessage: null,
       qualityReport: null,
       mp4Ref: null,
+      exportVariant: "original",
+      brandSpecVersion: null,
     });
     vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockReturnValue(terminal);
     vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(
@@ -637,6 +641,8 @@ describe("video browse actions", () => {
       errorMessage: null,
       qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
       mp4Ref: "supabase://exports/final.mp4",
+      exportVariant: "original",
+      brandSpecVersion: null,
     });
 
     await waitFor(() => expect(onProductUpdated).toHaveBeenCalledTimes(1));
@@ -653,6 +659,8 @@ describe("video browse actions", () => {
       errorMessage: null,
       qualityReport: null,
       mp4Ref: null,
+      exportVariant: "original",
+      brandSpecVersion: null,
     });
     vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockReturnValue(new Promise(() => {}));
 
@@ -683,6 +691,8 @@ describe("video browse actions", () => {
       errorMessage: null;
       qualityReport: { stage: string; status: string; blockers: never[]; warnings: never[] };
       mp4Ref: string;
+      exportVariant: "original";
+      brandSpecVersion: null;
     }) => void;
     let recoverySignal: AbortSignal | undefined;
     vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockImplementation(
@@ -720,6 +730,8 @@ describe("video browse actions", () => {
       errorMessage: null,
       qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
       mp4Ref: "supabase://exports/final.mp4",
+      exportVariant: "original",
+      brandSpecVersion: null,
     });
 
     await waitFor(() => expect(latestUpdate).toHaveBeenCalledTimes(1));
@@ -737,6 +749,8 @@ describe("video browse actions", () => {
       errorMessage: null,
       qualityReport: { stage: "export_file", status: "pass", blockers: [], warnings: [] },
       mp4Ref: "supabase://exports/final.mp4",
+      exportVariant: "original" as const,
+      brandSpecVersion: null,
     };
     const getCurrent = vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport")
       .mockImplementationOnce((_token, _assetId, signal) => new Promise((_resolve, reject) => {
@@ -775,6 +789,8 @@ describe("video browse actions", () => {
       errorMessage: "检查服务暂时不可用",
       qualityReport: null,
       mp4Ref: null,
+      exportVariant: "original" as const,
+      brandSpecVersion: null,
     };
     const completed = {
       ...failed,

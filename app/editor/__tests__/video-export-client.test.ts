@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { BRAND_SHOWCASE_SPEC_VERSION } from "@/lib/brand-showcase";
+
 import {
   getCurrentExportJob,
   getExportJob,
@@ -18,6 +20,8 @@ const queuedJob: ExportFinalizeJob = {
   errorMessage: null,
   qualityReport: null,
   mp4Ref: null,
+  exportVariant: "original",
+  brandSpecVersion: null,
 };
 
 function response(body: unknown, status = 200): Response {
@@ -38,6 +42,8 @@ function wire(job: Partial<ExportFinalizeJob> = {}): Record<string, unknown> {
     error_message: value.errorMessage,
     quality_report: value.qualityReport,
     mp4_ref: value.mp4Ref,
+    export_variant: value.exportVariant,
+    brand_spec_version: value.brandSpecVersion,
   };
 }
 
@@ -161,6 +167,46 @@ describe("video export finalization client", () => {
     }));
   });
 
+  it("carries the brand variant through upload, registration, and job parsing", async () => {
+    const brandedJob: ExportFinalizeJob = {
+      ...queuedJob,
+      exportVariant: "brand_showcase",
+      brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
+    };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "direct",
+        candidate_ref: "supabase://multimix-artifacts/brand-candidate.mp4",
+        upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/multimix-artifacts/brand-candidate.mp4?token=short",
+        upload_method: "PUT",
+        project_fingerprint: "a".repeat(64),
+        export_variant: "brand_showcase",
+        brand_spec_version: BRAND_SHOWCASE_SPEC_VERSION,
+      }, 201))
+      .mockResolvedValueOnce(response(wire(brandedJob), 202));
+    const { factory } = successfulResumableUploadFactory();
+
+    await expect(uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["brand-mp4"], { type: "video/mp4" }),
+      exportVariant: "brand_showcase",
+      brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
+      fetchImpl,
+      resumableUploadFactory: factory,
+    })).resolves.toEqual(brandedJob);
+
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
+      export_variant: "brand_showcase",
+      brand_spec_version: BRAND_SHOWCASE_SPEC_VERSION,
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body))).toMatchObject({
+      export_variant: "brand_showcase",
+      brand_spec_version: BRAND_SHOWCASE_SPEC_VERSION,
+    });
+  });
+
   it("resumes a matching interrupted direct upload before starting", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
@@ -281,6 +327,24 @@ describe("video export finalization client", () => {
       token: "token",
       fetchImpl,
     })).resolves.toBeNull();
+  });
+
+  it("queries the current brand job with its spec version", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({ detail: "missing" }, 404));
+
+    await expect(getCurrentExportJob({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      exportVariant: "brand_showcase",
+      brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
+      fetchImpl,
+    })).resolves.toBeNull();
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/v1/video/projects/1121/exports/current"
+        + "?export_variant=brand_showcase&brand_spec_version=multimix-brand-showcase%3Av1",
+    );
   });
 
   it("polls a running job until the worker publishes it", async () => {

@@ -217,6 +217,7 @@ export class RendererManager {
 				quality,
 				shouldIncludeAudio: !!includeAudio,
 				audioBuffer: audioBuffer || undefined,
+				frameDecorator: options.frameDecorator,
 			});
 
 			exporter.on("progress", (progress) => {

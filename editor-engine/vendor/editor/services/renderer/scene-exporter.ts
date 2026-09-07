@@ -13,7 +13,11 @@ import {
 	QUALITY_VERY_HIGH,
 } from "mediabunny";
 import type { RootNode } from "./nodes/root-node";
-import type { ExportFormat, ExportQuality } from "@editor/lib/export";
+import type {
+	ExportFormat,
+	ExportFrameDecorator,
+	ExportQuality,
+} from "@editor/lib/export";
 import { CanvasRenderer } from "./canvas-renderer";
 
 type ExportParams = {
@@ -24,6 +28,7 @@ type ExportParams = {
 	quality: ExportQuality;
 	shouldIncludeAudio?: boolean;
 	audioBuffer?: AudioBuffer;
+	frameDecorator?: ExportFrameDecorator;
 };
 
 const qualityMap = {
@@ -74,12 +79,28 @@ export function assertAudioBufferForExport({
 	}
 }
 
+export async function renderExportFrame({
+	renderer,
+	rootNode,
+	time,
+	frameDecorator,
+}: {
+	renderer: Pick<CanvasRenderer, "canvas" | "render">;
+	rootNode: RootNode;
+	time: number;
+	frameDecorator?: ExportFrameDecorator;
+}): Promise<void> {
+	await renderer.render({ node: rootNode, time });
+	await frameDecorator?.(renderer.canvas);
+}
+
 export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 	private renderer: CanvasRenderer;
 	private format: ExportFormat;
 	private quality: ExportQuality;
 	private shouldIncludeAudio: boolean;
 	private audioBuffer?: AudioBuffer;
+	private frameDecorator?: ExportFrameDecorator;
 
 	private isCancelled = false;
 
@@ -91,6 +112,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		quality,
 		shouldIncludeAudio,
 		audioBuffer,
+		frameDecorator,
 	}: ExportParams) {
 		super();
 		this.renderer = new CanvasRenderer({
@@ -103,6 +125,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 		this.quality = quality;
 		this.shouldIncludeAudio = shouldIncludeAudio ?? false;
 		this.audioBuffer = audioBuffer;
+		this.frameDecorator = frameDecorator;
 	}
 
 	cancel(): void {
@@ -171,7 +194,12 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			}
 
 			const time = i / fps;
-			await this.renderer.render({ node: rootNode, time });
+			await renderExportFrame({
+				renderer: this.renderer,
+				rootNode,
+				time,
+				frameDecorator: this.frameDecorator,
+			});
 			await videoSource.add(time, 1 / fps);
 
 			this.emit("progress", i / frameCount);
