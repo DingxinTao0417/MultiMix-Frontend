@@ -317,6 +317,30 @@ describe("runtime data boundary", () => {
 
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
+      instruction: "将两张图分别用于两个分镜",
+      imageGenerationSetApplication: {
+        expectedCandidateSetHash: "d".repeat(64),
+        clientRequestId: "512c8c43-2a79-491d-b5d0-f2b5f2cc7f39",
+        target: { kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-1", "scene-2"] },
+        assignments: [
+          { candidateAssetId: 201, sceneId: "scene-1" },
+          { candidateAssetId: 202, sceneId: "scene-2" },
+        ],
+      },
+    })).toMatchObject({
+      image_generation_set_application: {
+        expected_candidate_set_hash: "d".repeat(64),
+        client_request_id: "512c8c43-2a79-491d-b5d0-f2b5f2cc7f39",
+        target: { kind: "director_scene", asset_id: 91, version_id: 22, scene_ids: ["scene-1", "scene-2"] },
+        assignments: [
+          { candidate_asset_id: 201, scene_id: "scene-1" },
+          { candidate_asset_id: 202, scene_id: "scene-2" },
+        ],
+      },
+    });
+
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
       instruction: "采纳第 2 镜的关键帧建议。",
       imageGenerationRecommendationAcceptance: {
         recommendationId: "flux-scene-scene-2-abcdef1234567890",

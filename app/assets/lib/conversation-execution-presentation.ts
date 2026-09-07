@@ -22,6 +22,12 @@ export function optimisticVideoProjectSteps(): AgentRunStep[] {
   ];
 }
 
+export function optimisticImageGenerationSteps(): AgentRunStep[] {
+  return [
+    { key: "submit_image_generation", label: "提交图片生成任务", status: "run" },
+  ];
+}
+
 export function confirmationMessagePresentation(
   role: "user" | "assistant",
   metadata: Record<string, unknown> | undefined,

@@ -12,7 +12,7 @@ import {
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
-import { mergeVisibleConversationMessages, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
+import { mergeVisibleConversationMessages, optimisticImageGenerationSteps, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import {
   formatComposerError,
@@ -46,6 +46,7 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -253,6 +254,8 @@ export default function ConversationStudio({
   selectedConversation,
   selectedProduct,
   onSelectProduct,
+  selectedImageFrameIds = {},
+  onSelectImageFrame,
   imageAttachments = [],
   onUploadImages,
   onRemoveImageAttachment,
@@ -283,6 +286,8 @@ export default function ConversationStudio({
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
+  selectedImageFrameIds?: Record<string, string>;
+  onSelectImageFrame?: (productId: string, frameId: string) => void;
   imageAttachments?: ChatImageAttachment[];
   onUploadImages?: (files: File[]) => void;
   onRemoveImageAttachment?: (attachmentId: string) => void;
@@ -693,7 +698,9 @@ export default function ConversationStudio({
                 label: "生成口播清理方案",
                 status: "run",
               }]
-          : optimisticVideoProjectSteps(),
+          : isImageGenerationConfirmation
+            ? optimisticImageGenerationSteps()
+            : optimisticVideoProjectSteps(),
         confirmationPlanKey: planKey,
       },
       globalThis.crypto.randomUUID(),
@@ -855,8 +862,23 @@ export default function ConversationStudio({
     if (messageProducts.length === 0) return null;
     return (
       <div className="shadcn-prototype-product-card-list" aria-label="对话产物">
-        {messageProducts.map((product) => (
-          <Link
+        {messageProducts.map((product) => {
+          const generatedImages = product.mode === "image" && Array.isArray(product.metadata?.generated_images)
+            ? product.metadata.generated_images
+            : null;
+          if (generatedImages?.length) {
+            return <GeneratedImageKeyframeGroup
+              key={product.id}
+              title={product.title}
+              images={generatedImages}
+              selectedFrameId={selectedImageFrameIds[product.id]}
+              onSelectedFrameChange={(frameId) => {
+                onSelectProduct(selectedConversation.id, product.id);
+                onSelectImageFrame?.(product.id, frameId);
+              }}
+            />;
+          }
+          return <Link
             className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
             href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
             key={product.id}
@@ -884,8 +906,8 @@ export default function ConversationStudio({
             <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
-          </Link>
-        ))}
+          </Link>;
+        })}
       </div>
     );
   };
@@ -984,6 +1006,9 @@ export default function ConversationStudio({
             liveAgentAction,
             executionTimelineSteps,
           );
+          const isImageGenerationTimeline = timelineSteps.some(
+            (step) => step.key === "submit_image_generation",
+          );
           const messageGenerationJob = generationJobFromMessage(message);
           const renderedGenerationJob = messageGenerationJob && liveGenerationJobsById.has(messageGenerationJob.id)
             ? liveGenerationJobsById.get(messageGenerationJob.id) ?? messageGenerationJob
@@ -1072,6 +1097,7 @@ export default function ConversationStudio({
               {timelineSteps.length ? (
                 <AgentRunTimeline
                   steps={timelineSteps}
+                  title={isImageGenerationTimeline ? "图片生成进度" : undefined}
                   errorMessage={agentActionFailed
                     ? liveAgentAction.message
                     : liveRunState?.errorMessage}

@@ -259,6 +259,59 @@ describe("Conversation Agent actions", () => {
     );
   });
 
+  it("shows image-only execution progress while an image confirmation is submitting", async () => {
+    const onSendMessage = vi.fn().mockImplementation(() => new Promise<void>(() => {}));
+    const onPendingExchangeChange = vi.fn();
+    const plan: AssetMessagePlan = {
+      kind: "image_generation_confirmation",
+      title: "确认图片生成",
+      status: "awaiting_confirmation",
+      fields: [{ key: "count", label: "生成数量", value: "1 张" }],
+      confirmLabel: "确认生成",
+      proposalId: "image-proposal-progress",
+      planHash: "b".repeat(64),
+      proposalVersion: 1,
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-image-progress",
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认。", plan }],
+    };
+
+    const { rerender } = render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+        onPendingExchangeChange={onPendingExchangeChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "确认生成" }));
+
+    await waitFor(() => expect(onPendingExchangeChange).toHaveBeenCalledOnce());
+    const pendingExchange = onPendingExchangeChange.mock.calls[0]?.[1];
+    rerender(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+        pendingExchange={pendingExchange}
+        onPendingExchangeChange={onPendingExchangeChange}
+      />,
+    );
+
+    expect(screen.getByText("图片生成进度")).toBeInTheDocument();
+    expect(screen.getByText("提交图片生成任务")).toBeInTheDocument();
+    expect(screen.queryByText("创建视频工程任务")).toBeNull();
+    expect(screen.queryByText("读取已确认方案并准备分镜")).toBeNull();
+  });
+
   it("confirms a video project without replaying the earlier video-parameter binding", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const plan: AssetMessagePlan = {

@@ -20,7 +20,10 @@ import ProductPreview, {
   playableVideoUrl,
   type ProductPreviewHandle,
 } from "./product-preview";
-import type { GeneratedImageGalleryApplication } from "./generated-image-gallery";
+import type {
+  GeneratedImageGalleryApplication,
+  GeneratedImageGallerySetApplication,
+} from "./generated-image-gallery";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VideoFilmReviewPanel from "./video-film-review-panel";
@@ -171,6 +174,9 @@ export default function ProductWorkspace({
   onLongFormAction,
   onApplyCreativeDirection,
   onApplyGeneratedImage,
+  onApplyGeneratedImageSet,
+  selectedImageFrameId,
+  onSelectedImageFrameChange,
   onGenerateKeyframe,
   product,
   savedVersion,
@@ -188,6 +194,9 @@ export default function ProductWorkspace({
   onLongFormAction?: (action: LongFormSourceAction) => void;
   onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
   onApplyGeneratedImage?: (application: GeneratedImageGalleryApplication) => Promise<void>;
+  onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void>;
+  selectedImageFrameId?: string;
+  onSelectedImageFrameChange?: (frameId: string) => void;
   onGenerateKeyframe?: (product: ProductArtifact, segment: AssetProductSegment) => Promise<void> | void;
   product: ProductArtifact;
   savedVersion?: string;
@@ -1665,6 +1674,9 @@ export default function ProductWorkspace({
               footer={filmReviewPanel}
               onLongFormAction={onLongFormAction}
               onApplyGeneratedImage={onApplyGeneratedImage}
+              onApplyGeneratedImageSet={onApplyGeneratedImageSet}
+              selectedImageFrameId={selectedImageFrameId}
+              onSelectedImageFrameChange={onSelectedImageFrameChange}
               onGenerateKeyframe={onGenerateKeyframe ? (segment) => onGenerateKeyframe(product, segment) : undefined}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}

@@ -282,6 +282,13 @@ export type AssetImageGenerationApplication = {
   target: AssetImageGenerationTarget;
 };
 
+export type AssetImageGenerationSetApplication = {
+  expectedCandidateSetHash: string;
+  clientRequestId: string;
+  target: AssetImageGenerationTarget;
+  assignments: Array<{ candidateAssetId: number; sceneId: string }>;
+};
+
 export type AssetLongFormAction =
   | { kind: "analyze"; sourceAssetId: number }
   | { kind: "revise"; analysisAssetId: number }

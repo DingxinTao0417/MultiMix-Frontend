@@ -5,7 +5,10 @@ import { API_BASE } from "../../../lib/api";
 import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetImageGenerationTarget, AssetProductSegment } from "../lib/asset-workspace-types";
 import MarkdownProductDocument from "./markdown-product-document";
-import GeneratedImageGallery, { type GeneratedImageGalleryApplication } from "./generated-image-gallery";
+import GeneratedImageGallery, {
+  type GeneratedImageGalleryApplication,
+  type GeneratedImageGallerySetApplication,
+} from "./generated-image-gallery";
 import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock, { type GenerationAnimationSummary } from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
@@ -273,6 +276,9 @@ type ProductPreviewProps = {
   onExportError?: (message: string) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
   onApplyGeneratedImage?: (application: GeneratedImageGalleryApplication) => Promise<void> | void;
+  onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void> | void;
+  selectedImageFrameId?: string;
+  onSelectedImageFrameChange?: (frameId: string) => void;
 };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
@@ -294,6 +300,9 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onExportError,
   onLongFormAction,
   onApplyGeneratedImage,
+  onApplyGeneratedImageSet,
+  selectedImageFrameId,
+  onSelectedImageFrameChange,
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -373,6 +382,9 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
         target={target}
         applied={metadata.image_generation_applied === true}
         onApply={onApplyGeneratedImage}
+        onApplySet={onApplyGeneratedImageSet}
+        selectedFrameId={selectedImageFrameId}
+        onSelectedFrameChange={onSelectedImageFrameChange}
       />;
     }
     // Hero image card + caption + source block (spec §5.6 / demo workspace-copy

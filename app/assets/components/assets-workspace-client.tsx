@@ -44,6 +44,7 @@ import type {
   AgentRunStep,
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
+  AssetImageGenerationSetApplication,
   AssetImageGenerationConfirmation,
   AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
@@ -71,7 +72,10 @@ import {
 import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
-import type { GeneratedImageGalleryApplication } from "./generated-image-gallery";
+import type {
+  GeneratedImageGalleryApplication,
+  GeneratedImageGallerySetApplication,
+} from "./generated-image-gallery";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
 import type { LibraryActionIntent } from "./library-workshop";
 import ProjectResourcesDrawer, {
@@ -628,6 +632,7 @@ export default function AssetsWorkspaceClient({
     const conversationId = initialConversationId ?? "new";
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
+  const [selectedImageFrameIds, setSelectedImageFrameIds] = useState<Record<string, string>>({});
   const selectedConversationIdRef = useRef(selectedConversationId);
   const pendingConversationNavigationRef = useRef<string | null>(null);
   const conversationsRef = useRef(conversations);
@@ -1890,6 +1895,41 @@ export default function AssetsWorkspaceClient({
     );
   };
 
+  const handleApplyGeneratedImageSet = async (application: GeneratedImageGallerySetApplication) => {
+    if (!runtimeWriteCapabilities.canGenerate || isConversationSnapshot) {
+      throw new Error("当前完整对话尚未就绪，暂不能应用关键帧组。");
+    }
+    await handleSendConversationMessage(
+      selectedConversation,
+      `将 ${application.assignments.length} 张图片分别应用到分镜`,
+      undefined,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        expectedCandidateSetHash: application.candidateSetHash,
+        clientRequestId: globalThis.crypto.randomUUID(),
+        target: application.target,
+        assignments: application.assignments,
+      },
+    );
+  };
+
   const handleGenerateDirectorSceneKeyframe = async (
     product: ProductArtifact,
     segment: AssetProductSegment,
@@ -2284,6 +2324,7 @@ export default function AssetsWorkspaceClient({
     imageGenerationConfirmation?: AssetImageGenerationConfirmation,
     imageGenerationApplication?: AssetImageGenerationApplication,
     imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
+    imageGenerationSetApplication?: AssetImageGenerationSetApplication,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2362,6 +2403,7 @@ export default function AssetsWorkspaceClient({
         imageGenerationConfirmation,
         imageGenerationApplication,
         imageGenerationRecommendationAcceptance,
+        imageGenerationSetApplication,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
@@ -3040,6 +3082,10 @@ export default function AssetsWorkspaceClient({
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
+                selectedImageFrameIds={selectedImageFrameIds}
+                onSelectImageFrame={(productId, frameId) => {
+                  setSelectedImageFrameIds((current) => ({ ...current, [productId]: frameId }));
+                }}
                 imageAttachments={currentChatImageUploads}
                 onUploadImages={handleChatImageUpload}
                 onRemoveImageAttachment={handleRemoveChatImage}
@@ -3139,6 +3185,15 @@ export default function AssetsWorkspaceClient({
                       ? undefined
                       : handleApplyGeneratedImage
                   }
+                  onApplyGeneratedImageSet={
+                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                      ? undefined
+                      : handleApplyGeneratedImageSet
+                  }
+                  selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
+                  onSelectedImageFrameChange={(frameId) => {
+                    setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
+                  }}
                   onGenerateKeyframe={
                     !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
                       ? undefined
