@@ -330,11 +330,18 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByText("2 个分镜没有找到合适素材。", { exact: true })).not.toBeInTheDocument();
   });
 
-  it("keeps a running project out of edit and export", () => {
-    renderWorkspace("case-04-project-running");
-    expect(screen.getAllByRole("status").some((node) => node.textContent?.includes("视频生成中"))).toBe(true);
+  it("keeps the running state out of the header actions", () => {
+    const view = renderWorkspace("case-04-project-running");
+    expect(screen.getByText("视频生成中", { exact: true })).toBeInTheDocument();
+    expect(view.container.querySelector(".shadcn-prototype-artifact-generating-badge")).toHaveTextContent("生成中");
+    expect(view.container.querySelector(".shadcn-prototype-product-pending")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "导出视频" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the old director timeline out of the running video state", () => {
+    renderWorkspace("case-04-project-running");
+    expect(screen.queryByLabelText("时间轴预览")).not.toBeInTheDocument();
   });
 
   it("shows a stable failure with retry and no project controls", () => {

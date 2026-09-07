@@ -133,8 +133,12 @@ test("CASE-04 stays in progress after reload", async ({ page }) => {
   const workspace = await openCase(page, "case-04-project-running");
   const progress = workspace.getByRole("status").filter({ hasText: "视频生成中" });
   await expect(progress).toBeVisible();
+  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
+  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await page.reload();
   await expect(progress).toBeVisible();
+  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
+  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
 });
 

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
-import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
@@ -383,9 +382,6 @@ export default function ProductWorkspace({
     liveVideoJobFailed
     || product.productStatus === "failed"
   );
-  // The pending pill still surfaces the coarse stage label; the step-by-step
-  // timeline itself is owned by the conversation, not the display area.
-  const liveStageLabel = videoJobStageLabel(videoJobLive?.workflowStage ?? "queued");
   const failureDetail = videoJobLive?.failureReason
     || product.failureReason
     || videoJobLive?.errorMessage
@@ -1499,11 +1495,6 @@ export default function ProductWorkspace({
                 {exportButtonLabel}
               </button>
             ) : null}
-            {orchestrationPending ? (
-              <span className="shadcn-prototype-product-pending" aria-live="polite">
-                {liveStageLabel}
-              </span>
-            ) : null}
             {!editableTextArtifact ? (
               <button type="button" onClick={() => void onSaveProduct(product)}>
                 {savedVersion ? `已保存 ${savedVersion}` : "保存"}
@@ -1856,7 +1847,7 @@ export default function ProductWorkspace({
           />
         ) : null}
 
-        {!hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
+        {!orchestrationPending && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}
