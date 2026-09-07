@@ -134,13 +134,13 @@ export default function CreativeDirectionSelector({
 
   return (
     <section
-      className="mx-5 mb-4 rounded-2xl border border-[#e5e0d8] bg-[#faf8f4] p-4 text-[#2f2b27]"
+      className="shadcn-prototype-creative-direction"
       aria-label="创意方向"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h4 className="text-sm font-semibold">创意方向</h4>
-          <p className="mt-1 text-xs leading-5 text-[#736e67]">
+      <div className="shadcn-prototype-creative-direction-header">
+        <div className="shadcn-prototype-creative-direction-heading">
+          <h4>创意方向</h4>
+          <p>
             {parsed.selectionSource === "user"
               ? "当前已应用你选择的方向；查看其他方向不会修改编导稿。"
               : "当前已自动采用推荐方向；查看其他方向不会修改编导稿。"}
@@ -149,7 +149,7 @@ export default function CreativeDirectionSelector({
         {canBrowseMore ? (
           <button
             type="button"
-            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-[#5f5a54] hover:bg-white"
+            className="shadcn-prototype-creative-direction-toggle"
             aria-expanded={expanded}
             onClick={() => setExpanded((current) => !current)}
           >
@@ -159,33 +159,33 @@ export default function CreativeDirectionSelector({
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3">
+      <div className="shadcn-prototype-creative-direction-list">
         {visibleCandidates.map((candidate) => {
           const isSelected = candidate.id === parsed.selectedId;
           const isApplying = candidate.id === applyingId;
           return (
             <article
               key={candidate.id}
-              className={`rounded-xl border p-3 ${isSelected ? "border-[#bcb2a4] bg-white" : "border-[#e5e0d8] bg-[#fffdfa]"}`}
+              className={`shadcn-prototype-creative-direction-candidate${isSelected ? " selected" : ""}`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <strong className="text-sm">{candidate.angle}</strong>
+              <div className="shadcn-prototype-creative-direction-candidate-header">
+                <div className="shadcn-prototype-creative-direction-candidate-copy">
+                  <div className="shadcn-prototype-creative-direction-title-row">
+                    <strong>{candidate.angle}</strong>
                     {isSelected ? (
-                      <span className="rounded-full bg-[#ece8df] px-2 py-0.5 text-[11px] text-[#5f5a54]">
+                      <span className="shadcn-prototype-creative-direction-badge">
                         {parsed.selectionSource === "user" ? "已应用" : "当前采用"}
                       </span>
                     ) : candidate.id === parsed.recommendedId ? (
-                      <span className="rounded-full bg-[#ece8df] px-2 py-0.5 text-[11px] text-[#5f5a54]">推荐</span>
+                      <span className="shadcn-prototype-creative-direction-badge">推荐</span>
                     ) : null}
                   </div>
-                  <p className="mt-1 text-sm leading-6 text-[#4d4944]">Hook：{candidate.hook}</p>
+                  <p className="shadcn-prototype-creative-direction-hook">Hook：{candidate.hook}</p>
                 </div>
                 {!isSelected ? (
                   <button
                     type="button"
-                    className="shrink-0 rounded-lg bg-[#2f2b27] px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    className="shadcn-prototype-creative-direction-apply"
                     aria-label={isApplying ? `正在应用“${candidate.angle}”方向` : `应用“${candidate.angle}”方向`}
                     disabled={!onApply || disabled || Boolean(applyingId) || Boolean(submittedId)}
                     onClick={() => void applyCandidate(candidate)}
@@ -195,24 +195,24 @@ export default function CreativeDirectionSelector({
                 ) : null}
               </div>
               {candidate.narrativeStructure.length ? (
-                <p className="mt-2 text-xs leading-5 text-[#736e67]">
+                <p className="shadcn-prototype-creative-direction-detail first-detail">
                   结构：{candidate.narrativeStructure.join(" → ")}
                 </p>
               ) : null}
               {candidate.visualLanguage ? (
-                <p className="text-xs leading-5 text-[#736e67]">画面：{candidate.visualLanguage}</p>
+                <p className="shadcn-prototype-creative-direction-detail">画面：{candidate.visualLanguage}</p>
               ) : null}
               {expanded && candidate.assetStrategy ? (
-                <p className="text-xs leading-5 text-[#736e67]">素材：{candidate.assetStrategy}</p>
+                <p className="shadcn-prototype-creative-direction-detail">素材：{candidate.assetStrategy}</p>
               ) : null}
               {expanded && candidate.audioDirection ? (
-                <p className="text-xs leading-5 text-[#736e67]">声音：{candidate.audioDirection}</p>
+                <p className="shadcn-prototype-creative-direction-detail">声音：{candidate.audioDirection}</p>
               ) : null}
               {expanded && candidate.evidenceStrategy ? (
-                <p className="text-xs leading-5 text-[#736e67]">证据：{candidate.evidenceStrategy}</p>
+                <p className="shadcn-prototype-creative-direction-detail">证据：{candidate.evidenceStrategy}</p>
               ) : null}
               {expanded && candidate.differenceAxes.length ? (
-                <p className="mt-1 text-[11px] leading-5 text-[#8a837b]">差异维度：{candidate.differenceAxes.join("、")}</p>
+                <p className="shadcn-prototype-creative-direction-meta">差异维度：{candidate.differenceAxes.join("、")}</p>
               ) : null}
             </article>
           );
@@ -220,15 +220,15 @@ export default function CreativeDirectionSelector({
       </div>
 
       {parsed.selectionReason ? (
-        <p className="mt-3 text-xs leading-5 text-[#736e67]">
+        <p className="shadcn-prototype-creative-direction-reason">
           {parsed.selectionSource === "user" ? "原推荐理由" : "推荐理由"}：{parsed.selectionReason}
         </p>
       ) : null}
       {expanded && parsed.candidateCountReason ? (
-        <p className="mt-3 text-xs leading-5 text-[#8a837b]">候选数量：{parsed.candidateCountReason}</p>
+        <p className="shadcn-prototype-creative-direction-meta">候选数量：{parsed.candidateCountReason}</p>
       ) : null}
-      {submittedId ? <p className="mt-3 text-xs text-[#4f6f52]" role="status">已提交，正在重排编导稿。</p> : null}
-      {error ? <p className="mt-3 text-xs text-[#a43b32]" role="alert">{error}</p> : null}
+      {submittedId ? <p className="shadcn-prototype-creative-direction-status" role="status">已提交，正在重排编导稿。</p> : null}
+      {error ? <p className="shadcn-prototype-creative-direction-error" role="alert">{error}</p> : null}
     </section>
   );
 }

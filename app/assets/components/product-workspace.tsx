@@ -1179,6 +1179,11 @@ export default function ProductWorkspace({
     "shadcn-prototype-artifact",
     showGeneratingVisuals ? "generating" : ""
   ].filter(Boolean).join(" ");
+  const productClassName = [
+    "shadcn-prototype-product",
+    hasVideoProject ? "video-project-mode" : "",
+    !isTextEditing && creativeDirection ? "has-creative-direction" : "",
+  ].filter(Boolean).join(" ");
 
   const reviewPlan = product.metadata?.video_plan;
   const reviewVideoType = String(recordValue(reviewPlan)?.video_type ?? "");
@@ -1212,7 +1217,7 @@ export default function ProductWorkspace({
       aria-label="Current product workspace"
       onClickCapture={handleSourceEvidenceClickCapture}
     >
-      <div className={hasVideoProject ? "shadcn-prototype-product video-project-mode" : "shadcn-prototype-product"}>
+      <div className={productClassName}>
         <header className="shadcn-prototype-product-header">
           <div>
             <h3>

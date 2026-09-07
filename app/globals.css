@@ -3633,6 +3633,10 @@ button:disabled {
   gap: 8px;
 }
 
+.shadcn-prototype-product.has-creative-direction {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
 .shadcn-prototype-artifact .shadcn-prototype-product.video-project-mode .shadcn-prototype-product-header {
   min-height: 32px;
   padding-bottom: 7px;
@@ -4066,6 +4070,186 @@ button:disabled {
   border: 0;
   border-top: 1px solid #eae7e1;
   margin: 16px 0;
+}
+
+.shadcn-prototype-creative-direction {
+  display: grid;
+  place-self: start center;
+  align-content: start;
+  width: min(100%, 620px);
+  min-width: 0;
+  min-height: 0;
+  max-height: min(42vh, 360px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid #e5e0d8;
+  border-radius: 16px;
+  background: #faf8f4;
+  padding: 14px 16px;
+  color: #2f2b27;
+}
+
+.shadcn-prototype-creative-direction-header,
+.shadcn-prototype-creative-direction-candidate-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.shadcn-prototype-creative-direction-heading,
+.shadcn-prototype-creative-direction-candidate-copy {
+  min-width: 0;
+}
+
+.shadcn-prototype-creative-direction-heading h4 {
+  margin: 0;
+  color: #201f1e;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.shadcn-prototype-creative-direction-heading p,
+.shadcn-prototype-creative-direction-hook,
+.shadcn-prototype-creative-direction-detail,
+.shadcn-prototype-creative-direction-reason,
+.shadcn-prototype-creative-direction-meta,
+.shadcn-prototype-creative-direction-status,
+.shadcn-prototype-creative-direction-error {
+  margin: 0;
+}
+
+.shadcn-prototype-creative-direction-heading p {
+  margin-top: 4px;
+  color: #736e67;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.shadcn-prototype-creative-direction-toggle,
+.shadcn-prototype-creative-direction-apply {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.shadcn-prototype-creative-direction-toggle {
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 4px 8px;
+  color: #5f5a54;
+}
+
+.shadcn-prototype-creative-direction-toggle:hover {
+  background: #ffffff;
+  color: #201f1e;
+}
+
+.shadcn-prototype-creative-direction-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.shadcn-prototype-creative-direction-candidate {
+  min-width: 0;
+  border: 1px solid #e5e0d8;
+  border-radius: 12px;
+  background: #fffdfa;
+  padding: 12px;
+}
+
+.shadcn-prototype-creative-direction-candidate.selected {
+  border-color: #bcb2a4;
+  background: #ffffff;
+}
+
+.shadcn-prototype-creative-direction-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.shadcn-prototype-creative-direction-title-row strong {
+  color: #201f1e;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.shadcn-prototype-creative-direction-badge {
+  border-radius: 999px;
+  background: #ece8df;
+  padding: 2px 8px;
+  color: #5f5a54;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.shadcn-prototype-creative-direction-hook {
+  margin-top: 4px;
+  color: #4d4944;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.shadcn-prototype-creative-direction-apply {
+  border: 1px solid #2f2b27;
+  background: #2f2b27;
+  padding: 6px 12px;
+  color: #ffffff;
+}
+
+.shadcn-prototype-creative-direction-apply:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.shadcn-prototype-creative-direction-detail,
+.shadcn-prototype-creative-direction-reason {
+  color: #736e67;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.shadcn-prototype-creative-direction-detail.first-detail,
+.shadcn-prototype-creative-direction-reason,
+.shadcn-prototype-creative-direction-meta,
+.shadcn-prototype-creative-direction-status,
+.shadcn-prototype-creative-direction-error {
+  margin-top: 10px;
+}
+
+.shadcn-prototype-creative-direction-meta {
+  color: #8a837b;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.shadcn-prototype-creative-direction-status,
+.shadcn-prototype-creative-direction-error {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shadcn-prototype-creative-direction-status {
+  color: #4f6f52;
+}
+
+.shadcn-prototype-creative-direction-error {
+  color: #a43b32;
 }
 
 .shadcn-prototype-image-variants {
