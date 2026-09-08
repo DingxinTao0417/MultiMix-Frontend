@@ -1941,6 +1941,7 @@ export default function ProductWorkspace({
                 onApplyGeneratedImageSet={onApplyGeneratedImageSet}
                 selectedImageFrameId={selectedImageFrameId}
                 onSelectedImageFrameChange={onSelectedImageFrameChange}
+                onGenerateKeyframe={onGenerateKeyframe ? (segment) => onGenerateKeyframe(product, segment) : undefined}
                 footer={filmReviewPanel}
               />
             </div>

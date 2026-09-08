@@ -109,6 +109,44 @@ describe("display-area eight-case matrix", () => {
     expect(onGenerateKeyframe).toHaveBeenCalledWith(product.segments![0]);
   });
 
+  it("routes a director keyframe recommendation through the workspace container", () => {
+    const onGenerateKeyframe = vi.fn();
+    const product: AssetProduct = {
+      ...displayProducts["case-01-director-draft"],
+      mode: "copy",
+      segments: [{
+        id: "segment-lipstick-workspace",
+        index: 1,
+        title: "真人试色",
+        line: "拿起口红，对镜自然涂抹。",
+        isFallback: false,
+        imageGenerationRecommendation: {
+          recommendationId: "flux-clip-lipstick-workspace",
+          fingerprint: "b".repeat(64),
+          referenceAssetId: 1416,
+          count: 1,
+          ratio: "9:16",
+          reason: "用起始关键帧固定口红外观和手部动作。",
+          riskFlags: ["hand_contact"],
+        },
+      }],
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onGenerateKeyframe={onGenerateKeyframe}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
+    expect(onGenerateKeyframe).toHaveBeenCalledWith(product, product.segments![0]);
+  });
+
   it.each([
     ["case-01-director-draft", "编导脚本"],
     ["case-02-saved-asset-match", "已引用 测试门店素材"],
