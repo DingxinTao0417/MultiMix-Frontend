@@ -18,6 +18,13 @@ type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" |
 const EXPORT_MEDIA_RANGE_CHUNK_BYTES = 1024 * 1024;
 const EXPORT_MEDIA_RANGE_REQUEST_TIMEOUT_MS = 60_000;
 const EXPORT_MEDIA_TOTAL_TIMEOUT_MS = 5 * 60_000;
+const authorizedPlaybackUrlByMediaId: Record<string, string> = {};
+
+function clearAuthorizedPlaybackUrls(): void {
+  for (const mediaId of Object.keys(authorizedPlaybackUrlByMediaId)) {
+    delete authorizedPlaybackUrlByMediaId[mediaId];
+  }
+}
 
 export type ExportMediaHydrationOptions = {
   chunkBytes?: number;
@@ -258,6 +265,7 @@ async function fetchExportMediaBlob(
 
 export function disposeEditor(): void {
   EditorCore.reset();
+  clearAuthorizedPlaybackUrls();
   if (typeof window !== "undefined") {
     const editorWindow = window as Window & { __editor?: EditorCore };
     delete editorWindow.__editor;
@@ -271,9 +279,11 @@ export async function hydrateAssetFiles(
   bp: BackendProject,
   onProgress?: HydrateProgress,
 ): Promise<MediaAsset[]> {
+  clearAuthorizedPlaybackUrls();
   const playbackUrlById: Record<string, string> = {};
   for (const m of bp.media) {
     playbackUrlById[m.id] = m.playback_url || mediaUrl(m.file_path);
+    if (m.playback_url) authorizedPlaybackUrlByMediaId[m.id] = m.playback_url;
   }
 
   // Download in small batches so network isn't flooded by 30+ parallel fetches.
@@ -348,7 +358,8 @@ export async function hydrateAssetFilesForExport(
 ): Promise<MediaAsset[]> {
   const playbackUrlById: Record<string, string> = {};
   for (const media of bp.media) {
-    playbackUrlById[media.id] = media.playback_url || mediaUrl(media.file_path);
+    playbackUrlById[media.id] =
+      media.playback_url || authorizedPlaybackUrlByMediaId[media.id] || mediaUrl(media.file_path);
   }
 
   const results: MediaAsset[] = [];

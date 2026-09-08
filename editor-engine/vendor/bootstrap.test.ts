@@ -182,6 +182,64 @@ describe("hydrateAssetFiles", () => {
 });
 
 describe("hydrateAssetFilesForExport", () => {
+  it("reuses the authorized BGM playback URL after project serialization strips the token", async () => {
+    vi.stubGlobal("window", globalThis);
+    const signedPlaybackUrl = "https://api.example.test/v1/video/bgm/media/jungle-shop?token=signed";
+    const bgmAsset = {
+      id: "media-bgm-jungle-shop",
+      type: "audio" as const,
+      name: "Jungle Shop",
+      url: "bgm://jungle-shop",
+      file: new File([], "Jungle Shop"),
+    };
+    const loadedProject = {
+      metadata: { title: "bgm export retry", duration: 15 },
+      settings: { fps: 24, width: 544, height: 960 },
+      tracks: [],
+      media: [{
+        id: bgmAsset.id,
+        type: "audio" as const,
+        name: bgmAsset.name,
+        file_path: bgmAsset.url,
+        playback_url: signedPlaybackUrl,
+      }],
+    } as BackendProject;
+    const serializedProject = {
+      ...loadedProject,
+      media: loadedProject.media.map(({ playback_url: _playbackUrl, ...media }) => media),
+    } as BackendProject;
+    let exporting = false;
+    const source = new TextEncoder().encode("authorized-bgm");
+    const fetchMock = vi.fn((url: string) => {
+      if (!exporting) {
+        return Promise.resolve(new Response('{"detail":"preview unavailable"}', {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }));
+      }
+      expect(url).toBe(signedPlaybackUrl);
+      return Promise.resolve(new Response(source, {
+        status: 200,
+        headers: {
+          "content-type": "audio/mp4",
+          "content-length": String(source.byteLength),
+        },
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const previewAssets = await hydrateAssetFiles([bgmAsset], loadedProject);
+    expect(previewAssets[0].file.size).toBe(0);
+    exporting = true;
+
+    const hydrated = await exportHydrator()(previewAssets, serializedProject, { chunkBytes: 64 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(hydrated[0].file.type).toBe("audio/mp4");
+    expect(new Uint8Array(await hydrated[0].file.arrayBuffer())).toEqual(source);
+  });
+
   it("assembles a zero-byte video from contiguous byte-range responses", async () => {
     vi.stubGlobal("window", globalThis);
     const source = new TextEncoder().encode("abcdefghij");
