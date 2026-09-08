@@ -106,6 +106,36 @@ describe("presenter segment review", () => {
     expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).toBeNull();
   });
 
+  it("lets a presenter scene adopt an explicit server keyframe recommendation", () => {
+    const onGenerateKeyframe = vi.fn();
+    const segment = {
+      id: "scene-presenter-keyframe",
+      index: 1,
+      title: "真人试色",
+      isFallback: false,
+      isPresenter: true,
+      imageGenerationRecommendation: {
+        recommendationId: "flux-scene-presenter-keyframe-abcdef1234567890",
+        fingerprint: "b".repeat(64),
+        referenceAssetId: 1416,
+        count: 1,
+        ratio: "9:16",
+        reason: "生成真人自然涂抹口红的起始关键帧。",
+        riskFlags: [],
+      },
+    } as AssetProductSegment;
+
+    render(
+      <SegmentCards
+        segments={[segment]}
+        onGenerateKeyframe={onGenerateKeyframe}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
+    expect(onGenerateKeyframe).toHaveBeenCalledWith(segment);
+  });
+
   it("shows the event arrangement, publish requirement and material gap", () => {
     const segment = {
       id: "scene-1",

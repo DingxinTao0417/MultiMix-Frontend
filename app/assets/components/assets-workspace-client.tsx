@@ -3226,11 +3226,7 @@ export default function AssetsWorkspaceClient({
                   onSelectedImageFrameChange={(frameId) => {
                     setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
                   }}
-                  onGenerateKeyframe={
-                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
-                      ? undefined
-                      : handleGenerateDirectorSceneKeyframe
-                  }
+                  onGenerateKeyframe={handleGenerateDirectorSceneKeyframe}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}

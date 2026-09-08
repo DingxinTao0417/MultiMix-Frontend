@@ -62,7 +62,6 @@ export default function SegmentCards({
           const canReplaceMaterial = Boolean(onReplaceMaterial && !segment.isPresenter);
           const canGenerateKeyframe = Boolean(
             onGenerateKeyframe
-            && !segment.isPresenter
             && segment.imageGenerationRecommendation,
           );
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
