@@ -117,6 +117,7 @@ import {
 } from "../lib/chat-video-attachment-routing";
 import {
   mergeConversationContextAssets,
+  persistedConversationContextAssets,
   type ConversationContextAsset,
 } from "../lib/conversation-context-assets";
 import {
@@ -730,7 +731,8 @@ export default function AssetsWorkspaceClient({
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
   const selectedAssetGenerationJobs = assetGenerationJobsForConversation(selectedConversation.id)
     .map((live) => live.job);
-  const currentContextAssets = conversationContextAssets[selectedConversation.id] ?? [];
+  const currentContextAssets = conversationContextAssets[selectedConversation.id]
+    ?? persistedConversationContextAssets(selectedConversation.messages ?? []);
   const projectResourceSummary = selectedConversation.projectResourceSummary ?? {
     sources: selectedConversation.projectResources?.sources.length ?? 0,
     historicalSources: 0,
@@ -2342,7 +2344,8 @@ export default function AssetsWorkspaceClient({
       const packageAsset = await materialPackageAsset(conversation.id);
       assetsForSend = packageAsset ? [...sourceAssets, packageAsset] : sourceAssets;
     }
-    const contextAssets = conversationContextAssets[conversation.id] ?? [];
+    const contextAssets = conversationContextAssets[conversation.id]
+      ?? persistedConversationContextAssets(conversation.messages ?? []);
     const combinedContextAssets = mergeConversationContextAssets(contextAssets, assetsForSend);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
     const optimisticConversationId = conversation.id === "new"
@@ -3113,6 +3116,12 @@ export default function AssetsWorkspaceClient({
                 onRetryAgentAction={handleRetryAgentAction}
                  diagnosticsSlot={renderDiagnostics()}
                  onOpenProjectResources={() => setProjectResourcesOpen(true)}
+                onClearContextAssets={() => {
+                  setConversationContextAssets((current) => ({
+                    ...current,
+                    [selectedConversation.id]: [],
+                  }));
+                }}
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
                 onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
@@ -3247,6 +3256,15 @@ export default function AssetsWorkspaceClient({
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
         onOpenResource={handleOpenProjectResource}
+        onUseSourceForNextMessage={(item) => {
+          if (item.kind !== "source" || item.membershipState !== "active") return;
+          setConversationContextAssets((current) => ({
+            ...current,
+            [selectedConversation.id]: [{ id: item.id, title: item.title }],
+          }));
+          setProjectResourcesOpen(false);
+          toast.info(`已将「${item.title}」用于本轮。`);
+        }}
       />
       <ProjectTargetPicker
         open={Boolean(projectTargetRow)}
