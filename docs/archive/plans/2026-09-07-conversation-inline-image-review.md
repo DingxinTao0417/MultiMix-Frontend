@@ -1,6 +1,6 @@
 # 对话内图片关键帧组与默认审核栏
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-07
 
