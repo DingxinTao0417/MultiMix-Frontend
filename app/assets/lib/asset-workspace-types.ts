@@ -237,8 +237,11 @@ export type AssetVideoParameterConfirmation = {
 };
 
 export type AssetVideoProjectConfirmation = {
-  catalogVersion: string;
-  enabled: boolean;
+  directorAssetId?: number;
+  directorContentHash?: string;
+  ratio?: string;
+  catalogVersion?: string;
+  enabled?: boolean;
   catalogId?: string;
 };
 
@@ -397,6 +400,8 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
+  directorAssetId?: number;
+  directorContentHash?: string;
   kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation" | "image_generation_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"

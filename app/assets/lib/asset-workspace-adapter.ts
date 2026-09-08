@@ -468,6 +468,9 @@ export function buildConversationMessagePayload({
     } : {}),
     ...(videoProjectConfirmation ? {
       video_project_confirmation: {
+        ...(videoProjectConfirmation.directorAssetId ? { director_asset_id: videoProjectConfirmation.directorAssetId } : {}),
+        ...(videoProjectConfirmation.directorContentHash ? { director_content_hash: videoProjectConfirmation.directorContentHash } : {}),
+        ...(videoProjectConfirmation.ratio ? { ratio: videoProjectConfirmation.ratio } : {}),
         catalog_version: videoProjectConfirmation.catalogVersion,
         enabled: videoProjectConfirmation.enabled,
         ...(videoProjectConfirmation.catalogId

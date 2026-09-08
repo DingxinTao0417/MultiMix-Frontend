@@ -3,9 +3,11 @@ import { execFileSync } from "node:child_process";
 import {
   closeSync,
   existsSync,
+  lstatSync,
   openSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -36,9 +38,22 @@ function untrackedSnapshot(repo) {
     const absolutePath = path.join(repo, relativePath);
     return {
       path: relativePath.replaceAll("\\", "/"),
-      hash: existsSync(absolutePath) ? sha256(readFileSync(absolutePath)) : "missing",
+      hash: pathSnapshotHash(absolutePath),
     };
   });
+}
+
+function pathSnapshotHash(absolutePath) {
+  const stat = lstatSync(absolutePath, { throwIfNoEntry: false });
+  if (!stat) return "missing";
+  if (stat.isSymbolicLink()) return sha256(`symlink:${readlinkSync(absolutePath)}`);
+  if (stat.isDirectory()) {
+    const entries = readdirSync(absolutePath).sort().map((name) => [
+      name, pathSnapshotHash(path.join(absolutePath, name)),
+    ]);
+    return sha256(`directory:${JSON.stringify(entries)}`);
+  }
+  return sha256(readFileSync(absolutePath));
 }
 
 function repositorySnapshot(workspaceRoot, name) {
@@ -113,17 +128,25 @@ export function beginGuard({ workspaceRoot, token = crypto.randomUUID(), owner =
     }
     throw error;
   }
-  const lock = {
-    version: 1,
-    token,
-    owner,
-    createdAt: new Date().toISOString(),
-    checkpointedAt: null,
-    snapshot: snapshotWorkspace(workspaceRoot),
-  };
-  writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
-  closeSync(descriptor);
-  return lock;
+  try {
+    const lock = {
+      version: 1,
+      token,
+      owner,
+      createdAt: new Date().toISOString(),
+      checkpointedAt: null,
+      snapshot: snapshotWorkspace(workspaceRoot),
+    };
+    writeFileSync(descriptor, `${JSON.stringify(lock, null, 2)}\n`);
+    return lock;
+  } catch (error) {
+    closeSync(descriptor);
+    descriptor = undefined;
+    unlinkSync(filePath);
+    throw error;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
 }
 
 export function verifyGuard({ workspaceRoot, token }) {

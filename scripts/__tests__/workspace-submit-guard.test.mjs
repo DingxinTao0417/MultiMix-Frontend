@@ -79,3 +79,33 @@ test("guards the split workspace against second writers and late changes", () =>
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
+
+test("snapshots untracked nested repositories and detects content changes", () => {
+  const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "multimix-submit-guard-"));
+  try {
+    createRepo(workspaceRoot, "MultiMix-Frontend");
+    const backend = createRepo(workspaceRoot, "MultiMix-Backend");
+    const nested = createRepo(backend, "experiment");
+    beginGuard({ workspaceRoot, token: "nested", owner: "test" });
+    assert.doesNotThrow(() => verifyGuard({ workspaceRoot, token: "nested" }));
+    writeFileSync(path.join(nested, "tracked.txt"), "changed experiment\n");
+    assert.throws(() => verifyGuard({ workspaceRoot, token: "nested" }), /workspace changed/i);
+    endGuard({ workspaceRoot, token: "nested" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("snapshot failure releases only the newly created lock", () => {
+  const workspaceRoot = mkdtempSync(path.join(os.tmpdir(), "multimix-submit-guard-"));
+  try {
+    createRepo(workspaceRoot, "MultiMix-Frontend");
+    assert.throws(() => beginGuard({ workspaceRoot, token: "failed", owner: "test" }), /Missing Git repository/);
+    assert.equal(guardStatus({ workspaceRoot }), null);
+    createRepo(workspaceRoot, "MultiMix-Backend");
+    beginGuard({ workspaceRoot, token: "valid", owner: "test" });
+    endGuard({ workspaceRoot, token: "valid" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});

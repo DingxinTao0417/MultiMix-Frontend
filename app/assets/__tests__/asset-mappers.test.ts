@@ -19,6 +19,23 @@ const newConversationProduct = {
 } as AssetProduct;
 
 describe("project conversation mapping", () => {
+  it("preserves the server's director binding on a video card with no message asset", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-binding", title: "视频", status: "active", metadata: {},
+      created_at: "2026-09-08T00:00:00Z", updated_at: "2026-09-08T00:00:00Z",
+      products: [asset({ id: 1397 })],
+      messages: [{ id: 1, role: "assistant", text: "请确认视频方案。", asset_id: null,
+        created_at: "2026-09-08T00:00:00Z", metadata: { plan: {
+          kind: "video_project_confirmation", title: "视频方案", status: "pending",
+          fields: [{ key: "duration", label: "时长", value: "30 秒" }],
+          director_asset_id: 1397, director_content_hash: "director-v11",
+        } },
+      }],
+    }, newConversationProduct);
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      directorAssetId: 1397, directorContentHash: "director-v11",
+    });
+  });
   it("counts generated images rather than paragraphs in the direction plan", () => {
     const mapped = contentAssetToProduct(asset({ asset_kind: "image", library_kind: "image",
       content_type: "storyboard_image", generation_state: "image_ready", metadata: {

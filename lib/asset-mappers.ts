@@ -380,6 +380,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
       || planKind === "image_generation_confirmation"
       ? planKind
       : undefined,
+    directorAssetId: positiveIntegerValue(value.director_asset_id),
+    directorContentHash: stringValue(value.director_content_hash) || undefined,
     title,
     status,
     subtitle: stringValue(value.subtitle) || undefined,

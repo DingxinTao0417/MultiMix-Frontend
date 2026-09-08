@@ -27,6 +27,45 @@ const queuedAction: AgentActionRunResponse = {
 };
 
 describe("Conversation Agent actions", () => {
+  it("binds a video confirmation without BGM to its director even while an image is selected", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "video-confirmation-binding", detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认视频方案。", plan: {
+        kind: "video_project_confirmation" as const, title: "视频方案", status: "pending" as const,
+        fields: [], confirmLabel: "确认", confirmUtterance: "确认，生成视频工程",
+        ratioOptions: [{ value: "9:16", label: "竖屏 9:16" }], ratioDefault: "9:16",
+        directorAssetId: 1397, directorContentHash: "director-v11",
+      } }],
+    };
+    render(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={{ ...conversation.product, backendAssetId: 1405, mode: "image" }}
+      onSelectProduct={vi.fn()} onSendMessage={onSendMessage} />);
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[13]).toBe(1397);
+    expect(onSendMessage.mock.calls[0]?.[15]).toEqual({
+      directorAssetId: 1397, directorContentHash: "director-v11", ratio: "9:16",
+    });
+  });
+
+  it("does not send an unbound video confirmation", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(), id: "video-unbound", detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认。", plan: {
+        kind: "video_project_confirmation" as const, title: "视频方案", status: "pending" as const,
+        fields: [], confirmLabel: "确认", confirmUtterance: "确认，生成视频工程",
+      } }],
+    };
+    render(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={null} onSelectProduct={vi.fn()} onSendMessage={onSendMessage} />);
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(await screen.findByText("视频方案缺少编导稿绑定，请刷新后重试。")).toBeInTheDocument();
+  });
+
   it("shows a single-image creative draft as nonblocking and lets users fill missing details", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -373,6 +412,8 @@ describe("Conversation Agent actions", () => {
       catalogVersion: "v1",
       enabled: true,
       catalogId: "track-b",
+      directorAssetId: 1194,
+      ratio: "16:9",
     });
   });
 

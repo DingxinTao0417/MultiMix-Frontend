@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-04
+> Last verified: 2026-09-08
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -1176,3 +1176,13 @@ npm run test:display-coverage
 审阅建议不阻断生成和导出，不自动改稿或换素材。最终文稿审阅在口播适配、手动保存和局部重合成后执行，失败不阻断原操作，下次保存或生成时重试。用户修订后需重新导出、重新审阅，才能得到本版复验结论；同一成片已有有效报告时不重复消耗模型调用。
 
 隔离浏览器验证：`node scripts/run-video-film-review-e2e.mjs`，使用独立 8397 / 3297 端口、一次性 SQLite 和受控审阅响应；真实接口权限、任务幂等、失败恢复及并发版本绑定由后端 HTTP/数据库测试覆盖。该验证不代表真实模型的语义质量验收。
+
+## 视频方案确认绑定
+
+`video_project_confirmation` 卡片由后端提供 `director_asset_id` 和 `director_content_hash`；
+mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认时始终发送
+`video_project_confirmation={director_asset_id,director_content_hash,ratio}`，并把同一编导稿 ID
+作为 `selected_product_id`。没有 BGM 推荐时也发送结构化动作，有推荐时附加原有配乐字段。
+历史卡可使用其消息 assetId；完全缺少目标时提示刷新，不回退到用户当前浏览的图片。
+旧内容指纹被拒绝后须刷新确认卡；重复提交与断连恢复继续沿用 client_request_id 对账及
+后端的编导稿版本语义幂等。

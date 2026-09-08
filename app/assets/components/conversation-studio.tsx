@@ -561,6 +561,11 @@ export default function ConversationStudio({
     const base = (plan.confirmUtterance ?? plan.confirmLabel ?? "确认，开始生成").trim();
     const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
     const isVideoProjectConfirmation = plan.kind === "video_project_confirmation";
+    const directorAssetId = plan.directorAssetId ?? confirmationProductId;
+    if (isVideoProjectConfirmation && !directorAssetId) {
+      setSendError("视频方案缺少编导稿绑定，请刷新后重试。");
+      return;
+    }
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
     const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
     const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
@@ -720,9 +725,14 @@ export default function ConversationStudio({
       undefined,
       presenterCleanupConfirmation,
       presenterAudioSelectionConfirmation,
-       confirmationProductId,
+       isVideoProjectConfirmation ? directorAssetId : confirmationProductId,
        sourceSubtitleMode,
-       videoProjectConfirmation,
+       isVideoProjectConfirmation ? {
+         ...videoProjectConfirmation,
+         directorAssetId,
+         ...(plan.directorContentHash ? { directorContentHash: plan.directorContentHash } : {}),
+         ...(ratio ? { ratio } : {}),
+       } : videoProjectConfirmation,
        undefined,
        undefined,
        imageGenerationConfirmation,

@@ -513,6 +513,21 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("translated_zh");
   });
 
+  it("serializes a bound video confirmation without requiring a BGM choice", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-1", instruction: "确认，生成视频工程",
+      selectedProductId: 1397,
+      videoProjectConfirmation: {
+        directorAssetId: 1397, directorContentHash: "director-v11", ratio: "9:16",
+      },
+    })).toMatchObject({
+      selected_product_id: 1397,
+      video_project_confirmation: {
+        director_asset_id: 1397, director_content_hash: "director-v11", ratio: "9:16",
+      },
+    });
+  });
+
   it("serializes long-form actions as structured data", () => {
     expect(buildConversationMessagePayload({
       conversationId: "new",
