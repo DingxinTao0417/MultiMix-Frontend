@@ -104,7 +104,6 @@ export default function GeneratedImageGallery({
   onApply,
   onApplySet,
   selectedFrameId,
-  onSelectedFrameChange,
 }: {
   images: unknown;
   candidateAssetId?: number;
@@ -117,16 +116,10 @@ export default function GeneratedImageGallery({
   onSelectedFrameChange?: (frameId: string) => void;
 }) {
   const frames = framesFrom(images);
-  const [uncontrolledSelectedId, setUncontrolledSelectedId] = useState("");
   const [isApplying, setIsApplying] = useState(false);
   const [isApplyingSet, setIsApplyingSet] = useState(false);
   const [locallyApplied, setLocallyApplied] = useState(applied);
-  const selectedId = selectedFrameId ?? uncontrolledSelectedId;
-  const selected = frames.find((f) => f.frame_id === selectedId) ?? frames[0];
-  const selectFrame = (frameId: string) => {
-    if (selectedFrameId == null) setUncontrolledSelectedId(frameId);
-    onSelectedFrameChange?.(frameId);
-  };
+  const selected = frames.find((frame) => frame.frame_id === selectedFrameId) ?? frames[0];
   const actionableTarget = target?.kind === "cover" || target?.kind === "director_scene";
   const canApply = Boolean(
     onApply
@@ -168,6 +161,21 @@ export default function GeneratedImageGallery({
       </div>
       {target?.kind === "project" ? <p>已保存到图片库</p> : null}
       {target?.kind === "video_scene" ? <p>已保存到图片库；已有视频分镜的应用将在视频编辑中单独确认。</p> : null}
+      <section className="shadcn-prototype-generated-image-review-details" aria-label="图片检查结果">
+        <header>
+          <div>
+            <strong>审核结果</strong>
+            <span>{selected.frame_id} · {selected.intent}</span>
+          </div>
+          <span className={findings.length ? "needs-review" : "ready"}>{findings.length ? "需确认" : "未发现关键差异"}</span>
+        </header>
+        <p className="shadcn-prototype-generated-image-review-context">AI 检查可能漏检，使用前仍需人工确认商品细节。</p>
+        {findings.length ? (
+          <ul>{findings.slice(0, 3).map(([key, finding]) => (
+            <li key={key}>{CHECK_LABELS[key]}：{finding.evidence}</li>
+          ))}</ul>
+        ) : <div className="shadcn-prototype-generated-image-review-clear">未发现关键差异，仍建议人工确认。</div>}
+      </section>
       {actionableTarget ? (
         <div className="shadcn-prototype-generated-image-actions">
         {locallyApplied ? <span>已应用</span> : <span>尚未应用到分镜</span>}
@@ -215,29 +223,6 @@ export default function GeneratedImageGallery({
         ) : null}
         </div>
       ) : null}
-      <div className="shadcn-prototype-generated-image-thumbnails">
-      {frames.map((frame) => <button key={frame.frame_id} type="button"
-        aria-label={`查看 ${frame.frame_id} ${frame.intent}`} aria-pressed={frame.frame_id === selected.frame_id}
-        onClick={() => selectFrame(frame.frame_id)}>
-        {/* eslint-disable-next-line @next/next/no-img-element -- authenticated generated media */}
-        <img src={mediaUrl(frame.storage_ref)} alt={frame.frame_id} loading="lazy"
-          style={{ width: 100, height: 100, objectFit: "contain" }} />
-        <span>{frame.frame_id} · {reviewLabel(frame).split(" · ")[0]}</span>
-      </button>)}
-      </div>
     </div>
-    <aside className="shadcn-prototype-generated-image-review-rail" aria-label="图片检查结果">
-      <header>
-        <strong>审核结果</strong>
-        <span className={findings.length ? "needs-review" : "ready"}>{findings.length ? "需确认" : "未发现关键差异"}</span>
-      </header>
-      <p>{selected.frame_id} · {selected.intent}</p>
-      <small>AI 检查可能漏检，使用前仍需人工确认商品细节。</small>
-      {findings.length ? (
-        <ul>{findings.slice(0, 3).map(([key, finding]) => (
-          <li key={key}>{CHECK_LABELS[key]}：{finding.evidence}</li>
-        ))}</ul>
-      ) : <div className="shadcn-prototype-generated-image-review-clear">未发现关键差异，仍建议人工确认。</div>}
-    </aside>
   </section>;
 }

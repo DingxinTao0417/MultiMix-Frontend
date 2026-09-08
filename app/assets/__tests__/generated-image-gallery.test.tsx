@@ -5,15 +5,18 @@ import GeneratedImageGallery, { GeneratedImageKeyframeGroup } from "../component
 afterEach(cleanup);
 
 describe("generated image gallery", () => {
-  it("shows all frames and switches the full-size preview", () => {
-    render(<GeneratedImageGallery images={[1, 2, 3, 4, 5].map((n) => ({
+  it("shows the controlled full-size preview without duplicating the conversation selector", () => {
+    const images = [1, 2, 3, 4, 5].map((n) => ({
       frame_id: `F0${n}`, intent: `镜头${n}`, review_status: "unreviewed",
       storage_ref: `local://content-assets/1/generation-jobs/2/images/${String(n).repeat(64)}.png`,
-    }))} />);
-    expect(screen.getAllByRole("button")).toHaveLength(5);
-    fireEvent.click(screen.getByRole("button", { name: "查看 F05 镜头5" }));
+    }));
+    const { rerender } = render(<GeneratedImageGallery images={images} selectedFrameId="F01" />);
+    expect(screen.getByRole("img", { name: "F01 镜头1 大图" })).toBeTruthy();
+
+    rerender(<GeneratedImageGallery images={images} selectedFrameId="F05" />);
     expect(screen.getByRole("img", { name: "F05 镜头5 大图" }).getAttribute("src")).toContain("555555");
     expect(screen.getAllByText(/待人工检查/).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /查看 F0[1-5] 镜头/ })).toBeNull();
   });
   it("does not render an arbitrary storage path", () => {
     render(<GeneratedImageGallery images={[{ frame_id: "F01", intent: "test", storage_ref: "local://secrets.txt" }]} />);
@@ -28,17 +31,40 @@ describe("generated image gallery", () => {
     expect(screen.getAllByText(/需调整/).length).toBeGreaterThan(0);
     expect(screen.queryByText("商业验收通过")).toBeNull();
   });
-  it("uses a controlled selected frame and keeps the review rail visible without findings", () => {
-    const onSelectedFrameChange = vi.fn();
+  it("uses a controlled selected frame and keeps the review details visible without findings", () => {
     render(<GeneratedImageGallery images={[1, 2].map((n) => ({
       frame_id: `F0${n}`, intent: `镜头${n}`, review_status: "no_issue_detected",
       storage_ref: `local://content-assets/1/generation-jobs/2/images/${String(n).repeat(64)}.png`,
-    }))} selectedFrameId="F02" onSelectedFrameChange={onSelectedFrameChange} />);
+    }))} selectedFrameId="F02" />);
 
     expect(screen.getByRole("img", { name: "F02 镜头2 大图" })).toBeTruthy();
     expect(screen.getByLabelText("图片检查结果").textContent).toContain("未发现关键差异");
-    fireEvent.click(screen.getByRole("button", { name: "查看 F01 镜头1" }));
-    expect(onSelectedFrameChange).toHaveBeenCalledWith("F01");
+  });
+  it("places the selected frame review below the large image and updates it on frame selection", () => {
+    const images = [
+      {
+        frame_id: "F01", intent: "开场", review_status: "flagged",
+        storage_ref: `local://content-assets/1/generation-jobs/2/images/${"d".repeat(64)}.png`,
+        quality_review: { checks: { color: { status: "mismatch", evidence: "颜色偏冷。" } } },
+      },
+      {
+        frame_id: "F02", intent: "细节", review_status: "flagged",
+        storage_ref: `local://content-assets/1/generation-jobs/2/images/${"e".repeat(64)}.png`,
+        quality_review: { checks: { structure: { status: "mismatch", evidence: "盖子位置错误。" } } },
+      },
+    ];
+    const { rerender } = render(<GeneratedImageGallery images={images} selectedFrameId="F01" />);
+
+    const gallery = screen.getByLabelText("生成图片集");
+    expect(gallery.querySelector("aside")).toBeNull();
+    const review = screen.getByLabelText("图片检查结果");
+    expect(review.querySelector(".shadcn-prototype-generated-image-review-context")).toBeTruthy();
+    expect(review.querySelector("small")).toBeNull();
+    expect(review.textContent).toContain("颜色：颜色偏冷。");
+
+    rerender(<GeneratedImageGallery images={images} selectedFrameId="F02" />);
+    expect(screen.getByRole("img", { name: "F02 细节 大图" })).toBeTruthy();
+    expect(screen.getByLabelText("图片检查结果").textContent).toContain("结构：盖子位置错误。");
   });
   it("renders every generated keyframe inside the conversation group", () => {
     const onSelect = vi.fn();
