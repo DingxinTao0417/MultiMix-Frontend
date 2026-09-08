@@ -98,4 +98,27 @@ describe("ProjectResourcesDrawer", () => {
     await waitFor(() => expect(onRemoveSource).toHaveBeenCalledWith(11));
     expect(confirm).toHaveBeenCalledOnce();
   });
+
+  it("lets a user explicitly choose one active source for the next request without generating", async () => {
+    const onUseSourceForNextMessage = vi.fn();
+
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="门店讲解视频"
+        summary={{ sources: 1, historicalSources: 0, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue(sourcePage)}
+        onClose={vi.fn()}
+        onAddSource={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+        onUseSourceForNextMessage={onUseSourceForNextMessage}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "用于本轮" }));
+
+    expect(onUseSourceForNextMessage).toHaveBeenCalledWith(sourcePage.items[0]);
+  });
 });

@@ -48,6 +48,7 @@ export default function ProjectResourcesDrawer({
   onRemoveSource,
   onReaddSource,
   onOpenResource,
+  onUseSourceForNextMessage,
 }: {
   open: boolean;
   projectTitle: string;
@@ -63,6 +64,7 @@ export default function ProjectResourcesDrawer({
   onRemoveSource: (assetId: number) => Promise<void>;
   onReaddSource: (assetId: number) => Promise<void>;
   onOpenResource: (item: ProjectResourceItem) => void;
+  onUseSourceForNextMessage?: (item: ProjectResourceItem) => void;
 }) {
   const [kind, setKind] = useState<ProjectResourceKind>("source");
   const [sourceScope, setSourceScope] = useState<"active" | "history">("active");
@@ -224,6 +226,11 @@ export default function ProjectResourcesDrawer({
                   <>
                     {item.membershipState === "removed" && item.historicalReferenceCount > 0 ? (
                       <span>旧版本引用 {item.historicalReferenceCount} 次</span>
+                    ) : null}
+                    {item.membershipState === "active" && onUseSourceForNextMessage ? (
+                      <button type="button" onClick={() => onUseSourceForNextMessage(item)}>
+                        用于本轮
+                      </button>
                     ) : null}
                     <button
                       type="button"

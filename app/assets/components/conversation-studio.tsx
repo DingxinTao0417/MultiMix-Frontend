@@ -274,6 +274,7 @@ export default function ConversationStudio({
   onRetryAgentAction,
   diagnosticsSlot = null,
   onOpenProjectResources,
+  onClearContextAssets,
   detailLoadError = false,
   onRetryDetail,
   readonly = false,
@@ -334,6 +335,7 @@ export default function ConversationStudio({
   onRetryAgentAction?: (actionRunId: string) => void;
   diagnosticsSlot?: ReactNode;
   onOpenProjectResources?: () => void;
+  onClearContextAssets?: () => void;
   detailLoadError?: boolean;
   onRetryDetail?: () => void;
   readonly?: boolean;
@@ -1210,6 +1212,19 @@ export default function ConversationStudio({
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>
         <div className={composerControlClassName}>
+          {contextAssets.length ? (
+            <div className="shadcn-prototype-chat-attachment-tray" role="status" aria-label="本轮已选素材">
+              {contextAssets.map((asset) => (
+                <article key={asset.id}>
+                  <div>
+                    <strong>{asset.title}</strong>
+                    <em>本轮参考素材</em>
+                  </div>
+                  <button type="button" aria-label={`移除 ${asset.title}`} onClick={onClearContextAssets}>×</button>
+                </article>
+              ))}
+            </div>
+          ) : null}
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
               {imageAttachments.map((attachment) => (
