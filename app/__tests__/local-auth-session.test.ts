@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseStoredLocalUser, shouldAttemptLocalDevAdmin } from "../lib/local-auth-session";
+import {
+  parseStoredLocalUser,
+  shouldAttemptLocalDevAdmin,
+  shouldUseSupabaseAuth,
+} from "../lib/local-auth-session";
 
 describe("local auth session", () => {
   it("restores a saved API session only when it carries a token", () => {
@@ -21,5 +25,12 @@ describe("local auth session", () => {
     expect(shouldAttemptLocalDevAdmin("local")).toBe(false);
     expect(shouldAttemptLocalDevAdmin("")).toBe(false);
     expect(shouldAttemptLocalDevAdmin("dev-admin")).toBe(true);
+  });
+
+  it("keeps Supabase disabled in explicit dev-admin mode", () => {
+    expect(shouldUseSupabaseAuth("dev-admin", true)).toBe(false);
+    expect(shouldUseSupabaseAuth("local", true)).toBe(true);
+    expect(shouldUseSupabaseAuth("", true)).toBe(true);
+    expect(shouldUseSupabaseAuth("dev-admin", false)).toBe(false);
   });
 });

@@ -7,6 +7,10 @@ export function shouldAttemptLocalDevAdmin(authMode: string): boolean {
   return authMode.trim().toLowerCase() === "dev-admin";
 }
 
+export function shouldUseSupabaseAuth(authMode: string, isSupabaseConfigured: boolean): boolean {
+  return isSupabaseConfigured && !shouldAttemptLocalDevAdmin(authMode);
+}
+
 export function parseStoredLocalUser(raw: string | null): LocalUser | null {
   if (!raw) return null;
   try {

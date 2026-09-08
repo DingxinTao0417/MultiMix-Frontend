@@ -7,6 +7,7 @@ import type { ActiveView } from "./assets/lib/asset-workspace-shared";
 import {
   parseStoredLocalUser,
   shouldAttemptLocalDevAdmin,
+  shouldUseSupabaseAuth,
   type LocalUser,
 } from "./lib/local-auth-session";
 import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
@@ -18,6 +19,7 @@ const DEFAULT_LOCAL_USER: LocalUser = {
 };
 const AUTH_INIT_TIMEOUT_MS = 4000;
 const AUTH_MODE = process.env.NEXT_PUBLIC_MULTIMIX_AUTH_MODE || "";
+const USE_SUPABASE_AUTH = shouldUseSupabaseAuth(AUTH_MODE, isSupabaseConfigured && Boolean(supabase));
 
 function activeViewFromParam(value: string | null): ActiveView | undefined {
   if (value === "assets" || value === "copy" || value === "image" || value === "video") return value;
@@ -57,7 +59,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   const [authInitError, setAuthInitError] = useState<string | null>(null);
 
   const handleLogout = async () => {
-    if (supabase) {
+    if (USE_SUPABASE_AUTH && supabase) {
       await supabase.auth.signOut();
     }
     window.localStorage.removeItem(LOCAL_USER_KEY);
@@ -82,7 +84,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
       setReady(true);
     };
 
-    if (isSupabaseConfigured && supabase) {
+    if (USE_SUPABASE_AUTH && supabase) {
       // Try to restore Supabase session.
       const timeout = window.setTimeout(() => {
         setAuthUnavailable();
@@ -200,6 +202,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
     return (
       <MultiMixAuth
         initialError={authInitError}
+        useSupabaseAuth={USE_SUPABASE_AUTH}
         onAuthed={(nextUser) => {
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
           setUser(nextUser);
@@ -243,7 +246,15 @@ function MultiMixLoading() {
   );
 }
 
-function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) => void; initialError?: string | null }) {
+function MultiMixAuth({
+  onAuthed,
+  initialError,
+  useSupabaseAuth,
+}: {
+  onAuthed: (user: LocalUser) => void;
+  initialError?: string | null;
+  useSupabaseAuth: boolean;
+}) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -251,7 +262,7 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const canResetPassword = isSupabaseConfigured && Boolean(supabase);
+  const canResetPassword = useSupabaseAuth && Boolean(supabase);
 
   async function handleForgotPassword() {
     if (!supabase) return;
@@ -285,14 +296,14 @@ function MultiMixAuth({ onAuthed, initialError }: { onAuthed: (user: LocalUser) 
     }
 
     // Offline mock mode: no backend, accept any email.
-    if (!isApiConfigured && !isSupabaseConfigured) {
+    if (!isApiConfigured && !useSupabaseAuth) {
       onAuthed({ email: trimmedEmail });
       return;
     }
 
     setSubmitting(true);
     try {
-      if (isSupabaseConfigured && supabase) {
+      if (useSupabaseAuth && supabase) {
         // Supabase Auth.
         if (mode === "register") {
           const { data, error: err } = await supabase.auth.signUp({ email: trimmedEmail, password });
