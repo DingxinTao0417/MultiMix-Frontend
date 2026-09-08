@@ -4,7 +4,10 @@ vi.mock("@editor/core", () => ({
   EditorCore: { getInstance: vi.fn(), reset: vi.fn() },
 }));
 vi.mock("./buildProject", () => ({ buildProject: vi.fn() }));
-vi.mock("./api", () => ({ mediaUrl: (path: string) => path }));
+vi.mock("./api", () => ({
+  API_BASE: "https://api.example.test",
+  mediaUrl: (path: string) => path,
+}));
 
 import * as bootstrap from "./bootstrap";
 import type { BackendProject } from "./buildProject";
@@ -201,7 +204,7 @@ describe("hydrateAssetFilesForExport", () => {
         type: "audio" as const,
         name: bgmAsset.name,
         file_path: bgmAsset.url,
-        playback_url: signedPlaybackUrl,
+        playback_url: signedPlaybackUrl.replace("https://", "http://"),
       }],
     } as BackendProject;
     const serializedProject = {

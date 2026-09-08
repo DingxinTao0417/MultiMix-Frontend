@@ -2,7 +2,7 @@
 import { EditorCore } from "@editor/core";
 import type { BackendProject } from "./buildProject";
 import { buildProject } from "./buildProject";
-import { mediaUrl } from "./api";
+import { API_BASE, mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 
 // Progress callback while media blobs download (loaded, total).
@@ -23,6 +23,17 @@ const authorizedPlaybackUrlByMediaId: Record<string, string> = {};
 function clearAuthorizedPlaybackUrls(): void {
   for (const mediaId of Object.keys(authorizedPlaybackUrlByMediaId)) {
     delete authorizedPlaybackUrlByMediaId[mediaId];
+  }
+}
+
+function resolveAuthorizedPlaybackUrl(playbackUrl: string): string {
+  try {
+    const candidate = new URL(playbackUrl);
+    if (!candidate.pathname.startsWith("/v1/video/bgm/media/")) return playbackUrl;
+    const apiBase = new URL(API_BASE);
+    return new URL(`${candidate.pathname}${candidate.search}${candidate.hash}`, apiBase).toString();
+  } catch {
+    return playbackUrl;
   }
 }
 
@@ -282,8 +293,11 @@ export async function hydrateAssetFiles(
   clearAuthorizedPlaybackUrls();
   const playbackUrlById: Record<string, string> = {};
   for (const m of bp.media) {
-    playbackUrlById[m.id] = m.playback_url || mediaUrl(m.file_path);
-    if (m.playback_url) authorizedPlaybackUrlByMediaId[m.id] = m.playback_url;
+    const authorizedPlaybackUrl = m.playback_url
+      ? resolveAuthorizedPlaybackUrl(m.playback_url)
+      : "";
+    playbackUrlById[m.id] = authorizedPlaybackUrl || mediaUrl(m.file_path);
+    if (authorizedPlaybackUrl) authorizedPlaybackUrlByMediaId[m.id] = authorizedPlaybackUrl;
   }
 
   // Download in small batches so network isn't flooded by 30+ parallel fetches.
@@ -359,7 +373,9 @@ export async function hydrateAssetFilesForExport(
   const playbackUrlById: Record<string, string> = {};
   for (const media of bp.media) {
     playbackUrlById[media.id] =
-      media.playback_url || authorizedPlaybackUrlByMediaId[media.id] || mediaUrl(media.file_path);
+      (media.playback_url ? resolveAuthorizedPlaybackUrl(media.playback_url) : "")
+      || authorizedPlaybackUrlByMediaId[media.id]
+      || mediaUrl(media.file_path);
   }
 
   const results: MediaAsset[] = [];
