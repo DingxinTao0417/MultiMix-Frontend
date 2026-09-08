@@ -1934,7 +1934,15 @@ export default function ProductWorkspace({
         ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (
           <div className="shadcn-prototype-product-main">
             <div className={previewClassName}>
-              <ProductPreview product={product} onLongFormAction={onLongFormAction} footer={filmReviewPanel} />
+              <ProductPreview
+                product={product}
+                onLongFormAction={onLongFormAction}
+                onApplyGeneratedImage={onApplyGeneratedImage}
+                onApplyGeneratedImageSet={onApplyGeneratedImageSet}
+                selectedImageFrameId={selectedImageFrameId}
+                onSelectedImageFrameChange={onSelectedImageFrameChange}
+                footer={filmReviewPanel}
+              />
             </div>
           </div>
         ) : null}

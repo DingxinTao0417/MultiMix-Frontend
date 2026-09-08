@@ -75,6 +75,45 @@ function conversation() {
   };
 }
 
+function keyframeConversation(id = "keyframe-conversation") {
+  const product = {
+    ...assetWorkspaceAdapter.getNewConversation().product,
+    id: "asset-91",
+    backendAssetId: 91,
+    contentType: "storyboard_image",
+    mode: "image" as const,
+    title: "F01 · 开场产品特写",
+    metadata: {
+      generated_images: [1, 2, 3].map((index) => ({
+        frame_id: `F0${index}`,
+        asset_id: 200 + index,
+        intent: `分镜 ${index}`,
+        review_status: "no_issue_detected",
+        storage_ref: `local://content-assets/91/generation-jobs/1/images/${String(index).repeat(64)}.png`,
+      })),
+      image_generation_candidate_set_hash: "a".repeat(64),
+      image_generation_target: {
+        kind: "director_scene",
+        asset_id: 91,
+        version_id: 7,
+        scene_ids: ["scene-1", "scene-2", "scene-3"],
+      },
+    },
+  };
+  return {
+    ...conversation(),
+    id,
+    title: "三张连续关键帧",
+    product,
+    products: [product],
+    messages: [{
+      role: "assistant" as const,
+      text: "已生成 3 张连续关键帧。",
+      assetId: 91,
+    }],
+  };
+}
+
 function copyRow(): LibraryRow {
   return {
     assetId: 29,
@@ -605,6 +644,59 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     await waitFor(() => expect(loadSummaries).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
     expect(screen.queryByText(/后端暂时不可用，短视频创作、素材上传和保存暂不可用/)).not.toBeInTheDocument();
+  });
+
+  it("keeps an existing keyframe-set application reachable while full detail hydrates", async () => {
+    const conversationId = "keyframe-conversation";
+    const snapshot = { ...keyframeConversation(conversationId), detailsLoaded: false };
+    const detail = { ...keyframeConversation(conversationId), detailsLoaded: true };
+    let resolveDetail!: (value: typeof detail) => void;
+    const pendingDetail = new Promise<typeof detail>((resolve) => {
+      resolveDetail = resolve;
+    });
+    window.history.replaceState(null, "", `/app/assets?conversation=${conversationId}`);
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockResolvedValue([{
+      id: conversationId,
+      title: snapshot.title,
+      status: "ready",
+      metadata: {},
+      created_at: "2026-09-07T11:00:00Z",
+      updated_at: "2026-09-07T11:00:00Z",
+    }]);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSnapshot").mockResolvedValue(snapshot);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockReturnValue(pendingDetail);
+    const sendMessage = vi.spyOn(assetWorkspaceAdapter, "sendMessage").mockResolvedValue({
+      conversationId,
+      conversation: detail,
+      product: detail.product,
+      generationJob: null,
+      agentAction: null,
+    });
+
+    render(
+      <AssetsWorkspaceClient
+        basePath="/app/assets"
+        accountEmail="keyframes@multimix.local"
+        token="keyframes-token"
+        initialConversationId={conversationId}
+      />,
+    );
+
+    await screen.findAllByText("F01 · 开场产品特写");
+    const applyKeyframes = await screen.findByRole("button", { name: "将 3 张分别用于 3 个分镜" });
+    expect(applyKeyframes).toBeEnabled();
+    fireEvent.click(applyKeyframes);
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    resolveDetail(detail);
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId,
+      imageGenerationSetApplication: expect.objectContaining({
+        expectedCandidateSetHash: "a".repeat(64),
+        target: expect.objectContaining({ assetId: 91, versionId: 7 }),
+      }),
+    })));
   });
 
   it("closes subsequent write entry points after a live send connection failure", async () => {

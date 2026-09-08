@@ -613,6 +613,10 @@ export default function AssetsWorkspaceClient({
     hasToken: Boolean(token),
     connectionState: runtimeWriteConnectionState,
   }), [backendConfigured, runtimeWriteConnectionState, token]);
+  // Applying an image that the backend has already generated is a persisted,
+  // user-triggered selection. It must not be hidden behind the separate
+  // generation-availability probe while the full conversation is hydrating.
+  const canApplyExistingGeneratedImage = backendConfigured && Boolean(token);
   const handleLoadBgmCatalog = useCallback(async (assetId: number): Promise<AssetPlanBgmCatalog> => {
     const catalog = await getProjectBGMCatalog(String(assetId), token);
     return {
@@ -1864,12 +1868,30 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleApplyGeneratedImage = async (application: GeneratedImageGalleryApplication) => {
-    if (!runtimeWriteCapabilities.canGenerate || isConversationSnapshot) {
+  const hydrateConversationForImageApplication = async (): Promise<Conversation> => {
+    const current = conversationsRef.current.find(
+      (conversation) => conversation.id === selectedConversation.id,
+    ) ?? selectedConversation;
+    if (current.detailsLoaded === true) return current;
+    if (!token || current.id === "new") {
       throw new Error("当前完整对话尚未就绪，暂不能应用图片。");
     }
+    const detail = await assetWorkspaceAdapter.loadConversationDetail(token, current.id);
+    setConversations((items) => items.map((conversation) => (
+      conversation.id === detail.id
+        ? mergeProjectConversationDetail(conversation, detail)
+        : conversation
+    )));
+    return detail;
+  };
+
+  const handleApplyGeneratedImage = async (application: GeneratedImageGalleryApplication) => {
+    if (!canApplyExistingGeneratedImage) {
+      throw new Error("当前完整对话尚未就绪，暂不能应用图片。");
+    }
+    const conversation = await hydrateConversationForImageApplication();
     await handleSendConversationMessage(
-      selectedConversation,
+      conversation,
       application.target.kind === "cover" ? "将这张图片设为封面" : "将这张图片应用到分镜",
       undefined,
       [],
@@ -1898,11 +1920,12 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleApplyGeneratedImageSet = async (application: GeneratedImageGallerySetApplication) => {
-    if (!runtimeWriteCapabilities.canGenerate || isConversationSnapshot) {
+    if (!canApplyExistingGeneratedImage) {
       throw new Error("当前完整对话尚未就绪，暂不能应用关键帧组。");
     }
+    const conversation = await hydrateConversationForImageApplication();
     await handleSendConversationMessage(
-      selectedConversation,
+      conversation,
       `将 ${application.assignments.length} 张图片分别应用到分镜`,
       undefined,
       [],
@@ -3190,12 +3213,12 @@ export default function AssetsWorkspaceClient({
                       : (selection) => handleApplyCreativeDirection(selectedProduct, selection)
                   }
                   onApplyGeneratedImage={
-                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                    !canApplyExistingGeneratedImage
                       ? undefined
                       : handleApplyGeneratedImage
                   }
                   onApplyGeneratedImageSet={
-                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                    !canApplyExistingGeneratedImage
                       ? undefined
                       : handleApplyGeneratedImageSet
                   }
