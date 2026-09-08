@@ -72,6 +72,7 @@ function makeBgmProject(): BackendProject {
         duration: 10,
         mediaId: 'media-bgm',
         volume: 0.18,
+        volumeUnit: 'linear',
         animations,
       }],
     }],
@@ -148,8 +149,11 @@ describe('BGM editor round-trip', () => {
     const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
     const element = serialized.tracks[0].elements[0];
 
-    expect(element.volume).toBe(0.18);
-    expect(element.animations).toEqual(animations);
+    expect(element.volume).toBeCloseTo(0.18, 12);
+    expect(element.volumeUnit).toBe('linear');
+    const savedVolumeKeyframes = element.animations?.channels.volume?.keyframes ?? [];
+    expect(savedVolumeKeyframes[0]?.value).toBe(0);
+    expect(savedVolumeKeyframes[1]?.value).toBeCloseTo(0.18, 12);
     expect(serialized.media[0].file_path).toBe('bgm://bgm-tech-01');
     expect(serialized.media[0]).not.toHaveProperty('playback_url');
   });

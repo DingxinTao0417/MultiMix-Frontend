@@ -572,6 +572,10 @@ export const editDecisionByElementId: Record<string, BackendEditDecision> = {};
 export const editExecutionByElementId: Record<string, BackendEditExecution> = {};
 export const editOverlayKindByElementId: Record<string, string> = {};
 export const textRoleByElementId: Record<string, NonNullable<BackendElement["textRole"]>> = {};
+export const audioVolumeUnitByElementId: Record<
+  string,
+  NonNullable<BackendElement["volumeUnit"]>
+> = {};
 export const presenterEventByElementId: Record<string, {
   eventId: string;
   eventType?: string;
@@ -619,6 +623,7 @@ export function copyElementPersistenceMetadata(
   copy(editExecutionByElementId);
   copy(editOverlayKindByElementId);
   copy(textRoleByElementId);
+  copy(audioVolumeUnitByElementId);
   copy(presenterEventByElementId);
   copy(derivedPresenterReframeByElementId);
 }
@@ -1538,6 +1543,9 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
       if (e.editExecution) editExecutionByElementId[e.id] = e.editExecution;
       if (e.editOverlayKind) editOverlayKindByElementId[e.id] = e.editOverlayKind;
       if (e.textRole) textRoleByElementId[e.id] = e.textRole;
+      if (e.type === "audio" && e.volumeUnit) {
+        audioVolumeUnitByElementId[e.id] = e.volumeUnit;
+      }
       if (e.eventId) {
         presenterEventByElementId[e.id] = {
           eventId: e.eventId,
@@ -1763,6 +1771,7 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     editExecutionByElementId,
     editOverlayKindByElementId,
     textRoleByElementId,
+    audioVolumeUnitByElementId,
     presenterEventByElementId,
     presenterEventsByTrackId,
     derivedPresenterReframeByElementId,

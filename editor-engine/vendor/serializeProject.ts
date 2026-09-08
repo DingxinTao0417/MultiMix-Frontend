@@ -5,7 +5,9 @@
 // buildProject.ts.
 import type { EditorCore } from "@editor/core";
 import type { ElementAnimations } from "@editor/lib/animation/types";
+import { VOLUME_DB_MIN } from "@editor/lib/timeline/audio-constants";
 import {
+  audioVolumeUnitByElementId,
   displayTextByElementId,
   editDecisionByElementId,
   editExecutionByElementId,
@@ -85,8 +87,16 @@ function serializeElement(el: {
     if (el.animations) out.animations = el.animations;
   }
   if (el.type === "audio") {
-    out.volume = el.volume ?? 1;
-    if (el.animations) out.animations = el.animations;
+    const volumeUnit = audioVolumeUnitByElementId[el.id];
+    out.volume = volumeUnit === "linear"
+      ? editorDbToLinearGain(el.volume ?? 0)
+      : (el.volume ?? 1);
+    if (volumeUnit) out.volumeUnit = volumeUnit;
+    if (el.animations) {
+      out.animations = volumeUnit === "linear"
+        ? audioAnimationsForBackend(el.animations)
+        : el.animations;
+    }
   }
   const editExecution = editExecutionByElementId[el.id];
   if (visual && el.transform) out.transform = el.transform;
@@ -137,6 +147,29 @@ function serializeElement(el: {
   if (textRole) out.textRole = textRole;
   if (presenterEvent) Object.assign(out, presenterEvent);
   return out;
+}
+
+function editorDbToLinearGain(value: number): number {
+  if (!Number.isFinite(value) || value <= VOLUME_DB_MIN) return 0;
+  return 10 ** (value / 20);
+}
+
+function audioAnimationsForBackend(animations: ElementAnimations): ElementAnimations {
+  const volume = animations.channels.volume;
+  if (!volume || volume.valueKind !== "number") return animations;
+  return {
+    ...animations,
+    channels: {
+      ...animations.channels,
+      volume: {
+        ...volume,
+        keyframes: volume.keyframes.map((keyframe) => ({
+          ...keyframe,
+          value: editorDbToLinearGain(keyframe.value),
+        })),
+      },
+    },
+  };
 }
 
 function normalizedEditorTransition(
