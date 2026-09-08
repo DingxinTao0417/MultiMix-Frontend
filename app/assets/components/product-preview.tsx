@@ -349,9 +349,18 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 
   if (product.mode === "copy") {
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
+    const recommendedSegments = product.segments?.some(
+      (segment) => Boolean(segment.imageGenerationRecommendation),
+    );
     return (
       <>
         <MarkdownProductDocument markdown={markdown} />
+        {recommendedSegments ? (
+          <SegmentCards
+            segments={product.segments ?? []}
+            onGenerateKeyframe={onGenerateKeyframe}
+          />
+        ) : null}
         {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </>
     );

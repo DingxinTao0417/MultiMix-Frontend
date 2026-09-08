@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ProductPreview, { browseBgmSummary } from "../components/product-preview";
 import ProductWorkspace from "../components/product-workspace";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import type { AssetProduct } from "../lib/asset-workspace-types";
 import * as brandImageExport from "../lib/brand-image-export";
 import type { VideoQualityReport } from "../lib/video-quality";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
@@ -74,6 +75,38 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("article")).toHaveTextContent("连续文字正文");
     expect(screen.queryByLabelText(/视频工程预览|成片播放/)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("分镜摘要")).not.toBeInTheDocument();
+  });
+
+  it("keeps the director script readable and exposes persisted keyframe recommendations", () => {
+    const onGenerateKeyframe = vi.fn();
+    const product: AssetProduct = {
+      ...displayProducts["case-01-director-draft"],
+      mode: "copy" as const,
+      markdownBody: "# 口红带货编导稿\n\n真人拿起口红并自然试色。",
+      segments: [{
+        id: "segment-lipstick",
+        index: 1,
+        title: "真人试色",
+        line: "拿起口红，对镜自然涂抹。",
+        isFallback: false,
+        imageGenerationRecommendation: {
+          recommendationId: "flux-clip-lipstick",
+          fingerprint: "a".repeat(64),
+          referenceAssetId: 1416,
+          count: 1,
+          ratio: "9:16",
+          reason: "用起始关键帧固定口红外观和手部动作。",
+          riskFlags: ["hand_contact"],
+        },
+      }],
+    };
+
+    render(<ProductPreview product={product} onGenerateKeyframe={onGenerateKeyframe} />);
+
+    expect(screen.getByRole("article")).toHaveTextContent("真人拿起口红并自然试色");
+    expect(screen.getByLabelText("分镜摘要")).toHaveTextContent("建议生成 1 张关键帧");
+    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
+    expect(onGenerateKeyframe).toHaveBeenCalledWith(product.segments![0]);
   });
 
   it.each([
