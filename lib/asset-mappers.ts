@@ -834,7 +834,7 @@ function imageGenerationRecommendationValue(
   const recommendationId = stringValue(value.recommendation_id);
   const fingerprint = stringValue(value.fingerprint);
   const referenceAssetId = positiveIntegerValue(value.reference_asset_id);
-  const count = positiveIntegerValue(value.count);
+  const count = positiveIntegerValue(value.keyframe_count) ?? positiveIntegerValue(value.count);
   const ratio = stringValue(value.ratio);
   const reason = stringValue(value.reason);
   if (
@@ -865,9 +865,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     planScenes.map((scene) => [stringValue(scene.id), scene] as const).filter(([id]) => id),
   );
   const imageGenerationRecommendationsByScene = new Map(
-    (Array.isArray(videoPlan?.image_generation_recommendations)
-      ? videoPlan.image_generation_recommendations
-      : [])
+    (Array.isArray(videoPlan?.generated_clip_recommendations)
+      ? videoPlan.generated_clip_recommendations
+      : Array.isArray(videoPlan?.image_generation_recommendations)
+        ? videoPlan.image_generation_recommendations
+        : [])
       .flatMap((recommendation) => {
         const normalized = imageGenerationRecommendationValue(recommendation);
         const sceneId = isRecord(recommendation) ? stringValue(recommendation.scene_id) : "";

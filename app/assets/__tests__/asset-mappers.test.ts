@@ -1137,6 +1137,45 @@ describe("asset product mapper", () => {
     expect(product.segments?.[1]?.imageGenerationRecommendation).toBeUndefined();
   });
 
+  it("maps the generated-clip authority as one keyframe for its scene", () => {
+    const product = contentAssetToProduct(asset({
+      metadata: {
+        capability: "video_script",
+        video_workflow_stage: "director_script_draft",
+        video_plan: {
+          scenes: [
+            { id: "scene-generated", title: "真人使用", asset_reference: { status: "no_asset_hit" } },
+            { id: "scene-static", title: "片尾", asset_reference: { status: "matched" } },
+          ],
+          generated_clip_recommendations: [{
+            recommendation_id: "flux-clip-clip-use-abcdef1234567890",
+            fingerprint: "b".repeat(64),
+            scene_id: "scene-generated",
+            clip_id: "clip-use",
+            reference_asset_id: 72,
+            duration_seconds: 6,
+            keyframe_count: 1,
+            ratio: "9:16",
+            reason: "该动作片段需要一个明确起始状态。",
+            risk_flags: ["hand_contact"],
+            requires_confirmation: true,
+          }],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]?.imageGenerationRecommendation).toEqual({
+      recommendationId: "flux-clip-clip-use-abcdef1234567890",
+      fingerprint: "b".repeat(64),
+      referenceAssetId: 72,
+      count: 1,
+      ratio: "9:16",
+      reason: "该动作片段需要一个明确起始状态。",
+      riskFlags: ["hand_contact"],
+    });
+    expect(product.segments?.[1]?.imageGenerationRecommendation).toBeUndefined();
+  });
+
   it("maps a persisted generated primary visual as available scene media", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
