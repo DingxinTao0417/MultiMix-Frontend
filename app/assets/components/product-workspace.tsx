@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
-import { videoJobStageLabel } from "../../../lib/asset-mappers";
 import { API_BASE, getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
 import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
@@ -395,9 +394,6 @@ export default function ProductWorkspace({
     liveVideoJobFailed
     || product.productStatus === "failed"
   );
-  // The pending pill still surfaces the coarse stage label; the step-by-step
-  // timeline itself is owned by the conversation, not the display area.
-  const liveStageLabel = videoJobStageLabel(videoJobLive?.workflowStage ?? "queued");
   const failureDetail = videoJobLive?.failureReason
     || product.failureReason
     || videoJobLive?.errorMessage
@@ -1296,6 +1292,11 @@ export default function ProductWorkspace({
     "shadcn-prototype-artifact",
     showGeneratingVisuals ? "generating" : ""
   ].filter(Boolean).join(" ");
+  const productClassName = [
+    "shadcn-prototype-product",
+    hasVideoProject ? "video-project-mode" : "",
+    !isTextEditing && creativeDirection ? "has-creative-direction" : "",
+  ].filter(Boolean).join(" ");
 
   const reviewPlan = product.metadata?.video_plan;
   const reviewVideoType = String(recordValue(reviewPlan)?.video_type ?? "");
@@ -1329,7 +1330,7 @@ export default function ProductWorkspace({
       aria-label="Current product workspace"
       onClickCapture={handleSourceEvidenceClickCapture}
     >
-      <div className={hasVideoProject ? "shadcn-prototype-product video-project-mode" : "shadcn-prototype-product"}>
+      <div className={productClassName}>
         <header className="shadcn-prototype-product-header">
           <div>
             <h3>
@@ -1621,11 +1622,6 @@ export default function ProductWorkspace({
                 ]}
                 onSelect={handleExportVideo}
               />
-            ) : null}
-            {orchestrationPending ? (
-              <span className="shadcn-prototype-product-pending" aria-live="polite">
-                {liveStageLabel}
-              </span>
             ) : null}
             {!editableTextArtifact ? (
               <button type="button" onClick={() => void onSaveProduct(product)}>
@@ -1990,7 +1986,7 @@ export default function ProductWorkspace({
           />
         ) : null}
 
-        {!hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
+        {!orchestrationPending && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}

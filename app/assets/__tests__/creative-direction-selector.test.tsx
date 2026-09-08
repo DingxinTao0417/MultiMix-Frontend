@@ -2,6 +2,8 @@
 
 import "@testing-library/jest-dom/vitest";
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +17,7 @@ afterEach(() => {
 });
 
 const fingerprint = `sha256:${"a".repeat(64)}`;
+const globalsCss = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
 const creativeDirection = {
   schema_version: "creative_direction:v1",
   fingerprint,
@@ -177,5 +180,44 @@ describe("creative direction candidate choice", () => {
     );
 
     expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
+  });
+
+  it("reserves a dedicated product row and owns semantic styles for the direction panel", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const genericProduct = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      markdownBody: "# 编导稿\n\n连续正文",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          video_type: "explainer",
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onApplyCreativeDirection={vi.fn(async () => undefined)}
+        product={genericProduct}
+        selectedConversation={conversationForDisplayProduct(genericProduct)}
+      />,
+    );
+
+    const directionRegion = screen.getByRole("region", { name: "创意方向" });
+    expect(directionRegion).toHaveClass("shadcn-prototype-creative-direction");
+    expect(directionRegion.closest(".shadcn-prototype-product")).toHaveClass("has-creative-direction");
+    expect(globalsCss).toMatch(
+      /\.shadcn-prototype-product\.has-creative-direction\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto;/s,
+    );
+    expect(globalsCss).toMatch(
+      /\.shadcn-prototype-creative-direction\s*\{[^}]*min-height:\s*0;[^}]*max-height:\s*min\(42vh,\s*360px\);[^}]*overflow-y:\s*auto;/s,
+    );
   });
 });

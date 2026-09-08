@@ -27,7 +27,17 @@ const product = {
   original_ref: null,
   markdown_ref: null,
   content_hash: "sha256:creative-direction-e2e",
-  body: "# 产品介绍\n\n这是已经按推荐方向生成的编导稿。",
+  body: [
+    "# 产品介绍",
+    "## 方案摘要",
+    "这是已经按推荐方向生成的编导稿，用于验证长正文仍与创意方向卡片保持清晰分隔。",
+    ...Array.from({ length: 10 }, (_, index) => [
+      `## ${index + 1}. 分镜段落`,
+      "- 口播：围绕产品价值展开完整说明",
+      "- 画面：使用已保存素材呈现产品细节与使用场景",
+      "- 节奏：保持信息清晰、段落连续且正文可滚动",
+    ].join("\n")),
+  ].join("\n\n"),
   metadata: {
     capability: "video_script",
     capability_label: "编导文稿",
@@ -174,6 +184,29 @@ async function installFixtureApi(page: Page) {
   });
 }
 
+async function expectDirectionPanelSeparatedFromDocument(page: Page) {
+  const selector = page.getByRole("region", { name: "创意方向" });
+  const document = page.locator(".shadcn-prototype-copy-document");
+  const reason = selector.getByText(/推荐理由：/);
+  const [selectorBox, documentBox, reasonBox, panelLayout] = await Promise.all([
+    selector.boundingBox(),
+    document.boundingBox(),
+    reason.boundingBox(),
+    selector.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      overflowY: getComputedStyle(element).overflowY,
+    })),
+  ]);
+
+  expect(selectorBox).not.toBeNull();
+  expect(documentBox).not.toBeNull();
+  expect(reasonBox).not.toBeNull();
+  expect(panelLayout.clientHeight).toBeGreaterThan(0);
+  expect(panelLayout.overflowY).toBe("auto");
+  expect(selectorBox!.y + selectorBox!.height).toBeLessThanOrEqual(documentBox!.y + 1);
+  expect(reasonBox!.y + reasonBox!.height).toBeLessThanOrEqual(documentBox!.y + 1);
+}
+
 test("creative directions stay optional until a user explicitly applies one", async ({ page }) => {
   await installFixtureApi(page);
   await page.goto(`/app/assets?conversation=${conversationId}`);
@@ -182,6 +215,7 @@ test("creative directions stay optional until a user explicitly applies one", as
   await expect(selector).toBeVisible();
   await expect(selector.getByText("结果先行", { exact: true })).toBeVisible();
   await expect(selector.getByText("问题推进", { exact: true })).toHaveCount(0);
+  await expectDirectionPanelSeparatedFromDocument(page);
 
   let submissionCount = 0;
   page.on("request", (request) => {
@@ -191,6 +225,13 @@ test("creative directions stay optional until a user explicitly applies one", as
   });
   await selector.getByRole("button", { name: "查看其他方向" }).click();
   await expect(selector.getByText("问题推进", { exact: true })).toBeVisible();
+  const [expandedSelectorBox, expandedDocumentBox] = await Promise.all([
+    selector.boundingBox(),
+    page.locator(".shadcn-prototype-copy-document").boundingBox(),
+  ]);
+  expect(expandedSelectorBox).not.toBeNull();
+  expect(expandedDocumentBox).not.toBeNull();
+  expect(expandedSelectorBox!.y + expandedSelectorBox!.height).toBeLessThanOrEqual(expandedDocumentBox!.y + 1);
   expect(submissionCount).toBe(0);
 
   const responsePromise = page.waitForResponse((response) => (
