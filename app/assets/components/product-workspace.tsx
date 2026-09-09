@@ -399,8 +399,10 @@ export default function ProductWorkspace({
     || videoJobLive?.errorMessage
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
+  const failureAction = videoJobLive?.failureAction || product.failureAction;
   const replacementSceneId = videoJobLive?.failureSceneId || product.failureSceneId;
   const canReplaceFailedScene = Boolean(product.backendAssetId && replacementSceneId);
+  const retrySceneNumber = /^(?:seg|scene)-(\d+)$/.exec(replacementSceneId || "")?.[1];
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
   // Demo-final video surfaces (workspace-video.html): "browse" (player when an
   // MP4 exists, otherwise segment cards from video_project) is the default;
@@ -1879,7 +1881,7 @@ export default function ProductWorkspace({
               <strong>视频失败</strong>
               <p>{failureDetail || "任务在后台执行时出错，工程未能生成。"}</p>
               <div className="shadcn-prototype-video-failed-actions">
-                {product.failureAction === "replace_scene_asset" || videoJobLive?.failureAction === "replace_scene_asset" ? (
+                {failureAction === "replace_scene_asset" ? (
                   <button
                     type="button"
                     className="primary"
@@ -1897,7 +1899,7 @@ export default function ProductWorkspace({
                   >
                     重新寻找该镜素材
                   </button>
-                ) : product.failureAction === "modify_script" || videoJobLive?.failureAction === "modify_script" ? (
+                ) : failureAction === "modify_script" ? (
                   <button
                     type="button"
                     className="primary"
@@ -1919,7 +1921,11 @@ export default function ProductWorkspace({
                       }
                     }}
                   >
-                    {retrying ? "重试中…" : "↻ 重试生成"}
+                    {retrying
+                      ? "重试中…"
+                      : failureAction === "retry_scene_generation"
+                        ? `确认付费，只重做${retrySceneNumber ? `第 ${retrySceneNumber} 镜` : "该镜"}`
+                        : "↻ 重试生成"}
                   </button>
                 ) : null}
                 <button

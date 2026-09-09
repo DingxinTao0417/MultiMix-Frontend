@@ -92,6 +92,14 @@ export type AssetProductSegment = {
   isPresenter?: boolean;
   presenterEvents?: AssetPresenterVisualEvent[];
   presenterMaterialGap?: string;
+  executionStrategy?: {
+    schemaVersion: "scene_execution_strategy_v1";
+    mode: "material_video" | "static_image_animation" | "ai_generated_video" | "graphics_primary";
+    label: "素材视频" | "静态图动画" | "AI 生成视频" | "图形主画面";
+    requiresKeyframe: boolean;
+    retryScope: "scene" | "none";
+    selectionReason?: string;
+  };
   imageGenerationRecommendation?: {
     recommendationId: string;
     fingerprint: string;
@@ -168,11 +176,11 @@ export type AssetProduct = {
   // stages stay in execution details and must not be rendered as product state.
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string;
-  failureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
   failureSceneId?: string;
   operationStatus?: "generating" | "completed" | "failed";
   operationFailureReason?: string;
-  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
   operationFailureSceneId?: string;
   summary: string;
   ratio: string;

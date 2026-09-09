@@ -200,11 +200,11 @@ export type ContentAsset = {
   product_status?: "generating" | "completed" | "failed" | null;
   product_completed?: boolean;
   failure_reason?: string | null;
-  failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   failure_scene_id?: string | null;
   operation_status?: "generating" | "completed" | "failed" | null;
   operation_failure_reason?: string | null;
-  operation_failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operation_failure_scene_id?: string | null;
   created_at: string;
   updated_at: string;

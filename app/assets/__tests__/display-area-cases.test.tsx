@@ -429,6 +429,30 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
   });
 
+  it("makes the paid scene-only H3 retry explicit before dispatch", async () => {
+    const onRetryVideoJob = vi.fn(async () => undefined);
+    const product: AssetProduct = {
+      ...displayProducts["case-05-project-failed"],
+      failureAction: "retry_scene_generation",
+      failureSceneId: "scene-2",
+      failureReason: "第 2 镜未通过检查。只重做这一镜；本次费用最高 US$0.75。",
+    };
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={onRetryVideoJob}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("本次费用最高 US$0.75");
+    fireEvent.click(screen.getByRole("button", { name: "确认付费，只重做第 2 镜" }));
+    await waitFor(() => expect(onRetryVideoJob).toHaveBeenCalledWith(product));
+  });
+
   it("does not offer a blind retry when a confirmed source file is missing", () => {
     const base = displayProducts["case-05-project-failed"];
     render(<ProductPreview product={{

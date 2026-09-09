@@ -1258,6 +1258,41 @@ describe("asset product mapper", () => {
     });
   });
 
+  it("maps the backend scene execution strategy without re-inferring it", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      metadata: {
+        capability: "video_project",
+        video_plan: {
+          scenes: [{
+            id: "scene-ai-video",
+            title: "真人试用",
+            narration: "自然试用产品。",
+            execution_strategy: {
+              schema_version: "scene_execution_strategy_v1",
+              mode: "ai_generated_video",
+              label: "AI 生成视频",
+              requires_keyframe: true,
+              retry_scope: "scene",
+              selection_reason: "动作和商品需要保持一致。",
+            },
+          }],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]?.executionStrategy).toEqual({
+      schemaVersion: "scene_execution_strategy_v1",
+      mode: "ai_generated_video",
+      label: "AI 生成视频",
+      requiresKeyframe: true,
+      retryScope: "scene",
+      selectionReason: "动作和商品需要保持一致。",
+    });
+  });
+
   it("keeps export availability and local operation failure separate from product status", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",

@@ -911,6 +911,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       : isRecord(planScene?.primary_visual_strategy)
         ? planScene.primary_visual_strategy
         : null;
+    const executionStrategy = isRecord(segment.execution_strategy)
+      ? segment.execution_strategy
+      : isRecord(planScene?.execution_strategy)
+        ? planScene.execution_strategy
+        : null;
     const replacement = isRecord(segment.public_candidate_replacement)
       ? segment.public_candidate_replacement
       : isRecord(planScene?.public_candidate_replacement)
@@ -1005,6 +1010,23 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       presenterMaterialGap: isPresenter
         ? stringValue(materialGap?.message) || undefined
         : undefined,
+      executionStrategy: (() => {
+        const mode = stringValue(executionStrategy?.mode);
+        const label = stringValue(executionStrategy?.label);
+        if (
+          stringValue(executionStrategy?.schema_version) !== "scene_execution_strategy_v1"
+          || !["material_video", "static_image_animation", "ai_generated_video", "graphics_primary"].includes(mode)
+          || !["素材视频", "静态图动画", "AI 生成视频", "图形主画面"].includes(label)
+        ) return undefined;
+        return {
+          schemaVersion: "scene_execution_strategy_v1",
+          mode: mode as NonNullable<AssetProductSegment["executionStrategy"]>["mode"],
+          label: label as NonNullable<AssetProductSegment["executionStrategy"]>["label"],
+          requiresKeyframe: executionStrategy?.requires_keyframe === true,
+          retryScope: executionStrategy?.retry_scope === "scene" ? "scene" : "none",
+          selectionReason: stringValue(executionStrategy?.selection_reason) || undefined,
+        };
+      })(),
       imageGenerationRecommendation,
     };
   });
@@ -1109,11 +1131,11 @@ function productLifecycleFromAsset(
 ): {
   status: ProductLifecycleStatus;
   failureReason?: string;
-  failureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
   failureSceneId?: string;
   operationStatus?: ProductLifecycleStatus;
   operationFailureReason?: string;
-  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset";
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
   operationFailureSceneId?: string;
 } | undefined {
   const isVideo = asset.content_type === "video_project";

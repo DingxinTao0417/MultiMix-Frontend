@@ -798,11 +798,11 @@ export type VideoJobResult = {
   productStatus?: "generating" | "completed" | "failed";
   productCompleted: boolean;
   failureReason?: string | null;
-  failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
   operationStatus?: "generating" | "completed" | "failed" | null;
   operationFailureReason?: string | null;
-  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operationFailureSceneId?: string | null;
 };
 
@@ -822,11 +822,11 @@ type RawVideoJob = {
   product_status?: "generating" | "completed" | "failed";
   product_completed?: boolean;
   failure_reason?: string | null;
-  failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   failure_scene_id?: string | null;
   operation_status?: "generating" | "completed" | "failed" | null;
   operation_failure_reason?: string | null;
-  operation_failure_action?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operation_failure_scene_id?: string | null;
 };
 

@@ -218,11 +218,11 @@ export type VideoJobLiveStatus = {
   productStatus?: "generating" | "completed" | "failed";
   productCompleted?: boolean;
   failureReason?: string | null;
-  failureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   failureSceneId?: string | null;
   operationStatus?: "generating" | "completed" | "failed" | null;
   operationFailureReason?: string | null;
-  operationFailureAction?: "retry" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operationFailureSceneId?: string | null;
 };
 
