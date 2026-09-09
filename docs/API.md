@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-08
+> Last verified: 2026-09-09
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -916,7 +916,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - 后端校验当前发布 candidate 绑定后，才异步发布并渲染一个下一候选；陈旧 ID、没有未发布候选或重复请求不得回放当前方案伪装新版本。成功结果进入普通版本历史，可撤销、恢复。
 - 运行时间线中活动阶段的“用时”从该阶段最新 `occurred_at` 计算；整项任务总耗时只有在明确展示总时长的组件中才从 job `started_at` 计算。断连恢复不得把历史等待时间显示成当前阶段耗时。
-- 口播识别以 `metadata.video_plan.video_type == "presenter"` 为准，不读取顶层同名兼容字段。
+- 真人原片能力以 `metadata.video_plan.creative_profile` 的结构事实为准：`task_mode=repurpose`、`anchor_source=presenter_video`、`preserve_source_audio=true`。前端不根据标题、文案、音轨或旧类型字段猜测。
 - Agent 修改已有口播文案时，`video.presenter.edit` 的 `correct_verbatim` 必须包含 `spoken_script_resolution=screen_text_only|ai_voice|reupload_recording`。缺失选择由 Agent 追问；AI 配音不可用或新录音尚未上传时不修改稳定工程。
 
 ### 12.3 统一分镜素材候选端点（三入口共用）
@@ -1147,7 +1147,7 @@ npm run test:display-coverage
 - 独立的 `operation_status` 与 `operation_failure_*` 用于局部修改；失败时继续展示上一稳定工程
 - `visual_treatment=material_primary | material_enhanced | graphics_primary`，分别显示“素材 / 素材加图形或素材处理 / 图形主画面”
 
-前端不得根据 MP4、可编辑性、MG 状态、素材来源或内部 job stage 二次推断产品状态与逐镜呈现。`video_type`、策略版本、摘要和 activation 只属于后台，不进入用户侧类型或状态。
+前端不得根据 MP4、可编辑性、MG 状态、素材来源或内部 job stage 二次推断产品状态与逐镜呈现。`creative_profile`、`scene_execution`、策略版本和摘要均消费服务端公开投影；前端只校验合同和展示，不二次判断内容目的、风格或制作模式。`source_excerpt` 的专用内部类型不进入常规创作选择。
 
 `AssetProductSegment` 可从 `primary_visual_strategy` 和素材替换审计映射：
 
@@ -1161,7 +1161,7 @@ npm run test:display-coverage
 
 ## 14. 编导与成片审阅
 
-`lib/video-project-client.ts` 提供以下认证接口；当前覆盖 explainer / presenter 及兼容的历史工程。
+`lib/video-project-client.ts` 提供以下认证接口；当前覆盖五层普通视频工程及专用 `source_excerpt` 工程。
 
 | 接口 | 行为 |
 | --- | --- |

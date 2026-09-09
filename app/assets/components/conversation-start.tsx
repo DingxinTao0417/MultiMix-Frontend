@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
-import { ArrowUp, ExternalLink, FileText, Image as ImageIcon, Sparkles, Square, Video } from "lucide-react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { ArrowUp, FileText, Image as ImageIcon, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, shouldSubmitComposerOnEnter, type Conversation } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
@@ -27,30 +27,66 @@ const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想
 const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
 const ATTACHMENT_HELP_TEXT = "图片和视频会作为创作素材，PDF/文档会作为内容依据；视频也可以作为需要优化的口播原片。";
 
-// Primary task cards fill a bounded user intent. Unknown labels degrade to a
-// title-only card so the client never invents a creation instruction.
-const SUGGESTION_PRESETS: Record<string, { hint?: string; fill?: string }> = {
-  "制作讲解型视频": {
-    hint: "把概念、过程或结果讲清楚",
-    fill: "制作一条讲解型视频，先根据我的素材和目标确认比例、时长与配音。",
-  },
-  "优化真人口播视频": {
-    hint: "保留原声，优化节奏和画面包装",
-    fill: "优化一条真人口播视频，保留原声；我会上传需要处理的口播视频。",
-  },
-};
-const SUGGESTION_EVENT_KEYS: Record<string, string> = {
-  "制作讲解型视频": "explainer-video",
-  "优化真人口播视频": "presenter-video",
-};
+const START_CAPABILITIES = [
+  "我的素材",
+  "AI 生成镜头",
+  "公开素材",
+  "图形动画",
+  "口播优化",
+  "配音与音乐",
+] as const;
 
-function suggestionIcon(label: string): ReactNode {
-  if (/视频|口播/.test(label)) return <Video size={15} aria-hidden="true" />;
-  if (/种草|好评|分享/.test(label)) return <ExternalLink size={15} aria-hidden="true" />;
-  if (/图|封面/.test(label)) return <ImageIcon size={15} aria-hidden="true" />;
-  if (/文案|帖|资料|稿/.test(label)) return <FileText size={15} aria-hidden="true" />;
-  return <Sparkles size={15} aria-hidden="true" />;
-}
+const START_GOALS = [
+  {
+    key: "goal-explain",
+    title: "讲清楚",
+    hint: "概念、过程或结果",
+    imageClass: "goal-explain",
+    fill: "把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。",
+  },
+  {
+    key: "goal-promote",
+    title: "推广产品",
+    hint: "商品、服务或品牌",
+    imageClass: "goal-promote",
+    fill: "推广一个产品或品牌。请结合我的素材与目标用户，设计有吸引力但不过度广告化的视频。",
+  },
+  {
+    key: "goal-story",
+    title: "讲个故事",
+    hint: "人物、物品或过程",
+    imageClass: "goal-story",
+    fill: "用我提供的素材讲一个完整故事。请先规划开场、转折和结尾，再决定需要生成哪些镜头。",
+  },
+  {
+    key: "goal-optimize",
+    title: "优化已有视频",
+    hint: "保留主体和原声",
+    imageClass: "goal-optimize",
+    fill: "优化我上传的视频，尽量保留原有内容和声音，改善节奏、画面与包装。",
+  },
+] as const;
+
+const START_EXAMPLES = [
+  {
+    key: "example-image",
+    tag: "只有一张图片",
+    prompt: "用我上传的口红图片，制作一条 15 秒生活化带货视频。要有真人使用、产品特写、自然口播和轻快背景音乐，不要字幕。",
+    outcome: "系统补充镜头与画面变化",
+  },
+  {
+    key: "example-document",
+    tag: "只有一份资料",
+    prompt: "把我上传的产品介绍做成一条 30 秒讲解视频，使用公开素材补充场景，并用图形动画展示关键数据。",
+    outcome: "系统查找素材并设计动画",
+  },
+  {
+    key: "example-video",
+    tag: "只有一段原视频",
+    prompt: "优化我上传的真人口播，保留原声和人物主体，压缩停顿与重复内容，并补充相关产品画面。",
+    outcome: "系统剪辑、补画面与包装",
+  },
+] as const;
 
 function greetingLabel(): string {
   const hour = new Date().getHours();
@@ -62,7 +98,6 @@ function greetingLabel(): string {
 }
 
 export default function ConversationStart({
-  suggestions,
   onSend,
   conversation,
   accountName,
@@ -93,6 +128,8 @@ export default function ConversationStart({
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+  const [showGoalExplanation, setShowGoalExplanation] = useState(false);
   const [errorNotice, setErrorNotice] = useState<{ message: string | null; revision: number }>({
     message: null,
     revision: 0,
@@ -218,6 +255,19 @@ export default function ConversationStart({
     });
   };
 
+  const selectStarter = (
+    key: string,
+    fill: string,
+    { isGoal }: { isGoal: boolean },
+  ) => {
+    setSelectedGoal(isGoal ? key : null);
+    void trackProductEvent(token, {
+      eventName: "recommendation_selected",
+      properties: { recommendation_key: key },
+    });
+    fillComposer(fill);
+  };
+
   return (
     <section
       className="shadcn-prototype-start"
@@ -234,7 +284,7 @@ export default function ConversationStart({
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>新建视频项目</h1>
-        <p className="shadcn-prototype-start-sub">选择一种创作方式，随后可在同一对话里持续补素材、改文案和生成视频</p>
+        <p className="shadcn-prototype-start-sub">上传素材或直接描述目标，系统会组合合适的制作能力</p>
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
@@ -391,37 +441,76 @@ export default function ConversationStart({
         >
           {errorNotice.message ? <span key={errorNotice.revision}>{errorNotice.message}</span> : null}
         </p>
-        {suggestions.length > 0 ? (
-          <div className="shadcn-prototype-start-sugg-grid" aria-label="推荐指令">
-            {suggestions.map((suggestion, index) => {
-              const preset = SUGGESTION_PRESETS[suggestion];
-              return (
-                <button
-                  type="button"
-                  className="shadcn-prototype-start-sugg-card"
-                  key={suggestion}
-                  disabled={sending}
-                  onClick={() => {
-                    void trackProductEvent(token, {
-                      eventName: "recommendation_selected",
-                      properties: {
-                        recommendation_key: SUGGESTION_EVENT_KEYS[suggestion]
-                          ?? `recommendation-${index + 1}`,
-                      },
-                    });
-                    fillComposer(preset?.fill ?? suggestion);
-                  }}
-                >
-                  <span className="ic">{suggestionIcon(suggestion)}</span>
-                  <span className="tx">
-                    <span className="t">{suggestion}</span>
-                    {preset?.hint ? <span className="s">{preset.hint}</span> : null}
-                  </span>
-                </button>
-              );
-            })}
+        <section className="shadcn-prototype-start-capabilities" aria-label="可组合的视频制作能力">
+          <span className="shadcn-prototype-start-capability-label">可组合能力</span>
+          <span className="shadcn-prototype-start-capability-list">
+            {START_CAPABILITIES.map((capability) => (
+              <span className="shadcn-prototype-start-capability" key={capability}>
+                <i aria-hidden="true" />{capability}
+              </span>
+            ))}
+          </span>
+        </section>
+        <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-goals">
+          <div className="shadcn-prototype-start-section-head">
+            <h2 id="conversation-start-goals">不知道怎么描述？从一个目标开始</h2>
+            <button
+              type="button"
+              aria-expanded={showGoalExplanation}
+              onClick={() => setShowGoalExplanation((current) => !current)}
+            >
+              这些会限制制作方式吗？
+            </button>
           </div>
-        ) : null}
+          {showGoalExplanation ? (
+            <p className="shadcn-prototype-start-goal-explanation" role="status">
+              目标只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。
+            </p>
+          ) : null}
+          <div className="shadcn-prototype-start-goal-grid">
+            {START_GOALS.map((goal) => (
+              <button
+                type="button"
+                key={goal.key}
+                data-testid="conversation-start-goal"
+                className={`shadcn-prototype-start-goal-card ${goal.imageClass}${selectedGoal === goal.key ? " selected" : ""}`}
+                aria-pressed={selectedGoal === goal.key}
+                disabled={sending}
+                onClick={() => selectStarter(goal.key, goal.fill, { isGoal: true })}
+              >
+                <span>
+                  <strong>{goal.title}</strong>
+                  <small>{goal.hint}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-examples">
+          <div className="shadcn-prototype-start-section-head">
+            <h2 id="conversation-start-examples">手头只有这些？也可以直接开始</h2>
+          </div>
+          <div className="shadcn-prototype-start-example-grid">
+            {START_EXAMPLES.map((example, index) => (
+              <button
+                type="button"
+                key={example.key}
+                data-testid="conversation-start-example"
+                className={`shadcn-prototype-start-example-card${index === 0 ? " featured" : ""}`}
+                disabled={sending}
+                onClick={() => selectStarter(example.key, example.prompt, { isGoal: false })}
+              >
+                <span className="shadcn-prototype-start-example-copy">
+                  <span className="shadcn-prototype-start-example-tag">{example.tag}</span>
+                  <span>{example.prompt}</span>
+                </span>
+                <span className="shadcn-prototype-start-example-foot">
+                  {example.outcome}<i aria-hidden="true">→</i>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
         <MaterialsReadyStrip token={token} onOpenImageLibrary={onOpenImageLibrary} />
       </div>
     </section>

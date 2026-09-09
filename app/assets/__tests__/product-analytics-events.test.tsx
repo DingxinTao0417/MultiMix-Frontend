@@ -28,7 +28,7 @@ describe("product analytics event points", () => {
     const product = displayProducts["case-02-saved-asset-match"];
     render(
       <ConversationStart
-        suggestions={["制作讲解型视频"]}
+        suggestions={[]}
         conversation={conversationForDisplayProduct(product)}
         token="token"
       />,
@@ -39,14 +39,14 @@ describe("product analytics event points", () => {
       sessionId: "test-session",
       properties: { entry_surface: "new_conversation" },
     }));
-    fireEvent.click(screen.getByRole("button", { name: /制作讲解型视频/ }));
+    fireEvent.click(screen.getByRole("button", { name: /讲清楚/ }));
 
     expect(trackProductEvent).toHaveBeenCalledWith("token", {
       eventName: "recommendation_selected",
-      properties: { recommendation_key: "explainer-video" },
+      properties: { recommendation_key: "goal-explain" },
     });
     expect(JSON.stringify(vi.mocked(trackProductEvent).mock.calls)).not.toContain(
-      "制作一条讲解型视频，先根据我的素材和目标确认比例、时长与配音。",
+      "把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。",
     );
   });
 

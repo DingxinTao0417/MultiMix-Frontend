@@ -4,6 +4,7 @@
 
 import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";
 import { normalizeAssetTitle } from "../app/assets/lib/asset-workspace-shared";
+import { isPresenterSourceVideoPlan } from "../app/assets/lib/video-creative-profile";
 import type {
   AgentActionRunResponse,
   AgentActionStatus,
@@ -876,7 +877,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         return normalized && sceneId ? [[sceneId, normalized] as const] : [];
       }),
   );
-  const isPresenter = stringValue(videoPlan?.video_type) === "presenter";
+  const isPresenter = isPresenterSourceVideoPlan(videoPlan);
   const transcript = isRecord(videoPlan?.transcript) ? videoPlan.transcript : undefined;
   const presenterWords = Array.isArray(transcript?.words) ? transcript.words.filter(isRecord) : [];
   const presenterWordPositions = new Map(
@@ -1258,8 +1259,8 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 }
 
 
-function suggestionsForCapability(capability: string, videoType = ""): string[] {
-  if (videoType === "presenter") return ["调整口播包装", "修正字幕", "补充事件素材", "取消包装"];
+function suggestionsForCapability(capability: string, videoPlan: unknown): string[] {
+  if (isPresenterSourceVideoPlan(videoPlan)) return ["调整口播包装", "修正字幕", "补充事件素材", "取消包装"];
   if (capability === "long_form_candidate_set") return ["再给我更多候选", "只看指定主题", "调整时长或比例"];
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
   if (capability.includes("video")) return ["调整分镜", "补充产品素材", "缩短到30秒", "换成9:16"];
@@ -1511,7 +1512,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     markdownBody: asset.body,
     sections,
     timeline: timelineFromVideoProject(videoProject) ?? (mode === "copy" ? [] : timelineFromBody(asset.body, unsupported)),
-    actions: suggestionsForCapability(capability, stringValue(rawVideoPlan?.video_type)),
+    actions: suggestionsForCapability(capability, rawVideoPlan),
     sourceIds: asset.linked_asset_ids.map((id) => String(id)),
     segments,
     sourceSummary: sourceSummaryForAsset(asset, segments),

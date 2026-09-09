@@ -102,7 +102,22 @@ describe("source excerpt audit panel", () => {
   it("does not offer the audit for a non-source-excerpt project", () => {
     renderWorkspace({
       ...product,
-      metadata: { video_plan: { video_type: "explainer" }, video_project: {} },
+      metadata: {
+        video_plan: {
+          creative_profile: {
+            schema_version: "video_creative_profile:v1",
+            task_mode: "create",
+            content_goal: "explain",
+            style_profile: "editorial_clean",
+            production_mode: "hybrid",
+            anchor_source: "uploaded_assets",
+            preserve_source_audio: false,
+            cost_priority: "balanced",
+            latency_priority: "standard",
+          },
+        },
+        video_project: {},
+      },
     });
 
     expect(screen.queryByRole("button", { name: "核验原片精简" })).not.toBeInTheDocument();

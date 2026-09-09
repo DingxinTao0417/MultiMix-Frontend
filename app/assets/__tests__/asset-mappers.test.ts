@@ -1868,7 +1868,17 @@ describe("message plan mapping", () => {
       metadata: {
         capability: "video_project",
         video_plan: {
-          video_type: "presenter",
+          creative_profile: {
+            schema_version: "video_creative_profile:v1",
+            task_mode: "repurpose",
+            content_goal: "explain",
+            style_profile: "editorial_clean",
+            production_mode: "source_led",
+            anchor_source: "presenter_video",
+            preserve_source_audio: true,
+            cost_priority: "balanced",
+            latency_priority: "standard",
+          },
           transcript: {
             words: [
               { id: "pw-1", text: "先看" },

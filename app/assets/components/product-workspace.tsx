@@ -26,6 +26,10 @@ import type {
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import VideoFilmReviewPanel from "./video-film-review-panel";
+import {
+  isFiveLayerVideoPlan,
+  isPresenterSourceVideoPlan,
+} from "../lib/video-creative-profile";
 import VoiceoverDialog from "./voiceover-dialog";
 import { trackProductEvent } from "../../../lib/product-analytics";
 import { ExportVariantMenu } from "../../../components/export-variant-menu";
@@ -313,11 +317,13 @@ export default function ProductWorkspace({
     && !Array.isArray(productMetadata.video_plan)
     ? productMetadata.video_plan as Record<string, unknown>
     : null;
-  const creativeDirection = isDirectorText && presenterVideoPlan?.video_type === "explainer"
-    ? presenterVideoPlan.creative_direction
+  const isFiveLayerPlan = isFiveLayerVideoPlan(presenterVideoPlan);
+  const isPresenterSourcePlan = isPresenterSourceVideoPlan(presenterVideoPlan);
+  const creativeDirection = isDirectorText && isFiveLayerPlan && !isPresenterSourcePlan
+    ? presenterVideoPlan?.creative_direction
     : null;
   const hasSpeechTimeline = product.mode === "video"
-    && presenterVideoPlan?.video_type === "presenter"
+    && isPresenterSourcePlan
     && product.timeline.some((item) => item.line);
   const sourceSubtitleOutput = presenterVideoPlan?.subtitle_output
     && typeof presenterVideoPlan.subtitle_output === "object"
@@ -1301,9 +1307,11 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   const reviewPlan = product.metadata?.video_plan;
-  const reviewVideoType = String(recordValue(reviewPlan)?.video_type ?? "");
+  const reviewPlanValue = recordValue(reviewPlan);
+  const reviewableVideoPlan = isFiveLayerVideoPlan(reviewPlanValue)
+    || String(reviewPlanValue?.video_type ?? "") === "source_excerpt";
   const filmReviewPanel = token && product.backendAssetId && !isTextEditing
-          && ["", "explainer", "presenter"].includes(reviewVideoType)
+          && reviewableVideoPlan
           && (hasVideoProject || product.contentType === "video_script") ? (
           <VideoFilmReviewPanel
             token={token}

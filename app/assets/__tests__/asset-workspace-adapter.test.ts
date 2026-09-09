@@ -1343,11 +1343,8 @@ describe("runtime data boundary", () => {
     expect(mappers).not.toContain("function normalizeProductTitle");
   });
 
-  it("keeps the two primary video-task starters without restoring demo conversations", () => {
+  it("keeps the new conversation free from legacy type suggestions", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
-    expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([
-      "制作讲解型视频",
-      "优化真人口播视频",
-    ]);
+    expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([]);
   });
 });

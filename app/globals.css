@@ -1013,7 +1013,7 @@ button:disabled {
 
 .shadcn-prototype-start-inner {
   position: relative;
-  width: min(720px, 100%);
+  width: min(920px, 100%);
   display: grid;
   gap: 0;
   text-align: left;
@@ -1054,7 +1054,7 @@ button:disabled {
     var(--sp-ai-grad) border-box;
   box-shadow: 0 4px 14px rgba(124, 92, 255, 0.08), 0 22px 52px rgba(0, 168, 142, 0.08);
   padding: 18px 16px 12px 18px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
   transition: box-shadow 300ms ease;
 }
 
@@ -1172,63 +1172,230 @@ button:disabled {
   display: block;
 }
 
-/* 起始页建议大卡（demo start.html .sugg-card）：图标 + 标题 + 副文案，2×2 网格 */
-.shadcn-prototype-start-sugg-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 24px;
+/* 新建页目标、输入起点和能力提示：点击只填充对话框。 */
+.shadcn-prototype-start-capabilities {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 2px 23px;
+  overflow: hidden;
 }
 
-.shadcn-prototype-start-sugg-card {
+.shadcn-prototype-start-capability-label {
+  flex: none;
+  color: var(--sp-faint);
+  font-size: 11.5px;
+}
+
+.shadcn-prototype-start-capability-list {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.shadcn-prototype-start-capability-list::-webkit-scrollbar {
+  display: none;
+}
+
+.shadcn-prototype-start-capability {
+  display: inline-flex;
+  height: 27px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
   border: 1px solid var(--sp-border);
-  border-radius: 16px;
-  background: var(--sp-card);
-  color: inherit;
-  padding: 15px 17px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--sp-subtle);
+  font-size: 11.5px;
+}
+
+.shadcn-prototype-start-capability i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0e8a6b;
+  opacity: 0.72;
+}
+
+.shadcn-prototype-start-starter-section {
+  margin-bottom: 23px;
+}
+
+.shadcn-prototype-start-section-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.shadcn-prototype-start-section-head h2 {
+  margin: 0;
+  color: var(--sp-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.shadcn-prototype-start-section-head button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--sp-accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-start-goal-explanation {
+  margin: -3px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--sp-border);
+  border-radius: 11px;
+  background: var(--sp-muted);
+  color: var(--sp-subtle);
+  font-size: 12px;
+}
+
+.shadcn-prototype-start-goal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shadcn-prototype-start-goal-card {
+  position: relative;
+  display: flex;
+  min-height: 88px;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 12px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 13px;
+  background-color: #34312e;
+  background-position: center;
+  background-size: cover;
+  color: #ffffff;
   text-align: left;
   cursor: pointer;
-  transition:
-    transform 150ms ease,
-    box-shadow 150ms ease,
-    border-color 150ms ease;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
-.shadcn-prototype-start-sugg-card:hover:not(:disabled) {
-  transform: translateY(-1px);
+.shadcn-prototype-start-goal-card::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(18, 17, 16, 0.86), rgba(18, 17, 16, 0.56) 56%, rgba(18, 17, 16, 0.1));
+  content: "";
+  pointer-events: none;
+}
+
+.shadcn-prototype-start-goal-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 10px 26px rgba(32, 31, 30, 0.16);
+}
+
+.shadcn-prototype-start-goal-card.selected {
+  border-color: rgba(139, 117, 255, 0.95);
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.18), 0 10px 28px rgba(32, 31, 30, 0.16);
+}
+
+.shadcn-prototype-start-goal-card > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+}
+
+.shadcn-prototype-start-goal-card strong {
+  font-size: 13px;
+  font-weight: 650;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.32);
+}
+
+.shadcn-prototype-start-goal-card small {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 10.5px;
+  line-height: 1.4;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.38);
+}
+
+.shadcn-prototype-start-goal-card.goal-explain {
+  background-image: url("/start-goals/explain.webp");
+}
+
+.shadcn-prototype-start-goal-card.goal-promote {
+  background-image: url("/start-goals/promote.webp");
+}
+
+.shadcn-prototype-start-goal-card.goal-story {
+  background-image: url("/start-goals/story.webp");
+}
+
+.shadcn-prototype-start-goal-card.goal-optimize {
+  background-image: url("/start-goals/optimize.webp");
+}
+
+.shadcn-prototype-start-example-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shadcn-prototype-start-example-card {
+  display: grid;
+  min-height: 104px;
+  align-content: space-between;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid var(--sp-border);
+  border-radius: 14px;
+  background: var(--sp-card);
+  color: var(--sp-text);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+}
+
+.shadcn-prototype-start-example-card.featured {
+  background: linear-gradient(120deg, rgba(124, 92, 255, 0.09), rgba(0, 168, 142, 0.09));
+}
+
+.shadcn-prototype-start-example-card:hover:not(:disabled) {
+  transform: translateY(-2px);
   border-color: var(--sp-border-strong);
   box-shadow: var(--sp-shadow);
 }
 
-.shadcn-prototype-start-sugg-card .ic {
+.shadcn-prototype-start-example-copy {
   display: grid;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  place-items: center;
-  border-radius: 10px;
-  background: var(--sp-muted);
-  color: var(--sp-subtle);
+  gap: 9px;
+  font-size: 12.5px;
+  line-height: 1.58;
 }
 
-.shadcn-prototype-start-sugg-card .tx {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
+.shadcn-prototype-start-example-tag {
+  width: max-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--sp-accent);
+  font-size: 10.5px;
+  font-weight: 650;
 }
 
-.shadcn-prototype-start-sugg-card .t {
-  color: var(--sp-text);
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.shadcn-prototype-start-sugg-card .s {
+.shadcn-prototype-start-example-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--sp-faint);
-  font-size: 12px;
+  font-size: 10.5px;
+}
+
+.shadcn-prototype-start-example-foot i {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 15px;
 }
 
 /* 起始页「素材已就绪」横条（spec §5.6）：活徽章 + 计数 + 缩略图 */
@@ -7202,6 +7369,15 @@ button:disabled {
     font-size: 22px;
   }
 
+  .shadcn-prototype-start-goal-grid,
+  .shadcn-prototype-start-example-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shadcn-prototype-start-example-card:last-child {
+    grid-column: 1 / -1;
+  }
+
   .shadcn-prototype-product {
     padding: 14px;
   }
@@ -7224,6 +7400,39 @@ button:disabled {
 
   .shadcn-prototype-workshop-metrics {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .shadcn-prototype-start {
+    place-items: start center;
+    padding: 22px 16px;
+  }
+
+  .shadcn-prototype-start-inner {
+    margin-top: 0;
+  }
+
+  .shadcn-prototype-start-capabilities {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shadcn-prototype-start-goal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .shadcn-prototype-start-example-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shadcn-prototype-start-example-card:last-child {
+    grid-column: auto;
+  }
+
+  .shadcn-prototype-start-goal-card {
+    min-height: 88px;
+    padding: 11px;
   }
 }
 

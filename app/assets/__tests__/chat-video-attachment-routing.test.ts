@@ -11,7 +11,7 @@ const workspaceClient = readFileSync(
 );
 
 describe("chat video attachment routing", () => {
-  it("routes an established explainer project through ordinary video asset upload", () => {
+  it("routes an established five-layer project through ordinary video asset upload", () => {
     expect(workspaceClient).toContain("resolveChatVideoAttachmentPurpose");
     expect(workspaceClient).toContain('videoPurpose === "visual_material"');
     expect(workspaceClient).toMatch(
@@ -20,7 +20,7 @@ describe("chat video attachment routing", () => {
     expect(workspaceClient).toContain("addProjectSource(token, conversationId, assetId)");
   });
 
-  it("does not build a long-form analysis action from an explainer visual material", () => {
+  it("does not build a long-form analysis action from five-layer visual material", () => {
     expect(workspaceClient).not.toContain("resolveLongFormAnalyzeAction");
     expect(workspaceClient).toContain("const effectiveLongFormAction = longFormAction;");
   });
@@ -32,7 +32,7 @@ describe("chat video attachment routing", () => {
     );
   });
 
-  it("uses only structured project state to distinguish explainer material", () => {
+  it("uses only structured project state to distinguish project material", () => {
     const conversation = {
       product: { contentType: undefined, metadata: {} },
       products: [],
@@ -47,7 +47,7 @@ describe("chat video attachment routing", () => {
     expect(resolveChatVideoAttachmentPurpose(conversation)).toBe("visual_material");
   });
 
-  it("keeps a project without an established type on the neutral creation-source path", () => {
+  it("keeps a project without established video state on the neutral creation-source path", () => {
     const conversation = {
       product: { contentType: undefined, metadata: {} },
       products: [],

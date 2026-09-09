@@ -140,7 +140,7 @@ svg{flex:none;display:block}
     radial-gradient(640px 400px at 30% 12%,rgba(124,92,255,.08),transparent 68%),
     radial-gradient(560px 360px at 78% 26%,rgba(0,168,142,.07),transparent 70%),
     radial-gradient(500px 340px at 55% 88%,rgba(124,92,255,.045),transparent 72%)}
-.hero{width:100%;max-width:720px;padding:40px 32px 48px;display:grid;margin-top:-3vh;position:relative}
+.hero{width:100%;max-width:920px;padding:40px 32px 48px;display:grid;margin-top:-3vh;position:relative}
 .greet{font-size:13px;color:var(--ink-3);margin-bottom:10px}
 .hero h1{font-size:42px;font-weight:760;letter-spacing:.005em;line-height:1.22;margin-bottom:10px}
 .hero .sub{font-size:14.5px;color:var(--ink-2);margin-bottom:28px}
@@ -148,7 +148,7 @@ svg{flex:none;display:block}
   border:1px solid transparent;border-radius:18px;
   background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
   box-shadow:0 4px 14px rgba(124,92,255,.08),0 22px 52px rgba(0,168,142,.08);
-  padding:18px 16px 12px 18px;display:grid;gap:18px;margin-bottom:24px;
+  padding:18px 16px 12px 18px;display:grid;gap:18px;margin-bottom:0;
   transition:box-shadow .3s ease;
 }
 .input-card.focus{box-shadow:0 6px 20px rgba(124,92,255,.16),0 28px 64px rgba(0,168,142,.14)}
@@ -162,15 +162,47 @@ svg{flex:none;display:block}
 .send{margin-left:auto;width:38px;height:38px;border-radius:50%;background:var(--ai-grad);color:#fff;
   display:grid;place-items:center;box-shadow:0 8px 20px rgba(124,92,255,.28)}
 .send:hover{transform:translateY(-1px);box-shadow:0 11px 26px rgba(124,92,255,.36)}
-.sugg-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px}
-.sugg-card{display:flex;gap:12px;align-items:flex-start;text-align:left;
-  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:15px 17px}
-.sugg-card:hover{box-shadow:var(--shadow-card);border-color:var(--line-2);transform:translateY(-1px)}
-.sugg-card .ic{width:32px;height:32px;border-radius:10px;background:var(--surface-2);
-  display:grid;place-items:center;color:var(--ink-2);flex:none}
-.sugg-card .tx{display:grid;gap:1px}
-.sugg-card .t{font-size:13.5px;font-weight:600}
-.sugg-card .s{font-size:12px;color:var(--ink-3)}
+.capabilities{display:flex;align-items:center;gap:8px;margin:15px 2px 25px;overflow:hidden}
+.cap-label{flex:none;color:var(--ink-3);font-size:11.5px}
+.cap-list{display:flex;gap:7px;overflow:auto;scrollbar-width:none}
+.cap-list::-webkit-scrollbar{display:none}
+.cap{flex:none;display:inline-flex;align-items:center;gap:6px;height:27px;padding:0 10px;
+  border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.72);color:var(--ink-2);font-size:11.5px}
+.cap-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);opacity:.72}
+.section-head{display:flex;align-items:flex-end;gap:10px;margin-bottom:11px}
+.section-head h2{font-size:13px;font-weight:700}
+.section-head span{color:var(--ink-3);font-size:11.5px}
+.section-head .why{margin-left:auto;color:var(--accent);font-size:11.5px}
+.goal-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:25px}
+.goal-card{position:relative;min-height:88px;display:flex;align-items:flex-end;padding:12px 13px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.28);border-radius:13px;background-color:#34312e;background-position:center;
+  background-size:cover;text-align:left}
+.goal-card::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(90deg,rgba(18,17,16,.86) 0%,rgba(18,17,16,.58) 54%,rgba(18,17,16,.1) 100%)}
+.goal-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.5);box-shadow:0 10px 26px rgba(32,31,30,.16)}
+.goal-card.selected{border-color:rgba(139,117,255,.95);box-shadow:0 0 0 2px rgba(124,92,255,.18),0 10px 28px rgba(32,31,30,.16)}
+.goal-explain{background-image:url("../assets/start-goal-explain.webp")}
+.goal-promote{background-image:url("../assets/start-goal-promote.webp")}
+.goal-story{background-image:url("../assets/start-goal-story.webp")}
+.goal-optimize{background-image:url("../assets/start-goal-optimize.webp")}
+.goal-copy{position:relative;z-index:1;min-width:0;display:grid;gap:2px}
+.goal-copy strong{color:#fff;font-size:13px;font-weight:650;text-shadow:0 1px 4px rgba(0,0,0,.32)}
+.goal-copy small{color:rgba(255,255,255,.76);font-size:10.5px;line-height:1.4;text-shadow:0 1px 4px rgba(0,0,0,.38)}
+.examples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.example{min-height:104px;display:grid;align-content:space-between;gap:11px;padding:13px 14px;overflow:hidden;
+  border:1px solid var(--line);border-radius:14px;background:var(--surface);text-align:left}
+.example:hover{transform:translateY(-2px);border-color:var(--line-2);box-shadow:var(--shadow-card)}
+.example.featured{background:var(--ai-soft)}
+.example-copy{display:grid;align-content:space-between;gap:14px;min-width:0}
+.example-tag{width:max-content;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.78);
+  color:var(--accent);font-size:10.5px;font-weight:650}
+.example p{color:var(--ink);font-size:12.5px;line-height:1.58}
+.example-foot{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:10.5px}
+.example-arrow{margin-left:auto;width:27px;height:27px;display:grid;place-items:center;border:1px solid var(--line);
+  border-radius:50%;background:rgba(255,255,255,.84);color:var(--ink-2)}
+.cap-popover{display:none;margin:-4px 0 18px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface-2);color:var(--ink-2);font-size:12px;line-height:1.6}
+.cap-popover.show{display:block}
 .ready{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:var(--radius);
   background:var(--surface);padding:13px 17px;box-shadow:var(--shadow-card)}
 .ready .tx{display:grid;line-height:1.5}
@@ -209,6 +241,36 @@ body.side-collapsed .sidebar{display:none}
   background:var(--surface);border:1px solid var(--line);display:none;place-items:center;color:var(--ink-2);box-shadow:var(--shadow-card)}
 body.side-collapsed .expand-btn{display:grid}
 
+@media (max-width:1024px){
+  body{min-width:0}
+  .app{grid-template-columns:210px minmax(0,1fr)}
+  .hero{max-width:760px;margin-top:0}
+  .goal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .examples{grid-template-columns:1fr 1fr}
+  .example:last-child{grid-column:1/-1}
+}
+@media (max-width:768px){
+  body{height:auto;min-height:100vh;overflow:auto;grid-template-rows:44px auto}
+  .app{display:block}
+  .sidebar,.rail{display:none!important}
+  .stage-col{min-height:calc(100vh - 44px);place-items:start center;overflow:visible}
+  .hero{max-width:680px;padding:36px 16px 52px}
+  .capabilities{align-items:flex-start;flex-direction:column}
+  .examples{grid-template-columns:1fr}
+  .example:last-child{grid-column:auto}
+}
+@media (max-width:480px){
+  .hero{padding:28px 12px 44px}
+  .hero h1{font-size:29px}
+  .hero .sub{margin-bottom:20px}
+  .input-card{padding:15px 13px 10px 15px}
+  .hint-eg{display:none}
+  .icon-btn,.send{min-width:44px;min-height:44px}
+  .goal-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .goal-card{min-height:88px;padding:11px}
+  .goal-copy small{font-size:10px}
+  .example{min-height:98px}
+}
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -294,7 +356,7 @@ body.side-collapsed .expand-btn{display:grid}
 </aside>
 <!-- Hero -->
 <main class="stage-col">
-  <div class="drop-hint" id="dropHint">释放以上传 PDF / 图片素材</div>
+  <div class="drop-hint" id="dropHint">释放以上传 PDF / 图片 / 视频素材</div>
   <div class="hero">
     <div class="greet">下午好，陈老板</div>
     <h1>今天想做什么短视频？</h1>
@@ -307,6 +369,9 @@ body.side-collapsed .expand-btn{display:grid}
         <button class="icon-btn" title="上传图片素材" onclick="addAtt('img')">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
         </button>
+        <button class="icon-btn" title="上传视频素材" onclick="addAtt('video')">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        </button>
         <button class="icon-btn" title="上传 PDF / 文档" onclick="addAtt('doc')">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
@@ -317,41 +382,70 @@ body.side-collapsed .expand-btn{display:grid}
       </div>
     </div>
 
-    <div class="sugg-grid">
-      <button class="sugg-card" data-fill="用我已有的素材生成一条可编辑的短视频">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
-        <span class="tx"><span class="t">用已有素材生成短视频</span><span class="s">AI 自动编导并匹配画面</span></span>
-      </button>
-      <button class="sugg-card" data-fill="用我已有的图片和视频生成一条 9:16 的 30 秒短视频">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">用图片和视频做成片</span><span class="s">优先使用你的真实素材</span></span>
-      </button>
-      <button class="sugg-card" data-fill="把我上传的文档做成一条可编辑的短视频，关键内容保留来源">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">把文档做成短视频</span><span class="s">关键内容保留来源</span></span>
-      </button>
-      <button class="sugg-card" data-fill="继续修改我已有的视频，先让我选择要修改的版本">
-        <span class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 8.7V12a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 12V4A1.5 1.5 0 0 1 4 2.5h3.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="m6.5 9.5 6.8-6.8M9.8 2.5h3.7v3.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        <span class="tx"><span class="t">继续修改已有视频</span><span class="s">换画面、改文案或调整分镜</span></span>
-      </button>
+    <div class="capabilities" aria-label="可组合的视频制作能力">
+      <span class="cap-label">会自动组合</span>
+      <div class="cap-list">
+        <span class="cap"><span class="cap-dot"></span>我的素材</span>
+        <span class="cap"><span class="cap-dot"></span>AI 生成镜头</span>
+        <span class="cap"><span class="cap-dot"></span>公开素材</span>
+        <span class="cap"><span class="cap-dot"></span>图形动画</span>
+        <span class="cap"><span class="cap-dot"></span>口播优化</span>
+        <span class="cap"><span class="cap-dot"></span>配音与音乐</span>
+      </div>
     </div>
 
-    <div class="ready">
-      <div class="tx">
-        <span class="t">你的素材可以开始做视频了
-          <span class="live-badge"><span class="gdot"></span>已理解</span>
-        </span>
-        <span class="s">23 张图片已解析 · 5 张处理中</span>
+    <section aria-labelledby="goal-title">
+      <div class="section-head">
+        <h2 id="goal-title">不知道怎么描述？从一个目标开始</h2>
+        <span>选择后仍可继续修改</span>
+        <button class="why" id="whyButton" type="button" aria-expanded="false">这些选项有什么用？</button>
       </div>
-      <div class="thumbs">
-        <span class="phbox"><span class="ph ph-panorama"></span></span>
-        <span class="phbox"><span class="ph ph-seal"></span></span>
-        <span class="phbox"><span class="ph ph-work"></span></span>
-        <span class="phbox"><span class="ph ph-living"></span></span>
-        <span class="phbox"><span class="ph ph-balcony"></span></span>
+      <div class="cap-popover" id="capPopover">它们只会帮你写好第一句话，不会锁定制作方式。发送后，系统仍会根据素材和内容决定每个分镜怎么制作。</div>
+      <div class="goal-grid">
+        <button class="goal-card goal-explain" type="button" data-fill="把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。">
+          <span class="goal-copy"><strong>讲清楚内容</strong><small>知识、产品功能、过程说明</small></span>
+        </button>
+        <button class="goal-card goal-promote" type="button" data-fill="推广一个产品或品牌。请结合我的素材与目标用户，设计有吸引力但不过度广告化的视频。">
+          <span class="goal-copy"><strong>推广产品</strong><small>种草、带货、品牌宣传</small></span>
+        </button>
+        <button class="goal-card goal-story" type="button" data-fill="用我提供的素材讲一个完整故事。请先规划开场、转折和结尾，再决定需要生成哪些镜头。">
+          <span class="goal-copy"><strong>讲一个故事</strong><small>品牌故事、人物、过程记录</small></span>
+        </button>
+        <button class="goal-card goal-optimize" type="button" data-fill="优化我上传的视频，尽量保留原有内容和声音，改善节奏、画面与包装。">
+          <span class="goal-copy"><strong>优化已有视频</strong><small>真人口播、长视频、素材重剪</small></span>
+        </button>
       </div>
-      <a onclick="toast('前往图片库…')">查看图片库 →</a>
-    </div>
+    </section>
+
+    <section aria-labelledby="example-title">
+      <div class="section-head">
+        <h2 id="example-title">手头只有这些？也可以直接开始</h2>
+        <span>点击后继续补充</span>
+      </div>
+      <div class="examples">
+        <button class="example featured" type="button" data-fill="用我上传的口红图片，制作一条 15 秒生活化带货视频。要有真人使用、产品特写、自然口播和轻快背景音乐，不要字幕。">
+          <span class="example-copy">
+            <span class="example-tag">只有一张图片</span>
+            <p>“用这张口红图做一条 15 秒真人使用视频，有口播和音乐。”</p>
+            <span class="example-foot">系统补充镜头与画面变化<span class="example-arrow">→</span></span>
+          </span>
+        </button>
+        <button class="example" type="button" data-fill="把我上传的产品介绍做成一条 30 秒讲解视频，使用公开素材补充场景，并用图形动画展示关键数据。">
+          <span class="example-copy">
+            <span class="example-tag">只有一份资料</span>
+            <p>“把这份产品资料做成 30 秒视频，画面和动画由你安排。”</p>
+            <span class="example-foot">系统查找素材并设计动画<span class="example-arrow">→</span></span>
+          </span>
+        </button>
+        <button class="example" type="button" data-fill="优化我上传的真人口播，保留原声和人物主体，压缩停顿与重复内容，并补充相关产品画面。">
+          <span class="example-copy">
+            <span class="example-tag">只有一段原视频</span>
+            <p>“帮我把这段口播剪得更紧凑，保留原声并补充相关画面。”</p>
+            <span class="example-foot">系统剪辑、补画面与包装<span class="example-arrow">→</span></span>
+          </span>
+        </button>
+      </div>
+    </section>
   </div>
 </main>
 
@@ -376,12 +470,21 @@ var input = document.getElementById('input');
 var card = document.getElementById('inputCard');
 input.addEventListener('focus', function(){ card.classList.add('focus'); });
 input.addEventListener('blur', function(){ card.classList.remove('focus'); });
-document.querySelectorAll('.sugg-card').forEach(function(b){
+document.querySelectorAll('[data-fill]').forEach(function(b){
   b.addEventListener('click', function(){
+    document.querySelectorAll('.goal-card').forEach(function(goal){ goal.classList.remove('selected'); });
+    if(b.classList.contains('goal-card')) b.classList.add('selected');
     input.value = b.getAttribute('data-fill');
     input.focus();
     toast('好，补充细节后点发送');
   });
+});
+var whyButton = document.getElementById('whyButton');
+var capPopover = document.getElementById('capPopover');
+whyButton.addEventListener('click', function(){
+  var show = !capPopover.classList.contains('show');
+  capPopover.classList.toggle('show', show);
+  whyButton.setAttribute('aria-expanded', show ? 'true' : 'false');
 });
 document.getElementById('btnSend').addEventListener('click', function(){
   if(!input.value.trim()){ toast('先说一句你想做什么'); input.focus(); return; }
@@ -443,6 +546,13 @@ function addAtt(type){
         toast('重试成功，图片已识别');
       });
     }
+  } else if(type === 'video') {
+    el.innerHTML = '<span class="thumb"><span class="ph ph-panorama"></span></span>产品演示-0' + (++attId) + '.mp4'
+      + '<span class="st run">理解中…</span><button class="rm" title="移除">✕</button>';
+    setTimeout(function(){
+      var st = el.querySelector('.st');
+      if(st){ st.textContent = '已识别'; st.className = 'st ok'; toast('视频已理解，可以继续描述目标'); }
+    }, 2200);
   } else {
     el.innerHTML = '<span class="fic"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>产品手册-0' + (++attId) + '.pdf'
       + '<span class="st run">解析中…</span><button class="rm" title="移除">✕</button>';

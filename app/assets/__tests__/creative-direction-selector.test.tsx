@@ -18,6 +18,24 @@ afterEach(() => {
 
 const fingerprint = `sha256:${"a".repeat(64)}`;
 const globalsCss = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+const genericCreativeProfile = {
+  schema_version: "video_creative_profile:v1",
+  task_mode: "create",
+  content_goal: "explain",
+  style_profile: "editorial_clean",
+  production_mode: "hybrid",
+  anchor_source: "uploaded_assets",
+  preserve_source_audio: false,
+  cost_priority: "balanced",
+  latency_priority: "standard",
+};
+const presenterCreativeProfile = {
+  ...genericCreativeProfile,
+  task_mode: "repurpose",
+  production_mode: "source_led",
+  anchor_source: "presenter_video",
+  preserve_source_audio: true,
+};
 const creativeDirection = {
   schema_version: "creative_direction:v1",
   fingerprint,
@@ -126,7 +144,7 @@ describe("creative direction candidate choice", () => {
     expect(screen.queryByText("结果先行")).not.toBeInTheDocument();
   });
 
-  it("renders the selector above a generic director draft but not for presenter", () => {
+  it("renders the selector above a general five-layer draft but not for a presenter-source draft", () => {
     const base = displayProducts["case-01-director-draft"];
     const genericProduct = {
       ...base,
@@ -137,7 +155,7 @@ describe("creative direction candidate choice", () => {
         ...base.metadata,
         video_plan: {
           ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
-          video_type: "explainer",
+          creative_profile: genericCreativeProfile,
           creative_direction: creativeDirection,
         },
       },
@@ -164,7 +182,7 @@ describe("creative direction candidate choice", () => {
         ...genericProduct.metadata,
         video_plan: {
           ...((genericProduct.metadata?.video_plan as Record<string, unknown>) ?? {}),
-          video_type: "presenter",
+          creative_profile: presenterCreativeProfile,
         },
       },
     };
@@ -193,7 +211,7 @@ describe("creative direction candidate choice", () => {
         ...base.metadata,
         video_plan: {
           ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
-          video_type: "explainer",
+          creative_profile: genericCreativeProfile,
           creative_direction: creativeDirection,
         },
       },

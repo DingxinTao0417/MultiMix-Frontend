@@ -29,10 +29,7 @@ const newConversation: AssetConversation = {
   judgment: "",
   action: "",
   delivery: "",
-  suggestions: [
-    "制作讲解型视频",
-    "优化真人口播视频",
-  ],
+  suggestions: [],
   messages: [],
   product: emptyProduct,
   products: [],

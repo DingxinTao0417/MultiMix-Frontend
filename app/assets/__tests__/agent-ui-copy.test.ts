@@ -1508,17 +1508,21 @@ describe("agent conversation UI copy", () => {
     expect(authApp).toContain("登录你的 AI 短视频创作工作台");
     expect(authApp).toContain("上传素材，说出需求，生成可编辑的短视频");
     expect(conversationStart).toContain("新建视频项目");
-    expect(conversationStart).toContain("选择一种创作方式，随后可在同一对话里持续补素材、改文案和生成视频");
+    expect(conversationStart).toContain("上传素材或直接描述目标，系统会组合合适的制作能力");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
-    expect(conversationStart).toContain("shadcn-prototype-start-sugg-card");
-    expect(conversationStart).toContain("制作讲解型视频");
-    expect(conversationStart).toContain("优化真人口播视频");
+    expect(conversationStart).toContain("shadcn-prototype-start-goal-card");
+    expect(conversationStart).toContain("不知道怎么描述？从一个目标开始");
+    expect(conversationStart).toContain("手头只有这些？也可以直接开始");
+    expect(conversationStart).toContain("AI 生成镜头");
+    expect(conversationStart).not.toContain("制作讲解型视频");
+    expect(conversationStart).not.toContain("优化真人口播视频");
     expect(materialsReady).toContain("你的素材可以开始做视频了");
     expect(backgroundStatus).toContain("AI 正在理解素材");
     expect(backgroundStatus).toContain("完成后可用于视频创作");
     expect(globals).toContain(".shadcn-prototype-start-dock");
-    expect(globals).toContain(".shadcn-prototype-start-sugg-grid");
+    expect(globals).toContain(".shadcn-prototype-start-goal-grid");
+    expect(globals).toContain(".shadcn-prototype-start-example-grid");
     expect(globals).toContain("min-height: 52px");
   });
 

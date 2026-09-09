@@ -1,8 +1,12 @@
-# 编导稿关键帧建议操作入口修复
+# 编导稿关键帧建议操作入口修复（已被对话方案取代）
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
-> Last verified: 2026-09-08
+> Last verified: 2026-09-09
+
+## 归档结论
+
+该计划完成了旧版“分镜卡片展示采纳按钮”的实现与部署，但 2026-09-09 的产品决策明确：关键帧建议及其采纳应发生在对话中，不再以分镜按钮展示。因此停止旧方案的生产 UI 验收，不再把按钮是否可见作为验收条件；后续工作转入后端跨端计划 \`MultiMix-Backend/docs/plans/active/2026-09-09-director-keyframe-conversation-recommendations.md\`。
 
 ## 背景与根因
 
@@ -43,4 +47,5 @@
 - [x] 增加失败测试
 - [x] 实现条件式分镜建议入口与容器回调透传
 - [x] 运行前端检查并提交
-- [ ] 部署 Vercel 并完成生产验证
+- [x] 部署 Vercel
+- [x] 因产品决策改变，取消旧按钮方案的生产 UI 验收并归档
