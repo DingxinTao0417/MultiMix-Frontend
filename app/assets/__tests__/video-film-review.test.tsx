@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import VideoFilmReviewPanel from "../components/video-film-review-panel";
-import { getFilmReviews, requestFilmReviewRepair } from "../../../lib/video-project-client";
+import { getFilmReviews, requestFilmReviewRepair, startFilmReview } from "../../../lib/video-project-client";
 
 vi.mock("../../../lib/video-project-client", () => ({
   getFilmReviews: vi.fn(), startFilmReview: vi.fn(), requestFilmReviewRepair: vi.fn(),
@@ -49,4 +49,33 @@ it("shows revalidation separately from newly found issues", async () => {
   vi.mocked(getFilmReviews).mockResolvedValue({ ...payload, reviews: [{ ...payload.reviews[0], report }] });
   render(<VideoFilmReviewPanel token="test" assetId={12} revisionKey="v3" onLocate={vi.fn()} onRevise={vi.fn()} />);
   expect(await screen.findByText(/本版复验已解决/)).toBeVisible();
+});
+
+it("supplements a partial report and disables repeats once all checks are covered", async () => {
+  const initial = state();
+  const partialJob = { ...initial.reviews[0], can_retry: true, missing_checks: ["speech"] };
+  const completedJob = { ...partialJob, can_retry: false, missing_checks: [],
+    report: { ...partialJob.report, coverage: {
+      visual: "sampled", speech: "transcribed", audio: "decode_and_boundaries",
+    } } };
+  vi.mocked(getFilmReviews).mockResolvedValueOnce({ ...initial, reviews: [partialJob] })
+    .mockResolvedValue({ ...initial, reviews: [completedJob] });
+  vi.mocked(startFilmReview).mockResolvedValue({ ...partialJob, status: "queued" });
+  render(<VideoFilmReviewPanel token="test" assetId={12} revisionKey="same-film"
+    onLocate={vi.fn()} onRevise={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "补验未完成检查" }));
+  await waitFor(() => expect(startFilmReview).toHaveBeenCalledWith({ token: "test", projectAssetId: 12 }));
+  expect(await screen.findByRole("button", { name: "当前成片已审阅" })).toBeDisabled();
+  expect(screen.getByText(/已复转写成片/)).toBeVisible();
+});
+
+it("does not offer another check while the current supplement is running", async () => {
+  const payload = state();
+  vi.mocked(getFilmReviews).mockResolvedValue({ ...payload, reviews: [
+    { ...payload.reviews[0], status: "running", can_retry: false, missing_checks: ["speech"] },
+  ] });
+  render(<VideoFilmReviewPanel token="test" assetId={12} revisionKey="same-film"
+    onLocate={vi.fn()} onRevise={vi.fn()} />);
+  expect(await screen.findByRole("button", { name: "正在审阅…" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "查看修订选项" })).toBeDisabled();
 });

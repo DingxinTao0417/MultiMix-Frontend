@@ -78,7 +78,8 @@ export default function VideoFilmReviewPanel({ token, assetId, revisionKey, disa
   }
 
   function finding(issue: FilmReviewFinding, job?: FilmReviewJob) {
-    const current = !disabled && (job ? job.is_current : state?.script_review?.is_current !== false);
+    const current = !disabled && (job ? job.is_current && job.status === "completed"
+      : state?.script_review?.is_current !== false);
     return <li key={issue.id} className="mt-3">
       <strong>{issue.reason}</strong>
       <p>{issue.suggestion}</p>
@@ -126,13 +127,16 @@ export default function VideoFilmReviewPanel({ token, assetId, revisionKey, disa
 
   const pending = state?.reviews.some((job) => job.is_current && ["queued", "running"].includes(job.status));
   const latest = state?.reviews[0];
+  const canSupplement = latest?.is_current && latest.can_retry
+    && latest.report?.status !== "unavailable" && (latest.missing_checks?.length ?? 0) > 0;
   const alreadyReviewed = latest?.is_current && latest.status === "completed"
-    && latest.report && latest.report.status !== "unavailable";
+    && latest.report && latest.report.status !== "unavailable" && !latest.can_retry;
   return <section className={styles.panel} aria-label="编导与成片审阅">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <strong>编导与成片审阅</strong>
       <button type="button" disabled={busy || pending || disabled || !!alreadyReviewed || !state?.can_review}
-        onClick={() => void start()}>{pending || busy ? "正在审阅…" : alreadyReviewed ? "当前成片已审阅" : latest ? "重新审阅当前成片" : "审阅当前成片"}</button>
+        onClick={() => void start()}>{pending || busy ? "正在审阅…" : alreadyReviewed ? "当前成片已审阅"
+          : canSupplement ? "补验未完成检查" : latest ? "重新审阅当前成片" : "审阅当前成片"}</button>
     </div>
     <p className="text-sm mt-1">审阅建议不影响导出。修改后需重新导出、复验，才能确认问题已解决。</p>
     {disabled ? <p>请先保存修改并导出当前版本。</p> : state?.unavailable_reason ? <p>{state.unavailable_reason}</p> : null}
@@ -145,6 +149,12 @@ export default function VideoFilmReviewPanel({ token, assetId, revisionKey, disa
       {!latest.is_current || disabled ? <p role="status">报告已过期，不能代表当前版本。</p> : null}
       {latest.error ? <p role="alert">{latest.error}</p> : null}
       {latest.report ? reportContent(latest.report, latest) : null}
+      {latest.report_history?.length ? <details className="mt-3"><summary>补验前的报告</summary>
+        {latest.report_history.map((report, index) => <details key={index}>
+          <summary>第 {index + 1} 次报告</summary>
+          {reportContent(report, { ...latest, is_current: false })}
+        </details>)}
+      </details> : null}
     </div> : null}
     {(state?.reviews.length ?? 0) > 1 ? <details className="mt-3"><summary>历史审阅记录</summary>
       {state?.reviews.slice(1).map((job) => <details key={job.id} className="mt-2">

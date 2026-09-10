@@ -160,6 +160,9 @@ export type FilmReviewJob = {
   error: string | null;
   created_at: string | null;
   requested_repairs: string[];
+  can_retry?: boolean;
+  missing_checks?: string[];
+  report_history?: FilmReviewReport[];
 };
 
 export type FilmReviewState = {
