@@ -230,6 +230,9 @@ describe("ConfirmCard pending state", () => {
       fields: [
         { key: "ratio", label: "视频比例", value: "横屏 16:9（默认）" },
         { key: "duration", label: "目标时长", value: "30 秒（默认）" },
+        { key: "ai_voice", label: "AI 配音", value: "开启" },
+        { key: "subtitles", label: "字幕", value: "关闭（按你的要求）" },
+        { key: "bgm", label: "背景音乐", value: "开启（按你的要求）" },
       ],
       confirmLabel: "确认参数并生成编导稿",
       ratioOptions: [
@@ -253,6 +256,8 @@ describe("ConfirmCard pending state", () => {
     render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
 
     expect(screen.getByText("横屏 16:9（默认）")).toBeTruthy();
+    expect(screen.getByText("关闭（按你的要求）")).toBeTruthy();
+    expect(screen.getByText("开启（按你的要求）")).toBeTruthy();
     expect(screen.getByDisplayValue("30")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
     fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
