@@ -264,7 +264,6 @@ type ProductPreviewProps = {
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
-  onGenerateKeyframe?: (segment: AssetProductSegment) => void;
   onPreviewReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
@@ -289,7 +288,6 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
-  onGenerateKeyframe,
   onPreviewReadyChange,
   onExportStart,
   onExportProgress,
@@ -349,18 +347,9 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 
   if (product.mode === "copy") {
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
-    const recommendedSegments = product.segments?.some(
-      (segment) => Boolean(segment.imageGenerationRecommendation),
-    );
     return (
       <>
         <MarkdownProductDocument markdown={markdown} />
-        {recommendedSegments ? (
-          <SegmentCards
-            segments={product.segments ?? []}
-            onGenerateKeyframe={onGenerateKeyframe}
-          />
-        ) : null}
         {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </>
     );
@@ -694,7 +683,6 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
       {product.segments?.length ? (
         <SegmentCards
           segments={product.segments}
-          onGenerateKeyframe={onGenerateKeyframe}
         />
       ) : null}
 

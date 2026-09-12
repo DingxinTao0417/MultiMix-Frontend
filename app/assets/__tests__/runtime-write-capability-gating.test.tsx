@@ -87,6 +87,7 @@ function keyframeConversation(id = "keyframe-conversation") {
       generated_images: [1, 2, 3].map((index) => ({
         frame_id: `F0${index}`,
         asset_id: 200 + index,
+        target_scene_id: `scene-${index}`,
         intent: `分镜 ${index}`,
         review_status: "no_issue_detected",
         storage_ref: `local://content-assets/91/generation-jobs/1/images/${String(index).repeat(64)}.png`,

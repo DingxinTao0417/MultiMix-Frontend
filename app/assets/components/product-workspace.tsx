@@ -189,7 +189,6 @@ export default function ProductWorkspace({
   onApplyGeneratedImageSet,
   selectedImageFrameId,
   onSelectedImageFrameChange,
-  onGenerateKeyframe,
   product,
   savedVersion,
   selectedConversation,
@@ -209,7 +208,6 @@ export default function ProductWorkspace({
   onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void>;
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
-  onGenerateKeyframe?: (product: ProductArtifact, segment: AssetProductSegment) => Promise<void> | void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -1813,7 +1811,6 @@ export default function ProductWorkspace({
               onApplyGeneratedImageSet={onApplyGeneratedImageSet}
               selectedImageFrameId={selectedImageFrameId}
               onSelectedImageFrameChange={onSelectedImageFrameChange}
-              onGenerateKeyframe={onGenerateKeyframe ? (segment) => onGenerateKeyframe(product, segment) : undefined}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
               onEditVoiceover={
@@ -1955,7 +1952,6 @@ export default function ProductWorkspace({
                 onApplyGeneratedImageSet={onApplyGeneratedImageSet}
                 selectedImageFrameId={selectedImageFrameId}
                 onSelectedImageFrameChange={onSelectedImageFrameChange}
-                onGenerateKeyframe={onGenerateKeyframe ? (segment) => onGenerateKeyframe(product, segment) : undefined}
                 footer={filmReviewPanel}
               />
             </div>

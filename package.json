@@ -27,6 +27,7 @@
     "test:demo-units": "vitest run --config vitest.demo-e2e.config.ts",
     "test:e2e:demo:live": "node scripts/run-demo-material-packs.mjs",
     "test:e2e:agent-video-atomic": "node scripts/run-agent-video-atomic-e2e.mjs",
+    "test:e2e:keyframe-conversation": "node scripts/run-keyframe-conversation-e2e.mjs",
     "test:e2e:video-bgm": "node scripts/run-video-bgm-e2e.mjs",
     "test:e2e:video-pipeline-production": "node scripts/run-video-pipeline-production-e2e.mjs",
     "test:e2e:video-pipeline-recompose": "node scripts/run-video-pipeline-production-e2e.mjs --recompose",

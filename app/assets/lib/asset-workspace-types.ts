@@ -279,13 +279,6 @@ export type AssetImageGenerationConfirmation = {
   clientRequestId: string;
 };
 
-export type AssetImageGenerationRecommendationAcceptance = {
-  recommendationId: string;
-  fingerprint: string;
-  target: AssetImageGenerationTarget;
-  clientRequestId: string;
-};
-
 export type AssetImageGenerationApplication = {
   candidateAssetId: number;
   expectedCandidateSetHash: string;

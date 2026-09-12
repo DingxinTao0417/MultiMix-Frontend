@@ -342,29 +342,12 @@ describe("runtime data boundary", () => {
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
       instruction: "采纳第 2 镜的关键帧建议。",
-      imageGenerationRecommendationAcceptance: {
-        recommendationId: "flux-scene-scene-2-abcdef1234567890",
-        fingerprint: "c".repeat(64),
-        clientRequestId: "721a967a-c058-449f-8ba9-bf714c5015db",
-        target: {
-          kind: "director_scene",
-          assetId: 91,
-          versionId: 22,
-          sceneIds: ["scene-2"],
-        },
-      },
-    })).toMatchObject({
-      image_generation_recommendation_acceptance: {
-        recommendation_id: "flux-scene-scene-2-abcdef1234567890",
-        fingerprint: "c".repeat(64),
-        client_request_id: "721a967a-c058-449f-8ba9-bf714c5015db",
-        target: {
-          kind: "director_scene",
-          asset_id: 91,
-          version_id: 22,
-          scene_ids: ["scene-2"],
-        },
-      },
+      selectedProductId: 91,
+    })).toEqual({
+      conversation_id: "asset-conversation-1",
+      instruction: "采纳第 2 镜的关键帧建议。",
+      selected_product_id: 91,
+      linked_asset_ids: [],
     });
   });
 

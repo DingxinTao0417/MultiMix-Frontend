@@ -53,9 +53,8 @@ describe("presenter segment review", () => {
     expect(onSelect).toHaveBeenCalledTimes(2);
   });
 
-  it("lets a non-presenter director scene adopt an LLM keyframe recommendation without selecting the card", () => {
+  it("does not turn a non-presenter keyframe recommendation into a card action", () => {
     const onSelect = vi.fn();
-    const onGenerateKeyframe = vi.fn();
     const segment = {
       id: "scene-keyframe",
       index: 3,
@@ -77,13 +76,10 @@ describe("presenter segment review", () => {
       <SegmentCards
         segments={[segment]}
         onSelect={onSelect}
-        onGenerateKeyframe={onGenerateKeyframe}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
-
-    expect(onGenerateKeyframe).toHaveBeenCalledWith(segment);
+    expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).toBeNull();
     expect(onSelect).not.toHaveBeenCalled();
   });
 
@@ -99,15 +95,13 @@ describe("presenter segment review", () => {
     render(
       <SegmentCards
         segments={[segment]}
-        onGenerateKeyframe={vi.fn()}
       />,
     );
 
     expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).toBeNull();
   });
 
-  it("lets a presenter scene adopt an explicit server keyframe recommendation", () => {
-    const onGenerateKeyframe = vi.fn();
+  it("does not turn a presenter keyframe recommendation into a card action", () => {
     const segment = {
       id: "scene-presenter-keyframe",
       index: 1,
@@ -128,12 +122,10 @@ describe("presenter segment review", () => {
     render(
       <SegmentCards
         segments={[segment]}
-        onGenerateKeyframe={onGenerateKeyframe}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
-    expect(onGenerateKeyframe).toHaveBeenCalledWith(segment);
+    expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).toBeNull();
   });
 
   it("shows the event arrangement, publish requirement and material gap", () => {

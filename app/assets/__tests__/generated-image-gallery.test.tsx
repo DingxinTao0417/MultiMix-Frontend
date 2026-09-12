@@ -103,15 +103,25 @@ describe("generated image gallery", () => {
       target: { kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-2"] },
     });
   });
-  it("applies a complete keyframe set to its target scenes in order", async () => {
+  it("applies a complete keyframe set through explicit frame-to-scene bindings", async () => {
     const onApplySet = vi.fn().mockResolvedValue(undefined);
     render(<GeneratedImageGallery
-      images={[1, 2].map((n) => ({
-        frame_id: `F0${n}`,
-        asset_id: 200 + n,
-        intent: `镜头${n}`,
-        storage_ref: `local://content-assets/1/generation-jobs/2/images/${String(n).repeat(64)}.png`,
-      }))}
+      images={[
+        {
+          frame_id: "F02",
+          asset_id: 202,
+          target_scene_id: "scene-2",
+          intent: "镜头2",
+          storage_ref: `local://content-assets/1/generation-jobs/2/images/${"2".repeat(64)}.png`,
+        },
+        {
+          frame_id: "F01",
+          asset_id: 201,
+          target_scene_id: "scene-1",
+          intent: "镜头1",
+          storage_ref: `local://content-assets/1/generation-jobs/2/images/${"1".repeat(64)}.png`,
+        },
+      ]}
       candidateSetHash={"e".repeat(64)}
       target={{ kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-1", "scene-2"] }}
       onApplySet={onApplySet}
@@ -122,8 +132,8 @@ describe("generated image gallery", () => {
       candidateSetHash: "e".repeat(64),
       target: { kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-1", "scene-2"] },
       assignments: [
-        { candidateAssetId: 201, sceneId: "scene-1" },
         { candidateAssetId: 202, sceneId: "scene-2" },
+        { candidateAssetId: 201, sceneId: "scene-1" },
       ],
     });
   });

@@ -32,7 +32,8 @@ it("keeps image generation scoped to reference requests or server recommendation
   expect(libraryWorkshop).not.toContain("拆成短视频");
   expect(libraryWorkshop).not.toContain("加入对话并说明想怎么处理这段内容");
   expect(libraryWorkshop).not.toContain("可发布的短视频片段");
-  expect(workspaceClient).toContain("采纳第 ${segment.index} 镜的关键帧建议。");
+  expect(workspaceClient).not.toContain("采纳关键帧建议");
+  expect(workspaceClient).not.toContain("keyframeRecommendationAcceptance");
   expect(workspaceClient).not.toContain("生成图片方案");
   expect(workspaceClient).not.toContain("做成图片。");
   expect(conversationStart).toContain("封面方案");

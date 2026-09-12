@@ -46,9 +46,7 @@ import type {
   AssetImageGenerationApplication,
   AssetImageGenerationSetApplication,
   AssetImageGenerationConfirmation,
-  AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
-  AssetProductSegment,
   AssetLongFormAction,
   AssetPlanBgmCatalog,
   AssetPresenterDirectionConfirmation,
@@ -1945,68 +1943,12 @@ export default function AssetsWorkspaceClient({
       undefined,
       undefined,
       undefined,
-      undefined,
       {
         expectedCandidateSetHash: application.candidateSetHash,
         clientRequestId: globalThis.crypto.randomUUID(),
         target: application.target,
         assignments: application.assignments,
       },
-    );
-  };
-
-  const handleGenerateDirectorSceneKeyframe = async (
-    product: ProductArtifact,
-    segment: AssetProductSegment,
-  ) => {
-    if (!runtimeWriteCapabilities.canGenerate || isConversationSnapshot) {
-      throw new Error("当前完整对话尚未就绪，暂不能生成关键帧。");
-    }
-    if (product.contentType !== "video_script" || !product.backendAssetId) {
-      throw new Error("当前仅可为已保存的编导稿分镜生成关键帧。");
-    }
-    const currentVersionId = Number(product.versions?.at(-1)?.id);
-    if (!Number.isSafeInteger(currentVersionId) || currentVersionId <= 0) {
-      throw new Error("当前编导稿版本尚未就绪，请稍后重试。");
-    }
-    const recommendation = segment.imageGenerationRecommendation;
-    if (!recommendation) {
-      return;
-    }
-    const instruction = `采纳第 ${segment.index} 镜的关键帧建议。`;
-    const imageGenerationRecommendationAcceptance: AssetImageGenerationRecommendationAcceptance = {
-      recommendationId: recommendation.recommendationId,
-      fingerprint: recommendation.fingerprint,
-      clientRequestId: globalThis.crypto.randomUUID(),
-      target: {
-        kind: "director_scene",
-        assetId: product.backendAssetId,
-        versionId: currentVersionId,
-        sceneIds: [segment.id],
-      },
-    };
-    await handleSendConversationMessage(
-      selectedConversation,
-      instruction,
-      undefined,
-      [],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      imageGenerationRecommendationAcceptance,
     );
   };
 
@@ -2348,7 +2290,6 @@ export default function AssetsWorkspaceClient({
     imageGenerationRequest?: AssetImageGenerationRequest,
     imageGenerationConfirmation?: AssetImageGenerationConfirmation,
     imageGenerationApplication?: AssetImageGenerationApplication,
-    imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
     imageGenerationSetApplication?: AssetImageGenerationSetApplication,
   ) => {
     if (conversation.readonly) {
@@ -2428,7 +2369,6 @@ export default function AssetsWorkspaceClient({
         imageGenerationRequest,
         imageGenerationConfirmation,
         imageGenerationApplication,
-        imageGenerationRecommendationAcceptance,
         imageGenerationSetApplication,
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
@@ -3226,7 +3166,6 @@ export default function AssetsWorkspaceClient({
                   onSelectedImageFrameChange={(frameId) => {
                     setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
                   }}
-                  onGenerateKeyframe={handleGenerateDirectorSceneKeyframe}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
