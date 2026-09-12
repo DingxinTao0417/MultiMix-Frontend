@@ -44,6 +44,17 @@ const product = {
     video_workflow_stage: "director_script_draft",
     video_plan: {
       video_type: "explainer",
+      creative_profile: {
+        schema_version: "video_creative_profile:v1",
+        task_mode: "create",
+        content_goal: "promote",
+        style_profile: "ugc_native",
+        production_mode: "hybrid",
+        anchor_source: null,
+        preserve_source_audio: false,
+        cost_priority: "balanced",
+        latency_priority: "standard",
+      },
       creative_direction: {
         schema_version: "creative_direction:v1",
         fingerprint,
@@ -98,14 +109,45 @@ const conversation = {
   created_at: createdAt,
   updated_at: createdAt,
   products: [product],
-  messages: [],
+  messages: [{
+    id: 1,
+    role: "assistant",
+    text: "编导稿已经按当前方向生成，请确认逐镜方案。",
+    asset_id: product.id,
+    metadata: {
+      plan: {
+        kind: "video_project_confirmation",
+        title: "视频方案",
+        status: "pending",
+        fields: [
+          {
+            key: "creative_profile",
+            label: "内容方向",
+            value: "从头创作 · 推广 · UGC 原生 · 混合制作 · UGC 表达 + 品牌质感",
+          },
+          {
+            key: "production_mix",
+            label: "计划构成",
+            value: "1 段已保存素材 · 1 段生成镜头 · 1 段图形画面 · 配音与音乐",
+          },
+        ],
+        confirm_label: "确认，生成视频工程",
+        confirm_utterance: "确认，生成视频工程",
+        adjust_label: "调整方向",
+      },
+    },
+    created_at: createdAt,
+  }],
 };
 
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, headers: corsHeaders, body: JSON.stringify(body) });
 }
 
-async function installFixtureApi(page: Page) {
+async function installFixtureApi(page: Page, { withConfirmation = true } = {}) {
+  const fixtureConversation = withConfirmation
+    ? conversation
+    : { ...conversation, messages: [] };
   await page.addInitScript(() => {
     const user = {
       id: "00000000-0000-4000-8000-000000000042",
@@ -153,7 +195,7 @@ async function installFixtureApi(page: Page) {
       return;
     }
     if (request.method() === "GET" && url.pathname === `/v1/assets/conversations/${conversation.id}`) {
-      await fulfillJson(route, conversation);
+      await fulfillJson(route, fixtureConversation);
       return;
     }
     if (request.method() === "GET" && url.pathname === "/v1/assets") {
@@ -163,7 +205,7 @@ async function installFixtureApi(page: Page) {
     if (request.method() === "POST" && url.pathname === "/v1/assets/conversations/messages") {
       await fulfillJson(route, {
         conversation_id: conversation.id,
-        conversation,
+        conversation: fixtureConversation,
         user_message: "应用此方向",
         assistant_message: "内容生成任务已进入队列，完成后会自动更新当前对话。",
         intent: { operation: "revise" },
@@ -207,8 +249,26 @@ async function expectDirectionPanelSeparatedFromDocument(page: Page) {
   expect(reasonBox!.y + reasonBox!.height).toBeLessThanOrEqual(documentBox!.y + 1);
 }
 
-test("creative directions stay optional until a user explicitly applies one", async ({ page }) => {
+test("video plan confirmation presents correctable content direction and planned composition", async ({ page }) => {
   await installFixtureApi(page);
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+
+  const confirmation = page.getByLabel("视频方案 · 待确认");
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation).toContainText("内容方向");
+  await expect(confirmation).toContainText("UGC 表达 + 品牌质感");
+  await expect(confirmation).toContainText("计划构成");
+  await expect(confirmation).toContainText("1 段已保存素材 · 1 段生成镜头 · 1 段图形画面 · 配音与音乐");
+  await confirmation.getByRole("button", { name: "调整方向" }).click();
+  await expect(page.getByLabel("输入对话内容")).toBeFocused();
+  await expect(page.getByLabel("输入对话内容")).toHaveAttribute(
+    "placeholder",
+    "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…",
+  );
+});
+
+test("creative directions stay optional until a user explicitly applies one", async ({ page }) => {
+  await installFixtureApi(page, { withConfirmation: false });
   await page.goto(`/app/assets?conversation=${conversationId}`);
 
   const selector = page.getByRole("region", { name: "创意方向" });

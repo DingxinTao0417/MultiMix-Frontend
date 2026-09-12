@@ -18,7 +18,10 @@ export function videoCreativeProfile(
     || !CONTENT_GOALS.has(String(profile.content_goal ?? ""))
     || !STYLE_PROFILES.has(String(profile.style_profile ?? ""))
     || !PRODUCTION_MODES.has(String(profile.production_mode ?? ""))
-    || !ANCHOR_SOURCES.has(String(profile.anchor_source ?? ""))
+    || !(
+      profile.anchor_source === null
+      || ANCHOR_SOURCES.has(String(profile.anchor_source ?? ""))
+    )
     || typeof profile.preserve_source_audio !== "boolean"
   ) return null;
   return profile;
