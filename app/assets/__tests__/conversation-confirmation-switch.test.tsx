@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ConversationStudio from "../components/conversation-studio";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { AssetMessagePlan } from "../lib/asset-workspace-types";
+import { isFiveLayerVideoPlan } from "../lib/video-creative-profile";
 
 type PendingExchange = NonNullable<ComponentProps<typeof ConversationStudio>["pendingExchange"]>;
 
@@ -16,6 +17,8 @@ const videoPlan: AssetMessagePlan = {
   title: "视频方案",
   status: "pending",
   fields: [
+    { key: "creative_profile", label: "内容方向", value: "从头创作 · 推广 · UGC 原生 · 混合制作" },
+    { key: "production_mix", label: "计划构成", value: "1 段已保存素材 · 1 段生成镜头" },
     { key: "format", label: "视频形式", value: "横屏 16:9 · 真实" },
     { key: "duration", label: "时长", value: "约 30 秒 · 4 个分镜" },
   ],
@@ -109,6 +112,8 @@ describe("video confirmation while switching conversations", () => {
     fireEvent.click(screen.getByRole("button", { name: "返回对话 A" }));
 
     expect(screen.getByLabelText("视频方案 · 已确认")).toBeInTheDocument();
+    expect(screen.getByText("内容方向")).toBeInTheDocument();
+    expect(screen.getByText("计划构成")).toBeInTheDocument();
     expect(screen.getByText("创建视频工程任务")).toBeInTheDocument();
   });
 
@@ -123,5 +128,21 @@ describe("video confirmation while switching conversations", () => {
     fireEvent.click(screen.getByRole("button", { name: "切到对话 B" }));
 
     expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("accepts a valid no-material creative profile without inventing an anchor", () => {
+    expect(isFiveLayerVideoPlan({
+      creative_profile: {
+        schema_version: "video_creative_profile:v1",
+        task_mode: "create",
+        content_goal: "story",
+        style_profile: "brand_polished",
+        production_mode: "generated_led",
+        anchor_source: null,
+        preserve_source_audio: false,
+        cost_priority: "balanced",
+        latency_priority: "standard",
+      },
+    })).toBe(true);
   });
 });

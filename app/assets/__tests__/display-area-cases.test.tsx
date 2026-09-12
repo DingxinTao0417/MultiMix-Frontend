@@ -77,8 +77,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByLabelText("分镜摘要")).not.toBeInTheDocument();
   });
 
-  it("keeps the director script readable and exposes persisted keyframe recommendations", () => {
-    const onGenerateKeyframe = vi.fn();
+  it("keeps keyframe recommendations in the conversation instead of appending director controls", () => {
     const product: AssetProduct = {
       ...displayProducts["case-01-director-draft"],
       mode: "copy" as const,
@@ -101,16 +100,14 @@ describe("display-area eight-case matrix", () => {
       }],
     };
 
-    render(<ProductPreview product={product} onGenerateKeyframe={onGenerateKeyframe} />);
+    render(<ProductPreview product={product} />);
 
     expect(screen.getByRole("article")).toHaveTextContent("真人拿起口红并自然试色");
-    expect(screen.getByLabelText("分镜摘要")).toHaveTextContent("建议生成 1 张关键帧");
-    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
-    expect(onGenerateKeyframe).toHaveBeenCalledWith(product.segments![0]);
+    expect(screen.queryByLabelText("分镜摘要")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).not.toBeInTheDocument();
   });
 
-  it("routes a director keyframe recommendation through the workspace container", () => {
-    const onGenerateKeyframe = vi.fn();
+  it("does not expose a keyframe recommendation button through the workspace container", () => {
     const product: AssetProduct = {
       ...displayProducts["case-01-director-draft"],
       mode: "copy",
@@ -137,14 +134,12 @@ describe("display-area eight-case matrix", () => {
         copied={false}
         onCopyProduct={vi.fn(async () => undefined)}
         onSaveProduct={vi.fn(async () => undefined)}
-        onGenerateKeyframe={onGenerateKeyframe}
         product={product}
         selectedConversation={conversationForDisplayProduct(product)}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "采纳关键帧建议" }));
-    expect(onGenerateKeyframe).toHaveBeenCalledWith(product, product.segments![0]);
+    expect(screen.queryByRole("button", { name: "采纳关键帧建议" })).not.toBeInTheDocument();
   });
 
   it.each([

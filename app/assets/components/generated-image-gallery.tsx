@@ -5,7 +5,7 @@ import { API_BASE } from "../../../lib/api";
 import type { AssetImageGenerationTarget } from "../lib/asset-workspace-types";
 
 type Finding = { status: string; evidence: string };
-export type GeneratedImageFrame = { frame_id: string; intent: string; storage_ref: string; asset_id?: number; review_status?: string;
+export type GeneratedImageFrame = { frame_id: string; intent: string; storage_ref: string; asset_id?: number; target_scene_id?: string; review_status?: string;
   quality_review?: { status?: string; checks?: Record<string, Finding> } };
 const CHECK_LABELS: Record<string, string> = { structure: "结构", quantity: "数量", color: "颜色",
   text_marks: "文字与印记", shot: "镜头表达", diversity: "相邻帧丰富性" };
@@ -130,13 +130,20 @@ export default function GeneratedImageGallery({
     && target.versionId,
   );
   const actionLabel = target?.kind === "cover" ? "设为封面" : "应用到分镜";
+  const targetSceneIds = target?.sceneIds ?? [];
   const keyframeSetAssignments = target?.kind === "director_scene"
-    && target.sceneIds?.length === frames.length
+    && targetSceneIds.length === frames.length
     && frames.length > 1
-    && frames.every((frame) => typeof frame.asset_id === "number" && frame.asset_id > 0)
-    ? frames.map((frame, index) => ({
+    && frames.every((frame) => (
+      typeof frame.asset_id === "number"
+      && frame.asset_id > 0
+      && typeof frame.target_scene_id === "string"
+      && targetSceneIds.includes(frame.target_scene_id)
+    ))
+    && new Set(frames.map((frame) => frame.target_scene_id)).size === frames.length
+    ? frames.map((frame) => ({
         candidateAssetId: frame.asset_id as number,
-        sceneId: target.sceneIds![index],
+        sceneId: frame.target_scene_id as string,
       }))
     : null;
   const canApplySet = Boolean(
@@ -181,7 +188,7 @@ export default function GeneratedImageGallery({
         {locallyApplied ? <span>已应用</span> : <span>尚未应用到分镜</span>}
         {canApplySet ? (
           <>
-            <p>将按当前顺序分别写入目标分镜；这不会自动生成视频。</p>
+            <p>将按生成方案中冻结的对应关系分别写入目标分镜；这不会自动生成视频。</p>
             <button
               type="button"
               disabled={isApplyingSet || locallyApplied}
