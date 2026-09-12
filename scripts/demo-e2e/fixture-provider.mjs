@@ -11,6 +11,47 @@ function readJson(name) { return JSON.parse(fs.readFileSync(path.join(fixtureRoo
 function send(response, status, payload) { response.writeHead(status, { "content-type": "application/json; charset=utf-8" }); response.end(JSON.stringify(payload)); }
 async function body(request) { const chunks = []; for await (const chunk of request) chunks.push(chunk); return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
 
+function lly44SourceResolutionFixture(system, userContent) {
+  if (system.includes("You classify a Chinese content-creation assistant user's message")) {
+    return {
+      operation: "derive",
+      target_media: "video",
+      creative_profile: null,
+      has_provided_source: true,
+      source_scope: "conversation_material",
+      skip_confirmation: false,
+      requires_quantitative_proof: false,
+      ai_voice_enabled: null,
+      subtitles_enabled: null,
+      bgm_enabled: null,
+      topic: "门窗宣传",
+      confidence: 0.99,
+      reason: "explicit_named_saved_source",
+    };
+  }
+  if (system.includes("Determine whether the user explicitly refers to one existing source")) {
+    const referenceText = userContent.includes("品牌主视觉") ? "品牌主视觉" : "施工花絮";
+    return {
+      reference_intent: "explicit_reference",
+      reference_text: referenceText,
+      reason: "named_source_reference",
+    };
+  }
+  if (system.includes("Ground the user's explicit source reference to only the supplied candidate IDs")) {
+    const referenceText = userContent.includes("品牌主视觉") ? "品牌主视觉" : "施工花絮";
+    const candidateIds = [...userContent.matchAll(/\"asset_id\"\s*:\s*(\d+)\s*,\s*\"title\"\s*:\s*\"([^\"]*)\"/g)]
+      .filter((match) => match[2].includes(referenceText))
+      .map((match) => Number(match[1]));
+    return {
+      status: candidateIds.length === 1 ? "resolved" : "ambiguous",
+      selected_asset_id: candidateIds.length === 1 ? candidateIds[0] : null,
+      candidate_ids: candidateIds,
+      reason: candidateIds.length === 1 ? "single_identity_match" : "multiple_identity_matches",
+    };
+  }
+  return null;
+}
+
 export async function createFixtureProvider({ port = 8398 } = {}) {
   const vision = readJson("mock-vision-responses.json");
   const llm = readJson("mock-llm-responses.json");
@@ -29,6 +70,20 @@ export async function createFixtureProvider({ port = 8398 } = {}) {
         const key = String(messages.at(-1)?.content || "").trim();
         const match = Object.entries(llm).find(([candidate]) => key.includes(candidate));
         let content = match?.[1];
+        const isLly44FixtureRequest = (
+          key.includes("LLY44_BROWSER_FIXTURE")
+          || key.includes("品牌主视觉")
+          || key.includes("施工花絮")
+        );
+        if (
+          !content
+          && (
+            isLly44FixtureRequest
+            || system.includes("Ground the user's explicit source reference to only the supplied candidate IDs")
+          )
+        ) {
+          content = lly44SourceResolutionFixture(system, key);
+        }
         if (!content && system.includes("classify a MultiMix content-production instruction")) content = { capability: "video_project", channel: "short_video", audience: "本地门窗客户", format: "video_project", ratio: "9:16", duration: "30", style: "真实克制", video_mode: "real_scene", operation: "draft", asset_requirements: [], confidence: 0.99 };
         if (!content && system.includes("generate MultiMix content artifacts")) content = {
           title: "门窗隔音获客视频",

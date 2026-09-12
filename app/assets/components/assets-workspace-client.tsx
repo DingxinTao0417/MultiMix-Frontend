@@ -55,6 +55,7 @@ import type {
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetPresenterAudioSelectionConfirmation,
+  AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -2350,6 +2351,7 @@ export default function AssetsWorkspaceClient({
     imageGenerationApplication?: AssetImageGenerationApplication,
     imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
     imageGenerationSetApplication?: AssetImageGenerationSetApplication,
+    sourceResolutionSelection?: AssetSourceResolutionSelection,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -2433,6 +2435,7 @@ export default function AssetsWorkspaceClient({
         presenterCleanupConfirmation,
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
+        sourceResolutionSelection,
         signal
       });
     } catch (error) {

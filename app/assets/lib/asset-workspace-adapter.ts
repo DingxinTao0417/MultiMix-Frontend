@@ -14,6 +14,7 @@ import type {
   AssetPresenterDirectionConfirmation,
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
+  AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -301,6 +302,7 @@ export function buildConversationMessagePayload({
   imageGenerationApplication,
   imageGenerationSetApplication,
   sourceSubtitleMode,
+  sourceResolutionSelection,
 }: {
   conversationId: string;
   instruction: string;
@@ -323,6 +325,7 @@ export function buildConversationMessagePayload({
   imageGenerationApplication?: AssetImageGenerationApplication;
   imageGenerationSetApplication?: AssetImageGenerationSetApplication;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+  sourceResolutionSelection?: AssetSourceResolutionSelection;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -346,6 +349,12 @@ export function buildConversationMessagePayload({
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
     ...(sourceSubtitleMode ? { source_subtitle_mode: sourceSubtitleMode } : {}),
+    ...(sourceResolutionSelection ? {
+      source_resolution_selection: {
+        resolution_id: sourceResolutionSelection.resolutionId,
+        asset_id: sourceResolutionSelection.assetId,
+      },
+    } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
     ...(videoSceneReplacement ? {
       video_scene_replacement: {
@@ -634,6 +643,7 @@ export type AssetWorkspaceAdapter = {
     imageGenerationApplication?: AssetImageGenerationApplication;
     imageGenerationSetApplication?: AssetImageGenerationSetApplication;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+    sourceResolutionSelection?: AssetSourceResolutionSelection;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -1311,6 +1321,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       imageGenerationApplication,
       imageGenerationSetApplication,
       sourceSubtitleMode,
+      sourceResolutionSelection,
       signal,
     }) {
       if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
@@ -1345,6 +1356,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           imageGenerationApplication,
           imageGenerationSetApplication,
           sourceSubtitleMode,
+          sourceResolutionSelection,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

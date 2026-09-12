@@ -391,6 +391,11 @@ export type AssetCreativeDirectionSelection = {
   creativeDirectionFingerprint: string;
 };
 
+export type AssetSourceResolutionSelection = {
+  resolutionId: string;
+  assetId: number;
+};
+
 export type AssetPresenterCleanupConfirmation = {
   cleanupPlanId: string;
   cleanupPlanHash: string;
@@ -628,6 +633,10 @@ export type AssetSuggestionAction = {
   enabled: boolean;
   disabledReason?: string;
   requiresConfirmation: boolean;
+  targetAssetId?: number;
+  sourceResolutionId?: string;
+  sourceFilename?: string;
+  assetKind?: string;
 };
 
 export type AssetProjectResource = {

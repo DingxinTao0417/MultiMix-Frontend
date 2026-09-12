@@ -135,6 +135,25 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("serializes a source choice as a structured conversation field", () => {
+    expect(buildConversationMessagePayload({
+      conversationId: "asset-conversation-source-choice",
+      instruction: "使用「施工花絮 B」继续",
+      clientRequestId: "5d634f6d-1842-4894-9ee2-99228b760717",
+      sourceResolutionSelection: {
+        resolutionId: "source-resolution-abc",
+        assetId: 202,
+      },
+    })).toMatchObject({
+      conversation_id: "asset-conversation-source-choice",
+      client_request_id: "5d634f6d-1842-4894-9ee2-99228b760717",
+      source_resolution_selection: {
+        resolution_id: "source-resolution-abc",
+        asset_id: 202,
+      },
+    });
+  });
+
   it("creates an isolated draft id for a direct library creation request", () => {
     const draft = createLibraryCreationDraftConversation(
       assetWorkspaceAdapter.getNewConversation(),

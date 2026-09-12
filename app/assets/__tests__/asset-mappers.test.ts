@@ -19,6 +19,38 @@ const newConversationProduct = {
 } as AssetProduct;
 
 describe("project conversation mapping", () => {
+  it("maps bounded source-resolution actions without dropping stable ids", () => {
+    const conversation = conversationFromPersisted({
+      id: "asset-conversation-source-choice", title: "门窗视频", status: "active", metadata: {},
+      created_at: "2026-09-12T00:00:00Z", updated_at: "2026-09-12T00:00:00Z",
+      products: [],
+      messages: [{
+        id: 1, role: "assistant", text: "请选择素材。", asset_id: null,
+        created_at: "2026-09-12T00:00:00Z", metadata: { suggestion_actions: [{
+          id: "select-source:resolution-1:202",
+          label: "施工花絮 B · install-b.mp4 · video",
+          utterance: "使用「施工花絮 B」继续",
+          action_type: "select_source",
+          mode: "source_resolution",
+          enabled: true,
+          requires_confirmation: false,
+          target_asset_id: 202,
+          source_resolution_id: "resolution-1",
+          source_filename: "install-b.mp4",
+          asset_kind: "video",
+        }] },
+      }],
+    }, newConversationProduct);
+
+    expect(conversation.messages?.[0]?.suggestionActions?.[0]).toMatchObject({
+      actionType: "select_source",
+      targetAssetId: 202,
+      sourceResolutionId: "resolution-1",
+      sourceFilename: "install-b.mp4",
+      assetKind: "video",
+    });
+  });
+
   it("preserves the server's director binding on a video card with no message asset", () => {
     const conversation = conversationFromPersisted({
       id: "asset-conversation-binding", title: "视频", status: "active", metadata: {},

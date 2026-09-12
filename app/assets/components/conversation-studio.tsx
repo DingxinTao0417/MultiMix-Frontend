@@ -26,8 +26,11 @@ import type {
   AgentRunStep,
   AssetConversationMessage,
   AssetCreativeDirectionSelection,
+  AssetImageGenerationApplication,
   AssetImageGenerationConfirmation,
+  AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
+  AssetImageGenerationSetApplication,
   AssetLongFormAction,
   AssetMessagePlan,
   AssetMessagePresentation,
@@ -37,6 +40,7 @@ import type {
   AssetPresenterDirectionConfirmation,
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
+  AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -66,6 +70,24 @@ type OptimisticExchange = {
 };
 
 type OptimisticFeedback = Pick<OptimisticExchange, "assistantText" | "presentation" | "runSteps" | "confirmationPlanKey">;
+
+type SendInstructionOptions = {
+  optimisticFeedback?: OptimisticFeedback;
+  clientRequestId?: string;
+  videoParameterConfirmation?: AssetVideoParameterConfirmation;
+  agentConfirmationId?: string;
+  videoSceneReplacement?: AssetVideoSceneReplacement;
+  presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
+  presenterDirectionRequest?: AssetPresenterDirectionRequest;
+  presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
+  presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation;
+  confirmationProductId?: number;
+  sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
+  videoProjectConfirmation?: AssetVideoProjectConfirmation;
+  imageGenerationRequest?: AssetImageGenerationRequest;
+  imageGenerationConfirmation?: AssetImageGenerationConfirmation;
+  sourceResolutionSelection?: AssetSourceResolutionSelection;
+};
 
 type ActiveRequest = {
   controller: AbortController;
@@ -142,7 +164,9 @@ function visibleSuggestions(message: VisibleConversationMessage) {
       actionType: action.actionType,
       isAiPrimary: action.isAiPrimary === true,
       enabled: action.enabled,
-      disabledReason: action.disabledReason
+      disabledReason: action.disabledReason,
+      targetAssetId: action.targetAssetId,
+      sourceResolutionId: action.sourceResolutionId,
     }));
   }
   return (message.suggestions ?? []).map((suggestion) => ({
@@ -316,6 +340,10 @@ export default function ConversationStudio({
     creativeDirectionSelection?: AssetCreativeDirectionSelection,
     imageGenerationRequest?: AssetImageGenerationRequest,
     imageGenerationConfirmation?: AssetImageGenerationConfirmation,
+    imageGenerationApplication?: AssetImageGenerationApplication,
+    imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
+    imageGenerationSetApplication?: AssetImageGenerationSetApplication,
+    sourceResolutionSelection?: AssetSourceResolutionSelection,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
@@ -441,22 +469,25 @@ export default function ConversationStudio({
 
   const sendInstruction = async (
     instruction: string,
-    optimisticFeedback?: OptimisticFeedback,
-    clientRequestId?: string,
-    videoParameterConfirmation?: AssetVideoParameterConfirmation,
-    agentConfirmationId?: string,
-    videoSceneReplacement?: AssetVideoSceneReplacement,
-    presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
-    presenterDirectionRequest?: AssetPresenterDirectionRequest,
-    presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
-    presenterAudioSelectionConfirmation?: AssetPresenterAudioSelectionConfirmation,
-    confirmationProductId?: number,
-    sourceSubtitleMode?: "translated_zh" | "source" | "bilingual",
-    videoProjectConfirmation?: AssetVideoProjectConfirmation,
-    creativeDirectionSelection?: AssetCreativeDirectionSelection,
-    imageGenerationRequest?: AssetImageGenerationRequest,
-    imageGenerationConfirmation?: AssetImageGenerationConfirmation,
+    options: SendInstructionOptions = {},
   ) => {
+    const {
+      optimisticFeedback,
+      clientRequestId,
+      videoParameterConfirmation,
+      agentConfirmationId,
+      videoSceneReplacement,
+      presenterDirectionConfirmation,
+      presenterDirectionRequest,
+      presenterCleanupConfirmation,
+      presenterAudioSelectionConfirmation,
+      confirmationProductId,
+      sourceSubtitleMode,
+      videoProjectConfirmation,
+      imageGenerationRequest,
+      imageGenerationConfirmation,
+      sourceResolutionSelection,
+    } = options;
     const blockReason = attachmentSendBlockReason(imageAttachments);
     if (blockReason) {
       setSendError(blockReason);
@@ -514,6 +545,10 @@ export default function ConversationStudio({
         undefined,
         imageGenerationRequest,
         imageGenerationConfirmation,
+        undefined,
+        undefined,
+        undefined,
+        sourceResolutionSelection,
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
@@ -683,60 +718,61 @@ export default function ConversationStudio({
     setConfirmingPlanKey(planKey);
     try {
       await sendInstruction(instruction, {
-        assistantText: isVideoParameterConfirmation
-          ? "参数已确认，正在生成编导稿。"
-          : isImageGenerationConfirmation
-            ? "已确认，正在生成图片。"
-          : isAgentActionConfirmation
-            ? "已确认，正在执行视频修改。"
-            : isPresenterAudioSelectionConfirmation
-              ? "原声已确认，正在生成对应口播清理方案。"
-            : "已确认，正在创建视频工程任务。",
-        presentation: "execution_anchor",
-        runSteps: isAgentActionConfirmation
-          ? [{
-              key: plan.confirmationId ?? "agent-action-confirmation",
-              label: "执行视频修改",
-              status: "run",
-            }]
-          : isPresenterAudioSelectionConfirmation
+        optimisticFeedback: {
+          assistantText: isVideoParameterConfirmation
+            ? "参数已确认，正在生成编导稿。"
+            : isImageGenerationConfirmation
+              ? "已确认，正在生成图片。"
+            : isAgentActionConfirmation
+              ? "已确认，正在执行视频修改。"
+              : isPresenterAudioSelectionConfirmation
+                ? "原声已确认，正在生成对应口播清理方案。"
+              : "已确认，正在创建视频工程任务。",
+          presentation: "execution_anchor",
+          runSteps: isAgentActionConfirmation
             ? [{
-                key: plan.confirmationId ?? "presenter-audio-selection",
-                label: "生成口播清理方案",
+                key: plan.confirmationId ?? "agent-action-confirmation",
+                label: "执行视频修改",
                 status: "run",
               }]
-          : isImageGenerationConfirmation
-            ? optimisticImageGenerationSteps()
-            : optimisticVideoProjectSteps(),
-        confirmationPlanKey: planKey,
-      },
-      globalThis.crypto.randomUUID(),
-      videoParameterConfirmation,
-      plan.confirmationId,
-      undefined,
-      values?.directorCandidateId
-        ? {
-            directorCandidateId: values.directorCandidateId,
-            ...(ratio ? { ratio } : {}),
-            ...(values?.sourceSubtitleMode ? { subtitleMode: values.sourceSubtitleMode } : {}),
-            ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
-          }
-        : undefined,
-      undefined,
-      presenterCleanupConfirmation,
-      presenterAudioSelectionConfirmation,
-       isVideoProjectConfirmation ? directorAssetId : confirmationProductId,
-       sourceSubtitleMode,
-       isVideoProjectConfirmation ? {
-         ...videoProjectConfirmation,
-         directorAssetId,
-         ...(plan.directorContentHash ? { directorContentHash: plan.directorContentHash } : {}),
-         ...(ratio ? { ratio } : {}),
-       } : videoProjectConfirmation,
-       undefined,
-       undefined,
-       imageGenerationConfirmation,
-      );
+            : isPresenterAudioSelectionConfirmation
+              ? [{
+                  key: plan.confirmationId ?? "presenter-audio-selection",
+                  label: "生成口播清理方案",
+                  status: "run",
+                }]
+            : isImageGenerationConfirmation
+              ? optimisticImageGenerationSteps()
+              : optimisticVideoProjectSteps(),
+          confirmationPlanKey: planKey,
+        },
+        clientRequestId: globalThis.crypto.randomUUID(),
+        videoParameterConfirmation,
+        agentConfirmationId: plan.confirmationId,
+        presenterDirectionConfirmation: values?.directorCandidateId
+          ? {
+              directorCandidateId: values.directorCandidateId,
+              ...(ratio ? { ratio } : {}),
+              ...(values?.sourceSubtitleMode ? { subtitleMode: values.sourceSubtitleMode } : {}),
+              ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
+            }
+          : undefined,
+        presenterCleanupConfirmation,
+        presenterAudioSelectionConfirmation,
+        confirmationProductId: isVideoProjectConfirmation
+          ? directorAssetId
+          : confirmationProductId,
+        sourceSubtitleMode,
+        videoProjectConfirmation: isVideoProjectConfirmation
+          ? {
+              ...videoProjectConfirmation,
+              directorAssetId,
+              ...(plan.directorContentHash ? { directorContentHash: plan.directorContentHash } : {}),
+              ...(ratio ? { ratio } : {}),
+            }
+          : videoProjectConfirmation,
+        imageGenerationConfirmation,
+      });
     } finally {
       setConfirmingPlanKey((current) => current === planKey ? null : current);
     }
@@ -751,19 +787,15 @@ export default function ConversationStudio({
       void sendInstruction(
         "换个方向",
         {
-          assistantText: "正在准备下一个推荐方向。",
-          presentation: "execution_anchor",
-          confirmationPlanKey: confirmationPlanKey(plan),
+          optimisticFeedback: {
+            assistantText: "正在准备下一个推荐方向。",
+            presentation: "execution_anchor",
+            confirmationPlanKey: confirmationPlanKey(plan),
+          },
+          clientRequestId: globalThis.crypto.randomUUID(),
+          presenterDirectionRequest: { currentCandidateId: plan.directionDefault },
+          confirmationProductId,
         },
-        globalThis.crypto.randomUUID(),
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { currentCandidateId: plan.directionDefault },
-        undefined,
-        undefined,
-        confirmationProductId,
       );
       return;
     }
@@ -796,17 +828,14 @@ export default function ConversationStudio({
       if (typeof utterance === "string" && utterance.trim()) {
         void sendInstruction(
           utterance.trim(),
-          undefined,
-          detail?.videoSceneReplacement ? globalThis.crypto.randomUUID() : undefined,
-          undefined,
-          undefined,
-          detail?.videoSceneReplacement,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          detail?.confirmationProductId,
-          detail?.sourceSubtitleMode,
+          {
+            clientRequestId: detail?.videoSceneReplacement
+              ? globalThis.crypto.randomUUID()
+              : undefined,
+            videoSceneReplacement: detail?.videoSceneReplacement,
+            confirmationProductId: detail?.confirmationProductId,
+            sourceSubtitleMode: detail?.sourceSubtitleMode,
+          },
         );
       }
     };
@@ -1159,7 +1188,10 @@ export default function ConversationStudio({
                       ?? products.find((product) => product.backendAssetId === message.assetId);
                     const disabled = intent.disabled
                       || (intent.mode === "open_panel" ? !panelProduct : !canSend)
-                      || (sending && intent.mode === "submit_message");
+                      || (
+                        sending
+                        && (intent.mode === "submit_message" || intent.mode === "select_source")
+                      );
                     return (
                       <button
                         type="button"
@@ -1173,6 +1205,15 @@ export default function ConversationStudio({
                             if (panelProduct) {
                               setComposerValue("");
                               onSelectProduct(selectedConversation.id, panelProduct.id);
+                            }
+                            return;
+                          }
+                          if (intent.mode === "select_source") {
+                            if (intent.sourceResolutionSelection) {
+                              void sendInstruction(intent.utterance, {
+                                clientRequestId: globalThis.crypto.randomUUID(),
+                                sourceResolutionSelection: intent.sourceResolutionSelection,
+                              });
                             }
                             return;
                           }

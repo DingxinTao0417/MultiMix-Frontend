@@ -16,6 +16,35 @@ describe("conversation suggestion actions", () => {
     });
   });
 
+  it("keeps a source choice bound to the server resolution and asset ids", () => {
+    expect(resolveSuggestionClickIntent({
+      label: "施工花絮 B · install-b.mp4 · video",
+      utterance: "使用「施工花絮 B」继续",
+      actionType: "select_source",
+      enabled: true,
+      targetAssetId: 202,
+      sourceResolutionId: "source-resolution-abc",
+    })).toEqual({
+      disabled: false,
+      hidden: false,
+      mode: "select_source",
+      utterance: "使用「施工花絮 B」继续",
+      sourceResolutionSelection: {
+        resolutionId: "source-resolution-abc",
+        assetId: 202,
+      },
+    });
+  });
+
+  it("disables a source choice when its stable identity is incomplete", () => {
+    expect(resolveSuggestionClickIntent({
+      label: "施工花絮",
+      utterance: "使用「施工花絮」继续",
+      actionType: "select_source",
+      enabled: true,
+    }).disabled).toBe(true);
+  });
+
   it("keeps composer-fill suggestions editable", () => {
     expect(resolveSuggestionClickIntent({
       label: "生成视频方案",

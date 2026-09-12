@@ -27,6 +27,51 @@ const queuedAction: AgentActionRunResponse = {
 };
 
 describe("Conversation Agent actions", () => {
+  it("submits a source choice with its stable resolution binding", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "source-resolution-choice",
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: "找到了几个可能的素材，请选择你指的是哪一个。",
+        suggestionActions: [{
+          id: "select-source:resolution-1:202",
+          label: "施工花絮 B · install-b.mp4 · video",
+          utterance: "使用「施工花絮 B」继续",
+          actionType: "select_source",
+          mode: "source_resolution",
+          enabled: true,
+          requiresConfirmation: false,
+          targetAssetId: 202,
+          sourceResolutionId: "resolution-1",
+        }],
+      }],
+    };
+
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={null}
+      onSelectProduct={vi.fn()}
+      onSendMessage={onSendMessage}
+    />);
+    fireEvent.click(screen.getByRole("button", {
+      name: "施工花絮 B · install-b.mp4 · video",
+    }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[1]).toBe("使用「施工花絮 B」继续");
+    expect(onSendMessage.mock.calls[0]?.[4]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(onSendMessage.mock.calls[0]?.[22]).toEqual({
+      resolutionId: "resolution-1",
+      assetId: 202,
+    });
+  });
+
   it("binds a video confirmation without BGM to its director even while an image is selected", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const conversation = {

@@ -194,7 +194,11 @@ function suggestionActionsValue(value: unknown): AssetSuggestionAction[] | undef
       mode: stringValue(item.mode) || undefined,
       enabled: item.enabled !== false,
       disabledReason: stringValue(item.disabled_reason) || undefined,
-      requiresConfirmation: item.requires_confirmation !== false
+      requiresConfirmation: item.requires_confirmation !== false,
+      targetAssetId: numberOrUndefined(item.target_asset_id),
+      sourceResolutionId: stringValue(item.source_resolution_id) || undefined,
+      sourceFilename: stringValue(item.source_filename) || undefined,
+      assetKind: stringValue(item.asset_kind) || undefined,
     }];
   });
   return actions.length ? actions : undefined;
