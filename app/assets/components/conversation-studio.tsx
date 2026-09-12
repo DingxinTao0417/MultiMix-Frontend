@@ -28,7 +28,6 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
   AssetImageGenerationConfirmation,
-  AssetImageGenerationRecommendationAcceptance,
   AssetImageGenerationRequest,
   AssetImageGenerationSetApplication,
   AssetLongFormAction,
@@ -341,7 +340,6 @@ export default function ConversationStudio({
     imageGenerationRequest?: AssetImageGenerationRequest,
     imageGenerationConfirmation?: AssetImageGenerationConfirmation,
     imageGenerationApplication?: AssetImageGenerationApplication,
-    imageGenerationRecommendationAcceptance?: AssetImageGenerationRecommendationAcceptance,
     imageGenerationSetApplication?: AssetImageGenerationSetApplication,
     sourceResolutionSelection?: AssetSourceResolutionSelection,
   ) => Promise<void>;
@@ -545,7 +543,6 @@ export default function ConversationStudio({
         undefined,
         imageGenerationRequest,
         imageGenerationConfirmation,
-        undefined,
         undefined,
         undefined,
         sourceResolutionSelection,
