@@ -162,11 +162,19 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     name: "E2E 新场景图详情",
   });
   await expect(replacementDialog).toBeVisible();
-  await replacementDialog.getByRole("button", { name: "加入对话" }).click();
-  await expect(page.getByText("已加入当前对话引用。", { exact: true })).toBeVisible();
+  await replacementDialog.getByRole("button", { name: "加入项目…" }).click();
+  const projectPicker = page.getByRole("dialog", { name: "选择目标项目" });
+  await expect(projectPicker).toBeVisible();
+  await projectPicker.getByRole("button", { name: /^Agent 原子修改测试，/ }).click();
+  await expect(page.getByText("已加入项目，并立即保存。", { exact: true })).toBeVisible();
+  await replacementDialog.getByRole("button", { name: "关闭详情" }).click();
+  await page.getByRole("link", { name: /Agent 原子修改测试/ }).click();
   await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
     timeout: 120_000,
   });
+  await expect(page.getByRole("status", { name: "本轮已选素材" })).toContainText(
+    "E2E 新场景图",
+  );
 
   const replacement = await sendMessage(
     page,
@@ -232,15 +240,21 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     )
     && response.request().method() === "POST"
   ));
-  await undoArticle.getByRole("button", { name: "恢复", exact: true }).click();
+  await undoArticle.getByRole(
+    "button",
+    { name: "基于此版本继续", exact: true },
+  ).click();
   expect((await restoreResponse).status()).toBe(201);
-  await expect(page.getByText(/已恢复到 v1 的视频工程/).last()).toBeVisible();
+  await expect(
+    page.getByText(/已基于 v1 生成新的当前视频工程/).last(),
+  ).toBeVisible();
 
   await expect.poll(async () => {
     const restored = await readAsset(page, token);
     return scenesOf(restored)[1]?.asset_reference?.chosen_asset_id;
   }, { timeout: 30_000 }).toBe(seed.scene_two_old_asset_id);
   const restoredAsset = await readAsset(page, token);
+  expect(restoredAsset.versions.length).toBeGreaterThan(changedAsset.versions.length);
   expect(scenesOf(restoredAsset)[0]).toEqual(initialScenes[0]);
   expect(scenesOf(restoredAsset)[1]?.primary_visual?.asset_id).toBe(
     seed.scene_two_old_asset_id,

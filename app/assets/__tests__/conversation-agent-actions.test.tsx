@@ -264,6 +264,58 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[6]).toBe("agent-confirm-exact");
   });
 
+  it("confirms a generated-image scene update with target-specific progress copy", async () => {
+    const onSendMessage = vi.fn().mockImplementation(() => new Promise<void>(() => {}));
+    const onPendingExchangeChange = vi.fn();
+    const plan: AssetMessagePlan = {
+      kind: "agent_action_confirmation",
+      title: "确认更新已有视频",
+      status: "pending",
+      fields: [
+        { key: "image", label: "使用图片", value: "F02 · 产品近景" },
+        { key: "target", label: "更新分镜", value: "第 2 镜 · 产品近景" },
+        { key: "scope", label: "影响范围", value: "仅更新这一镜；其他分镜和上一稳定版本保持可用" },
+        { key: "time", label: "预计耗时", value: "预计数分钟，具体以任务状态为准" },
+        { key: "cost", label: "预计费用", value: "最高约 US$0.75" },
+      ],
+      confirmLabel: "确认更新这一镜",
+      adjustLabel: "取消",
+      confirmUtterance: "确认",
+      confirmationId: "agent-confirm-generated-image",
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-generated-image-video",
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "请确认。", plan }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+        onPendingExchangeChange={onPendingExchangeChange}
+      />,
+    );
+
+    expect(screen.getByText("F02 · 产品近景")).toBeInTheDocument();
+    expect(screen.getByText("最高约 US$0.75")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认更新这一镜" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[1]).toBe("确认");
+    expect(onSendMessage.mock.calls[0]?.[6]).toBe("agent-confirm-generated-image");
+    const pendingExchange = onPendingExchangeChange.mock.calls[0]?.[1];
+    expect(pendingExchange).toMatchObject({
+      assistantText: "正在更新第 2 镜 · 产品近景，其他分镜和上一稳定版本保持可用。",
+      presentation: "execution_anchor",
+      runSteps: [{ label: "更新第 2 镜 · 产品近景", status: "run" }],
+    });
+  });
+
   it("uses normal chat for an explicit reference-image request without exposing generic image actions", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const conversation = {

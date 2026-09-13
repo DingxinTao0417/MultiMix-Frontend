@@ -626,6 +626,10 @@ export default function ConversationStudio({
     const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
     const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
     const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
+    const generatedImageVideoTarget = isAgentActionConfirmation
+      && plan.fields?.some((field) => field.key === "image")
+      ? plan.fields.find((field) => field.key === "target")?.value
+      : undefined;
     const ratio = values?.ratio;
     const ratioLabel = ratio ? plan.ratioOptions?.find((option) => option.value === ratio)?.label : undefined;
     const confirmationDetails = [
@@ -745,7 +749,9 @@ export default function ConversationStudio({
             : isImageGenerationConfirmation
               ? "已确认，正在生成图片。"
             : isAgentActionConfirmation
-              ? "已确认，正在执行视频修改。"
+              ? generatedImageVideoTarget
+                ? `正在更新${generatedImageVideoTarget}，其他分镜和上一稳定版本保持可用。`
+                : "已确认，正在执行视频修改。"
               : isPresenterAudioSelectionConfirmation
                 ? "原声已确认，正在生成对应口播清理方案。"
               : "已确认，正在创建视频工程任务。",
@@ -753,7 +759,9 @@ export default function ConversationStudio({
           runSteps: isAgentActionConfirmation
             ? [{
                 key: plan.confirmationId ?? "agent-action-confirmation",
-                label: "执行视频修改",
+                label: generatedImageVideoTarget
+                  ? `更新${generatedImageVideoTarget}`
+                  : "执行视频修改",
                 status: "run",
               }]
             : isPresenterAudioSelectionConfirmation

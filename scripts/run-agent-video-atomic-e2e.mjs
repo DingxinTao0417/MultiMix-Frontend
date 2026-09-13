@@ -260,6 +260,20 @@ function extractTurnContext(requestBody) {
 }
 
 function fakeInterpretation(requestBody) {
+  const messages = Array.isArray(requestBody?.messages)
+    ? requestBody.messages
+    : [];
+  const systemPrompt = messages
+    .filter((message) => message?.role === "system")
+    .map((message) => String(message?.content ?? ""))
+    .join("\n");
+  if (
+    systemPrompt.includes("apply_frozen_target")
+    && systemPrompt.includes("server_verified_frozen_target")
+  ) {
+    scheduleWorkerStart();
+    return { kind: "apply_frozen_target" };
+  }
   const { context, instruction } = extractTurnContext(requestBody);
   if (instruction.includes("第1个分镜") && instruction.includes("逐词高亮")) {
     scheduleWorkerStart();

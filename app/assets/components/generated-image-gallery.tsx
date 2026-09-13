@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { API_BASE } from "../../../lib/api";
 import type { AssetImageGenerationTarget } from "../lib/asset-workspace-types";
 
@@ -119,6 +119,7 @@ export default function GeneratedImageGallery({
   const [isApplying, setIsApplying] = useState(false);
   const [isApplyingSet, setIsApplyingSet] = useState(false);
   const [locallyApplied, setLocallyApplied] = useState(applied);
+  useEffect(() => setLocallyApplied(applied), [applied]);
   const selected = frames.find((frame) => frame.frame_id === selectedFrameId) ?? frames[0];
   const actionableTarget = target?.kind === "cover" || target?.kind === "director_scene";
   const canApply = Boolean(
@@ -167,7 +168,11 @@ export default function GeneratedImageGallery({
         <a href={mediaUrl(selected.storage_ref)} target="_blank" rel="noreferrer">打开原图</a>
       </div>
       {target?.kind === "project" ? <p>已保存到图片库</p> : null}
-      {target?.kind === "video_scene" ? <p>已保存到图片库；已有视频分镜的应用将在视频编辑中单独确认。</p> : null}
+      {target?.kind === "video_scene" ? (
+        <p>{locallyApplied
+          ? "已应用到已有视频分镜。"
+          : "已保存到图片库。选中图片不会更新视频；请在对话中说明要更新的目标分镜，确认费用后再执行。"}</p>
+      ) : null}
       <section className="shadcn-prototype-generated-image-review-details" aria-label="图片检查结果">
         <header>
           <div>

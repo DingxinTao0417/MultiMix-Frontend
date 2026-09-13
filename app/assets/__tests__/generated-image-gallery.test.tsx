@@ -103,6 +103,46 @@ describe("generated image gallery", () => {
       target: { kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-2"] },
     });
   });
+  it("keeps existing-video application in the conversation instead of exposing a direct apply button", () => {
+    const onApply = vi.fn();
+    render(<GeneratedImageGallery
+      images={[{ frame_id: "F02", intent: "产品近景", review_status: "no_issue_detected",
+        storage_ref: `local://content-assets/1/generation-jobs/2/images/${"f".repeat(64)}.png`,
+      }]}
+      candidateAssetId={202}
+      candidateSetHash={"a".repeat(64)}
+      target={{ kind: "video_scene", assetId: 92, versionId: 23, sceneIds: ["scene-2"] }}
+      onApply={onApply}
+    />);
+
+    expect(screen.getByText(/选中图片不会更新视频/)).toBeTruthy();
+    expect(screen.getByText(/请在对话中说明要更新的目标分镜/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "应用到分镜" })).toBeNull();
+    expect(onApply).not.toHaveBeenCalled();
+  });
+  it("shows when an existing-video candidate has been applied", () => {
+    const props = {
+      images: [{ frame_id: "F02", intent: "产品近景", review_status: "no_issue_detected",
+        storage_ref: `local://content-assets/1/generation-jobs/2/images/${"f".repeat(64)}.png`,
+      }],
+      candidateAssetId: 202,
+      candidateSetHash: "a".repeat(64),
+      target: { kind: "video_scene" as const, assetId: 92, versionId: 23, sceneIds: ["scene-2"] },
+    };
+    const { rerender } = render(<GeneratedImageGallery
+      {...props}
+    />);
+
+    expect(screen.getByText(/选中图片不会更新视频/)).toBeTruthy();
+
+    rerender(<GeneratedImageGallery
+      {...props}
+      applied
+    />);
+
+    expect(screen.getByText("已应用到已有视频分镜。")).toBeTruthy();
+    expect(screen.queryByText(/选中图片不会更新视频/)).toBeNull();
+  });
   it("applies a complete keyframe set through explicit frame-to-scene bindings", async () => {
     const onApplySet = vi.fn().mockResolvedValue(undefined);
     render(<GeneratedImageGallery
