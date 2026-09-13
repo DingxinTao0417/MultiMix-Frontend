@@ -43,6 +43,7 @@ import type {
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
+  ProjectRequirementSnapshot,
 } from "../lib/asset-workspace-types";
 import ConfirmCard from "./confirm-card";
 import AgentRunTimeline from "./agent-run-timeline";
@@ -50,6 +51,8 @@ import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
+import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
+import { requirementConversationMediaFromValue } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -304,6 +307,9 @@ export default function ConversationStudio({
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
   onLoadBgmCatalog,
+  requirementSnapshot,
+  inheritedRequirementNotice = false,
+  requirementAnalyticsToken,
 }: {
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
@@ -368,6 +374,9 @@ export default function ConversationStudio({
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
   onLoadBgmCatalog?: (assetId: number) => Promise<AssetPlanBgmCatalog>;
+  requirementSnapshot?: ProjectRequirementSnapshot | null;
+  inheritedRequirementNotice?: boolean;
+  requirementAnalyticsToken?: string | null;
 }) {
   const products = getConversationProducts(selectedConversation);
   const [composerValue, setComposerValue] = useState("");
@@ -420,6 +429,21 @@ export default function ConversationStudio({
     () => mergeVisibleConversationMessages(conversationMessages, optimisticExchange),
     [conversationMessages, optimisticExchange]
   );
+  const hasPersistedRequirementSnapshotTurn = useMemo(() => {
+    if (!requirementSnapshot) return false;
+    return visibleConversationMessages.some((message) => {
+      if (message.role !== "assistant") return false;
+      const metadata = message.metadata ?? {};
+      if (metadata.requirement_snapshot_id === requirementSnapshot.id) return true;
+      const intent = metadata.intent;
+      return Boolean(
+        intent
+        && typeof intent === "object"
+        && !Array.isArray(intent)
+        && (intent as Record<string, unknown>).snapshot_id === requirementSnapshot.id,
+      );
+    });
+  }, [requirementSnapshot, visibleConversationMessages]);
   // Presenter cleanup is a bound, two-step confirmation.  A legacy generic
   // `submit_message` suggestion may carry only "确认" and cannot include the
   // cleanup plan ID/hash or selected cleanup items.  Keep that unbound shortcut
@@ -1009,6 +1033,11 @@ export default function ConversationStudio({
             ))}
           </button>
         ) : null}
+        {inheritedRequirementNotice ? (
+          <p className="shadcn-prototype-requirement-inherited" role="status">
+            已继承上一项目的需求；这是一个独立项目，对话和产物从空白开始。
+          </p>
+        ) : null}
         {selectedConversation.agentTasks ? (
           <AgentTaskStrip
             tasks={selectedConversation.agentTasks}
@@ -1079,6 +1108,14 @@ export default function ConversationStudio({
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
                 <p>{message.text}</p>
+              ) : null}
+              {message.role === "assistant" ? (
+                <RequirementEvidenceMedia
+                  media={requirementConversationMediaFromValue(
+                    message.metadata?.requirement_evidence_media,
+                  )}
+                  token={requirementAnalyticsToken}
+                />
               ) : null}
               {creativeDraft ? (
                 <div className="shadcn-prototype-confirm-card" aria-label="创意草稿状态">
@@ -1256,6 +1293,14 @@ export default function ConversationStudio({
               onCancel={onCancelGeneration}
             />
           ))}
+        {requirementSnapshot
+        && requirementSnapshot.triggerKind !== "cloned_from_requirements"
+        && !hasPersistedRequirementSnapshotTurn ? (
+          <RequirementUnderstandingTurn
+            snapshot={requirementSnapshot}
+            token={requirementAnalyticsToken}
+          />
+        ) : null}
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>

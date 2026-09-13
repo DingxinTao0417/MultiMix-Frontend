@@ -86,4 +86,14 @@ describe("new conversation routing", () => {
       selectedConversationId: detail.id,
     })).toEqual([detail, recent]);
   });
+
+  it("keeps requirement cloning in the project action menu instead of the global new action", () => {
+    const client = readWorkspaceClient();
+
+    expect(client).toContain("基于当前需求新建项目");
+    expect(client).toContain("cloneProjectFromRequirements");
+    expect(client).toContain("handleCloneProjectFromRequirements");
+    expect(client).toContain("handleStartConversation");
+    expect(client).toContain('requirementSnapshots[selectedConversation.id]?.triggerKind === "cloned_from_requirements"');
+  });
 });

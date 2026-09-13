@@ -1482,7 +1482,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("shadcn-prototype-start-dock-attach");
     expect(conversationStart).toContain("chatAttachmentStatusLabel(attachment)");
     expect(conversationStart).toContain('role="progressbar"');
-    expect(attachmentPolicy).toContain(".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm");
+    expect(attachmentPolicy).toContain(".pdf,.docx,.pptx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm");
     expect(conversationStudio).toContain("DOC_ONLY_INSTRUCTION");
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
@@ -1704,7 +1704,7 @@ describe("agent conversation UI copy", () => {
     const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
 
     expect(adapter).toContain("downloadAsset(token: string, assetId: number): Promise<Blob>");
-    expect(adapter).toContain("deleteAsset(token: string, assetId: number): Promise<void>");
+    expect(adapter).toContain('deleteAsset(token: string, assetId: number, mode?: "archive" | "permanent"): Promise<void>');
     expect(adapter).toContain("/download");
     expect(adapter).toContain('method: "DELETE"');
     expect(libraryWorkshop).toContain("handleDownload");

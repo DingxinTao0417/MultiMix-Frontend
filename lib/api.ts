@@ -228,6 +228,13 @@ export type AssetConversationMessageItemResponse = {
   created_at: string;
 };
 
+export type RequirementConversationMediaResponse = {
+  kind: "image_evidence";
+  asset_id: number;
+  anchor: string;
+  quote: string;
+};
+
 export type AssetConversationProjectResourcesResponse = {
   sources: ContentAsset[];
   copies: ContentAsset[];
@@ -263,6 +270,8 @@ export type ProjectResourceItemResponse = {
   asset_kind: string;
   content_type: string;
   source_type: string;
+  content_role?: "product_or_service" | "brand_identity" | "fact_evidence" | "style_reference" | "competitor_reference" | "general_material" | null;
+  use_policy?: "must_use" | "can_use" | "reference_only" | "do_not_use" | "rights_unclear" | "unknown" | null;
   updated_at: string;
 };
 
@@ -572,6 +581,16 @@ export type AdminProductMetrics = {
     activated_users: number;
     editable_video_users: number;
   }>;
+  requirement_understanding?: {
+    viewed_versions: number;
+    confirmed_first_pass_versions: number;
+    corrected_versions: number;
+    first_pass_confirmation_rate: number;
+    correction_rate: number;
+    time_to_confirm_seconds_median: number | null;
+    time_to_confirm_seconds_p75: number | null;
+    unnecessary_question_proxy_rate: number;
+  };
 };
 
 // Local auth (MULTIMIX_AUTH_PROVIDER=local). Email verification is off by default.

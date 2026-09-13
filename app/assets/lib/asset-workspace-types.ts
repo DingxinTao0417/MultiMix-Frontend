@@ -548,6 +548,146 @@ export type AssetPresenterDirectionOption = {
 
 export type AssetMessagePresentation = "standard" | "hidden_confirmation" | "execution_anchor";
 
+export type RequirementConflictType =
+  | "direct_conflict"
+  | "likely_version_difference"
+  | "scope_or_channel_difference"
+  | "preference_tension"
+  | "missing_or_ambiguous";
+
+export type RequirementConflictSeverity = "blocking" | "non_blocking";
+export type RequirementSnapshotStatus = "analyzing" | "needs_confirmation" | "ready" | "failed";
+export type RequirementTriggerKind =
+  | "manual_refresh"
+  | "source_added"
+  | "source_removed"
+  | "source_changed"
+  | "source_usage_changed"
+  | "requirement_edited";
+export type ProjectSourceContentRole =
+  | "product_or_service"
+  | "brand_identity"
+  | "fact_evidence"
+  | "style_reference"
+  | "competitor_reference"
+  | "general_material";
+export type ProjectSourceUsePolicy =
+  | "must_use"
+  | "can_use"
+  | "reference_only"
+  | "do_not_use"
+  | "rights_unclear"
+  | "unknown";
+
+export type RequirementEvidence = {
+  id: string;
+  sourceAssetId: number;
+  anchor: string | null;
+  quote: string;
+  confidence: number;
+  ocrConfidence: number | null;
+};
+
+export type RequirementItem = {
+  id: string;
+  kind: "goal" | "audience" | "deliverable" | "fact" | "constraint" | "style" | "must_use" | "avoid" | "requirement" | "uncertainty";
+  label: string;
+  value: unknown;
+  exactNumeric: boolean;
+  confidence: number;
+  confirmedByUser: boolean;
+  basis: "explicit" | "inferred";
+  evidence: RequirementEvidence[];
+};
+
+export type ProjectAssetUsage = {
+  sourceAssetId: number;
+  contentRole: ProjectSourceContentRole;
+  usePolicy: ProjectSourceUsePolicy;
+  confidence: number;
+  confirmedByUser: boolean;
+  basis: "explicit" | "inferred";
+  evidence: RequirementEvidence[];
+};
+
+export type RequirementConflict = {
+  id: string;
+  conflictType: RequirementConflictType;
+  severity: RequirementConflictSeverity;
+  status: "unresolved" | "resolved" | "excluded";
+  summary: string;
+  itemIds: string[];
+  choices: Array<Record<string, unknown>>;
+  resolution: Record<string, unknown> | null;
+  basis: "explicit" | "inferred";
+  evidence: RequirementEvidence[];
+};
+
+export type ProjectRequirementPayload = {
+    schemaVersion: "project_requirement_snapshot_v1";
+    summary: string;
+    goal: string | null;
+    audience: string | null;
+    intent: {
+      operation: "supplement" | "modify" | "remove" | "replace_source" | "confirm" | "question" | "clone_project";
+      scope: "current_output" | "project_default";
+      targetItemIds: string[];
+      replacementSourceAssetId: number | null;
+    };
+    deliverables: RequirementItem[];
+    facts: RequirementItem[];
+    requirements: RequirementItem[];
+    assetUsages: ProjectAssetUsage[];
+    conflicts: RequirementConflict[];
+    sourceAssetIds: number[];
+    diff: {
+      addedItemIds: string[];
+      removedItemIds: string[];
+      changedItemIds: string[];
+      newConflictIds: string[];
+      resolvedConflictIds: string[];
+      usageChangedAssetIds: number[];
+    };
+};
+
+export type RequirementConversationMedia = {
+  kind: "image_evidence";
+  assetId: number;
+  anchor: string;
+  quote: string;
+};
+
+export type ProjectRequirementSnapshot = {
+  id: string;
+  conversationId: string;
+  version: number;
+  parentSnapshotId: string | null;
+  status: RequirementSnapshotStatus;
+  triggerKind: string;
+  conversationText: string;
+  conversationMedia?: RequirementConversationMedia[];
+  payload: ProjectRequirementPayload | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  completedAt: string | null;
+};
+
+export type RequirementConflictResolution = {
+  snapshotId: string;
+  snapshotVersion: number;
+  conflictId: string;
+  resolutionKind: "choose_evidence" | "replace_with_user_value" | "exclude_both";
+  evidenceId?: string;
+  userValue?: unknown;
+};
+
+export type ProjectAssetUsageUpdate = {
+  contentRole: ProjectSourceContentRole;
+  usePolicy: ProjectSourceUsePolicy;
+  expectedSnapshotVersion: number;
+};
+
 // A single agent execution step (demo workspace「MultiMix 已完成执行」clist).
 // Mapped from real backend task events; three visual states + optional elapsed.
 export type AgentRunStep = {
@@ -612,6 +752,7 @@ export type AssetConversationMessage = {
   metadata?: Record<string, unknown>;
   localState?: "failed" | "stopped" | "unsubmitted";
   pending?: boolean;
+  requirementSnapshot?: ProjectRequirementSnapshot | null;
 };
 
 export type AssetSuggestionAction = {
@@ -687,6 +828,7 @@ export type AssetConversation = {
   sourceIds?: string[];
   projectResources?: AssetConversationProjectResources;
   projectResourceSummary?: AssetProjectResourceSummary;
+  requirementSnapshot?: ProjectRequirementSnapshot;
 };
 
 export type AssetWorkshop = {

@@ -1,9 +1,9 @@
 export const CHAT_IMAGE_UPLOAD_ACCEPT = "image/png,image/jpeg,image/webp";
-export const CHAT_SOURCE_UPLOAD_ACCEPT = ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
+export const CHAT_SOURCE_UPLOAD_ACCEPT = ".pdf,.docx,.pptx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm";
 export const CHAT_VIDEO_UPLOAD_ACCEPT = ".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska";
 
 const VIDEO_EXTENSION_PATTERN = /\.(mp4|mov|webm|mkv)$/i;
-const SOURCE_EXTENSION_PATTERN = /\.(pdf|txt|md|markdown|html|htm|xlsx|xlsm)$/i;
+const SOURCE_EXTENSION_PATTERN = /\.(pdf|docx|pptx|txt|md|markdown|html|htm|xlsx|xlsm)$/i;
 const SUPPORTED_VIDEO_MIME_TYPES = new Set([
   "video/mp4",
   "video/quicktime",

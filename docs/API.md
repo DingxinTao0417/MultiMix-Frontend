@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-10
+> Last verified: 2026-09-13
 
 本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -264,6 +264,14 @@ type AssetConversationMessage = {
   plan?: AssetMessagePlan;  // 视频参数、编导稿或 Agent 动作确认卡
   runSteps?: AgentRunStep[];
   agentAction?: AgentActionRunResponse;
+  metadata?: {
+    requirement_evidence_media?: Array<{
+      kind: "image_evidence";
+      asset_id: number;
+      anchor: string;
+      quote: string;
+    }>;
+  };
 };
 ```
 
@@ -1188,3 +1196,26 @@ mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认�
 历史卡可使用其消息 assetId；完全缺少目标时提示刷新，不回退到用户当前浏览的图片。
 旧内容指纹被拒绝后须刷新确认卡；重复提交与断连恢复继续沿用 client_request_id 对账及
 后端的编导稿版本语义幂等。
+
+## 15. 项目需求理解与项目级素材用途
+
+工作台通过 adapter 消费以下服务端资源，不在前端按文案重新判断意图、冲突或素材角色：
+
+```text
+GET   /v1/assets/conversations/{conversation_id}/requirements/current
+GET   /v1/assets/conversations/{conversation_id}/requirements/versions
+POST  /v1/assets/conversations/{conversation_id}/requirements/analyze
+POST  /v1/assets/conversations/{conversation_id}/requirements/conflicts/{conflict_id}/resolve
+PATCH /v1/assets/conversations/{conversation_id}/sources/{asset_id}/usage
+POST  /v1/assets/conversations/{conversation_id}/clone-from-requirements
+POST  /v1/assets/conversations/messages
+```
+
+- `ProjectRequirementSnapshot` 返回服务端生成的 `conversation_text` 和结构化 `conversation_media`。首次分析会把二者按 `requirement_snapshot_id` 幂等持久化为普通 assistant 消息；消息中的图片证据位于 `metadata.requirement_evidence_media`。前端只把未迁移的旧快照投影成相同消息，不展示独立需求卡、确认窗口或填写区。
+- 用户直接通过 `POST /v1/assets/conversations/messages` 自然回复需求理解、冲突和素材用途。后端把当前完整快照、允许的选择、最近对话与本轮原文交给模型返回结构化动作及 `related_conflict_ids`；Python 只校验当前快照、冲突和服务端允许的选择。文件来源以标题、位置与原文显示；图片来源只投影当前用户、未删除、结构上确认为图片的资产 ID、位置与原文，前端通过认证的 `/assets/{asset_id}/download` 读取并在同一 Agent 回复中创建短期 object URL 显示原图，不以文件名代替图片。两端都不按中文词表、正则或字符相似度推断语义。
+- 歧义回复保留未解决冲突，并产生普通 assistant 追问；在冲突解决前，既有生成门禁继续阻断视频生成。显式冲突解决接口和素材用途 PATCH 只保留为兼容/内部契约，普通产品 UI 不直接调用。
+- 克隆返回 `{conversation_id, requirement_snapshot}`。前端使用服务端快照；`trigger_kind=cloned_from_requirements` 使继承提示在刷新后仍可恢复，聊天与产物保持空白。
+- 项目资源兼容响应仍可返回内部 `content_role` 与 `use_policy`，但抽屉不展示这两项理解；它只提供打开、加入、移出、恢复与永久删除等管理动作。角色、用途和冲突由 Agent 在对话中说明；文件证据用文字追溯，图片证据直接显示实际图片，二者仍受后端引用与所有权保护。
+- DOCX/PPTX 与既有 PDF、表格、文本共用批量上传入口；每个文件有独立幂等键和失败状态。批量部分失败不撤销成功文件，也不触发生成。
+- `ProjectRequirementSnapshot.payload` 在 `failed/analyzing` 状态可为空；客户端继续展示最后稳定快照，不能用失败结果覆盖它。
+- 产品埋点只发送固定事件和安全枚举/计数/耗时，不发送需求原文、证据摘录、文件名或用户填写内容。

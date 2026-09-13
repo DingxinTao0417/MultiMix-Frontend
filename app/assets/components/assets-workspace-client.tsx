@@ -23,6 +23,7 @@ import {
 import {
   API_CONNECTION_ERROR,
   addProjectSource,
+  apiErrorStatus,
   formatComposerError,
   getAssetLlmDiagnostics,
   getProjectResources,
@@ -31,6 +32,7 @@ import {
   type AssetLlmDiagnosticsRead,
 } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
+import { trackProductEvent } from "../../../lib/product-analytics";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
   assetWorkspaceAdapter,
@@ -57,6 +59,7 @@ import type {
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
+  ProjectRequirementSnapshot,
 } from "../lib/asset-workspace-types";
 import {
   resolveConversationProduct,
@@ -688,6 +691,8 @@ export default function AssetsWorkspaceClient({
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
+  const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
+  const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
   const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
   const [libraryTargetProjectId, setLibraryTargetProjectId] = useState<string | null>(null);
@@ -743,6 +748,7 @@ export default function AssetsWorkspaceClient({
     covers: selectedConversation.projectResources?.covers.length ?? 0,
     videos: selectedConversation.projectResources?.videos.length ?? 0,
   };
+  const currentRequirementSnapshot = requirementSnapshots[selectedConversation.id] ?? null;
   const projectTargetOptions = visibleConversationRows
     .filter((conversation) => conversation.id !== "new" && !conversation.readonly)
     .map((conversation) => ({
@@ -758,6 +764,35 @@ export default function AssetsWorkspaceClient({
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
+
+  const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
+    setRequirementSnapshots((current) => ({ ...current, [conversationId]: snapshot }));
+  }, []);
+
+  const reloadCurrentRequirements = useCallback(async (conversationId: string) => {
+    if (!token || conversationId === "new") return null;
+    const snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
+    if (snapshot) {
+      storeRequirementSnapshot(conversationId, snapshot);
+    }
+    return snapshot;
+  }, [storeRequirementSnapshot, token]);
+
+  useEffect(() => {
+    if (!token || selectedConversation.id === "new" || selectedConversation.detailsLoaded === false) return;
+    let cancelled = false;
+    void assetWorkspaceAdapter.loadCurrentRequirements(token, selectedConversation.id)
+      .then((snapshot) => {
+        if (!cancelled && snapshot) {
+          storeRequirementSnapshot(selectedConversation.id, snapshot);
+        }
+      })
+      .catch(() => {
+        // A project may legitimately predate requirement snapshots. Keep the
+        // conversation usable and let explicit refresh surface later errors.
+      });
+    return () => { cancelled = true; };
+  }, [selectedConversation.detailsLoaded, selectedConversation.id, selectedConversation.updatedAt, storeRequirementSnapshot, token]);
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
   const handleWriteAvailabilityChange = useStableCallback((state: RuntimeWriteConnectionState) => {
     setRuntimeWriteConnectionState(state);
@@ -1783,6 +1818,42 @@ export default function AssetsWorkspaceClient({
     router.replace(`${url.pathname}${url.search}${url.hash}`);
   };
 
+  const handleCloneProjectFromRequirements = async (conversation: Conversation) => {
+    if (!token || !runtimeWriteCapabilities.canPersist) return;
+    const snapshot = requirementSnapshots[conversation.id];
+    if (!snapshot) {
+      toast.error("当前项目还没有可继承的需求快照。");
+      return;
+    }
+    try {
+      const clone = await assetWorkspaceAdapter.cloneProjectFromRequirements(
+        token,
+        conversation.id,
+        snapshot.version,
+      );
+      setConversations((current) => [clone, ...current.filter((item) => item.id !== clone.id)]);
+      if (clone.requirementSnapshot) {
+        storeRequirementSnapshot(clone.id, clone.requirementSnapshot);
+      }
+      void trackProductEvent(token, {
+        eventName: "requirement_clone_created",
+        conversationId: conversation.id,
+        properties: { snapshot_version: snapshot.version },
+      });
+      setInheritedRequirementNotices((current) => ({ ...current, [clone.id]: true }));
+      setConversationMenuId(null);
+      handleSelectConversation(clone.id);
+      toast.success("已基于当前需求新建独立项目。");
+    } catch (error) {
+      if (apiErrorStatus(error) === 409) {
+        await reloadCurrentRequirements(conversation.id).catch(() => null);
+        toast.info("需求已经更新，请确认最新版本后再新建项目。");
+        return;
+      }
+      toast.error(formatComposerError(error));
+    }
+  };
+
   const refreshProjectConversation = async (projectId: string) => {
     if (!token) return;
     const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, projectId);
@@ -2428,7 +2499,11 @@ export default function AssetsWorkspaceClient({
       product,
       generationJob,
       agentAction,
+      requirementSnapshot,
     } = result;
+    if (requirementSnapshot) {
+      storeRequirementSnapshot(targetConversationId, requirementSnapshot);
+    }
     setConversations((current) => {
       const existingIndex = current.findIndex((item) => item.id === (optimisticConversationId ?? conversation.id) || item.id === conversation.id || item.id === targetConversationId);
       if (existingIndex >= 0) {
@@ -2636,6 +2711,8 @@ export default function AssetsWorkspaceClient({
         assetKind: item.asset_kind,
         contentType: item.content_type,
         sourceType: item.source_type,
+        contentRole: item.content_role ?? null,
+        usePolicy: item.use_policy ?? null,
         updatedAt: item.updated_at,
       })),
     };
@@ -2653,6 +2730,7 @@ export default function AssetsWorkspaceClient({
       }));
     }
     await refreshProjectConversation(selectedConversation.id);
+    await reloadCurrentRequirements(selectedConversation.id);
   };
 
   const handleOpenProjectResource = (item: ProjectResourceItem) => {
@@ -2949,6 +3027,16 @@ export default function AssetsWorkspaceClient({
                 </button>
                 {conversationMenuId === conversation.id ? (
                   <div className="shadcn-prototype-conversation-menu" onClick={(event) => event.stopPropagation()}>
+                    {conversation.id === selectedConversation.id && requirementSnapshots[conversation.id] ? (
+                      <button
+                        type="button"
+                        disabled={!runtimeWriteCapabilities.canPersist}
+                        onClick={() => void handleCloneProjectFromRequirements(conversation)}
+                      >
+                        <Plus size={13} aria-hidden="true" />
+                        基于当前需求新建项目
+                      </button>
+                    ) : null}
                     <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleStartRenameConversation(conversation)}>
                       <Pencil size={13} aria-hidden="true" />
                       重命名
@@ -3094,6 +3182,12 @@ export default function AssetsWorkspaceClient({
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onLoadBgmCatalog={handleLoadBgmCatalog}
+                requirementSnapshot={currentRequirementSnapshot}
+                inheritedRequirementNotice={
+                  inheritedRequirementNotices[selectedConversation.id] === true
+                  || requirementSnapshots[selectedConversation.id]?.triggerKind === "cloned_from_requirements"
+                }
+                requirementAnalyticsToken={token}
               />
               <div
                 className="shadcn-prototype-resize-handle"
@@ -3216,6 +3310,12 @@ export default function AssetsWorkspaceClient({
         }}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
+        onPermanentDeleteSource={async (assetId) => {
+          if (!token) throw new Error("请先登录后再删除源文件。");
+          await assetWorkspaceAdapter.deleteAsset(token, assetId, "permanent");
+          await reloadCurrentRequirements(selectedConversation.id).catch(() => null);
+          toast.success("源文件已永久删除。");
+        }}
         onOpenResource={handleOpenProjectResource}
         onUseSourceForNextMessage={(item) => {
           if (item.kind !== "source" || item.membershipState !== "active") return;

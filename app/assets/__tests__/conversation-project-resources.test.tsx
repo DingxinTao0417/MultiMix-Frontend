@@ -4,12 +4,13 @@ import "@testing-library/jest-dom/vitest";
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AssetConversationResponse } from "../../../lib/api";
 import { conversationFromPersisted } from "../../../lib/asset-mappers";
 import ConversationStudio from "../components/conversation-studio";
+import ProjectResourcesDrawer from "../components/project-resources-drawer";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 
 const resource = (id: number, title: string, contentType: string) => ({
@@ -150,5 +151,54 @@ describe("conversation project resources", () => {
     expect(source).toContain("历史版本预览");
     expect(source).toContain("退出预览");
     expect(source).toContain("基于此版本继续");
+  });
+
+  it("keeps Agent understanding out of the resource drawer while management actions remain", async () => {
+    const onPermanentDeleteSource = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="品牌短片"
+        summary={{ sources: 1, historicalSources: 0, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue({
+          items: [{
+            id: 31,
+            title: "品牌手册.pptx",
+            kind: "source",
+            membershipState: "active",
+            historicalReferenceCount: 0,
+            status: "ready",
+            assetKind: "asset",
+            contentType: "knowledge",
+            sourceType: "upload",
+            updatedAt: "2026-09-12T08:00:00Z",
+            contentRole: "brand_identity",
+            usePolicy: "do_not_use",
+          }],
+          total: 1,
+          offset: 0,
+          limit: 20,
+        })}
+        onClose={vi.fn()}
+        onAddSource={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+        onPermanentDeleteSource={onPermanentDeleteSource}
+      />,
+    );
+
+    expect(await screen.findByText("品牌手册.pptx")).toBeVisible();
+    expect(screen.queryByText("素材角色")).not.toBeInTheDocument();
+    expect(screen.queryByText("使用方式")).not.toBeInTheDocument();
+    expect(screen.queryByText("品牌身份")).not.toBeInTheDocument();
+    expect(screen.queryByText("不可用于成片")).not.toBeInTheDocument();
+    expect(screen.queryByText("需要调整时，直接在项目对话里告诉 Agent。")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移出项目" })).toBeVisible();
+    const permanentDelete = screen.getByRole("button", { name: "永久删除源文件" });
+    await waitFor(() => expect(permanentDelete).not.toBeDisabled());
+    fireEvent.click(permanentDelete);
+    await waitFor(() => expect(onPermanentDeleteSource).toHaveBeenCalledWith(31));
   });
 });

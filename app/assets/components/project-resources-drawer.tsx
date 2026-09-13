@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, RefreshCw, X } from "lucide-react";
 
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
+import type { ProjectSourceContentRole, ProjectSourceUsePolicy } from "../lib/asset-workspace-types";
 
 export type ProjectResourceKind = "source" | "copy" | "cover" | "video";
 export type ProjectResourceScope = "active" | "history" | "all";
@@ -18,6 +19,8 @@ export type ProjectResourceItem = {
   assetKind: string;
   contentType: string;
   sourceType: string;
+  contentRole?: ProjectSourceContentRole | null;
+  usePolicy?: ProjectSourceUsePolicy | null;
   updatedAt: string;
 };
 
@@ -49,6 +52,7 @@ export default function ProjectResourcesDrawer({
   onReaddSource,
   onOpenResource,
   onUseSourceForNextMessage,
+  onPermanentDeleteSource,
 }: {
   open: boolean;
   projectTitle: string;
@@ -65,6 +69,7 @@ export default function ProjectResourcesDrawer({
   onReaddSource: (assetId: number) => Promise<void>;
   onOpenResource: (item: ProjectResourceItem) => void;
   onUseSourceForNextMessage?: (item: ProjectResourceItem) => void;
+  onPermanentDeleteSource?: (assetId: number) => Promise<void>;
 }) {
   const [kind, setKind] = useState<ProjectResourceKind>("source");
   const [sourceScope, setSourceScope] = useState<"active" | "history">("active");
@@ -135,6 +140,21 @@ export default function ProjectResourcesDrawer({
       setReloadRevision((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "项目资源操作失败，请重试。");
+    } finally {
+      setPendingAssetId(null);
+    }
+  };
+
+  const permanentlyDelete = async (item: ProjectResourceItem) => {
+    if (!onPermanentDeleteSource) return;
+    if (!window.confirm("永久删除会移除源文件；如仍有项目或历史版本引用，系统会拒绝删除。确定继续吗？")) return;
+    setPendingAssetId(item.id);
+    setError("");
+    try {
+      await onPermanentDeleteSource(item.id);
+      setReloadRevision((value) => value + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "源文件无法永久删除。");
     } finally {
       setPendingAssetId(null);
     }
@@ -243,6 +263,16 @@ export default function ProjectResourcesDrawer({
                           ? "移出项目"
                           : "重新加入项目"}
                     </button>
+                    {onPermanentDeleteSource ? (
+                      <button
+                        type="button"
+                        className="shadcn-prototype-project-source-permanent-delete"
+                        disabled={pendingAssetId === item.id}
+                        onClick={() => void permanentlyDelete(item)}
+                      >
+                        永久删除源文件
+                      </button>
+                    ) : null}
                   </>
                 ) : (
                   <button type="button" onClick={() => onOpenResource(item)}>查看</button>
