@@ -1,10 +1,51 @@
 import fs from "node:fs";
 import path from "node:path";
 
+const REVIEW_VERSION = "rendered-human-review:v1";
+const sampleFractions = [0.15, 0.5, 0.85];
+const rubric = [
+  ["truth_and_positioning", "内容可信与产品定位", 20],
+  ["narrative_and_pacing", "叙事结构与节奏", 15],
+  ["asset_relevance_and_authenticity", "素材相关性与可信感", 20],
+  ["art_direction_and_scene_variety", "美术指导与场景差异", 20],
+  ["information_hierarchy_and_readability", "信息分层与可读性", 10],
+  ["motion_and_camera_language", "动效与镜头语言", 10],
+  ["audio_and_technical_finish", "声音与技术完成度", 5],
+];
+
 function requiredText(value, field) {
   const normalized = typeof value === "string" ? value.trim() : "";
   if (!normalized) throw new Error(`${field} is required`);
   return normalized;
+}
+
+function authoritativeSceneWindows(videoProject, videoPlan) {
+  const known = new Set((videoPlan?.scenes ?? []).map((scene) => String(scene?.id ?? "")));
+  const windows = new Map();
+  for (const track of videoProject?.tracks ?? []) {
+    if (track?.id !== "track-video") continue;
+    for (const element of track?.elements ?? []) {
+      const sceneId = String(element?.segmentId ?? "");
+      const start = Number(element?.startTime ?? 0);
+      const end = start + Number(element?.duration ?? 0);
+      if (!known.has(sceneId) || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+      const previous = windows.get(sceneId);
+      windows.set(sceneId, {
+        scene_id: sceneId,
+        start_seconds: previous ? Math.min(previous.start_seconds, start) : start,
+        end_seconds: previous ? Math.max(previous.end_seconds, end) : end,
+      });
+    }
+  }
+  return [...windows.values()]
+    .sort((left, right) => left.start_seconds - right.start_seconds)
+    .map((window) => ({
+      ...window,
+      samples: sampleFractions.map((fraction) => ({
+        fraction,
+        timestamp_seconds: Number((window.start_seconds + (window.end_seconds - window.start_seconds) * fraction).toFixed(6)),
+      })),
+    }));
 }
 
 function warningLines(warnings) {
@@ -27,39 +68,119 @@ function warningLines(warnings) {
   ));
 }
 
-export function buildVideoHumanReviewReport({
+export function buildRenderedHumanReview({
   candidateVideo,
+  candidateVideoSha256 = null,
+  referenceVideo = null,
+  referenceVideoSha256 = null,
   videoType,
   creativeDraftOnly,
   qualityWarnings,
+  benchmarkBinding = null,
+  sameInputAb = null,
+  videoPlan = null,
+  videoProject = null,
 }) {
   const candidate = requiredText(candidateVideo, "candidate video path");
   const type = requiredText(videoType, "video type");
-  const boundary = creativeDraftOnly === true
+  const binding = benchmarkBinding && typeof benchmarkBinding === "object"
+    ? benchmarkBinding
+    : { status: "unbound", case_id: null, case_fingerprint: null, input_fingerprint: null };
+  const sceneWindows = videoPlan && videoProject
+    ? authoritativeSceneWindows(videoProject, videoPlan)
+    : [];
+  if (binding.status === "bound") {
+    if (sceneWindows.length === 0) {
+      throw new Error("bound human review requires authoritative scene windows");
+    }
+    if (binding.candidate_video_sha256 !== candidateVideoSha256) {
+      throw new Error("bound human review candidate fingerprint does not match");
+    }
+  }
+  return {
+    schema_version: REVIEW_VERSION,
+    benchmark: {
+      status: binding.status ?? "unbound",
+      case_id: binding.case_id ?? null,
+      case_fingerprint: binding.case_fingerprint ?? null,
+      input_fingerprint: binding.input_fingerprint ?? null,
+      benchmark_level: binding.benchmark_level ?? null,
+      scenario_family: binding.scenario_family ?? null,
+    },
+    same_input_ab: sameInputAb ?? { status: "not_provided" },
+    candidate: { path: candidate, sha256: candidateVideoSha256 },
+    reference: { path: referenceVideo, sha256: referenceVideoSha256 },
+    video_type: type,
+    creative_draft_only: creativeDraftOnly === true,
+    scene_windows: sceneWindows,
+    review: {
+      status: "pending",
+      reviewer: null,
+      reviewed_at: null,
+      complete_viewing: false,
+      dimensions: rubric.map(([id, label, weight]) => ({
+        id,
+        label,
+        weight,
+        candidate_score: null,
+        reference_score: null,
+        evidence: null,
+      })),
+      findings: [],
+      disagreements: [],
+      decision: null,
+    },
+    technical_signals: { quality_warnings: Array.isArray(qualityWarnings) ? qualityWarnings : [] },
+    release: {
+      rights_status: "unverified",
+      public_release_gold: false,
+      maximum_eligible_level:
+        binding.status === "bound" && candidateVideoSha256
+          ? "technical_baseline"
+          : "none",
+    },
+    advisory_only: true,
+    runtime_effects: { quality_gate: false, auto_repair: false },
+  };
+}
+
+function renderStructuredReview(review) {
+  if (review?.schema_version !== REVIEW_VERSION) {
+    throw new Error(`human review must use ${REVIEW_VERSION}`);
+  }
+  const boundary = review.creative_draft_only
     ? "创意草稿：可继续编辑和观看，但不能作为公开发布依据。"
     : "技术候选：已完成当前技术检查，但公开发布仍需单独核对授权、事实、素材与人工审片。";
-  const scoreRows = [
-    ["内容可信与产品定位", 20],
-    ["叙事结构与节奏", 15],
-    ["素材相关性与可信感", 20],
-    ["美术指导与场景差异", 20],
-    ["信息分层与可读性", 10],
-    ["动效与镜头语言", 10],
-    ["声音与技术完成度", 5],
-  ].map(([criterion, weight]) => `| ${criterion} | ${weight} |  |  |  |`).join("\n");
+  const scoreRows = review.review.dimensions
+    .map((item) => `| ${item.label} | ${item.weight} |  |  |  |`)
+    .join("\n");
+  const sceneRows = review.scene_windows
+    .map((window) => `| ${window.scene_id} | ${window.start_seconds.toFixed(3)}–${window.end_seconds.toFixed(3)} | ${window.samples.map((sample) => sample.timestamp_seconds.toFixed(3)).join(" / ")} |`)
+    .join("\n");
 
   return [
     "# MultiMix 成片人工评分",
     "",
-    `- 候选 MP4：${candidate}`,
-    `- 视频类型：${type}`,
-    "- 人工审片状态：pending",
+    `- 案例：${review.benchmark.case_id ?? "unbound"}`,
+    `- 候选 MP4：${review.candidate.path}`,
+    `- 视频类型：${review.video_type}`,
+    `- 人工审片状态：${review.review.status}`,
     `- 交付边界：${boundary}`,
-    "- 审片前请查看：`run-manifest.json`、`browser-result.json`、`qa-report.md` 与 `keyframes/`。",
+    `- 公开发布 Gold：${review.release.public_release_gold ? "可宣称" : "不可宣称"}`,
+    `- 同输入 A/B：${review.same_input_ab?.status ?? "not_provided"}`,
+    "- 本表是 `rendered-human-review.json` 的投影；主观判断不改变运行时质量门，也不会触发自动返修。",
+    "",
+    "## 权威分镜取证窗口",
+    "",
+    "每镜按窗口内 15% / 50% / 85% 取证。",
+    "",
+    "| 分镜 | 权威窗口（秒） | 抽样时间（秒） |",
+    "| --- | ---: | --- |",
+    sceneRows || "| 待生成 |  |  |",
     "",
     "## 已知技术信号",
     "",
-    ...warningLines(qualityWarnings),
+    ...warningLines(review.technical_signals.quality_warnings),
     "",
     "## 人工评分",
     "",
@@ -68,7 +189,7 @@ export function buildVideoHumanReviewReport({
     "- 人工判断参考：建议 85/100，前六项均不低于 4/5，且没有未处理 P0/P1；这不是系统自动通过规则。",
     "- 总分、P0/P1 和结论由审片人决定，不能由本表自动推导。",
     "",
-    "| 维度 | 权重 | 分数（1–5） | 加权分 | 证据 / 问题 |",
+    "| 维度 | 权重 | 候选分数（1–5） | 参考分数（1–5） | 证据 / 问题 |",
     "| --- | ---: | ---: | ---: | --- |",
     scoreRows,
     "| 总分 | 100 |  |  |  |",
@@ -76,27 +197,26 @@ export function buildVideoHumanReviewReport({
     "## P0/P1 问题",
     "",
     "- [ ] 无 P0/P1 问题",
-    "- [ ] P0：阻塞观看、事实、授权或成片可用性",
-    "- [ ] P1：明显影响理解、可信度、节奏、字幕或素材匹配",
-    "- 记录（时间点、证据、处理结论）：",
-    "",
-    "## 审片结论",
-    "",
-    "- [ ] 技术候选可保留，继续编辑",
-    "- [ ] 需要按 P0/P1 修复后重审",
-    "- [ ] 已完成公开发布前置条件核对（授权、产品事实、互补素材、人工审片）",
+    "- 记录：",
     "",
   ].join("\n");
 }
 
+export function buildVideoHumanReviewReport(input) {
+  return renderStructuredReview(
+    input?.schema_version === REVIEW_VERSION ? input : buildRenderedHumanReview(input),
+  );
+}
+
 export function writeVideoHumanReviewReport({ resultDir, ...input }) {
-  const directory = requiredText(resultDir, "result directory");
+  const outputDirectory = requiredText(resultDir, "result directory");
   const candidate = requiredText(input.candidateVideo, "candidate video path");
-  if (!fs.existsSync(candidate)) {
-    throw new Error(`candidate video is missing: ${candidate}`);
-  }
-  fs.mkdirSync(directory, { recursive: true });
-  const reportPath = path.join(directory, "human-review.md");
-  fs.writeFileSync(reportPath, buildVideoHumanReviewReport(input), "utf8");
-  return reportPath;
+  if (!fs.existsSync(candidate)) throw new Error(`candidate video does not exist: ${candidate}`);
+  fs.mkdirSync(outputDirectory, { recursive: true });
+  const review = buildRenderedHumanReview(input);
+  const jsonPath = path.join(outputDirectory, "rendered-human-review.json");
+  const markdownPath = path.join(outputDirectory, "human-review.md");
+  fs.writeFileSync(jsonPath, `${JSON.stringify(review, null, 2)}\n`, "utf8");
+  fs.writeFileSync(markdownPath, renderStructuredReview(review), "utf8");
+  return markdownPath;
 }

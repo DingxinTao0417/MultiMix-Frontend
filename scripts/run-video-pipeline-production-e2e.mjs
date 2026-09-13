@@ -22,6 +22,11 @@ import {
   probeProductMediaFile,
 } from "./product-media-file-probe.mjs";
 import { assertPaidE2EAllowed } from "./paid-e2e-gate.mjs";
+import {
+  assertVideoBenchmarkExecution,
+  loadVideoBenchmarkCase,
+  unboundVideoBenchmarkRun,
+} from "./video-benchmark-contract.mjs";
 
 if (process.argv.slice(2).some((argument) => argument === "--help" || argument === "-h")) {
   console.log(`Usage: npm run test:e2e:video-pipeline-production
@@ -34,6 +39,10 @@ Core environment variables:
   VIDEO_PIPELINE_VIDEO_TYPE   One active type: explainer, source_excerpt, or presenter.
   VIDEO_PIPELINE_QUALITY_BASELINE=true
                               Require approved product inputs for a single explainer or presenter quality run.
+  VIDEO_PIPELINE_BENCHMARK_CASE
+                              Checked-in video-benchmark-case:v2 filename required for a quality baseline.
+  VIDEO_PIPELINE_REFERENCE_REVIEW
+                              Optional prior rendered-human-review:v1 JSON for verified same-input A/B.
   VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO
                               Required original presenter video when VIDEO_PIPELINE_QUALITY_BASELINE=true.
   VIDEO_PIPELINE_PRESENTER_SOURCE_APPROVAL_REF
@@ -228,6 +237,10 @@ if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
 const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
 if (qualityBaselineRun && !process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   throw new Error("quality baseline requires one explicitly selected active video type");
+}
+const benchmarkCaseFilename = (process.env.VIDEO_PIPELINE_BENCHMARK_CASE ?? "").trim();
+if (qualityBaselineRun && !benchmarkCaseFilename) {
+  throw new Error("quality baseline requires VIDEO_PIPELINE_BENCHMARK_CASE");
 }
 if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   const matrixResultRoot = path.resolve(
@@ -426,6 +439,65 @@ const savedLibraryMediaFiles = usesSavedLibraryMedia
     }, ...qualityBaselineInputs.presenterSupportImages])
     : (process.env.VIDEO_PIPELINE_SAVED_LIBRARY_MEDIA_FILES ?? defaultSavedLibraryMediaFiles))
   : "[]";
+const benchmarkCase = benchmarkCaseFilename
+  ? loadVideoBenchmarkCase({
+      backendRoot: canonicalBackendRoot,
+      filename: benchmarkCaseFilename,
+    })
+  : null;
+const benchmarkExecution = {
+  video_type: expectedVideoType,
+  input_profile: inputProfile,
+  ratio: targetRatio,
+  target_seconds: targetSeconds,
+};
+if (benchmarkCase) assertVideoBenchmarkExecution(benchmarkCase, benchmarkExecution);
+const benchmarkCaseIdentity = benchmarkCase
+  ? {
+      status: "case_bound_input_pending",
+      case_id: benchmarkCase.case_id,
+      case_fingerprint: benchmarkCase.case_fingerprint,
+      benchmark_level: benchmarkCase.benchmark_level,
+      scenario_family: benchmarkCase.scenario_family,
+    }
+  : unboundVideoBenchmarkRun(null);
+const benchmarkSourceIdentities = {
+  source_document_sha256: sourceDocumentFingerprint?.sha256 ?? null,
+  source_asset_sha256s: [
+    ...configuredInputFingerprints(process.env.VIDEO_PIPELINE_PRODUCT_MEDIA_FILES),
+    ...configuredInputFingerprints(savedLibraryMediaFiles),
+  ].map((item) => item.sha256).filter(Boolean),
+};
+const referenceReviewInput = (process.env.VIDEO_PIPELINE_REFERENCE_REVIEW ?? "").trim();
+let benchmarkReference = null;
+if (referenceReviewInput) {
+  const reviewPath = path.resolve(referenceReviewInput);
+  if (!fs.existsSync(reviewPath) || !fs.statSync(reviewPath).isFile()) {
+    throw new Error(`VIDEO_PIPELINE_REFERENCE_REVIEW is missing: ${reviewPath}`);
+  }
+  const review = JSON.parse(fs.readFileSync(reviewPath, "utf8"));
+  if (review?.schema_version !== "rendered-human-review:v1") {
+    throw new Error("VIDEO_PIPELINE_REFERENCE_REVIEW must use rendered-human-review:v1");
+  }
+  const videoPath = path.resolve(String(review?.candidate?.path ?? ""));
+  const video = fingerprintFile(videoPath);
+  if (!video.sha256 || video.sha256 !== review?.candidate?.sha256) {
+    throw new Error("VIDEO_PIPELINE_REFERENCE_REVIEW candidate fingerprint is unavailable or stale");
+  }
+  benchmarkReference = {
+    reviewPath,
+    reviewSha256: fingerprintFile(reviewPath).sha256,
+    video,
+    review,
+  };
+}
+const benchmarkReferenceIdentity = benchmarkReference
+  ? {
+      reviewPath: benchmarkReference.reviewPath,
+      reviewSha256: benchmarkReference.reviewSha256,
+      video: benchmarkReference.video,
+    }
+  : null;
 const children = [];
 let providerProxy;
 let decisionAuditEnv;
@@ -1365,6 +1437,9 @@ function assertResumeManifest() {
     expectedSceneCount,
     sourceDocument: sourceDocumentFingerprint,
     sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
+    benchmarkCaseIdentity,
+    benchmarkSourceIdentities,
+    benchmarkReferenceIdentity,
     qualityBaselineRun,
     presenterSourceApprovalRef,
     qualityBaselineInputs,
@@ -1517,7 +1592,13 @@ async function writeQaReport() {
   fs.writeFileSync(
     path.join(resultDir, "benchmark-report.json"),
     JSON.stringify({
-      caseId: "video_pipeline_multimix_pdf_promo_60s_v1",
+      benchmarkBinding: result.benchmarkBinding ?? benchmarkCaseIdentity,
+      sameInputAb: result.sameInputAb ?? { status: "not_provided" },
+      caseId: result.benchmarkBinding?.case_id ?? benchmarkCaseIdentity.case_id,
+      caseFingerprint:
+        result.benchmarkBinding?.case_fingerprint
+        ?? benchmarkCaseIdentity.case_fingerprint,
+      inputFingerprint: result.benchmarkBinding?.input_fingerprint ?? null,
       targetSeconds,
       durationContract: {
         toleranceRatio: durationToleranceRatio,
@@ -1661,6 +1742,9 @@ try {
       },
       sourceDocument: sourceDocumentFingerprint,
       sourceExcerptVideo: expectedVideoType === "source_excerpt" ? fingerprintFile(sourceExcerptVideo) : null,
+      benchmarkCase: benchmarkCaseIdentity,
+      benchmarkSourceIdentities,
+      benchmarkReference: benchmarkReferenceIdentity,
       visionServiceUrl,
       mgModalTarget: {
         appName: mgTestTarget.MULTIMIX_MG_MODAL_APP_NAME
@@ -1895,6 +1979,13 @@ try {
       VIDEO_PIPELINE_EXPECT_TWO_STAGE: twoStageEnabled ? "true" : "false",
       VIDEO_PIPELINE_EXPECT_BGM: expectBgm ? "true" : "false",
       VIDEO_PIPELINE_TIMING_PATH: playwrightTimingPath,
+      VIDEO_PIPELINE_BENCHMARK_CASE: benchmarkCase ? JSON.stringify(benchmarkCase) : "",
+      VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES: JSON.stringify(
+        benchmarkSourceIdentities,
+      ),
+      VIDEO_PIPELINE_REFERENCE_REVIEW: benchmarkReference
+        ? JSON.stringify(benchmarkReference)
+        : "",
     },
     stdout: process.stdout,
     stderr: process.stderr,

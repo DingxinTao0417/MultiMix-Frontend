@@ -850,6 +850,7 @@ test("production video E2E writes a pending human review only after its candidat
   assert.match(source, /import \{ writeVideoHumanReviewReport \} from "\.\.\/scripts\/video-human-review-report\.mjs"/);
   assert.match(source, /humanReviewStatus:\s*"pending"/);
   assert.match(source, /humanReviewReport:\s*"human-review\.md"/);
+  assert.match(source, /humanReviewStructuredReport:\s*"rendered-human-review\.json"/);
   assert.match(
     source,
     /writeVideoHumanReviewReport\(\{[\s\S]*?candidateVideo:\s*candidateVideoPath,[\s\S]*?videoType:\s*expectedVideoType,[\s\S]*?creativeDraftOnly:\s*singleImageCreativeDraft,[\s\S]*?qualityWarnings:\s*projectQualityReport!\.warnings \?\? \[\]/,
@@ -1210,6 +1211,32 @@ test("production video E2E defines generated-primary warning codes before export
   assert.match(source, /"mg_primary_blank"/);
   assert.match(source, /"mg_primary_fallback"/);
   assert.match(source, /"title_scene_render_fallback"/);
+});
+
+test("production quality baseline binds the exact benchmark case and inputs", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const specSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.doesNotMatch(
+    runnerSource,
+    /caseId:\s*"video_pipeline_multimix_pdf_promo_60s_v1"/,
+  );
+  assert.match(runnerSource, /VIDEO_PIPELINE_BENCHMARK_CASE/);
+  assert.match(runnerSource, /quality baseline requires VIDEO_PIPELINE_BENCHMARK_CASE/);
+  assert.match(runnerSource, /loadVideoBenchmarkCase/);
+  assert.match(runnerSource, /benchmarkCaseIdentity/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES/);
+  assert.match(runnerSource, /VIDEO_PIPELINE_REFERENCE_REVIEW/);
+  assert.match(specSource, /bindVideoBenchmarkRun/);
+  assert.match(specSource, /verifySameInputAb/);
+  assert.match(specSource, /generationInstructionSha256/);
+  assert.match(specSource, /candidateVideoSha256/);
+  assert.match(specSource, /benchmarkBinding/);
+  assert.match(specSource, /sameInputAb/);
+  assert.match(
+    specSource,
+    /writeVideoHumanReviewReport\([\s\S]*?benchmarkBinding[\s\S]*?videoPlan[\s\S]*?videoProject/,
+  );
 });
 
 test("production video E2E validates generated headline subtitle dedup through the public main track", () => {

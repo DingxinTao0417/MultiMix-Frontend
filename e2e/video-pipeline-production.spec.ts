@@ -19,6 +19,11 @@ import {
 } from "../test-support/video-pipeline-production-helpers";
 import { writeVideoHumanReviewReport } from "../scripts/video-human-review-report.mjs";
 import {
+  bindVideoBenchmarkRun,
+  unboundVideoBenchmarkRun,
+  verifySameInputAb,
+} from "../scripts/video-benchmark-contract.mjs";
+import {
   getMgReadiness,
   plannedMgExecutions,
   type MgDecisionExecution,
@@ -33,6 +38,15 @@ const sourceDocument = process.env.VIDEO_PIPELINE_SOURCE_DOCUMENT;
 const sourceExcerptVideo = process.env.VIDEO_PIPELINE_SOURCE_EXCERPT_VIDEO;
 const resultDir = process.env.VIDEO_PIPELINE_RESULT_DIR;
 const timingPath = process.env.VIDEO_PIPELINE_TIMING_PATH;
+const benchmarkCase = process.env.VIDEO_PIPELINE_BENCHMARK_CASE
+  ? JSON.parse(process.env.VIDEO_PIPELINE_BENCHMARK_CASE)
+  : null;
+const benchmarkSourceIdentities = process.env.VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES
+  ? JSON.parse(process.env.VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES)
+  : { source_document_sha256: null, source_asset_sha256s: [] };
+const benchmarkReference = process.env.VIDEO_PIPELINE_REFERENCE_REVIEW
+  ? JSON.parse(process.env.VIDEO_PIPELINE_REFERENCE_REVIEW)
+  : null;
 const qaGenerationInstructionOverride = (process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? "").trim();
 
 type ActiveVideoType = "explainer" | "source_excerpt" | "presenter";
@@ -1409,6 +1423,30 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         : inputProfile === "explainer_data_process"
           ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的数据与流程讲解视频。至少三个分镜分别用数据总结、步骤流程和结构关系来解释资料中已经明确的产品闭环；只使用资料里有依据的信息，不虚构数字、案例或产品界面。MG 可以承担结构化解释，但不能替代真实证据或审核产品截图。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。把工作台/对话、分镜编辑/视频预览设计成两个不同的产品界面分镜，分别使用已审核产品截图，不要把整张截图直接重复铺成背景；其中至少一个界面分镜把截图证据与来源中存在且不与旁白、字幕重复的补充信息分区呈现，优先保证截图清晰可读。至少一个流程分镜使用 MG 动画补充真实步骤、差异或结构，不得重复旁白和字幕，也不得使用空泛对比项。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`;
+  const generationInstructionSha256 = crypto
+    .createHash("sha256")
+    .update(generationInstruction, "utf8")
+    .digest("hex");
+  const buildBenchmarkBinding = (candidateVideoSha256: string | null = null) => (
+    benchmarkCase
+      ? bindVideoBenchmarkRun({
+          benchmarkCase,
+          execution: {
+            video_type: expectedVideoType,
+            input_profile: inputProfile,
+            ratio: targetRatio,
+            target_seconds: targetSeconds,
+          },
+          sourceDocumentSha256:
+            benchmarkSourceIdentities.source_document_sha256 ?? null,
+          sourceAssetSha256s:
+            benchmarkSourceIdentities.source_asset_sha256s ?? [],
+          generationInstructionSha256,
+          candidateVideoSha256,
+          referenceVideoSha256: benchmarkReference?.video?.sha256 ?? null,
+        })
+      : unboundVideoBenchmarkRun(null)
+  );
   let generationJobId: string | undefined;
   let activeConversationId: string | undefined;
   if (expectedVideoType === "source_excerpt") {
@@ -2716,6 +2754,14 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       expect(subtitle.subtitleTokens?.length ?? 0).toBeGreaterThan(0);
     }
   }
+  const candidateVideoSha256 = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(candidateVideoPath))
+    .digest("hex");
+  const benchmarkBinding = buildBenchmarkBinding(candidateVideoSha256);
+  const sameInputAb = benchmarkReference
+    ? verifySameInputAb(benchmarkBinding, benchmarkReference.review)
+    : { status: "not_provided" };
 
   fs.writeFileSync(
     path.join(resultDir, "browser-result.json"),
@@ -2730,6 +2776,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       beforeRefs,
       afterRefs,
       candidateVideo: candidateVideoPath,
+      benchmarkBinding,
+      sameInputAb,
       publicProjectCoverage:
         (mainTrack?.elements?.length ?? 0) / beforeScenes.length,
       publicCandidateOnlyCount,
@@ -2785,6 +2833,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       artDirection: artDirectionSummary,
       humanReviewStatus: "pending",
       humanReviewReport: "human-review.md",
+      humanReviewStructuredReport: "rendered-human-review.json",
       audioFinishing: {
         closingHoldSeconds: videoProject?.metadata?.closing_hold_seconds,
         ttsSampleGate: videoProject?.orchestration?.tts_sample_gate ?? null,
@@ -2803,9 +2852,16 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   const humanReviewReportPath = writeVideoHumanReviewReport({
     resultDir,
     candidateVideo: candidateVideoPath,
+    candidateVideoSha256,
     videoType: expectedVideoType,
     creativeDraftOnly: singleImageCreativeDraft,
     qualityWarnings: projectQualityReport!.warnings ?? [],
+    benchmarkBinding,
+    referenceVideo: benchmarkReference?.video?.path ?? null,
+    referenceVideoSha256: benchmarkReference?.video?.sha256 ?? null,
+    sameInputAb,
+    videoPlan: { scenes: beforeScenes },
+    videoProject,
   });
   expect(fs.existsSync(humanReviewReportPath)).toBe(true);
   expect(
