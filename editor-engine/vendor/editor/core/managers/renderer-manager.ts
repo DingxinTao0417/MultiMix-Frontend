@@ -169,7 +169,11 @@ export class RendererManager {
 		onCancel,
 	}: {
 		options: ExportOptions;
-		onProgress?: ({ progress }: { progress: number }) => void;
+		onProgress?: (progress: {
+			progress: number;
+			completedFrames: number;
+			totalFrames: number;
+		}) => void;
 		onCancel?: () => boolean;
 	}): Promise<ExportResult> {
 		const { format, quality, fps, includeAudio } = options;
@@ -193,7 +197,6 @@ export class RendererManager {
 
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
-				onProgress?.({ progress: 0.05 });
 				audioBuffer = await createTimelineAudioBuffer({
 					tracks,
 					mediaAssets,
@@ -221,10 +224,7 @@ export class RendererManager {
 			});
 
 			exporter.on("progress", (progress) => {
-				const adjustedProgress = includeAudio
-					? 0.05 + progress * 0.95
-					: progress;
-				onProgress?.({ progress: adjustedProgress });
+				onProgress?.(progress);
 			});
 
 			let cancelled = false;

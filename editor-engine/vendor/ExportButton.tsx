@@ -5,8 +5,9 @@ import {
 } from "@/lib/brand-showcase";
 
 export type ExportProgressState = {
-  phase: "idle" | "rendering" | "uploading" | "verifying" | "completed" | "error";
-  progress: number;
+  phase: "idle" | "preparing" | "rendering" | "hashing" | "uploading" | "registering"
+    | "verifying" | "publishing" | "completed" | "error";
+  progress: number | null;
 };
 
 const EXPORT_OPTIONS = [
@@ -16,11 +17,17 @@ const EXPORT_OPTIONS = [
 
 function exportButtonLabel(state: ExportProgressState, variant: ExportVariant): string {
   const variantLabel = variant === "brand_showcase" ? "品牌展示版" : "原始成片";
+  if (state.phase === "preparing") return `${variantLabel} · 正在准备…`;
   if (state.phase === "rendering") {
-    return `${variantLabel} · 正在合成 ${Math.round(state.progress * 100)}%`;
+    return `${variantLabel} · 正在合成 ${state.progress == null ? "…" : `${Math.round(state.progress * 100)}%`}`;
   }
-  if (state.phase === "uploading") return `${variantLabel} · 正在上传`;
+  if (state.phase === "hashing") return `${variantLabel} · 正在计算文件指纹`;
+  if (state.phase === "uploading") {
+    return `${variantLabel} · 正在上传${state.progress == null ? "" : ` ${Math.round(state.progress * 100)}%`}`;
+  }
+  if (state.phase === "registering") return `${variantLabel} · 正在登记任务`;
   if (state.phase === "verifying") return `${variantLabel} · 正在检查`;
+  if (state.phase === "publishing") return `${variantLabel} · 正在发布`;
   return "导出视频";
 }
 
@@ -41,7 +48,15 @@ export function ExportButton({
   disabled?: boolean;
   disabledReason?: string;
 }) {
-  const busy = ["rendering", "uploading", "verifying"].includes(exportState.phase);
+  const busy = [
+    "preparing",
+    "rendering",
+    "hashing",
+    "uploading",
+    "registering",
+    "verifying",
+    "publishing",
+  ].includes(exportState.phase);
 
   function handleDownload(blob: Blob, variant: ExportVariant) {
     const url = URL.createObjectURL(blob);

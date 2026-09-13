@@ -268,9 +268,11 @@ type ProductPreviewProps = {
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
   onExportPreparing?: () => void;
+  onExportHashing?: () => void;
   onExportUploading?: () => void;
   onExportRegistering?: () => void;
   onExportVerifying?: () => void;
+  onExportPublishing?: () => void;
   onExportQualityReport?: (report: VideoQualityReport) => void;
   onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
   onExportError?: (message: string) => void;
@@ -292,9 +294,11 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onExportStart,
   onExportProgress,
   onExportPreparing,
+  onExportHashing,
   onExportUploading,
   onExportRegistering,
   onExportVerifying,
+  onExportPublishing,
   onExportQualityReport,
   onExportSuccess,
   onExportError,
@@ -536,9 +540,11 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
               onExportStart={onExportStart}
               onExportProgress={onExportProgress}
               onExportPreparing={onExportPreparing}
+              onExportHashing={onExportHashing}
               onExportUploading={onExportUploading}
               onExportRegistering={onExportRegistering}
               onExportVerifying={onExportVerifying}
+              onExportPublishing={onExportPublishing}
               onExportQualityReport={onExportQualityReport}
               onExportSuccess={onExportSuccess}
               onExportError={onExportError}

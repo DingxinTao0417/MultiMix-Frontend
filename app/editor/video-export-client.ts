@@ -10,6 +10,36 @@ const EXPORT_JOB_MAX_CONSECUTIVE_NETWORK_ERRORS = 3;
 const SUPABASE_TUS_CHUNK_SIZE_BYTES = 6 * 1024 * 1024;
 const SUPABASE_TUS_RETRY_DELAYS_MS = [0, 3_000, 5_000, 10_000, 20_000];
 
+export type ExportTimingEvent = {
+  stage: "preparing" | "composing" | "hashing" | "uploading" | "verifying" | "publishing";
+  source: "browser" | "server";
+  status: "completed" | "failed";
+  duration_ms: number;
+  progress_basis?: "frames" | "bytes";
+  completed_units?: number;
+  total_units?: number;
+  attempt: number;
+};
+
+export type ExportUnitProgress = {
+  progress: number;
+  completedUnits: number;
+  totalUnits: number;
+  basis: "frames" | "bytes";
+};
+
+export type LocalExportStage = "preparing" | "composing" | "hashing" | "uploading" | "registering";
+
+export type LocalExportMarker = {
+  stage: LocalExportStage;
+  startedAt: number;
+};
+
+export type LocatedLocalExportMarker = {
+  exportVariant: ExportVariant;
+  marker: LocalExportMarker;
+};
+
 export type ExportFinalizeJob = {
   id: string;
   assetId: number;
@@ -21,6 +51,7 @@ export type ExportFinalizeJob = {
   mp4Ref: string | null;
   exportVariant: ExportVariant;
   brandSpecVersion: string | null;
+  timingEvents?: ExportTimingEvent[];
 };
 
 type ExportClientBase = {
@@ -35,6 +66,70 @@ type ExportClientBase = {
 
 export type ExportCandidateStage = "hashing" | "uploading" | "registering";
 export type ExportCandidateFormat = "mp4" | "webm";
+
+const LOCAL_EXPORT_STAGES = new Set<LocalExportStage>([
+  "preparing",
+  "composing",
+  "hashing",
+  "uploading",
+  "registering",
+]);
+
+function localExportMarkerKey(assetId: string | number, exportVariant: ExportVariant): string {
+  return `multimix-video-export-local:${assetId}:${exportVariant}`;
+}
+
+export function writeLocalExportMarker(
+  assetId: string | number,
+  exportVariant: ExportVariant,
+  stage: LocalExportStage,
+  storage: Storage | null = typeof window === "undefined" ? null : window.sessionStorage,
+): void {
+  storage?.setItem(localExportMarkerKey(assetId, exportVariant), JSON.stringify({
+    stage,
+    startedAt: Date.now(),
+  } satisfies LocalExportMarker));
+}
+
+export function readLocalExportMarker(
+  assetId: string | number,
+  exportVariant: ExportVariant,
+  storage: Storage | null = typeof window === "undefined" ? null : window.sessionStorage,
+): LocalExportMarker | null {
+  const raw = storage?.getItem(localExportMarkerKey(assetId, exportVariant));
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<LocalExportMarker>;
+    if (
+      typeof value.stage !== "string"
+      || !LOCAL_EXPORT_STAGES.has(value.stage as LocalExportStage)
+      || typeof value.startedAt !== "number"
+      || !Number.isFinite(value.startedAt)
+    ) return null;
+    return { stage: value.stage as LocalExportStage, startedAt: value.startedAt };
+  } catch {
+    return null;
+  }
+}
+
+export function findLocalExportMarker(
+  assetId: string | number,
+  storage: Storage | null = typeof window === "undefined" ? null : window.sessionStorage,
+): LocatedLocalExportMarker | null {
+  for (const exportVariant of ["original", "brand_showcase"] as const) {
+    const marker = readLocalExportMarker(assetId, exportVariant, storage);
+    if (marker) return { exportVariant, marker };
+  }
+  return null;
+}
+
+export function clearLocalExportMarker(
+  assetId: string | number,
+  exportVariant: ExportVariant,
+  storage: Storage | null = typeof window === "undefined" ? null : window.sessionStorage,
+): void {
+  storage?.removeItem(localExportMarkerKey(assetId, exportVariant));
+}
 
 type ExportUploadSession = {
   mode: "direct" | "multipart";
@@ -57,6 +152,7 @@ type ResumableUploadOptions = {
   chunkSize: number;
   onSuccess: () => void;
   onError: (error: Error) => void;
+  onProgress: (bytesUploaded: number, bytesTotal: number) => void;
 };
 
 type PreviousResumableUpload = Parameters<Upload["resumeFromPreviousUpload"]>[0];
@@ -91,6 +187,7 @@ type WireExportFinalizeJob = {
   mp4_ref?: unknown;
   export_variant?: unknown;
   brand_spec_version?: unknown;
+  timing_events?: unknown;
 };
 
 export class ExportJobHttpError extends Error {
@@ -157,6 +254,18 @@ function parseExportJob(payload: unknown): ExportFinalizeJob {
     exportVariant,
     typeof wire.brand_spec_version === "string" ? wire.brand_spec_version : null,
   );
+  const timingEvents = Array.isArray(wire.timing_events)
+    ? wire.timing_events.filter((event): event is ExportTimingEvent => {
+      if (!event || typeof event !== "object") return false;
+      const value = event as Record<string, unknown>;
+      return typeof value.stage === "string"
+        && (value.source === "browser" || value.source === "server")
+        && (value.status === "completed" || value.status === "failed")
+        && typeof value.duration_ms === "number"
+        && Number.isFinite(value.duration_ms)
+        && typeof value.attempt === "number";
+    })
+    : [];
   return {
     id: wire.job_id,
     assetId: wire.asset_id,
@@ -170,6 +279,7 @@ function parseExportJob(payload: unknown): ExportFinalizeJob {
     mp4Ref: typeof wire.mp4_ref === "string" ? wire.mp4_ref : null,
     exportVariant: contract.exportVariant,
     brandSpecVersion: contract.brandSpecVersion,
+    timingEvents,
   };
 }
 
@@ -335,6 +445,7 @@ async function uploadDirectCandidateResumably(
     uploadUrl: string;
     signal?: AbortSignal;
     resumableUploadFactory?: ResumableUploadFactory;
+    onProgress?: (progress: ExportUnitProgress) => void;
   },
 ): Promise<void> {
   ensureNotAborted(args.signal);
@@ -378,6 +489,16 @@ async function uploadDirectCandidateResumably(
         cacheControl: "3600",
       },
       chunkSize: SUPABASE_TUS_CHUNK_SIZE_BYTES,
+      onProgress: (bytesUploaded, bytesTotal) => {
+        if (bytesTotal <= 0) return;
+        const completedUnits = Math.min(bytesTotal, Math.max(0, bytesUploaded));
+        args.onProgress?.({
+          progress: completedUnits / bytesTotal,
+          completedUnits,
+          totalUnits: bytesTotal,
+          basis: "bytes",
+        });
+      },
       onSuccess: () => finish(resolve),
       onError: (error) => finish(() => reject(error)),
     });
@@ -443,6 +564,9 @@ export async function uploadExportCandidate(
     exportVariant?: ExportVariant;
     brandSpecVersion?: string | null;
     onStage?: (stage: ExportCandidateStage) => void;
+    onUploadProgress?: (progress: ExportUnitProgress) => void;
+    clientTimingEvents?: ExportTimingEvent[];
+    now?: () => number;
     resumableUploadFactory?: ResumableUploadFactory;
   },
 ): Promise<ExportFinalizeJob> {
@@ -452,8 +576,18 @@ export async function uploadExportCandidate(
     args.exportVariant,
     args.brandSpecVersion,
   );
+  const now = args.now ?? (() => performance.now());
+  const timingEvents = [...(args.clientTimingEvents ?? [])];
   args.onStage?.("hashing");
+  const hashingStartedAt = now();
   const sha256 = await sha256Hex(args.blob);
+  timingEvents.push({
+    stage: "hashing",
+    source: "browser",
+    status: "completed",
+    duration_ms: Math.max(0, Math.round(now() - hashingStartedAt)),
+    attempt: 1,
+  });
   ensureNotAborted(args.signal);
   const session = await createUploadSession({
     ...args,
@@ -464,6 +598,7 @@ export async function uploadExportCandidate(
   });
 
   args.onStage?.("uploading");
+  const uploadingStartedAt = now();
   if (session.mode === "direct") {
     await uploadDirectCandidateResumably({
       blob: args.blob,
@@ -472,6 +607,17 @@ export async function uploadExportCandidate(
       uploadUrl: session.uploadUrl,
       signal: args.signal,
       resumableUploadFactory: args.resumableUploadFactory,
+      onProgress: args.onUploadProgress,
+    });
+    timingEvents.push({
+      stage: "uploading",
+      source: "browser",
+      status: "completed",
+      duration_ms: Math.max(0, Math.round(now() - uploadingStartedAt)),
+      progress_basis: "bytes",
+      completed_units: args.blob.size,
+      total_units: args.blob.size,
+      attempt: 1,
     });
     args.onStage?.("registering");
     const registerResponse = await fetchAuthenticated(
@@ -489,6 +635,7 @@ export async function uploadExportCandidate(
           project_fingerprint: session.projectFingerprint,
           export_variant: session.exportVariant,
           brand_spec_version: session.brandSpecVersion,
+          client_timing_events: timingEvents,
         }),
         signal: args.signal,
       },
@@ -499,6 +646,7 @@ export async function uploadExportCandidate(
 
   const formData = new FormData();
   formData.append("file", args.blob, `video-export.${format}`);
+  formData.append("client_timing_events", JSON.stringify(timingEvents));
   const response = await fetchAuthenticated(
     args,
     new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
@@ -588,6 +736,7 @@ export async function waitForExportJob(
   args: ExportClientBase & {
     initialJob: ExportFinalizeJob;
     sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
+    onJobUpdate?: (job: ExportFinalizeJob) => void;
   },
 ): Promise<ExportFinalizeJob> {
   let current = args.initialJob;
@@ -601,6 +750,7 @@ export async function waitForExportJob(
         ...args,
         jobId: current.id,
       });
+      args.onJobUpdate?.(current);
       consecutiveNetworkErrors = 0;
     } catch (cause) {
       ensureNotAborted(args.signal);

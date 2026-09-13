@@ -927,6 +927,7 @@ export type AssetWorkspaceAdapter = {
     projectAssetId: number,
     initialJob: ExportFinalizeJob,
     signal?: AbortSignal,
+    onJobUpdate?: (job: ExportFinalizeJob) => void,
   ): Promise<ExportFinalizeJob>;
   loadSegmentMaterialCandidates(
     token: string,
@@ -1816,13 +1817,14 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         signal,
       });
     },
-    async waitForVideoExport(token, projectAssetId, initialJob, signal) {
+    async waitForVideoExport(token, projectAssetId, initialJob, signal, onJobUpdate) {
       return waitForExportJob({
         apiBase: API_BASE,
         assetId: String(projectAssetId),
         token,
         initialJob,
         signal,
+        onJobUpdate,
       });
     },
     async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {

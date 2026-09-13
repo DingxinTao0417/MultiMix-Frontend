@@ -735,10 +735,13 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 ```
 
 - 直传模式完成后调用 `POST /v1/video/projects/{asset_id}/exports/register`，并在上述字段之外携带
-  `project_fingerprint`；本地兼容模式使用上传会话返回的带版本查询参数的
+  `project_fingerprint` 和可选 `client_timing_events`；本地兼容模式使用上传会话返回的带版本查询参数的
   `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址。两条路径都只做工程与上传边界检查、
   持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测和最终发布由现有
-  视频 worker 继续执行。
+  视频 worker 继续执行。multipart 的 `client_timing_events` 是 JSON 字符串字段。
+- `client_timing_events` 只接受浏览器已经完成的 `preparing | composing | hashing | uploading`；
+  `composing` 必须携带完整 `frames` 计数，`uploading` 只在直传拿到真实字节回调时携带完整 `bytes`
+  计数。浏览器不得提交 `verifying/publishing`，无效来源、单位、未完成计数或超限事件返回 `422`。
 - 导出任务响应包含以下版本字段；其他已有状态字段保持不变：
 
 ```json
@@ -748,17 +751,36 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   "status": "queued",
   "stage": "uploaded",
   "export_variant": "brand_showcase",
-  "brand_spec_version": "multimix-brand-showcase:v1"
+  "brand_spec_version": "multimix-brand-showcase:v1",
+  "timing_events": [
+    {
+      "stage": "composing",
+      "source": "browser",
+      "status": "completed",
+      "duration_ms": 18420,
+      "progress_basis": "frames",
+      "completed_units": 900,
+      "total_units": 900,
+      "attempt": 1
+    }
+  ]
 }
 ```
 
-- 导出按钮按版本显示“品牌展示版 · 正在合成 N%”“品牌展示版 · 正在上传”“品牌展示版 · 正在检查”等状态；
-  原始版使用同样格式。这些是导出内部阶段，不改变视频工程的“生成中 / 完成 / 失败”主状态。
+- `timing_events` 统一返回浏览器 `preparing/composing/hashing/uploading` 与 worker
+  `verifying/publishing` 的真实阶段耗时；worker 失败会关闭当前阶段并标记 `failed`，retry 使用新的
+  `attempt`。旧任务没有事件时返回空数组；重复登记同一候选不会重复追加浏览器事件。
+- 导出按钮按版本显示准备、合成、计算文件指纹、上传、登记任务、检查、发布等状态。合成百分比只来自
+  `completedFrames / totalFrames`，直传上传百分比只来自 `bytesUploaded / bytesTotal`；multipart 上传、
+  哈希、检查和发布没有可靠单位时不显示百分比或 ETA。这些是导出内部阶段，不改变视频工程的
+  “生成中 / 完成 / 失败”主状态。
 - `GET /v1/video/projects/{asset_id}/exports/current?export_variant=brand_showcase&brand_spec_version=multimix-brand-showcase%3Av1`
   返回当前工程指纹与指定版本对应的最新任务；省略查询参数时读取 `original`，没有可恢复任务时返回 `404`。
   `GET /v1/video/projects/{asset_id}/exports/{job_public_id}` 用于轮询指定任务。
-- 页面刷新或连接中断后，前端先读取 current：`queued/running` 继续轮询，`completed` 刷新工程并恢复
-  下载，`failed` 显示任务错误。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
+- 页面刷新或连接中断后，前端先读取 current：`queued/running` 按 `verifying/publishing` 真实阶段继续
+  轮询，`completed` 刷新工程并恢复下载，`failed` 显示任务错误。浏览器本地准备、合成、哈希或上传
+  只用 `sessionStorage` 保存轻量标记；若刷新后没有服务端任务，明确提示该本地阶段无法恢复并允许
+  重新导出，不伪造续跑。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
   返回可重试失败，前端调用现有 `POST /v1/video/jobs/{job_public_id}/retry` 复用服务端候选文件，刷新
   页面后也不重新合成。
 - 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、

@@ -38,12 +38,34 @@ const qualityMap = {
 	very_high: QUALITY_VERY_HIGH,
 };
 
+export type ExportFrameProgress = {
+	progress: number;
+	completedFrames: number;
+	totalFrames: number;
+};
+
 export type SceneExporterEvents = {
-	progress: [progress: number];
+	progress: [progress: ExportFrameProgress];
 	complete: [buffer: ArrayBuffer];
 	error: [error: Error];
 	cancelled: [];
 };
+
+export function frameProgressFromCompletedFrames(
+	completedFrames: number,
+	totalFrames: number,
+): ExportFrameProgress {
+	const normalizedTotal = Math.max(1, Math.trunc(totalFrames));
+	const normalizedCompleted = Math.min(
+		normalizedTotal,
+		Math.max(0, Math.trunc(completedFrames)),
+	);
+	return {
+		progress: normalizedCompleted / normalizedTotal,
+		completedFrames: normalizedCompleted,
+		totalFrames: normalizedTotal,
+	};
+}
 
 export async function resolveBrowserExportFormat({
 	requestedFormat,
@@ -202,7 +224,7 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 			});
 			await videoSource.add(time, 1 / fps);
 
-			this.emit("progress", i / frameCount);
+			this.emit("progress", frameProgressFromCompletedFrames(i + 1, frameCount));
 		}
 
 		if (this.isCancelled) {
@@ -213,7 +235,6 @@ export class SceneExporter extends EventEmitter<SceneExporterEvents> {
 
 		videoSource.close();
 		await output.finalize();
-		this.emit("progress", 1);
 
 		const buffer = output.target.buffer;
 		if (!buffer) {

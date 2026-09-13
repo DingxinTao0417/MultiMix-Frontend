@@ -8,7 +8,10 @@ import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-wor
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetConversationMessage, AssetCreativeDirectionSelection, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
-import type { ExportFinalizeJob } from "../../editor/video-export-client";
+import {
+  findLocalExportMarker,
+  type ExportFinalizeJob,
+} from "../../editor/video-export-client";
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
@@ -56,9 +59,13 @@ type EditorBridgeMessage = {
   brandSpecVersion?: string | null;
 };
 
-type ExportState = "idle" | "checking" | "preparing" | "exporting" | "uploading" | "registering" | "verifying"
+type ExportState = "idle" | "checking" | "preparing" | "exporting" | "hashing" | "uploading" | "registering" | "verifying" | "publishing"
   | "downloading" | "blocked" | "done" | "error";
 type EditorExitState = "idle" | "flushing" | "error";
+
+function serverExportState(job: ExportFinalizeJob): Extract<ExportState, "verifying" | "publishing"> {
+  return job.stage === "publishing" ? "publishing" : "verifying";
+}
 
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -677,7 +684,7 @@ export default function ProductWorkspace({
           setExportError("");
           break;
         case "multimix-editor-export-progress":
-          setExportState("exporting");
+          setExportState((previous) => previous === "uploading" ? "uploading" : "exporting");
           setExportProgress(
             typeof data.progress === "number"
               ? Math.min(100, Math.max(0, data.progress <= 1 ? data.progress * 100 : data.progress))
@@ -686,22 +693,31 @@ export default function ProductWorkspace({
           break;
         case "multimix-editor-export-preparing":
           setExportState("preparing");
-          setExportProgress(100);
+          setExportProgress(null);
+          setExportError("");
+          break;
+        case "multimix-editor-export-hashing":
+          setExportState("hashing");
+          setExportProgress(null);
           setExportError("");
           break;
         case "multimix-editor-export-uploading":
           setExportState("uploading");
-          setExportProgress(100);
+          setExportProgress(null);
           setExportError("");
           break;
         case "multimix-editor-export-registering":
           setExportState("registering");
-          setExportProgress(100);
+          setExportProgress(null);
           setExportError("");
           break;
         case "multimix-editor-export-verifying":
           setExportState("verifying");
-          setExportProgress(100);
+          setExportProgress(null);
+          break;
+        case "multimix-editor-export-publishing":
+          setExportState("publishing");
+          setExportProgress(null);
           break;
         case "multimix-editor-export-quality-report":
           if (data.report) {
@@ -824,7 +840,17 @@ export default function ProductWorkspace({
           "original",
           controller.signal,
         );
-        if (!current) return;
+        if (!current) {
+          const localExport = findLocalExportMarker(product.backendAssetId!);
+          if (localExport) {
+            activeExportVariantRef.current = localExport.exportVariant;
+            setActiveExportVariant(localExport.exportVariant);
+            setExportState("error");
+            setExportProgress(null);
+            setExportError("上次导出在浏览器本地阶段中断，无法自动恢复，请重新导出。");
+          }
+          return;
+        }
         foundExport = true;
 
         let terminal = current;
@@ -832,14 +858,19 @@ export default function ProductWorkspace({
           // A persisted task with stage=uploaded has already crossed the HTTP
           // upload boundary.  On recovery the user is waiting for the worker,
           // so this belongs to the checking phase rather than upload progress.
-          setExportState("verifying");
-          setExportProgress(100);
+          setExportState(serverExportState(current));
+          setExportProgress(null);
           setExportError("");
           terminal = await assetWorkspaceAdapter.waitForVideoExport(
             token,
             product.backendAssetId!,
             current,
             controller.signal,
+            (job) => {
+              if (job.status !== "queued" && job.status !== "running") return;
+              setExportState(serverExportState(job));
+              setExportProgress(null);
+            },
           );
         }
         if (terminal.status === "failed") {
@@ -975,7 +1006,7 @@ export default function ProductWorkspace({
   };
 
   const handleExportVideo = async (exportVariant: ExportVariant) => {
-    if (!currentAssetId || ["exporting", "uploading", "registering", "checking", "preparing", "verifying", "downloading"].includes(exportState)) return;
+    if (!currentAssetId || ["exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading"].includes(exportState)) return;
     activeExportVariantRef.current = exportVariant;
     setActiveExportVariant(exportVariant);
     const cachedBlob = verifiedExportBlobsRef.current.get(exportVariant);
@@ -995,11 +1026,18 @@ export default function ProductWorkspace({
           exportVariant,
         );
         if (current?.status === "queued" || current?.status === "running") {
-          setExportState("verifying");
+          setExportState(serverExportState(current));
+          setExportProgress(null);
           const terminal = await assetWorkspaceAdapter.waitForVideoExport(
             token,
             product.backendAssetId,
             current,
+            undefined,
+            (job) => {
+              if (job.status !== "queued" && job.status !== "running") return;
+              setExportState(serverExportState(job));
+              setExportProgress(null);
+            },
           );
           if (terminal.status === "completed") {
             await downloadPublishedExportJob(terminal, exportVariant);
@@ -1026,7 +1064,7 @@ export default function ProductWorkspace({
     }
     if (recoverableJob?.retryable && token && product.backendAssetId) {
       setExportState("verifying");
-      setExportProgress(100);
+      setExportProgress(null);
       setExportError("");
       try {
         const retried = await assetWorkspaceAdapter.retryVideoExport(
@@ -1038,6 +1076,12 @@ export default function ProductWorkspace({
           token,
           product.backendAssetId,
           retried,
+          undefined,
+          (job) => {
+            if (job.status !== "queued" && job.status !== "running") return;
+            setExportState(serverExportState(job));
+            setExportProgress(null);
+          },
         );
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableExportJobsRef.current.set(exportVariant, terminal);
@@ -1116,12 +1160,16 @@ export default function ProductWorkspace({
     ? `${activeExportVariantLabel} · 正在查找…`
     : exportState === "preparing"
       ? `${activeExportVariantLabel} · 正在准备…`
+    : exportState === "hashing"
+      ? `${activeExportVariantLabel} · 正在计算文件指纹`
     : exportState === "uploading"
-      ? `${activeExportVariantLabel} · 正在上传`
+      ? `${activeExportVariantLabel} · 正在上传${exportProgress == null ? "" : ` ${Math.round(exportProgress)}%`}`
     : exportState === "registering"
-      ? `${activeExportVariantLabel} · 正在确认`
+      ? `${activeExportVariantLabel} · 正在登记任务`
     : exportState === "verifying"
       ? `${activeExportVariantLabel} · 正在检查`
+    : exportState === "publishing"
+      ? `${activeExportVariantLabel} · 正在发布`
     : exportState === "downloading"
       ? `${activeExportVariantLabel} · 正在下载…`
     : exportState === "exporting"
@@ -1622,7 +1670,7 @@ export default function ProductWorkspace({
                 triggerClassName="shadcn-prototype-open-editor"
                 menuAriaLabel="选择视频导出版本"
                 disabled={[
-                  "exporting", "uploading", "registering", "checking", "preparing", "verifying", "downloading",
+                  "exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading",
                 ].includes(exportState)}
                 options={[
                   { variant: "original", label: "原始成片" },
@@ -1820,7 +1868,7 @@ export default function ProductWorkspace({
               }
               onPreviewReadyChange={handlePreviewReadyChange}
               exportRequestVariant={
-                !showEditorEmbed && ["preparing", "exporting", "uploading", "registering", "verifying"].includes(exportState)
+                !showEditorEmbed && ["preparing", "exporting", "hashing", "uploading", "registering", "verifying", "publishing"].includes(exportState)
                   ? activeExportVariant
                   : null
               }
@@ -1832,24 +1880,32 @@ export default function ProductWorkspace({
                 verifiedExportBlobsRef.current.delete(activeExportVariantRef.current);
               }}
               onExportProgress={(progress) => {
-                setExportState("exporting");
+                setExportState((previous) => previous === "uploading" ? "uploading" : "exporting");
                 setExportProgress(progress);
               }}
               onExportPreparing={() => {
                 setExportState("preparing");
-                setExportProgress(100);
+                setExportProgress(null);
+              }}
+              onExportHashing={() => {
+                setExportState("hashing");
+                setExportProgress(null);
               }}
               onExportUploading={() => {
                 setExportState("uploading");
-                setExportProgress(100);
+                setExportProgress(null);
               }}
               onExportRegistering={() => {
                 setExportState("registering");
-                setExportProgress(100);
+                setExportProgress(null);
               }}
               onExportVerifying={() => {
                 setExportState("verifying");
-                setExportProgress(100);
+                setExportProgress(null);
+              }}
+              onExportPublishing={() => {
+                setExportState("publishing");
+                setExportProgress(null);
               }}
               onExportQualityReport={(report) => {
                 setQualityReport(report);

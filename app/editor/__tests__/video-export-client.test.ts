@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { BRAND_SHOWCASE_SPEC_VERSION } from "@/lib/brand-showcase";
 
 import {
+  findLocalExportMarker,
   getCurrentExportJob,
   getExportJob,
   retryExportJob,
   uploadExportCandidate,
   waitForExportJob,
+  writeLocalExportMarker,
   type ExportFinalizeJob,
 } from "../video-export-client";
 
@@ -22,6 +24,7 @@ const queuedJob: ExportFinalizeJob = {
   mp4Ref: null,
   exportVariant: "original",
   brandSpecVersion: null,
+  timingEvents: [],
 };
 
 function response(body: unknown, status = 200): Response {
@@ -44,6 +47,7 @@ function wire(job: Partial<ExportFinalizeJob> = {}): Record<string, unknown> {
     mp4_ref: value.mp4Ref,
     export_variant: value.exportVariant,
     brand_spec_version: value.brandSpecVersion,
+    timing_events: value.timingEvents,
   };
 }
 
@@ -56,6 +60,7 @@ type ResumableOptions = {
   metadata: Record<string, string>;
   onSuccess: () => void;
   onError: (error: Error) => void;
+  onProgress: (bytesUploaded: number, bytesTotal: number) => void;
 };
 
 function successfulResumableUploadFactory() {
@@ -73,6 +78,30 @@ function successfulResumableUploadFactory() {
 }
 
 describe("video export finalization client", () => {
+  it("finds a brand local marker and gives original precedence when both exist", () => {
+    const values = new Map<string, string>();
+    const storage = {
+      get length() { return values.size; },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => { values.delete(key); },
+      setItem: (key: string, value: string) => { values.set(key, value); },
+    } satisfies Storage;
+    writeLocalExportMarker("1121", "brand_showcase", "uploading", storage);
+
+    expect(findLocalExportMarker("1121", storage)).toMatchObject({
+      exportVariant: "brand_showcase",
+      marker: { stage: "uploading" },
+    });
+
+    writeLocalExportMarker("1121", "original", "composing", storage);
+    expect(findLocalExportMarker("1121", storage)).toMatchObject({
+      exportVariant: "original",
+      marker: { stage: "composing" },
+    });
+  });
+
   it("uses the multipart compatibility endpoint when direct storage is unavailable", async () => {
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(response({
@@ -165,6 +194,126 @@ describe("video export finalization client", () => {
     expect(JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body))).toEqual(expect.objectContaining({
       project_fingerprint: "a".repeat(64),
     }));
+  });
+
+  it("reports direct-upload percentage only from uploaded bytes and registers real timings", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "direct",
+        upload_url: "https://project.supabase.co/storage/v1/object/upload/sign/bucket/candidate.mp4?token=short",
+        upload_method: "PUT",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockResolvedValueOnce(response(wire(), 202));
+    const onUploadProgress = vi.fn();
+    const clock = vi.fn()
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(10)
+      .mockReturnValueOnce(30);
+    const factory = vi.fn((_blob: Blob, options: ResumableOptions) => ({
+      abort: vi.fn().mockResolvedValue(undefined),
+      findPreviousUploads: vi.fn().mockResolvedValue([]),
+      resumeFromPreviousUpload: vi.fn(),
+      start: vi.fn(() => {
+        options.onProgress(2, 4);
+        options.onSuccess();
+      }),
+    }));
+    const initialTimings = [{
+      stage: "composing" as const,
+      source: "browser" as const,
+      status: "completed" as const,
+      duration_ms: 500,
+      progress_basis: "frames" as const,
+      completed_units: 30,
+      total_units: 30,
+      attempt: 1 as const,
+    }];
+
+    await uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4!"], { type: "video/mp4" }),
+      fetchImpl,
+      resumableUploadFactory: factory,
+      clientTimingEvents: initialTimings,
+      onUploadProgress,
+      now: clock,
+    });
+
+    expect(onUploadProgress).toHaveBeenCalledWith({
+      progress: 0.5,
+      completedUnits: 2,
+      totalUnits: 4,
+      basis: "bytes",
+    });
+    const registration = JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body));
+    expect(registration.client_timing_events).toEqual([
+      ...initialTimings,
+      {
+        stage: "hashing",
+        source: "browser",
+        status: "completed",
+        duration_ms: 10,
+        attempt: 1,
+      },
+      {
+        stage: "uploading",
+        source: "browser",
+        status: "completed",
+        duration_ms: 20,
+        progress_basis: "bytes",
+        completed_units: 4,
+        total_units: 4,
+        attempt: 1,
+      },
+    ]);
+  });
+
+  it("keeps multipart upload indeterminate and sends only already completed timings", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({
+        mode: "multipart",
+        upload_url: "/v1/video/projects/1121/exports",
+        upload_method: "POST",
+        project_fingerprint: "a".repeat(64),
+      }, 201))
+      .mockResolvedValueOnce(response(wire(), 202));
+    const onUploadProgress = vi.fn();
+    const clock = vi.fn().mockReturnValueOnce(0).mockReturnValueOnce(10).mockReturnValueOnce(10);
+    const preparing = {
+      stage: "preparing" as const,
+      source: "browser" as const,
+      status: "completed" as const,
+      duration_ms: 90,
+      attempt: 1 as const,
+    };
+
+    await uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+      clientTimingEvents: [preparing],
+      onUploadProgress,
+      now: clock,
+    });
+
+    expect(onUploadProgress).not.toHaveBeenCalled();
+    const form = fetchImpl.mock.calls[1]?.[1]?.body as FormData;
+    expect(JSON.parse(String(form.get("client_timing_events")))).toEqual([
+      preparing,
+      {
+        stage: "hashing",
+        source: "browser",
+        status: "completed",
+        duration_ms: 10,
+        attempt: 1,
+      },
+    ]);
   });
 
   it("carries the brand variant through upload, registration, and job parsing", async () => {
@@ -356,8 +505,9 @@ describe("video export finalization client", () => {
       mp4Ref: "supabase://exports/final.mp4",
     };
     const fetchImpl = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(response(wire(running)))
+      .mockResolvedValueOnce(response(wire({ ...running, stage: "publishing" })))
       .mockResolvedValueOnce(response(wire(completed)));
+    const onJobUpdate = vi.fn();
 
     const result = await waitForExportJob({
       apiBase: "https://api.example.test",
@@ -366,10 +516,19 @@ describe("video export finalization client", () => {
       initialJob: queuedJob,
       fetchImpl,
       sleep: async () => undefined,
+      onJobUpdate,
     });
 
     expect(result).toEqual(completed);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(onJobUpdate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ status: "running", stage: "publishing" }),
+    );
+    expect(onJobUpdate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ status: "completed", stage: "done" }),
+    );
   });
 
   it("keeps the task id across a transient network interruption", async () => {

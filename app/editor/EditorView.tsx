@@ -33,12 +33,17 @@ import BgmPanel from "./BgmPanel";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
 import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
+  clearLocalExportMarker,
+  findLocalExportMarker,
   getCurrentExportJob,
   retryExportJob,
   uploadExportCandidate,
   waitForExportJob,
+  writeLocalExportMarker,
   type ExportFinalizeJob,
   type ExportCandidateFormat,
+  type ExportTimingEvent,
+  type ExportUnitProgress,
 } from "./video-export-client";
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -83,11 +88,14 @@ type LoadedProject = {
 
 type VerifiedExportHooks = {
   onStart?: () => void;
-  onProgress?: (progress: number) => void;
+  onProgress?: (progress: ExportUnitProgress) => void;
   onPreparing?: () => void;
+  onHashing?: () => void;
   onUploading?: () => void;
+  onUploadProgress?: (progress: ExportUnitProgress) => void;
   onRegistering?: () => void;
   onVerifying?: () => void;
+  onPublishing?: () => void;
   onQualityReport?: (report: VideoQualityReport) => void;
 };
 
@@ -97,6 +105,7 @@ type CachedExportCandidate = {
   format: ExportCandidateFormat;
   exportVariant: ExportVariant;
   brandSpecVersion: string | null;
+  clientTimingEvents: ExportTimingEvent[];
 };
 
 const EMBED_READY_RETRY_MS = 1000;
@@ -186,7 +195,7 @@ export default function EditorView({
   const [isBgmPanelOpen, setIsBgmPanelOpen] = useState(false);
   const [standaloneExportState, setStandaloneExportState] = useState<ExportProgressState>({
     phase: "idle",
-    progress: 0,
+    progress: null,
   });
   const [activeStandaloneExportVariant, setActiveStandaloneExportVariant] = useState<ExportVariant>("original");
   const [standaloneExportBlobs, setStandaloneExportBlobs] = useState<Partial<Record<ExportVariant, Blob>>>({});
@@ -292,6 +301,9 @@ export default function EditorView({
     exportVariant: ExportVariant,
     hooks: VerifiedExportHooks,
   ) => {
+    const preparingStartedAt = performance.now();
+    hooks.onPreparing?.();
+    if (assetId) writeLocalExportMarker(assetId, exportVariant, "preparing");
     const brandSpecVersion = exportVariant === "brand_showcase"
       ? BRAND_SHOWCASE_SPEC_VERSION
       : null;
@@ -305,6 +317,7 @@ export default function EditorView({
           : serialized
     ) as unknown as BackendProject;
     const localReport = inspectEditorProject(currentProject);
+    if (localReport.blockers.length && assetId) clearLocalExportMarker(assetId, exportVariant);
     if (localReport.blockers.length) {
       hooks.onQualityReport?.(localReport);
       return null;
@@ -329,6 +342,7 @@ export default function EditorView({
     const preflightReport = qualityReportFromPayload(preflightPayload);
     if (!preflightReport) throw new Error("导出前检查没有返回有效报告");
     if (preflightReport.blockers.length) {
+      clearLocalExportMarker(assetId, exportVariant);
       hooks.onQualityReport?.(preflightReport);
       return null;
     }
@@ -339,7 +353,6 @@ export default function EditorView({
       ? candidateBlobRef.current
       : null;
     if (!candidate) {
-      hooks.onStart?.();
       const editor = EditorCore.getInstance();
       const currentAssets = editor.media.getAssets();
       const hydratedAssets = await hydrateAssetFilesForExport(currentAssets, currentProject);
@@ -351,6 +364,18 @@ export default function EditorView({
         }
       }
       editor.media.setAssets({ assets: hydratedAssets });
+      const clientTimingEvents: ExportTimingEvent[] = [{
+        stage: "preparing",
+        source: "browser",
+        status: "completed",
+        duration_ms: Math.max(0, Math.round(performance.now() - preparingStartedAt)),
+        attempt: 1,
+      }];
+      const composingStartedAt = performance.now();
+      let completedFrames = 0;
+      let totalFrames = 0;
+      writeLocalExportMarker(assetId, exportVariant, "composing");
+      hooks.onStart?.();
       const result = await editor.renderer.exportProject({
         options: {
           format: "mp4",
@@ -360,11 +385,33 @@ export default function EditorView({
             ? createBrandShowcaseFrameDecorator()
             : undefined,
         },
-        onProgress: ({ progress }) => hooks.onProgress?.(progress),
+        onProgress: ({ progress, completedFrames: completed, totalFrames: total }) => {
+          completedFrames = completed;
+          totalFrames = total;
+          hooks.onProgress?.({
+            progress,
+            completedUnits: completed,
+            totalUnits: total,
+            basis: "frames",
+          });
+        },
       });
       if (!result.success || !result.buffer) {
         throw new Error(result.error || "未知错误");
       }
+      if (totalFrames <= 0 || completedFrames !== totalFrames) {
+        throw new Error("成片合成没有返回完整的帧进度");
+      }
+      clientTimingEvents.push({
+        stage: "composing",
+        source: "browser",
+        status: "completed",
+        duration_ms: Math.max(0, Math.round(performance.now() - composingStartedAt)),
+        progress_basis: "frames",
+        completed_units: completedFrames,
+        total_units: totalFrames,
+        attempt: 1,
+      });
       const format = (result.format ?? "mp4") as ExportCandidateFormat;
       const blob = new Blob([result.buffer], { type: getExportMimeType({ format }) });
       candidate = {
@@ -373,6 +420,7 @@ export default function EditorView({
         format,
         exportVariant,
         brandSpecVersion,
+        clientTimingEvents,
       };
       candidateBlobRef.current = candidate;
     }
@@ -393,12 +441,21 @@ export default function EditorView({
         brandSpecVersion,
         signal: controller.signal,
         onStage: (stage) => {
-          if (stage === "hashing") hooks.onPreparing?.();
+          writeLocalExportMarker(assetId, exportVariant, stage);
+          if (stage === "hashing") hooks.onHashing?.();
           if (stage === "uploading") hooks.onUploading?.();
           if (stage === "registering") hooks.onRegistering?.();
         },
+        onUploadProgress: hooks.onUploadProgress,
+        clientTimingEvents: candidate.clientTimingEvents,
       });
-      hooks.onVerifying?.();
+      clearLocalExportMarker(assetId, exportVariant);
+      const publishServerStage = (job: ExportFinalizeJob) => {
+        if (job.status !== "queued" && job.status !== "running") return;
+        if (job.stage === "publishing") hooks.onPublishing?.();
+        else hooks.onVerifying?.();
+      };
+      publishServerStage(exportJob);
       const terminalJob = await waitForExportJob({
         apiBase: API_BASE,
         assetId,
@@ -407,6 +464,7 @@ export default function EditorView({
         refreshToken: refreshExportToken,
         initialJob: exportJob,
         signal: controller.signal,
+        onJobUpdate: publishServerStage,
       });
       const verifiedReport = qualityReportFromPayload(terminalJob.qualityReport);
       if (terminalJob.status === "failed") {
@@ -450,14 +508,20 @@ export default function EditorView({
     try {
       const result = await performVerifiedExport(exportVariant, {
         onStart: () => postExportUpdate({ type: "multimix-editor-export-start" }),
-        onProgress: (progress) => postExportUpdate({
+        onProgress: ({ progress }) => postExportUpdate({
           type: "multimix-editor-export-progress",
           progress,
         }),
         onPreparing: () => postExportUpdate({ type: "multimix-editor-export-preparing" }),
+        onHashing: () => postExportUpdate({ type: "multimix-editor-export-hashing" }),
         onUploading: () => postExportUpdate({ type: "multimix-editor-export-uploading" }),
+        onUploadProgress: ({ progress }) => postExportUpdate({
+          type: "multimix-editor-export-progress",
+          progress,
+        }),
         onRegistering: () => postExportUpdate({ type: "multimix-editor-export-registering" }),
         onVerifying: () => postExportUpdate({ type: "multimix-editor-export-verifying" }),
+        onPublishing: () => postExportUpdate({ type: "multimix-editor-export-publishing" }),
         onQualityReport: (report) => postExportUpdate({
           type: "multimix-editor-export-quality-report",
           report,
@@ -494,7 +558,7 @@ export default function EditorView({
     let recoverableJob = recoverableStandaloneExportsRef.current.get(exportVariant);
     const currentToken = getExportToken();
     if (!recoverableJob && exportVariant === "brand_showcase" && assetId && currentToken) {
-      setStandaloneExportState({ phase: "verifying", progress: 1 });
+      setStandaloneExportState({ phase: "verifying", progress: null });
       setStandaloneExportError("");
       try {
         const current = await getCurrentExportJob({
@@ -507,6 +571,10 @@ export default function EditorView({
           brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
         });
         if (current?.status === "queued" || current?.status === "running") {
+          setStandaloneExportState({
+            phase: current.stage === "publishing" ? "publishing" : "verifying",
+            progress: null,
+          });
           const terminal = await waitForExportJob({
             apiBase: API_BASE,
             assetId,
@@ -514,6 +582,13 @@ export default function EditorView({
             getToken: getExportToken,
             refreshToken: refreshExportToken,
             initialJob: current,
+            onJobUpdate: (job) => {
+              if (job.status !== "queued" && job.status !== "running") return;
+              setStandaloneExportState({
+                phase: job.stage === "publishing" ? "publishing" : "verifying",
+                progress: null,
+              });
+            },
           });
           if (terminal.status === "completed") {
             const downloadToken = await refreshExportToken() || getExportToken();
@@ -533,13 +608,13 @@ export default function EditorView({
           recoverableJob = current;
         }
       } catch (cause) {
-        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportState({ phase: "error", progress: null });
         setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
         return;
       }
     }
     if (recoverableJob?.retryable && assetId && currentToken) {
-      setStandaloneExportState({ phase: "verifying", progress: 1 });
+      setStandaloneExportState({ phase: "verifying", progress: null });
       setStandaloneExportError("");
       try {
         const retried = await retryExportJob({
@@ -557,6 +632,13 @@ export default function EditorView({
           getToken: getExportToken,
           refreshToken: refreshExportToken,
           initialJob: retried,
+          onJobUpdate: (job) => {
+            if (job.status !== "queued" && job.status !== "running") return;
+            setStandaloneExportState({
+              phase: job.stage === "publishing" ? "publishing" : "verifying",
+              progress: null,
+            });
+          },
         });
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableStandaloneExportsRef.current.set(exportVariant, terminal);
@@ -569,7 +651,7 @@ export default function EditorView({
         setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: blob }));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
-        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportState({ phase: "error", progress: null });
         setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
       }
       return;
@@ -584,12 +666,15 @@ export default function EditorView({
     });
     try {
       const result = await performVerifiedExport(exportVariant, {
-        onStart: () => setStandaloneExportState({ phase: "rendering", progress: 0 }),
-        onProgress: (progress) => setStandaloneExportState({ phase: "rendering", progress }),
-        onPreparing: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
-        onUploading: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
-        onRegistering: () => setStandaloneExportState({ phase: "uploading", progress: 1 }),
-        onVerifying: () => setStandaloneExportState({ phase: "verifying", progress: 1 }),
+        onPreparing: () => setStandaloneExportState({ phase: "preparing", progress: null }),
+        onStart: () => setStandaloneExportState({ phase: "rendering", progress: null }),
+        onProgress: ({ progress }) => setStandaloneExportState({ phase: "rendering", progress }),
+        onHashing: () => setStandaloneExportState({ phase: "hashing", progress: null }),
+        onUploading: () => setStandaloneExportState({ phase: "uploading", progress: null }),
+        onUploadProgress: ({ progress }) => setStandaloneExportState({ phase: "uploading", progress }),
+        onRegistering: () => setStandaloneExportState({ phase: "registering", progress: null }),
+        onVerifying: () => setStandaloneExportState({ phase: "verifying", progress: null }),
+        onPublishing: () => setStandaloneExportState({ phase: "publishing", progress: null }),
         onQualityReport: (report) => {
           blockerMessage = report.blockers[0]?.message || "当前工程未通过导出检查";
         },
@@ -599,10 +684,10 @@ export default function EditorView({
         setStandaloneExportBlobs((previous) => ({ ...previous, [exportVariant]: result.blob }));
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } else {
-        setStandaloneExportState({ phase: "idle", progress: 0 });
+        setStandaloneExportState({ phase: "idle", progress: null });
       }
     } catch (cause) {
-      setStandaloneExportState({ phase: "error", progress: 0 });
+      setStandaloneExportState({ phase: "error", progress: null });
       setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
     }
   }, [assetId, getExportToken, performVerifiedExport, refreshExportToken]);
@@ -688,10 +773,22 @@ export default function EditorView({
           exportVariant: "original",
           signal: controller.signal,
         });
-        if (!current) return;
+        if (!current) {
+          const localExport = findLocalExportMarker(assetId);
+          if (localExport) {
+            setActiveStandaloneExportVariant(localExport.exportVariant);
+            setStandaloneExportState({ phase: "error", progress: null });
+            setStandaloneExportError("上次导出在浏览器本地阶段中断，无法自动恢复，请重新导出。");
+          }
+          return;
+        }
+        clearLocalExportMarker(assetId, "original");
         let terminal: ExportFinalizeJob = current;
         if (current.status === "queued" || current.status === "running") {
-          setStandaloneExportState({ phase: "verifying", progress: 1 });
+          setStandaloneExportState({
+            phase: current.stage === "publishing" ? "publishing" : "verifying",
+            progress: null,
+          });
           terminal = await waitForExportJob({
             apiBase: API_BASE,
             assetId,
@@ -700,12 +797,19 @@ export default function EditorView({
             refreshToken: refreshExportToken,
             initialJob: current,
             signal: controller.signal,
+            onJobUpdate: (job) => {
+              if (job.status !== "queued" && job.status !== "running") return;
+              setStandaloneExportState({
+                phase: job.stage === "publishing" ? "publishing" : "verifying",
+                progress: null,
+              });
+            },
           });
         }
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableStandaloneExportsRef.current.set("original", terminal);
           else recoverableStandaloneExportsRef.current.delete("original");
-          setStandaloneExportState({ phase: "error", progress: 0 });
+          setStandaloneExportState({ phase: "error", progress: null });
           setStandaloneExportError(terminal.errorMessage || "成片检查未完成");
           return;
         }
@@ -716,7 +820,7 @@ export default function EditorView({
         setStandaloneExportState({ phase: "completed", progress: 1 });
       } catch (cause) {
         if (controller.signal.aborted) return;
-        setStandaloneExportState({ phase: "error", progress: 0 });
+        setStandaloneExportState({ phase: "error", progress: null });
         setStandaloneExportError(cause instanceof Error ? cause.message : String(cause));
       }
     })();

@@ -52,9 +52,11 @@ export type VideoProjectPreviewProps = {
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
   onExportPreparing?: () => void;
+  onExportHashing?: () => void;
   onExportUploading?: () => void;
   onExportRegistering?: () => void;
   onExportVerifying?: () => void;
+  onExportPublishing?: () => void;
   onExportQualityReport?: (report: VideoQualityReport) => void;
   onExportSuccess?: (report: VideoQualityReport | undefined, blob: Blob | undefined) => void;
   onExportError?: (message: string) => void;
@@ -77,9 +79,11 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     onExportStart,
     onExportProgress,
     onExportPreparing,
+    onExportHashing,
     onExportUploading,
     onExportRegistering,
     onExportVerifying,
+    onExportPublishing,
     onExportQualityReport,
     onExportSuccess,
     onExportError,
@@ -217,6 +221,10 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
           onExportPreparing?.();
           return;
         }
+        if (data.type === "multimix-editor-export-hashing") {
+          onExportHashing?.();
+          return;
+        }
         if (data.type === "multimix-editor-export-uploading") {
           onExportUploading?.();
           return;
@@ -227,6 +235,10 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         }
         if (data.type === "multimix-editor-export-verifying") {
           onExportVerifying?.();
+          return;
+        }
+        if (data.type === "multimix-editor-export-publishing") {
+          onExportPublishing?.();
           return;
         }
         if (data.type === "multimix-editor-export-quality-report" && data.report) {
@@ -262,8 +274,10 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       assetId,
       onError,
       onExportError,
+      onExportHashing,
       onExportPreparing,
       onExportProgress,
+      onExportPublishing,
       onExportQualityReport,
       onExportRegistering,
       onExportStart,

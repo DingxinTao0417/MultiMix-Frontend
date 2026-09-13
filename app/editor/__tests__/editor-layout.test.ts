@@ -103,6 +103,10 @@ describe("editor layout constraints", () => {
 		expect(verifiedBlobHandoff).toBeGreaterThan(waitForJob);
 		expect(view).toContain('type: "multimix-editor-export-uploading"');
 		expect(view).toContain('type: "multimix-editor-export-verifying"');
+		expect(view).toContain('type: "multimix-editor-export-hashing"');
+		expect(view).toContain('type: "multimix-editor-export-publishing"');
+		expect(view).toContain("clientTimingEvents");
+		expect(view).toContain("completedFrames");
 		expect(view).not.toContain("/exports/finalize");
 		expect(view).not.toContain("/exports/verify");
 		expect(view).not.toContain("/mp4");
@@ -119,6 +123,7 @@ describe("editor layout constraints", () => {
 		expect(view).toContain("const tokenRef = useRef(token)");
 		expect(view).toContain("getToken: getExportToken");
 		expect(view).toContain("refreshToken: refreshExportToken");
+		expect(view).toContain("findLocalExportMarker(assetId)");
 	});
 
 	it("keeps brand export identity in the editor bridge and candidate cache", () => {

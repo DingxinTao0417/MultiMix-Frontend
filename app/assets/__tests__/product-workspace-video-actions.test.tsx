@@ -19,6 +19,7 @@ vi.mock("../../../lib/video-project-client", async (importOriginal) => ({
 
 afterEach(() => {
   cleanup();
+  window.sessionStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -578,10 +579,29 @@ describe("video browse actions", () => {
       data: {
         source: "multimix-editor",
         assetId: product.backendAssetId,
+        type: "multimix-editor-export-hashing",
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在计算文件指纹" })).toBeDisabled();
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
         type: "multimix-editor-export-uploading",
       },
     }));
-    expect(await screen.findByRole("button", { name: "原始成片 · 正在上传" })).toBeDisabled();
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-progress",
+        progress: 0.5,
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在上传 50%" })).toBeDisabled();
 
     window.dispatchEvent(new MessageEvent("message", {
       origin: window.location.origin,
@@ -592,6 +612,97 @@ describe("video browse actions", () => {
       },
     }));
     expect(await screen.findByRole("button", { name: "原始成片 · 正在检查" })).toBeDisabled();
+
+    window.dispatchEvent(new MessageEvent("message", {
+      origin: window.location.origin,
+      data: {
+        source: "multimix-editor",
+        assetId: product.backendAssetId,
+        type: "multimix-editor-export-publishing",
+      },
+    }));
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在发布" })).toBeDisabled();
+  });
+
+  it("resumes a persisted publishing task with the publishing label", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue({
+      id: "video-export-publishing",
+      assetId: product.backendAssetId!,
+      status: "running",
+      stage: "publishing",
+      retryable: false,
+      errorMessage: null,
+      qualityReport: null,
+      mp4Ref: null,
+      exportVariant: "original",
+      brandSpecVersion: null,
+      timingEvents: [],
+    });
+    vi.spyOn(assetWorkspaceAdapter, "waitForVideoExport").mockReturnValue(new Promise(() => {}));
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "原始成片 · 正在发布" })).toBeDisabled();
+  });
+
+  it("explains that an interrupted browser-local export must be restarted", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    window.sessionStorage.setItem(
+      `multimix-video-export-local:${product.backendAssetId}:original`,
+      JSON.stringify({ stage: "composing", startedAt: Date.now() }),
+    );
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue(null);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByText("上次导出在浏览器本地阶段中断，无法自动恢复，请重新导出。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
+  });
+
+  it("attributes an interrupted browser-local brand export to the brand variant", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    window.sessionStorage.setItem(
+      `multimix-video-export-local:${product.backendAssetId}:brand_showcase`,
+      JSON.stringify({ stage: "uploading", startedAt: Date.now() }),
+    );
+    vi.spyOn(assetWorkspaceAdapter, "getCurrentVideoExport").mockResolvedValue(null);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onProductUpdated={vi.fn()}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByText("上次导出在浏览器本地阶段中断，无法自动恢复，请重新导出。")).toBeInTheDocument();
+    expect(screen.getByText("品牌展示版导出失败")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled();
   });
 
   it("resumes a running export task after the workspace remounts", async () => {

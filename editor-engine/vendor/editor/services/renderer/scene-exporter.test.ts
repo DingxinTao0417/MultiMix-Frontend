@@ -17,6 +17,7 @@ vi.mock("./webgl/webgl-effect-renderer", () => ({
 
 import {
   assertAudioBufferForExport,
+  frameProgressFromCompletedFrames,
   renderExportFrame,
   resolveBrowserExportFormat,
 } from "./scene-exporter";
@@ -72,6 +73,19 @@ describe("resolveBrowserExportFormat", () => {
 });
 
 describe("renderExportFrame", () => {
+  it("derives composition progress from completed frames", () => {
+    expect(frameProgressFromCompletedFrames(1, 4)).toEqual({
+      progress: 0.25,
+      completedFrames: 1,
+      totalFrames: 4,
+    });
+    expect(frameProgressFromCompletedFrames(4, 4)).toEqual({
+      progress: 1,
+      completedFrames: 4,
+      totalFrames: 4,
+    });
+  });
+
   it("awaits the brand decorator after scene rendering and before encoding", async () => {
     const order: string[] = [];
     const canvas = { width: 320, height: 180 } as OffscreenCanvas;
