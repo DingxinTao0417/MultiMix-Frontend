@@ -474,7 +474,7 @@ export type AssetPresenterCleanupItem = {
   id: string;
   state: "auto" | "suggested" | "protected";
   category: string;
-  displayGroup?: "pause" | "fluency" | "repetition" | "noise_operation";
+  displayGroup?: "user_selected" | "pause" | "fluency" | "repetition" | "noise_operation";
   spokenText: string;
   action: string;
   reason: string;

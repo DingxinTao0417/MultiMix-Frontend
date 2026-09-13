@@ -2058,6 +2058,27 @@ describe("message plan mapping", () => {
                 protection_reasons: [],
                 selected: true,
                 locked: false,
+              }, {
+                id: "candidate-user-range",
+                state: "suggested",
+                category: "user_requested_range",
+                display_group: "user_selected",
+                spoken_text: "用户指定台词",
+                action: "delete",
+                reason: "按用户明确指定的范围处理",
+                estimated_saving_seconds: 2,
+                execution_effect_status: "actionable",
+                effect_label: "删除，预计缩短 2.0 秒",
+                source_range: {
+                  start_seconds: 2,
+                  end_seconds: 4,
+                },
+                risk: "medium",
+                audio_risk: "low",
+                visual_jump_risk: "unknown",
+                protection_reasons: [],
+                selected: true,
+                locked: false,
               }],
             },
           },
@@ -2085,6 +2106,12 @@ describe("message plan mapping", () => {
         label: "第二次识别一致，已恢复自动处理",
         model: "paraformer-v2",
       },
+    });
+    expect(conversation.messages?.[0]?.plan?.cleanupItems?.[1]).toMatchObject({
+      category: "user_requested_range",
+      displayGroup: "user_selected",
+      sourceRange: { startSeconds: 2, endSeconds: 4 },
+      selected: true,
     });
   });
 

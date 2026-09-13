@@ -479,7 +479,7 @@ function planCleanupItemsValue(value: unknown): AssetPresenterCleanupItem[] {
         }
       : undefined;
     const displayGroupValue = stringValue(item.display_group);
-    const displayGroup = ["pause", "fluency", "repetition", "noise_operation"].includes(displayGroupValue)
+    const displayGroup = ["user_selected", "pause", "fluency", "repetition", "noise_operation"].includes(displayGroupValue)
       ? displayGroupValue as AssetPresenterCleanupItem["displayGroup"]
       : undefined;
     const executionEffectStatusValue = stringValue(item.execution_effect_status);

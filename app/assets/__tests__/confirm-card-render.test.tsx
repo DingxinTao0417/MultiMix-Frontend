@@ -455,6 +455,25 @@ describe("ConfirmCard pending state", () => {
           locked: false,
         },
         {
+          id: "user-range-1",
+          state: "suggested" as const,
+          category: "user_requested_range",
+          displayGroup: "user_selected" as const,
+          spokenText: "用户指定台词",
+          action: "delete",
+          reason: "按用户明确指定的范围处理",
+          estimatedSavingSeconds: 2,
+          executionEffectStatus: "actionable" as const,
+          effectLabel: "删除，预计缩短 2.0 秒",
+          sourceRange: { startSeconds: 8, endSeconds: 10 },
+          risk: "medium",
+          audioRisk: "low",
+          visualJumpRisk: "unknown",
+          protectionReasons: [],
+          selected: true,
+          locked: false,
+        },
+        {
           id: "fake-keep",
           state: "auto" as const,
           category: "removable_non_speech_sound",
@@ -492,6 +511,7 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByRole("button", { name: "说话不顺（1）" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "内容重复（1）" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "杂音或拍摄操作（0）" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "按你的要求（1）" })).toBeTruthy();
     expect(screen.queryByText("模型")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "说话不顺（1）" }));
     expect(screen.getByText("嗯")).toBeTruthy();
@@ -505,12 +525,15 @@ describe("ConfirmCard pending state", () => {
     fireEvent.click(screen.getByRole("button", { name: "内容重复（1）" }));
     expect(screen.getByText("再说一次")).toBeTruthy();
     fireEvent.click(screen.getByText("再说一次"));
+    fireEvent.click(screen.getByRole("button", { name: "按你的要求（1）" }));
+    expect(screen.getByText("用户指定台词")).toBeTruthy();
+    expect(screen.getByText("00:08.0–00:10.0")).toBeTruthy();
     expect(screen.getByRole("button", { name: "按当前选择继续" })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "人声轨 2" }));
     fireEvent.click(screen.getByRole("button", { name: "按当前选择继续" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {
-      cleanupCandidateIds: ["auto-1", "suggested-1"],
+      cleanupCandidateIds: ["auto-1", "user-range-1", "suggested-1"],
       protectedOverrideCandidateIds: [],
       confirmProtectedOverride: false,
       audioStreamIndex: 2,

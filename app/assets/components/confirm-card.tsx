@@ -14,6 +14,7 @@ import type {
 type CleanupDisplayGroup = NonNullable<AssetPresenterCleanupItem["displayGroup"]>;
 
 const CLEANUP_DISPLAY_GROUPS: { id: CleanupDisplayGroup; label: string }[] = [
+  { id: "user_selected", label: "按你的要求" },
   { id: "pause", label: "停顿太长" },
   { id: "fluency", label: "说话不顺" },
   { id: "repetition", label: "内容重复" },
@@ -21,6 +22,7 @@ const CLEANUP_DISPLAY_GROUPS: { id: CleanupDisplayGroup; label: string }[] = [
 ];
 
 const CLEANUP_GROUP_BY_LEGACY_CATEGORY: Record<string, CleanupDisplayGroup> = {
+  user_requested_range: "user_selected",
   leading_silence: "pause",
   trailing_silence: "pause",
   overlong_silence: "pause",
