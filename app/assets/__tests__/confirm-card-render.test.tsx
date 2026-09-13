@@ -6,6 +6,30 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("renders the server-owned silent event-backdrop summary without reclassifying it", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "video_project_confirmation",
+          title: "视频方案",
+          status: "pending",
+          fields: [
+            { key: "creative_profile", label: "内容方向", value: "从头创作 · 推广 · 品牌精致 · 素材主导" },
+            { key: "production_mix", label: "计划构成", value: "1 段图形画面 · 无音轨" },
+            { key: "format", label: "视频形式", value: "横屏 16:9" },
+            { key: "duration", label: "时长", value: "约 180 秒 · 1 个分镜" },
+            { key: "materials", label: "素材", value: "命中 1 个已保存素材" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("1 段图形画面 · 无音轨")).toBeTruthy();
+    expect(screen.getByText("横屏 16:9")).toBeTruthy();
+    expect(screen.getByText("约 180 秒 · 1 个分镜")).toBeTruthy();
+    expect(screen.getByText("命中 1 个已保存素材")).toBeTruthy();
+  });
+
   it("shows the image preservation contract before the user confirms", () => {
     render(
       <ConfirmCard
