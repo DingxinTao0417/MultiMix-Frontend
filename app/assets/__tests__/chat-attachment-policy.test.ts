@@ -15,14 +15,22 @@ describe("chat attachment policy", () => {
   it("accepts images and supported documents", () => {
     const image = file("cover.png", "image/png");
     const pdf = file("brief.pdf", "application/pdf");
+    const docx = file(
+      "requirements.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    const pptx = file(
+      "references.pptx",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    );
 
-    expect(partitionChatAttachmentFiles([image, pdf])).toEqual({
-      acceptedFiles: [image, pdf],
+    expect(partitionChatAttachmentFiles([image, pdf, docx, pptx])).toEqual({
+      acceptedFiles: [image, pdf, docx, pptx],
       rejectedUnsupportedCount: 0,
     });
     expect(CHAT_IMAGE_UPLOAD_ACCEPT).toBe("image/png,image/jpeg,image/webp");
     expect(CHAT_SOURCE_UPLOAD_ACCEPT).toBe(
-      ".pdf,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm",
+      ".pdf,.docx,.pptx,.txt,.md,.markdown,.html,.htm,.xlsx,.xlsm",
     );
   });
 

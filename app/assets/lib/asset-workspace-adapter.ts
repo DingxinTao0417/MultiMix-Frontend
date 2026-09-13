@@ -13,6 +13,12 @@ import type {
   AssetPresenterDirectionConfirmation,
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
+  ProjectRequirementSnapshot,
+  ProjectRequirementPayload,
+  RequirementConversationMedia,
+  ProjectAssetUsageUpdate,
+  RequirementTriggerKind,
+  RequirementConflictResolution,
   AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
@@ -30,6 +36,7 @@ import {
   VIDEO_WRITES_PAUSED_MESSAGE,
   api,
   apiBlob,
+  apiErrorStatus,
   apiForm,
   cancelAssetGenerationJob,
   getAssetGenerationJob,
@@ -49,6 +56,7 @@ import {
   type ContentAssetRevisionResponse,
   type PublicMaterialCandidate,
   type PublicSourceRead,
+  type RequirementConversationMediaResponse,
   type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
 import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
@@ -173,6 +181,25 @@ export type LibraryListOptions = {
 };
 
 type UploadProgressCallback = (percent: number | null) => void;
+
+export type BatchUploadItemState = {
+  file: File;
+  index: number;
+  status: "uploading" | "ready" | "failed";
+  percent: number | null;
+  asset?: ContentAsset;
+  error?: Error;
+};
+
+export class BatchUploadError extends Error {
+  readonly items: BatchUploadItemState[];
+
+  constructor(items: BatchUploadItemState[]) {
+    super("部分文件上传失败，请重试失败项。");
+    this.name = "BatchUploadError";
+    this.items = items;
+  }
+}
 const UPLOAD_STALL_TIMEOUT_MS = 60_000;
 const UPLOAD_STALL_ERROR = "上传长时间没有进展，请检查网络后重试。";
 
@@ -277,6 +304,196 @@ function uploadAssetWithProgress<T>(
 // Trimming variant on purpose: adapter-level strings feed UI labels directly.
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+type RawRequirementEvidence = {
+  id: string;
+  source_asset_id: number;
+  anchor: string | null;
+  quote: string;
+  confidence: number;
+  ocr_confidence: number | null;
+};
+
+type RawRequirementItem = {
+  id: string;
+  kind: ProjectRequirementPayload["requirements"][number]["kind"];
+  label: string;
+  value: unknown;
+  exact_numeric: boolean;
+  confidence: number;
+  confirmed_by_user: boolean;
+  basis: "explicit" | "inferred";
+  evidence: RawRequirementEvidence[];
+};
+
+type RawProjectRequirementSnapshot = {
+  id: string;
+  conversation_id: string;
+  version: number;
+  parent_snapshot_id: string | null;
+  status: ProjectRequirementSnapshot["status"];
+  trigger_kind: string;
+  conversation_text: string;
+  conversation_media?: RequirementConversationMediaResponse[];
+  payload: {
+    schema_version: "project_requirement_snapshot_v1";
+    summary: string;
+    goal: string | null;
+    audience: string | null;
+    intent: {
+      operation: ProjectRequirementPayload["intent"]["operation"];
+      scope: ProjectRequirementPayload["intent"]["scope"];
+      target_item_ids: string[];
+      replacement_source_asset_id: number | null;
+    };
+    deliverables: RawRequirementItem[];
+    facts: RawRequirementItem[];
+    requirements: RawRequirementItem[];
+    asset_usages: Array<{
+      source_asset_id: number;
+      content_role: ProjectRequirementPayload["assetUsages"][number]["contentRole"];
+      use_policy: ProjectRequirementPayload["assetUsages"][number]["usePolicy"];
+      confidence: number;
+      confirmed_by_user: boolean;
+      basis: "explicit" | "inferred";
+      evidence: RawRequirementEvidence[];
+    }>;
+    conflicts: Array<{
+      id: string;
+      conflict_type: ProjectRequirementPayload["conflicts"][number]["conflictType"];
+      severity: ProjectRequirementPayload["conflicts"][number]["severity"];
+      status: ProjectRequirementPayload["conflicts"][number]["status"];
+      summary: string;
+      item_ids: string[];
+      choices: Array<Record<string, unknown>>;
+      resolution: Record<string, unknown> | null;
+      basis: "explicit" | "inferred";
+      evidence: RawRequirementEvidence[];
+    }>;
+    source_asset_ids: number[];
+    diff: {
+      added_item_ids: string[];
+      removed_item_ids: string[];
+      changed_item_ids: string[];
+      new_conflict_ids: string[];
+      resolved_conflict_ids: string[];
+      usage_changed_asset_ids: number[];
+    };
+  } | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+function mapRequirementEvidence(item: RawRequirementEvidence) {
+  return {
+    id: item.id,
+    sourceAssetId: item.source_asset_id,
+    anchor: item.anchor,
+    quote: item.quote,
+    confidence: item.confidence,
+    ocrConfidence: item.ocr_confidence,
+  };
+}
+
+function mapRequirementItem(item: RawRequirementItem) {
+  return {
+    id: item.id,
+    kind: item.kind,
+    label: item.label,
+    value: item.value,
+    exactNumeric: item.exact_numeric,
+    confidence: item.confidence,
+    confirmedByUser: item.confirmed_by_user,
+    basis: item.basis,
+    evidence: item.evidence.map(mapRequirementEvidence),
+  };
+}
+
+export function requirementConversationMediaFromValue(
+  value: unknown,
+): RequirementConversationMedia[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || item.kind !== "image_evidence") return [];
+    const assetId = item.asset_id;
+    if (!Number.isInteger(assetId) || typeof assetId !== "number" || assetId <= 0) {
+      return [];
+    }
+    return [{
+      kind: "image_evidence" as const,
+      assetId,
+      anchor: stringValue(item.anchor).slice(0, 240),
+      quote: stringValue(item.quote).slice(0, 160),
+    }];
+  });
+}
+
+function mapProjectRequirementSnapshot(raw: RawProjectRequirementSnapshot): ProjectRequirementSnapshot {
+  const payload = raw.payload?.schema_version === "project_requirement_snapshot_v1"
+    ? raw.payload
+    : null;
+  return {
+    id: raw.id,
+    conversationId: raw.conversation_id,
+    version: raw.version,
+    parentSnapshotId: raw.parent_snapshot_id,
+    status: raw.status,
+    triggerKind: raw.trigger_kind,
+    conversationText: raw.conversation_text,
+    conversationMedia: requirementConversationMediaFromValue(raw.conversation_media),
+    payload: payload ? {
+      schemaVersion: payload.schema_version,
+      summary: payload.summary,
+      goal: payload.goal,
+      audience: payload.audience,
+      intent: {
+        operation: payload.intent.operation,
+        scope: payload.intent.scope,
+        targetItemIds: payload.intent.target_item_ids,
+        replacementSourceAssetId: payload.intent.replacement_source_asset_id,
+      },
+      deliverables: payload.deliverables.map(mapRequirementItem),
+      facts: payload.facts.map(mapRequirementItem),
+      requirements: payload.requirements.map(mapRequirementItem),
+      assetUsages: payload.asset_usages.map((item) => ({
+        sourceAssetId: item.source_asset_id,
+        contentRole: item.content_role,
+        usePolicy: item.use_policy,
+        confidence: item.confidence,
+        confirmedByUser: item.confirmed_by_user,
+        basis: item.basis,
+        evidence: item.evidence.map(mapRequirementEvidence),
+      })),
+      conflicts: payload.conflicts.map((item) => ({
+        id: item.id,
+        conflictType: item.conflict_type,
+        severity: item.severity,
+        status: item.status,
+        summary: item.summary,
+        itemIds: item.item_ids,
+        choices: item.choices,
+        resolution: item.resolution,
+        basis: item.basis,
+        evidence: item.evidence.map(mapRequirementEvidence),
+      })),
+      sourceAssetIds: payload.source_asset_ids,
+      diff: {
+        addedItemIds: payload.diff.added_item_ids,
+        removedItemIds: payload.diff.removed_item_ids,
+        changedItemIds: payload.diff.changed_item_ids,
+        newConflictIds: payload.diff.new_conflict_ids,
+        resolvedConflictIds: payload.diff.resolved_conflict_ids,
+        usageChangedAssetIds: payload.diff.usage_changed_asset_ids,
+      },
+    } : null,
+    errorCode: raw.error_code,
+    errorMessage: raw.error_message,
+    createdAt: raw.created_at,
+    completedAt: raw.completed_at,
+  };
 }
 
 export function buildConversationMessagePayload({
@@ -601,6 +818,29 @@ export type AssetWorkspaceAdapter = {
   loadConversationSnapshot(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
+  loadCurrentRequirements(token: string, conversationId: string): Promise<ProjectRequirementSnapshot | null>;
+  analyzeRequirements(
+    token: string,
+    conversationId: string,
+    triggerKind: RequirementTriggerKind,
+    idempotencyKey: string,
+  ): Promise<ProjectRequirementSnapshot>;
+  resolveRequirementConflict(
+    token: string,
+    conversationId: string,
+    resolution: RequirementConflictResolution,
+  ): Promise<ProjectRequirementSnapshot>;
+  updateProjectSourceUsage(
+    token: string,
+    conversationId: string,
+    sourceAssetId: number,
+    update: ProjectAssetUsageUpdate,
+  ): Promise<ProjectRequirementSnapshot>;
+  cloneProjectFromRequirements(
+    token: string,
+    conversationId: string,
+    expectedSnapshotVersion: number,
+  ): Promise<AssetConversation>;
   deleteConversation(token: string, conversationId: string): Promise<void>;
   renameConversation(token: string, conversationId: string, title: string): Promise<void>;
   createMaterialPackage(token: string, payload: { title: string; assetIds: number[]; metadata?: Record<string, unknown> }): Promise<ContentAsset>;
@@ -634,6 +874,7 @@ export type AssetWorkspaceAdapter = {
     product: AssetProduct | null;
     generationJob: AssetGenerationJobResponse | null;
     agentAction: AgentActionRunResponse | null;
+    requirementSnapshot?: ProjectRequirementSnapshot | null;
   }>;
   reconcileMessage(args: {
     token: string;
@@ -644,6 +885,7 @@ export type AssetWorkspaceAdapter = {
     product: AssetProduct | null;
     generationJob: AssetGenerationJobResponse | null;
     agentAction: AgentActionRunResponse | null;
+    requirementSnapshot?: ProjectRequirementSnapshot | null;
   } | null>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
@@ -717,12 +959,18 @@ export type AssetWorkspaceAdapter = {
     onProgress?: UploadProgressCallback,
     idempotencyKey?: string,
   ): Promise<ContentAsset>;
+  uploadAssets(
+    token: string,
+    files: File[],
+    view: Exclude<AssetWorkspaceView, "conversation">,
+    onProgress?: (state: BatchUploadItemState) => void,
+  ): Promise<ContentAsset[]>;
   getLatestAssetIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
   downloadAsset(token: string, assetId: number): Promise<Blob>;
-  deleteAsset(token: string, assetId: number): Promise<void>;
+  deleteAsset(token: string, assetId: number, mode?: "archive" | "permanent"): Promise<void>;
   reparseAsset(token: string, assetId: number): Promise<ContentAsset>;
   listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
   searchPublicMaterials(token: string, payload: { query: string; mediaTypes: Array<"text" | "image" | "video">; providers?: string[]; limit?: number }): Promise<PublicMaterialCandidate[]>;
@@ -1260,6 +1508,84 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         detailsLoaded: true,
       }));
     },
+    async loadCurrentRequirements(token, conversationId) {
+      try {
+        const snapshot = await api<RawProjectRequirementSnapshot>(
+          `/assets/conversations/${encodeURIComponent(conversationId)}/requirements/current`,
+          token,
+        );
+        return mapProjectRequirementSnapshot(snapshot);
+      } catch (error) {
+        if (apiErrorStatus(error) === 404) return null;
+        throw error;
+      }
+    },
+    async analyzeRequirements(token, conversationId, triggerKind, idempotencyKey) {
+      const snapshot = await api<RawProjectRequirementSnapshot>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/requirements/analyze`,
+        token,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify({ trigger_kind: triggerKind }),
+        },
+      );
+      return mapProjectRequirementSnapshot(snapshot);
+    },
+    async resolveRequirementConflict(token, conversationId, resolution) {
+      const snapshot = await api<RawProjectRequirementSnapshot>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/requirements/conflicts/${encodeURIComponent(resolution.conflictId)}/resolve`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            snapshot_id: resolution.snapshotId,
+            snapshot_version: resolution.snapshotVersion,
+            conflict_id: resolution.conflictId,
+            resolution_kind: resolution.resolutionKind,
+            ...(resolution.evidenceId ? { evidence_id: resolution.evidenceId } : {}),
+            ...(resolution.userValue !== undefined ? { user_value: resolution.userValue } : {}),
+          }),
+        },
+      );
+      return mapProjectRequirementSnapshot(snapshot);
+    },
+    async updateProjectSourceUsage(token, conversationId, sourceAssetId, update) {
+      const snapshot = await api<RawProjectRequirementSnapshot>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/sources/${sourceAssetId}/usage`,
+        token,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            content_role: update.contentRole,
+            use_policy: update.usePolicy,
+            expected_snapshot_version: update.expectedSnapshotVersion,
+          }),
+        },
+      );
+      return mapProjectRequirementSnapshot(snapshot);
+    },
+    async cloneProjectFromRequirements(token, conversationId, expectedSnapshotVersion) {
+      const clone = await api<{ conversation_id: string; requirement_snapshot: RawProjectRequirementSnapshot }>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/clone-from-requirements`,
+        token,
+        {
+          method: "POST",
+          body: JSON.stringify({ expected_snapshot_version: expectedSnapshotVersion }),
+        },
+      );
+      const row = await retryConversationDetailLoad(
+        () => api<AssetConversationResponse>(
+          `/assets/conversations/${encodeURIComponent(clone.conversation_id)}?include_project_resource_items=false`,
+          token,
+        ),
+      );
+      return {
+        ...conversationFromPersisted(row, data.newConversation.product),
+        detailsLoaded: true,
+        requirementSnapshot: mapProjectRequirementSnapshot(clone.requirement_snapshot),
+      };
+    },
     async deleteConversation(token, conversationId) {
       await api<void>(`/assets/conversations/${encodeURIComponent(conversationId)}`, token, {
         method: "DELETE"
@@ -1309,7 +1635,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
         assertVideoWritesAvailable();
       }
-      const response = await api<AssetConversationMessageResponse>("/assets/conversations/messages", token, {
+      const response = await api<AssetConversationMessageResponse & {
+        requirement_snapshot?: RawProjectRequirementSnapshot | null;
+      }>("/assets/conversations/messages", token, {
         method: "POST",
         signal,
         headers: {
@@ -1356,6 +1684,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         generationJob: response.generation_job ?? null,
         agentAction: response.agent_action
           ? mapAgentAction(response.agent_action)
+          : null,
+        requirementSnapshot: response.requirement_snapshot
+          ? mapProjectRequirementSnapshot(response.requirement_snapshot)
           : null,
       };
     },
@@ -1570,6 +1901,43 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress, idempotencyKey);
       return apiForm<ContentAsset>("/assets/upload", token, formData);
     },
+    async uploadAssets(token, files, view, onProgress) {
+      const states: BatchUploadItemState[] = files.map((file, index) => ({
+        file,
+        index,
+        status: "uploading",
+        percent: 0,
+      }));
+      const uploaded = await Promise.all(files.map(async (file, index) => {
+        const idempotencyKey = globalThis.crypto?.randomUUID?.()
+          ?? `upload-${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
+        onProgress?.({ ...states[index] });
+        try {
+          const result = await this.uploadAsset(
+            token,
+            file,
+            view,
+            (percent) => {
+              states[index] = { ...states[index], percent };
+              onProgress?.({ ...states[index] });
+            },
+            idempotencyKey,
+          );
+          states[index] = { ...states[index], status: "ready", percent: 100, asset: result };
+          onProgress?.({ ...states[index] });
+          return result;
+        } catch (error) {
+          const uploadError = error instanceof Error ? error : new Error("上传失败");
+          states[index] = { ...states[index], status: "failed", error: uploadError };
+          onProgress?.({ ...states[index] });
+          return null;
+        }
+      }));
+      if (states.some((item) => item.status === "failed")) {
+        throw new BatchUploadError(states);
+      }
+      return uploaded.filter((item): item is ContentAsset => item !== null);
+    },
     async getLatestAssetIngestJob(token, assetId) {
       return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
     },
@@ -1595,8 +1963,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     async downloadAsset(token, assetId) {
       return apiBlob(`/assets/${assetId}/download`, token);
     },
-    async deleteAsset(token, assetId) {
-      await api<void>(`/assets/${assetId}`, token, { method: "DELETE" });
+    async deleteAsset(token, assetId, mode = "archive") {
+      await api<void>(`/assets/${assetId}?mode=${mode}`, token, { method: "DELETE" });
     },
     async reparseAsset(token, assetId) {
       return api<ContentAsset>(`/assets/${assetId}/reparse`, token, { method: "POST" });

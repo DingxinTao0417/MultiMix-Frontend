@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   assetWorkspaceAdapter,
   assertVideoWritesAvailable,
+  BatchUploadError,
   buildConversationMessagePayload,
   createLibraryCreationDraftConversation,
   conversationFromSummary,
@@ -135,6 +136,264 @@ describe("asset workspace category inference", () => {
 });
 
 describe("runtime data boundary", () => {
+  it("maps requirement snapshots and sends only explicit structured mutations", async () => {
+    const snapshot = {
+      id: "snapshot-7",
+      conversation_id: "project-1",
+      version: 7,
+      parent_snapshot_id: "snapshot-6",
+      status: "needs_confirmation",
+      trigger_kind: "manual_refresh",
+      conversation_text: "我理解的是：需要一支品牌短片。请直接回复采用哪一项。",
+      payload: {
+        schema_version: "project_requirement_snapshot_v1",
+        summary: "需要一支品牌短片，价格信息存在冲突。",
+        goal: "品牌介绍",
+        audience: "新客户",
+        intent: {
+          operation: "supplement",
+          scope: "project_default",
+          target_item_ids: [],
+          replacement_source_asset_id: null,
+        },
+        deliverables: [],
+        facts: [],
+        requirements: [],
+        asset_usages: [{
+          source_asset_id: 31,
+          content_role: "fact_evidence",
+          use_policy: "reference_only",
+          confidence: 0.98,
+          confirmed_by_user: false,
+          basis: "explicit",
+          evidence: [{
+            id: "price-new",
+            source_asset_id: 31,
+            anchor: "第 2 页",
+            quote: "价格为 299 元",
+            confidence: 0.98,
+            ocr_confidence: null,
+          }],
+        }],
+        conflicts: [{
+          id: "price",
+          conflict_type: "direct_conflict",
+          severity: "blocking",
+          status: "unresolved",
+          summary: "价格口径不一致",
+          item_ids: [],
+          choices: [{ id: "price-new", label: "299 元" }],
+          resolution: null,
+          basis: "explicit",
+          evidence: [],
+        }],
+        source_asset_ids: [31],
+        diff: {
+          added_item_ids: [],
+          removed_item_ids: [],
+          changed_item_ids: [],
+          new_conflict_ids: ["price"],
+          resolved_conflict_ids: [],
+          usage_changed_asset_ids: [],
+        },
+      },
+      error_code: null,
+      error_message: null,
+      created_at: "2026-09-12T08:00:00Z",
+      completed_at: "2026-09-12T08:00:01Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 8 }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 9 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 10 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const current = await assetWorkspaceAdapter.loadCurrentRequirements("token", "project-1");
+    await assetWorkspaceAdapter.analyzeRequirements("token", "project-1", "manual_refresh", "analysis-1");
+    await assetWorkspaceAdapter.resolveRequirementConflict("token", "project-1", {
+      snapshotId: "snapshot-7",
+      snapshotVersion: 7,
+      conflictId: "price",
+      resolutionKind: "choose_evidence",
+      evidenceId: "price-new",
+    });
+    await assetWorkspaceAdapter.updateProjectSourceUsage("token", "project-1", 31, {
+      contentRole: "fact_evidence",
+      usePolicy: "reference_only",
+      expectedSnapshotVersion: 9,
+    });
+    vi.unstubAllGlobals();
+
+    expect(current).toMatchObject({
+      id: "snapshot-7",
+      conversationId: "project-1",
+      version: 7,
+      status: "needs_confirmation",
+      conversationText: "我理解的是：需要一支品牌短片。请直接回复采用哪一项。",
+      payload: {
+        assetUsages: [{ sourceAssetId: 31, contentRole: "fact_evidence", usePolicy: "reference_only" }],
+        conflicts: [{ id: "price", severity: "blocking", status: "unresolved" }],
+      },
+    });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ "Idempotency-Key": "analysis-1" }),
+      body: JSON.stringify({ trigger_kind: "manual_refresh" }),
+    });
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({
+      snapshot_id: "snapshot-7",
+      snapshot_version: 7,
+      conflict_id: "price",
+      resolution_kind: "choose_evidence",
+      evidence_id: "price-new",
+    }));
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(JSON.stringify({
+      content_role: "fact_evidence",
+      use_policy: "reference_only",
+      expected_snapshot_version: 9,
+    }));
+  });
+
+  it("uploads every selected file with an independent idempotency key", async () => {
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = "";
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      abort = vi.fn();
+      send = vi.fn(() => {
+        const index = FakeUploadRequest.instances.indexOf(this);
+        this.responseText = JSON.stringify(asset({ id: 101 + index }));
+        this.onload?.();
+      });
+
+      constructor() {
+        FakeUploadRequest.instances.push(this);
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("upload-a").mockReturnValueOnce("upload-b") });
+
+    const uploaded = await assetWorkspaceAdapter.uploadAssets(
+      "token",
+      [
+        new File(["one"], "one.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+        new File(["two"], "two.pptx", { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }),
+      ],
+      "assets",
+    );
+    vi.unstubAllGlobals();
+
+    expect(uploaded.map((item) => item.id)).toEqual([101, 102]);
+    expect(FakeUploadRequest.instances).toHaveLength(2);
+    expect(FakeUploadRequest.instances[0]?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-a");
+    expect(FakeUploadRequest.instances[1]?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-b");
+  });
+
+  it("reports per-file states and never marks a partially failed batch ready", async () => {
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = "";
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      abort = vi.fn();
+      send = vi.fn(() => {
+        const index = FakeUploadRequest.instances.indexOf(this);
+        if (index === 0) {
+          this.responseText = JSON.stringify(asset({ id: 201 }));
+        } else {
+          this.status = 400;
+          this.statusText = "Bad Request";
+          this.responseText = JSON.stringify({ detail: "文件不符合上传契约" });
+        }
+        this.onload?.();
+      });
+
+      constructor() {
+        FakeUploadRequest.instances.push(this);
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    const progress = vi.fn();
+
+    const upload = assetWorkspaceAdapter.uploadAssets(
+      "token",
+      [new File(["one"], "one.docx"), new File(["two"], "two.pptx")],
+      "assets",
+      progress,
+    );
+    await expect(upload).rejects.toBeInstanceOf(BatchUploadError);
+    await upload.catch((error: BatchUploadError) => {
+      expect(error.items.map((item) => item.status)).toEqual(["ready", "failed"]);
+    });
+    vi.unstubAllGlobals();
+
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ index: 0, status: "ready", percent: 100 }));
+    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ index: 1, status: "failed" }));
+  });
+
+  it("clones only the explicitly bound requirement snapshot version", async () => {
+    const now = "2026-09-12T08:00:00Z";
+    const cloneResponse = {
+      conversation_id: "project-clone",
+      requirement_snapshot: {
+        id: "snapshot-clone",
+        conversation_id: "project-clone",
+        version: 1,
+        parent_snapshot_id: null,
+        status: "ready",
+        trigger_kind: "clone_project",
+        conversation_text: "我理解的是：继承的项目需求。",
+        payload: {
+          schema_version: "project_requirement_snapshot_v1",
+          summary: "继承的项目需求",
+          goal: null,
+          audience: null,
+          intent: { operation: "clone_project", scope: "project_default", target_item_ids: [], replacement_source_asset_id: null },
+          deliverables: [], facts: [], requirements: [], asset_usages: [], conflicts: [], source_asset_ids: [],
+          diff: { added_item_ids: [], removed_item_ids: [], changed_item_ids: [], new_conflict_ids: [], resolved_conflict_ids: [], usage_changed_asset_ids: [] },
+        },
+        error_code: null,
+        error_message: null,
+        created_at: now,
+        completed_at: now,
+      },
+    };
+    const conversationResponse = {
+      id: "project-clone",
+      title: "项目副本",
+      status: "active",
+      metadata: {},
+      messages: [],
+      products: [],
+      created_at: now,
+      updated_at: now,
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(cloneResponse), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(conversationResponse), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clone = await assetWorkspaceAdapter.cloneProjectFromRequirements("token", "project-1", 7);
+    vi.unstubAllGlobals();
+
+    expect(clone).toMatchObject({ id: "project-clone", title: "项目副本", detailsLoaded: true });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ expected_snapshot_version: 7 }));
+  });
+
   it("serializes a source choice as a structured conversation field", () => {
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-source-choice",

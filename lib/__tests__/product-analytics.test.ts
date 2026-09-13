@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getProductAnalyticsSessionId,
+  isAllowedProductEvent,
+  sanitizeProductEventProperties,
   trackProductEvent,
 } from "../product-analytics";
 
@@ -59,5 +61,21 @@ describe("product analytics", () => {
     expect(first).toBeTruthy();
     expect(second).toBe(first);
     expect(window.sessionStorage.getItem("multimix_product_analytics_session")).toBe(first);
+  });
+
+  it("allowlists requirement events and removes raw requirement content", () => {
+    expect(isAllowedProductEvent("requirement_confirmed_first_pass")).toBe(true);
+    expect(isAllowedProductEvent("requirement_conflict_resolved")).toBe(true);
+    expect(sanitizeProductEventProperties({
+      snapshot_version: 3,
+      conflict_severity: "blocking",
+      question_required: false,
+      raw_requirement_text: "customer private text",
+      filename: "private-brief.docx",
+    })).toEqual({
+      snapshot_version: 3,
+      conflict_severity: "blocking",
+      question_required: false,
+    });
   });
 });
