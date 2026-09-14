@@ -1,6 +1,6 @@
 # 生产 UI/UX P1 整改计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-14
 
@@ -41,7 +41,7 @@
 
 1. 运行定向 Vitest，并确认每项测试在实现前按预期失败、实现后通过。
 2. 运行类型检查、ESLint、播放器视觉契约、产品展示区样式检查和隔离展示区 E2E。
-3. 生成桌面确认卡、桌面播放器失败恢复、桌面成功播放器和移动端成功播放器截图。
+3. 生成桌面确认卡、桌面工程预览、桌面成功播放器和移动端成功播放器截图；生产项目若均正常 ready，则用计时测试证明异常分支，不人为篡改生产页面制造失败截图。
 4. 取得提交锁，仅暂存本计划和本轮实现/测试文件；验证无晚到变化后提交本地 `main`。
 5. 按用户已确认范围推送 `origin/main`、部署到 Vercel 生产项目 `multimix-frontend`，再执行登录后只读生产复测。
 
@@ -66,4 +66,12 @@
 
 - [x] 任务 1：原声音轨选择器修复
 - [x] 任务 2：预览超时恢复
-- [ ] 任务 3：验证、提交、部署与生产复测
+- [x] 任务 3：验证、提交、部署与生产复测
+
+## 完成记录
+
+- 失败测试先稳定复现了全局表单样式污染、无 ready/error 时无限加载，以及切换工程未重置计时器；实现后定向 26 项测试通过。
+- `typecheck`、`lint`、`check:video-preview-contract`、`test:product-stage-style`、`docs:check`、生产构建和隔离 `test:display-coverage` 均通过；展示区 E2E 为 15 项通过、1 项按套件设计跳过。
+- 前端提交 `524ac5a9e4585ba4059e568caf50252802a8e058` 已推送到 `origin/main`，Vercel 生产部署 `dpl_7ju7t4ac5qr6vn4i9x2EVw74k5Vf` 为 Ready，并绑定 `https://multimix-frontend.vercel.app`。
+- 登录后生产复测确认音轨 radio 为 `16×16px`，三条完成项目均未再停留在加载态，成片桌面与 390px 移动端加载完成且无横向溢出；资源抽屉可由 Escape 关闭，控制台无错误。
+- 复测截图位于工作区 `artifacts/qa/ui-ux-production-retest-20260914/`。生产抽查未自然触发超时失败态，因此异常提示与重试入口由 fake-timer 测试覆盖，未人为改写生产页面。
