@@ -11,6 +11,7 @@ import VideoProjectPreview, { type VideoProjectPreviewHandle } from "../componen
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function publishPreviewState(iframe: HTMLIFrameElement, overrides: Record<string, unknown> = {}) {
@@ -114,6 +115,67 @@ describe("video project preview", () => {
     expect(postMessage.mock.calls.filter(([payload]) => (
       (payload as { type?: string }).type === "multimix-editor-preview-sync"
     ))).toHaveLength(0);
+  });
+
+  it("offers recovery when the editor never reports readiness", () => {
+    vi.useFakeTimers();
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    act(() => vi.advanceTimersByTime(12_000));
+
+    expect(screen.getByRole("alert")).toHaveTextContent("预览暂时无法加载，可先查看分镜");
+    expect(screen.getByRole("button", { name: "重新加载预览" })).toBeInTheDocument();
+  });
+
+  it("does not show timeout recovery after the editor reports ready", () => {
+    vi.useFakeTimers();
+    render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(iframe);
+    act(() => vi.advanceTimersByTime(12_000));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("restarts the readiness timeout when the preview asset changes", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <VideoProjectPreview
+        assetId={9100}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+
+    act(() => vi.advanceTimersByTime(6_000));
+    rerender(
+      <VideoProjectPreview
+        assetId={9200}
+        ratioClassName="ratio-landscape"
+        durationSeconds={3}
+        channelId="preview-test"
+      />,
+    );
+    act(() => vi.advanceTimersByTime(6_000));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("正在准备预览")).toBeInTheDocument();
   });
 
   it("keeps a failed engineering preview in the player and reloads it on demand", () => {

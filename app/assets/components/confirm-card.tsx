@@ -520,6 +520,7 @@ export default function ConfirmCard({
           {audioTrackOptions.map((option) => (
             <label key={option.streamIndex}>
               <input
+                className="shadcn-prototype-confirm-audio-track-radio"
                 type="radio"
                 name="presenter-audio-track"
                 checked={selectedAudioStream === option.streamIndex}

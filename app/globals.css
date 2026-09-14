@@ -9580,6 +9580,50 @@ label {
   display: block;
 }
 
+.shadcn-prototype-confirm-audio-tracks {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px 14px;
+  align-items: start;
+  padding: 0 18px 15px;
+}
+
+.shadcn-prototype-confirm-audio-tracks > label {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--sp-text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.shadcn-prototype-confirm-audio-track-radio {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--sp-accent);
+}
+
+.shadcn-prototype-confirm-audio-tracks > label > audio {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+}
+
+.shadcn-prototype-confirm-audio-tracks > label:has(input:disabled) {
+  cursor: default;
+  opacity: 0.72;
+}
+
 /* Video-size toggle inside the confirm card (spec §5.2). Mirrors the library
    filter chips: neutral pill, accent-soft when active. */
 .shadcn-prototype-confirm-ratio {

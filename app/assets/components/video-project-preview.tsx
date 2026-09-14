@@ -36,6 +36,8 @@ type EditorPreviewMessage = {
   brandSpecVersion?: string | null;
 };
 
+const PREVIEW_READY_TIMEOUT_MS = 12_000;
+
 export type VideoProjectPreviewHandle = {
   seekAndPlay: (time: number) => void;
   export: (exportVariant: ExportVariant) => boolean;
@@ -146,6 +148,16 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       }, 1000);
       return () => window.clearInterval(timer);
     }, [failed, postCommand, ready]);
+
+    useEffect(() => {
+      if (ready || failed || typeof window === "undefined") return;
+      const timer = window.setTimeout(() => {
+        setReady(false);
+        setFailed(true);
+        setPlaying(false);
+      }, PREVIEW_READY_TIMEOUT_MS);
+      return () => window.clearTimeout(timer);
+    }, [assetId, failed, iframeRevision, previewChannel, ready]);
 
     const seek = useCallback((time: number) => {
       if (!Number.isFinite(time)) return;

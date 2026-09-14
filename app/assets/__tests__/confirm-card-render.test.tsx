@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -643,5 +646,41 @@ describe("ConfirmCard pending state", () => {
       audioFingerprint: "sha256:audio-2",
       transcriptHash: "sha256:transcript-2",
     });
+  });
+
+  it("keeps presenter audio radios compact inside the confirmation card", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "presenter_audio_selection_confirmation",
+          title: "选择口播原声",
+          status: "pending",
+          fields: [{ key: "audio", label: "有效人声音轨", value: "检测到 1 条" }],
+          audioTrackDefault: 1,
+          audioTrackOptions: [
+            {
+              streamIndex: 1,
+              label: "人声轨 1",
+              previewUrl: "",
+              qualityScore: 0.9,
+              recommended: true,
+              channels: 1,
+              codec: "aac",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("radio", { name: /人声轨 1/ }).classList.contains(
+        "shadcn-prototype-confirm-audio-track-radio",
+      ),
+    ).toBe(true);
+
+    const css = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    expect(css).toMatch(
+      /\.shadcn-prototype-confirm-audio-track-radio\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*min-height:\s*16px;[^}]*padding:\s*0;[^}]*box-shadow:\s*none;/s,
+    );
   });
 });
