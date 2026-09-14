@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorCore } from "@editor/core";
 import type { TimelineElement, TimelineTrack } from "@editor/lib/timeline/types";
 import { API_BASE } from "@/editor-engine/vendor/api";
+import { useConfirmationDialog } from "../components/confirmation-dialog";
 import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import {
   copyElementPersistenceMetadata,
@@ -74,6 +75,7 @@ export default function FilmStrip({
   const [saveNote, setSaveNote] = useState<TimelineSaveStatus>("idle");
   const [recompose, setRecompose] = useState<RecomposeState>({ phase: "idle" });
   const [pickerOpen, setPickerOpen] = useState(false);
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const stripRef = useRef<HTMLDivElement | null>(null);
   const saveCoordinatorRef = useRef<TimelineSaveCoordinator | null>(null);
   const saveNoteRef = useRef<TimelineSaveStatus>("idle");
@@ -337,7 +339,13 @@ export default function FilmStrip({
         if (result.kind === "confirm_overwrite") {
           const message = result.message || OVERWRITE_FALLBACK_MESSAGE;
           setRecompose({ phase: "idle" });
-          if (window.confirm(message)) await submitRecompose(body, true);
+          const confirmed = await confirm({
+            title: "覆盖手工剪辑？",
+            description: message,
+            confirmLabel: "覆盖并重新合成",
+            tone: "danger",
+          });
+          if (confirmed) await submitRecompose(body, true);
           return;
         }
         postToParent({ type: "multimix-editor-recompose-started", jobId: result.job.id });
@@ -346,7 +354,7 @@ export default function FilmStrip({
         setRecompose({ phase: "error", message: cause instanceof Error ? cause.message : String(cause) });
       }
     },
-    [assetId, token, selectedSegmentId, postToParent],
+    [assetId, token, selectedSegmentId, postToParent, confirm],
   );
 
   // While a recompose job runs, poll its real status; reload the editor with
@@ -549,6 +557,7 @@ export default function FilmStrip({
         onSelect={handlePickMaterial}
         onClose={() => setPickerOpen(false)}
       />
+      {confirmationDialog}
     </div>
   );
 }

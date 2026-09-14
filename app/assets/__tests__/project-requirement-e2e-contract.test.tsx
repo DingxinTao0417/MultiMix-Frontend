@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { apiErrorStatus } from "../../../lib/api";
@@ -120,7 +120,6 @@ describe("project requirement cross-stack contract", () => {
   it("keeps requirement understanding conversational while project removal and deletion stay distinct", async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const permanentDelete = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <ProjectResourcesDrawer
         open
@@ -150,9 +149,11 @@ describe("project requirement cross-stack contract", () => {
     expect(screen.queryByText("仅作参考")).not.toBeInTheDocument();
     expect(screen.queryByText("需要调整时，直接在项目对话里告诉 Agent。")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "移出项目" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "将素材移出项目？" })).getByRole("button", { name: "移出项目" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(31));
     await waitFor(() => expect(screen.getByRole("button", { name: "永久删除源文件" })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "永久删除源文件" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "永久删除源文件？" })).getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(permanentDelete).toHaveBeenCalledWith(31));
   });
 });

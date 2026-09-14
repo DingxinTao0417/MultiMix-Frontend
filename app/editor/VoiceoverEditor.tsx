@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useConfirmationDialog } from "../components/confirmation-dialog";
 
 import {
   VoiceoverApiError,
@@ -99,6 +100,7 @@ export default function VoiceoverEditor({
   const [busy, setBusy] = useState<BusyAction>(null);
   const [error, setError] = useState("");
   const [undoVersionId, setUndoVersionId] = useState<number | null>(null);
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -187,7 +189,12 @@ export default function VoiceoverEditor({
       if (
         cause instanceof VoiceoverApiError
         && cause.code === "timeline_dirty"
-        && window.confirm(cause.message)
+        && await confirm({
+          title: "覆盖手工剪辑？",
+          description: cause.message,
+          confirmLabel: "覆盖并继续",
+          tone: "danger",
+        })
       ) {
         setBusy(null);
         await apply(scope, true);
@@ -225,8 +232,13 @@ export default function VoiceoverEditor({
     VOICES.find(([name]) => name === currentVoiceName)?.[1] ?? "当前声音";
   const actionDisabled = disabled || busy !== null;
 
-  const applyProject = () => {
-    if (!window.confirm("这会把当前声音设置应用到全部分镜，确定继续吗？")) return;
+  const applyProject = async () => {
+    const confirmed = await confirm({
+      title: "应用到全部分镜？",
+      description: "当前声音、语速和情绪设置会应用到整条视频的全部分镜。",
+      confirmLabel: "应用到全部分镜",
+    });
+    if (!confirmed) return;
     void apply("project");
   };
 
@@ -453,7 +465,7 @@ export default function VoiceoverEditor({
           type="button"
           className="shadcn-prototype-voiceover-secondary"
           disabled={actionDisabled || !preview}
-          onClick={applyProject}
+          onClick={() => void applyProject()}
         >
           {busy === "project" ? "正在应用到全片…" : "应用到全部分镜"}
         </button>
@@ -478,6 +490,7 @@ export default function VoiceoverEditor({
       <p className="shadcn-prototype-voiceover-help">
         先试听再应用。应用失败时，当前视频和试听都不会丢失。
       </p>
+      {confirmationDialog}
     </section>
   );
 }

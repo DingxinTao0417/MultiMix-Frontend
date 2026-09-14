@@ -6,6 +6,38 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("shows editable video parameters once instead of repeating summary values", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "video_parameter_confirmation",
+          title: "确认视频参数",
+          status: "pending",
+          fields: [
+            { key: "ratio", label: "视频比例", value: "竖屏 9:16" },
+            { key: "duration", label: "目标时长", value: "30 秒" },
+            { key: "ai_voice", label: "AI 配音", value: "开启（默认）" },
+            { key: "materials", label: "素材", value: "已找到 2 个素材" },
+          ],
+          ratioOptions: [{ value: "9:16", label: "竖屏 9:16" }],
+          ratioDefault: "9:16",
+          voiceOptions: [
+            { value: true, label: "生成 AI 配音" },
+            { value: false, label: "不生成 AI 配音" },
+          ],
+          voiceDefault: true,
+          durationSeconds: 30,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("视频比例")).toHaveLength(1);
+    expect(screen.getAllByText("目标时长（秒）")).toHaveLength(1);
+    expect(screen.getAllByText("AI 配音")).toHaveLength(1);
+    expect(screen.getByText("已找到 2 个素材")).toBeTruthy();
+    expect(screen.queryByText("开启（默认）")).toBeNull();
+  });
+
   it("renders the server-owned silent event-backdrop summary without reclassifying it", () => {
     render(
       <ConfirmCard
@@ -279,7 +311,8 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
 
-    expect(screen.getByText("横屏 16:9（默认）")).toBeTruthy();
+    expect(screen.queryByText("横屏 16:9（默认）")).toBeNull();
+    expect(screen.getByRole("radio", { name: "横屏 16:9" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText("关闭（按你的要求）")).toBeTruthy();
     expect(screen.getByText("开启（按你的要求）")).toBeTruthy();
     expect(screen.getByDisplayValue("30")).toBeTruthy();
@@ -398,7 +431,7 @@ describe("ConfirmCard pending state", () => {
     fireEvent.click(screen.getByRole("radio", { name: "竖屏 9:16" }));
     fireEvent.click(screen.getByRole("radio", { name: "不生成 AI 配音" }));
     expect(screen.queryByText("开启（默认）")).toBeNull();
-    expect(screen.getByText("关闭")).not.toBeNull();
+    expect(screen.getByRole("radio", { name: "不生成 AI 配音" }).getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
 
     expect(onConfirm).toHaveBeenCalledWith(plan, {

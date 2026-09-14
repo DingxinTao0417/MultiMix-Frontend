@@ -72,6 +72,11 @@ describe("product stage style contract", () => {
     expect(workspace).toContain("onOpenLongFormCandidates");
   });
 
+  test("uses a neutral completed confirmation card and preserves the pending AI gradient", () => {
+    expect(css).toMatch(/\.shadcn-prototype-confirm-card\s*\{[^}]*var\(--sp-ai-grad\) border-box;/s);
+    expect(css).toMatch(/\.shadcn-prototype-confirm-card\.confirmed\s*\{[^}]*border:\s*1px solid var\(--sp-border\);[^}]*background:\s*var\(--sp-card\);/s);
+  });
+
   test("keeps the video preview in the current natural-scroll browse layout", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*visible;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*flex:\s*0 0 auto;/s);

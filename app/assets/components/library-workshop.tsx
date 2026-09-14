@@ -12,6 +12,7 @@ import {
   type RuntimeWriteConnectionState,
 } from "../lib/runtime-write-capabilities";
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
+import { useConfirmationDialog } from "../../components/confirmation-dialog";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
@@ -334,6 +335,7 @@ function LibraryWorkshop({
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [assetModal, setAssetModal] = useState<"web" | null>(null);
   const [webUrl, setWebUrl] = useState("");
@@ -615,7 +617,12 @@ function LibraryWorkshop({
 
   const handleDelete = async (row: LibraryRow) => {
     if (!writeCapabilities.canPersist || !token || !row.assetId) return;
-    const confirmed = window.confirm(`确认删除「${row.title}」吗？删除后将从当前库隐藏。`);
+    const confirmed = await confirm({
+      title: `删除「${row.title}」？`,
+      description: "删除后它会从当前资源库隐藏。已有项目中的历史引用不会改变。",
+      confirmLabel: "删除",
+      tone: "danger",
+    });
     if (!confirmed) return;
     setActionMessage(null);
     try {
@@ -812,7 +819,7 @@ function LibraryWorkshop({
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
         {libraryState === "unconfigured" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>未连接后端</strong><p>请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端。</p></div></article>
+          <article className="shadcn-prototype-workshop-empty"><div><strong>创作服务尚未连接</strong><p>请联系管理员完成配置后重试。</p></div></article>
         ) : libraryState === "error" ? (
           <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={handleRetryLibraryConnection}>重新加载</button></div></article>
         ) : libraryState === "loading" ? (
@@ -1322,6 +1329,7 @@ function LibraryWorkshop({
           </aside>
         </div>
       ) : null}
+      {confirmationDialog}
     </section>
   );
 }

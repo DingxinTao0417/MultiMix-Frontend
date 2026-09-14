@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import VoiceoverEditor, { type VoiceoverApi } from "../VoiceoverEditor";
@@ -83,13 +83,13 @@ describe("VoiceoverEditor", () => {
 
   it("can apply the preview to every scene", async () => {
     const api = apiFixture();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<VoiceoverEditor {...baseProps} api={api} />);
     fireEvent.click(screen.getByRole("button", { name: "修改配音" }));
     fireEvent.click(screen.getByRole("button", { name: "生成试听" }));
     await screen.findByRole("button", { name: "播放试听" });
 
     fireEvent.click(screen.getByRole("button", { name: "应用到全部分镜" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "应用到全部分镜？" })).getByRole("button", { name: "应用到全部分镜" }));
 
     await waitFor(() =>
       expect(api.applyProjectVoice).toHaveBeenCalledWith(
@@ -101,14 +101,13 @@ describe("VoiceoverEditor", () => {
 
   it("does not apply the preview to every scene when confirmation is cancelled", async () => {
     const api = apiFixture();
-    vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<VoiceoverEditor {...baseProps} api={api} initiallyExpanded />);
     fireEvent.click(screen.getByRole("button", { name: "生成试听" }));
     await screen.findByRole("button", { name: "播放试听" });
 
     fireEvent.click(screen.getByRole("button", { name: "应用到全部分镜" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "应用到全部分镜？" })).getByRole("button", { name: "取消" }));
 
-    expect(window.confirm).toHaveBeenCalledWith("这会把当前声音设置应用到全部分镜，确定继续吗？");
     expect(api.applyProjectVoice).not.toHaveBeenCalled();
   });
 

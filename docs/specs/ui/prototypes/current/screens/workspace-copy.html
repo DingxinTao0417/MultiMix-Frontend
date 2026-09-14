@@ -97,7 +97,7 @@ svg{flex:none;display:block}
   font-size:13.5px;color:var(--ink-2);transition:background .15s ease;cursor:pointer}
 .nav-item:hover{background:rgba(32,31,30,.045)}
 .nav-item svg{color:var(--ink-3)}
-.convs{display:grid;grid-template-rows:auto minmax(0,1fr);gap:6px;min-height:0}
+.convs{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:7px;min-height:0}
 .sec-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);padding:0 10px;font-weight:600}
 .conv-list{overflow:auto;display:grid;gap:2px;align-content:start;min-height:0}
 .conv{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border-radius:10px;
@@ -120,11 +120,16 @@ svg{flex:none;display:block}
 .user .n{font-size:12.5px;font-weight:600}
 .user .e{font-size:11px;color:var(--ink-3)}
 /* ============ 对话列 ============ */
-.chat{display:grid;grid-template-rows:auto minmax(0,1fr) auto;background:var(--surface);
+.chat{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;background:var(--surface);
   border-right:1px solid var(--line);min-height:0}
 .chat-head{display:flex;align-items:center;height:56px;padding:0 24px;border-bottom:1px solid var(--line);gap:12px}
 .chat-head .title{font-size:15px;font-weight:650;letter-spacing:.01em}
 .chat-head .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.project-resources{display:flex;align-items:center;gap:7px;min-height:30px;padding:5px 30px;
+  border-bottom:1px solid var(--line);background:#FCFBF9;color:var(--ink-2);font-size:11.5px;cursor:pointer}
+.project-resources b{color:var(--ink);font-weight:650}
+.project-resources em{font-style:normal;border-radius:999px;background:var(--surface-2);padding:2px 7px}
+.project-resources .arrow{margin-left:auto;color:var(--ink-3)}
 .replay{display:flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:999px;
   border:1px solid var(--line);font-size:12px;color:var(--ink-3);background:var(--surface)}
 .replay:hover{color:var(--ink-2);border-color:var(--line-2);transform:translateY(-1px)}
@@ -153,7 +158,7 @@ svg{flex:none;display:block}
 .cc-sub{padding:3px 20px 0;font-size:12px;color:var(--ink-3)}
 .cc-fields{display:grid;gap:10px;padding:14px 20px 16px}
 .cc-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:baseline}
-.cc-row .k{font-size:12.5px;color:var(--ink-3);text-align:right}
+.cc-row .k{font-size:12.5px;color:var(--ink-2);text-align:right}
 .cc-row .v{font-size:13.5px;font-weight:500}
 .cc-row .v .thumbs{display:inline-flex;gap:5px;vertical-align:-5px;margin-left:7px}
 .cc-row .v .phbox{width:22px;height:22px;border-radius:6px}
@@ -167,14 +172,13 @@ svg{flex:none;display:block}
 
 /* 确认卡：已确认紧凑态 */
 .cc-done{margin-left:37px;border-radius:var(--radius);max-width:560px;
-  border:1px solid transparent;
-  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
-  box-shadow:0 3px 10px rgba(124,92,255,.06);padding:14px 19px;display:grid;gap:8px}
+  border:1px solid var(--line);background:var(--surface);
+  box-shadow:0 2px 8px rgba(32,31,30,.04);padding:14px 19px;display:grid;gap:8px}
 .cc-done .h{display:flex;align-items:center;gap:10px;font-size:14.5px;font-weight:650}
 .cc-done .ok{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
   color:var(--ok);background:rgba(14,138,107,.09);padding:3px 10px;border-radius:999px}
 .cc-done .r{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;font-size:13px}
-.cc-done .r .k{color:var(--ink-3);text-align:right;font-size:12.5px}
+.cc-done .r .k{color:var(--ink-2);text-align:right;font-size:12.5px}
 
 /* Agent 执行时间线 */
 .agent-run{margin-left:37px;max-width:560px;background:var(--surface);border:1px solid var(--line);
@@ -348,9 +352,9 @@ body.side-collapsed .expand-btn{display:grid}
 .prod-card .arrow{margin-left:auto;color:var(--ink-3)}
 
 /* ===== 产物区顶部操作 + 详情浮层 ===== */
-.art-head{display:flex;align-items:flex-start;gap:10px}
+.art-head{display:grid;grid-template-columns:minmax(0,1fr);align-items:flex-start;gap:8px}
 .art-head .hgroup{display:grid;gap:2px;min-width:0}
-.art-acts{margin-left:auto;display:flex;gap:7px;flex:none}
+.art-acts{display:flex;gap:7px;flex:none;flex-wrap:wrap}
 .hbtn{display:flex;align-items:center;gap:6px;height:30px;padding:0 13px;border-radius:999px;
   background:var(--ink);color:#fff;font-size:12px;font-weight:600}
 .hbtn:hover{transform:translateY(-1px);box-shadow:var(--shadow-card)}
@@ -418,10 +422,6 @@ body.side-collapsed .expand-btn{display:grid}
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
     新建项目
   </button>
-  <div class="search">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    搜索素材、产物或来源
-  </div>
   <nav class="nav">
     <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>资产库</a>
     <a class="nav-item"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>文案库</a>
@@ -430,6 +430,10 @@ body.side-collapsed .expand-btn{display:grid}
   </nav>
   <div class="convs">
     <div class="sec-label">项目列表<span class="cnt">5</span></div>
+    <div class="search" role="search">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      搜索项目
+    </div>
     <div class="conv-list">
       <a class="conv active"><span class="t">门窗案例小红书内容</span><span class="d">今天</span></a>
       <a class="conv"><span class="t">全屋定制获客视频方案</span><span class="d">昨天</span></a>
@@ -462,6 +466,10 @@ body.side-collapsed .expand-btn{display:grid}
       </button>
     </div>
   </div>
+  <button class="project-resources">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4.5h4l1.2 1.4H14v6.6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    <b>项目资源</b><strong>6</strong><em>素材 4</em><em>封面 1</em><em>文案 1</em><span class="arrow">›</span>
+  </button>
 
   <div class="msgs" id="msgs">
     <!-- 更早的产物：封面图（演示多产物切换） -->
@@ -608,7 +616,7 @@ body.side-collapsed .expand-btn{display:grid}
 <div class="pv" id="pvImg">
   <div class="art-head">
     <div class="hgroup">
-      <div class="t">门窗案例 · 封面图
+      <div class="t" title="门窗案例 · 封面图">门窗案例 · 封面图
         <span class="okb">
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           已完成
@@ -649,7 +657,7 @@ body.side-collapsed .expand-btn{display:grid}
 <div class="pv gone" id="pvCopy">
   <div class="art-head">
     <div class="hgroup">
-      <div class="t">门窗安装 · 小红书帖
+      <div class="t" title="门窗安装 · 小红书帖">门窗安装 · 小红书帖
         <span class="live-badge badge-gen"><span class="gdot"></span>生成中</span>
         <span class="badge-done">
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -671,7 +679,7 @@ body.side-collapsed .expand-btn{display:grid}
   <div class="detail-pop" id="detailPop">
     <div class="dp-row"><span class="k">状态</span><span id="dpStatus">草稿 · v1</span></div>
     <div class="dp-row"><span class="k">来源</span><span>基于 4 张已解析素材生成，重点卖点：密封工艺、真实记录</span></div>
-    <div class="dp-row"><span class="k">规格</span><span>小红书帖 · 320 字 · Markdown / 11 段</span></div>
+    <div class="dp-row"><span class="k">规格</span><span>小红书帖 · 约 320 字</span></div>
     <div class="dp-sec">版本历史</div>
     <div class="dp-ver"><span class="tag">v1</span>刚刚生成<span class="cur">当前</span></div>
   </div>

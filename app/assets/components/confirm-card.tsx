@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import type {
   AssetMessagePlan,
   AssetPlanBgmCatalog,
@@ -179,6 +180,7 @@ export default function ConfirmCard({
   );
   const [showCleanupEditor, setShowCleanupEditor] = useState(false);
   const [expandedCleanupGroup, setExpandedCleanupGroup] = useState<CleanupDisplayGroup>();
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const audioTrackOptions = plan.audioTrackOptions ?? [];
   const subtitleOptions = plan.subtitleOptions ?? [];
   const [selectedSubtitleMode, setSelectedSubtitleMode] = useState(
@@ -257,6 +259,14 @@ export default function ConfirmCard({
         return field;
       })
     : plan.fields;
+  const pendingFields = isVideoParameterConfirmation
+    ? currentFields.filter((field) => {
+        if (field.key === "ratio" && ratioOptions.length > 0) return false;
+        if (field.key === "duration") return false;
+        if (field.key === "ai_voice" && voiceOptions.length > 0) return false;
+        return true;
+      })
+    : currentFields;
   const hasCleanupSelectionChanged = cleanupSelectionChanged(
     initialCleanupIds,
     selectedCleanupIds,
@@ -373,7 +383,8 @@ export default function ConfirmCard({
   }
 
   return (
-    <div className="shadcn-prototype-confirm-card pending" aria-label={`${plan.title} · 待确认`}>
+    <>
+      <div className="shadcn-prototype-confirm-card pending" aria-label={`${plan.title} · 待确认`}>
       <div className="shadcn-prototype-confirm-head">
         <span className="shadcn-prototype-confirm-title">{plan.title}</span>
         <span className="shadcn-prototype-confirm-badge">
@@ -382,7 +393,7 @@ export default function ConfirmCard({
         </span>
       </div>
       <div className="shadcn-prototype-confirm-fields">
-        <PlanFieldRows fields={currentFields} />
+        <PlanFieldRows fields={pendingFields} />
       </div>
       {isImageGenerationConfirmation && plan.preservationSummary ? (
         <section className="shadcn-prototype-confirm-preservation" aria-label="商品保真条件">
@@ -574,8 +585,8 @@ export default function ConfirmCard({
         </div>
       ) : null}
       {ratioOptions.length ? (
-        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="视频尺寸">
-          <span className="shadcn-prototype-confirm-ratio-label">视频尺寸</span>
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="视频比例">
+          <span className="shadcn-prototype-confirm-ratio-label">视频比例</span>
           <div className="shadcn-prototype-confirm-ratio-options">
             {ratioOptions.map((option) => (
               <button
@@ -665,7 +676,7 @@ export default function ConfirmCard({
             || (bgmOptions.length > 0 && bgmEnabled && !selectedBgmId)
             || voiceBlocked
           }
-          onClick={() => {
+          onClick={async () => {
             if (isPresenterAudioSelectionConfirmation) {
               const selectedTrack = audioTrackOptions.find(
                 (option) => option.streamIndex === selectedAudioStream,
@@ -687,9 +698,15 @@ export default function ConfirmCard({
               const protectedIds = cleanupItems
                 .filter((item) => item.locked && selectedCleanupIds.has(item.id))
                 .map((item) => item.id);
-              const confirmed = protectedIds.length === 0
-                || globalThis.confirm("所选内容包含数字、否定、条件或其他保护信息。确认仍要删除吗？");
-              if (!confirmed) return;
+              if (protectedIds.length > 0) {
+                const confirmed = await confirm({
+                  title: "删除受保护内容？",
+                  description: "所选内容包含数字、否定、条件或其他保护信息。删除可能改变原意。",
+                  confirmLabel: "仍然删除",
+                  tone: "danger",
+                });
+                if (!confirmed) return;
+              }
               onConfirm?.(plan, {
                 cleanupCandidateIds: [...selectedCleanupIds],
                 protectedOverrideCandidateIds: protectedIds,
@@ -740,6 +757,8 @@ export default function ConfirmCard({
         ) : null}
       </div>
       {maintenanceMessage ? <p role="status">{maintenanceMessage}</p> : null}
-    </div>
+      </div>
+      {confirmationDialog}
+    </>
   );
 }

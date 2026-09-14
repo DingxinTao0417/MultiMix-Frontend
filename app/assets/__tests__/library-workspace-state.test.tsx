@@ -15,7 +15,7 @@ describe("library workspace dynamic states", () => {
 
     expect(workshop).not.toContain("backendRows !== null ? backendRows : workshop.rows");
     expect(workshop).toContain("资源库加载失败");
-    expect(workshop).toContain("未连接后端");
+    expect(workshop).toContain("创作服务尚未连接");
     expect(readyStrip).not.toContain('assetWorkspaceAdapter.getWorkshop("image").rows');
   });
 
@@ -51,6 +51,8 @@ describe("library workspace dynamic states", () => {
     );
 
     expect(screen.getByText("加载失败，请重新加载")).toBeInTheDocument();
+    expect(screen.getByText("内容暂时无法显示，重新加载后即可继续。")).toBeInTheDocument();
+    expect(screen.queryByText(/组件/)).not.toBeInTheDocument();
     const reload = screen.getByRole("button", { name: "重新加载" });
     fireEvent.click(reload);
     expect(onReload).toHaveBeenCalledOnce();

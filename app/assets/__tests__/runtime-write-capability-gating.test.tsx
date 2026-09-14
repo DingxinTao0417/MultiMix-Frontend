@@ -177,7 +177,7 @@ describe("runtime write capability model", () => {
     }
     expect(unconfigured.availability).toBe("unconfigured");
     expect(unconfigured.recovery).toBe("restart");
-    expect(unconfigured.reason).toContain("NEXT_PUBLIC_API_BASE_URL");
+    expect(unconfigured.reason).toBe("创作服务尚未连接，请联系管理员完成配置后重试。");
     expect(checking.availability).toBe("checking");
     expect(unavailable.availability).toBe("unavailable");
     expect(unavailable.recovery).toBe("retry");
@@ -580,7 +580,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     );
 
     expect(
-      (await screen.findAllByText(/请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端/)).length,
+      (await screen.findAllByText(/请联系管理员完成配置后重试/)).length,
     ).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole("button", { name: "上传图片素材" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();

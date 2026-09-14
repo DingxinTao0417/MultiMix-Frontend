@@ -193,7 +193,7 @@ export default function GeneratedImageGallery({
         {locallyApplied ? <span>已应用</span> : <span>尚未应用到分镜</span>}
         {canApplySet ? (
           <>
-            <p>将按生成方案中冻结的对应关系分别写入目标分镜；这不会自动生成视频。</p>
+            <p>将按当前方案分别用于对应分镜；应用图片不会自动生成视频。</p>
             <button
               type="button"
               disabled={isApplyingSet || locallyApplied}

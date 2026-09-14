@@ -112,6 +112,8 @@ try {
   };
   const frontendEnv = {
     ...process.env,
+    DISPLAY_COVERAGE_BACKEND_PORT: String(backendPort),
+    DISPLAY_COVERAGE_FRONTEND_PORT: String(frontendPort),
     NEXT_DEV_DIST_DIR: nextDistDirName,
     NEXT_PUBLIC_API_BASE_URL: `http://127.0.0.1:${backendPort}`,
     NEXT_PUBLIC_MULTIMIX_AUTH_MODE: "dev-admin",

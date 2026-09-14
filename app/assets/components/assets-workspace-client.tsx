@@ -17,8 +17,10 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
+  Search,
   Trash2,
-  Video
+  Video,
+  X
 } from "lucide-react";
 import {
   API_CONNECTION_ERROR,
@@ -690,6 +692,7 @@ export default function AssetsWorkspaceClient({
   const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
@@ -725,8 +728,14 @@ export default function AssetsWorkspaceClient({
   // Conversations render straight from state: delete removes the row and rename
   // updates its title in place, both persisted to the backend, so there is no
   // client-only overlay to reconcile on reload.
-  const visibleConversationRows = conversations;
-  const selectedPersistedConversation = visibleConversationRows.find(
+  const visibleConversationRows = useMemo(() => {
+    const normalizedQuery = projectSearchQuery.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return conversations;
+    return conversations.filter((conversation) => (
+      conversation.title.toLocaleLowerCase().includes(normalizedQuery)
+    ));
+  }, [conversations, projectSearchQuery]);
+  const selectedPersistedConversation = conversations.find(
     (conversation) => conversation.id === selectedConversationId,
   );
   const isConversationSnapshot = selectedPersistedConversation?.detailsLoaded === false;
@@ -749,7 +758,7 @@ export default function AssetsWorkspaceClient({
     videos: selectedConversation.projectResources?.videos.length ?? 0,
   };
   const currentRequirementSnapshot = requirementSnapshots[selectedConversation.id] ?? null;
-  const projectTargetOptions = visibleConversationRows
+  const projectTargetOptions = conversations
     .filter((conversation) => conversation.id !== "new" && !conversation.readonly)
     .map((conversation) => ({
       id: conversation.id,
@@ -758,7 +767,7 @@ export default function AssetsWorkspaceClient({
       updatedAt: conversation.updatedAt,
     }));
   const libraryTargetProjectTitle = libraryTargetProjectId
-    ? visibleConversationRows.find((conversation) => conversation.id === libraryTargetProjectId)?.title ?? null
+    ? conversations.find((conversation) => conversation.id === libraryTargetProjectId)?.title ?? null
     : null;
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
@@ -2947,21 +2956,44 @@ export default function AssetsWorkspaceClient({
         <div className="shadcn-prototype-conversation-section">
           <div className="shadcn-prototype-section-title">
             <span>项目列表</span>
-            {conversationLoadState === "ready" ? <em>{visibleConversationRows.length}</em> : null}
+            {conversationLoadState === "ready" ? <em>{conversations.length}</em> : null}
           </div>
+          {conversationLoadState === "ready" && conversations.length > 0 ? (
+            <label className="shadcn-prototype-project-search">
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="search"
+                aria-label="搜索项目"
+                placeholder="搜索项目"
+                value={projectSearchQuery}
+                onChange={(event) => setProjectSearchQuery(event.currentTarget.value)}
+              />
+              {projectSearchQuery ? (
+                <button type="button" aria-label="清除项目搜索" onClick={() => setProjectSearchQuery("")}>
+                  <X size={13} aria-hidden="true" />
+                </button>
+              ) : null}
+            </label>
+          ) : null}
           <div className="shadcn-prototype-conversation-list">
             {conversationLoadState === "loading" ? (
               <div className="shadcn-prototype-conversation-state" role="status">正在加载你的项目…</div>
             ) : conversationLoadState === "unconfigured" ? (
               <div className="shadcn-prototype-conversation-state">
-                <strong>未连接后端</strong>
-                <span>请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端。</span>
+                <strong>创作服务尚未连接</strong>
+                <span>请联系管理员完成配置后重试。</span>
               </div>
             ) : conversationLoadState === "error" ? (
               <div className="shadcn-prototype-conversation-state" role="alert">
                 <strong>项目加载失败</strong>
-                <span>没有展示本地样例，避免与真实数据混淆。</span>
+                <span>你的项目没有改变，请重新加载。</span>
                 <button type="button" onClick={() => setConversationLoadRevision((value) => value + 1)}>重新加载</button>
+              </div>
+            ) : visibleConversationRows.length === 0 && projectSearchQuery.trim() ? (
+              <div className="shadcn-prototype-conversation-state">
+                <strong>没有找到匹配项目</strong>
+                <span>换一个关键词，或清除搜索查看全部项目。</span>
+                <button type="button" onClick={() => setProjectSearchQuery("")}>清除搜索</button>
               </div>
             ) : visibleConversationRows.length === 0 ? (
               <div className="shadcn-prototype-conversation-state">

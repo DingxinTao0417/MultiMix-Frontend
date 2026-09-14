@@ -1345,7 +1345,8 @@ describe("agent conversation UI copy", () => {
     const productWorkspace = readAssetFile("app/assets/components/product-workspace.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
-    expect(productWorkspace).toContain("明确要文案、图片或视频后");
+    expect(productWorkspace).toContain("继续左侧对话");
+    expect(productWorkspace).not.toContain("明确要文案、图片或视频后");
     expect(workspaceClient).not.toContain("短视频脚本");
     expect(workspaceClient).not.toContain("图片提示词");
   });
@@ -1416,9 +1417,34 @@ describe("agent conversation UI copy", () => {
     const appShell = readAssetFile("app/multimix-app.tsx");
 
     expect(appShell).toContain("登录即代表同意《服务条款》与《隐私政策》");
+    expect(appShell).toContain('setNotice("注册成功，请检查邮箱确认后登录。")');
+    expect(appShell).not.toContain('setError("注册成功，请检查邮箱确认后登录。")');
     expect(appShell).not.toContain("本地演示模式直接进入");
     expect(appShell).not.toContain("未配置 Supabase 时自动进入本地模式");
     expect(appShell).not.toContain("multimix-auth-demo");
+  });
+
+  it("keeps implementation terms out of public recovery copy", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const libraryState = readAssetFile("app/assets/components/library-workspace-state.tsx");
+    const runtimeCapabilities = readAssetFile("app/assets/lib/runtime-write-capabilities.ts");
+    const imageGallery = readAssetFile("app/assets/components/generated-image-gallery.tsx");
+
+    expect(workspaceClient).not.toContain("NEXT_PUBLIC_API_BASE_URL");
+    expect(runtimeCapabilities).not.toContain("NEXT_PUBLIC_API_BASE_URL");
+    expect(libraryState).not.toContain("资源库组件");
+    expect(imageGallery).not.toContain("冻结的对应关系");
+  });
+
+  it("adds a findable project search and an explicit project-resources affordance", () => {
+    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
+    const conversationStudio = readAssetFile("app/assets/components/conversation-studio.tsx");
+
+    expect(workspaceClient).toContain('aria-label="搜索项目"');
+    expect(workspaceClient).toContain('placeholder="搜索项目"');
+    expect(workspaceClient).toContain("没有找到匹配项目");
+    expect(conversationStudio).toContain("FolderOpen");
+    expect(conversationStudio).toContain("ChevronRight");
   });
 
   it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {
@@ -1682,7 +1708,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("正在加载你的项目");
     expect(workspaceClient).toContain("还没有项目");
     expect(workspaceClient).toContain("项目加载失败");
-    expect(workspaceClient).toContain("未连接后端");
+    expect(workspaceClient).toContain("创作服务尚未连接");
     expect(workspaceClient).toContain("重新加载");
     expect(workspaceClient).not.toContain("显示本地样例数据");
   });
@@ -1709,7 +1735,7 @@ describe("agent conversation UI copy", () => {
     expect(adapter).toContain('method: "DELETE"');
     expect(libraryWorkshop).toContain("handleDownload");
     expect(libraryWorkshop).toContain("handleDelete");
-    expect(libraryWorkshop).toContain("确认删除");
+    expect(libraryWorkshop).toContain("删除后它会从当前资源库隐藏");
     expect((libraryWorkshop.match(/<Download size=\{14\} aria-hidden=\"true\" \/>下载/g) ?? []).length).toBeGreaterThanOrEqual(4);
     expect((libraryWorkshop.match(/删除/g) ?? []).length).toBeGreaterThanOrEqual(4);
   });

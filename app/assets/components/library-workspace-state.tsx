@@ -46,7 +46,7 @@ export class LibraryWorkspaceErrorBoundary extends Component<
         <section className="shadcn-prototype-workshop-empty" role="alert">
           <div>
             <strong>加载失败，请重新加载</strong>
-            <p>资源库组件未能完成加载，重新加载页面后即可重试。</p>
+            <p>内容暂时无法显示，重新加载后即可继续。</p>
             <button type="button" onClick={this.reload}>重新加载</button>
           </div>
         </section>

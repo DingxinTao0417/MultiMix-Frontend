@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, X } from "lucide-react";
+import { File, FileText, Image as ImageIcon, Plus, RefreshCw, Video, X } from "lucide-react";
 
+import ConfirmationDialog from "../../components/confirmation-dialog";
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 import type { ProjectSourceContentRole, ProjectSourceUsePolicy } from "../lib/asset-workspace-types";
 
@@ -78,6 +79,10 @@ export default function ProjectResourcesDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingAssetId, setPendingAssetId] = useState<number | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    action: "remove" | "delete";
+    item: ProjectResourceItem;
+  } | null>(null);
   const [reloadRevision, setReloadRevision] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -85,7 +90,7 @@ export default function ProjectResourcesDrawer({
   const scope: ProjectResourceScope = kind === "source" ? sourceScope : "all";
 
   useDialogFocusManagement({
-    open,
+    open: open && pendingConfirmation === null,
     dialogRef,
     initialFocusRef: closeButtonRef,
     onEscape: onClose,
@@ -124,19 +129,13 @@ export default function ProjectResourcesDrawer({
 
   const changeMembership = async (item: ProjectResourceItem) => {
     if (item.membershipState === "active") {
-      const confirmed = window.confirm(
-        "确定移出项目吗？只影响今后的生成，旧文案、旧封面和旧视频不会改变。",
-      );
-      if (!confirmed) return;
+      setPendingConfirmation({ action: "remove", item });
+      return;
     }
     setPendingAssetId(item.id);
     setError("");
     try {
-      if (item.membershipState === "active") {
-        await onRemoveSource(item.id);
-      } else {
-        await onReaddSource(item.id);
-      }
+      await onReaddSource(item.id);
       setReloadRevision((value) => value + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "项目资源操作失败，请重试。");
@@ -147,17 +146,38 @@ export default function ProjectResourcesDrawer({
 
   const permanentlyDelete = async (item: ProjectResourceItem) => {
     if (!onPermanentDeleteSource) return;
-    if (!window.confirm("永久删除会移除源文件；如仍有项目或历史版本引用，系统会拒绝删除。确定继续吗？")) return;
+    setPendingConfirmation({ action: "delete", item });
+  };
+
+  const confirmPendingAction = async () => {
+    if (!pendingConfirmation) return;
+    const { action, item } = pendingConfirmation;
     setPendingAssetId(item.id);
     setError("");
     try {
-      await onPermanentDeleteSource(item.id);
+      if (action === "remove") {
+        await onRemoveSource(item.id);
+      } else if (onPermanentDeleteSource) {
+        await onPermanentDeleteSource(item.id);
+      }
       setReloadRevision((value) => value + 1);
+      setPendingConfirmation(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "源文件无法永久删除。");
+      setError(cause instanceof Error
+        ? cause.message
+        : action === "remove"
+          ? "项目资源操作失败，请重试。"
+          : "源文件无法永久删除。");
     } finally {
       setPendingAssetId(null);
     }
+  };
+
+  const resourceIcon = (item: ProjectResourceItem) => {
+    if (item.kind === "copy") return <FileText size={18} aria-hidden="true" />;
+    if (item.kind === "cover" || item.assetKind === "image") return <ImageIcon size={18} aria-hidden="true" />;
+    if (item.kind === "video" || item.assetKind === "video") return <Video size={18} aria-hidden="true" />;
+    return <File size={18} aria-hidden="true" />;
   };
 
   const tabs: Array<{ kind: ProjectResourceKind; label: string; count: number }> = [
@@ -168,7 +188,8 @@ export default function ProjectResourcesDrawer({
   ];
 
   return (
-    <div className="shadcn-prototype-project-resources-mask" role="presentation" onClick={onClose}>
+    <>
+      <div className="shadcn-prototype-project-resources-mask" role="presentation" onClick={onClose}>
       <aside
         ref={dialogRef}
         className="shadcn-prototype-project-resources-drawer"
@@ -241,12 +262,19 @@ export default function ProjectResourcesDrawer({
           <ul className="shadcn-prototype-project-resources-list">
             {page.items.map((item) => (
               <li key={`${item.kind}-${item.id}`}>
-                <button type="button" onClick={() => onOpenResource(item)}>{item.title}</button>
-                {item.kind === "source" ? (
-                  <>
-                    {item.membershipState === "removed" && item.historicalReferenceCount > 0 ? (
-                      <span>旧版本引用 {item.historicalReferenceCount} 次</span>
-                    ) : null}
+                <div className="shadcn-prototype-project-resource-identity">
+                  <span className="shadcn-prototype-project-resource-icon">{resourceIcon(item)}</span>
+                  <button type="button" onClick={() => onOpenResource(item)}>{item.title}</button>
+                  <small>
+                    {item.membershipState === "removed" ? "历史使用" : item.status === "ready" ? "可使用" : item.status}
+                    {item.membershipState === "removed" && item.historicalReferenceCount > 0
+                      ? ` · 旧版本引用 ${item.historicalReferenceCount} 次`
+                      : ""}
+                  </small>
+                </div>
+                <div className="shadcn-prototype-project-resource-actions">
+                  {item.kind === "source" ? (
+                    <>
                     {item.membershipState === "active" && onUseSourceForNextMessage ? (
                       <button type="button" onClick={() => onUseSourceForNextMessage(item)}>
                         用于本轮
@@ -273,10 +301,11 @@ export default function ProjectResourcesDrawer({
                         永久删除源文件
                       </button>
                     ) : null}
-                  </>
-                ) : (
-                  <button type="button" onClick={() => onOpenResource(item)}>查看</button>
-                )}
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => onOpenResource(item)}>查看</button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -289,7 +318,20 @@ export default function ProjectResourcesDrawer({
             <button type="button" disabled={offset + PAGE_SIZE >= page.total} onClick={() => setOffset(offset + PAGE_SIZE)}>下一页</button>
           </footer>
         ) : null}
-      </aside>
-    </div>
+        </aside>
+      </div>
+      <ConfirmationDialog
+        open={pendingConfirmation !== null}
+        title={pendingConfirmation?.action === "delete" ? "永久删除源文件？" : "将素材移出项目？"}
+        description={pendingConfirmation?.action === "delete"
+          ? "源文件会从资产库移除。若仍被项目或历史版本引用，系统会拒绝删除。"
+          : "这只影响之后的生成；已有文案、封面和视频不会改变。"}
+        confirmLabel={pendingConfirmation?.action === "delete" ? "永久删除" : "移出项目"}
+        tone={pendingConfirmation?.action === "delete" ? "danger" : "default"}
+        busy={pendingAssetId !== null}
+        onCancel={() => setPendingConfirmation(null)}
+        onConfirm={() => void confirmPendingAction()}
+      />
+    </>
   );
 }

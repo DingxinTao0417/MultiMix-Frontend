@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProjectResourcesDrawer, {
@@ -74,11 +74,6 @@ describe("ProjectResourcesDrawer", () => {
   it("explains future-only removal before changing project membership", async () => {
     const loadResources = vi.fn().mockResolvedValue(sourcePage);
     const onRemoveSource = vi.fn().mockResolvedValue(undefined);
-    const confirm = vi.spyOn(window, "confirm").mockImplementation((message) => {
-      expect(message).toContain("只影响今后的生成");
-      expect(message).toContain("旧文案、旧封面和旧视频不会改变");
-      return true;
-    });
 
     render(
       <ProjectResourcesDrawer
@@ -95,8 +90,18 @@ describe("ProjectResourcesDrawer", () => {
     );
 
     fireEvent.click(await screen.findByRole("button", { name: "移出项目" }));
+    expect(screen.getByRole("dialog", { name: "将素材移出项目？" })).toBeInTheDocument();
+    expect(screen.getByText(/这只影响之后的生成/)).toBeInTheDocument();
+    expect(screen.getByText(/已有文案、封面和视频不会改变/)).toBeInTheDocument();
+    expect(onRemoveSource).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog", { name: "将素材移出项目？" })).not.toBeInTheDocument();
+    expect(onRemoveSource).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "移出项目" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "将素材移出项目？" })).getByRole("button", { name: "移出项目" }));
     await waitFor(() => expect(onRemoveSource).toHaveBeenCalledWith(11));
-    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("lets a user explicitly choose one active source for the next request without generating", async () => {

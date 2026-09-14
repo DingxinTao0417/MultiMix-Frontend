@@ -311,7 +311,9 @@ function MultiMixAuth({
           if (data.session) {
             onAuthed({ email: data.session.user.email ?? trimmedEmail, token: data.session.access_token });
           } else {
-            setError("注册成功，请检查邮箱确认后登录。");
+            setPassword("");
+            setMode("login");
+            setNotice("注册成功，请检查邮箱确认后登录。");
           }
         } else {
           const { data, error: err } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
@@ -329,7 +331,9 @@ function MultiMixAuth({
           ? await authLogin(trimmedEmail, password)
           : await authRegister(trimmedEmail, password);
         if (response.verification_required || !response.access_token) {
-          setError(response.message ?? "需要邮箱验证后才能登录。");
+          setPassword("");
+          setMode("login");
+          setNotice(response.message ?? "注册成功，请检查邮箱确认后登录。");
           return;
         }
         onAuthed({ email: response.email ?? trimmedEmail, token: response.access_token });

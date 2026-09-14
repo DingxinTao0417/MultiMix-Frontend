@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
-import { ArrowUp, FileText, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { ArrowUp, ChevronRight, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
@@ -1009,6 +1009,7 @@ export default function ConversationStudio({
     ["视频", selectedConversation.projectResourceSummary?.videos ?? selectedConversation.projectResources?.videos.length ?? 0],
   ];
   const visibleProjectResourceCounts = projectResourceCounts.filter(([, count]) => count > 0);
+  const projectResourceTotal = projectResourceCounts.reduce((total, [, count]) => total + count, 0);
 
   return (
     <section
@@ -1035,10 +1036,13 @@ export default function ConversationStudio({
             aria-label="项目资源"
             onClick={onOpenProjectResources}
           >
+            <FolderOpen size={15} aria-hidden="true" />
             <span>项目资源</span>
+            <strong>{projectResourceTotal}</strong>
             {visibleProjectResourceCounts.map(([label, count]) => (
               <em key={label}>{label} {count}</em>
             ))}
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         ) : null}
         {inheritedRequirementNotice ? (

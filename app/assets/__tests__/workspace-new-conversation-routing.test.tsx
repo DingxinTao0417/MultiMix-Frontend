@@ -49,7 +49,7 @@ describe("new conversation routing", () => {
 
     expect(client).toContain('selectedConversation.detailsLoaded === true');
     expect(client).toContain('const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;');
-    expect(client).toContain('const selectedPersistedConversation = visibleConversationRows.find(');
+    expect(client).toContain('const selectedPersistedConversation = conversations.find(');
     expect(client).toContain('conversationDetailRequestKeyRef.current === requestKey');
   });
 

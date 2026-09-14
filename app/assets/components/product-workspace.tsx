@@ -28,6 +28,7 @@ import type {
 } from "./generated-image-gallery";
 import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
+import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import VideoFilmReviewPanel from "./video-film-review-panel";
 import {
   isFiveLayerVideoPlan,
@@ -165,15 +166,15 @@ export function EmptyProductWorkspace() {
       <div className="shadcn-prototype-product">
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3>等待确认创作方向</h3>
+            <h3>创作结果</h3>
             <p>还没有生成产物</p>
           </div>
         </header>
         <div className="shadcn-prototype-product-main">
           <div className="shadcn-prototype-product-preview">
             <div>
-              <strong>先从对话开始</strong>
-              <span>明确要文案、图片或视频后，这里会展示生成结果。</span>
+              <strong>继续左侧对话</strong>
+              <span>产物生成后会自动显示在这里，你可以继续编辑、保存或导出。</span>
             </div>
           </div>
         </div>
@@ -254,6 +255,7 @@ export default function ProductWorkspace({
   const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
   const [sourceExcerptAuditState, setSourceExcerptAuditState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [sourceExcerptAuditError, setSourceExcerptAuditError] = useState("");
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const materialCandidates = useSegmentMaterialCandidates({
     token: token ?? null,
     projectAssetId: product.backendAssetId ?? null,
@@ -502,8 +504,16 @@ export default function ProductWorkspace({
     }
   };
 
-  const cancelTextEdit = () => {
-    if (textEditDirty && !window.confirm("当前有未保存修改，确定取消吗？")) return;
+  const cancelTextEdit = async () => {
+    if (textEditDirty) {
+      const confirmed = await confirm({
+        title: "放弃未保存的修改？",
+        description: "当前文案改动尚未保存，放弃后无法恢复。",
+        confirmLabel: "放弃修改",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
     setTextEditBody(product.markdownBody ?? "");
     setTextEditError("");
     setStructuralChange(null);
@@ -1222,7 +1232,13 @@ export default function ProductWorkspace({
         selection,
       );
       if (result.kind === "confirm_overwrite") {
-        if (!window.confirm(result.message)) {
+        const confirmed = await confirm({
+          title: "覆盖手工剪辑？",
+          description: result.message,
+          confirmLabel: "覆盖并替换素材",
+          tone: "danger",
+        });
+        if (!confirmed) {
           setMaterialPickerState("idle");
           return;
         }
@@ -1243,7 +1259,7 @@ export default function ProductWorkspace({
     } finally {
       setMaterialPickerState("idle");
     }
-  }, [materialPickerSegment, product.backendAssetId, token]);
+  }, [confirm, materialPickerSegment, product.backendAssetId, token]);
 
   useEffect(() => {
     if (!materialJobId || !token) return;
@@ -1389,7 +1405,7 @@ export default function ProductWorkspace({
       <div className={productClassName}>
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3>
+            <h3 title={product.title}>
               <span className="shadcn-prototype-product-title-text">{product.title}</span>
               {showGeneratingVisuals ? (
                 <span className="shadcn-prototype-artifact-generating-badge">
@@ -1409,7 +1425,7 @@ export default function ProductWorkspace({
               {[
                 product.phase,
                 isDoneStatus || isFailedStatus || showGeneratingVisuals ? null : product.status,
-                `${product.ratio} / ${product.duration}`
+                product.mode === "copy" ? null : `${product.ratio} / ${product.duration}`
               ].filter(Boolean).join(" · ")}
             </p>
           </div>
@@ -1437,7 +1453,7 @@ export default function ProductWorkspace({
                   </article>
                   <article>
                     <span>规格</span>
-                    <strong>{product.ratio} / {product.duration}</strong>
+                    <strong>{product.mode === "copy" ? "Markdown 文案" : `${product.ratio} / ${product.duration}`}</strong>
                     <em>{modeLabel}</em>
                   </article>
                 </div>
@@ -1608,7 +1624,7 @@ export default function ProductWorkspace({
             ) : null}
             {isTextEditing ? (
               <>
-                <button type="button" onClick={cancelTextEdit} disabled={textEditSaving}>取消</button>
+                <button type="button" onClick={() => void cancelTextEdit()} disabled={textEditSaving}>取消</button>
                 <button
                   type="button"
                   className="primary"
@@ -2078,6 +2094,8 @@ export default function ProductWorkspace({
             </div>
           </section>
         ) : null}
+
+        {confirmationDialog}
 
       </div>
     </section>

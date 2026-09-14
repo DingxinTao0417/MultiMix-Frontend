@@ -40,7 +40,7 @@ export function resolveRuntimeWriteCapabilities({
       canUpload: false,
       canGenerate: false,
       canPersist: false,
-      reason: "未连接后端。请配置 NEXT_PUBLIC_API_BASE_URL 后重启前端，短视频创作、素材上传和保存暂不可用。",
+      reason: "创作服务尚未连接，请联系管理员完成配置后重试。",
       recovery: "restart",
     };
   }

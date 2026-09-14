@@ -155,7 +155,6 @@ describe("conversation project resources", () => {
 
   it("keeps Agent understanding out of the resource drawer while management actions remain", async () => {
     const onPermanentDeleteSource = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <ProjectResourcesDrawer
         open
@@ -199,6 +198,7 @@ describe("conversation project resources", () => {
     const permanentDelete = screen.getByRole("button", { name: "永久删除源文件" });
     await waitFor(() => expect(permanentDelete).not.toBeDisabled());
     fireEvent.click(permanentDelete);
+    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(onPermanentDeleteSource).toHaveBeenCalledWith(31));
   });
 });
