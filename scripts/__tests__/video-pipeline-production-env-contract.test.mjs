@@ -16,6 +16,18 @@ const scriptsRoot = path.resolve(
 const runnerPath = path.join(scriptsRoot, "run-video-pipeline-production-e2e.mjs");
 const productionSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-production.spec.ts");
 const retainedExportSpecPath = path.resolve(scriptsRoot, "..", "e2e", "video-pipeline-retained-export.spec.ts");
+const retainedConfirmationSpecPath = path.resolve(
+  scriptsRoot,
+  "..",
+  "e2e",
+  "video-pipeline-retained-confirmation.spec.ts",
+);
+const retainedDirectorRetrySpecPath = path.resolve(
+  scriptsRoot,
+  "..",
+  "e2e",
+  "video-pipeline-retained-director-retry.spec.ts",
+);
 
 function loadMgTargetResolver() {
   const source = fs.readFileSync(runnerPath, "utf8");
@@ -118,16 +130,6 @@ test("production video E2E help exits before creating an isolated run", () => {
     "e2e-runtime",
     "video-pipeline-production",
     runId,
-  );
-
-  fs.mkdirSync(
-    path.join(backendRoot, "app", "video_pipelines", "unified"),
-    { recursive: true },
-  );
-  fs.writeFileSync(
-    path.join(backendRoot, "app", "video_pipelines", "unified", "activation.yaml"),
-    "active_versions:\n  explainer: v1\n",
-    "utf8",
   );
 
   try {
@@ -243,6 +245,23 @@ test("production video E2E does not hard-code semantic rejection of a particular
 
   assert.doesNotMatch(source, /generic hammer/i);
   assert.doesNotMatch(source, /savedLibraryMediaAssetIds\[5\]/);
+});
+
+test("saved-library production E2E applies primary-visual uniqueness only to saved images", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    source,
+    /const matchedSavedPrimaryImageIds = matchedSavedPrimaryMediaIds\.filter\([\s\S]{0,160}?!savedLibraryVideoAssetIds\.includes\(assetId\)/,
+  );
+  assert.match(
+    source,
+    /new Set\(matchedSavedPrimaryImageIds\)\.size[\s\S]{0,180}?toBe\(matchedSavedPrimaryImageIds\.length\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /new Set\(matchedSavedPrimaryMediaIds\)\.size[\s\S]{0,180}?toBe\(matchedSavedPrimaryMediaIds\.length\)/,
+  );
 });
 
 test("production video E2E isolates backend settings with the current MULTIMIX prefix", () => {
@@ -435,6 +454,7 @@ test("retained export reads duration from the public video plan contract", () =>
 
 test("production video E2E continues a completed retained project through browser export", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
+  const productionSpec = fs.readFileSync(productionSpecPath, "utf8");
   const retainedSpec = fs.readFileSync(retainedExportSpecPath, "utf8");
   const seedReader = source.match(
     /async function readRetainedExportSeed[\s\S]*?\r?\n}\r?\n\r?\nasync function writeQaReport/,
@@ -480,13 +500,196 @@ test("production video E2E continues a completed retained project through browse
   );
   assert.match(
     source,
+    /video-pipeline-retained-export\.spec\.ts[\s\S]*?VIDEO_PIPELINE_BENCHMARK_CASE:\s*benchmarkCase \? JSON\.stringify\(benchmarkCase\) : ""[\s\S]*?VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES[\s\S]*?VIDEO_PIPELINE_REFERENCE_REVIEW/,
+  );
+  assert.match(
+    source,
     /SELECT status, render_stage, attempts, error_message FROM video_render_jobs WHERE public_id LIKE 'video-job-%' ORDER BY id DESC LIMIT 1/,
   );
   assert.match(retainedSpec, /\[aria-label="成片预览"\], \[title="视频工程预播"\]/);
-  assert.match(retainedSpec, /initialExportState/);
-  assert.match(retainedSpec, /initialExportState === "导出视频"/);
-  assert.match(retainedSpec, /initialExportState === "下载成片"/);
-  assert.match(retainedSpec, /unexpected retained export state/);
+  assert.match(
+    retainedSpec,
+    /const currentExportUrl =[\s\S]*?exports\/current\?export_variant=original[\s\S]*?const currentExportResponse = await page\.request\.get\(currentExportUrl/,
+  );
+  assert.match(retainedSpec, /if \(currentExportResponse\.status\(\) === 404\)/);
+  assert.match(
+    retainedSpec,
+    /expect\(currentExport\.status, "retained original export must be complete"\)\.toBe\("completed"\)/,
+  );
+  assert.match(retainedSpec, /expectedMissingCurrentExportUrl/);
+  const originalExportSelections = retainedSpec.match(
+    /await page\.getByRole\("menuitem", \{ name: "原始成片", exact: true \}\)\.click\(\);/g,
+  ) ?? [];
+  assert.equal(originalExportSelections.length, 2);
+  assert.match(
+    retainedSpec,
+    /原始成片", exact: true \}\)\.click\(\);[\s\S]{0,500}?toBeDisabled[\s\S]{0,500}?toBeEnabled[\s\S]{0,500}?const downloadPromise/,
+  );
+  assert.match(
+    retainedSpec,
+    /const downloadPromise = page\.waitForEvent\("download"[\s\S]{0,500}?await exportButton\.click\(\)[\s\S]{0,500}?原始成片/,
+  );
+  assert.doesNotMatch(retainedSpec, /initialExportState/);
+  assert.doesNotMatch(retainedSpec, /下载成片/);
+  assert.match(retainedSpec, /bindVideoBenchmarkRun/);
+  assert.match(retainedSpec, /verifySameInputAb/);
+  assert.match(retainedSpec, /writeVideoHumanReviewReport/);
+  assert.match(retainedSpec, /benchmarkBinding,/);
+  assert.match(retainedSpec, /sameInputAb,/);
+  assert.match(retainedSpec, /const actionableConsoleErrors = consoleErrors\.filter/);
+  assert.match(retainedSpec, /const actionableRequestFailures = requestFailures\.filter/);
+  assert.match(retainedSpec, /expect\(actionableConsoleErrors/);
+  assert.match(retainedSpec, /expect\(actionableRequestFailures/);
+  assert.match(source, /result\.actionableConsoleErrors/);
+  assert.match(productionSpec, /actionableConsoleErrors,/);
+});
+
+test("retained QA report uses the persisted project scene count", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const reportStart = source.indexOf("async function writeQaReport");
+  const reportEnd = source.indexOf("async function exportDecisionEvents", reportStart);
+  const reportWriter = source.slice(reportStart, reportEnd);
+  const retainedSeedStart = source.indexOf(
+    "const retainedExportSeed = await readRetainedExportSeed(backendEnv);",
+  );
+  const retainedSeedBlock = source.slice(retainedSeedStart, retainedSeedStart + 400);
+
+  assert.ok(reportStart > -1 && reportEnd > reportStart);
+  assert.match(source, /let qaSceneCount = expectedSceneCount/);
+  assert.match(
+    retainedSeedBlock,
+    /qaSceneCount = retainedExportSeed\.expectedSceneCount/,
+  );
+  assert.match(reportWriter, /\$\{qaSceneCount\} 镜主轨/);
+  assert.doesNotMatch(reportWriter, /\$\{expectedSceneCount\} 镜主轨/);
+});
+
+test("production video E2E resumes a retained director confirmation without repeating provider stages", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.ok(
+    fs.existsSync(retainedConfirmationSpecPath),
+    "retained director confirmation browser contract must exist",
+  );
+  const retainedConfirmationSpec = fs.readFileSync(retainedConfirmationSpecPath, "utf8");
+  const seedReader = source.match(
+    /async function readRetainedDirectorConfirmationSeed[\s\S]*?\r?\n}\r?\n\r?\nfunction snapshotProviderRequestEvidence/,
+  )?.[0] ?? "";
+
+  assert.match(source, /async function readRetainedDirectorConfirmationSeed/);
+  assert.match(seedReader, /len\(source_assets\) == 3/);
+  assert.match(seedReader, /len\(generation_jobs\) == 1/);
+  assert.match(seedReader, /len\(render_jobs\) == 0/);
+  assert.match(seedReader, /benchmark_source_hashes/);
+  assert.match(seedReader, /director_script_draft/);
+  assert.match(seedReader, /video_creation_policy:v1/);
+  assert.match(seedReader, /content_driven_scene_count=sys\.argv\[6\] == 'true'/);
+  assert.match(
+    seedReader,
+    /if content_driven_scene_count:[\s\S]{0,160}?4 <= len\(scenes\) <= 8[\s\S]{0,220}?else:[\s\S]{0,160}?len\(scenes\) == expected_scene_count/,
+  );
+  assert.match(
+    seedReader,
+    /String\(savedLibraryInputProfile && expectedVideoType !== "presenter"\)/,
+  );
+  assert.match(source, /function snapshotProviderRequestEvidence/);
+  assert.match(source, /function assertProviderRequestEvidenceUnchanged/);
+  assert.match(
+    source,
+    /retainedDirectorSeed[\s\S]*?video-pipeline-retained-confirmation\.spec\.ts[\s\S]*?verifyRetainedDirectorContinuation[\s\S]*?assertProviderRequestEvidenceUnchanged/,
+  );
+  assert.match(source, /VIDEO_PIPELINE_RETAINED_CONFIRMATION_SEED/);
+  assert.match(retainedConfirmationSpec, /VIDEO_PIPELINE_RETAINED_CONFIRMATION_SEED/);
+  assert.match(retainedConfirmationSpec, /视频方案 · 待确认/);
+  assert.match(retainedConfirmationSpec, /shadcn-prototype-confirm-primary/);
+  assert.match(retainedConfirmationSpec, /video_project_confirmation/);
+  assert.match(retainedConfirmationSpec, /preserve_source_audio/);
+  assert.match(retainedConfirmationSpec, /latest_job_public_id/);
+  assert.match(retainedConfirmationSpec, /project_ready/);
+  assert.doesNotMatch(retainedConfirmationSpec, /setInputFiles|generation-jobs\/.*retry/);
+});
+
+test("production video runner explicitly enables only its retained-resume paid-gate exemption", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const gateCall = source.match(/assertPaidE2EAllowed\(\{[\s\S]*?\}\);/)?.[0] ?? "";
+
+  assert.match(gateCall, /suite:\s*"video-pipeline-production"/);
+  assert.match(gateCall, /allowRetainedResume:\s*true/);
+});
+
+test("production video E2E retries one retained authorized director failure without repeating ingestion", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.ok(
+    fs.existsSync(retainedDirectorRetrySpecPath),
+    "retained director retry browser contract must exist",
+  );
+  const retainedRetrySpec = fs.readFileSync(retainedDirectorRetrySpecPath, "utf8");
+  const seedReader = source.match(
+    /async function readRetainedDirectorRetrySeed[\s\S]*?\r?\n}\r?\n\r?\nasync function readRetainedDirectorConfirmationSeed/,
+  )?.[0] ?? "";
+
+  assert.match(seedReader, /len\(source_assets\) == 3/);
+  assert.match(seedReader, /benchmark_source_hashes/);
+  assert.match(seedReader, /len\(ingest_jobs\) == 3/);
+  assert.match(seedReader, /job\.attempts == 1/);
+  assert.match(seedReader, /generation_job\.status == 'failed'/);
+  assert.match(seedReader, /generation_job\.error_code == 'quality_rejected'/);
+  assert.match(seedReader, /generation_job\.error_code == 'internal_error'/);
+  assert.match(seedReader, /VideoDecisionEvent/);
+  assert.match(seedReader, /director_generation_failed/);
+  assert.match(seedReader, /diagnostics\.get\('exception_type'\) == 'ValueError'/);
+  assert.match(seedReader, /diagnostics\.get\('detail'\) == 'choreography source ranges must not overlap'/);
+  assert.doesNotMatch(seedReader, /backend\.log/);
+  assert.match(seedReader, /generation_job\.result_asset_id is None/);
+  assert.match(seedReader, /len\(director_assets\) == 0/);
+  assert.match(seedReader, /len\(render_jobs\) == 0/);
+  assert.match(
+    source,
+    /retainedDirectorRetrySeed[\s\S]*?video-pipeline-retained-director-retry\.spec\.ts[\s\S]*?expectedGenerationAttempts:\s*2[\s\S]*?video-pipeline-retained-confirmation\.spec\.ts/,
+  );
+  assert.match(source, /VIDEO_PIPELINE_RETAINED_DIRECTOR_RETRY_SEED/);
+  assert.match(retainedRetrySpec, /VIDEO_PIPELINE_RETAINED_DIRECTOR_RETRY_SEED/);
+  assert.match(retainedRetrySpec, /\/v1\/assets\/generation-jobs\/\$\{seed\.generationJobId\}\/retry/);
+  assert.match(retainedRetrySpec, /toHaveLength\(1\)/);
+  assert.match(retainedRetrySpec, /status === "completed"/);
+  assert.match(
+    retainedRetrySpec,
+    /mutatingRequests\.filter\(\(\{ url \}\) => url\.includes\("\/v1\/assets\/upload"\)\)[\s\S]*?toEqual\(\[\]\)/,
+  );
+  assert.doesNotMatch(retainedRetrySpec, /setInputFiles/);
+});
+
+test("retained resume compares the benchmark case through the persisted manifest key", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const manifestWriter = source.slice(
+    source.indexOf("run-manifest.json"),
+    source.indexOf("decisionAuditEnv = backendEnv"),
+  );
+  const resumeValidator = source.slice(
+    source.indexOf("function assertResumeManifest"),
+    source.indexOf("async function verifyRetainedDirectorContinuation"),
+  );
+
+  assert.match(manifestWriter, /benchmarkCase:\s*benchmarkCaseIdentity/);
+  assert.match(resumeValidator, /benchmarkCase:\s*benchmarkCaseIdentity/);
+  assert.doesNotMatch(resumeValidator, /^\s*benchmarkCaseIdentity,?$/m);
+  assert.match(manifestWriter, /benchmarkReference:\s*benchmarkReferenceIdentity/);
+  assert.match(resumeValidator, /benchmarkReference:\s*benchmarkReferenceIdentity/);
+  assert.doesNotMatch(resumeValidator, /^\s*benchmarkReferenceIdentity,?$/m);
+});
+
+test("a provider-free resume preflight failure preserves the verified checkpoint capability", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(
+    source,
+    /let remoteCheckpointReady = isResume\s*&& lifecycle\.readState\(\)\.resumeSupported === true;/,
+  );
+  assert.match(
+    source,
+    /resumeSupported:\s*retainRemoteCheckpoint && remoteCheckpointReady && localResumeReady/,
+  );
 });
 
 test("production video E2E warns but does not reject a final MP4 for duration drift", () => {
@@ -527,7 +730,7 @@ test("quality-baseline E2E fails closed without approved product or presenter in
     "quality-baseline preflight must run before creating its isolated runtime",
   );
   assert.match(browserSource, /const qualityBaselineRun = process\.env\.VIDEO_PIPELINE_QUALITY_BASELINE === "true"/);
-  assert.match(browserSource, /quality baseline explainer cannot use a saved-library creative-draft profile/);
+  assert.match(browserSource, /quality-baseline saved-library explainer requires approved media/);
   assert.match(runnerSource, /explainer_single_image_draft is creative-draft-only and cannot run as a quality baseline/);
   assert.match(browserSource, /quality baseline presenter requires a source approval reference/);
   assert.match(browserSource, /VIDEO_PIPELINE_PRESENTER_SOURCE_VIDEO/);
@@ -624,7 +827,7 @@ test("quality-baseline presenter accepts exactly one source video plus approved 
   );
   assert.match(
     source,
-    /const requiredSavedLibraryMediaCount = isQualityBaselinePresenter \|\| singleImageCreativeDraft \? 1 : 3/,
+    /const requiredSavedLibraryMediaCount = isQualityBaselinePresenter \|\| singleImageCreativeDraft[\s\S]{0,220}?benchmarkCase\?\.source_contract\?\.asset_roles/,
   );
   assert.match(
     source,
@@ -858,28 +1061,19 @@ test("production video E2E writes a pending human review only after its candidat
   assert.match(source, /expect\(fs\.existsSync\(humanReviewReportPath\)\)\.toBe\(true\)/);
 });
 
-test("production video E2E discovers active video types and asserts the server plan contract", () => {
+test("production video E2E follows the five-layer creation contract without the deleted activation registry", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const specSource = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.doesNotMatch(
-    runnerSource,
-    /activeVideoTypes\.includes\("presenter"\)/,
-    "an explicitly selected active video type must not be blocked by another active type",
-  );
-  assert.doesNotMatch(
-    specSource,
-    /active\.some\(\(videoType\) => !allowed\.has/,
-    "the browser spec must validate its selected type instead of rejecting the full registry",
-  );
-  assert.match(runnerSource, /if \(activeVideoTypes\.length === 0\)/);
-  assert.match(specSource, /if \(active\.length === 0\)/);
-  assert.match(specSource, /activation\.yaml/);
-  assert.match(specSource, /activeVideoTypes/);
-  assert.match(runnerSource, /for \(const videoType of activeVideoTypes\)/);
+  assert.doesNotMatch(runnerSource, /activation\.yaml/);
+  assert.doesNotMatch(specSource, /activation\.yaml/);
+  assert.match(runnerSource, /const productionE2EProfiles = \[/);
+  assert.match(specSource, /const productionE2EProfiles = \[/);
+  assert.match(runnerSource, /for \(const videoType of productionE2EProfiles\)/);
   assert.match(runnerSource, /VIDEO_PIPELINE_VIDEO_TYPE: videoType/);
-  assert.match(specSource, /persistedVideoPlan\.video_type/);
-  assert.match(specSource, /expect\(persistedVideoPlan\.video_type\)\.toBe\(expectedVideoType\)/);
+  assert.match(specSource, /assertDirectorPlanMatchesScenario/);
+  assert.match(specSource, /creative_profile/);
+  assert.match(specSource, /expect\(plan\.video_type\)\.toBeUndefined\(\)/);
   assert.doesNotMatch(specSource, /expectedPipelineCode/);
   assert.doesNotMatch(specSource, /pipelineCode/);
   assert.doesNotMatch(specSource, /VIDEO_PIPELINE_SCENARIO/);
@@ -890,13 +1084,15 @@ test("production video E2E fails before confirmation when required understanding
   const source = fs.readFileSync(productionSpecPath, "utf8");
   const understandingGate = source.indexOf("saved-library source understanding failed");
   const generationInstruction = source.indexOf("const generationInstruction");
-  const routeGate = source.indexOf("director selected wrong video type");
+  const routeGate = source.indexOf(
+    "assertDirectorPlanMatchesScenario(directorVideoPlan, expectedVideoType);",
+  );
   const confirmationClick = source.indexOf("await confirmButton.click()");
 
   assert.ok(understandingGate > -1 && understandingGate < generationInstruction);
   assert.ok(routeGate > generationInstruction && routeGate < confirmationClick);
   assert.match(source, /understanding\?\.status/);
-  assert.match(source, /directorVideoPlan\.video_type/);
+  assert.match(source, /assertDirectorPlanMatchesScenario\(directorVideoPlan, expectedVideoType\)/);
 });
 
 test("production E2E no longer exposes the retired demonstration type or input contract", () => {
@@ -959,8 +1155,12 @@ test("saved-library video E2E uses the same isolated remote storage for cloud AS
 test("saved-library media upload has an explicit acceptance timeout", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
+  assert.match(source, /const PRODUCTION_MEDIA_UPLOAD_TIMEOUT_MS = 10 \* 60_000/);
   assert.match(source, /const mediaUploadTimeoutMs = Number\(/);
-  assert.match(source, /VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS/);
+  assert.match(
+    source,
+    /VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS\s*\?\? PRODUCTION_MEDIA_UPLOAD_TIMEOUT_MS/,
+  );
   assert.match(source, /timeout: mediaUploadTimeoutMs/);
 });
 
@@ -974,11 +1174,13 @@ test("saved-library video E2E continues the presenter cleanup confirmation befor
   assert.match(source, /await confirmPresenterCleanupIfRequired\(/);
 });
 
-test("production E2E treats presenter as an active type and confirms its single recommendation", () => {
+test("production E2E treats presenter as a structural five-layer profile and confirms its single recommendation", () => {
   const specSource = fs.readFileSync(productionSpecPath, "utf8");
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
 
-  assert.match(specSource, /type ActiveVideoType = [^;]*"presenter"/);
+  assert.match(specSource, /const productionE2EProfiles = \[[\s\S]*?"presenter"/);
+  assert.match(specSource, /plan\.creative_profile\?\.anchor_source\)\.toBe\("presenter_video"\)/);
+  assert.match(specSource, /plan\.creative_profile\?\.preserve_source_audio\)\.toBe\(true\)/);
   assert.match(specSource, /function videoProjectConfirmationCard/);
   assert.match(specSource, /getByLabel\("口播型方案 · 待确认"\)/);
   assert.match(
@@ -1024,6 +1226,9 @@ test("production E2E treats presenter as an active type and confirms its single 
 
 test("retained production E2E checkpoints remote artifacts before cleanup and restores them before resume", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
+  const restoreBlock = source.match(
+    /async function restoreCheckpointedRemoteArtifacts[\s\S]*?\r?\n}\r?\n\r?\nfunction readTimingSummary/,
+  )?.[0] ?? "";
 
   assert.match(source, /async function checkpointRemoteArtifactWrites/);
   assert.match(source, /async function restoreCheckpointedRemoteArtifacts/);
@@ -1035,10 +1240,35 @@ test("retained production E2E checkpoints remote artifacts before cleanup and re
   assert.match(source, /remote artifact checkpoint digest changed/);
   assert.match(source, /const checkpointAttempts = 3/);
   assert.match(source, /checkpoint remote artifacts attempt \$\{attempt\}/);
+  assert.match(source, /checkpoint_chunk_bytes = 512 \* 1024/);
+  assert.match(source, /chunk = store\.read_range\(ref, start, end\)/);
+  assert.match(source, /if len\(chunk\) != end - start \+ 1:/);
+  assert.doesNotMatch(source, /data = store\.get_bytes\(ref\)/);
   assert.match(source, /if current and target\.is_file\(\):/);
   assert.match(source, /if len\(cached\) != int\(current\.get\('size_bytes'\) or -1\)/);
   assert.match(source, /continue/);
   assert.match(source, /remote artifact checkpoint path escaped its cache directory/);
+  assert.match(restoreBlock, /restore_chunk_bytes = 512 \* 1024/);
+  assert.match(restoreBlock, /import hashlib, json, os, sys, time/);
+  assert.match(restoreBlock, /def verify_remote\(ref, expected_size, expected_digest\):/);
+  assert.match(restoreBlock, /remote_operation_attempts = 5/);
+  assert.match(restoreBlock, /def retry_remote_call\(operation, label\):/);
+  assert.match(restoreBlock, /if any\(token in message for token in \('nosuchkey', 'not found', '404', 'digest changed'\)\): raise/);
+  assert.match(restoreBlock, /retry_remote_call\(lambda: store\.stat\(ref\), 'stat'\)/);
+  assert.match(restoreBlock, /retry_remote_call\(read_verified_range, 'read_range'\)/);
+  assert.match(restoreBlock, /retry_remote_call\(write_remote, 'put_bytes_at'\)/);
+  assert.match(restoreBlock, /chunk = store\.read_range\(ref, start, end\)/);
+  assert.match(restoreBlock, /const restoreAttempts = 3/);
+  assert.match(restoreBlock, /restore remote artifacts attempt \$\{attempt\}/);
+  assert.doesNotMatch(restoreBlock, /store\.get_bytes\(/);
+  assert.match(
+    source,
+    /def persist_manifest\(\):[\s\S]{0,500}?temporary_manifest\.replace\(manifest_path\)/,
+  );
+  assert.match(
+    source,
+    /entries\[ref\] = candidate[\s\S]{0,100}?persist_manifest\(\)/,
+  );
   assert.match(
     source,
     /await checkpointRemoteArtifactWrites\(decisionAuditEnv\);[\s\S]*?await cleanupRemoteArtifactWrites\(decisionAuditEnv\)/,
@@ -1047,6 +1277,9 @@ test("retained production E2E checkpoints remote artifacts before cleanup and re
     source,
     /await restoreCheckpointedRemoteArtifacts\(backendEnv\);[\s\S]*?await rehydrateRetainedSourceExcerpt\(backendEnv\)/,
   );
+  assert.match(source, /if \(!runError\) \{\s*await cleanupRemoteArtifactWrites\(decisionAuditEnv\);\s*\}/);
+  assert.match(source, /if \(cleanupError && runError\) \{/);
+  assert.match(source, /if \(cleanupError && !runError\) throw cleanupError/);
 });
 
 test("production video E2E can skip the remote checkpoint for a non-resumable acceptance run", () => {
@@ -1058,7 +1291,7 @@ test("production video E2E can skip the remote checkpoint for a non-resumable ac
   );
   assert.match(
     source,
-    /if \(retainRemoteCheckpoint\) \{\s*await checkpointRemoteArtifactWrites\(decisionAuditEnv\);\s*remoteCheckpointReady = true;\s*\}[\s\S]*?await cleanupRemoteArtifactWrites\(decisionAuditEnv\)/,
+    /if \(retainRemoteCheckpoint && !\(runError && remoteCheckpointReady\)\) \{\s*await checkpointRemoteArtifactWrites\(decisionAuditEnv\);\s*remoteCheckpointReady = true;\s*\}[\s\S]*?if \(!runError\) \{\s*await cleanupRemoteArtifactWrites\(decisionAuditEnv\);\s*\}/,
   );
   assert.match(
     source,
@@ -1213,6 +1446,106 @@ test("production video E2E defines generated-primary warning codes before export
   assert.match(source, /"title_scene_render_fallback"/);
 });
 
+test("quality-baseline saved-library explainer accepts only approved stable media", () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-saved-library-inputs-"));
+  const firstPath = path.join(temporaryRoot, "first.mp4");
+  const secondPath = path.join(temporaryRoot, "second.webm");
+  const thirdPath = path.join(temporaryRoot, "third.mov");
+  fs.writeFileSync(firstPath, "first approved video");
+  fs.writeFileSync(secondPath, "second approved video");
+  fs.writeFileSync(thirdPath, "third approved video");
+  const validate = loadQualityBaselineInputValidator();
+  const approved = [firstPath, secondPath, thirdPath].map((filePath, index) => ({
+    path: filePath,
+    name: `source-${index + 1}`,
+    approval_ref: `local-benchmark-approval-${index + 1}`,
+  }));
+
+  try {
+    const result = validate({
+      expectedVideoType: "explainer",
+      inputProfile: "explainer_saved_library_simple",
+      savedLibraryMediaFilesRaw: JSON.stringify(approved),
+    });
+
+    assert.equal(result.savedLibraryMedia.length, 3);
+    assert.deepEqual(
+      result.savedLibraryMedia.map((entry) => entry.approval_ref),
+      approved.map((entry) => entry.approval_ref),
+    );
+    assert.deepEqual(
+      result.savedLibraryMedia.map((entry) => entry.sha256),
+      [firstPath, secondPath, thirdPath].map((filePath) => (
+        crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex")
+      )),
+    );
+    assert.deepEqual(
+      result.savedLibraryMedia.map((entry) => entry.name),
+      ["source-1.mp4", "source-2.webm", "source-3.mov"],
+    );
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("quality-baseline saved-library explainer rejects missing approval and duplicate bytes", () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "multimix-saved-library-inputs-"));
+  const firstPath = path.join(temporaryRoot, "first.mp4");
+  const duplicatePath = path.join(temporaryRoot, "duplicate.mp4");
+  fs.writeFileSync(firstPath, "same video bytes");
+  fs.writeFileSync(duplicatePath, "same video bytes");
+  const validate = loadQualityBaselineInputValidator();
+
+  try {
+    assert.throws(
+      () => validate({
+        expectedVideoType: "explainer",
+        inputProfile: "explainer_saved_library_simple",
+        savedLibraryMediaFilesRaw: JSON.stringify([
+          { path: firstPath, approval_ref: "" },
+          { path: duplicatePath, approval_ref: "approval-2" },
+        ]),
+      }),
+      /approval reference is required/,
+    );
+    assert.throws(
+      () => validate({
+        expectedVideoType: "explainer",
+        inputProfile: "explainer_saved_library_simple",
+        savedLibraryMediaFilesRaw: JSON.stringify([
+          { path: firstPath, approval_ref: "approval-1" },
+          { path: duplicatePath, approval_ref: "approval-2" },
+        ]),
+      }),
+      /distinct files/,
+    );
+    assert.throws(
+      () => validate({
+        expectedVideoType: "explainer",
+        inputProfile: "explainer_saved_library_simple",
+        savedLibraryMediaFilesRaw: JSON.stringify([
+          { path: path.join(temporaryRoot, "missing.mp4"), approval_ref: "approval-1" },
+        ]),
+      }),
+      /existing non-empty file/,
+    );
+    const unsupportedPath = path.join(temporaryRoot, "notes.txt");
+    fs.writeFileSync(unsupportedPath, "not media");
+    assert.throws(
+      () => validate({
+        expectedVideoType: "explainer",
+        inputProfile: "explainer_saved_library_simple",
+        savedLibraryMediaFilesRaw: JSON.stringify([
+          { path: unsupportedPath, approval_ref: "approval-1" },
+        ]),
+      }),
+      /unsupported approved saved-library media/,
+    );
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test("production quality baseline binds the exact benchmark case and inputs", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const specSource = fs.readFileSync(productionSpecPath, "utf8");
@@ -1274,4 +1607,15 @@ test("production video E2E resolves a queued confirmation job from every public 
   assert.match(source, /confirmationPayload\.product\?\.metadata\?\.latest_job_public_id/);
   assert.match(source, /confirmationPayload\.conversation\?\.metadata\?\.latest_job_public_id/);
   assert.match(source, /message\.metadata\?\.job_public_id/);
+});
+
+test("retained recovery accepts either a queued dispatch or a stale-running resume", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const recoveryBlock = source.match(
+    /async function recoverInterruptedVideoJob[\s\S]*?\r?\n}\r?\n\r?\nasync function readRetainedVideoJob/,
+  )?.[0] ?? "";
+
+  assert.match(recoveryBlock, /assert result\.get\('queued'\) == 1, result/);
+  assert.match(recoveryBlock, /assert result\.get\('dispatched'\) == 1, result/);
+  assert.doesNotMatch(recoveryBlock, /assert result\.get\('resume_queued'\) == 1, result/);
 });

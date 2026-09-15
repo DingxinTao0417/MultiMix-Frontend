@@ -1,8 +1,15 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test, type Page, type Route } from "@playwright/test";
 
+import {
+  bindVideoBenchmarkRun,
+  unboundVideoBenchmarkRun,
+  verifySameInputAb,
+} from "../scripts/video-benchmark-contract.mjs";
+import { writeVideoHumanReviewReport } from "../scripts/video-human-review-report.mjs";
 import { selectClosestDurationCandidate } from "../test-support/video-pipeline-production-helpers";
 
 
@@ -54,6 +61,18 @@ type AssetListRow = {
 const seed = JSON.parse(
   process.env.VIDEO_PIPELINE_RETAINED_EXPORT_SEED ?? "null",
 ) as RetainedExportSeed | null;
+const benchmarkCase = process.env.VIDEO_PIPELINE_BENCHMARK_CASE
+  ? JSON.parse(process.env.VIDEO_PIPELINE_BENCHMARK_CASE)
+  : null;
+const benchmarkSourceIdentities = process.env.VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES
+  ? JSON.parse(process.env.VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES)
+  : { source_document_sha256: null, source_asset_sha256s: [] };
+const benchmarkReference = process.env.VIDEO_PIPELINE_REFERENCE_REVIEW
+  ? JSON.parse(process.env.VIDEO_PIPELINE_REFERENCE_REVIEW)
+  : null;
+const generationInstruction = (process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? "").trim();
+const expectedVideoType = (process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? "").trim();
+const inputProfile = (process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? "").trim();
 
 
 async function authenticate(page: Page, value: RetainedExportSeed): Promise<string> {
@@ -406,16 +425,6 @@ function assertPresenterSourceIdentity(project: ProjectAsset) {
 }
 
 
-async function exportButtonState(page: Page, button: ReturnType<Page["locator"]>) {
-  const text = (await button.textContent())?.trim() ?? "";
-  const error = page.getByText(/成片合成失败|当前无法导出|导出失败/).last();
-  if (await error.isVisible().catch(() => false)) {
-    throw new Error(`retained project export failed: ${await error.innerText()}`);
-  }
-  return text;
-}
-
-
 test("opens and exports the completed retained video project", async ({ page }) => {
   test.setTimeout(30 * 60_000);
   if (!seed) throw new Error("VIDEO_PIPELINE_RETAINED_EXPORT_SEED is missing");
@@ -423,7 +432,12 @@ test("opens and exports the completed retained video project", async ({ page }) 
   const consoleErrors: string[] = [];
   const requestFailures: Array<{ url: string; error: string }> = [];
   page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
+    if (message.type() !== "error") return;
+    const location = message.location();
+    const suffix = location.url
+      ? ` @ ${location.url}:${location.lineNumber ?? 0}:${location.columnNumber ?? 0}`
+      : "";
+    consoleErrors.push(`${message.text()}${suffix}`);
   });
   page.on("requestfailed", (request) => {
     requestFailures.push({
@@ -490,18 +504,30 @@ test("opens and exports the completed retained video project", async ({ page }) 
   const exportButton = page.locator("button.shadcn-prototype-open-editor").last();
   await expect(exportButton).toBeVisible({ timeout: 180_000 });
   await expect(exportButton).toBeEnabled();
-  const initialExportState = (await exportButton.textContent())?.trim() ?? "";
-  if (initialExportState === "导出视频") {
+  const currentExportUrl = `${activeSeed.backendUrl}/v1/video/projects/`
+    + `${activeSeed.projectAssetId}/exports/current?export_variant=original`;
+  const currentExportResponse = await page.request.get(currentExportUrl, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (currentExportResponse.status() === 404) {
     await exportButton.click();
-    await expect.poll(
-      () => exportButtonState(page, exportButton),
-      { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
-    ).toBe("下载成片");
-  } else if (initialExportState === "下载成片") {
-    await expect(exportButton).toHaveText("下载成片");
+    await page.getByRole("menuitem", { name: "原始成片", exact: true }).click();
+    await expect(exportButton).toBeDisabled({ timeout: 30_000 });
+    await expect(exportButton).toBeEnabled({ timeout: 15 * 60_000 });
+    await expect(exportButton).toContainText("导出视频");
   } else {
-    throw new Error(`unexpected retained export state: ${initialExportState || "empty"}`);
+    expect(
+      currentExportResponse.ok(),
+      `retained current export lookup failed: ${currentExportResponse.status()}`,
+    ).toBe(true);
+    const currentExport = await currentExportResponse.json() as { status?: string };
+    expect(currentExport.status, "retained original export must be complete").toBe("completed");
   }
+
+  const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });
+  await exportButton.click();
+  await page.getByRole("menuitem", { name: "原始成片", exact: true }).click();
+  const download = await downloadPromise;
 
   const exportPreflightResponse = await page.request.get(
     `${activeSeed.backendUrl}/v1/video/projects/${activeSeed.projectAssetId}/quality?stage=export_preflight`,
@@ -511,18 +537,47 @@ test("opens and exports the completed retained video project", async ({ page }) 
     exportPreflightResponse.ok(),
     `export preflight request failed: ${exportPreflightResponse.status()}`,
   ).toBe(true);
-  const exportPreflight = await exportPreflightResponse.json() as { blockers?: unknown[] };
+  const exportPreflight = await exportPreflightResponse.json() as {
+    blockers?: unknown[];
+    warnings?: Array<{ code?: string; message?: string }>;
+  };
   expect(
     exportPreflight.blockers ?? [],
     "saved export preflight must have no blockers",
   ).toEqual([]);
 
-  const downloadPromise = page.waitForEvent("download", { timeout: 180_000 });
-  await exportButton.click();
-  const download = await downloadPromise;
   const outputPath = path.join(activeSeed.resultDir, "multimix-candidate.mp4");
   await download.saveAs(outputPath);
   expect(fs.statSync(outputPath).size).toBeGreaterThan(10_000);
+  const candidateVideoSha256 = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(outputPath))
+    .digest("hex");
+  const generationInstructionSha256 = crypto
+    .createHash("sha256")
+    .update(generationInstruction, "utf8")
+    .digest("hex");
+  const benchmarkBinding = benchmarkCase
+    ? bindVideoBenchmarkRun({
+        benchmarkCase,
+        execution: {
+          video_type: expectedVideoType,
+          input_profile: inputProfile,
+          ratio: activeSeed.ratio,
+          target_seconds: activeSeed.targetSeconds,
+        },
+        sourceDocumentSha256:
+          benchmarkSourceIdentities.source_document_sha256 ?? null,
+        sourceAssetSha256s:
+          benchmarkSourceIdentities.source_asset_sha256s ?? [],
+        generationInstructionSha256,
+        candidateVideoSha256,
+        referenceVideoSha256: benchmarkReference?.video?.sha256 ?? null,
+      })
+    : unboundVideoBenchmarkRun(null);
+  const sameInputAb = benchmarkReference
+    ? verifySameInputAb(benchmarkBinding, benchmarkReference.review)
+    : { status: "not_provided" };
   await page.screenshot({
     path: path.join(activeSeed.resultDir, "video-pipeline-ready.png"),
     fullPage: true,
@@ -544,6 +599,20 @@ test("opens and exports the completed retained video project", async ({ page }) 
     },
     {},
   );
+  const expectedMissingRequirementsUrl = `${activeSeed.backendUrl}/v1/assets/conversations/`
+    + `${encodeURIComponent(activeSeed.conversationId)}/requirements/current`;
+  const expectedMissingCurrentExportUrl = `${activeSeed.backendUrl}/v1/video/projects/`
+    + `${activeSeed.projectAssetId}/exports/current`;
+  const actionableConsoleErrors = consoleErrors.filter((message) => !(
+    message.includes("Failed to load resource: the server responded with a status of 404")
+    && (
+      message.includes(`@ ${expectedMissingRequirementsUrl}:`)
+      || message.includes(`@ ${expectedMissingCurrentExportUrl}`)
+    )
+  ));
+  const actionableRequestFailures = requestFailures.filter(
+    (failure) => failure.error !== "net::ERR_ABORTED",
+  );
   fs.writeFileSync(
     path.join(activeSeed.resultDir, "browser-result.json"),
     `${JSON.stringify({
@@ -564,8 +633,30 @@ test("opens and exports the completed retained video project", async ({ page }) 
         bgmEnabled: false,
         bgmSelectionReason: "source_clip_preserves_original_audio",
       },
+      candidateVideo: outputPath,
+      benchmarkBinding,
+      sameInputAb,
       consoleErrors,
+      actionableConsoleErrors,
       requestFailures,
     }, null, 2)}\n`,
   );
+
+  const humanReviewReportPath = writeVideoHumanReviewReport({
+    resultDir: activeSeed.resultDir,
+    candidateVideo: outputPath,
+    candidateVideoSha256,
+    videoType: expectedVideoType,
+    creativeDraftOnly: false,
+    qualityWarnings: exportPreflight.warnings ?? [],
+    benchmarkBinding,
+    referenceVideo: benchmarkReference?.video?.path ?? null,
+    referenceVideoSha256: benchmarkReference?.video?.sha256 ?? null,
+    sameInputAb,
+    videoPlan: { scenes: project.metadata?.video_plan?.scenes ?? [] },
+    videoProject: project.metadata?.video_project ?? null,
+  });
+  expect(fs.existsSync(humanReviewReportPath)).toBe(true);
+  expect(actionableConsoleErrors, "retained browser console errors should be empty").toEqual([]);
+  expect(actionableRequestFailures, "retained browser request failures should be empty").toEqual([]);
 });
