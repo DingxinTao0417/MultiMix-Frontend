@@ -9,8 +9,16 @@ const workspaceDesign = readFileSync(
   new URL("../../../docs/MULTIMIX_WORKSPACE_DESIGN.md", import.meta.url),
   "utf8",
 );
+const authEntry = readFileSync(new URL("../../multimix-app.tsx", import.meta.url), "utf8");
 
-describe("material-driven product positioning copy", () => {
+describe("conversational video product positioning copy", () => {
+  test("introduces video creation from an idea at both entry points", () => {
+    const tagline = "说出你的想法，和 AI 一起把视频做出来。";
+    expect(authEntry).toContain(tagline);
+    expect(conversationStart).toContain(tagline);
+    expect(authEntry).not.toContain("上传素材，说出需求，生成可编辑的短视频");
+  });
+
   test("accepts video creation sources through the chat composer", () => {
     expect(conversationStart).toContain("PDF / 图片 / 视频素材");
     expect(conversationStart).toContain('aria-label="上传视频素材"');

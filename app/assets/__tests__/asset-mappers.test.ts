@@ -705,6 +705,39 @@ describe("asset product mapper", () => {
     expect(product.duration).toBe("45秒");
   });
 
+  it("uses the current timeline duration after a revision even when an older export remains", () => {
+    const product = contentAssetToProduct(asset({
+      id: 123,
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      product_status: "completed",
+      generation_state: "video_project_ready",
+      metadata: {
+        capability: "video_project",
+        orchestration_pending: false,
+        video_workflow_stage: "video_project_ready",
+        video_export_current: false,
+        mp4_artifact: { duration_seconds: 27 },
+        intent: { duration: "30秒" },
+        video_project: {
+          timeline: {
+            tracks: [{
+              type: "video",
+              elements: [
+                { startTime: 0, duration: 10 },
+                { startTime: 10, duration: 15 },
+              ],
+            }],
+            media: [],
+          },
+        },
+      },
+    }));
+
+    expect(product.duration).toBe("25秒");
+  });
+
   it("does not let a malformed non-script artifact replace the current director script", () => {
     const director = asset({ id: 488, generation_state: "draft", metadata: { capability: "video_script", video_workflow_stage: "draft" } });
     const malformed = asset({

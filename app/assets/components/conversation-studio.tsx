@@ -109,8 +109,8 @@ export type ChatImageAttachment = {
   error?: string;
 };
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
-const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
+const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
+const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
 const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
@@ -389,6 +389,7 @@ export default function ConversationStudio({
   // Set when the user clicks a plan's "调整方向": the composer swaps to a guiding
   // placeholder so the click has a visible effect instead of silently focusing.
   const [adjustHint, setAdjustHint] = useState(false);
+  const [adjustmentProductId, setAdjustmentProductId] = useState<number | null>(null);
   const [confirmingPlanKey, setConfirmingPlanKey] = useState<string | null>(null);
   const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -469,6 +470,7 @@ export default function ConversationStudio({
     setSendError(null);
     setComposerValue("");
     setAdjustHint(false);
+    setAdjustmentProductId(null);
     setConfirmingPlanKey(null);
     return () => {
       const activeRequest = activeRequestRef.current;
@@ -573,6 +575,7 @@ export default function ConversationStudio({
       );
       if (controller.signal.aborted) return;
       onPendingExchangeChange?.(selectedConversation.id, null);
+      setAdjustmentProductId(null);
     } catch (error) {
       if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
         onPendingExchangeChange?.(selectedConversation.id, exchange ? { ...exchange, assistantText: "已停止生成。", status: "stopped", runSteps: undefined } : null);
@@ -606,7 +609,9 @@ export default function ConversationStudio({
       return;
     }
     const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
-    await sendInstruction(instruction);
+    await sendInstruction(instruction, {
+      confirmationProductId: adjustmentProductId ?? undefined,
+    });
   };
 
   const handleConfirmPlan = async (
@@ -645,6 +650,12 @@ export default function ConversationStudio({
       : undefined;
     const voiceChoiceRequired = (plan.voiceOptions?.length ?? 0) > 0;
     const voiceChoiceValid = !voiceChoiceRequired || typeof values?.aiVoiceEnabled === "boolean";
+    if (isVideoParameterConfirmation && ((plan.productionBlockedReason
+      && (!values?.productionChoiceId || values.productionChoiceId === plan.productionChoiceId))
+      || (plan.productionSelectionRequired && !values?.productionChoiceId))) {
+      setSendError(plan.productionBlockedReason || "请先选择制作方式。");
+      return;
+    }
     const videoParameterConfirmation = (
       isVideoParameterConfirmation
       && plan.pendingIntentId
@@ -657,6 +668,7 @@ export default function ConversationStudio({
         version: plan.pendingIntentVersion,
         ratio,
         targetSeconds: values.targetSeconds,
+        ...(values.productionChoiceId ? { productionChoiceId: values.productionChoiceId } : {}),
         ...(typeof values.aiVoiceEnabled === "boolean"
           ? { aiVoiceEnabled: values.aiVoiceEnabled }
           : {}),
@@ -791,7 +803,7 @@ export default function ConversationStudio({
         confirmationProductId: isVideoProjectConfirmation
           ? directorAssetId
           : confirmationProductId,
-        sourceSubtitleMode,
+        sourceSubtitleMode: plan.kind === "presenter_project_confirmation" ? undefined : sourceSubtitleMode,
         videoProjectConfirmation: isVideoProjectConfirmation
           ? {
               ...videoProjectConfirmation,
@@ -828,12 +840,19 @@ export default function ConversationStudio({
       );
       return;
     }
-    // A custom adjust label seeds the composer; the default "调整方向" carries no
-    // instruction, so we show a guiding placeholder instead of an empty box —
-    // otherwise the click just silently focuses and reads as a dead button.
-    const seed = plan.adjustLabel && plan.adjustLabel !== "调整方向" ? plan.adjustLabel : "";
-    setComposerValue(seed);
-    setAdjustHint(!seed);
+    if (confirmationProductId) {
+      const targetProduct = products.find(
+        (product) => product.backendAssetId === confirmationProductId,
+      );
+      if (targetProduct) {
+        onSelectProduct(selectedConversation.id, targetProduct.id);
+      }
+      setAdjustmentProductId(confirmationProductId);
+    }
+    // Button labels describe an action; they are not user-authored revision
+    // instructions. Keep the composer empty and guide with a placeholder.
+    setComposerValue("");
+    setAdjustHint(true);
     requestAnimationFrame(() => {
       composerRef.current?.focus();
       if (composerRef.current) resizeComposer(composerRef.current);
@@ -1187,7 +1206,8 @@ export default function ConversationStudio({
                   title={isImageGenerationTimeline ? "图片生成进度" : undefined}
                   errorMessage={agentActionFailed
                     ? liveAgentAction.message
-                    : liveRunState?.errorMessage}
+                    : liveRunState?.errorMessage
+                      ?? (message.localState === "failed" ? message.text : undefined)}
                   completionConfirmed={liveAgentAction
                     ? ["succeeded", "failed", "blocked", "canceled"].includes(liveAgentAction.status)
                     : liveRunState?.completionConfirmed}

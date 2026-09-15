@@ -350,7 +350,7 @@ function MultiMixAuth({
       <section className="multimix-auth-card">
         <MultiMixBrand />
         <h1 className="multimix-auth-title">{mode === "login" ? "登录你的 AI 短视频创作工作台" : "注册你的 AI 短视频创作工作台"}</h1>
-        <p className="multimix-auth-sub">上传素材，说出需求，生成可编辑的短视频</p>
+        <p className="multimix-auth-sub">说出你的想法，和 AI 一起把视频做出来。</p>
 
         <form onSubmit={submit}>
           <label className="multimix-auth-field">

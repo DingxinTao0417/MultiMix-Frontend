@@ -2,9 +2,9 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-13
+> Last verified: 2026-09-16
 
-本文档描述 MultiMix 内容生成工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
+本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
 > 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与 `MultiMix-Backend/docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
@@ -1241,3 +1241,35 @@ POST  /v1/assets/conversations/messages
 - DOCX/PPTX 与既有 PDF、表格、文本共用批量上传入口；每个文件有独立幂等键和失败状态。批量部分失败不撤销成功文件，也不触发生成。
 - `ProjectRequirementSnapshot.payload` 在 `failed/analyzing` 状态可为空；客户端继续展示最后稳定快照，不能用失败结果覆盖它。
 - 产品埋点只发送固定事件和安全枚举/计数/耗时，不发送需求原文、证据摘录、文件名或用户填写内容。
+
+## 对话创作增量契约（2026-09-15）
+
+复用 `POST /v1/assets/conversations/messages`、现有确认卡、Agent 注册表、持久化队列及资产版本。新增语义与动作受后端 `conversational_creation_enabled` 控制（当前默认关闭）；客户端不得据静态文案推定能力开放。实际验收状态见跨端对话创作 active plan。
+
+### 参数确认的制作方式
+
+现有 `video_parameter_confirmation` 增加可选 `production_choice_id: public_stock | graphics | ai_visual`。仍须发送 `pending_intent_id`、`version`、`ratio`、`target_seconds`，以及既有声音选项；其他新增字段不得用来绕过服务端校验。
+
+助手消息 plan 的只读投影增加 `production_options`（最多三项，每项 `id / label / effect / required_inputs / cost_note`）、`production_choice_id`、`production_recommended_id`、`production_selection_required`、`production_restriction`（`prefer | only`）和 `production_blocked_reason`。adapter 转换为对应 camelCase 字段。自然语言与按钮选择写入同一服务端需求/确认快照，旧客户端不携带选择时不得跳过必须选择的门。服务端 `production_preference.choice_id` 可为 null，以保存未选择新制作方式时的 `excluded_choice_ids`，此时 `restriction` 必须为 `prefer`。已有可用视觉素材且仅声明排除项时不显示新的制作方式选择；排除项仍写入视频参数快照并逐镜校验。素材范围的“只用这张照片”不能被转换为“只用图形动画”。
+
+推荐 ID 不构成选择；选项 ID 不构成 Provider 能力或费用授权。确认时服务端重验可用性、版本及限制，快照过期则重新展示方案，不静默换用其他方式。
+
+自然语言同时修改比例/时长和制作偏好时，仍返回同一个 pending ID 的新版本；服务端同步 brief、制作画像、声音选项和制作限制，客户端刷新后消费最新卡片。制作偏好的模型证据引用由服务端解析为原文，客户端不发送或解释这一内部引用。无可用素材仍需选择制作方式；已有素材的排除项不额外增加确认步骤。
+
+### 版本绑定的创作建议
+
+助手消息 metadata 可返回 `creative_advice`，含 `schema_version / id / project_id / asset_id / version_id / answer_kind` 与 `suggestions[]`（`id / title / reason / instruction`）。对外投影不暴露内部执行参数或证据指纹。建议正文仍由现有消息渲染；服务端保存完整证据、建议动作与指纹，用于后续自然语言采纳。
+
+只读问题不创建作品版本或渲染任务。采纳时校验当前用户、会话、作品、版本和建议指纹；“按这个改”不能从任意客户端文本重建动作。多条或过期建议先澄清，采纳仍进入现有修改 policy。
+
+### 全片修改与恢复
+
+新增注册动作 `video.project.set_ratio`、`video.project.reorder_scenes`、`video.project.set_duration`。API 只编排，独立服务先冻结方案及基础版本，现有 policy 决定直接执行或确认。比例与重排只有在无歧义、额外费用、手工编辑冲突时可直接执行；时长修改始终确认。
+
+动作使用同一视频资产与 `VideoRenderJob`，重复确认复用同一任务。完成结果记录 `version_id / version / undo_version_id / undo_version / changes / message`，前端继续使用已有版本入口恢复。失败保持上一稳定版本、给出原因和下一步；过期任务不能发布。预览、重开和导出都读取同一已发布工程，旧 MP4 引用不能沿用到新版本。
+
+## 对话创作能力验收状态（2026-09-16）
+
+`creative_advice`、制作方式选项以及 `video.project.set_ratio`、`video.project.reorder_scenes`、`video.project.set_duration` 已按本章契约接入并完成本地跨端验收。后端配置仍以 `conversational_creation_enabled` 为唯一开关，默认值为 `false`；前端必须以接口返回为准，不把静态入口文案解释为能力已开放。
+
+首次视频成功发布后，`versions` 至少包含一个完整工程快照；后续修改、恢复、保存和导出都绑定当前服务端版本。导出返回的 `quality_report.status=pass` 才能视为服务器已发布成片，浏览器完成本地合成或上传不等于发布成功。

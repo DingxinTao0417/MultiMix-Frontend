@@ -870,4 +870,102 @@ describe("Conversation Agent actions", () => {
     });
     expect(onSendMessage.mock.calls[0]?.[13]).toBe(1501);
   });
+
+  it("keeps first Presenter subtitle choice inside direction confirmation", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "presenter_project_confirmation",
+      title: "口播型方案",
+      status: "pending",
+      fields: [{ key: "directions", label: "导演方向", value: "系统推荐 1 个方案" }],
+      confirmLabel: "确认推荐方案并生成视频",
+      directionOptions: [{
+        id: "direction-a",
+        label: "推荐方向",
+        concept: "人物主导",
+        reason: "主体清晰",
+        recommended: true,
+        sampleUrl: "/preview/a.mp4",
+        durationSeconds: 2.5,
+      }],
+      directionDefault: "direction-a",
+      recommendationMode: "single_winner",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }],
+      ratioDefault: "16:9",
+      durationSeconds: 30,
+      durationMin: 5,
+      durationMax: 120,
+      subtitleOptions: [
+        { value: "translated_zh", label: "中文字幕" },
+        { value: "source", label: "原文字幕" },
+      ],
+      subtitleDefault: "translated_zh",
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-presenter-first-project",
+      detailsLoaded: true,
+      messages: [{
+        role: "assistant" as const,
+        text: "请确认推荐方案。",
+        assetId: 1501,
+        plan,
+      }],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "原文字幕" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认推荐方案并生成视频" }));
+
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[9]).toEqual({
+      directorCandidateId: "direction-a",
+      ratio: "16:9",
+      subtitleMode: "source",
+      targetSeconds: 30,
+    });
+    expect(onSendMessage.mock.calls[0]?.[14]).toBeUndefined();
+  });
+
+  it("shows the server reason when an optimistic video confirmation fails", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "conversation-presenter-confirmation-failed",
+      detailsLoaded: true,
+      messages: [],
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        pendingExchange={{
+          id: "failed-confirmation",
+          userText: "确认，开始创建视频工程",
+          assistantText: "当前安全精简后的时长无法满足目标，请调整内容范围或保留当前时长。",
+          status: "failed",
+          presentation: "execution_anchor",
+          runSteps: [
+            { key: "create_job", label: "创建视频工程任务", status: "fail" },
+            { key: "prepare_scenes", label: "读取已确认方案并准备分镜", status: "wait" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText(
+      "当前安全精简后的时长无法满足目标，请调整内容范围或保留当前时长。",
+    )).toBeInTheDocument();
+  });
 });
