@@ -1,8 +1,8 @@
 # 生产编辑器导出菜单遮挡与旧中断提示修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
-> Last verified: 2026-09-16
+> Last verified: 2026-09-17
 
 ## 背景与根因
 
@@ -34,4 +34,4 @@
 - 生产复现：Playwright 鼠标点击“原始成片”被预览画布拦截；键盘 Enter 成功导出。异步现有任务查询在新导出写入标记后返回 404，显示假“上次导出中断”文案；真实导出仍能完成。
 - 本地最小修复：操作栏 `position: relative; z-index: 1`；现有任务查询只对查询开始前已存在、查询结束后未变化的本地标记提示中断。
 - 隔离端口 3217 的本地前端接生产验收账号、只读媒体；Playwright 将现有任务查询延迟到点击后，鼠标菜单项命中并启动导出，404 返回后未出现假错误。项目 PUT 在脚本中拦截并未写入生产，端口进程已停止。
-- `typecheck`、编辑器布局 9 项、目标文件 ESLint、`docs:check`、`git diff --check` 均通过。前端尚未推送或部署，等待当次授权后做生产鼠标复测。
+- `typecheck`、编辑器布局 9 项、目标文件 ESLint、`docs:check`、`git diff --check` 均通过。修复提交 `527a84a7f16aca8e601e75f84df6c5f50e11aff0` 已按当次授权推送，Vercel 生产部署 `dpl_9F4dbhvseVgkLPAwz1oKKyjcotrG` READY。生产页面鼠标点击“原始成片”完成导出与下载，延迟查询未再误报旧中断；用户接受成片上下黑边并记录为现有限制，第一阶段通过。
