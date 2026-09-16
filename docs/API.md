@@ -1258,7 +1258,7 @@ POST  /v1/assets/conversations/messages
 
 ## 对话创作增量契约（2026-09-15）
 
-复用 `POST /v1/assets/conversations/messages`、现有确认卡、Agent 注册表、持久化队列及资产版本。新增语义与动作受后端 `conversational_creation_enabled` 控制（当前默认关闭）；客户端不得据静态文案推定能力开放。实际验收状态见跨端对话创作 active plan。
+复用 `POST /v1/assets/conversations/messages`、现有确认卡、Agent 注册表、持久化队列及资产版本。后端以结构化语义与动作路径处理请求；客户端以接口状态和能力返回为准，不据静态文案推定请求已成功。
 
 ### 参数确认的制作方式
 
@@ -1284,6 +1284,6 @@ POST  /v1/assets/conversations/messages
 
 ## 对话创作能力验收状态（2026-09-16）
 
-`creative_advice`、制作方式选项以及 `video.project.set_ratio`、`video.project.reorder_scenes`、`video.project.set_duration` 已按本章契约接入并完成本地跨端验收。后端配置仍以 `conversational_creation_enabled` 为唯一开关，默认值为 `false`；前端必须以接口返回为准，不把静态入口文案解释为能力已开放。
+`creative_advice`、制作方式选项以及 `video.project.set_ratio`、`video.project.reorder_scenes`、`video.project.set_duration` 已按本章契约接入并完成生产真实工程验收。后端旧总开关在本地代码中退役；新版本发布前生产仍运行上一部署。前端必须以接口返回为准，不把静态入口文案解释为服务已成功执行。
 
 首次视频成功发布后，`versions` 至少包含一个完整工程快照；后续修改、恢复、保存和导出都绑定当前服务端版本。导出返回的 `quality_report.status=pass` 才能视为服务器已发布成片，浏览器完成本地合成或上传不等于发布成功。
