@@ -1,6 +1,6 @@
 # MultiMix 公开账号入口与 UI/UX 验收收口计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-16
 
@@ -62,5 +62,13 @@
 
 - [x] 任务 1：补齐评审基线、法律事实清单与账号恢复设计。
 - [x] 任务 2：实现协议入口、注册同意版本和密码恢复闭环，并通过聚焦测试。
-- [ ] 任务 3：完成本地全量检查、部署与生产浏览器验收。
-- [ ] 任务 4：更新评审报告、归档计划、双仓提交推送并核对最终状态。
+- [x] 任务 3：完成本地全量检查、部署与生产浏览器验收。
+- [x] 任务 4：更新评审报告、归档计划、双仓提交推送并核对最终状态。
+
+## 完成证据（2026-09-16）
+
+- 聚焦 Vitest 3 个文件、64 个用例，TypeScript 类型检查、ESLint、agent/docs/player 合同和生产构建均通过。
+- 前端功能提交 `d50cd61fc722148208b0f448b8bd0d5a9811fdee` 已合入本地 `main`；同步远端更新后的提交为 `cc65f814821dcf6c9f6122c69c8029bfd34f867b`。
+- Vercel 生产部署 `dpl_Hd4BDMZJnt5cZmSozaeyThFUqzVE` 状态为 Ready，目标 team、project 与生产域名均与权威配置一致。
+- 生产只读验收覆盖条款、隐私、注册显式同意和 390×844 无效恢复链接；浏览器控制台无 warning/error，未触发注册、邮件、生成、删除或付费操作。
+- 本地与生产截图归档在工作区 `artifacts/qa/ui-ux-account-closeout-20260916/`。
