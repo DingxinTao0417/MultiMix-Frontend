@@ -24,7 +24,7 @@ MultiMix 是两个并排的独立仓库：
 步骤：
 
 1. 在后端仓库 GitHub Actions 手动运行 `Publish backend image`，从 `main` 用 `Dockerfile.lean` 构建一次并发布私有 GHCR 镜像。记录运行摘要中的完整 `ghcr.io/...@sha256:<digest>`；生产禁止使用可漂移 tag。
-2. Railway 的 API、video worker、素材 worker 与 scheduler 必须都指向上述完全相同的 digest。私有 GHCR 拉取需在 Railway 配置只读 registry 凭据，并使用支持私有外部镜像的 Railway 套餐；条件不满足时不得切断当前正常运行的源码部署。
+2. Railway 的 API、video worker、素材 worker、long-form ingest worker 与 scheduler 必须都指向上述完全相同的 digest。私有 GHCR 拉取需在 Railway 配置只含 `read:packages` 的只读 registry 凭据，并使用支持私有外部镜像的 Railway 套餐；条件不满足时不得切断当前正常运行的源码部署。
    API 服务必须在 Railway 服务设置中显式配置启动命令：
    `python -c "import os; os.execvp('python', ['python', '-m', 'uvicorn', 'app.main:app', '--host', '0.0.0.0', '--port', os.environ.get('PORT', '8000')])"`。
    `railway.json` 不保存启动命令，因为同仓的 API 与 video worker 需要使用不同命令，config-as-code 会覆盖服务级设置。
@@ -53,7 +53,7 @@ MultiMix 是两个并排的独立仓库：
    MULTIMIX_S3_ENDPOINT_URL / MULTIMIX_S3_BUCKET / MULTIMIX_S3_ACCESS_KEY / MULTIMIX_S3_SECRET_KEY
    ```
 5. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
-6. 四项服务必须回读到同一镜像 digest。发布前记录原 digest；回滚时四项服务同时改回同一个已验证旧 digest，禁止只回滚一个服务或现场重建旧 commit。
+6. 五项服务必须回读到同一镜像 digest。发布前记录原 deployment ID、source 和 digest；回滚时五项服务同时恢复到已验证的旧 deployment/source，禁止只回滚一个服务或现场重建旧 commit。
 
 ### 视频编排 worker（异步生成）
 
@@ -76,6 +76,17 @@ MULTIMIX_RUNTIME_ROLE=asset-generation-worker
 
 该服务必须与 API、video worker 共用生产 Postgres、Redis、ArtifactStore 和 `MULTIMIX_*` 配置。镜像默认 role 是 API，因此此变量不能省略。
 
+### 长内容解析 worker（异步任务）
+
+长内容解析使用独立常驻服务，并复用同一不可变镜像：
+
+```
+MULTIMIX_RUNTIME_ROLE=long-form-ingest-worker
+```
+
+该服务必须与 API、video worker、素材 worker 共用生产 Postgres、Redis、ArtifactStore 和
+`MULTIMIX_*` 配置。镜像默认 role 是 API，因此此变量不能省略。
+
 ### 视频任务恢复 scheduler（必需）
 
 再部署一个同镜像的常驻 Railway service，用于恢复“数据库已创建、但原始派发丢失”或
@@ -86,9 +97,9 @@ MULTIMIX_VIDEO_ORCHESTRATION_INLINE=false
 MULTIMIX_RUNTIME_ROLE=scheduler
 ```
 
-它与 API、video worker、素材 worker 共用同一个 Postgres、Redis、ArtifactStore 和 image digest。scheduler
+它与 API、video worker、素材 worker、long-form ingest worker 共用同一个 Postgres、Redis、ArtifactStore 和 image digest。scheduler
 只会幂等重派已有 `queued` 任务，worker 仍以原子 `queued -> running` claim 防止重复执行；它
-不会新建工程、覆盖用户内容或把失败伪装为成功。发布前确认四项服务均为同一 digest，发布后从
+不会新建工程、覆盖用户内容或把失败伪装为成功。发布前确认五项服务均为同一 digest，发布后从
 scheduler 日志确认至少完成一轮恢复扫描。
 
 ### 素材 provider 发布前 preflight

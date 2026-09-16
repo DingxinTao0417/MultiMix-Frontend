@@ -717,7 +717,7 @@ describe("display-area eight-case matrix", () => {
     };
     const sourceBlob = new Blob(["original"], { type: "image/png" });
     const brandedBlob = new Blob(["branded"], { type: "image/png" });
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(sourceBlob, {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(new TextEncoder().encode("original"), {
       status: 200,
       headers: { "content-type": "image/png" },
     }));
@@ -751,7 +751,10 @@ describe("display-area eight-case matrix", () => {
     await waitFor(() => expect(filenames).toContain("campaign-cover-multimix-brand.png"));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(createBranded).toHaveBeenCalledWith(expect.any(Blob), { sourceType: "image/png" });
+    expect(createBranded).toHaveBeenCalledWith(
+      expect.objectContaining({ size: 8, type: "image/png" }),
+      { sourceType: "image/png" },
+    );
   });
 
   it("keeps the original image available when branded composition fails", async () => {
@@ -767,7 +770,10 @@ describe("display-area eight-case matrix", () => {
       metadata: { preview_url: "/generated-cover.png" },
     };
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(new Blob(["original"], { type: "image/png" }), { status: 200 }),
+      new Response(new TextEncoder().encode("original"), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      }),
     ));
     vi.spyOn(brandImageExport, "createBrandedImageBlob")
       .mockRejectedValue(new Error("品牌展示版生成失败，请重试。"));
