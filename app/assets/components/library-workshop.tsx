@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
@@ -163,6 +163,41 @@ function isDigitalHuman(row: LibraryRow) {
 
 function isReparsableMedia(row: LibraryRow) {
   return row.kind === "image" || row.kind === "video";
+}
+
+function videoEmptyPreviewState(row: LibraryRow): {
+  tone: "failed" | "ready" | "processing" | "missing";
+  title: string;
+  description: string;
+} {
+  if (row.productStatus === "failed" || row.statusLabel?.includes("失败")) {
+    return {
+      tone: "failed",
+      title: "视频生成失败",
+      description: row.failureReason || "当前没有生成可播放的成片，请查看工程内容并调整后再继续。",
+    };
+  }
+  if (row.contentTypeCode === "video_project" && row.productStatus === "completed") {
+    return {
+      tone: "ready",
+      title: "视频工程已准备好",
+      description: "当前还没有可播放的成片，可打开剪辑器继续编辑并导出。",
+    };
+  }
+  if (row.mediaAvailability === "missing" || row.statusLabel === "原文件不可用") {
+    return {
+      tone: "missing",
+      title: "原视频暂不可用",
+      description: "当前文件无法读取，请重新上传或检查素材来源后再继续。",
+    };
+  }
+  return {
+    tone: "processing",
+    title: row.productStatus === "generating" ? "视频正在生成" : "暂无可播放预览",
+    description: row.productStatus === "generating"
+      ? "完成后会自动显示可播放的成片。"
+      : "视频可能仍在处理，或当前还没有可播放文件。",
+  };
 }
 
 function libraryRowIdentity(row: LibraryRow): string {
@@ -967,12 +1002,22 @@ function LibraryWorkshop({
                   />
                 </div>
               ) : (
-                <div className="shadcn-prototype-library-video-preview">
-                  <button type="button" aria-label="播放视频预览" disabled title="暂无可播放预览">
-                    <Play size={22} fill="currentColor" aria-hidden="true" />
-                  </button>
-                  <span>{selectedRow.format ?? "视频预览"}</span>
-                </div>
+                (() => {
+                  const previewState = videoEmptyPreviewState(selectedRow);
+                  return (
+                    <div
+                      className={`shadcn-prototype-library-video-preview empty ${previewState.tone}`}
+                      role="status"
+                      aria-label="视频预览状态"
+                    >
+                      <span className="shadcn-prototype-library-video-state-icon" aria-hidden="true">
+                        <Video size={22} strokeWidth={1.8} />
+                      </span>
+                      <strong>{previewState.title}</strong>
+                      <p>{previewState.description}</p>
+                    </div>
+                  );
+                })()
               )
             ) : null}
 
