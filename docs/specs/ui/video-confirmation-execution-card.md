@@ -13,7 +13,7 @@
 - 独立图片、文案、上传与导出进度保持现状。
 - 不新增预计剩余时间、等待计时、百分比、完成通知或自动重试。
 - 不改变确认门、任务幂等、来源合同、费用判断或视频完成谓词。
-- 实施与验证记录见[跨端计划](../../../../MultiMix-Backend/docs/plans/active/2026-09-15-video-progress-card-simplification.md)。
+- 实施与验证记录见[跨端计划](../../../../MultiMix-Backend/docs/archive/plans/2026-09-15-video-progress-card-simplification.md)。
 
 ## 2. 默认卡片
 
