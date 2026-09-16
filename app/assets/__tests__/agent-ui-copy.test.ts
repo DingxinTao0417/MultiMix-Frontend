@@ -1418,7 +1418,12 @@ describe("agent conversation UI copy", () => {
   it("keeps local auth details out of the login shell", () => {
     const appShell = readAssetFile("app/multimix-app.tsx");
 
-    expect(appShell).toContain("登录即代表同意《服务条款》与《隐私政策》");
+    expect(appShell).toContain("登录前可查阅");
+    expect(appShell).toContain('href="/legal/terms"');
+    expect(appShell).toContain('href="/legal/privacy"');
+    expect(appShell).toContain("请先阅读并同意服务条款与隐私政策。");
+    expect(appShell).toContain("createLegalConsentMetadata()");
+    expect(appShell).toContain("passwordResetRedirect(window.location.origin)");
     expect(appShell).toContain('setNotice("注册成功，请检查邮箱确认后登录。")');
     expect(appShell).not.toContain('setError("注册成功，请检查邮箱确认后登录。")');
     expect(appShell).not.toContain("本地演示模式直接进入");
