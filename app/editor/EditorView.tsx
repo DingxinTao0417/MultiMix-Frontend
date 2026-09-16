@@ -762,6 +762,7 @@ export default function EditorView({
     const currentToken = getExportToken();
     if (embed || state !== "ready" || !assetId || !currentToken) return;
     const controller = new AbortController();
+    const localExportAtStart = findLocalExportMarker(assetId);
     void (async () => {
       try {
         const current = await getCurrentExportJob({
@@ -773,10 +774,15 @@ export default function EditorView({
           exportVariant: "original",
           signal: controller.signal,
         });
+        const localExportNow = findLocalExportMarker(assetId);
+        if (
+          localExportNow?.exportVariant !== localExportAtStart?.exportVariant
+          || localExportNow?.marker.stage !== localExportAtStart?.marker.stage
+          || localExportNow?.marker.startedAt !== localExportAtStart?.marker.startedAt
+        ) return;
         if (!current) {
-          const localExport = findLocalExportMarker(assetId);
-          if (localExport) {
-            setActiveStandaloneExportVariant(localExport.exportVariant);
+          if (localExportAtStart) {
+            setActiveStandaloneExportVariant(localExportAtStart.exportVariant);
             setStandaloneExportState({ phase: "error", progress: null });
             setStandaloneExportError("上次导出在浏览器本地阶段中断，无法自动恢复，请重新导出。");
           }
