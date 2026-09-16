@@ -1616,7 +1616,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("liveRunStateByAssetId={liveRunStateByAssetId}");
     expect(workspaceClient).toContain("onRetryExecution={handleRetryExecution}");
     expect(workspaceClient).toContain(
-      "errorMessage: live.failureReason ?? live.operationFailureReason ?? null",
+      "? live.operationFailureReason ?? live.failureReason ?? null",
     );
     expect(workspaceClient).not.toContain("errorMessage: live.errorMessage");
     // Studio reuses the same execution card for live steps, errors, and exact retries.

@@ -1219,6 +1219,20 @@ mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认�
 旧内容指纹被拒绝后须刷新确认卡；重复提交与断连恢复继续沿用 client_request_id 对账及
 后端的编导稿版本语义幂等。
 
+## 视频任务进度展示投影
+
+`AssetGenerationJobResponse` 可返回 `progress_kind`，取值为 `video_plan | video_create | video_update | general`。
+服务端同时把该值写入对话消息的 `metadata.asset_generation_progress_kind`，保证实时轮询、刷新和重新进入
+会话时使用同一任务用途。旧记录缺少字段时，客户端只使用已绑定产物类型或稳定结构化事件键兼容识别；
+无法证明用途时继续显示原通用生成卡。
+
+`progress_events` 和视频工程步骤继续完整保留，客户端将视频事件归并为最多四个产品阶段，不从阶段数量
+推导百分比或完成状态。任务状态、`product_status`、`operation_status` 和既有完成对账共同决定终态；
+`failure_action` / `operation_failure_action` 决定是否允许准确重试、改稿或换素材，展示聚合不能改变动作目标。
+
+客户端连接状态是本地展示字段，不回写任务，也不创建替代任务。轮询或完成后的会话刷新失败时，卡片保留
+最后一次服务端进展并显示重新连接；下一次成功读取清除此状态。视频修改失败继续展示上一稳定工程。
+
 ## 15. 项目需求理解与项目级素材用途
 
 工作台通过 adapter 消费以下服务端资源，不在前端按文案重新判断意图、冲突或素材角色：

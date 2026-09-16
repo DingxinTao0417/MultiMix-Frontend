@@ -159,15 +159,18 @@ svg{flex:none;display:block}
 .cc-done .r .k{color:var(--ink-3);text-align:right;font-size:12.5px}
 .agent-run{margin-left:37px;max-width:560px;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius);box-shadow:var(--shadow-card);overflow:hidden}
-.ar-head{display:flex;align-items:center;gap:8px;padding:12px 17px;border-bottom:1px solid var(--line);
-  font-size:12.5px;font-weight:650}
-.ar-head .st{margin-left:auto;font-size:11.5px;color:var(--ink-3);font-weight:500}
-.ar-steps{display:grid;padding:6px 0}
-.ar-step{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:6px;align-items:center;
+.ar-head{display:flex;align-items:center;gap:8px;padding:12px 17px;cursor:pointer;list-style:none;
+  font-size:12px;font-weight:650}
+.ar-head::-webkit-details-marker{display:none}
+.ar-head:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+.ar-head .ar-status{color:var(--ok)}
+.ar-head::after{content:"";margin-left:auto;width:6px;height:6px;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);transform:rotate(45deg)}
+.agent-run[open] .ar-head::after{transform:rotate(225deg)}
+.ar-steps{display:grid;padding:6px 0;border-top:1px solid var(--line);list-style:none}
+.ar-step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:6px;align-items:center;
   padding:7px 17px;font-size:13px}
 .ar-step .ok-ic{width:17px;height:17px;border-radius:50%;background:rgba(14,138,107,.1);color:var(--ok);display:grid;place-items:center;margin:0 auto}
 .ar-step .tx{color:var(--ink)}
-.ar-step .tm{font-size:11px;color:var(--ink-3)}
 .sugg{display:flex;gap:8px;margin-left:37px;flex-wrap:wrap}
 .sugg button{height:30px;padding:0 14px;border-radius:999px;border:1px solid var(--line);
   background:var(--surface);font-size:12.5px;color:var(--ink-2)}
@@ -576,19 +579,16 @@ body.side-collapsed .expand-btn{display:grid}
         <div class="r"><span class="k">配音</span><span>男声 · 沉稳 · 1.05 倍速</span></div>
       </div>
 
-      <div class="agent-run">
-        <div class="ar-head">
-          <span class="gdot"></span>MultiMix 已完成执行
-          <span class="st">共 5 步 · 14.4s</span>
-        </div>
-        <div class="ar-steps">
-          <div class="ar-step"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">理解 3 张素材的画面与可用场景</span><span class="tm">0.8s</span></div>
-          <div class="ar-step"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">写编导稿（4 段 · 30 秒）</span><span class="tm">3.2s</span></div>
-          <div class="ar-step"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">分镜安排：3 段使用你的素材，第 4 段使用图形动效收束</span><span class="tm">2.4s</span></div>
-          <div class="ar-step"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">合成配音（男声 · 沉稳）</span><span class="tm">6.1s</span></div>
-          <div class="ar-step"><span class="ok-ic"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">拼装时间线，给第 2 段加 MG 数字字卡</span><span class="tm">1.9s</span></div>
-        </div>
-      </div>
+      <!-- video-progress-card:v2 · 2026-09-15 · 完成默认单行，详情仅关键阶段 -->
+      <details class="agent-run" aria-label="视频任务进度">
+        <summary class="ar-head" aria-label="视频已做好，查看进度详情"><span class="ar-status"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>视频已做好</summary>
+        <ol class="ar-steps" aria-label="视频关键进展">
+          <li class="ar-step" aria-label="任务已提交，已完成"><span class="ok-ic"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">任务已提交</span></li>
+          <li class="ar-step" aria-label="准备画面，已完成"><span class="ok-ic"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">准备画面</span></li>
+          <li class="ar-step" aria-label="制作视频，已完成"><span class="ok-ic"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">制作视频</span></li>
+          <li class="ar-step" aria-label="视频已做好，已完成"><span class="ok-ic"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tx">视频已做好</span></li>
+        </ol>
+      </details>
 
       <div class="sugg">
         <button data-t="换个开场钩子">换个开场钩子</button>

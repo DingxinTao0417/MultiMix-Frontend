@@ -18,6 +18,23 @@ const remote = (status: "queued" | "running" | "completed" | "failed") => ({
 });
 
 describe("asset generation poller", () => {
+  it("restores video purpose and real progress before the first network response", () => {
+    const event = {
+      key: "source_staging", label: "正在准备原片", detail: "",
+      status: "active", occurred_at: "2026-09-15T06:00:00Z",
+    };
+    const restored = assetGenerationJobsFromConversations([{
+      id: "conversation-1",
+      messages: [{
+        role: "assistant", text: "",
+        metadata: {
+          asset_generation_job_id: "video-job-1", asset_generation_status: "running",
+          asset_generation_progress_kind: "video_plan", asset_generation_progress: [event],
+        },
+      }],
+    }]);
+    expect(restored[0].job).toMatchObject({ progress_kind: "video_plan", progress_events: [event] });
+  });
   it("moves queued to running without refreshing the conversation", () => {
     const result = nextAssetGenerationPollState({
       jobId: "asset-generation-job-1",

@@ -50,6 +50,7 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
 import { requirementConversationMediaFromValue } from "../lib/asset-workspace-adapter";
@@ -124,9 +125,13 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
   const progress = Array.isArray(metadata.asset_generation_progress)
     ? metadata.asset_generation_progress.filter((event): event is NonNullable<AssetGenerationJobResponse["progress_events"]>[number] => Boolean(event && typeof event === "object" && typeof (event as Record<string, unknown>).key === "string" && typeof (event as Record<string, unknown>).label === "string" && typeof (event as Record<string, unknown>).status === "string" && typeof (event as Record<string, unknown>).occurred_at === "string")).map((event) => ({ ...event, detail: typeof event.detail === "string" ? event.detail : "" }))
     : [];
+  const progressKind = ["video_plan", "video_create", "video_update", "general"].includes(
+    String(metadata.asset_generation_progress_kind),
+  ) ? metadata.asset_generation_progress_kind as AssetGenerationJobResponse["progress_kind"] : undefined;
   return {
     id,
     status: status as AssetGenerationJobResponse["status"],
+    progress_kind: progressKind,
     result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
     error_message: status === "failed" || status === "cancelled" ? message.text : null,
     created_at: "",
@@ -292,6 +297,7 @@ export default function ConversationStudio({
   onSendMessage,
   generationJob = null,
   generationJobs = [],
+  generationJobConnectionLostById = {},
   onRetryGeneration,
   onCancelGeneration,
   liveRunStateByAssetId,
@@ -351,6 +357,7 @@ export default function ConversationStudio({
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
+  generationJobConnectionLostById?: Record<string, boolean>;
   onRetryGeneration?: (jobId: string) => void;
   onCancelGeneration?: (jobId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
@@ -361,6 +368,12 @@ export default function ConversationStudio({
     steps: AgentRunStep[];
     errorMessage: string | null;
     completionConfirmed: boolean;
+    progressKind?: "video_create" | "video_update";
+    connectionLost?: boolean;
+    productStatus?: "generating" | "completed" | "failed";
+    failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+    operationStatus?: "generating" | "completed" | "failed" | null;
+    operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   }>;
   onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
   liveAgentActionsById?: Record<string, AgentActionRunResponse>;
@@ -1107,6 +1120,66 @@ export default function ConversationStudio({
           const isImageGenerationTimeline = timelineSteps.some(
             (step) => step.key === "submit_image_generation",
           );
+          const boundProduct = message.assetId
+            ? products.find((product) => product.backendAssetId === message.assetId)
+            : undefined;
+          const isVideoAgentAction = Boolean(
+            liveAgentAction
+            && boundProduct?.contentType === "video_project"
+            && !["planned", "waiting_confirmation"].includes(liveAgentAction.status),
+          );
+          const isVideoExecutionTimeline = timelineSteps.length > 0
+            && !isImageGenerationTimeline
+            && (isVideoAgentAction
+              || liveRunState?.progressKind === "video_create"
+              || liveRunState?.progressKind === "video_update"
+              || boundProduct?.contentType === "video_project");
+          const videoProgressKind = isVideoAgentAction
+            ? "video_update" as const
+            : liveRunState?.progressKind ?? "video_create" as const;
+          const videoProgressStatus = liveAgentAction
+            ? liveAgentAction.status === "queued" ? "queued" as const
+              : liveAgentAction.status === "succeeded" ? "completed" as const
+                : liveAgentAction.status === "canceled" ? "cancelled" as const
+                  : ["failed", "blocked"].includes(liveAgentAction.status) ? "failed" as const
+                    : "running" as const
+            : liveRunState?.status === "cancelled" || liveRunState?.status === "canceled"
+              ? "cancelled" as const
+              : liveRunState?.status === "queued" ? "queued" as const
+                : liveRunState?.status === "failed"
+                  || liveRunState?.productStatus === "failed"
+                  || liveRunState?.operationStatus === "failed"
+                  ? "failed" as const
+                  : liveRunState?.status === "completed" && liveRunState.completionConfirmed
+                    ? "completed" as const
+                    : "running" as const;
+          const failedExecutionStep = timelineSteps.find(
+            (step) => step.status === "fail" && typeof step.retryJobId === "string",
+          );
+          const mainRetryAllowed = liveRunState?.failureAction === "retry"
+            || liveRunState?.failureAction === "retry_scene_generation"
+            || liveRunState?.operationFailureAction === "retry"
+            || liveRunState?.operationFailureAction === "retry_scene_generation";
+          const videoProgressActions = isVideoAgentAction
+            && liveAgentAction?.retryable
+            && onRetryAgentAction
+            && ["failed", "blocked", "canceled"].includes(liveAgentAction.status) ? (
+              <button type="button" onClick={() => void onRetryAgentAction(liveAgentAction.id)}>
+                {liveAgentAction.status === "canceled" ? "重新生成" : "重试"}
+              </button>
+            ) : !isVideoAgentAction
+              && videoProgressStatus === "failed"
+              && mainRetryAllowed
+              && failedExecutionStep?.retryJobId
+              && liveRunState
+              && onRetryExecution ? (
+                <button
+                  type="button"
+                  onClick={() => void onRetryExecution(failedExecutionStep.retryJobId!, liveRunState.jobId)}
+                >
+                  重试
+                </button>
+              ) : undefined;
           const messageGenerationJob = generationJobFromMessage(message);
           const renderedGenerationJob = messageGenerationJob && liveGenerationJobsById.has(messageGenerationJob.id)
             ? liveGenerationJobsById.get(messageGenerationJob.id) ?? messageGenerationJob
@@ -1201,34 +1274,54 @@ export default function ConversationStudio({
                 />
               ) : null}
               {timelineSteps.length ? (
-                <AgentRunTimeline
-                  steps={timelineSteps}
-                  title={isImageGenerationTimeline ? "图片生成进度" : undefined}
-                  errorMessage={agentActionFailed
-                    ? liveAgentAction.message
-                    : liveRunState?.errorMessage
-                      ?? (message.localState === "failed" ? message.text : undefined)}
-                  completionConfirmed={liveAgentAction
-                    ? ["succeeded", "failed", "blocked", "canceled"].includes(liveAgentAction.status)
-                    : liveRunState?.completionConfirmed}
-                  onRetry={
-                    !writeCapabilities.canGenerate
-                      ? undefined
-                      : liveAgentAction?.retryable && onRetryAgentAction
-                        ? (actionRunId) => void onRetryAgentAction(actionRunId)
-                        : liveRunState && onRetryExecution
-                          ? (retryJobId) => {
-                              void onRetryExecution(retryJobId, liveRunState.jobId);
-                            }
-                          : undefined
-                  }
-                />
+                isVideoExecutionTimeline ? (
+                  <VideoProgressCard
+                    kind={videoProgressKind}
+                    status={videoProgressStatus}
+                    steps={timelineSteps}
+                    submitted
+                    completionConfirmed={liveAgentAction
+                      ? liveAgentAction.status === "succeeded"
+                      : liveRunState?.completionConfirmed}
+                    connectionLost={!liveAgentAction && liveRunState?.connectionLost}
+                    errorMessage={agentActionFailed
+                      ? liveAgentAction.message
+                      : liveRunState?.errorMessage
+                        ?? (message.localState === "failed" ? message.text : undefined)}
+                    actions={writeCapabilities.canGenerate ? videoProgressActions : undefined}
+                  />
+                ) : (
+                  <AgentRunTimeline
+                    steps={timelineSteps}
+                    title={isImageGenerationTimeline ? "图片生成进度" : undefined}
+                    errorMessage={agentActionFailed
+                      ? liveAgentAction.message
+                      : liveRunState?.errorMessage
+                        ?? (message.localState === "failed" ? message.text : undefined)}
+                    completionConfirmed={liveAgentAction
+                      ? ["succeeded", "failed", "blocked", "canceled"].includes(liveAgentAction.status)
+                      : liveRunState?.completionConfirmed}
+                    onRetry={
+                      !writeCapabilities.canGenerate
+                        ? undefined
+                        : liveAgentAction?.retryable && onRetryAgentAction
+                          ? (actionRunId) => void onRetryAgentAction(actionRunId)
+                          : liveRunState && onRetryExecution
+                            ? (retryJobId) => {
+                                void onRetryExecution(retryJobId, liveRunState.jobId);
+                              }
+                            : undefined
+                    }
+                  />
+                )
               ) : null}
               {renderedGenerationJob ? (
                 <AssetGenerationJobCard
                   job={renderedGenerationJob}
                   onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
+                  boundContentType={boundProduct?.contentType}
+                  connectionLost={generationJobConnectionLostById[renderedGenerationJob.id] === true}
                   completionLabel={directorScriptUsedForVideoProject
                     ? "编导稿已确认，已用于生成视频工程"
                     : undefined}
@@ -1323,6 +1416,7 @@ export default function ConversationStudio({
               job={job}
               onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
               onCancel={onCancelGeneration}
+              connectionLost={generationJobConnectionLostById[job.id] === true}
             />
           ))}
         {requirementSnapshot

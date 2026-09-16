@@ -49,6 +49,70 @@ function deferred<T>() {
 }
 
 describe("useAssetGenerationJobs", () => {
+  it.each(["retry", "cancel"] as const)("retains persisted video purpose when a legacy %s response omits it", async (action) => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
+    const response = generationJob({ status: action === "retry" ? "queued" : "cancelled" });
+    vi.spyOn(assetWorkspaceAdapter, "retryGenerationJob").mockResolvedValue(response);
+    vi.spyOn(assetWorkspaceAdapter, "cancelGenerationJob").mockResolvedValue(response);
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1", conversations: [],
+      onConversationRefreshed: vi.fn(), onConversationRefreshError: vi.fn(),
+    }));
+    act(() => result.current.registerJob("conversation-1", generationJob({
+      status: action === "retry" ? "failed" : "running", progress_kind: "video_plan",
+    })));
+    await act(async () => {
+      if (action === "retry") await result.current.retryJob(response.id);
+      else await result.current.cancelJob(response.id);
+    });
+    expect(result.current.jobsByConversation["conversation-1"]?.job.progress_kind).toBe("video_plan");
+    expect(response.progress_kind).toBeUndefined();
+  });
+
+  it("exposes connection loss separately and clears it after recovery", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const original = generationJob({ status: "running", progress_kind: "video_plan" });
+    vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(generationJob({ status: "running" }));
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1", conversations: [],
+      onConversationRefreshed: vi.fn(), onConversationRefreshError: vi.fn(),
+    }));
+    act(() => result.current.registerJob("conversation-1", original));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.jobsByConversation["conversation-1"]).toMatchObject({
+      connectionLost: true, job: original, run: 0,
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(result.current.jobsByConversation["conversation-1"]?.connectionLost).not.toBe(true);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.progress_kind).toBe("video_plan");
+    expect(result.current.jobsByConversation["conversation-1"]?.run).toBe(0);
+  });
+
+  it("reconciles a completed video plan after a temporary result-refresh failure", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "getGenerationJob").mockResolvedValue(generationJob({
+      status: "completed", progress_kind: "video_plan", result_asset_id: 42,
+    }));
+    const load = vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail")
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(conversation());
+    const refreshed = vi.fn();
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1", conversations: [],
+      onConversationRefreshed: refreshed, onConversationRefreshError: vi.fn(),
+    }));
+    act(() => result.current.registerJob("conversation-1", generationJob({ progress_kind: "video_plan" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(result.current.jobsByConversation["conversation-1"]?.connectionLost).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(refreshed).toHaveBeenCalledOnce();
+    expect(result.current.jobsForConversation("conversation-1")).toEqual([]);
+  });
   it("registers a generation job for its conversation", () => {
     const { result } = renderHook(() => useAssetGenerationJobs({
       token: "token-1",

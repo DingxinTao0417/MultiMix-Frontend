@@ -219,6 +219,8 @@ export type VideoJobLiveStatus = {
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   completionConfirmed: boolean;
+  progressKind?: "video_create" | "video_update";
+  connectionLost?: boolean;
   productStatus?: "generating" | "completed" | "failed";
   productCompleted?: boolean;
   failureReason?: string | null;
@@ -229,6 +231,41 @@ export type VideoJobLiveStatus = {
   operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operationFailureSceneId?: string | null;
 };
+
+export function videoJobLiveStatusFromResult(job: VideoJobResult): VideoJobLiveStatus {
+  return {
+    jobId: job.id,
+    status: job.status,
+    workflowStage: job.workflowStage,
+    steps: job.steps,
+    errorMessage: job.errorMessage,
+    completionConfirmed: false,
+    progressKind: job.operationStatus == null ? "video_create" : "video_update",
+    connectionLost: false,
+    productStatus: job.productStatus,
+    productCompleted: job.productCompleted,
+    failureReason: job.failureReason,
+    failureAction: job.failureAction,
+    failureSceneId: job.failureSceneId,
+    operationStatus: job.operationStatus,
+    operationFailureReason: job.operationFailureReason,
+    operationFailureAction: job.operationFailureAction,
+    operationFailureSceneId: job.operationFailureSceneId,
+  };
+}
+
+export function markExecutionConnectionLost(
+  current: Record<number, VideoJobLiveStatus>,
+  jobId: string,
+): Record<number, VideoJobLiveStatus> {
+  const entry = Object.entries(current).find(([, live]) => live.jobId === jobId);
+  if (!entry || entry[1].connectionLost) return current;
+  const [assetId, live] = entry;
+  return {
+    ...current,
+    [Number(assetId)]: { ...live, connectionLost: true },
+  };
+}
 
 export function executionRunKey(jobId: string, generation: number): string {
   return jobId + "::" + generation;
@@ -746,8 +783,11 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
-  const selectedAssetGenerationJobs = assetGenerationJobsForConversation(selectedConversation.id)
-    .map((live) => live.job);
+  const selectedAssetGenerationJobLives = assetGenerationJobsForConversation(selectedConversation.id);
+  const selectedAssetGenerationJobs = selectedAssetGenerationJobLives.map((live) => live.job);
+  const selectedAssetGenerationJobConnectionLostById = Object.fromEntries(
+    selectedAssetGenerationJobLives.map((live) => [live.job.id, live.connectionLost === true]),
+  );
   const currentContextAssets = conversationContextAssets[selectedConversation.id]
     ?? persistedConversationContextAssets(selectedConversation.messages ?? []);
   const projectResourceSummary = selectedConversation.projectResourceSummary ?? {
@@ -1262,7 +1302,7 @@ export default function AssetsWorkspaceClient({
           setConversations(rows);
         },
         onRefreshError: () => {
-          // Keep the job active; a later poll retries this refresh.
+          setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
         },
       });
     };
@@ -1271,23 +1311,7 @@ export default function AssetsWorkspaceClient({
       if (cancelled) return;
       setVideoJobLive((current) => ({
         ...current,
-        [job.assetId]: {
-          jobId: job.id,
-          status: job.status,
-          workflowStage: job.workflowStage,
-          steps: job.steps,
-          errorMessage: job.errorMessage,
-          productStatus: job.productStatus,
-          productCompleted: job.productCompleted,
-          failureReason: job.failureReason,
-          failureAction: job.failureAction,
-          failureSceneId: job.failureSceneId,
-          operationStatus: job.operationStatus,
-          operationFailureReason: job.operationFailureReason,
-          operationFailureAction: job.operationFailureAction,
-          operationFailureSceneId: job.operationFailureSceneId,
-          completionConfirmed: false,
-        },
+        [job.assetId]: videoJobLiveStatusFromResult(job),
       }));
     };
 
@@ -1363,8 +1387,8 @@ export default function AssetsWorkspaceClient({
         getJob: (jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId),
         isCancelled: () => cancelled,
         onJob: processJob,
-        onFetchError: () => {
-          // Transient per-job error; its own next interval retries it.
+        onFetchError: (jobId) => {
+          setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
         },
       });
     };
@@ -1385,14 +1409,28 @@ export default function AssetsWorkspaceClient({
       steps: AgentRunStep[];
       errorMessage: string | null;
       completionConfirmed: boolean;
+      progressKind: "video_create" | "video_update";
+      connectionLost: boolean;
+      productStatus?: "generating" | "completed" | "failed";
+      failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+      operationStatus?: "generating" | "completed" | "failed" | null;
+      operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
     }> = {};
     for (const [assetId, live] of Object.entries(videoJobLive)) {
       map[Number(assetId)] = {
         jobId: live.jobId,
         status: live.status,
         steps: resolveLiveExecutionTimelineSteps(live),
-        errorMessage: live.failureReason ?? live.operationFailureReason ?? null,
+        errorMessage: (live.progressKind === "video_update" || live.operationStatus != null)
+          ? live.operationFailureReason ?? live.failureReason ?? null
+          : live.failureReason ?? live.operationFailureReason ?? null,
         completionConfirmed: live.completionConfirmed,
+        progressKind: live.progressKind ?? (live.operationStatus == null ? "video_create" : "video_update"),
+        connectionLost: live.connectionLost === true,
+        productStatus: live.productStatus,
+        failureAction: live.failureAction,
+        operationStatus: live.operationStatus,
+        operationFailureAction: live.operationFailureAction,
       };
     }
     return map;
@@ -1504,23 +1542,7 @@ export default function AssetsWorkspaceClient({
       storeExecution: (refreshed) => {
         setVideoJobLive((current) => ({
           ...current,
-          [refreshed.assetId]: {
-            jobId: refreshed.id,
-            status: refreshed.status,
-            workflowStage: refreshed.workflowStage,
-            steps: refreshed.steps,
-          errorMessage: refreshed.errorMessage,
-          productStatus: refreshed.productStatus,
-          productCompleted: refreshed.productCompleted,
-          failureReason: refreshed.failureReason,
-          failureAction: refreshed.failureAction,
-          failureSceneId: refreshed.failureSceneId,
-          operationStatus: refreshed.operationStatus,
-          operationFailureReason: refreshed.operationFailureReason,
-          operationFailureAction: refreshed.operationFailureAction,
-          operationFailureSceneId: refreshed.operationFailureSceneId,
-            completionConfirmed: false,
-          },
+          [refreshed.assetId]: videoJobLiveStatusFromResult(refreshed),
         }));
       },
       restartPolling: () => setVideoJobPollRevision((current) => current + 1),
@@ -3194,6 +3216,7 @@ export default function AssetsWorkspaceClient({
                 }}
                 onSendMessage={handleSendConversationMessage}
                 generationJobs={selectedAssetGenerationJobs}
+                generationJobConnectionLostById={selectedAssetGenerationJobConnectionLostById}
                 onRetryGeneration={handleRetryGeneration}
                 onCancelGeneration={handleCancelGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}

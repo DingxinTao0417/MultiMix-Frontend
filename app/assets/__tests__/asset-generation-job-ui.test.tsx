@@ -21,6 +21,34 @@ const job = (overrides: Partial<AssetGenerationJobResponse>): AssetGenerationJob
 describe("AssetGenerationJobCard", () => {
   afterEach(cleanup);
 
+  it("uses video scope immediately while queued, before any director event", () => {
+    render(<AssetGenerationJobCard job={job({ progress_kind: "video_plan" })} />);
+    expect(screen.getByText("视频任务已提交")).toBeTruthy();
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText("内容生成进度")).toBeNull();
+  });
+
+  it("keeps stopped video actions visible without expanding details", () => {
+    const onRetry = vi.fn();
+    render(<AssetGenerationJobCard job={job({ progress_kind: "video_plan", status: "cancelled" })}
+      onRetry={onRetry} />);
+    expect(screen.getByText("本次任务已停止")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
+  it("keeps video failure and retry outside collapsed details", () => {
+    const onRetry = vi.fn();
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "video_plan", status: "failed", error_message: "视频方案生成失败，可以重试。",
+    })} onRetry={onRetry} />);
+    expect(screen.getByText("视频方案生成失败，可以重试。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
+    expect(screen.queryByRole("list")).toBeNull();
+  });
+
   it("shows queued and running progress", () => {
     const { rerender } = render(<AssetGenerationJobCard job={job({})} />);
     expect(screen.getAllByText("内容生成已排队").length).toBeGreaterThan(0);
@@ -29,9 +57,10 @@ describe("AssetGenerationJobCard", () => {
       status: "running",
       progress_events: [{ key: "structuring_director_script", label: "正在整理编导稿", detail: "", status: "active", occurred_at: "2026-07-17T06:00:01Z" }],
     })} />);
-    expect(screen.getByText("编导稿生成进度")).not.toBeNull();
+    expect(screen.getByText("正在准备视频方案")).not.toBeNull();
     expect(document.querySelector(".shadcn-prototype-agent-run")).not.toBeNull();
-    expect(screen.getAllByText("正在整理编导稿").length).toBeGreaterThan(0);
+    expect(screen.queryByText("正在整理编导稿")).toBeNull();
+    expect(screen.queryByRole("list")).toBeNull();
   });
 
   it("shows real byte progress while staging a long-form source", () => {
@@ -65,7 +94,7 @@ describe("AssetGenerationJobCard", () => {
       ],
     })} />);
 
-    expect(screen.getByText(/编导脚本已生成，可确认或修改/)).not.toBeNull();
+    expect(screen.getByText("视频方案已准备好")).not.toBeNull();
     expect(screen.queryByText(/视频已生成，可立即编辑/)).toBeNull();
   });
 
