@@ -65,7 +65,7 @@ describe("product stage style contract", () => {
 
   test("matches the demo header action hierarchy", () => {
     expect(css).toMatch(/\.shadcn-prototype-product-actions\s*\{[^}]*gap:\s*7px;/s);
-    expect(css).toMatch(/\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\s*\{[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*padding:\s*0 13px;[^}]*font-size:\s*12px;/s);
+    expect(css).toMatch(/\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\s*\{[^}]*height:\s*var\(--sp-control-compact\);[^}]*min-height:\s*var\(--sp-control-compact\);[^}]*padding:\s*0 13px;[^}]*font-size:\s*12\.5px;/s);
     expect(css).toMatch(/\.shadcn-prototype-artifact \.shadcn-prototype-product-header \.shadcn-prototype-product-actions > button\.primary\s*\{[^}]*background:\s*var\(--sp-text\);[^}]*color:\s*#ffffff;/s);
     expect(css).not.toMatch(/video-project-mode[^}]*height:\s*26px/s);
     expect(workspace).toContain("尝试其他拆条方式");

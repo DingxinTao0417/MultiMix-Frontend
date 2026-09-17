@@ -155,6 +155,16 @@ function projectStateLabel(state: Conversation["projectState"]): string {
   return state ? PROJECT_STATE_LABELS[state] : "待完善需求";
 }
 
+const PROJECT_LIST_STATE_LABELS: Partial<Record<NonNullable<Conversation["projectState"]>, string>> = {
+  script_review: "待确认",
+  generating: "生成中",
+  needs_attention: "需处理",
+};
+
+export function projectListStateLabel(state: Conversation["projectState"]): string | null {
+  return state ? PROJECT_LIST_STATE_LABELS[state] ?? null : null;
+}
+
 function mergeProjectConversationDetail(
   previous: Conversation | undefined,
   next: Conversation,
@@ -200,6 +210,25 @@ type ChatImageUpload = ChatImageAttachment & {
 };
 
 const CHAT_UPLOAD_BATCH_CONCURRENCY = 3;
+const DESKTOP_CHAT_PANEL_MIN = 480;
+const DESKTOP_CHAT_PANEL_MAX = 720;
+const DESKTOP_ARTIFACT_PANEL_MIN = 420;
+const DESKTOP_CHAT_PANEL_RATIO = 0.52;
+const NARROW_CHAT_PANEL_MIN = 320;
+const NARROW_ARTIFACT_PANEL_MIN = 360;
+const WORKSPACE_DIVIDER_WIDTH = 6;
+const RECENT_PROJECT_LIMIT = 8;
+
+function clampChatPanelWidth(workspaceWidth: number, desiredWidth: number, narrow: boolean): number {
+  const minChatWidth = narrow ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN;
+  const minArtifactWidth = narrow ? NARROW_ARTIFACT_PANEL_MIN : DESKTOP_ARTIFACT_PANEL_MIN;
+  const preferredMax = narrow ? Number.POSITIVE_INFINITY : DESKTOP_CHAT_PANEL_MAX;
+  const availableMax = Math.max(
+    minChatWidth,
+    workspaceWidth - minArtifactWidth - WORKSPACE_DIVIDER_WIDTH,
+  );
+  return Math.round(Math.min(preferredMax, availableMax, Math.max(minChatWidth, desiredWidth)));
+}
 
 function createUploadIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -652,13 +681,17 @@ export default function AssetsWorkspaceClient({
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [chatPanelWidth, setChatPanelWidth] = useState(640);
-  // Demo-final default split (workspace-copy.html .app): product pane ≈448px,
-  // chat takes the rest. Measured once on mount; dragging still re-clamps live.
+  // Desktop starts from the approved 52/48 balance and then respects the
+  // shared chat/result bounds. Dragging continues to override this default.
   useEffect(() => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect || rect.width < 700) return;
-    setChatPanelWidth(Math.max(320, Math.round(rect.width - 448 - 10)));
-  }, []);
+    setChatPanelWidth(clampChatPanelWidth(
+      rect.width,
+      rect.width * DESKTOP_CHAT_PANEL_RATIO,
+      isNarrowViewport,
+    ));
+  }, [isNarrowViewport]);
   const [conversationMenuId, setConversationMenuId] = useState<string | null>(null);
   // Inline rename: the conversation row swaps its title for a text input instead
   // of opening a browser prompt. Null when no row is being renamed.
@@ -693,6 +726,7 @@ export default function AssetsWorkspaceClient({
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const [showAllProjectRows, setShowAllProjectRows] = useState(false);
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
@@ -730,11 +764,22 @@ export default function AssetsWorkspaceClient({
   // client-only overlay to reconcile on reload.
   const visibleConversationRows = useMemo(() => {
     const normalizedQuery = projectSearchQuery.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return conversations;
-    return conversations.filter((conversation) => (
-      conversation.title.toLocaleLowerCase().includes(normalizedQuery)
-    ));
-  }, [conversations, projectSearchQuery]);
+    if (normalizedQuery) {
+      return conversations.filter((conversation) => (
+        conversation.title.toLocaleLowerCase().includes(normalizedQuery)
+      ));
+    }
+    if (showAllProjectRows || conversations.length <= RECENT_PROJECT_LIMIT) return conversations;
+
+    const recentRows = conversations.slice(0, RECENT_PROJECT_LIMIT);
+    const selectedRow = conversations.find((conversation) => conversation.id === selectedConversationId);
+    if (!selectedRow || recentRows.some((conversation) => conversation.id === selectedRow.id)) {
+      return recentRows;
+    }
+    return [...recentRows.slice(0, RECENT_PROJECT_LIMIT - 1), selectedRow];
+  }, [conversations, projectSearchQuery, selectedConversationId, showAllProjectRows]);
+  const canToggleAllProjectRows = !projectSearchQuery.trim()
+    && conversations.length > RECENT_PROJECT_LIMIT;
   const selectedPersistedConversation = conversations.find(
     (conversation) => conversation.id === selectedConversationId,
   );
@@ -1572,10 +1617,12 @@ export default function AssetsWorkspaceClient({
     const startX = clientX;
     const startWidth = chatPanelWidth;
     let latestWidth = startWidth;
-    const minChatWidth = 320;
-    const minArtifactWidth = 360;
-    const handleWidth = 6;
-    const maxChatWidth = Math.max(minChatWidth, workspaceRect.width - minArtifactWidth - handleWidth);
+    const minChatWidth = isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN;
+    const maxChatWidth = clampChatPanelWidth(
+      workspaceRect.width,
+      Number.POSITIVE_INFINITY,
+      isNarrowViewport,
+    );
     document.body.classList.add("shadcn-prototype-resizing");
 
     const handleResizeMove = (moveEvent: PointerEvent | MouseEvent) => {
@@ -1606,12 +1653,10 @@ export default function AssetsWorkspaceClient({
 
   const adjustDividerWidth = (delta: number) => {
     const workspaceRect = workspaceRef.current?.getBoundingClientRect();
-    const minChatWidth = 320;
-    const minArtifactWidth = 360;
-    const handleWidth = 6;
+    const minChatWidth = isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN;
     const maxChatWidth = workspaceRect
-      ? Math.max(minChatWidth, workspaceRect.width - minArtifactWidth - handleWidth)
-      : 640;
+      ? clampChatPanelWidth(workspaceRect.width, Number.POSITIVE_INFINITY, isNarrowViewport)
+      : isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX;
     setChatPanelWidth((current) => Math.min(maxChatWidth, Math.max(minChatWidth, current + delta)));
   };
 
@@ -2934,29 +2979,9 @@ export default function AssetsWorkspaceClient({
           新建项目
         </button>
 
-        <nav className="shadcn-prototype-nav" aria-label="Primary">
-          <button className={activeView === "assets" ? "active" : ""} type="button" onClick={() => setActiveView("assets")}>
-            <Package size={16} aria-hidden="true" />
-            资产库
-          </button>
-          <button className={activeView === "copy" ? "active" : ""} type="button" onClick={() => setActiveView("copy")}>
-            <FileText size={16} aria-hidden="true" />
-            文案库
-          </button>
-          <button className={activeView === "image" ? "active" : ""} type="button" onClick={() => setActiveView("image")}>
-            <ImageIcon size={16} aria-hidden="true" />
-            图片库
-          </button>
-          <button className={activeView === "video" ? "active" : ""} type="button" onClick={() => setActiveView("video")}>
-            <Video size={16} aria-hidden="true" />
-            视频库
-          </button>
-        </nav>
-
         <div className="shadcn-prototype-conversation-section">
           <div className="shadcn-prototype-section-title">
-            <span>项目列表</span>
-            {conversationLoadState === "ready" ? <em>{conversations.length}</em> : null}
+            <span>最近项目</span>
           </div>
           {conversationLoadState === "ready" && conversations.length > 0 ? (
             <label className="shadcn-prototype-project-search">
@@ -3026,7 +3051,6 @@ export default function AssetsWorkspaceClient({
                         }
                       }}
                     />
-                    <span>{conversation.updatedAt}</span>
                   </div>
                 ) : (
                   <Link
@@ -3039,10 +3063,11 @@ export default function AssetsWorkspaceClient({
                     }}
                   >
                     <strong title={conversation.title}>{conversation.title}</strong>
-                    <span>{conversation.updatedAt}</span>
-                    <small className={`shadcn-prototype-project-state ${conversation.projectState ?? "needs_input"}`}>
-                      {projectStateLabel(conversation.projectState)}
-                    </small>
+                    {projectListStateLabel(conversation.projectState) ? (
+                      <small className={`shadcn-prototype-project-state ${conversation.projectState}`}>
+                        {projectListStateLabel(conversation.projectState)}
+                      </small>
+                    ) : null}
                   </Link>
                 )}
                 <button
@@ -3082,7 +3107,65 @@ export default function AssetsWorkspaceClient({
               </div>
             ))}
           </div>
+          {conversationLoadState === "ready" && canToggleAllProjectRows ? (
+            <button
+              className="shadcn-prototype-project-list-toggle"
+              type="button"
+              aria-expanded={showAllProjectRows}
+              onClick={() => setShowAllProjectRows((current) => !current)}
+            >
+              {showAllProjectRows ? "收起项目" : "查看全部"}
+            </button>
+          ) : null}
         </div>
+
+        <nav className="shadcn-prototype-nav" aria-label="资源库">
+          <span className="shadcn-prototype-nav-title">资源库</span>
+          <button
+            className={`shadcn-prototype-nav-item assets${activeView === "assets" ? " active" : ""}`}
+            type="button"
+            aria-label="资产库"
+            aria-current={activeView === "assets" ? "page" : undefined}
+            title="资产库"
+            onClick={() => setActiveView("assets")}
+          >
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Package size={16} /></span>
+            资产
+          </button>
+          <button
+            className={`shadcn-prototype-nav-item copy${activeView === "copy" ? " active" : ""}`}
+            type="button"
+            aria-label="文案库"
+            aria-current={activeView === "copy" ? "page" : undefined}
+            title="文案库"
+            onClick={() => setActiveView("copy")}
+          >
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><FileText size={16} /></span>
+            文案
+          </button>
+          <button
+            className={`shadcn-prototype-nav-item image${activeView === "image" ? " active" : ""}`}
+            type="button"
+            aria-label="图片库"
+            aria-current={activeView === "image" ? "page" : undefined}
+            title="图片库"
+            onClick={() => setActiveView("image")}
+          >
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><ImageIcon size={16} /></span>
+            图片
+          </button>
+          <button
+            className={`shadcn-prototype-nav-item video${activeView === "video" ? " active" : ""}`}
+            type="button"
+            aria-label="视频库"
+            aria-current={activeView === "video" ? "page" : undefined}
+            title="视频库"
+            onClick={() => setActiveView("video")}
+          >
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Video size={16} /></span>
+            视频
+          </button>
+        </nav>
 
         <AiBackgroundStatus tasks={backgroundTasks} />
 
@@ -3159,7 +3242,6 @@ export default function AssetsWorkspaceClient({
               onImportVideoUrl={handleImportVideoUrl}
               onSend={handleSendConversationMessage}
               token={token}
-              onOpenImageLibrary={() => setActiveView("image")}
               writeCapabilities={runtimeWriteCapabilities}
               onRetryWriteAvailability={handleRetryWriteAvailability}
             />
@@ -3225,7 +3307,8 @@ export default function AssetsWorkspaceClient({
                 className="shadcn-prototype-resize-handle"
                 role="separator"
                 aria-orientation="vertical"
-                aria-valuemin={320}
+                aria-valuemin={isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN}
+                aria-valuemax={isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX}
                 aria-valuenow={chatPanelWidth}
                 aria-label="调整对话和展示区宽度"
                 tabIndex={0}

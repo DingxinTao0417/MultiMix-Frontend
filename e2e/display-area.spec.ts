@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
@@ -7,12 +8,32 @@ type SeedResult = {
 };
 
 const seed = JSON.parse(process.env.DISPLAY_COVERAGE_SEED_JSON ?? "{}") as Partial<SeedResult>;
+const desktopEvidenceDirectory = resolve(process.cwd(), "artifacts/qa/desktop-ui-ux-remediation-20260917");
+
+async function captureDesktopEvidence(page: Page, slug: string) {
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  for (const viewport of [
+    { width: 1280, height: 720, suffix: "1280x720" },
+    { width: 1440, height: 900, suffix: "1440x900" },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `${slug}-${viewport.suffix}.png`),
+      animations: "disabled",
+    });
+  }
+}
 
 async function openCase(page: Page, caseId: string) {
   const conversationId = seed.conversation_ids?.[caseId];
   if (!conversationId) throw new Error(`Missing seeded conversation id for ${caseId}`);
   await page.goto("/app/assets");
   const conversationLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`);
+  if (await conversationLink.count() === 0) {
+    const showAllProjects = page.getByRole("button", { name: "查看全部", exact: true });
+    await expect(showAllProjects).toBeVisible();
+    await showAllProjects.click();
+  }
   await expect(conversationLink).toBeVisible();
   await conversationLink.click();
   await expect(conversationLink).toHaveAttribute("aria-current", "page");
@@ -123,12 +144,14 @@ test("CASE-01 shows a director draft without project controls", async ({ page })
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
+  await captureDesktopEvidence(page, "copy-result");
 });
 
 test("CASE-14 exports distinct original and branded images and downloads the brand kit", async ({ page }) => {
   const workspace = await openCase(page, "case-14-image-export");
   const downloadMenu = workspace.getByRole("button", { name: "下载", exact: true });
   await expect(downloadMenu).toBeEnabled();
+  await captureDesktopEvidence(page, "image-result");
 
   const originalDownloadPromise = page.waitForEvent("download");
   await downloadMenu.click();
@@ -184,13 +207,18 @@ test("CASE-04 stays in progress after reload", async ({ page }) => {
   await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
   await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
+  await captureDesktopEvidence(page, "generating");
 });
 
-test("CASE-05 shows its stable failure and retry", async ({ page }) => {
+test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   const workspace = await openCase(page, "case-05-project-failed");
   const failure = workspace.getByRole("alert");
+  const thread = page.getByRole("region", { name: "Content generation conversation" });
   await expect(failure.getByText("视频生成未能完成，请重试。", { exact: true })).toBeVisible();
-  await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
+  await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
+  await expect(thread.getByRole("button", { name: "重新执行此步骤", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "failure");
 });
 
 test("CASE-09 keeps an invalid video-render record out of the legacy preview", async ({ page }) => {
@@ -289,6 +317,7 @@ test("CASE-06 renders the ready engineering preview without opening the editable
     maxDiffPixels: 2_000,
   });
   await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
+  await captureDesktopEvidence(page, "video-engineering");
 });
 
 test("CASE-07 recovers the same export after API and worker restart", async ({ page }) => {
@@ -473,6 +502,7 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   if (layoutGap[0] && layoutGap[1]) {
     expect(layoutGap[1].y - (layoutGap[0].y + layoutGap[0].height)).toBeLessThan(32);
   }
+  await captureDesktopEvidence(page, "video-complete");
 
   await workspace.getByRole("button", { name: "编辑", exact: true }).click();
   const editor = page.frameLocator('iframe[title="视频剪辑器"]');
@@ -585,12 +615,56 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 
+test("desktop start and image library keep the approved hierarchy", async ({ page }) => {
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "新建项目", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "新建视频项目", exact: true })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Workspace navigation" });
+  const projectRows = sidebar.locator(".shadcn-prototype-conversation-row");
+  const projectSection = sidebar.locator(".shadcn-prototype-conversation-section");
+  const libraryNavigation = sidebar.getByRole("navigation", { name: "资源库" });
+  const libraryButtons = libraryNavigation.getByRole("button");
+  await expect(sidebar.getByText("最近项目", { exact: true })).toBeVisible();
+  await expect(libraryNavigation.getByText("资源库", { exact: true })).toBeVisible();
+  await expect(libraryButtons).toHaveCount(4);
+  await expect(libraryNavigation.getByRole("button", { name: "资产库", exact: true })).toContainText("资产");
+  await expect(libraryNavigation.getByRole("button", { name: "文案库", exact: true })).toContainText("文案");
+  await expect(libraryNavigation.getByRole("button", { name: "图片库", exact: true })).toContainText("图片");
+  await expect(libraryNavigation.getByRole("button", { name: "视频库", exact: true })).toContainText("视频");
+  await expect.poll(async () => libraryNavigation.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+  await expect(projectRows).toHaveCount(8);
+  await expect(sidebar.getByText("可继续编辑", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("待完善需求", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("你的素材可以开始做视频了", { exact: true })).toHaveCount(0);
+  const [projectBox, libraryBox] = await Promise.all([projectSection.boundingBox(), libraryNavigation.boundingBox()]);
+  expect(projectBox).not.toBeNull();
+  expect(libraryBox).not.toBeNull();
+  if (projectBox && libraryBox) expect(libraryBox.y).toBeGreaterThan(projectBox.y);
+  await sidebar.getByRole("button", { name: "查看全部", exact: true }).click();
+  await expect(projectRows).toHaveCount(14);
+  await sidebar.getByRole("button", { name: "收起项目", exact: true }).click();
+  await expect(projectRows).toHaveCount(8);
+  await captureDesktopEvidence(page, "new-project");
+
+  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "图片库", exact: true }).click();
+  const grid = page.getByLabel("图片库列表");
+  const firstCard = grid.locator("button.shadcn-prototype-library-media-card").first();
+  await expect(firstCard).toBeVisible();
+  await captureDesktopEvidence(page, "image-library");
+
+  await firstCard.click();
+  await expect(page.getByRole("dialog", { name: /详情$/ })).toBeVisible();
+  await captureDesktopEvidence(page, "image-detail");
+});
+
 test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }, testInfo) => {
   const workspace = await openCase(page, "case-08-mg-failed-project-ready");
   const thread = page.getByRole("region", { name: "Content generation conversation" });
   const failure = workspace.getByRole("alert");
   await expect(failure.getByText("第 2 镜动效未能完成", { exact: false })).toBeVisible();
-  await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
+  await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
+  await expect(thread.getByRole("button", { name: "重新执行此步骤", exact: true })).toBeVisible();
   await expect(thread.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(page.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);

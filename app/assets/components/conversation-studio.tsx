@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, ChevronRight, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
@@ -939,7 +939,7 @@ export default function ConversationStudio({
           if (generatedImages?.length) {
             return <GeneratedImageKeyframeGroup
               key={product.id}
-              title={product.title}
+              title={getProductDisplayIdentity(product).title}
               images={generatedImages}
               selectedFrameId={selectedImageFrameIds[product.id]}
               onSelectedFrameChange={(frameId) => {
@@ -948,6 +948,7 @@ export default function ConversationStudio({
               }}
             />;
           }
+          const displayIdentity = getProductDisplayIdentity(product);
           return <Link
             className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
             href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
@@ -969,10 +970,9 @@ export default function ConversationStudio({
               )}
             </span>
             <span>
-              <strong>{product.title}</strong>
-              <em>{product.phase} · {product.status}</em>
+              <strong>{displayIdentity.title}</strong>
+              <em>{product.status}</em>
             </span>
-            {product.version ? <small>{product.version}</small> : null}
             <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>

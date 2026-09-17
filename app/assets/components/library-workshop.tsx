@@ -737,7 +737,46 @@ function LibraryWorkshop({
         ) : null}
         <div className="shadcn-prototype-library-toolbar">
           <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
-            {FILTERS[view].map((filter) => (
+            {view === "image" ? (
+              <>
+                <div className="shadcn-prototype-library-filter-group" role="group" aria-label="内容类型">
+                  <span className="shadcn-prototype-library-filter-label">内容类型</span>
+                  <div className="shadcn-prototype-library-filter-options">
+                    {FILTERS[view].map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        className={filter === activeFilter ? "active" : undefined}
+                        onClick={() => setActiveFilter(filter)}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="shadcn-prototype-library-filter-group" role="group" aria-label="处理状态">
+                  <span className="shadcn-prototype-library-filter-label">处理状态</span>
+                  <div className="shadcn-prototype-library-filter-options">
+                    <button
+                      type="button"
+                      className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
+                      onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
+                    >
+                      <i className="dot-ok" aria-hidden="true" />
+                      已解析
+                    </button>
+                    <button
+                      type="button"
+                      className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
+                      onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
+                    >
+                      <i className="dot-wait" aria-hidden="true" />
+                      待处理
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : FILTERS[view].map((filter) => (
               <button
                 key={filter}
                 type="button"
@@ -747,27 +786,6 @@ function LibraryWorkshop({
                 {filter}
               </button>
             ))}
-            {view === "image" ? (
-              <>
-                <span className="shadcn-prototype-library-filter-sep" aria-hidden="true" />
-                <button
-                  type="button"
-                  className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
-                  onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
-                >
-                  <i className="dot-ok" aria-hidden="true" />
-                  已解析
-                </button>
-                <button
-                  type="button"
-                  className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
-                  onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
-                >
-                  <i className="dot-wait" aria-hidden="true" />
-                  待处理
-                </button>
-              </>
-            ) : null}
           </div>
           <label className="shadcn-prototype-library-search compact">
             <Search size={15} aria-hidden="true" />

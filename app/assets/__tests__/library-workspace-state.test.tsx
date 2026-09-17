@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,12 +11,11 @@ import { LibraryWorkspaceErrorBoundary, LibraryWorkspaceLoading } from "../compo
 describe("library workspace dynamic states", () => {
   it("does not fall back to bundled workshop rows", () => {
     const workshop = readFileSync(resolve(process.cwd(), "app/assets/components/library-workshop.tsx"), "utf8");
-    const readyStrip = readFileSync(resolve(process.cwd(), "app/assets/components/materials-ready-strip.tsx"), "utf8");
 
     expect(workshop).not.toContain("backendRows !== null ? backendRows : workshop.rows");
     expect(workshop).toContain("资源库加载失败");
     expect(workshop).toContain("创作服务尚未连接");
-    expect(readyStrip).not.toContain('assetWorkspaceAdapter.getWorkshop("image").rows');
+    expect(existsSync(resolve(process.cwd(), "app/assets/components/materials-ready-strip.tsx"))).toBe(false);
   });
 
   it("uses authoritative understanding and completed project state", () => {
