@@ -510,6 +510,18 @@ function LibraryWorkshop({
     : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
+  const hasActiveLibraryCriteria = Boolean(
+    searchQuery.trim()
+    || activeFilter !== "全部"
+    || statusFilter,
+  );
+
+  const handleClearLibraryCriteria = () => {
+    setSearchQuery("");
+    setDebouncedQuery("");
+    setActiveFilter("全部");
+    setStatusFilter(null);
+  };
 
   useDialogFocusManagement({
     open: Boolean(selectedRow),
@@ -895,8 +907,11 @@ function LibraryWorkshop({
           <article className="shadcn-prototype-workshop-empty">
             <div>
               <span className="shadcn-prototype-workshop-empty-icon"><EmptyLibraryIcon size={21} aria-hidden="true" /></span>
-              <strong>这个分类还没有内容</strong>
-              <p>{activeFilter === "全部" && !statusFilter ? "上传资料或在对话中生成产物后，会在这里出现。" : "在对话里生成后会自动归档到这里。"}</p>
+              <strong>{hasActiveLibraryCriteria ? "没有找到匹配内容" : "这个分类还没有内容"}</strong>
+              <p>{hasActiveLibraryCriteria ? "试试更换关键词，或者清除当前筛选条件。" : "上传资料或在对话中生成产物后，会在这里出现。"}</p>
+              {hasActiveLibraryCriteria ? (
+                <button type="button" onClick={handleClearLibraryCriteria}>清除搜索和筛选</button>
+              ) : null}
             </div>
           </article>
         ) : (
@@ -975,9 +990,10 @@ function LibraryWorkshop({
               })}
             </div>
             {nextOffset !== null ? (
-              <div className="shadcn-prototype-library-load-more">
+              <div className="shadcn-prototype-library-results-footer" role="status">
+                <span>当前显示 {filteredRows.length} 项</span>
                 <button type="button" disabled={loadingMore} onClick={() => void handleLoadMore()}>
-                  {loadingMore ? "正在加载…" : "加载更多"}
+                  {loadingMore ? "正在加载更多…" : "加载更多内容"}
                 </button>
               </div>
             ) : null}

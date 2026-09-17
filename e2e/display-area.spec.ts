@@ -470,13 +470,142 @@ test("video library renders one bounded page without eager video elements", asyn
   await page.getByRole("button", { name: "展开侧边栏" }).click();
   await expect(shell).not.toHaveClass(/sidebar-collapsed/);
 
-  await page.getByRole("button", { name: "加载更多" }).click();
+  await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "加载更多内容" }).click();
   await expect(cards).toHaveCount(65);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);
   expect(listRequests[1].searchParams.get("limit")).toBe("49");
   expect(listRequests[1].searchParams.get("offset")).toBe("48");
+});
+
+test("library cross-type details and interaction states stay consistent", async ({ page }) => {
+  const updatedAt = "2026-09-17T10:00:00Z";
+  const copyAsset = {
+    id: 9101,
+    library_kind: "copy",
+    asset_kind: "copy",
+    content_type: "social_post",
+    title: "秋季门店焕新推广文案",
+    status: "ready",
+    body: "秋日焕新，从一扇更安静的窗开始。\n\n我们把隔音、保温和采光写进每一个生活细节，让家的舒适被真实感知。\n\n到店可查看真实案例与材料样板。",
+    source_type: "conversation",
+    source_filename: null,
+    original_ref: null,
+    markdown_ref: null,
+    metadata: { reference_count: 3, artifact_category: "文案稿" },
+    source_mapping: [{ title: "门店活动需求", source_type: "conversation", asset_id: 701 }],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [{ version: 1, instruction: "初稿" }, { version: 2, instruction: "强化到店行动" }],
+    updated_at: updatedAt,
+  };
+  const baseVideoAsset = {
+    library_kind: "video",
+    asset_kind: "video",
+    content_type: "generated_video",
+    status: "ready",
+    body: "镜头一：门店外景与品牌标识。\n\n镜头二：隔音窗细节和实际体验。\n\n镜头三：顾客到店咨询与行动引导。",
+    source_type: "generation",
+    source_filename: "store-campaign.mp4",
+    source_content_type: "video/mp4",
+    original_ref: null,
+    markdown_ref: null,
+    metadata: {
+      reference_count: 1,
+      artifact_category: "生成视频素材",
+      understanding: { status: "ready", caption: "门店焕新推广视频", tags: ["门店", "隔音窗", "到店"] },
+    },
+    source_mapping: [],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [],
+    updated_at: updatedAt,
+  };
+  const videoAssets = Array.from({ length: 52 }, (_, index) => ({
+    ...baseVideoAsset,
+    id: 9201 + index,
+    title: index === 0 ? "门店焕新推广视频" : `门店视频素材 ${String(index + 1).padStart(2, "0")}`,
+  }));
+  const sourceAsset = {
+    id: 9301,
+    library_kind: "assets",
+    asset_kind: "asset",
+    content_type: "pdf",
+    title: "门窗行业获客白皮书",
+    status: "ready",
+    body: "本资料汇总本地门窗门店的短视频获客路径。\n\n重点包括到店线索、案例可信度、内容频次和咨询转化。",
+    source_type: "upload",
+    source_filename: "门窗行业获客白皮书.pdf",
+    source_content_type: "application/pdf",
+    original_ref: "local://fixtures/window-industry-report.pdf",
+    markdown_ref: null,
+    metadata: {
+      reference_count: 2,
+      understanding: { status: "ready", caption: "门窗门店短视频获客与转化摘要", tags: ["门窗", "获客", "转化"] },
+    },
+    source_mapping: [{ title: "白皮书第 3 章", source_type: "document", state: "ready" }],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [],
+    updated_at: updatedAt,
+  };
+
+  await page.route("**/v1/assets?**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const url = new URL(route.request().url());
+    const kind = url.searchParams.get("library_kind");
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    const limit = Number(url.searchParams.get("limit") ?? "49");
+    const rows = kind === "copy" ? [copyAsset] : kind === "video" ? videoAssets : kind === "assets" ? [sourceAsset] : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows.slice(offset, offset + limit)) });
+  });
+  await page.route("**/v1/assets/search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/v1/assets/semantic-search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  await page.goto("/app/assets");
+  const navigation = page.locator(".shadcn-prototype-nav");
+
+  await navigation.getByRole("button", { name: "文案库", exact: true }).click();
+  const copyGrid = page.getByLabel("文案库列表");
+  await copyGrid.locator("button.shadcn-prototype-library-text-card").first().click();
+  let detail = page.getByRole("dialog", { name: "秋季门店焕新推广文案详情" });
+  await expect(detail.getByText("秋日焕新，从一扇更安静的窗开始。", { exact: true })).toBeVisible();
+  await expect(detail.locator(".shadcn-prototype-library-detail-primary")).toHaveText("用于创作");
+  await captureDesktopEvidence(page, "copy-detail");
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+
+  await page.getByRole("textbox", { name: "搜索文案库" }).fill("不存在的内容");
+  await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
+  await expect(copyGrid.locator("button.shadcn-prototype-library-text-card")).toHaveCount(1);
+  await page.getByRole("button", { name: "选题方案", exact: true }).click();
+  await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
+
+  await navigation.getByRole("button", { name: "视频库", exact: true }).click();
+  const videoGrid = page.getByLabel("视频库列表");
+  await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
+  await videoGrid.locator("button.shadcn-prototype-library-media-card").first().click();
+  detail = page.getByRole("dialog", { name: "门店焕新推广视频详情" });
+  await expect(detail.getByText("规格", { exact: true })).toBeVisible();
+  await expect(detail.getByText("用于创作", { exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "video-detail");
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+  await page.getByRole("button", { name: "加载更多内容", exact: true }).click();
+  await expect(videoGrid.locator("button.shadcn-prototype-library-media-card")).toHaveCount(52);
+  await expect(page.getByRole("button", { name: "加载更多内容", exact: true })).toHaveCount(0);
+
+  await navigation.getByRole("button", { name: "资产库", exact: true }).click();
+  const assetGrid = page.getByLabel("资产库列表");
+  await assetGrid.locator("button.shadcn-prototype-library-text-card").first().click();
+  detail = page.getByRole("dialog", { name: "门窗行业获客白皮书详情" });
+  await expect(detail.getByRole("heading", { name: /AI 摘要/ })).toBeVisible();
+  await expect(detail.getByText("本资料汇总本地门窗门店的短视频获客路径。", { exact: true })).toBeVisible();
+  await detail.getByLabel("更多操作").click();
+  await expect(detail.getByRole("button", { name: "查看来源", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "asset-detail");
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {

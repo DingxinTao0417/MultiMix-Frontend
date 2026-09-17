@@ -562,8 +562,10 @@ function renderGrid(){
         + '<span class="ph '+a.ph+'"></span></div>'
         + '<div class="body"><div class="name">'+a.name+'</div><div class="stat">'+a.stat+'</div></div></div>';
     });
-    html += '<div class="upload-card" onclick="toast(\'选择文件后 AI 会自动开始理解\')">'
-      + '<svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>上传更多素材</div>';
+    if(fCat === 'all' && !fSt){
+      html += '<div class="upload-card" onclick="toast(\'选择文件后 AI 会自动开始理解\')">'
+        + '<svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>上传更多素材</div>';
+    }
   } else if(view === 'copy'){
     g.style.gridTemplateColumns = 'repeat(auto-fill,minmax(280px,1fr))';
     COPIES.forEach(function(c,i){
@@ -597,8 +599,10 @@ function renderGrid(){
       + '<svg width="20" height="20" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>上传更多资料</div>';
   }
   if(!html){
+    var hasCriteria = fCat !== 'all' || Boolean(fSt);
     html = '<div class="empty"><svg width="26" height="26" viewBox="0 0 16 16" fill="none"><path d="M8 1.8l1.5 3.6 3.9.4-2.9 2.6.8 3.8L8 10.2l-3.3 2 .8-3.8-2.9-2.6 3.9-.4L8 1.8Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>'
-      + '<b>这个分类还没有内容</b>在对话里生成后会自动归档到这里</div>';
+      + '<b>'+(hasCriteria?'没有找到匹配内容':'这个分类还没有内容')+'</b>'
+      + (hasCriteria?'试试更换条件，或清除当前筛选。<button class="f-chip" onclick="fCat=\'all\';fSt=null;renderFilters();renderGrid()">清除搜索和筛选</button>':'上传资料或在对话中生成产物后，会在这里出现。')+'</div>';
   }
   g.innerHTML = html;
 }
