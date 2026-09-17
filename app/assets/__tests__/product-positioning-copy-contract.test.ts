@@ -10,12 +10,17 @@ const workspaceDesign = readFileSync(
   "utf8",
 );
 const authEntry = readFileSync(new URL("../../multimix-app.tsx", import.meta.url), "utf8");
+const loginPrototype = readFileSync(new URL("../../../docs/specs/ui/prototypes/current/screens/login.html", import.meta.url), "utf8");
+const startPrototype = readFileSync(new URL("../../../docs/specs/ui/prototypes/current/screens/start.html", import.meta.url), "utf8");
 
 describe("conversational video product positioning copy", () => {
   test("introduces video creation from an idea at both entry points", () => {
-    const tagline = "说出你的想法，和 AI 一起把视频做出来。";
+    const tagline = "说出想法，让 AI 帮你更快、更省力地做出短视频。";
     expect(authEntry).toContain(tagline);
     expect(conversationStart).toContain(tagline);
+    expect(loginPrototype).toContain(tagline);
+    expect(startPrototype).toContain(tagline);
+    expect(workspaceDesign).toContain(tagline);
     expect(authEntry).not.toContain("上传素材，说出需求，生成可编辑的短视频");
   });
 

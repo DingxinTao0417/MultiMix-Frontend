@@ -1540,9 +1540,9 @@ describe("agent conversation UI copy", () => {
 
     expect(workspaceClient).toContain('initialConversationId === "new"');
     expect(authApp).toContain("登录你的 AI 短视频创作工作台");
-    expect(authApp).toContain("说出你的想法，和 AI 一起把视频做出来。");
+    expect(authApp).toContain("说出想法，让 AI 帮你更快、更省力地做出短视频。");
     expect(conversationStart).toContain("新建视频项目");
-    expect(conversationStart).toContain("说出你的想法，和 AI 一起把视频做出来。");
+    expect(conversationStart).toContain("说出想法，让 AI 帮你更快、更省力地做出短视频。");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-goal-card");

@@ -284,7 +284,7 @@ export default function ConversationStart({
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>新建视频项目</h1>
-        <p className="shadcn-prototype-start-sub">说出你的想法，和 AI 一起把视频做出来。</p>
+        <p className="shadcn-prototype-start-sub">说出想法，让 AI 帮你更快、更省力地做出短视频。</p>
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
