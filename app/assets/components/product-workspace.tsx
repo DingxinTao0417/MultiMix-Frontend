@@ -16,6 +16,8 @@ import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
 import CreativeDirectionSelector from "./creative-direction-selector";
+import { CreativeProjectUsage } from "./creative-profile-panel";
+import CreativeMemoryPrompt from "./creative-memory-prompt";
 import ProductPreview, {
   browseBgmSummary,
   persistedVideoExportMatchesCurrentProject,
@@ -201,6 +203,7 @@ export default function ProductWorkspace({
   savedVersion,
   selectedConversation,
   token,
+  creativeProfileVisible = false,
   videoJobLive,
 }: {
   copied: boolean;
@@ -220,6 +223,7 @@ export default function ProductWorkspace({
   savedVersion?: string;
   selectedConversation: Conversation;
   token?: string | null;
+  creativeProfileVisible?: boolean;
   videoJobLive?: VideoJobLiveStatus | null;
 }) {
   const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
@@ -1395,6 +1399,17 @@ export default function ProductWorkspace({
             } : undefined}
           />
         ) : null;
+  const creativeMemoryPrompt = creativeProfileVisible && token && product.backendAssetId
+    && product.mode === "video" ? (
+      <CreativeMemoryPrompt
+        token={token}
+        assetId={product.backendAssetId}
+        completed={videoProductCompleted && effectiveProductStatus === "completed"}
+      />
+    ) : null;
+  const videoBrowseFooter = filmReviewPanel || creativeMemoryPrompt
+    ? <>{filmReviewPanel}{creativeMemoryPrompt}</>
+    : null;
 
   return (
     <section
@@ -1705,6 +1720,10 @@ export default function ProductWorkspace({
           </div>
         </header>
 
+        {creativeProfileVisible && token && selectedConversation.id !== "new" && product.mode === "video" ? (
+          <CreativeProjectUsage token={token} conversationId={selectedConversation.id} product={product} />
+        ) : null}
+
         {canAuditSourceExcerpt && sourceExcerptAuditState === "ready" && sourceExcerptAudit ? (
           <section
             className="mx-5 mb-3 rounded-xl border border-[#e5e0d8] bg-[#faf8f4] px-4 py-3 text-sm text-[#4d4944]"
@@ -1869,7 +1888,7 @@ export default function ProductWorkspace({
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
-              footer={filmReviewPanel}
+              footer={videoBrowseFooter}
               onLongFormAction={onLongFormAction}
               onApplyGeneratedImage={onApplyGeneratedImage}
               onApplyGeneratedImageSet={onApplyGeneratedImageSet}

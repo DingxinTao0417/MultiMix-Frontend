@@ -14,6 +14,7 @@ import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
 import MaterialsReadyStrip from "./materials-ready-strip";
+import styles from "./creative-memory-ui.module.css";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -107,6 +108,9 @@ export default function ConversationStart({
   onRetryImageAttachment,
   onImportVideoUrl,
   token,
+  creativeProfileVisible = false,
+  ignoreProfile = false,
+  onIgnoreProfileChange,
   onOpenImageLibrary,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
@@ -121,6 +125,9 @@ export default function ConversationStart({
   onRetryImageAttachment?: (attachmentId: string) => void;
   onImportVideoUrl?: (url: string) => void;
   token?: string | null;
+  creativeProfileVisible?: boolean;
+  ignoreProfile?: boolean;
+  onIgnoreProfileChange?: (ignore: boolean) => void;
   onOpenImageLibrary?: () => void;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
@@ -285,6 +292,12 @@ export default function ConversationStart({
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>新建视频项目</h1>
         <p className="shadcn-prototype-start-sub">说出你的想法，和 AI 一起把视频做出来。</p>
+        {creativeProfileVisible && token && onIgnoreProfileChange ? (
+          <label className={styles.startOptOut}>
+            <input className={styles.startCheckbox} type="checkbox" checked={ignoreProfile} onChange={(event) => onIgnoreProfileChange(event.target.checked)} />
+            本项目不使用创作档案
+          </label>
+        ) : null}
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">

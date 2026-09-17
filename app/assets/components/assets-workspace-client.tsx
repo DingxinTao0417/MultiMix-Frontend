@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  BookOpen,
   FileText,
   Gauge,
   GripVertical,
@@ -43,6 +44,8 @@ import {
   type VideoJobResult,
   type VideoJobStepResult,
 } from "../lib/asset-workspace-adapter";
+import CreativeProfilePanel from "./creative-profile-panel";
+import { createCreativeProject, getCreativeProfileCapabilities } from "../lib/creative-memory-api";
 import type {
   AgentActionRunResponse,
   AgentRunStep,
@@ -648,6 +651,25 @@ export default function AssetsWorkspaceClient({
       : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const [creativeProfileOpen, setCreativeProfileOpen] = useState(false);
+  const [creativeProfileVisible, setCreativeProfileVisible] = useState(false);
+  const [newConversationIgnoreProfile, setNewConversationIgnoreProfile] = useState(false);
+  const closeCreativeProfile = useCallback(() => setCreativeProfileOpen(false), []);
+  useEffect(() => {
+    let active = true;
+    setCreativeProfileVisible(false);
+    setCreativeProfileOpen(false);
+    if (token) {
+      void getCreativeProfileCapabilities(token)
+        .then((capabilities) => {
+          if (active) setCreativeProfileVisible(capabilities.visible === true);
+        })
+        .catch(() => {
+          if (active) setCreativeProfileVisible(false);
+        });
+    }
+    return () => { active = false; };
+  }, [token]);
   const [runtimeWriteConnectionState, setRuntimeWriteConnectionState] = useState<RuntimeWriteConnectionState>("checking");
   const runtimeWriteCapabilities = useMemo(() => resolveRuntimeWriteCapabilities({
     backendConfigured,
@@ -1840,6 +1862,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleStartConversation = () => {
+    setNewConversationIgnoreProfile(false);
     pendingConversationNavigationRef.current = "new";
     selectedConversationIdRef.current = "new";
     setActiveView("conversation");
@@ -2416,6 +2439,10 @@ export default function AssetsWorkspaceClient({
       ?? persistedConversationContextAssets(conversation.messages ?? []);
     const combinedContextAssets = mergeConversationContextAssets(contextAssets, assetsForSend);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
+    // Persist the first project's opt-out before any video planning starts.
+    const createdProjectId = conversation.id === "new" && creativeProfileVisible && newConversationIgnoreProfile
+      ? await createCreativeProject(token, true)
+      : null;
     const optimisticConversationId = conversation.id === "new"
       ? `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
       : null;
@@ -2457,7 +2484,7 @@ export default function AssetsWorkspaceClient({
     try {
       result = await assetWorkspaceAdapter.sendMessage({
         token,
-        conversationId: optimisticConversationId ?? conversation.id,
+        conversationId: createdProjectId ?? optimisticConversationId ?? conversation.id,
         instruction,
         selectedProductId: selectedBackendAssetId,
         linkedAssetIds: combinedLinkedAssetIds,
@@ -2509,6 +2536,7 @@ export default function AssetsWorkspaceClient({
           if (item.id !== optimisticConversationId) return item;
           return {
             ...item,
+            id: createdProjectId ?? item.id,
             status: "生成失败",
             response: message,
             delivery: message,
@@ -2519,11 +2547,16 @@ export default function AssetsWorkspaceClient({
             updatedAt: "刚刚"
           };
         }));
+        if (createdProjectId) {
+          selectedConversationIdRef.current = createdProjectId;
+          setSelectedConversationId(createdProjectId);
+        }
       }
       throw error;
       }
     }
     if (signal?.aborted) return;
+    if (createdProjectId) setNewConversationIgnoreProfile(false);
     const {
       conversationId: targetConversationId,
       conversation: persistedConversation,
@@ -2941,7 +2974,11 @@ export default function AssetsWorkspaceClient({
           </div>
 
           <div className="shadcn-prototype-collapsed-rail-user" aria-label="账户">
-            <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
+            {creativeProfileVisible ? (
+              <button type="button" title="创作档案" aria-label="创作档案" onClick={() => setCreativeProfileOpen(true)}>
+                <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
+              </button>
+            ) : <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>}
           </div>
         </div>
 
@@ -3113,6 +3150,7 @@ export default function AssetsWorkspaceClient({
           <div>
             <strong>{accountName}</strong>
             <em title={accountEmail}>{accountEmail}</em>
+            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={() => setCreativeProfileOpen(true)}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
           </div>
           {onLogout ? (
             <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={onLogout}>
@@ -3180,6 +3218,9 @@ export default function AssetsWorkspaceClient({
               onRetryImageAttachment={handleRetryChatImage}
               onImportVideoUrl={handleImportVideoUrl}
               onSend={handleSendConversationMessage}
+              creativeProfileVisible={creativeProfileVisible}
+              ignoreProfile={newConversationIgnoreProfile}
+              onIgnoreProfileChange={setNewConversationIgnoreProfile}
               token={token}
               onOpenImageLibrary={() => setActiveView("image")}
               writeCapabilities={runtimeWriteCapabilities}
@@ -3322,6 +3363,7 @@ export default function AssetsWorkspaceClient({
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
                   token={token}
+                  creativeProfileVisible={creativeProfileVisible}
                   videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
                 />
               ) : (
@@ -3395,6 +3437,7 @@ export default function AssetsWorkspaceClient({
           handleStartConversation();
         }}
       />
+      {creativeProfileVisible && creativeProfileOpen && token ? <CreativeProfilePanel token={token} onClose={closeCreativeProfile} /> : null}
     </main>
   );
 }
