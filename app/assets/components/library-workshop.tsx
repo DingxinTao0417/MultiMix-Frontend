@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { CircleAlert, Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, LoaderCircle, PackageOpen, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { CircleAlert, Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, LoaderCircle, MoreHorizontal, PackageOpen, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
@@ -740,6 +740,13 @@ function LibraryWorkshop({
       : view === "copy"
         ? FileText
         : PackageOpen;
+  const DetailIcon = view === "image"
+    ? ImageIcon
+    : view === "video"
+      ? Video
+      : view === "copy"
+        ? FileText
+        : PackageOpen;
 
   return (
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
@@ -981,17 +988,29 @@ function LibraryWorkshop({
         <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
           <aside
             ref={detailDialogRef}
-            className="shadcn-prototype-library-detail shadcn-prototype-library-modal"
+            className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-library-detail-dialog"
             aria-label={`${selectedRow.title}详情`}
+            aria-describedby="library-detail-supporting-meta"
             aria-modal="true"
             role="dialog"
             tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <header>
-              <div>
-                <span>{displayMeta(selectedRow, view)}</span>
-                <h2>{selectedRow.title}</h2>
+            <header className="shadcn-prototype-library-detail-header">
+              <div className="shadcn-prototype-library-detail-identity">
+                <span className="shadcn-prototype-library-detail-icon" aria-hidden="true">
+                  <DetailIcon size={20} />
+                </span>
+                <div>
+                  <span className="shadcn-prototype-library-detail-eyebrow">
+                    <em>{selectedRow.category ?? selectedRow.contentType ?? workshop.title}</em>
+                    {selectedRow.statusLabel ? <i>{selectedRow.statusLabel}</i> : null}
+                  </span>
+                  <h2>{selectedRow.title}</h2>
+                  <p id="library-detail-supporting-meta">
+                    {[selectedRow.updatedLabel, referenceCountLabel(selectedRow)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
@@ -1000,6 +1019,8 @@ function LibraryWorkshop({
                 </button>
               </div>
             </header>
+
+            <div className="shadcn-prototype-library-detail-body">
 
             {/* Preview (demo md-preview) */}
             {view === "image" ? (
@@ -1186,56 +1207,82 @@ function LibraryWorkshop({
                 </div>
               </section>
             ) : null}
+            </div>
 
             {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
               {view === "copy" ? (
                 <>
                   <button type="button" onClick={() => { if (selectedRow) void handleCopyRow(selectedRow); }}><Copy size={14} aria-hidden="true" />复制</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Video size={14} aria-hidden="true" />生成视频</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : view === "image" ? (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  {isReparsableMedia(selectedRow) ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      {isReparsableMedia(selectedRow) ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
+                      ) : null}
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : view === "video" ? (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  {isReparsableMedia(selectedRow) ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
                   {selectedRow.contentTypeCode === "video_project" ? (
                     <button
+                      className="shadcn-prototype-library-detail-primary"
                       type="button"
                       disabled={!selectedRow.assetId || selectedRow.productStatus !== "completed"}
                       title={selectedRow.productStatus === "completed" ? "打开剪辑器" : "视频工程完成后可编辑"}
                       onClick={() => { if (selectedRow) handleOpenEditor(selectedRow); }}
                     ><Video size={14} aria-hidden="true" />打开剪辑器</button>
+                  ) : (
+                    <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  )}
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
+                  {selectedRow.contentTypeCode === "video_project" ? (
+                    <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   ) : null}
-                  {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      {isReparsableMedia(selectedRow) ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
+                      ) : null}
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  {selectedRow.statusLabel === "解析失败" ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleRetry(selectedRow); }}><RefreshCw size={14} aria-hidden="true" />重试处理</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      {selectedRow.statusLabel === "解析失败" ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleRetry(selectedRow); }}><RefreshCw size={14} aria-hidden="true" />重试处理</button>
+                      ) : null}
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               )}
             </div>

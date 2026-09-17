@@ -661,8 +661,17 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await captureDesktopEvidence(page, "image-library");
 
   await firstCard.click();
-  await expect(page.getByRole("dialog", { name: /详情$/ })).toBeVisible();
+  const detailDialog = page.getByRole("dialog", { name: /详情$/ });
+  await expect(detailDialog).toBeVisible();
+  await expect(detailDialog.locator(".shadcn-prototype-library-detail-primary")).toHaveCount(1);
+  await expect(detailDialog.locator(".shadcn-prototype-library-detail-body")).toHaveCSS("overflow-y", "auto");
+  await expect(detailDialog.locator(".shadcn-prototype-library-actions")).toBeVisible();
   await captureDesktopEvidence(page, "image-detail");
+  await detailDialog.getByLabel("更多操作").click();
+  await expect(detailDialog.getByRole("button", { name: "下载", exact: true })).toBeVisible();
+  await expect(detailDialog.getByRole("button", { name: "删除", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "image-detail-more");
+  await detailDialog.getByLabel("更多操作").click();
   await page.getByRole("button", { name: "关闭详情", exact: true }).click();
 
   await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "资产库", exact: true }).click();

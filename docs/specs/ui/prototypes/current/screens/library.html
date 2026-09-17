@@ -255,8 +255,8 @@ body.side-collapsed .expand-btn{display:grid}
 .modal-mask{position:fixed;inset:0;z-index:90;background:rgba(32,31,30,.38);backdrop-filter:blur(3px);
   display:none;align-items:center;justify-content:center;padding:30px}
 .modal-mask.open{display:flex}
-.modal{width:560px;max-height:84vh;overflow:auto;background:var(--surface);border-radius:var(--radius);
-  box-shadow:0 30px 80px rgba(32,31,30,.3);display:grid}
+.modal{width:680px;max-height:min(86vh,820px);overflow:hidden;background:var(--surface);border-radius:var(--radius);
+  box-shadow:0 30px 80px rgba(32,31,30,.3);display:grid;grid-template-rows:auto minmax(0,1fr) auto}
 .project-picker{width:420px;padding:20px;gap:16px}
 .project-picker .picker-title{font-size:16px;font-weight:650}
 .project-picker .picker-help{font-size:12.5px;line-height:1.6;color:var(--ink-3)}
@@ -270,22 +270,28 @@ body.side-collapsed .expand-btn{display:grid}
 .picker-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .picker-actions .right{display:flex;gap:8px}
 .picker-actions button:disabled{opacity:.42;cursor:not-allowed}
-.md-head{display:flex;align-items:flex-start;gap:10px;padding:18px 20px 0}
+.md-head{display:flex;align-items:center;gap:12px;padding:17px 20px;border-bottom:1px solid var(--line)}
+.md-icon{display:grid;width:42px;height:42px;place-items:center;border:1px solid var(--line);border-radius:12px;background:#F8F6F3;color:var(--ink-2);flex:none}
 .md-head .tx{display:grid;gap:2px;min-width:0}
-.md-head .t{font-size:15.5px;font-weight:650}
-.md-head .m{font-size:12px;color:var(--ink-3)}
+.md-head .t{font-size:18px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md-head .m,.md-head .support{font-size:11.5px;color:var(--ink-3)}
 .md-close{margin-left:auto;width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-3);flex:none}
 .md-close:hover{background:var(--surface-2);color:var(--ink)}
-.md-body{padding:14px 20px 16px;display:grid;gap:14px}
+.md-body{min-height:0;overflow:auto;padding:18px 20px 22px;display:grid;gap:14px;align-content:start;overscroll-behavior:contain}
 .md-preview{border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--line)}
 .md-preview .ph{aspect-ratio:16/9;border-radius:0}
-.md-acts{display:flex;gap:8px;flex-wrap:wrap;padding:14px 20px 20px;border-top:1px solid var(--line)}
+.md-acts{position:relative;display:flex;align-items:center;gap:8px;padding:14px 20px 16px;border-top:1px solid var(--line)}
 .hbtn{display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;
   background:var(--ink);color:#fff;font-size:12.5px;font-weight:600}
 .hbtn:hover{transform:translateY(-1px);box-shadow:var(--shadow-card)}
 .hbtn.ghost{background:var(--surface);border:1px solid var(--line-2);color:var(--ink-2)}
 .hbtn.ghost:hover{color:var(--ink)}
 .hbtn.danger{background:var(--surface);border:1px solid #EFC7C0;color:#B42318}
+.md-more{position:relative;margin-left:auto}
+.md-more summary{display:flex;align-items:center;height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);font-size:12.5px;font-weight:600;cursor:pointer;list-style:none}
+.md-more summary::-webkit-details-marker{display:none}
+.md-more-menu{position:absolute;right:0;bottom:calc(100% + 8px);display:grid;gap:3px;min-width:156px;padding:5px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-card)}
+.md-more-menu .hbtn{width:100%;justify-content:flex-start;border:0;border-radius:8px;background:transparent;color:var(--ink-2);box-shadow:none}
 
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -400,9 +406,13 @@ body.side-collapsed .expand-btn{display:grid}
 <div class="modal-mask" id="mask">
   <div class="modal" role="dialog" aria-modal="true">
     <div class="md-head">
+      <div class="md-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="m3.5 11 3.2-3.2 2.1 2.1 1.4-1.4 2.3 2.5" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+      </div>
       <div class="tx">
-        <div class="t" id="mdName">—</div>
         <div class="m" id="mdMeta">—</div>
+        <div class="t" id="mdName">—</div>
+        <div class="support">今天 · 未使用</div>
       </div>
       <button class="md-close" id="mdClose" title="关闭">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -609,10 +619,15 @@ function renderView(){
 }
 
 function actBtns(list){
-  return list.map(function(b){
+  var visible = list.slice(0, 2).map(function(b, index){
     var action = b[0] === '加入项目…' ? 'openProjectPicker()' : "toast('"+b[1]+"')";
+    return '<button class="hbtn '+(index === 0 ? '' : 'ghost')+'" onclick="'+action+'">'+b[0]+'</button>';
+  }).join('');
+  var more = list.slice(2).map(function(b){
+    var action = "toast('"+b[1]+"')";
     return '<button class="hbtn '+(b[2]||'ghost')+'" onclick="'+action+'">'+b[0]+'</button>';
   }).join('');
+  return visible + (more ? '<details class="md-more"><summary>••• 更多</summary><div class="md-more-menu">'+more+'</div></details>' : '');
 }
 
 var projectPickerMask = document.getElementById('projectPickerMask');
@@ -658,7 +673,7 @@ function renderModal(){
         + '<div class="l" style="font-size:11.5px;color:var(--ink-3)">完成后会自动生成画面描述、可用场景和检索关键词</div></div></div>';
     }
     html += '<div class="d-sec"><div class="d-label">使用记录</div><div class="d-usage">'+a.usage.replace(/「(.+?)」/g,'<b>「$1」</b>')+'</div></div>';
-    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['用于创作','用这张图开始新的创作…'],
+    acts = actBtns([['用于创作','用这张图开始新的创作…'],['加入项目…','请选择目标项目；加入后会立即保存',''],
       ['重新解析','已重新排队解析这张素材'],['重新生成','基于这张图重新生成变体…'],
       ['下载','已开始下载原图'],['删除','删除需二次确认（demo 不真删）','danger']]);
   } else if(view === 'copy'){
@@ -674,7 +689,7 @@ function renderModal(){
         + '<span class="ab-t" id="abT">00:00 / 00:30</span></div></div>';
     }
     html += '<div class="d-sec"><div class="d-label">来源</div><div class="d-usage">'+c.usage+'</div></div>';
-    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['复制全文','已复制全文'],
+    acts = actBtns([['用于创作','用这篇文案开始新的创作…'],['复制全文','已复制全文'],
       ['导出','已导出 Markdown'],['删除','删除需二次确认（demo 不真删）','danger']]);
   } else if(view === 'video'){
     var v = VIDEOS[selected];
@@ -684,10 +699,10 @@ function renderModal(){
       + '<div class="d-sec"><div class="d-label">规格</div><div class="d-usage">'+v.meta+'</div></div>';
     if(v.cat === '数字人视频'){
       html += '<div class="d-sec"><div class="d-label">口播文稿</div><div class="d-understand">'+v.script+'</div></div>';
-      acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['改口播文稿','回到项目对话说想怎么改，AI 会重新配播'],
+      acts = actBtns([['用于创作','用这条视频开始新的创作…'],['加入项目…','请选择目标项目；加入后会立即保存',''],
         ['导出','正在导出 MP4…'],['删除','删除需二次确认（demo 不真删）','danger']]);
     } else {
-      acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['在剪辑器中打开','正在打开剪辑器…'],
+      acts = actBtns([['在剪辑器中打开','正在打开剪辑器…'],['加入项目…','请选择目标项目；加入后会立即保存',''],
         ['导出','正在导出 MP4…'],['删除','删除需二次确认（demo 不真删）','danger']]);
     }
   } else {
@@ -703,8 +718,8 @@ function renderModal(){
       html = '<div class="d-sec"><div class="d-label">AI 解析</div>'
         + '<div class="d-pending"><div class="l"><span class="gdot"></span>AI 正在解析这份资料…</div><div class="bar"></div></div></div>';
     }
-    acts = actBtns([['加入项目…','请选择目标项目；加入后会立即保存',''],['重新解析','已重新排队解析'],
-      ['下载原件','已开始下载'],['删除','删除需二次确认（demo 不真删）','danger']]);
+    acts = actBtns([['用于创作','用这份资料开始新的创作…'],['加入项目…','请选择目标项目；加入后会立即保存',''],
+      ['查看来源','已展开来源详情'],['重新解析','已重新排队解析'],['下载原件','已开始下载'],['删除','删除需二次确认（demo 不真删）','danger']]);
   }
   document.getElementById('mdBody').innerHTML = html;
   document.getElementById('mdActs').innerHTML = acts;
