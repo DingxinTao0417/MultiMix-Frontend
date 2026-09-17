@@ -1,6 +1,6 @@
 # 桌面 UI 远端合并与生产部署计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-17
 
@@ -54,4 +54,11 @@
 - [x] 任务 1：逐文件解决 5 个合并冲突并核对双方能力。
 - [x] 任务 2：运行定向测试与完整前端回归。
 - [x] 任务 3：运行隔离桌面 E2E 并人工复核截图。
-- [ ] 任务 4：提交合并、推送远端并验证 Vercel 生产部署。
+- [x] 任务 4：提交合并、推送远端并验证 Vercel 生产部署。
+
+## 完成结果
+
+- 合并提交：`f20a44b28f6fc59b5e0b79476b1e0201b5f26491`。
+- GitHub `main` 与本地 `main` 已核对为同一提交，ahead / behind 为 `0 / 0`。
+- Vercel 目标已显式核对为 `lywgood96-1172s-projects / multimix-frontend`；生产部署 `dpl_CDsVjMvkYwQbHsdxg9JrJcXHSpT1` 状态为 `READY`，生产域名 `https://multimix-frontend.vercel.app` 指向该部署。
+- 生产首页、`/app/assets`、隐私政策与服务条款均返回 `200`；首页桌面截图与控制台检查通过，部署后 30 分钟窗口未发现运行时错误。
