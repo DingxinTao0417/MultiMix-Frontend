@@ -242,6 +242,7 @@ export type AssetVideoParameterConfirmation = {
   ratio: string;
   targetSeconds: number;
   aiVoiceEnabled?: boolean;
+  productionChoiceId?: string;
 };
 
 export type AssetVideoProjectConfirmation = {
@@ -308,6 +309,7 @@ export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;
   aiVoiceEnabled?: boolean;
+  productionChoiceId?: string;
   directorCandidateId?: string;
   cleanupCandidateIds?: string[];
   protectedOverrideCandidateIds?: string[];
@@ -406,6 +408,12 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
+  productionOptions?: { id: string; label: string; effect: string; requiredInputs: string; costNote: string }[];
+  productionChoiceId?: string;
+  productionRecommendedId?: string;
+  productionSelectionRequired?: boolean;
+  productionRestriction?: "prefer" | "only";
+  productionBlockedReason?: string;
   directorAssetId?: number;
   directorContentHash?: string;
   kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation" | "image_generation_confirmation";

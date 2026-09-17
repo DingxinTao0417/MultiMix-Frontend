@@ -9,6 +9,8 @@ import {
   generationTimelineTitle,
 } from "../lib/asset-generation-progress";
 import AgentRunTimeline from "./agent-run-timeline";
+import { VideoProgressCard } from "./video-progress-card";
+import { resolveProgressKind } from "../lib/video-progress-presentation";
 
 function failureMessage(job: AssetGenerationJobResponse): string {
   if (job.error_message) return formatComposerError(new Error(job.error_message));
@@ -20,17 +22,25 @@ export function AssetGenerationJobCard({
   onRetry,
   onCancel,
   completionLabel,
+  boundContentType,
+  connectionLost = false,
 }: {
   job: AssetGenerationJobResponse;
   onRetry?: (jobId: string) => void | Promise<void>;
   onCancel?: (jobId: string) => void | Promise<void>;
   completionLabel?: string;
+  boundContentType?: string;
+  connectionLost?: boolean;
 }) {
   const [stopping, setStopping] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const canCancel = job.status === "queued" || job.status === "running";
   const terminal = job.status === "completed" || job.status === "cancelled";
+  const steps = generationTimelineSteps(job, now);
+  const progressKind = resolveProgressKind({
+    progressKind: job.progress_kind, boundContentType, steps,
+  });
 
   useEffect(() => {
     if (!canCancel) setStopping(false);
@@ -39,10 +49,10 @@ export function AssetGenerationJobCard({
     if (job.status !== "failed" && job.status !== "cancelled") setRetrying(false);
   }, [job.status]);
   useEffect(() => {
-    if (job.status !== "running") return;
+    if (job.status !== "running" || progressKind !== "general") return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [job.status]);
+  }, [job.status, progressKind]);
 
   const stop = async () => {
     if (!onCancel || stopping) return;
@@ -58,6 +68,34 @@ export function AssetGenerationJobCard({
     if (job.status === "cancelled") void retry(job.id);
   };
   const isDirectorScriptGeneration = generationTimelineTitle(job) === "编导稿生成进度";
+
+  if (progressKind !== "general") {
+    return (
+      <div className="shadcn-prototype-generation-job-timeline" data-generation-job-id={job.id}>
+        <VideoProgressCard
+          kind={progressKind}
+          status={job.status}
+          steps={steps}
+          submitted={Boolean(job.id)}
+          completionConfirmed={job.status === "completed" && !connectionLost}
+          completionLabel={completionLabel}
+          connectionLost={connectionLost}
+          errorMessage={job.status === "failed" ? failureMessage(job) : null}
+          actions={canCancel && onCancel ? (
+            <button type="button" className="shadcn-prototype-agent-run-stop"
+              disabled={stopping} onClick={() => void stop()}>
+              {stopping ? "正在停止…" : "停止生成"}
+            </button>
+          ) : (job.status === "failed" || job.status === "cancelled") && onRetry ? (
+            <button type="button" className="shadcn-prototype-agent-run-retry"
+              disabled={retrying} onClick={() => void retry(job.id)}>
+              {retrying ? "正在重试…" : job.status === "cancelled" ? "重新生成" : "重试"}
+            </button>
+          ) : null}
+        />
+      </div>
+    );
+  }
 
   return (
     <div

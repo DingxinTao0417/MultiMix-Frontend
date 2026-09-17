@@ -117,6 +117,7 @@ export interface BackendElement {
   content?: string;
   fontSize?: number;
   transform?: BackendTransform;
+  fitMode?: "cover" | "contain";
   segmentId?: string;
   segmentText?: string;
   displayText?: string;
@@ -462,8 +463,30 @@ export function layoutCaption(text: string, options: CaptionLayoutOptions): Capt
   if (!exceedsLineBudget && measure(compact, fitted) <= options.availableWidth) {
     return { text: compact, lines: 1, fontPx: fitted };
   }
-  const split = bestTwoLineSplit(compact, minimum, measure, options.maxLineChars);
-  return { text: split ?? compact, lines: split ? 2 : 1, fontPx: minimum };
+  const budgetedSplit = bestTwoLineSplit(
+    compact,
+    minimum,
+    measure,
+    options.maxLineChars,
+  );
+  if (budgetedSplit) {
+    return { text: budgetedSplit, lines: 2, fontPx: minimum };
+  }
+
+  // A provider cue can be longer than two configured line budgets while still
+  // fitting safely as two measured lines. OpenCut only breaks on explicit
+  // newlines, so never fall back to an overflowing single line here.
+  const measuredSplit = bestTwoLineSplit(compact, minimum, measure);
+  if (measuredSplit) {
+    const widest = Math.max(
+      ...measuredSplit.split("\n").map((line) => measure(line, minimum)),
+    );
+    const fitted = widest <= options.availableWidth
+      ? minimum
+      : Math.max(1, minimum * options.availableWidth / widest);
+    return { text: measuredSplit, lines: 2, fontPx: fitted };
+  }
+  return { text: compact, lines: 1, fontPx: minimum };
 }
 
 function wrapMeasuredLine(
@@ -1586,6 +1609,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
           trimStart: e.trimStart ?? 0,
           trimEnd: e.trimEnd ?? 0,
           transform,
+          ...(e.fitMode === "contain" || e.fitMode === "cover" ? { fitMode: e.fitMode } : {}),
           opacity: 1,
           ...(transition ? { transition } : {}),
         };

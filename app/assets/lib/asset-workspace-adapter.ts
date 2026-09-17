@@ -109,6 +109,7 @@ export type LibraryRow = {
   understandingRoles?: string[];
   licenseLabel?: string;
   productStatus?: "generating" | "completed" | "failed" | null;
+  failureReason?: string;
   variant?: "digital-human" | "standard";
 };
 
@@ -671,6 +672,7 @@ export function buildConversationMessagePayload({
         version: videoParameterConfirmation.version,
         ratio: videoParameterConfirmation.ratio,
         target_seconds: videoParameterConfirmation.targetSeconds,
+        ...(videoParameterConfirmation.productionChoiceId ? { production_choice_id: videoParameterConfirmation.productionChoiceId } : {}),
         ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
           ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
           : {}),
@@ -1323,6 +1325,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
     understandingRoles: understanding?.roles.map((item) => item.label) ?? [],
     licenseLabel,
     productStatus: asset.product_status,
+    failureReason: asset.failure_reason || asset.error_message || undefined,
     variant: libraryVariantForAsset(asset)
   };
 }

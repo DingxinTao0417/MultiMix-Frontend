@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
 import type { ActiveView } from "./assets/lib/asset-workspace-shared";
@@ -12,6 +13,7 @@ import {
 } from "./lib/local-auth-session";
 import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { createLegalConsentMetadata, passwordResetRedirect } from "./legal/legal-content";
 
 const LOCAL_USER_KEY = "multimix_local_user";
 const DEFAULT_LOCAL_USER: LocalUser = {
@@ -261,6 +263,7 @@ function MultiMixAuth({
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [legalConsent, setLegalConsent] = useState(false);
 
   const canResetPassword = useSupabaseAuth && Boolean(supabase);
 
@@ -274,7 +277,9 @@ function MultiMixAuth({
     setError(null);
     setNotice(null);
     try {
-      const { error: err } = await supabase.auth.resetPasswordForEmail(trimmedEmail);
+      const { error: err } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: passwordResetRedirect(window.location.origin),
+      });
       if (err) {
         setError(err.message);
         return;
@@ -294,6 +299,10 @@ function MultiMixAuth({
       setError("请填写邮箱和密码。");
       return;
     }
+    if (mode === "register" && !legalConsent) {
+      setError("请先阅读并同意服务条款与隐私政策。");
+      return;
+    }
 
     // Offline mock mode: no backend, accept any email.
     if (!isApiConfigured && !useSupabaseAuth) {
@@ -306,7 +315,13 @@ function MultiMixAuth({
       if (useSupabaseAuth && supabase) {
         // Supabase Auth.
         if (mode === "register") {
-          const { data, error: err } = await supabase.auth.signUp({ email: trimmedEmail, password });
+          const { data, error: err } = await supabase.auth.signUp({
+            email: trimmedEmail,
+            password,
+            options: {
+              data: createLegalConsentMetadata(),
+            },
+          });
           if (err) { setError(err.message); return; }
           if (data.session) {
             onAuthed({ email: data.session.user.email ?? trimmedEmail, token: data.session.access_token });
@@ -350,7 +365,7 @@ function MultiMixAuth({
       <section className="multimix-auth-card">
         <MultiMixBrand />
         <h1 className="multimix-auth-title">{mode === "login" ? "登录你的 AI 短视频创作工作台" : "注册你的 AI 短视频创作工作台"}</h1>
-        <p className="multimix-auth-sub">上传素材，说出需求，生成可编辑的短视频</p>
+        <p className="multimix-auth-sub">说出想法，让 AI 帮你更快、更省力地做出短视频。</p>
 
         <form onSubmit={submit}>
           <label className="multimix-auth-field">
@@ -383,6 +398,16 @@ function MultiMixAuth({
               <button type="button" onClick={() => void handleForgotPassword()}>忘记密码？</button>
             </p>
           ) : null}
+          {mode === "register" ? (
+            <label className="multimix-auth-consent">
+              <input
+                type="checkbox"
+                checked={legalConsent}
+                onChange={(event) => setLegalConsent(event.target.checked)}
+              />
+              <span>我已阅读并同意 <Link href="/legal/terms">《服务条款》</Link> 与 <Link href="/legal/privacy">《隐私政策》</Link></span>
+            </label>
+          ) : null}
           {error ? <p className="multimix-auth-error" role="alert">{error}</p> : null}
           {notice ? <p className="multimix-auth-notice" role="status">{notice}</p> : null}
           <button className="multimix-auth-submit" type="submit" disabled={submitting}>
@@ -392,14 +417,14 @@ function MultiMixAuth({
 
         <p className="multimix-auth-switch">
           {mode === "login" ? (
-            <>没有账号？<button type="button" onClick={() => { setMode("register"); setError(null); setNotice(null); }}>注册</button></>
+            <>没有账号？<button type="button" onClick={() => { setMode("register"); setLegalConsent(false); setError(null); setNotice(null); }}>注册</button></>
           ) : (
-            <>已有账号？<button type="button" onClick={() => { setMode("login"); setError(null); setNotice(null); }}>登录</button></>
+            <>已有账号？<button type="button" onClick={() => { setMode("login"); setLegalConsent(false); setError(null); setNotice(null); }}>登录</button></>
           )}
         </p>
 
         <p className="multimix-auth-foot">
-          登录即代表同意《服务条款》与《隐私政策》
+          登录前可查阅 <Link href="/legal/terms">《服务条款》</Link> 与 <Link href="/legal/privacy">《隐私政策》</Link>
         </p>
       </section>
     </main>

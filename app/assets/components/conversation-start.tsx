@@ -13,6 +13,7 @@ import {
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
+import styles from "./creative-memory-ui.module.css";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -22,8 +23,8 @@ import {
   trackProductEvent,
 } from "../../../lib/product-analytics";
 
-const IMAGE_ONLY_INSTRUCTION = "请先总结这些图片素材，并询问我想做短视频、文案还是封面方案。";
-const DOC_ONLY_INSTRUCTION = "请先阅读这些资料，并询问我想基于它做视频、文案还是总结。";
+const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
+const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
 const ATTACHMENT_HELP_TEXT = "图片和视频会作为创作素材，PDF/文档会作为内容依据；视频也可以作为需要优化的口播原片。";
 
 const START_CAPABILITIES = [
@@ -41,49 +42,49 @@ const START_GOALS = [
     title: "讲清楚",
     hint: "概念、过程或结果",
     imageClass: "goal-explain",
-    fill: "把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。",
+    fill: "我想用一条短视频讲清楚一个概念、过程或结果。请先帮我明确要讲的重点，再规划结构和画面。",
   },
   {
     key: "goal-promote",
     title: "推广产品",
     hint: "商品、服务或品牌",
     imageClass: "goal-promote",
-    fill: "推广一个产品或品牌。请结合我的素材与目标用户，设计有吸引力但不过度广告化的视频。",
+    fill: "我想做一条推广产品或品牌的短视频。请先帮我明确目标用户和核心卖点，再规划有吸引力的表达方式。",
   },
   {
     key: "goal-story",
     title: "讲个故事",
     hint: "人物、物品或过程",
     imageClass: "goal-story",
-    fill: "用我提供的素材讲一个完整故事。请先规划开场、转折和结尾，再决定需要生成哪些镜头。",
+    fill: "我想用短视频讲一个故事。请先帮我梳理人物、事件和想传达的感受，再规划开场、转折和结尾。",
   },
   {
     key: "goal-optimize",
     title: "优化已有视频",
     hint: "保留主体和原声",
     imageClass: "goal-optimize",
-    fill: "优化我上传的视频，尽量保留原有内容和声音，改善节奏、画面与包装。",
+    fill: "我想优化一条已有视频，尽量保留原有内容和声音。请先帮我明确希望改善的地方和需要提供的原片。",
   },
 ] as const;
 
 const START_EXAMPLES = [
   {
-    key: "example-image",
-    tag: "只有一张图片",
-    prompt: "用我上传的口红图片，制作一条 15 秒生活化带货视频。要有真人使用、产品特写、自然口播和轻快背景音乐，不要字幕。",
-    outcome: "系统补充镜头与画面变化",
+    key: "example-idea",
+    tag: "只有一个想法",
+    prompt: "我想给新开的咖啡店做一条短视频，目前只有一个想法，还没有图片或视频。请先和我讨论创作方向。",
+    outcome: "从想法开始梳理视频内容",
   },
   {
-    key: "example-document",
-    tag: "只有一份资料",
-    prompt: "把我上传的产品介绍做成一条 30 秒讲解视频，使用公开素材补充场景，并用图形动画展示关键数据。",
-    outcome: "系统查找素材并设计动画",
+    key: "example-image",
+    tag: "只有一张图片",
+    prompt: "我想用一张产品图片做一条 15 秒短视频，突出产品的使用场景。请先讨论内容和画面方案，再明确需要哪些图片。",
+    outcome: "围绕产品规划内容与画面",
   },
   {
     key: "example-video",
     tag: "只有一段原视频",
-    prompt: "优化我上传的真人口播，保留原声和人物主体，压缩停顿与重复内容，并补充相关产品画面。",
-    outcome: "系统剪辑、补画面与包装",
+    prompt: "我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。",
+    outcome: "保留原声，讨论节奏与删留",
   },
 ] as const;
 
@@ -106,6 +107,9 @@ export default function ConversationStart({
   onRetryImageAttachment,
   onImportVideoUrl,
   token,
+  creativeProfileVisible = false,
+  ignoreProfile = false,
+  onIgnoreProfileChange,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
 }: {
@@ -119,6 +123,9 @@ export default function ConversationStart({
   onRetryImageAttachment?: (attachmentId: string) => void;
   onImportVideoUrl?: (url: string) => void;
   token?: string | null;
+  creativeProfileVisible?: boolean;
+  ignoreProfile?: boolean;
+  onIgnoreProfileChange?: (ignore: boolean) => void;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
 }) {
@@ -280,7 +287,13 @@ export default function ConversationStart({
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>新建视频项目</h1>
-        <p className="shadcn-prototype-start-sub">上传素材或直接描述目标，系统会组合合适的制作能力</p>
+        <p className="shadcn-prototype-start-sub">说出想法，让 AI 帮你更快、更省力地做出短视频。</p>
+        {creativeProfileVisible && token && onIgnoreProfileChange ? (
+          <label className={styles.startOptOut}>
+            <input className={styles.startCheckbox} type="checkbox" checked={ignoreProfile} onChange={(event) => onIgnoreProfileChange(event.target.checked)} />
+            本项目不使用创作档案
+          </label>
+        ) : null}
         <div className={dockClassName}>
           {imageAttachments.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" aria-label="本次上传资料">
@@ -314,7 +327,7 @@ export default function ConversationStart({
           <textarea
             ref={composerRef}
             aria-label="输入对话内容"
-            placeholder="例如：用我上周的安装素材，做一条 30 秒竖屏短视频…"
+            placeholder="例如：我想给新开的咖啡店做一条短视频，吸引附近的人来看看…"
             rows={1}
             value={composerValue}
             disabled={!canGenerate}
@@ -485,7 +498,7 @@ export default function ConversationStart({
         </section>
         <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-examples">
           <div className="shadcn-prototype-start-section-head">
-            <h2 id="conversation-start-examples">手头只有这些？也可以直接开始</h2>
+            <h2 id="conversation-start-examples">从一个想法、一张图片或一段视频开始</h2>
           </div>
           <div className="shadcn-prototype-start-example-grid">
             {START_EXAMPLES.map((example) => (

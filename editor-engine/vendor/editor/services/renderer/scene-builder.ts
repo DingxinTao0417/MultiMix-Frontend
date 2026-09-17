@@ -48,7 +48,7 @@ function buildTrackNodes({
 		const mainTrack = isMainTrack(track);
 		// Main-track visuals fill the canvas (cover) so mixed-ratio source clips
 		// no longer look like different aspect ratios; overlays keep contain.
-		const fitMode: "cover" | "contain" = isMainTrack(track) ? "cover" : "contain";
+		const defaultFitMode: "cover" | "contain" = isMainTrack(track) ? "cover" : "contain";
 
 		for (const [elementIndex, element] of elements.entries()) {
 			if (element.type === "effect") {
@@ -64,6 +64,7 @@ function buildTrackNodes({
 			}
 
 			if (element.type === "video" || element.type === "image") {
+				const fitMode = element.fitMode ?? defaultFitMode;
 				const transition = resolveIncomingBoundaryTransition(
 					elements,
 					elementIndex,

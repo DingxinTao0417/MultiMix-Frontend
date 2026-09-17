@@ -9,11 +9,13 @@ import {
   assetGenerationPollLifecycleKey,
 } from "./asset-generation-poller";
 import type { Conversation } from "./asset-workspace-shared";
+import { resolveProgressKind } from "./video-progress-presentation";
 
 export type AssetGenerationJobLive = {
   conversationId: string;
   job: AssetGenerationJobResponse;
   run: number;
+  connectionLost?: boolean;
 };
 
 type UseAssetGenerationJobsArgs = {
@@ -22,6 +24,12 @@ type UseAssetGenerationJobsArgs = {
   onConversationRefreshed: (conversation: Conversation) => void;
   onConversationRefreshError: () => void;
 };
+
+function retainVideoPurpose(remote: AssetGenerationJobResponse, previous?: AssetGenerationJobResponse) {
+  if (remote.progress_kind !== undefined || previous?.id !== remote.id) return remote;
+  const kind = resolveProgressKind({ progressKind: previous.progress_kind, steps: previous.progress_events });
+  return kind === "general" ? remote : { ...remote, progress_kind: kind };
+}
 
 export function useAssetGenerationJobs(
   args: UseAssetGenerationJobsArgs,
@@ -68,7 +76,10 @@ export function useAssetGenerationJobs(
     if (!conversationId) {
       throw new Error("未找到可重试的内容生成任务，请刷新对话后重试。");
     }
-    const remote = await assetWorkspaceAdapter.retryGenerationJob(token, jobId);
+    const remote = retainVideoPurpose(
+      await assetWorkspaceAdapter.retryGenerationJob(token, jobId),
+      liveEntry?.job ?? persistedEntry?.job,
+    );
     const nextEntry = {
       conversationId,
       job: remote,
@@ -88,8 +99,9 @@ export function useAssetGenerationJobs(
     const entry = Object.values(jobsByIdRef.current)
       .find((live) => live.job.id === jobId);
     if (!entry) return;
-    const remote = await assetWorkspaceAdapter.cancelGenerationJob(token, jobId);
+    const remote = retainVideoPurpose(await assetWorkspaceAdapter.cancelGenerationJob(token, jobId), entry.job);
     const nextEntry = { ...entry, job: remote, run: entry.run + 1 };
+    delete nextEntry.connectionLost;
     jobsByIdRef.current = {
       ...jobsByIdRef.current,
       [remote.id]: nextEntry,
@@ -136,6 +148,15 @@ export function useAssetGenerationJobs(
       timers.add(timer);
     }
 
+    function markConnectionLost(live: AssetGenerationJobLive): boolean {
+      const latest = jobsByIdRef.current[live.job.id];
+      if (cancelled || !latest || latest.run !== live.run) return false;
+      const disconnected = { ...latest, connectionLost: true };
+      jobsByIdRef.current = { ...jobsByIdRef.current, [live.job.id]: disconnected };
+      setJobsById((jobs) => ({ ...jobs, [live.job.id]: disconnected }));
+      return true;
+    }
+
     async function poll(live: AssetGenerationJobLive) {
       const identity = `${live.job.id}::${live.run}`;
       const current = jobsByIdRef.current[live.job.id];
@@ -147,11 +168,13 @@ export function useAssetGenerationJobs(
       ) return;
       inFlightRunsRef.current.add(identity);
       try {
-        const remote = await assetWorkspaceAdapter.getGenerationJob(authToken, live.job.id);
+        const fetched = await assetWorkspaceAdapter.getGenerationJob(authToken, live.job.id);
         if (cancelled) return;
         const latest = jobsByIdRef.current[live.job.id];
         if (latest?.job.id !== live.job.id || latest.run !== live.run) return;
+        const remote = retainVideoPurpose(fetched, latest.job);
         const remoteLive = { ...latest, job: remote };
+        delete remoteLive.connectionLost;
         jobsByIdRef.current = {
           ...jobsByIdRef.current,
           [live.job.id]: remoteLive,
@@ -188,6 +211,11 @@ export function useAssetGenerationJobs(
           } catch {
             refreshedRunsRef.current.delete(identity);
             onConversationRefreshErrorRef.current();
+            if (resolveProgressKind({
+              progressKind: remote.progress_kind, steps: remote.progress_events,
+            }) !== "general" && markConnectionLost(live)) {
+              schedule(live, 4000);
+            }
           }
           return;
         }
@@ -195,7 +223,7 @@ export function useAssetGenerationJobs(
           schedule({ ...live, job: remote }, 2500);
         }
       } catch {
-        if (!cancelled) schedule(live, 4000);
+        if (markConnectionLost(live)) schedule(live, 4000);
       } finally {
         inFlightRunsRef.current.delete(identity);
       }

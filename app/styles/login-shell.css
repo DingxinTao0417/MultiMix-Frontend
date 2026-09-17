@@ -132,7 +132,9 @@
 
 .multimix-auth-forgot button:focus-visible,
 .multimix-auth-switch button:focus-visible,
-.multimix-auth-foot a:focus-visible {
+.multimix-auth-foot a:focus-visible,
+.multimix-auth-consent a:focus-visible,
+.multimix-auth-submit-link:focus-visible {
   border-radius: 4px;
   outline: 2px solid #7c5cff;
   outline-offset: 3px;
@@ -151,6 +153,42 @@
 
 .multimix-auth-notice {
   color: #0e8a6b;
+}
+
+.multimix-auth-consent {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  margin: 0 0 14px;
+  color: #5f5b55;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.multimix-auth-consent input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #5b45e0;
+}
+
+.multimix-auth-consent input:focus-visible {
+  outline: 2px solid #7c5cff;
+  outline-offset: 3px;
+}
+
+.multimix-auth-consent a,
+.multimix-auth-foot a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.multimix-auth-consent a:hover,
+.multimix-auth-foot a:hover {
+  text-decoration: underline;
 }
 
 .multimix-auth-submit {
@@ -174,6 +212,12 @@
 
 .multimix-auth-submit:disabled {
   opacity: 0.7;
+}
+
+.multimix-auth-submit-link {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
 }
 
 .multimix-auth-switch {

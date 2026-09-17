@@ -36,7 +36,9 @@ it("keeps image generation scoped to reference requests or server recommendation
   expect(workspaceClient).not.toContain("keyframeRecommendationAcceptance");
   expect(workspaceClient).not.toContain("生成图片方案");
   expect(workspaceClient).not.toContain("做成图片。");
-  expect(conversationStart).toContain("封面方案");
+  expect(conversationStart).toContain("等待我说明创作目标");
+  expect(conversationStart).toContain("本次仅上传素材，不开始制作");
+  expect(conversationStudio).toContain("本次仅上传资料，不开始制作");
   expect(conversationStart).not.toContain("视频、文案还是封面。");
 });
 
@@ -1416,7 +1418,12 @@ describe("agent conversation UI copy", () => {
   it("keeps local auth details out of the login shell", () => {
     const appShell = readAssetFile("app/multimix-app.tsx");
 
-    expect(appShell).toContain("登录即代表同意《服务条款》与《隐私政策》");
+    expect(appShell).toContain("登录前可查阅");
+    expect(appShell).toContain('href="/legal/terms"');
+    expect(appShell).toContain('href="/legal/privacy"');
+    expect(appShell).toContain("请先阅读并同意服务条款与隐私政策。");
+    expect(appShell).toContain("createLegalConsentMetadata()");
+    expect(appShell).toContain("passwordResetRedirect(window.location.origin)");
     expect(appShell).toContain('setNotice("注册成功，请检查邮箱确认后登录。")');
     expect(appShell).not.toContain('setError("注册成功，请检查邮箱确认后登录。")');
     expect(appShell).not.toContain("本地演示模式直接进入");
@@ -1533,14 +1540,14 @@ describe("agent conversation UI copy", () => {
 
     expect(workspaceClient).toContain('initialConversationId === "new"');
     expect(authApp).toContain("登录你的 AI 短视频创作工作台");
-    expect(authApp).toContain("上传素材，说出需求，生成可编辑的短视频");
+    expect(authApp).toContain("说出想法，让 AI 帮你更快、更省力地做出短视频。");
     expect(conversationStart).toContain("新建视频项目");
-    expect(conversationStart).toContain("上传素材或直接描述目标，系统会组合合适的制作能力");
+    expect(conversationStart).toContain("说出想法，让 AI 帮你更快、更省力地做出短视频。");
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-goal-card");
     expect(conversationStart).toContain("不知道怎么描述？从一个目标开始");
-    expect(conversationStart).toContain("手头只有这些？也可以直接开始");
+    expect(conversationStart).toContain("从一个想法、一张图片或一段视频开始");
     expect(conversationStart).toContain("AI 生成镜头");
     expect(conversationStart).not.toContain("制作讲解型视频");
     expect(conversationStart).not.toContain("优化真人口播视频");
@@ -1615,7 +1622,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("liveRunStateByAssetId={liveRunStateByAssetId}");
     expect(workspaceClient).toContain("onRetryExecution={handleRetryExecution}");
     expect(workspaceClient).toContain(
-      "errorMessage: live.failureReason ?? live.operationFailureReason ?? null",
+      "? live.operationFailureReason ?? live.failureReason ?? null",
     );
     expect(workspaceClient).not.toContain("errorMessage: live.errorMessage");
     // Studio reuses the same execution card for live steps, errors, and exact retries.
@@ -1623,7 +1630,8 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("resolveExecutionTimelineSteps(liveRunState, message.runSteps)");
     expect(conversationStudio).toContain("agentActionFailed");
     expect(conversationStudio).toContain("? liveAgentAction.message");
-    expect(conversationStudio).toContain(": liveRunState?.errorMessage}");
+    expect(conversationStudio).toContain(": liveRunState?.errorMessage");
+    expect(conversationStudio).toContain("message.localState === \"failed\" ? message.text : undefined");
     expect(conversationStudio).toContain("onRetryExecution(retryJobId, liveRunState.jobId)");
     expect((conversationStudio.match(/<AgentRunTimeline/g) ?? []).length).toBe(1);
   });

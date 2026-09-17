@@ -350,11 +350,11 @@ body.side-collapsed .expand-btn{display:grid}
   <div class="hero">
     <div class="greet">下午好，陈老板</div>
     <h1>今天想做什么短视频？</h1>
-    <div class="sub">上传素材，说出需求，生成可编辑的短视频</div>
+    <div class="sub">说出想法，让 AI 帮你更快、更省力地做出短视频。</div>
 
     <div class="input-card" id="inputCard">
       <div class="tray" id="tray"></div>
-      <textarea id="input" placeholder="例如：用我上周的安装素材，做一条 30 秒竖屏短视频…"></textarea>
+      <textarea id="input" placeholder="例如：我想给新开的咖啡店做一条短视频，吸引附近的人来看看…"></textarea>
       <div class="bar">
         <button class="icon-btn" title="上传图片素材" onclick="addAtt('img')">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
@@ -392,16 +392,16 @@ body.side-collapsed .expand-btn{display:grid}
         <span>选择后仍可继续修改</span>
       </div>
       <div class="goal-grid">
-        <button class="goal-card goal-explain" type="button" data-fill="把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。">
+        <button class="goal-card goal-explain" type="button" data-fill="我想用一条短视频讲清楚一个概念、过程或结果。请先帮我明确要讲的重点，再规划结构和画面。">
           <span class="goal-copy"><strong>讲清楚内容</strong><small>知识、产品功能、过程说明</small></span>
         </button>
-        <button class="goal-card goal-promote" type="button" data-fill="推广一个产品或品牌。请结合我的素材与目标用户，设计有吸引力但不过度广告化的视频。">
+        <button class="goal-card goal-promote" type="button" data-fill="我想做一条推广产品或品牌的短视频。请先帮我明确目标用户和核心卖点，再规划有吸引力的表达方式。">
           <span class="goal-copy"><strong>推广产品</strong><small>种草、带货、品牌宣传</small></span>
         </button>
-        <button class="goal-card goal-story" type="button" data-fill="用我提供的素材讲一个完整故事。请先规划开场、转折和结尾，再决定需要生成哪些镜头。">
+        <button class="goal-card goal-story" type="button" data-fill="我想用短视频讲一个故事。请先帮我梳理人物、事件和想传达的感受，再规划开场、转折和结尾。">
           <span class="goal-copy"><strong>讲一个故事</strong><small>品牌故事、人物、过程记录</small></span>
         </button>
-        <button class="goal-card goal-optimize" type="button" data-fill="优化我上传的视频，尽量保留原有内容和声音，改善节奏、画面与包装。">
+        <button class="goal-card goal-optimize" type="button" data-fill="我想优化一条已有视频，尽量保留原有内容和声音。请先帮我明确希望改善的地方和需要提供的原片。">
           <span class="goal-copy"><strong>优化已有视频</strong><small>真人口播、长视频、素材重剪</small></span>
         </button>
       </div>
@@ -409,29 +409,29 @@ body.side-collapsed .expand-btn{display:grid}
 
     <section aria-labelledby="example-title">
       <div class="section-head">
-        <h2 id="example-title">手头只有这些？也可以直接开始</h2>
+        <h2 id="example-title">从一个想法、一张图片或一段视频开始</h2>
         <span>点击后继续补充</span>
       </div>
       <div class="examples">
-        <button class="example" type="button" data-fill="用我上传的口红图片，制作一条 15 秒生活化带货视频。要有真人使用、产品特写、自然口播和轻快背景音乐，不要字幕。">
+        <button class="example" type="button" data-fill="我想给新开的咖啡店做一条短视频，目前只有一个想法，还没有图片或视频。请先和我讨论创作方向。">
+          <span class="example-copy">
+            <span class="example-tag">只有一个想法</span>
+            <p>“想给新开的咖啡店做一条短视频，还没有图片或视频，先聊聊方向。”</p>
+            <span class="example-foot">从想法开始梳理视频内容<span class="example-arrow">→</span></span>
+          </span>
+        </button>
+        <button class="example" type="button" data-fill="我想用一张产品图片做一条 15 秒短视频，突出产品的使用场景。请先讨论内容和画面方案，再明确需要哪些图片。">
           <span class="example-copy">
             <span class="example-tag">只有一张图片</span>
-            <p>“用这张口红图做一条 15 秒真人使用视频，有口播和音乐。”</p>
-            <span class="example-foot">系统补充镜头与画面变化<span class="example-arrow">→</span></span>
+            <p>“想用一张产品图做 15 秒短视频，先讨论内容和画面方案。”</p>
+            <span class="example-foot">围绕产品规划内容与画面<span class="example-arrow">→</span></span>
           </span>
         </button>
-        <button class="example" type="button" data-fill="把我上传的产品介绍做成一条 30 秒讲解视频，使用公开素材补充场景，并用图形动画展示关键数据。">
-          <span class="example-copy">
-            <span class="example-tag">只有一份资料</span>
-            <p>“把这份产品资料做成 30 秒视频，画面和动画由你安排。”</p>
-            <span class="example-foot">系统查找素材并设计动画<span class="example-arrow">→</span></span>
-          </span>
-        </button>
-        <button class="example" type="button" data-fill="优化我上传的真人口播，保留原声和人物主体，压缩停顿与重复内容，并补充相关产品画面。">
+        <button class="example" type="button" data-fill="我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。">
           <span class="example-copy">
             <span class="example-tag">只有一段原视频</span>
-            <p>“帮我把这段口播剪得更紧凑，保留原声并补充相关画面。”</p>
-            <span class="example-foot">系统剪辑、补画面与包装<span class="example-arrow">→</span></span>
+            <p>“想优化一段真人口播，保留原声，先讨论节奏和哪些内容可以删减。”</p>
+            <span class="example-foot">保留原声，讨论节奏与删留<span class="example-arrow">→</span></span>
           </span>
         </button>
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  BookOpen,
   FileText,
   Gauge,
   GripVertical,
@@ -43,6 +44,8 @@ import {
   type VideoJobResult,
   type VideoJobStepResult,
 } from "../lib/asset-workspace-adapter";
+import CreativeProfilePanel from "./creative-profile-panel";
+import { createCreativeProject, getCreativeProfileCapabilities } from "../lib/creative-memory-api";
 import type {
   AgentActionRunResponse,
   AgentRunStep,
@@ -248,6 +251,8 @@ export type VideoJobLiveStatus = {
   steps: VideoJobStepResult[];
   errorMessage: string | null;
   completionConfirmed: boolean;
+  progressKind?: "video_create" | "video_update";
+  connectionLost?: boolean;
   productStatus?: "generating" | "completed" | "failed";
   productCompleted?: boolean;
   failureReason?: string | null;
@@ -258,6 +263,41 @@ export type VideoJobLiveStatus = {
   operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
   operationFailureSceneId?: string | null;
 };
+
+export function videoJobLiveStatusFromResult(job: VideoJobResult): VideoJobLiveStatus {
+  return {
+    jobId: job.id,
+    status: job.status,
+    workflowStage: job.workflowStage,
+    steps: job.steps,
+    errorMessage: job.errorMessage,
+    completionConfirmed: false,
+    progressKind: job.operationStatus == null ? "video_create" : "video_update",
+    connectionLost: false,
+    productStatus: job.productStatus,
+    productCompleted: job.productCompleted,
+    failureReason: job.failureReason,
+    failureAction: job.failureAction,
+    failureSceneId: job.failureSceneId,
+    operationStatus: job.operationStatus,
+    operationFailureReason: job.operationFailureReason,
+    operationFailureAction: job.operationFailureAction,
+    operationFailureSceneId: job.operationFailureSceneId,
+  };
+}
+
+export function markExecutionConnectionLost(
+  current: Record<number, VideoJobLiveStatus>,
+  jobId: string,
+): Record<number, VideoJobLiveStatus> {
+  const entry = Object.entries(current).find(([, live]) => live.jobId === jobId);
+  if (!entry || entry[1].connectionLost) return current;
+  const [assetId, live] = entry;
+  return {
+    ...current,
+    [Number(assetId)]: { ...live, connectionLost: true },
+  };
+}
 
 export function executionRunKey(jobId: string, generation: number): string {
   return jobId + "::" + generation;
@@ -640,6 +680,25 @@ export default function AssetsWorkspaceClient({
       : "unconfigured"
   ));
   const [conversationLoadRevision, setConversationLoadRevision] = useState(0);
+  const [creativeProfileOpen, setCreativeProfileOpen] = useState(false);
+  const [creativeProfileVisible, setCreativeProfileVisible] = useState(false);
+  const [newConversationIgnoreProfile, setNewConversationIgnoreProfile] = useState(false);
+  const closeCreativeProfile = useCallback(() => setCreativeProfileOpen(false), []);
+  useEffect(() => {
+    let active = true;
+    setCreativeProfileVisible(false);
+    setCreativeProfileOpen(false);
+    if (token) {
+      void getCreativeProfileCapabilities(token)
+        .then((capabilities) => {
+          if (active) setCreativeProfileVisible(capabilities.visible === true);
+        })
+        .catch(() => {
+          if (active) setCreativeProfileVisible(false);
+        });
+    }
+    return () => { active = false; };
+  }, [token]);
   const [runtimeWriteConnectionState, setRuntimeWriteConnectionState] = useState<RuntimeWriteConnectionState>("checking");
   const runtimeWriteCapabilities = useMemo(() => resolveRuntimeWriteCapabilities({
     backendConfigured,
@@ -791,8 +850,11 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
-  const selectedAssetGenerationJobs = assetGenerationJobsForConversation(selectedConversation.id)
-    .map((live) => live.job);
+  const selectedAssetGenerationJobLives = assetGenerationJobsForConversation(selectedConversation.id);
+  const selectedAssetGenerationJobs = selectedAssetGenerationJobLives.map((live) => live.job);
+  const selectedAssetGenerationJobConnectionLostById = Object.fromEntries(
+    selectedAssetGenerationJobLives.map((live) => [live.job.id, live.connectionLost === true]),
+  );
   const currentContextAssets = conversationContextAssets[selectedConversation.id]
     ?? persistedConversationContextAssets(selectedConversation.messages ?? []);
   const projectResourceSummary = selectedConversation.projectResourceSummary ?? {
@@ -1307,7 +1369,7 @@ export default function AssetsWorkspaceClient({
           setConversations(rows);
         },
         onRefreshError: () => {
-          // Keep the job active; a later poll retries this refresh.
+          setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
         },
       });
     };
@@ -1316,23 +1378,7 @@ export default function AssetsWorkspaceClient({
       if (cancelled) return;
       setVideoJobLive((current) => ({
         ...current,
-        [job.assetId]: {
-          jobId: job.id,
-          status: job.status,
-          workflowStage: job.workflowStage,
-          steps: job.steps,
-          errorMessage: job.errorMessage,
-          productStatus: job.productStatus,
-          productCompleted: job.productCompleted,
-          failureReason: job.failureReason,
-          failureAction: job.failureAction,
-          failureSceneId: job.failureSceneId,
-          operationStatus: job.operationStatus,
-          operationFailureReason: job.operationFailureReason,
-          operationFailureAction: job.operationFailureAction,
-          operationFailureSceneId: job.operationFailureSceneId,
-          completionConfirmed: false,
-        },
+        [job.assetId]: videoJobLiveStatusFromResult(job),
       }));
     };
 
@@ -1408,8 +1454,8 @@ export default function AssetsWorkspaceClient({
         getJob: (jobId) => assetWorkspaceAdapter.getVideoJob(token, jobId),
         isCancelled: () => cancelled,
         onJob: processJob,
-        onFetchError: () => {
-          // Transient per-job error; its own next interval retries it.
+        onFetchError: (jobId) => {
+          setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
         },
       });
     };
@@ -1430,14 +1476,28 @@ export default function AssetsWorkspaceClient({
       steps: AgentRunStep[];
       errorMessage: string | null;
       completionConfirmed: boolean;
+      progressKind: "video_create" | "video_update";
+      connectionLost: boolean;
+      productStatus?: "generating" | "completed" | "failed";
+      failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+      operationStatus?: "generating" | "completed" | "failed" | null;
+      operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
     }> = {};
     for (const [assetId, live] of Object.entries(videoJobLive)) {
       map[Number(assetId)] = {
         jobId: live.jobId,
         status: live.status,
         steps: resolveLiveExecutionTimelineSteps(live),
-        errorMessage: live.failureReason ?? live.operationFailureReason ?? null,
+        errorMessage: (live.progressKind === "video_update" || live.operationStatus != null)
+          ? live.operationFailureReason ?? live.failureReason ?? null
+          : live.failureReason ?? live.operationFailureReason ?? null,
         completionConfirmed: live.completionConfirmed,
+        progressKind: live.progressKind ?? (live.operationStatus == null ? "video_create" : "video_update"),
+        connectionLost: live.connectionLost === true,
+        productStatus: live.productStatus,
+        failureAction: live.failureAction,
+        operationStatus: live.operationStatus,
+        operationFailureAction: live.operationFailureAction,
       };
     }
     return map;
@@ -1549,23 +1609,7 @@ export default function AssetsWorkspaceClient({
       storeExecution: (refreshed) => {
         setVideoJobLive((current) => ({
           ...current,
-          [refreshed.assetId]: {
-            jobId: refreshed.id,
-            status: refreshed.status,
-            workflowStage: refreshed.workflowStage,
-            steps: refreshed.steps,
-          errorMessage: refreshed.errorMessage,
-          productStatus: refreshed.productStatus,
-          productCompleted: refreshed.productCompleted,
-          failureReason: refreshed.failureReason,
-          failureAction: refreshed.failureAction,
-          failureSceneId: refreshed.failureSceneId,
-          operationStatus: refreshed.operationStatus,
-          operationFailureReason: refreshed.operationFailureReason,
-          operationFailureAction: refreshed.operationFailureAction,
-          operationFailureSceneId: refreshed.operationFailureSceneId,
-            completionConfirmed: false,
-          },
+          [refreshed.assetId]: videoJobLiveStatusFromResult(refreshed),
         }));
       },
       restartPolling: () => setVideoJobPollRevision((current) => current + 1),
@@ -1863,6 +1907,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleStartConversation = () => {
+    setNewConversationIgnoreProfile(false);
     pendingConversationNavigationRef.current = "new";
     selectedConversationIdRef.current = "new";
     setActiveView("conversation");
@@ -2439,6 +2484,10 @@ export default function AssetsWorkspaceClient({
       ?? persistedConversationContextAssets(conversation.messages ?? []);
     const combinedContextAssets = mergeConversationContextAssets(contextAssets, assetsForSend);
     const combinedLinkedAssetIds = combinedContextAssets.map((asset) => asset.id);
+    // Persist the first project's opt-out before any video planning starts.
+    const createdProjectId = conversation.id === "new" && creativeProfileVisible && newConversationIgnoreProfile
+      ? await createCreativeProject(token, true)
+      : null;
     const optimisticConversationId = conversation.id === "new"
       ? `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`
       : null;
@@ -2480,7 +2529,7 @@ export default function AssetsWorkspaceClient({
     try {
       result = await assetWorkspaceAdapter.sendMessage({
         token,
-        conversationId: optimisticConversationId ?? conversation.id,
+        conversationId: createdProjectId ?? optimisticConversationId ?? conversation.id,
         instruction,
         selectedProductId: selectedBackendAssetId,
         linkedAssetIds: combinedLinkedAssetIds,
@@ -2532,6 +2581,7 @@ export default function AssetsWorkspaceClient({
           if (item.id !== optimisticConversationId) return item;
           return {
             ...item,
+            id: createdProjectId ?? item.id,
             status: "生成失败",
             response: message,
             delivery: message,
@@ -2542,11 +2592,16 @@ export default function AssetsWorkspaceClient({
             updatedAt: "刚刚"
           };
         }));
+        if (createdProjectId) {
+          selectedConversationIdRef.current = createdProjectId;
+          setSelectedConversationId(createdProjectId);
+        }
       }
       throw error;
       }
     }
     if (signal?.aborted) return;
+    if (createdProjectId) setNewConversationIgnoreProfile(false);
     const {
       conversationId: targetConversationId,
       conversation: persistedConversation,
@@ -2964,7 +3019,11 @@ export default function AssetsWorkspaceClient({
           </div>
 
           <div className="shadcn-prototype-collapsed-rail-user" aria-label="账户">
-            <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
+            {creativeProfileVisible ? (
+              <button type="button" title="创作档案" aria-label="创作档案" onClick={() => setCreativeProfileOpen(true)}>
+                <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
+              </button>
+            ) : <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>}
           </div>
         </div>
 
@@ -3174,6 +3233,7 @@ export default function AssetsWorkspaceClient({
           <div>
             <strong>{accountName}</strong>
             <em title={accountEmail}>{accountEmail}</em>
+            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={() => setCreativeProfileOpen(true)}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
           </div>
           {onLogout ? (
             <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={onLogout}>
@@ -3243,6 +3303,9 @@ export default function AssetsWorkspaceClient({
               onRetryImageAttachment={handleRetryChatImage}
               onImportVideoUrl={handleImportVideoUrl}
               onSend={handleSendConversationMessage}
+              creativeProfileVisible={creativeProfileVisible}
+              ignoreProfile={newConversationIgnoreProfile}
+              onIgnoreProfileChange={setNewConversationIgnoreProfile}
               token={token}
               writeCapabilities={runtimeWriteCapabilities}
               onRetryWriteAvailability={handleRetryWriteAvailability}
@@ -3278,6 +3341,7 @@ export default function AssetsWorkspaceClient({
                 }}
                 onSendMessage={handleSendConversationMessage}
                 generationJobs={selectedAssetGenerationJobs}
+                generationJobConnectionLostById={selectedAssetGenerationJobConnectionLostById}
                 onRetryGeneration={handleRetryGeneration}
                 onCancelGeneration={handleCancelGeneration}
                 liveRunStateByAssetId={liveRunStateByAssetId}
@@ -3384,6 +3448,7 @@ export default function AssetsWorkspaceClient({
                   savedVersion={savedProductIds[selectedProduct.id]}
                   selectedConversation={selectedConversation}
                   token={token}
+                  creativeProfileVisible={creativeProfileVisible}
                   videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
                 />
               ) : (
@@ -3457,6 +3522,7 @@ export default function AssetsWorkspaceClient({
           handleStartConversation();
         }}
       />
+      {creativeProfileVisible && creativeProfileOpen && token ? <CreativeProfilePanel token={token} onClose={closeCreativeProfile} /> : null}
     </main>
   );
 }

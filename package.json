@@ -33,6 +33,7 @@
     "test:e2e:video-pipeline-recompose": "node scripts/run-video-pipeline-production-e2e.mjs --recompose",
     "test:e2e:video-pipeline-resume": "node scripts/run-video-pipeline-production-e2e.mjs --resume",
     "test:e2e:product-positioning": "node scripts/run-product-positioning-e2e.mjs",
+    "test:e2e:creative-memory": "node scripts/run-creative-memory-e2e.mjs",
     "test:e2e:admin-product-metrics": "node scripts/run-admin-product-metrics-e2e.mjs",
     "e2e:runs": "node scripts/manage-e2e-run.mjs list",
     "e2e:cleanup": "node scripts/manage-e2e-run.mjs cleanup",
@@ -100,6 +101,6 @@
     "jsdom": "^29.1.1",
     "tsx": "^4.20.5",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   }
 }

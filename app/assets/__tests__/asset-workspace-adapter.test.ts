@@ -929,6 +929,29 @@ describe("runtime data boundary", () => {
     });
   });
 
+  it("preserves a failed video project's public failure reason for the library detail", async () => {
+    const video = asset({
+      id: 73,
+      library_kind: "video",
+      asset_kind: "video",
+      content_type: "video_project",
+      product_status: "failed",
+      failure_reason: "第 1 镜素材不可用，请调整素材后再继续。",
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([video]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token-failed-video", "video");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]).toMatchObject({
+      productStatus: "failed",
+      failureReason: "第 1 镜素材不可用，请调整素材后再继续。",
+    });
+  });
+
   it("serializes failed-scene material replacement as a bound action", () => {
     expect(buildConversationMessagePayload({
       conversationId: "asset-conversation-1",

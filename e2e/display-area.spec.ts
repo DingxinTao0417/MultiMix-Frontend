@@ -217,7 +217,9 @@ test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   await expect(failure.getByText("视频生成未能完成，请重试。", { exact: true })).toBeVisible();
   await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
   await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
-  await expect(thread.getByRole("button", { name: "重新执行此步骤", exact: true })).toBeVisible();
+  const retryAction = thread.getByRole("button", { name: "重试", exact: true });
+  await expect(retryAction).toHaveCount(1);
+  await expect(retryAction).toBeVisible();
   await captureDesktopEvidence(page, "failure");
 });
 
@@ -828,7 +830,9 @@ test("CASE-08 marks the video failed when a planned MG effect fails", async ({ p
   await expect(failure.getByText("第 2 镜动效未能完成", { exact: false })).toBeVisible();
   await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
   await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
-  await expect(thread.getByRole("button", { name: "重新执行此步骤", exact: true })).toBeVisible();
+  const retryAction = thread.getByRole("button", { name: "重试", exact: true });
+  await expect(retryAction).toHaveCount(1);
+  await expect(retryAction).toBeVisible();
   await expect(thread.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(page.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);

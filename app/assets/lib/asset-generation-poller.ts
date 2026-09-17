@@ -1,4 +1,5 @@
 import type { AssetGenerationJobResponse } from "../../../lib/api";
+import { generationProgressEvents } from "./asset-generation-progress";
 
 export type AssetGenerationPollState = {
   jobId: string;
@@ -49,18 +50,25 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
         ? rawStatus
         : null;
       if (!id || !status || status === "completed") continue;
+      const kind = metadata.asset_generation_progress_kind;
+      const job: AssetGenerationJobResponse = {
+        id, status,
+        result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
+        error_message: status === "failed" || status === "cancelled" ? message.text : null,
+        created_at: "", updated_at: "",
+      };
+      if (kind === "video_plan" || kind === "video_create" || kind === "video_update" || kind === "general") {
+        job.progress_kind = kind;
+      }
+      if (Array.isArray(metadata.asset_generation_progress)) {
+        job.progress_events = generationProgressEvents({
+          ...job,
+          progress_events: metadata.asset_generation_progress as AssetGenerationJobResponse["progress_events"],
+        });
+      }
       jobs.set(id, {
         conversationId: conversation.id,
-        job: {
-          id,
-          status,
-          result_asset_id: typeof metadata.product_id === "number"
-            ? metadata.product_id
-            : null,
-          error_message: status === "failed" || status === "cancelled" ? message.text : null,
-          created_at: "",
-          updated_at: "",
-        },
+        job,
       });
     }
   }

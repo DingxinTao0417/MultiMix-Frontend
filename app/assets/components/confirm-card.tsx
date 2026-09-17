@@ -199,6 +199,16 @@ export default function ConfirmCard({
   const [bgmCatalog, setBgmCatalog] = useState<AssetPlanBgmCatalog | null>(null);
   const [bgmCatalogError, setBgmCatalogError] = useState(false);
   const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+  const [selectedProductionId, setSelectedProductionId] = useState(plan.productionChoiceId);
+  const productionOptions = plan.productionOptions ?? [];
+  useEffect(() => {
+    setSelectedProductionId(plan.productionChoiceId);
+  }, [plan.pendingIntentId, plan.pendingIntentVersion, plan.productionChoiceId]);
+  const productionBlocked = isVideoParameterConfirmation && (
+    (Boolean(plan.productionBlockedReason) && (!selectedProductionId || selectedProductionId === plan.productionChoiceId))
+    || (plan.productionSelectionRequired === true && !selectedProductionId)
+    || (selectedProductionId !== undefined && !productionOptions.some((option) => option.id === selectedProductionId))
+  );
   const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
   const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
   const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
@@ -585,6 +595,30 @@ export default function ConfirmCard({
           </div>
         </div>
       ) : null}
+      {isVideoParameterConfirmation && productionOptions.length > 0 ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="制作方式">
+          <span className="shadcn-prototype-confirm-ratio-label">制作方式</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {productionOptions.map((option) => (
+              <button key={option.id} type="button" role="radio"
+                aria-checked={selectedProductionId === option.id}
+                aria-label={`${option.label}${plan.productionRecommendedId === option.id ? "（推荐）" : ""}`}
+                className={selectedProductionId === option.id ? "active" : undefined}
+                disabled={disabled} onClick={() => setSelectedProductionId(option.id)}>
+                {option.label}{plan.productionRecommendedId === option.id ? "（推荐）" : ""}
+              </button>
+            ))}
+          </div>
+          {productionOptions.map((option) => (
+            <p key={option.id}><strong>{option.label}</strong>：{option.effect}<br />
+              需要：{option.requiredInputs}<br /><span>{option.costNote}</span></p>
+          ))}
+          <p>{plan.productionRestriction === "only" ? "只使用所选制作方式" : "优先使用所选方式，允许按镜头混合制作"}</p>
+        </div>
+      ) : null}
+      {isVideoParameterConfirmation && productionBlocked && plan.productionBlockedReason ? (
+        <p role="alert" className="shadcn-prototype-confirm-warning">{plan.productionBlockedReason}</p>
+      ) : null}
       {ratioOptions.length ? (
         <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="视频比例">
           <span className="shadcn-prototype-confirm-ratio-label">视频比例</span>
@@ -676,6 +710,7 @@ export default function ConfirmCard({
             || (isVideoParameterConfirmation && voiceOptions.length > 0 && selectedAiVoice === undefined)
             || (bgmOptions.length > 0 && bgmEnabled && !selectedBgmId)
             || voiceBlocked
+            || productionBlocked
           }
           onClick={async () => {
             if (isPresenterAudioSelectionConfirmation) {
@@ -723,6 +758,7 @@ export default function ConfirmCard({
                   ratio: selectedRatio,
                   targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
                   aiVoiceEnabled: selectedAiVoice,
+                  ...(selectedProductionId ? { productionChoiceId: selectedProductionId } : {}),
                 }
               : ratioOptions.length
                 ? {

@@ -369,6 +369,7 @@ export type AgentTaskCollectionResponse = {
 
 export type AssetGenerationJobResponse = {
   id: string;
+  progress_kind?: "video_plan" | "video_create" | "video_update" | "general";
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   result_asset_id: number | null;
   error_message: string | null;
