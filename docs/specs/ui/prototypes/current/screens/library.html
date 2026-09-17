@@ -61,8 +61,9 @@ body.side-collapsed .app{grid-template-columns:52px minmax(0,1fr)}
 .ab-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,rgba(124,92,255,.5),rgba(0,168,142,.5))}
 .ab-t{font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;flex:none}
 /* 空态 */
-.empty{grid-column:1/-1;border:1.5px dashed var(--line-2);border-radius:14px;padding:44px 20px;
-  display:grid;place-items:center;gap:8px;color:var(--ink-3);font-size:12.5px;text-align:center;justify-items:center}
+.empty{grid-column:1/-1;min-height:260px;border:1px solid var(--line);border-radius:16px;padding:32px;
+  display:grid;place-items:center;gap:8px;background:#F8F6F3;color:var(--ink-3);font-size:12.5px;text-align:center;justify-items:center}
+.empty svg{width:42px;height:42px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface);box-shadow:0 6px 16px rgba(32,31,30,.06)}
 .empty b{color:var(--ink-2);font-weight:600;font-size:13px}
 button{font:inherit;border:0;background:none;cursor:pointer;color:inherit;transition:transform .15s ease,box-shadow .15s ease,background .15s ease,color .15s ease,border-color .15s ease}
 button:active{transform:scale(.98)}
@@ -143,18 +144,24 @@ svg{flex:none;display:block}
 .user .n{font-size:12.5px;font-weight:600}
 .user .e{font-size:11px;color:var(--ink-3)}
 /* ============ 素材主区 ============ */
-.main{display:grid;grid-template-rows:auto auto minmax(0,1fr);background:var(--surface);
+.main{display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:12px;padding:20px;background:var(--surface);
   border-right:1px solid var(--line);min-height:0}
-.main-head{display:flex;align-items:center;gap:14px;height:60px;padding:0 24px;border-bottom:1px solid var(--line)}
-.main-head .title{font-size:15px;font-weight:650;letter-spacing:.01em}
+.main-head{display:grid;grid-template-columns:minmax(240px,1fr) auto;gap:24px;align-items:end;padding:2px 2px 0}
+.main-title{min-width:0}
+.main-head .title{font-size:24px;font-weight:730;letter-spacing:-.025em;line-height:1.2}
+.main-head .desc{margin-top:6px;color:var(--ink-2);font-size:13px;line-height:1.5}
+.main-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px}
 .seg-ctl{display:flex;background:var(--surface-2);border-radius:999px;padding:3px}
 .seg-ctl button{height:26px;padding:0 14px;border-radius:999px;font-size:12.5px;color:var(--ink-2)}
 .seg-ctl button.on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(32,31,30,.08)}
-.main-head .search{margin-left:auto;width:190px}
+.main-head .search{width:210px}
 .btn-ink{display:flex;align-items:center;gap:7px;height:36px;padding:0 16px;border-radius:999px;
   background:var(--ink);color:#fff;font-size:13px;font-weight:600;box-shadow:var(--shadow-card)}
 .btn-ink:hover{transform:translateY(-1px)}
-.filters{display:flex;align-items:flex-end;gap:18px;padding:10px 24px 12px;border-bottom:1px solid var(--line)}
+.btn-secondary{display:none;align-items:center;height:36px;padding:0 13px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:600}
+.btn-secondary:hover{color:var(--ink);border-color:var(--line-2)}
+.filters{display:flex;align-items:flex-end;gap:18px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:#F8F6F3}
 .filter-group{display:grid;gap:5px}
 .filter-label{font-size:12px;font-weight:650;color:var(--ink-2)}
 .filter-options{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -168,9 +175,9 @@ svg{flex:none;display:block}
 .gdot-s{width:8px;height:8px;border-radius:50%;background:var(--ai-grad);flex:none}
 .wdot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none;animation:blink 1.4s ease infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.grid{overflow:auto;padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));
+.grid{overflow:auto;padding:4px 2px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(208px,1fr));
   gap:16px;align-content:start;min-height:0}
-.card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden;
+.card{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;
   display:grid;cursor:pointer;transition:box-shadow .2s ease,transform .15s ease,opacity .25s ease}
 .card:hover{box-shadow:var(--shadow-card);transform:translateY(-1px)}
 .card.hidden{display:none}
@@ -287,7 +294,7 @@ body.side-collapsed .expand-btn{display:grid}
 
 <!-- 顶栏 -->
 <div class="topbar">
-  <span class="crumb">库 / <b id="crumbView">图片库</b></span>
+  <span class="crumb">资源库 / <b id="crumbView">图片库</b></span>
   <button class="diag" onclick="toast('LLM 诊断面板（管理员入口）')">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1.8 8h3l1.6-4.2L9.6 12l1.6-4h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     诊断
@@ -366,20 +373,22 @@ body.side-collapsed .expand-btn{display:grid}
 <!-- 库主区（四库共用，随左侧导航切换） -->
 <main class="main">
   <div class="main-head">
-    <div class="title" id="viewTitle">图片库</div>
-    <div class="seg-ctl" id="srcSeg" style="display:none">
-      <button class="on">上传资料</button>
-      <button onclick="toast('采集资料：来自网页采集的资料会出现在这里')">采集资料</button>
-      <button onclick="toast('对话沉淀：对话里产生的资料会自动归档到这里')">对话沉淀</button>
+    <div class="main-title">
+      <div class="title" id="viewTitle">图片库</div>
+      <div class="desc" id="viewDesc">管理封面图、素材图和可以复用的分镜画面。</div>
     </div>
-    <div class="search" id="searchBox">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      <span id="searchPh">搜索素材…</span>
+    <div class="main-actions">
+      <div class="search" id="searchBox">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.4" stroke="currentColor" stroke-width="1.5"/><path d="M13 13l-2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span id="searchPh">搜索素材…</span>
+      </div>
+      <button class="btn-secondary asset-action" onclick="toast('读取网页资料')">读取网页</button>
+      <button class="btn-secondary asset-action" onclick="toast('搜索公开素材')">公开素材搜索</button>
+      <button class="btn-ink" id="upBtn" onclick="toast('选择文件后 AI 会自动开始理解')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span id="upLbl">上传素材</span>
+      </button>
     </div>
-    <button class="btn-ink" id="upBtn" onclick="toast('选择文件后 AI 会自动开始理解')">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      <span id="upLbl">上传素材</span>
-    </button>
   </div>
   <div class="filters" id="filters"></div>
   <div class="grid" id="grid"></div>
@@ -503,10 +512,10 @@ var SOURCES = [
     ex:'', kw:[] },
 ];
 var VIEW_DEF = {
-  image: { title:'图片库', ph:'搜索素材…', up:'上传素材', cats:['封面图','素材图','分镜图'], status:true, src:false },
-  copy:  { title:'文案库', ph:'搜索文案 / 选题…', up:null, cats:['选题方案','文案稿','配音稿','编导稿'], status:false, src:false },
-  video: { title:'视频库', ph:'搜索视频…', up:null, cats:['混剪视频','数字人视频','MG动画视频','实景拍摄视频','生成视频素材'], status:false, src:false },
-  assets:{ title:'资产库', ph:'搜索资料 / 知识块…', up:'上传资料', cats:[], status:false, src:true },
+  image: { title:'图片库', desc:'管理封面图、素材图和可以复用的分镜画面。', ph:'搜索素材…', up:'上传素材', cats:['封面图','素材图','分镜图'], status:true },
+  copy:  { title:'文案库', desc:'集中查看选题方案、文案稿和已确认的编导稿。', ph:'搜索文案 / 选题…', up:null, cats:['选题方案','文案稿','配音稿','编导稿'], status:false },
+  video: { title:'视频库', desc:'查看已保存的视频工程，并继续编辑或用于创作。', ph:'搜索视频…', up:null, cats:['混剪视频','数字人视频','MG动画视频','实景拍摄视频','生成视频素材'], status:false },
+  assets:{ title:'资产库', desc:'管理上传、采集和对话沉淀的来源资料。', ph:'搜索资料 / 知识块…', up:'上传资料', cats:[], status:false },
 };
 var view = 'image';
 var selected = 0, fCat = 'all', fSt = null;
@@ -587,9 +596,10 @@ function renderGrid(){
 function renderView(){
   var d = VIEW_DEF[view];
   document.getElementById('viewTitle').textContent = d.title;
+  document.getElementById('viewDesc').textContent = d.desc;
   document.getElementById('crumbView').textContent = d.title;
   document.getElementById('searchPh').textContent = d.ph;
-  document.getElementById('srcSeg').style.display = d.src ? '' : 'none';
+  document.querySelectorAll('.asset-action').forEach(function(button){ button.style.display = view === 'assets' ? 'flex' : 'none'; });
   var up = document.getElementById('upBtn');
   up.style.display = d.up ? '' : 'none';
   if(d.up) document.getElementById('upLbl').textContent = d.up;

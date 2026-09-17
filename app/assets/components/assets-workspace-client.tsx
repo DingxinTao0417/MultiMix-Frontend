@@ -3198,6 +3198,8 @@ export default function AssetsWorkspaceClient({
               </button>
             ) : null}
             <div className="shadcn-prototype-breadcrumb">
+              <span>资源库</span>
+              <span className="shadcn-prototype-library-breadcrumb-separator" aria-hidden="true">/</span>
               <strong>{assetWorkspaceAdapter.getWorkshop(activeView).title}</strong>
             </div>
             <div className="shadcn-prototype-actions">

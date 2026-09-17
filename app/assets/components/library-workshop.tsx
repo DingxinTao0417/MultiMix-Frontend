@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { CircleAlert, Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, LoaderCircle, PackageOpen, Play, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
@@ -33,6 +33,13 @@ const UPLOAD_LABEL: Record<Exclude<ActiveView, "conversation">, string> = {
   copy: "上传",
   image: "上传",
   video: "上传"
+};
+
+const LIBRARY_VIEW_DESCRIPTIONS: Record<Exclude<ActiveView, "conversation">, string> = {
+  assets: "管理上传、采集和对话沉淀的来源资料。",
+  copy: "集中查看选题方案、文案稿和已确认的编导稿。",
+  image: "管理封面图、素材图和可以复用的分镜画面。",
+  video: "查看已保存的视频工程，并继续编辑或用于创作。",
 };
 
 const LIBRARY_PAGE_SIZE = 48;
@@ -726,6 +733,14 @@ function LibraryWorkshop({
     setLocalRefreshKey((value) => value + 1);
   };
 
+  const EmptyLibraryIcon = view === "image"
+    ? ImageIcon
+    : view === "video"
+      ? Video
+      : view === "copy"
+        ? FileText
+        : PackageOpen;
+
   return (
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
       <div className="shadcn-prototype-workshop-body">
@@ -735,7 +750,49 @@ function LibraryWorkshop({
             <button type="button" onClick={onExitProjectTarget}>完成</button>
           </div>
         ) : null}
-        <div className="shadcn-prototype-library-toolbar">
+        <div className="shadcn-prototype-library-page-header">
+          <div className="shadcn-prototype-library-page-heading">
+            <h1>{workshop.title}</h1>
+            <p>{LIBRARY_VIEW_DESCRIPTIONS[view]}</p>
+          </div>
+          <div className="shadcn-prototype-library-page-actions">
+            <label className="shadcn-prototype-library-search compact">
+              <Search size={15} aria-hidden="true" />
+              <input
+                aria-label={`搜索${workshop.title}`}
+                placeholder={SEARCH_PLACEHOLDER[view]}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+            {loadingRows ? <span className="shadcn-prototype-library-loading" aria-label="正在搜索" /> : null}
+            {view === "assets" ? (
+              <>
+                <button type="button" disabled={!canUseBackend} onClick={() => setAssetModal("web")}>
+                  <FileText size={15} aria-hidden="true" />
+                  读取网页
+                </button>
+                <button type="button" disabled={!canUseBackend} onClick={() => setPublicSearchOpen(true)}>
+                  <Globe2 size={15} aria-hidden="true" />
+                  公开素材搜索
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                if (writeCapabilities.canUpload) onUploadClick?.();
+              }}
+              disabled={!onUploadClick || uploading || !writeCapabilities.canUpload}
+              aria-describedby={runtimeWriteStatusId}
+            >
+              <Plus size={15} aria-hidden="true" />
+              {uploading ? "上传中" : UPLOAD_LABEL[view]}
+            </button>
+          </div>
+        </div>
+        <div className="shadcn-prototype-library-filter-bar">
           <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
             {view === "image" ? (
               <>
@@ -787,40 +844,6 @@ function LibraryWorkshop({
               </button>
             ))}
           </div>
-          <label className="shadcn-prototype-library-search compact">
-            <Search size={15} aria-hidden="true" />
-            <input
-              aria-label={`搜索${workshop.title}`}
-              placeholder={SEARCH_PLACEHOLDER[view]}
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
-          {loadingRows ? <span className="shadcn-prototype-library-loading" aria-label="正在搜索" /> : null}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => {
-              if (writeCapabilities.canUpload) onUploadClick?.();
-            }}
-            disabled={!onUploadClick || uploading || !writeCapabilities.canUpload}
-            aria-describedby={runtimeWriteStatusId}
-          >
-            <Plus size={15} aria-hidden="true" />
-            {uploading ? "上传中" : UPLOAD_LABEL[view]}
-          </button>
-          {view === "assets" ? (
-            <>
-              <button type="button" disabled={!canUseBackend} onClick={() => setAssetModal("web")}>
-                <FileText size={15} aria-hidden="true" />
-                读取网页
-              </button>
-              <button type="button" disabled={!canUseBackend} onClick={() => setPublicSearchOpen(true)}>
-                <Globe2 size={15} aria-hidden="true" />
-                公开素材搜索
-              </button>
-            </>
-          ) : null}
         </div>
         {writeCapabilities.reason ? (
           <p
@@ -837,14 +860,34 @@ function LibraryWorkshop({
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
         {libraryState === "unconfigured" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>创作服务尚未连接</strong><p>请联系管理员完成配置后重试。</p></div></article>
+          <article className="shadcn-prototype-workshop-empty">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon"><PackageOpen size={21} aria-hidden="true" /></span>
+              <strong>创作服务尚未连接</strong>
+              <p>请联系管理员完成配置后重试。</p>
+            </div>
+          </article>
         ) : libraryState === "error" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={handleRetryLibraryConnection}>重新加载</button></div></article>
+          <article className="shadcn-prototype-workshop-empty" role="alert">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon is-error"><CircleAlert size={21} aria-hidden="true" /></span>
+              <strong>资源库加载失败</strong>
+              <p>没有展示本地样例，避免与真实数据混淆。</p>
+              <button type="button" onClick={handleRetryLibraryConnection}>重新加载</button>
+            </div>
+          </article>
         ) : libraryState === "loading" ? (
-          <article className="shadcn-prototype-workshop-empty" role="status"><div><strong>正在加载{workshop.title}…</strong></div></article>
+          <article className="shadcn-prototype-workshop-empty" role="status">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon is-loading"><LoaderCircle size={21} aria-hidden="true" /></span>
+              <strong>正在加载{workshop.title}…</strong>
+              <p>内容准备好后会自动显示。</p>
+            </div>
+          </article>
         ) : filteredRows.length === 0 ? (
           <article className="shadcn-prototype-workshop-empty">
             <div>
+              <span className="shadcn-prototype-workshop-empty-icon"><EmptyLibraryIcon size={21} aria-hidden="true" /></span>
               <strong>这个分类还没有内容</strong>
               <p>{activeFilter === "全部" && !statusFilter ? "上传资料或在对话中生成产物后，会在这里出现。" : "在对话里生成后会自动归档到这里。"}</p>
             </div>

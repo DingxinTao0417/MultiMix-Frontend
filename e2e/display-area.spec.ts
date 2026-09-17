@@ -647,6 +647,14 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await captureDesktopEvidence(page, "new-project");
 
   await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "图片库", exact: true }).click();
+  const breadcrumb = page.locator(".shadcn-prototype-topbar .shadcn-prototype-breadcrumb");
+  await expect(breadcrumb).toContainText("资源库");
+  await expect(breadcrumb).toContainText("图片库");
+  await expect(page.getByRole("heading", { name: "图片库", exact: true })).toBeVisible();
+  await expect(page.getByText("管理封面图、素材图和可以复用的分镜画面。", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("图片库筛选")).toBeVisible();
+  await expect(page.getByRole("group", { name: "内容类型" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "处理状态" })).toBeVisible();
   const grid = page.getByLabel("图片库列表");
   const firstCard = grid.locator("button.shadcn-prototype-library-media-card").first();
   await expect(firstCard).toBeVisible();
@@ -655,6 +663,24 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await firstCard.click();
   await expect(page.getByRole("dialog", { name: /详情$/ })).toBeVisible();
   await captureDesktopEvidence(page, "image-detail");
+  await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+
+  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "资产库", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const assetHeader = page.locator(".shadcn-prototype-library-page-header");
+  await expect(page.getByRole("heading", { name: "资产库", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("textbox", { name: "搜索资产库" })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "读取网页", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "公开素材搜索", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "上传", exact: true })).toBeVisible();
+  const [assetHeaderBox, viewport] = await Promise.all([
+    assetHeader.boundingBox(),
+    page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth })),
+  ]);
+  expect(assetHeaderBox).not.toBeNull();
+  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width);
+  if (assetHeaderBox) expect(assetHeaderBox.x + assetHeaderBox.width).toBeLessThanOrEqual(viewport.width);
+  await captureDesktopEvidence(page, "asset-library");
 });
 
 test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }, testInfo) => {
