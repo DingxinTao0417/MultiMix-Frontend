@@ -503,6 +503,17 @@ test("library cross-type details and interaction states stay consistent", async 
     versions: [{ version: 1, instruction: "初稿" }, { version: 2, instruction: "强化到店行动" }],
     updated_at: updatedAt,
   };
+  const legacyDirectorAsset = {
+    ...copyAsset,
+    id: 9102,
+    library_kind: "video",
+    asset_kind: "video",
+    content_type: "video_script",
+    title: "生产验收编导稿",
+    body: "# 生产验收编导稿\n\n这是连续文字编导内容，不应显示播放器。",
+    metadata: { reference_count: 1, artifact_category: "编导稿" },
+    versions: [{ version: 1, instruction: "确认编导方案" }],
+  };
   const baseVideoAsset = {
     library_kind: "video",
     asset_kind: "video",
@@ -527,6 +538,16 @@ test("library cross-type details and interaction states stay consistent", async 
   };
   const videoAssets = Array.from({ length: 52 }, (_, index) => ({
     ...baseVideoAsset,
+    ...(index === 0 ? {
+      content_type: "video_project",
+      body: "第一步：说出你的营销想法，系统整理目标和受众。\n\n第二步：AI 生成可确认的编导方案并匹配画面。\n\n第三步：继续通过对话调整分镜、节奏和字幕。",
+      metadata: { ...baseVideoAsset.metadata, artifact_category: "视频工程" },
+      versions: [
+        { version: 3, instruction: "global-revision:before" },
+        { version: 4, instruction: "video.project.set_ratio" },
+        { version: 5, instruction: "video.project.reorder_scenes" },
+      ],
+    } : {}),
     id: 9201 + index,
     title: index === 0 ? "门店焕新推广视频" : `门店视频素材 ${String(index + 1).padStart(2, "0")}`,
   }));
@@ -560,7 +581,7 @@ test("library cross-type details and interaction states stay consistent", async 
     const kind = url.searchParams.get("library_kind");
     const offset = Number(url.searchParams.get("offset") ?? "0");
     const limit = Number(url.searchParams.get("limit") ?? "49");
-    const rows = kind === "copy" ? [copyAsset] : kind === "video" ? videoAssets : kind === "assets" ? [sourceAsset] : [];
+    const rows = kind === "copy" ? [copyAsset, legacyDirectorAsset] : kind === "video" ? videoAssets : kind === "assets" ? [sourceAsset] : [];
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows.slice(offset, offset + limit)) });
   });
   await page.route("**/v1/assets/search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
@@ -578,10 +599,18 @@ test("library cross-type details and interaction states stay consistent", async 
   await captureDesktopEvidence(page, "copy-detail");
   await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
 
+  const directorCard = copyGrid.getByRole("button").filter({ hasText: "生产验收编导稿" });
+  await expect(directorCard).toHaveCount(1);
+  await directorCard.click();
+  detail = page.getByRole("dialog", { name: "生产验收编导稿详情" });
+  await expect(detail.getByText("这是连续文字编导内容，不应显示播放器。", { exact: true })).toBeVisible();
+  await expect(detail.locator(".shadcn-prototype-library-video-preview")).toHaveCount(0);
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+
   await page.getByRole("textbox", { name: "搜索文案库" }).fill("不存在的内容");
   await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
-  await expect(copyGrid.locator("button.shadcn-prototype-library-text-card")).toHaveCount(1);
+  await expect(copyGrid.locator("button.shadcn-prototype-library-text-card")).toHaveCount(2);
   await page.getByRole("button", { name: "选题方案", exact: true }).click();
   await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
@@ -593,6 +622,14 @@ test("library cross-type details and interaction states stay consistent", async 
   detail = page.getByRole("dialog", { name: "门店焕新推广视频详情" });
   await expect(detail.getByText("规格", { exact: true })).toBeVisible();
   await expect(detail.getByText("用于创作", { exact: true })).toBeVisible();
+  const previewSection = detail.locator(".shadcn-prototype-library-content").nth(1);
+  const versionSection = detail.locator(".shadcn-prototype-library-keywords");
+  const [previewBox, versionBox] = await Promise.all([previewSection.boundingBox(), versionSection.boundingBox()]);
+  expect(previewBox).not.toBeNull();
+  expect(versionBox).not.toBeNull();
+  if (previewBox && versionBox) {
+    expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(versionBox.y);
+  }
   await captureDesktopEvidence(page, "video-detail");
   await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
   await page.getByRole("button", { name: "加载更多内容", exact: true }).click();

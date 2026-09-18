@@ -857,6 +857,29 @@ describe("runtime data boundary", () => {
     expect(page.nextOffset).toBe(48);
   });
 
+  it("renders legacy video-kind director scripts as copy rows", async () => {
+    const legacyDirector = asset({
+      id: 70,
+      library_kind: "video",
+      asset_kind: "video",
+      content_type: "video_script",
+      title: "历史编导稿",
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify([legacyDirector]), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const page = await assetWorkspaceAdapter.listLibrary("token", "copy");
+    vi.unstubAllGlobals();
+
+    expect(page.rows[0]).toMatchObject({
+      kind: "copy",
+      category: "编导稿",
+      contentTypeCode: "video_script",
+    });
+  });
+
   it("keeps exact search results when semantic search returns no matches", async () => {
     const exact = asset({ id: 81, title: "精确命中的素材" });
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {

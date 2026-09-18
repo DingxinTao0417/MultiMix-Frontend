@@ -15,6 +15,11 @@ describe("library detail visual hierarchy", () => {
     expect(css).toMatch(/\.shadcn-prototype-library-detail-body\s*\{[^}]*overflow:\s*auto;/s);
   });
 
+  it("keeps detail sections at their natural block height so adjacent sections cannot overlap", () => {
+    expect(css).toMatch(/\.shadcn-prototype-library-detail-body\s*\{[^}]*grid-auto-rows:\s*max-content;/s);
+    expect(css).toMatch(/\.shadcn-prototype-library-content\s*\{[^}]*min-height:\s*max-content;/s);
+  });
+
   it("keeps one primary action and moves management actions into an overflow menu", () => {
     expect(source.match(/shadcn-prototype-library-detail-primary/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(source).toContain("shadcn-prototype-library-detail-overflow");

@@ -6626,6 +6626,7 @@ button:disabled {
 
 .shadcn-prototype-library-detail-body {
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 14px;
   min-height: 0;
@@ -7029,7 +7030,7 @@ button:disabled {
 .shadcn-prototype-library-content {
   display: grid;
   gap: 10px;
-  min-height: 0;
+  min-height: max-content;
   overflow: visible;
   border: 1px solid var(--sp-border);
   border-radius: 14px;
