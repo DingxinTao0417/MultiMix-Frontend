@@ -1328,9 +1328,9 @@ describe("agent conversation UI copy", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
     expect(workspaceClient).toContain("新建项目");
-    expect(workspaceClient).toContain("项目列表");
+    expect(workspaceClient).toContain("最近项目");
     expect(workspaceClient).toContain("删除项目");
-    expect(workspaceClient).toContain("projectStateLabel(conversation.projectState)");
+    expect(workspaceClient).toContain("projectListStateLabel(conversation.projectState)");
     expect(workspaceClient).not.toContain(">新建对话<");
     expect(workspaceClient).not.toContain(">对话列表<");
   });
@@ -1457,7 +1457,8 @@ describe("agent conversation UI copy", () => {
   it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {
     const globals = readAssetFile("app/globals.css");
 
-    expect(globals).toContain("grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;");
+    expect(globals).toContain("grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;");
+    expect(globals).not.toContain("grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;");
     expect(globals).not.toContain("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;");
   });
 
@@ -1481,7 +1482,7 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-library-grid.view-video");
     expect(globals).toContain(".shadcn-prototype-library-media-thumb.video");
     expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{\s*display: flex;\s*flex-direction: column;/);
-    expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{[^}]*overflow: visible;[^}]*clip-path: inset\(0 round 16px\);/);
+    expect(globals).toMatch(/\.shadcn-prototype-library-media-card\s*\{[^}]*overflow: visible;[^}]*clip-path: inset\(0 round 14px\);/);
     expect(globals).toMatch(/\.shadcn-prototype-library-media-frame\s*\{[^}]*width: 100%;[^}]*flex: none;[^}]*overflow: visible;/);
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-image-media .shadcn-prototype-library-media-frame");
     expect(globals).toContain(".shadcn-prototype-library-media-card.with-video-media .shadcn-prototype-library-media-frame");
@@ -1533,7 +1534,6 @@ describe("agent conversation UI copy", () => {
   it("renders the demo-final start hero and input dock", () => {
     const authApp = readAssetFile("app/multimix-app.tsx");
     const conversationStart = readAssetFile("app/assets/components/conversation-start.tsx");
-    const materialsReady = readAssetFile("app/assets/components/materials-ready-strip.tsx");
     const backgroundStatus = readAssetFile("app/assets/components/ai-background-status.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
     const globals = readAssetFile("app/globals.css");
@@ -1551,7 +1551,8 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("AI 生成镜头");
     expect(conversationStart).not.toContain("制作讲解型视频");
     expect(conversationStart).not.toContain("优化真人口播视频");
-    expect(materialsReady).toContain("你的素材可以开始做视频了");
+    expect(conversationStart).not.toContain("你的素材可以开始做视频了");
+    expect(existsSync(join(root, "app/assets/components/materials-ready-strip.tsx"))).toBe(false);
     expect(backgroundStatus).toContain("AI 正在理解素材");
     expect(backgroundStatus).toContain("完成后可用于视频创作");
     expect(globals).toContain(".shadcn-prototype-start-dock");

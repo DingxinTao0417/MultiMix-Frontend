@@ -85,6 +85,40 @@ export function getProductModeLabel(mode: ProductMode) {
   return "视频";
 }
 
+const PRODUCT_CONTENT_TYPE_LABELS: Record<string, string> = {
+  content_plan: "选题方案",
+  social_post: "文案稿",
+  manual_text: "文案稿",
+  copy_draft: "文案稿",
+  short_video_narration: "编导稿",
+  video_script: "编导稿",
+  cover_image: "封面图",
+  storyboard_image: "分镜图",
+  uploaded_image: "素材图",
+  saved_image: "素材图",
+  document_embedded_image: "素材图",
+  video_project: "视频工程",
+};
+
+export function getProductDisplayIdentity(product: ProductArtifact): {
+  label: string;
+  versionLabel: string;
+  title: string;
+} {
+  const metadata = isRecord(product.metadata) ? product.metadata : {};
+  const explicitCategory = stringValue(metadata.artifact_category).trim();
+  const contentTypeCategory = product.contentType
+    ? PRODUCT_CONTENT_TYPE_LABELS[product.contentType]
+    : "";
+  const label = explicitCategory || contentTypeCategory || getProductModeLabel(product.mode);
+  const versionLabel = product.version?.trim() ?? "";
+  return {
+    label,
+    versionLabel,
+    title: versionLabel ? `${label} · ${versionLabel}` : label,
+  };
+}
+
 export function getProductRatioClass(ratio: string) {
   if (ratio.includes("16:9")) return "ratio-landscape";
   if (ratio.includes("9:16")) return "ratio-portrait";

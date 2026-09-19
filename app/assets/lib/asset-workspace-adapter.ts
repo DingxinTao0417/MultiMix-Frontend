@@ -1126,6 +1126,7 @@ function libraryKindsForView(view: Exclude<AssetWorkspaceView, "conversation">):
 }
 
 function libraryRowKind(asset: ContentAsset): LibraryRow["kind"] {
+  if (asset.content_type === "video_script" || asset.content_type === "short_video_narration") return "copy";
   if (asset.asset_kind === "image") return "image";
   if (asset.asset_kind === "video") return "video";
   if (asset.asset_kind === "copy") return "copy";

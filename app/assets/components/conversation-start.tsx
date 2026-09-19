@@ -13,7 +13,6 @@ import {
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
-import MaterialsReadyStrip from "./materials-ready-strip";
 import styles from "./creative-memory-ui.module.css";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
@@ -111,7 +110,6 @@ export default function ConversationStart({
   creativeProfileVisible = false,
   ignoreProfile = false,
   onIgnoreProfileChange,
-  onOpenImageLibrary,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
 }: {
@@ -128,14 +126,13 @@ export default function ConversationStart({
   creativeProfileVisible?: boolean;
   ignoreProfile?: boolean;
   onIgnoreProfileChange?: (ignore: boolean) => void;
-  onOpenImageLibrary?: () => void;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
 }) {
   const [composerValue, setComposerValue] = useState("");
   const [sending, setSending] = useState(false);
   const [isDraggingUpload, setIsDraggingUpload] = useState(false);
-  const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
+  const [selectedStarter, setSelectedStarter] = useState<string | null>(null);
   const [showGoalExplanation, setShowGoalExplanation] = useState(false);
   const [errorNotice, setErrorNotice] = useState<{ message: string | null; revision: number }>({
     message: null,
@@ -162,8 +159,8 @@ export default function ConversationStart({
   };
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
-    textarea.style.height = "52px";
-    textarea.style.height = `${Math.max(52, textarea.scrollHeight)}px`;
+    textarea.style.height = "42px";
+    textarea.style.height = `${Math.max(42, textarea.scrollHeight)}px`;
   };
 
   useEffect(() => {
@@ -265,9 +262,8 @@ export default function ConversationStart({
   const selectStarter = (
     key: string,
     fill: string,
-    { isGoal }: { isGoal: boolean },
   ) => {
-    setSelectedGoal(isGoal ? key : null);
+    setSelectedStarter(key);
     void trackProductEvent(token, {
       eventName: "recommendation_selected",
       properties: { recommendation_key: key },
@@ -463,33 +459,34 @@ export default function ConversationStart({
               </span>
             ))}
           </span>
+          <button
+            className="shadcn-prototype-start-capability-help"
+            type="button"
+            aria-expanded={showGoalExplanation}
+            onClick={() => setShowGoalExplanation((current) => !current)}
+          >
+            这些会限制制作方式吗？
+          </button>
         </section>
+        {showGoalExplanation ? (
+          <p className="shadcn-prototype-start-goal-explanation" role="status">
+            目标和示例只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。
+          </p>
+        ) : null}
         <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-goals">
           <div className="shadcn-prototype-start-section-head">
             <h2 id="conversation-start-goals">不知道怎么描述？从一个目标开始</h2>
-            <button
-              type="button"
-              aria-expanded={showGoalExplanation}
-              onClick={() => setShowGoalExplanation((current) => !current)}
-            >
-              这些会限制制作方式吗？
-            </button>
           </div>
-          {showGoalExplanation ? (
-            <p className="shadcn-prototype-start-goal-explanation" role="status">
-              目标只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。
-            </p>
-          ) : null}
           <div className="shadcn-prototype-start-goal-grid">
             {START_GOALS.map((goal) => (
               <button
                 type="button"
                 key={goal.key}
                 data-testid="conversation-start-goal"
-                className={`shadcn-prototype-start-goal-card ${goal.imageClass}${selectedGoal === goal.key ? " selected" : ""}`}
-                aria-pressed={selectedGoal === goal.key}
+                className={`shadcn-prototype-start-goal-card ${goal.imageClass}${selectedStarter === goal.key ? " selected" : ""}`}
+                aria-pressed={selectedStarter === goal.key}
                 disabled={sending}
-                onClick={() => selectStarter(goal.key, goal.fill, { isGoal: true })}
+                onClick={() => selectStarter(goal.key, goal.fill)}
               >
                 <span>
                   <strong>{goal.title}</strong>
@@ -504,14 +501,15 @@ export default function ConversationStart({
             <h2 id="conversation-start-examples">从一个想法、一张图片或一段视频开始</h2>
           </div>
           <div className="shadcn-prototype-start-example-grid">
-            {START_EXAMPLES.map((example, index) => (
+            {START_EXAMPLES.map((example) => (
               <button
                 type="button"
                 key={example.key}
                 data-testid="conversation-start-example"
-                className={`shadcn-prototype-start-example-card${index === 0 ? " featured" : ""}`}
+                className={`shadcn-prototype-start-example-card${selectedStarter === example.key ? " selected" : ""}`}
+                aria-pressed={selectedStarter === example.key}
                 disabled={sending}
-                onClick={() => selectStarter(example.key, example.prompt, { isGoal: false })}
+                onClick={() => selectStarter(example.key, example.prompt)}
               >
                 <span className="shadcn-prototype-start-example-copy">
                   <span className="shadcn-prototype-start-example-tag">{example.tag}</span>
@@ -524,7 +522,6 @@ export default function ConversationStart({
             ))}
           </div>
         </section>
-        <MaterialsReadyStrip token={token} onOpenImageLibrary={onOpenImageLibrary} />
       </div>
     </section>
   );

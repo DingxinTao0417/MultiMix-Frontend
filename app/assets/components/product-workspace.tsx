@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { API_BASE, getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
-import { getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { getProductDisplayIdentity, getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetConversationMessage, AssetCreativeDirectionSelection, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
@@ -313,6 +313,7 @@ export default function ProductWorkspace({
   }, [product.backendAssetId, token]);
   const hasProductUpdateHandler = Boolean(onProductUpdated);
   const modeLabel = getProductModeLabel(product.mode);
+  const displayIdentity = getProductDisplayIdentity(product);
   const editableTextArtifact = Boolean(
     product.backendAssetId
     && product.contentHash
@@ -395,10 +396,11 @@ export default function ProductWorkspace({
   // fall back to the completed main job here: that would render a convincing
   // but invalid retry button.  The backend publishes this server-issued ID in
   // the aggregate job steps.
+  const failedStepRetryJobId = videoJobLive?.steps.find((step) => (
+    step.status === "fail" && Boolean(step.retryJobId)
+  ))?.retryJobId ?? null;
   const operationRetryJobId = operationFailureAction === "retry"
-    ? videoJobLive?.steps.find((step) => (
-      step.status === "fail" && Boolean(step.retryJobId)
-    ))?.retryJobId ?? null
+    ? failedStepRetryJobId
     : null;
   const videoProductCompleted = videoJobLive?.productCompleted ?? product.videoProductCompleted === true;
   const liveVideoJobFailed = !videoProductCompleted && effectiveProductStatus === "failed";
@@ -1361,6 +1363,7 @@ export default function ProductWorkspace({
   // Aurora + "生成中" badge only during the real generating state (spec §5.3 /
   // §12): while orchestration runs. Gated by flag; no fake progress.
   const showGeneratingVisuals = orchestrationPending;
+  const stableHeaderActionsAvailable = !showGeneratingVisuals && !isFailedStatus;
   const artifactClassName = [
     "shadcn-prototype-card",
     "shadcn-prototype-artifact",
@@ -1420,8 +1423,8 @@ export default function ProductWorkspace({
       <div className={productClassName}>
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3 title={product.title}>
-              <span className="shadcn-prototype-product-title-text">{product.title}</span>
+            <h3 title={displayIdentity.title}>
+              <span className="shadcn-prototype-product-title-text">{displayIdentity.title}</span>
               {showGeneratingVisuals ? (
                 <span className="shadcn-prototype-artifact-generating-badge">
                   <span aria-hidden="true" />
@@ -1613,7 +1616,7 @@ export default function ProductWorkspace({
                 ) : null}
               </div>
             ) : null}
-            {longFormCandidateProduct && onOpenLongFormCandidates ? (
+            {stableHeaderActionsAvailable && longFormCandidateProduct && onOpenLongFormCandidates ? (
               <button
                 type="button"
                 onClick={() => onOpenLongFormCandidates(longFormCandidateProduct)}
@@ -1621,7 +1624,7 @@ export default function ProductWorkspace({
                 尝试其他拆条方式
               </button>
             ) : null}
-            {editableTextArtifact && !isTextEditing ? (
+            {stableHeaderActionsAvailable && editableTextArtifact && !isTextEditing ? (
               <button
                 type="button"
                 className="primary"
@@ -1650,12 +1653,12 @@ export default function ProductWorkspace({
                 </button>
               </>
             ) : null}
-            {product.mode === "copy" && !isTextEditing ? (
+            {stableHeaderActionsAvailable && product.mode === "copy" && !isTextEditing ? (
               <button type="button" className="primary" onClick={() => void onCopyProduct(product)}>
                 {copied ? "已复制" : "复制全文"}
               </button>
             ) : null}
-            {product.mode === "image" && imageDownloadUrl ? (
+            {stableHeaderActionsAvailable && product.mode === "image" && imageDownloadUrl ? (
               <ExportVariantMenu
                 triggerLabel="下载"
                 triggerClassName="primary"
@@ -1710,7 +1713,7 @@ export default function ProductWorkspace({
                 onSelect={handleExportVideo}
               />
             ) : null}
-            {!editableTextArtifact ? (
+            {stableHeaderActionsAvailable && !editableTextArtifact ? (
               <button type="button" onClick={() => void onSaveProduct(product)}>
                 {savedVersion ? `已保存 ${savedVersion}` : "保存"}
               </button>
@@ -1976,8 +1979,13 @@ export default function ProductWorkspace({
             <div className="shadcn-prototype-video-failed" role="alert">
               <strong>视频失败</strong>
               <p>{failureDetail || "任务在后台执行时出错，工程未能生成。"}</p>
-              <div className="shadcn-prototype-video-failed-actions">
-                {failureAction === "replace_scene_asset" ? (
+              {failedStepRetryJobId ? (
+                <p className="shadcn-prototype-video-failed-note">
+                  请在左侧重试失败步骤；这里只保留失败原因，避免重复执行同一任务。
+                </p>
+              ) : failureAction ? (
+                <div className="shadcn-prototype-video-failed-actions">
+                  {failureAction === "replace_scene_asset" ? (
                   <button
                     type="button"
                     className="primary"
@@ -1995,7 +2003,7 @@ export default function ProductWorkspace({
                   >
                     重新寻找该镜素材
                   </button>
-                ) : failureAction === "modify_script" ? (
+                  ) : failureAction === "modify_script" ? (
                   <button
                     type="button"
                     className="primary"
@@ -2003,7 +2011,7 @@ export default function ProductWorkspace({
                   >
                     修改编导脚本
                   </button>
-                ) : onRetryVideoJob ? (
+                  ) : onRetryVideoJob && (failureAction === "retry" || failureAction === "retry_scene_generation") ? (
                   <button
                     type="button"
                     className="primary"
@@ -2023,14 +2031,11 @@ export default function ProductWorkspace({
                         ? `确认付费，只重做${retrySceneNumber ? `第 ${retrySceneNumber} 镜` : "该镜"}`
                         : "↻ 重试生成"}
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
-                >
-                  回对话调整
-                </button>
-              </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="shadcn-prototype-video-failed-note">当前任务不可直接重试，请在左侧对话中调整后重新生成。</p>
+              )}
             </div>
           </div>
         ) : !isTextEditing && !showEditorEmbed && !hasVideoProject ? (

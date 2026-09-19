@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
@@ -7,12 +8,32 @@ type SeedResult = {
 };
 
 const seed = JSON.parse(process.env.DISPLAY_COVERAGE_SEED_JSON ?? "{}") as Partial<SeedResult>;
+const desktopEvidenceDirectory = resolve(process.cwd(), "artifacts/qa/desktop-ui-ux-remediation-20260917");
+
+async function captureDesktopEvidence(page: Page, slug: string) {
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  for (const viewport of [
+    { width: 1280, height: 720, suffix: "1280x720" },
+    { width: 1440, height: 900, suffix: "1440x900" },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `${slug}-${viewport.suffix}.png`),
+      animations: "disabled",
+    });
+  }
+}
 
 async function openCase(page: Page, caseId: string) {
   const conversationId = seed.conversation_ids?.[caseId];
   if (!conversationId) throw new Error(`Missing seeded conversation id for ${caseId}`);
   await page.goto("/app/assets");
   const conversationLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`);
+  if (await conversationLink.count() === 0) {
+    const showAllProjects = page.getByRole("button", { name: "查看全部", exact: true });
+    await expect(showAllProjects).toBeVisible();
+    await showAllProjects.click();
+  }
   await expect(conversationLink).toBeVisible();
   await conversationLink.click();
   await expect(conversationLink).toHaveAttribute("aria-current", "page");
@@ -123,12 +144,14 @@ test("CASE-01 shows a director draft without project controls", async ({ page })
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toHaveCount(0);
+  await captureDesktopEvidence(page, "copy-result");
 });
 
 test("CASE-14 exports distinct original and branded images and downloads the brand kit", async ({ page }) => {
   const workspace = await openCase(page, "case-14-image-export");
   const downloadMenu = workspace.getByRole("button", { name: "下载", exact: true });
   await expect(downloadMenu).toBeEnabled();
+  await captureDesktopEvidence(page, "image-result");
 
   const originalDownloadPromise = page.waitForEvent("download");
   await downloadMenu.click();
@@ -184,13 +207,20 @@ test("CASE-04 stays in progress after reload", async ({ page }) => {
   await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
   await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
+  await captureDesktopEvidence(page, "generating");
 });
 
-test("CASE-05 shows its stable failure and retry", async ({ page }) => {
+test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   const workspace = await openCase(page, "case-05-project-failed");
   const failure = workspace.getByRole("alert");
+  const thread = page.getByRole("region", { name: "Content generation conversation" });
   await expect(failure.getByText("视频生成未能完成，请重试。", { exact: true })).toBeVisible();
-  await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
+  await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
+  const retryAction = thread.getByRole("button", { name: "重试", exact: true });
+  await expect(retryAction).toHaveCount(1);
+  await expect(retryAction).toBeVisible();
+  await captureDesktopEvidence(page, "failure");
 });
 
 test("CASE-09 keeps an invalid video-render record out of the legacy preview", async ({ page }) => {
@@ -289,6 +319,7 @@ test("CASE-06 renders the ready engineering preview without opening the editable
     maxDiffPixels: 2_000,
   });
   await expectProportionalFramelessMediaCanvas(page, screen, 16 / 9);
+  await captureDesktopEvidence(page, "video-engineering");
 });
 
 test("CASE-07 recovers the same export after API and worker restart", async ({ page }) => {
@@ -441,13 +472,179 @@ test("video library renders one bounded page without eager video elements", asyn
   await page.getByRole("button", { name: "展开侧边栏" }).click();
   await expect(shell).not.toHaveClass(/sidebar-collapsed/);
 
-  await page.getByRole("button", { name: "加载更多" }).click();
+  await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "加载更多内容" }).click();
   await expect(cards).toHaveCount(65);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);
   expect(listRequests[1].searchParams.get("limit")).toBe("49");
   expect(listRequests[1].searchParams.get("offset")).toBe("48");
+});
+
+test("library cross-type details and interaction states stay consistent", async ({ page }) => {
+  const updatedAt = "2026-09-17T10:00:00Z";
+  const copyAsset = {
+    id: 9101,
+    library_kind: "copy",
+    asset_kind: "copy",
+    content_type: "social_post",
+    title: "秋季门店焕新推广文案",
+    status: "ready",
+    body: "秋日焕新，从一扇更安静的窗开始。\n\n我们把隔音、保温和采光写进每一个生活细节，让家的舒适被真实感知。\n\n到店可查看真实案例与材料样板。",
+    source_type: "conversation",
+    source_filename: null,
+    original_ref: null,
+    markdown_ref: null,
+    metadata: { reference_count: 3, artifact_category: "文案稿" },
+    source_mapping: [{ title: "门店活动需求", source_type: "conversation", asset_id: 701 }],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [{ version: 1, instruction: "初稿" }, { version: 2, instruction: "强化到店行动" }],
+    updated_at: updatedAt,
+  };
+  const legacyDirectorAsset = {
+    ...copyAsset,
+    id: 9102,
+    library_kind: "video",
+    asset_kind: "video",
+    content_type: "video_script",
+    title: "生产验收编导稿",
+    body: "# 生产验收编导稿\n\n这是连续文字编导内容，不应显示播放器。",
+    metadata: { reference_count: 1, artifact_category: "编导稿" },
+    versions: [{ version: 1, instruction: "确认编导方案" }],
+  };
+  const baseVideoAsset = {
+    library_kind: "video",
+    asset_kind: "video",
+    content_type: "generated_video",
+    status: "ready",
+    body: "镜头一：门店外景与品牌标识。\n\n镜头二：隔音窗细节和实际体验。\n\n镜头三：顾客到店咨询与行动引导。",
+    source_type: "generation",
+    source_filename: "store-campaign.mp4",
+    source_content_type: "video/mp4",
+    original_ref: null,
+    markdown_ref: null,
+    metadata: {
+      reference_count: 1,
+      artifact_category: "生成视频素材",
+      understanding: { status: "ready", caption: "门店焕新推广视频", tags: ["门店", "隔音窗", "到店"] },
+    },
+    source_mapping: [],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [],
+    updated_at: updatedAt,
+  };
+  const videoAssets = Array.from({ length: 52 }, (_, index) => ({
+    ...baseVideoAsset,
+    ...(index === 0 ? {
+      content_type: "video_project",
+      body: "第一步：说出你的营销想法，系统整理目标和受众。\n\n第二步：AI 生成可确认的编导方案并匹配画面。\n\n第三步：继续通过对话调整分镜、节奏和字幕。",
+      metadata: { ...baseVideoAsset.metadata, artifact_category: "视频工程" },
+      versions: [
+        { version: 3, instruction: "global-revision:before" },
+        { version: 4, instruction: "video.project.set_ratio" },
+        { version: 5, instruction: "video.project.reorder_scenes" },
+      ],
+    } : {}),
+    id: 9201 + index,
+    title: index === 0 ? "门店焕新推广视频" : `门店视频素材 ${String(index + 1).padStart(2, "0")}`,
+  }));
+  const sourceAsset = {
+    id: 9301,
+    library_kind: "assets",
+    asset_kind: "asset",
+    content_type: "pdf",
+    title: "门窗行业获客白皮书",
+    status: "ready",
+    body: "本资料汇总本地门窗门店的短视频获客路径。\n\n重点包括到店线索、案例可信度、内容频次和咨询转化。",
+    source_type: "upload",
+    source_filename: "门窗行业获客白皮书.pdf",
+    source_content_type: "application/pdf",
+    original_ref: "local://fixtures/window-industry-report.pdf",
+    markdown_ref: null,
+    metadata: {
+      reference_count: 2,
+      understanding: { status: "ready", caption: "门窗门店短视频获客与转化摘要", tags: ["门窗", "获客", "转化"] },
+    },
+    source_mapping: [{ title: "白皮书第 3 章", source_type: "document", state: "ready" }],
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    versions: [],
+    updated_at: updatedAt,
+  };
+
+  await page.route("**/v1/assets?**", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const url = new URL(route.request().url());
+    const kind = url.searchParams.get("library_kind");
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    const limit = Number(url.searchParams.get("limit") ?? "49");
+    const rows = kind === "copy" ? [copyAsset, legacyDirectorAsset] : kind === "video" ? videoAssets : kind === "assets" ? [sourceAsset] : [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows.slice(offset, offset + limit)) });
+  });
+  await page.route("**/v1/assets/search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.route("**/v1/assets/semantic-search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  await page.goto("/app/assets");
+  const navigation = page.locator(".shadcn-prototype-nav");
+
+  await navigation.getByRole("button", { name: "文案库", exact: true }).click();
+  const copyGrid = page.getByLabel("文案库列表");
+  await copyGrid.locator("button.shadcn-prototype-library-text-card").first().click();
+  let detail = page.getByRole("dialog", { name: "秋季门店焕新推广文案详情" });
+  await expect(detail.getByText("秋日焕新，从一扇更安静的窗开始。", { exact: true })).toBeVisible();
+  await expect(detail.locator(".shadcn-prototype-library-detail-primary")).toHaveText("用于创作");
+  await captureDesktopEvidence(page, "copy-detail");
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+
+  const directorCard = copyGrid.getByRole("button").filter({ hasText: "生产验收编导稿" });
+  await expect(directorCard).toHaveCount(1);
+  await directorCard.click();
+  detail = page.getByRole("dialog", { name: "生产验收编导稿详情" });
+  await expect(detail.getByText("这是连续文字编导内容，不应显示播放器。", { exact: true })).toBeVisible();
+  await expect(detail.locator(".shadcn-prototype-library-video-preview")).toHaveCount(0);
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+
+  await page.getByRole("textbox", { name: "搜索文案库" }).fill("不存在的内容");
+  await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
+  await expect(copyGrid.locator("button.shadcn-prototype-library-text-card")).toHaveCount(2);
+  await page.getByRole("button", { name: "选题方案", exact: true }).click();
+  await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
+
+  await navigation.getByRole("button", { name: "视频库", exact: true }).click();
+  const videoGrid = page.getByLabel("视频库列表");
+  await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
+  await videoGrid.locator("button.shadcn-prototype-library-media-card").first().click();
+  detail = page.getByRole("dialog", { name: "门店焕新推广视频详情" });
+  await expect(detail.getByText("规格", { exact: true })).toBeVisible();
+  await expect(detail.getByText("用于创作", { exact: true })).toBeVisible();
+  const previewSection = detail.locator(".shadcn-prototype-library-content").nth(1);
+  const versionSection = detail.locator(".shadcn-prototype-library-keywords");
+  const [previewBox, versionBox] = await Promise.all([previewSection.boundingBox(), versionSection.boundingBox()]);
+  expect(previewBox).not.toBeNull();
+  expect(versionBox).not.toBeNull();
+  if (previewBox && versionBox) {
+    expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(versionBox.y);
+  }
+  await captureDesktopEvidence(page, "video-detail");
+  await detail.getByRole("button", { name: "关闭详情", exact: true }).click();
+  await page.getByRole("button", { name: "加载更多内容", exact: true }).click();
+  await expect(videoGrid.locator("button.shadcn-prototype-library-media-card")).toHaveCount(52);
+  await expect(page.getByRole("button", { name: "加载更多内容", exact: true })).toHaveCount(0);
+
+  await navigation.getByRole("button", { name: "资产库", exact: true }).click();
+  const assetGrid = page.getByLabel("资产库列表");
+  await assetGrid.locator("button.shadcn-prototype-library-text-card").first().click();
+  detail = page.getByRole("dialog", { name: "门窗行业获客白皮书详情" });
+  await expect(detail.getByRole("heading", { name: /AI 摘要/ })).toBeVisible();
+  await expect(detail.getByText("本资料汇总本地门窗门店的短视频获客路径。", { exact: true })).toBeVisible();
+  await detail.getByLabel("更多操作").click();
+  await expect(detail.getByRole("button", { name: "查看来源", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "asset-detail");
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
@@ -473,6 +670,7 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   if (layoutGap[0] && layoutGap[1]) {
     expect(layoutGap[1].y - (layoutGap[0].y + layoutGap[0].height)).toBeLessThan(32);
   }
+  await captureDesktopEvidence(page, "video-complete");
 
   await workspace.getByRole("button", { name: "编辑", exact: true }).click();
   const editor = page.frameLocator('iframe[title="视频剪辑器"]');
@@ -585,12 +783,93 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 
+test("desktop start and image library keep the approved hierarchy", async ({ page }) => {
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "新建项目", exact: true }).first().click();
+  await expect(page.getByRole("heading", { name: "新建视频项目", exact: true })).toBeVisible();
+  const sidebar = page.getByRole("complementary", { name: "Workspace navigation" });
+  const projectRows = sidebar.locator(".shadcn-prototype-conversation-row");
+  const projectSection = sidebar.locator(".shadcn-prototype-conversation-section");
+  const libraryNavigation = sidebar.getByRole("navigation", { name: "资源库" });
+  const libraryButtons = libraryNavigation.getByRole("button");
+  await expect(sidebar.getByText("最近项目", { exact: true })).toBeVisible();
+  await expect(libraryNavigation.getByText("资源库", { exact: true })).toBeVisible();
+  await expect(libraryButtons).toHaveCount(4);
+  await expect(libraryNavigation.getByRole("button", { name: "资产库", exact: true })).toContainText("资产");
+  await expect(libraryNavigation.getByRole("button", { name: "文案库", exact: true })).toContainText("文案");
+  await expect(libraryNavigation.getByRole("button", { name: "图片库", exact: true })).toContainText("图片");
+  await expect(libraryNavigation.getByRole("button", { name: "视频库", exact: true })).toContainText("视频");
+  await expect.poll(async () => libraryNavigation.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+  await expect(projectRows).toHaveCount(8);
+  await expect(sidebar.getByText("可继续编辑", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("待完善需求", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("你的素材可以开始做视频了", { exact: true })).toHaveCount(0);
+  const [projectBox, libraryBox] = await Promise.all([projectSection.boundingBox(), libraryNavigation.boundingBox()]);
+  expect(projectBox).not.toBeNull();
+  expect(libraryBox).not.toBeNull();
+  if (projectBox && libraryBox) expect(libraryBox.y).toBeGreaterThan(projectBox.y);
+  await sidebar.getByRole("button", { name: "查看全部", exact: true }).click();
+  await expect(projectRows).toHaveCount(14);
+  await sidebar.getByRole("button", { name: "收起项目", exact: true }).click();
+  await expect(projectRows).toHaveCount(8);
+  await captureDesktopEvidence(page, "new-project");
+
+  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "图片库", exact: true }).click();
+  const breadcrumb = page.locator(".shadcn-prototype-topbar .shadcn-prototype-breadcrumb");
+  await expect(breadcrumb).toContainText("资源库");
+  await expect(breadcrumb).toContainText("图片库");
+  await expect(page.getByRole("heading", { name: "图片库", exact: true })).toBeVisible();
+  await expect(page.getByText("管理封面图、素材图和可以复用的分镜画面。", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("图片库筛选")).toBeVisible();
+  await expect(page.getByRole("group", { name: "内容类型" })).toBeVisible();
+  await expect(page.getByRole("group", { name: "处理状态" })).toBeVisible();
+  const grid = page.getByLabel("图片库列表");
+  const firstCard = grid.locator("button.shadcn-prototype-library-media-card").first();
+  await expect(firstCard).toBeVisible();
+  await captureDesktopEvidence(page, "image-library");
+
+  await firstCard.click();
+  const detailDialog = page.getByRole("dialog", { name: /详情$/ });
+  await expect(detailDialog).toBeVisible();
+  await expect(detailDialog.locator(".shadcn-prototype-library-detail-primary")).toHaveCount(1);
+  await expect(detailDialog.locator(".shadcn-prototype-library-detail-body")).toHaveCSS("overflow-y", "auto");
+  await expect(detailDialog.locator(".shadcn-prototype-library-actions")).toBeVisible();
+  await captureDesktopEvidence(page, "image-detail");
+  await detailDialog.getByLabel("更多操作").click();
+  await expect(detailDialog.getByRole("button", { name: "下载", exact: true })).toBeVisible();
+  await expect(detailDialog.getByRole("button", { name: "删除", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "image-detail-more");
+  await detailDialog.getByLabel("更多操作").click();
+  await page.getByRole("button", { name: "关闭详情", exact: true }).click();
+
+  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "资产库", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const assetHeader = page.locator(".shadcn-prototype-library-page-header");
+  await expect(page.getByRole("heading", { name: "资产库", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("textbox", { name: "搜索资产库" })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "读取网页", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "公开素材搜索", exact: true })).toBeVisible();
+  await expect(assetHeader.getByRole("button", { name: "上传", exact: true })).toBeVisible();
+  const [assetHeaderBox, viewport] = await Promise.all([
+    assetHeader.boundingBox(),
+    page.evaluate(() => ({ width: window.innerWidth, scrollWidth: document.documentElement.scrollWidth })),
+  ]);
+  expect(assetHeaderBox).not.toBeNull();
+  expect(viewport.scrollWidth).toBeLessThanOrEqual(viewport.width);
+  if (assetHeaderBox) expect(assetHeaderBox.x + assetHeaderBox.width).toBeLessThanOrEqual(viewport.width);
+  await captureDesktopEvidence(page, "asset-library");
+});
+
 test("CASE-08 marks the video failed when a planned MG effect fails", async ({ page }, testInfo) => {
   const workspace = await openCase(page, "case-08-mg-failed-project-ready");
   const thread = page.getByRole("region", { name: "Content generation conversation" });
   const failure = workspace.getByRole("alert");
   await expect(failure.getByText("第 2 镜动效未能完成", { exact: false })).toBeVisible();
-  await expect(failure.getByRole("button", { name: /重试生成/ })).toBeVisible();
+  await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
+  await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
+  const retryAction = thread.getByRole("button", { name: "重试", exact: true });
+  await expect(retryAction).toHaveCount(1);
+  await expect(retryAction).toBeVisible();
   await expect(thread.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(page.getByText(/视频已生成，可立即编辑/)).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);

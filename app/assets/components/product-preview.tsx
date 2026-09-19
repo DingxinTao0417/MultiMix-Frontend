@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
 import { API_BASE } from "../../../lib/api";
-import { getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { getProductDisplayIdentity, getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetImageGenerationTarget, AssetProductSegment } from "../lib/asset-workspace-types";
 import MarkdownProductDocument from "./markdown-product-document";
 import GeneratedImageGallery, {
@@ -77,7 +77,7 @@ function videoPlanSummary(product: ProductArtifact) {
   const scenes = Array.isArray(plan.scenes) ? plan.scenes.filter(isRecord) : [];
   const mgStyleProfile = isRecord(plan.mg_style_profile) ? plan.mg_style_profile : null;
   return {
-    topic: stringValue(summary.topic) || product.title,
+    topic: stringValue(summary.topic) || "当前视频",
     audience: stringValue(plan.audience) || "潜在用户",
     style: stringValue(plan.style) || "清晰可信",
     mgStyle: stringValue(summary.mg_style_label) || stringValue(mgStyleProfile?.preset) || "科技",
@@ -172,8 +172,9 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
           ? "系统不会自动替换已经确认的素材。"
           : "你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。"}
       </p>
-      <div className="shadcn-prototype-video-failed-actions">
-        {product.failureAction === "replace_scene_asset" ? (
+      {product.failureAction ? (
+        <div className="shadcn-prototype-video-failed-actions">
+          {product.failureAction === "replace_scene_asset" ? (
           <button
             type="button"
             className="primary"
@@ -191,11 +192,11 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
           >
             重新寻找该镜素材
           </button>
-        ) : product.failureAction === "modify_script" ? (
+          ) : product.failureAction === "modify_script" ? (
           <button type="button" className="primary" onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}>
             修改编导脚本
           </button>
-        ) : (
+          ) : product.failureAction === "retry" || product.failureAction === "retry_scene_generation" ? (
           <button
             type="button"
             className="primary"
@@ -203,14 +204,11 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
           >
             ↻ 重试生成
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
-        >
-          回对话调整
-        </button>
-      </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="shadcn-prototype-video-failed-note">当前任务不可直接重试，请回到对话调整后重新生成。</p>
+      )}
     </div>
   );
 }
@@ -317,6 +315,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const [fullVideoRecoveryPending, setFullVideoRecoveryPending] = useState(false);
   const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
   const exportedVideoUrl = playableVideoUrl(product);
+  const displayIdentity = getProductDisplayIdentity(product);
 
   useEffect(() => {
     setFullVideoFailed(false);
@@ -396,15 +395,21 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     // 图片产物形态). Variant thumbnails come from preview.frames when present.
     const heroUrl = isRecord(product.metadata) ? stringValue(product.metadata.preview_url) || stringValue(product.metadata.thumbnail_url) : "";
     const caption = product.preview?.subtitle ?? product.summary;
+    const imageTitle = product.preview?.title?.trim();
+    const showImageTitle = Boolean(
+      imageTitle
+      && imageTitle !== product.title
+      && imageTitle !== displayIdentity.title,
+    );
     const variants = (product.preview?.frames ?? []).slice(1);
     return (
       <div className="shadcn-prototype-image-card" aria-label="图片产物预览">
         <div className="shadcn-prototype-image-card-hero">
           {/* eslint-disable-next-line @next/next/no-img-element -- dynamic remote hero URLs are unsupported by next/image */}
-          {/^https?:\/\//i.test(heroUrl) ? <img src={heroUrl} alt={product.preview?.title ?? product.title} loading="lazy" /> : <span>{product.ratio}</span>}
+          {/^https?:\/\//i.test(heroUrl) ? <img src={heroUrl} alt={imageTitle || `${displayIdentity.label}预览`} loading="lazy" /> : <span>{product.ratio}</span>}
         </div>
         <div className="shadcn-prototype-image-card-caption">
-          <strong>{product.preview?.title ?? product.title}</strong>
+          {showImageTitle ? <strong>{imageTitle}</strong> : null}
           <em>{caption}</em>
         </div>
         {variants.length ? (
@@ -427,7 +432,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
       <div className="shadcn-prototype-audio-preview" aria-label="音频产物预览">
         <div>
           <span>{product.duration}</span>
-          <strong>{product.preview?.title ?? product.title}</strong>
+          <strong>{product.preview?.title ?? displayIdentity.label}</strong>
           <em>{product.preview?.subtitle ?? "口播 / 字幕 / 时间轴已匹配"}</em>
         </div>
         <div className="shadcn-prototype-waveform" aria-hidden="true">
@@ -495,7 +500,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const previewStageDescription = hasVideoProject
     ? "视频已完成，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
     : "当前是可编辑编导脚本，包含内容结构、关键段落和分镜方向；确认后可生成视频。";
-  const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? product.title;
+  const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? previewStageLabel;
   const allSegmentsCovered = hasVideoProject
     && Boolean(product.segments?.length)
     && !product.segments?.some(segmentNeedsMaterial);
@@ -627,7 +632,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
           <div className="shadcn-prototype-video-placeholder-meta">
             <header>
               <span>{previewStageLabel}</span>
-              <strong>{product.preview?.title ?? product.title}</strong>
+              <strong>{product.preview?.title ?? displayIdentity.label}</strong>
               <em>{product.ratio} / {product.duration}</em>
             </header>
             <p>{previewStageDescription}</p>
