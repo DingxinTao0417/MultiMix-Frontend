@@ -25,6 +25,7 @@ import {
 
 const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
 const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
+const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。";
 const ATTACHMENT_HELP_TEXT = "图片和视频会作为创作素材，PDF/文档会作为内容依据；视频也可以作为需要优化的口播原片。";
 
 const START_CAPABILITIES = [
@@ -184,12 +185,14 @@ export default function ConversationStart({
       return;
     }
     const explicitInstruction = composerValue.trim();
-    if (hasReadyVideoAttachment && !explicitInstruction) {
-      setError("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
-      return;
-    }
-    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
-    if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment) || !canGenerate || !onSend || sending) return;
+    const instruction = explicitInstruction || (hasReadyImageAttachment
+      ? IMAGE_ONLY_INSTRUCTION
+      : hasReadySourceAttachment
+        ? DOC_ONLY_INSTRUCTION
+        : hasReadyVideoAttachment
+          ? VIDEO_ONLY_INSTRUCTION
+          : "");
+    if ((!instruction && !hasReadyImageAttachment && !hasReadySourceAttachment && !hasReadyVideoAttachment) || !canGenerate || !onSend || sending) return;
     const controller = new AbortController();
     controllerRef.current = controller;
     setSending(true);

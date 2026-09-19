@@ -56,4 +56,14 @@ describe("chat video attachment routing", () => {
 
     expect(resolveChatVideoAttachmentPurpose(conversation)).toBe("creation_source");
   });
+
+  it("uploads a local neutral video as an editable video while keeping URL import on the long-form path", () => {
+    expect(workspaceClient).toContain("const isLocalConversationVideo");
+    expect(workspaceClient).toMatch(
+      /isLocalConversationVideo[\s\S]*uploadAsset\(\s*token,\s*upload\.file,\s*"video"/,
+    );
+    expect(workspaceClient).toMatch(
+      /upload\.sourceUrl[\s\S]*prepareLongFormComposerSource/,
+    );
+  });
 });

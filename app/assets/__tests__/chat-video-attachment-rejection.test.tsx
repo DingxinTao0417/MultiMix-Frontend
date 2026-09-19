@@ -76,7 +76,7 @@ describe("chat video attachments", () => {
     expect(screen.getByRole("button", { name: "上传图片素材" })).toBeInTheDocument();
   });
 
-  it("does not force a long-form choice after a ready video in a new conversation", async () => {
+  it("asks whether to identify scenes when a ready video is sent without text in a new conversation", async () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
     render(
       <ConversationStart
@@ -93,8 +93,9 @@ describe("chat video attachments", () => {
     expect(screen.queryByRole("button", { name: "找出值得发布的片段" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    await waitFor(() => expect(onSend).not.toHaveBeenCalled());
-    expect(screen.getByRole("alert")).toHaveTextContent("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+    expect(onSend.mock.calls[0][1]).toBe("我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("turns a supported pasted video URL into an attachment request", () => {
@@ -117,7 +118,7 @@ describe("chat video attachments", () => {
     expect(screen.getByLabelText("输入对话内容")).toHaveValue("");
   });
 
-  it("does not force a long-form choice after a ready video in an existing conversation", async () => {
+  it("asks whether to identify scenes when a ready video is sent without text in an existing conversation", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     render(
       <ConversationStudio
@@ -137,7 +138,8 @@ describe("chat video attachments", () => {
     expect(screen.queryByRole("button", { name: "找出值得发布的片段" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    await waitFor(() => expect(onSendMessage).not.toHaveBeenCalled());
-    expect(screen.getByRole("alert")).toHaveTextContent("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledTimes(1));
+    expect(onSendMessage.mock.calls[0][1]).toBe("我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

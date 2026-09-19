@@ -50,6 +50,7 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import ExternalVideoStoryboardProgress from "./external-video-storyboard-progress";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
@@ -112,7 +113,8 @@ export type ChatImageAttachment = {
 
 const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
 const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
-const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
+const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。";
+const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后可直接发送，再选择是否识别分镜。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -139,6 +141,26 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
     started_at: typeof metadata.asset_generation_started_at === "string" ? metadata.asset_generation_started_at : null,
     progress_events: progress,
   };
+}
+
+function storyboardProgressFromMessage(message: AssetConversationMessage): {
+  sourceAssetId: number;
+  jobId: string;
+} | null {
+  if (message.role !== "assistant") return null;
+  const intent = message.metadata?.intent;
+  if (!intent || typeof intent !== "object" || Array.isArray(intent)) return null;
+  const value = intent as Record<string, unknown>;
+  if (
+    value.capability !== "external_video_storyboard"
+    || value.operation !== "analyze_storyboard"
+    || typeof value.job_id !== "string"
+    || !value.job_id.trim()
+    || typeof value.source_asset_id !== "number"
+    || !Number.isInteger(value.source_asset_id)
+    || value.source_asset_id <= 0
+  ) return null;
+  return { sourceAssetId: value.source_asset_id, jobId: value.job_id.trim() };
 }
 
 function confirmationPlanKey(plan: AssetMessagePlan): string {
@@ -617,11 +639,13 @@ export default function ConversationStudio({
 
   const submitInstruction = async () => {
     const explicitInstruction = composerValue.trim();
-    if (hasReadyVideoAttachment && !explicitInstruction) {
-      setSendError("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
-      return;
-    }
-    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const instruction = explicitInstruction || (hasReadyImageAttachment
+      ? IMAGE_ONLY_INSTRUCTION
+      : hasReadySourceAttachment
+        ? DOC_ONLY_INSTRUCTION
+        : hasReadyVideoAttachment
+          ? VIDEO_ONLY_INSTRUCTION
+          : "");
     await sendInstruction(instruction, {
       confirmationProductId: adjustmentProductId ?? undefined,
     });
@@ -1187,10 +1211,15 @@ export default function ConversationStudio({
           const directorScriptUsedForVideoProject = renderedGenerationJob
             && renderedGenerationJob.status === "completed"
             && hasReadyVideoProjectForDirectorScript(products, message.assetId);
+          const storyboardProgress = storyboardProgressFromMessage(message);
+          const rendersStoryboardProgress = storyboardProgress !== null
+            && !visibleConversationMessages.slice(index + 1).some((laterMessage) => (
+              storyboardProgressFromMessage(laterMessage)?.jobId === storyboardProgress.jobId
+            ));
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(
-            message.plan || timelineSteps.length || renderedGenerationJob,
+            message.plan || timelineSteps.length || renderedGenerationJob || rendersStoryboardProgress,
           );
           const showsAssistantWaiting = message.role === "assistant"
             && message.pending === true
@@ -1238,6 +1267,13 @@ export default function ConversationStudio({
                   </p>
                   <p className="shadcn-prototype-confirm-sub">{creativeDraft.releaseNote}</p>
                 </div>
+              ) : null}
+              {rendersStoryboardProgress && storyboardProgress && requirementAnalyticsToken ? (
+                <ExternalVideoStoryboardProgress
+                  token={requirementAnalyticsToken}
+                  sourceAssetId={storyboardProgress.sourceAssetId}
+                  jobId={storyboardProgress.jobId}
+                />
               ) : null}
               {message.plan ? (
                 <ConfirmCard

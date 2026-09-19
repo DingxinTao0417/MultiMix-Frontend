@@ -2262,7 +2262,9 @@ export default function AssetsWorkspaceClient({
     const controller = new AbortController();
     const videoPurpose = upload.videoPurpose ?? "creation_source";
     const isVisualMaterialVideo = upload.fileKind === "video" && videoPurpose === "visual_material";
-    if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+    const isLocalConversationVideo = upload.fileKind === "video" && Boolean(upload.file) && !upload.sourceUrl;
+    const usesOrdinaryVideoUpload = isVisualMaterialVideo || isLocalConversationVideo;
+    if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
       longFormSourceControllersRef.current.set(upload.id, controller);
     }
     try {
@@ -2275,7 +2277,7 @@ export default function AssetsWorkspaceClient({
         }));
       };
       let asset;
-      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+      if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
         const input = upload.sourceUrl
           ? { kind: "url" as const, url: upload.sourceUrl }
           : upload.file
@@ -2290,7 +2292,7 @@ export default function AssetsWorkspaceClient({
         });
       } else {
         if (!upload.file) throw new Error("没有可上传的资料。");
-        if (isVisualMaterialVideo) {
+        if (usesOrdinaryVideoUpload) {
           asset = await assetWorkspaceAdapter.uploadAsset(
             token,
             upload.file,
@@ -2312,7 +2314,7 @@ export default function AssetsWorkspaceClient({
         assetId: asset.id,
         fileKind: upload.fileKind,
         status: (
-          (upload.fileKind === "video" && !isVisualMaterialVideo)
+          (upload.fileKind === "video" && !usesOrdinaryVideoUpload)
           || !("status" in asset)
           || asset.status === "ready"
         ) ? "ready" : "processing",
@@ -2354,7 +2356,7 @@ export default function AssetsWorkspaceClient({
         )
       }));
     } finally {
-      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+      if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
         longFormSourceControllersRef.current.delete(upload.id);
       }
     }

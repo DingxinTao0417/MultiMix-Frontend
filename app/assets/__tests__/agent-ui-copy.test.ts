@@ -1521,7 +1521,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
     expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
-    expect(conversationStudio).toContain("添加视频后请先说明想怎么处理");
+    expect(conversationStudio).toContain("添加视频后可直接发送，再选择是否识别分镜");
     expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
     expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
