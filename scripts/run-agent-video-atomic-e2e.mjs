@@ -599,6 +599,8 @@ try {
       databaseUrl,
       "--artifact-dir",
       artifactDir,
+      "--audio-file",
+      fakeAudioPath,
     ],
     { cwd: backendRoot, env: backendEnv },
   );

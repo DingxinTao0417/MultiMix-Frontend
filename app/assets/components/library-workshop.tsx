@@ -13,6 +13,22 @@ import {
 } from "../lib/runtime-write-capabilities";
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
+import { apiErrorStatus } from "../../../lib/api";
+import {
+  animateVideoStoryboardScene,
+  confirmVideoStoryboard,
+  createVideoStoryboard,
+  getLatestVideoStoryboardJob,
+  getLatestVideoStoryboardAnimationJob,
+  getVideoStoryboard,
+  getVideoStoryboardJob,
+  getVideoStoryboardAnimationJob,
+  retryVideoStoryboardJob,
+  type VideoStoryboard,
+  type VideoStoryboardJob,
+  type VideoStoryboardAnimationJob,
+  type VideoStoryboardAnimationStyle,
+} from "../lib/video-storyboard-client";
 
 const FILTERS: Record<Exclude<ActiveView, "conversation">, string[]> = {
   assets: ["全部", "上传资料", "采集资料", "对话沉淀", "未分类"],
@@ -387,6 +403,7 @@ function LibraryWorkshop({
   const [publicLoading, setPublicLoading] = useState(false);
   const [publicMessage, setPublicMessage] = useState<string | null>(null);
   const detailDialogRef = useRef<HTMLElement | null>(null);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const detailCloseRef = useRef<HTMLButtonElement | null>(null);
   const publicDialogRef = useRef<HTMLElement | null>(null);
   const publicQueryRef = useRef<HTMLInputElement | null>(null);
@@ -538,6 +555,194 @@ function LibraryWorkshop({
     : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
+  const selectedUploadedVideoId = view === "video" && selectedRow?.contentTypeCode === "uploaded_video"
+    ? selectedRow.assetId ?? null
+    : null;
+  const [videoStoryboard, setVideoStoryboard] = useState<VideoStoryboard | null>(null);
+  const [storyboardJob, setStoryboardJob] = useState<VideoStoryboardJob | null>(null);
+  const [storyboardBusy, setStoryboardBusy] = useState(false);
+  const [storyboardError, setStoryboardError] = useState("");
+  const [storyboardAnimationJob, setStoryboardAnimationJob] = useState<VideoStoryboardAnimationJob | null>(null);
+  const [storyboardAnimationError, setStoryboardAnimationError] = useState("");
+  const activeAnimationJobId = storyboardAnimationJob?.job_id;
+  const activeAnimationStatus = storyboardAnimationJob?.status;
+  const activeStoryboardJobId = storyboardJob?.job_id;
+  const activeStoryboardJobStatus = storyboardJob?.status;
+  const storyboardJobStatusText = storyboardJob?.stage === "reading_source"
+    ? "正在读取视频素材…"
+    : storyboardJob?.stage === "analyzing"
+      ? "正在识别视频分镜…"
+      : "正在准备自动分镜…";
+
+  useEffect(() => {
+    setVideoStoryboard(null);
+    setStoryboardJob(null);
+    setStoryboardError("");
+    setStoryboardAnimationJob(null);
+    setStoryboardAnimationError("");
+    if (!token || !selectedUploadedVideoId) return;
+    let current = true;
+    void getVideoStoryboard(token, selectedUploadedVideoId)
+      .then(async (index) => {
+        if (!current) return;
+        setVideoStoryboard(index);
+        try {
+          const latestJob = await getLatestVideoStoryboardAnimationJob(
+            token, selectedUploadedVideoId,
+          );
+          if (current) setStoryboardAnimationJob(latestJob);
+        } catch (error) {
+          if (current && apiErrorStatus(error) !== 404) {
+            setStoryboardAnimationError("动画任务状态暂时无法读取，请稍后刷新。");
+          }
+        }
+      })
+      .catch((error) => {
+        if (!current) return;
+        if (apiErrorStatus(error) !== 409) {
+          setStoryboardError("分镜暂时无法读取，请稍后再试。");
+          return;
+        }
+        void getLatestVideoStoryboardJob(token, selectedUploadedVideoId)
+          .then((job) => {
+            if (!current) return;
+            setStoryboardJob(job);
+            if (job.storyboard) setVideoStoryboard(job.storyboard);
+          })
+          .catch((jobError) => {
+            if (current && apiErrorStatus(jobError) !== 404) {
+              setStoryboardError("分镜任务状态暂时无法读取，请稍后刷新。");
+            }
+          });
+      });
+    return () => { current = false; };
+  }, [token, selectedUploadedVideoId]);
+
+  useEffect(() => {
+    if (
+      !token || !selectedUploadedVideoId || !activeStoryboardJobId
+      || !activeStoryboardJobStatus
+      || !["queued", "running"].includes(activeStoryboardJobStatus)
+    ) return;
+    let current = true;
+    const poll = () => {
+      void getVideoStoryboardJob(token, selectedUploadedVideoId, activeStoryboardJobId)
+        .then((job) => {
+          if (!current) return;
+          setStoryboardJob(job);
+          if (job.storyboard) setVideoStoryboard(job.storyboard);
+        })
+        .catch(() => {
+          if (current) setStoryboardError("分镜任务状态暂时无法读取，请稍后刷新。");
+        });
+    };
+    poll();
+    const timer = window.setInterval(poll, 2500);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [token, selectedUploadedVideoId, activeStoryboardJobId, activeStoryboardJobStatus]);
+
+  useEffect(() => {
+    if (!token || !selectedUploadedVideoId || !storyboardJob?.animation_job_id) return;
+    let current = true;
+    void getVideoStoryboardAnimationJob(
+      token, selectedUploadedVideoId, storyboardJob.animation_job_id,
+    )
+      .then((job) => { if (current) setStoryboardAnimationJob(job); })
+      .catch(() => {
+        if (current) setStoryboardAnimationError("动画任务状态暂时无法读取，请稍后刷新。");
+      });
+    return () => { current = false; };
+  }, [token, selectedUploadedVideoId, storyboardJob?.animation_job_id]);
+
+  useEffect(() => {
+    if (
+      !token || !selectedUploadedVideoId || !activeAnimationJobId
+      || !activeAnimationStatus || !["queued", "running"].includes(activeAnimationStatus)
+    ) return;
+    let current = true;
+    const timer = window.setInterval(() => {
+      void getVideoStoryboardAnimationJob(token, selectedUploadedVideoId, activeAnimationJobId)
+        .then((job) => { if (current) setStoryboardAnimationJob(job); })
+        .catch(() => { if (current) setStoryboardAnimationError("动画任务状态暂时无法读取，请稍后刷新。"); });
+    }, 2500);
+    return () => { current = false; window.clearInterval(timer); };
+  }, [token, selectedUploadedVideoId, activeAnimationJobId, activeAnimationStatus]);
+
+  useEffect(() => {
+    if (storyboardAnimationJob?.status === "completed") setLocalRefreshKey((value) => value + 1);
+  }, [storyboardAnimationJob?.status]);
+
+  const analyzeSelectedVideo = async () => {
+    if (!token || !selectedUploadedVideoId || storyboardBusy) return;
+    setStoryboardBusy(true);
+    setStoryboardError("");
+    try {
+      const job = await createVideoStoryboard(token, selectedUploadedVideoId);
+      setStoryboardJob(job);
+      if (job.storyboard) setVideoStoryboard(job.storyboard);
+    } catch (error) {
+      setStoryboardError(error instanceof Error ? error.message : "分镜识别失败，请重试。");
+      reportRuntimeWriteFailure(error);
+    } finally {
+      setStoryboardBusy(false);
+    }
+  };
+
+  const retrySelectedVideoStoryboard = async () => {
+    if (
+      !token || !selectedUploadedVideoId || !storyboardJob?.job_id
+      || !storyboardJob.retryable || storyboardBusy
+    ) return;
+    setStoryboardBusy(true);
+    setStoryboardError("");
+    try {
+      setStoryboardJob(await retryVideoStoryboardJob(
+        token, selectedUploadedVideoId, storyboardJob.job_id,
+      ));
+    } catch (error) {
+      setStoryboardError(error instanceof Error ? error.message : "分镜任务重试失败，请稍后再试。");
+      reportRuntimeWriteFailure(error);
+    } finally {
+      setStoryboardBusy(false);
+    }
+  };
+
+  const confirmSelectedVideoStoryboard = async () => {
+    if (!token || !selectedUploadedVideoId || !videoStoryboard || storyboardBusy) return;
+    setStoryboardBusy(true);
+    setStoryboardError("");
+    try {
+      setVideoStoryboard(await confirmVideoStoryboard(
+        token, selectedUploadedVideoId, videoStoryboard.storyboard_fingerprint,
+      ));
+    } catch (error) {
+      setStoryboardError(error instanceof Error ? error.message : "分镜确认失败，请刷新后重试。");
+      reportRuntimeWriteFailure(error);
+    } finally {
+      setStoryboardBusy(false);
+    }
+  };
+
+  const previewStoryboardScene = (startSeconds: number) => {
+    if (videoPreviewRef.current) videoPreviewRef.current.currentTime = startSeconds;
+  };
+
+  const animateStoryboardScene = async (ordinal: number, style: VideoStoryboardAnimationStyle) => {
+    if (!token || !selectedUploadedVideoId || !videoStoryboard || storyboardBusy) return;
+    setStoryboardBusy(true);
+    setStoryboardAnimationError("");
+    try {
+      setStoryboardAnimationJob(await animateVideoStoryboardScene(
+        token, selectedUploadedVideoId, videoStoryboard.storyboard_fingerprint, ordinal,
+        style,
+      ));
+    } catch (error) {
+      setStoryboardAnimationError(error instanceof Error ? error.message : "动画任务发起失败，请重试。");
+      reportRuntimeWriteFailure(error);
+    } finally {
+      setStoryboardBusy(false);
+    }
+  };
 
   useDialogFocusManagement({
     open: Boolean(selectedRow),
@@ -993,6 +1198,7 @@ function LibraryWorkshop({
               selectedRow.previewUrl ? (
                 <div className="shadcn-prototype-library-video-preview playable">
                   <video
+                    ref={videoPreviewRef}
                     key={selectedRow.previewUrl}
                     src={selectedRow.previewUrl}
                     controls
@@ -1087,6 +1293,68 @@ function LibraryWorkshop({
                   <h3>规格</h3>
                   <div className="shadcn-prototype-library-usage">{[selectedRow.format, selectedRow.meta].filter(Boolean).join(" · ") || "视频素材"}</div>
                 </section>
+                {selectedUploadedVideoId ? (
+                  <section className="shadcn-prototype-library-content" aria-label="自动分镜">
+                    <h3>自动分镜</h3>
+                    {videoStoryboard ? (
+                      <>
+                        <div className="shadcn-prototype-library-timeline">
+                          {videoStoryboard.scenes.map((scene) => (
+                            <div
+                              key={scene.scene_id}
+                              style={{ display: "block", width: "100%", textAlign: "left", marginBottom: 8, padding: "10px 12px", border: "1px solid #eae7e1", borderRadius: 12, background: "#fff" }}
+                            >
+                              <button type="button" onClick={() => previewStoryboardScene(scene.start_seconds)} aria-label={`预览第 ${scene.ordinal} 个分镜`} style={{ display: "block", width: "100%", textAlign: "left", border: 0, background: "transparent", padding: 0 }}>
+                                <strong>{String(scene.ordinal).padStart(2, "0")} · {scene.title}</strong>
+                                <span style={{ display: "block", marginTop: 4 }}>{scene.start_seconds.toFixed(1)}–{scene.end_seconds.toFixed(1)} 秒 · {scene.status === "needs_review" ? "边界待确认" : "已识别"}</span>
+                                <span style={{ display: "block", marginTop: 4 }}>{scene.description}</span>
+                              </button>
+                              {videoStoryboard.status === "ready" ? (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                                  <button type="button" disabled={storyboardBusy || !writeCapabilities.canGenerate || storyboardAnimationJob?.status === "queued" || storyboardAnimationJob?.status === "running"} onClick={() => { void animateStoryboardScene(scene.ordinal, "motion_illustration_v1"); }}>
+                                    为第 {scene.ordinal} 镜生成快速动效
+                                  </button>
+                                  <button type="button" disabled={storyboardBusy || !writeCapabilities.canGenerate || storyboardAnimationJob?.status === "queued" || storyboardAnimationJob?.status === "running"} onClick={() => { void animateStoryboardScene(scene.ordinal, "generative_animation_v1"); }}>
+                                    为第 {scene.ordinal} 镜生成 AI 动画
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                        {videoStoryboard.status === "needs_review" ? (
+                          <button type="button" disabled={storyboardBusy || !writeCapabilities.canPersist} onClick={() => { void confirmSelectedVideoStoryboard(); }}>
+                            {storyboardBusy ? "正在确认…" : "确认这些分镜边界"}
+                          </button>
+                        ) : null}
+                        {storyboardAnimationJob?.status === "queued" || storyboardAnimationJob?.status === "running" ? <p role="status">第 {videoStoryboard.scenes.find((scene) => scene.scene_id === storyboardAnimationJob.scene_id)?.ordinal ?? "?"} 镜{storyboardAnimationJob.style === "generative_animation_v1" ? " AI 动画" : "快速动效"}正在生成…</p> : null}
+                        {storyboardAnimationJob?.status === "completed" ? <p role="status">{storyboardAnimationJob.style === "generative_animation_v1" ? `AI 动画已保存到视频库${typeof storyboardAnimationJob.generation?.estimated_standard_cost_cny === "number" ? `，视频生成预计 ¥${storyboardAnimationJob.generation.estimated_standard_cost_cny.toFixed(2)}，关键帧费用按图片模型账单计` : ""}。` : "快速动效已保存到视频库，可在列表中打开查看。"}</p> : null}
+                        {storyboardAnimationJob?.status === "failed" ? <p role="alert">{storyboardAnimationJob.message || "动画生成失败，请重试。"}</p> : null}
+                        {storyboardAnimationError ? <p role="alert">{storyboardAnimationError}</p> : null}
+                      </>
+                    ) : storyboardJob?.status === "queued" || storyboardJob?.status === "running" ? (
+                      <p role="status">{storyboardJobStatusText}</p>
+                    ) : storyboardJob?.status === "failed" ? (
+                      <>
+                        <p role="alert">{storyboardJob.message || "自动分镜未完成。"}</p>
+                        {storyboardJob.retryable ? (
+                          <button
+                            type="button"
+                            disabled={storyboardBusy || !writeCapabilities.canGenerate}
+                            onClick={() => { void retrySelectedVideoStoryboard(); }}
+                          >
+                            {storyboardBusy ? "正在重试…" : "重试自动分镜"}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : (
+                      <button type="button" disabled={storyboardBusy || !writeCapabilities.canGenerate} onClick={() => { void analyzeSelectedVideo(); }}>
+                        {storyboardBusy ? "正在创建任务…" : "识别这条视频的分镜"}
+                      </button>
+                    )}
+                    {storyboardError ? <p role="alert">{storyboardError}</p> : null}
+                  </section>
+                ) : null}
                 <section className="shadcn-prototype-library-content">
                   <h3>{isDigitalHuman(selectedRow) ? "口播文稿" : selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
                   {isDigitalHuman(selectedRow) ? (

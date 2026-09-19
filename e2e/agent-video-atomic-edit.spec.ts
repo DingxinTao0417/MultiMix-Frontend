@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 
 type Seed = {
   email: string;
@@ -32,6 +33,10 @@ type ContentAsset = {
   metadata: {
     video_plan?: {
       scenes?: VideoScene[];
+    };
+    video_project?: {
+      mp4_state?: string;
+      mp4_ref?: string;
     };
   };
   versions: AssetVersion[];
@@ -128,7 +133,7 @@ async function sendMessage(page: Page, instruction: string): Promise<{
 }
 
 test("Conversation Agent keeps task memory and atomically edits one video scene", async ({ page }) => {
-  test.setTimeout(5 * 60_000);
+  test.setTimeout(15 * 60_000);
   if (!seed) throw new Error("AGENT_ATOMIC_E2E_SEED is missing");
   const token = await authenticate(page);
 
@@ -214,6 +219,48 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     status: "persisted",
   });
   expect(changedScenes[1]?.primary_visual?.asset_id).toBeTruthy();
+
+  const exportButton = page.locator("button.shadcn-prototype-open-editor").last();
+  await expect(exportButton).toBeEnabled({ timeout: 60_000 });
+  await exportButton.click();
+  await page.getByRole("menuitem", { name: "原始成片" }).click();
+  await expect(exportButton).toBeDisabled({ timeout: 30_000 });
+  await expect(exportButton).toBeEnabled({ timeout: 10 * 60_000 });
+  await expect.poll(async () => (
+    await readAsset(page, token)
+  ).metadata.video_project?.mp4_state, { timeout: 30_000 }).toBe("ready");
+
+  await exportButton.click();
+  const downloadPromise = page.waitForEvent("download", { timeout: 10 * 60_000 });
+  const exportFailure = page.getByRole("alert").filter({ hasText: "原始成片导出失败" });
+  const exportBlocked = page.getByRole("button", { name: "修复后重新检查" });
+  await page.getByRole("menuitem", { name: "原始成片" }).click();
+  const exportOutcome = await Promise.race([
+    downloadPromise.then((download) => ({ download, error: null })),
+    exportFailure.waitFor({ state: "visible", timeout: 10 * 60_000 })
+      .then(async () => ({ download: null, error: await exportFailure.textContent() })),
+    exportBlocked.waitFor({ state: "visible", timeout: 10 * 60_000 })
+      .then(() => ({ download: null, error: "Video export blocked by quality preflight" })),
+  ]);
+  if (exportOutcome.error) throw new Error(exportOutcome.error);
+  if (!exportOutcome.download) throw new Error("Video export produced no download");
+  const exportedMp4 = test.info().outputPath("scene-incremental-recomposed.mp4");
+  await exportOutcome.download.saveAs(exportedMp4);
+  const probe = JSON.parse(execFileSync("ffprobe", [
+    "-v", "error", "-show_streams", "-show_format", "-of", "json", exportedMp4,
+  ], { encoding: "utf8" })) as {
+    streams?: Array<{ codec_type?: string }>;
+    format?: { duration?: string };
+  };
+  expect(probe.streams?.some((stream) => stream.codec_type === "video")).toBe(true);
+  expect(probe.streams?.some((stream) => stream.codec_type === "audio")).toBe(true);
+  expect(Number(probe.format?.duration ?? 0)).toBeGreaterThan(0);
+  execFileSync("ffmpeg", ["-v", "error", "-i", exportedMp4, "-f", "null", "-"], {
+    timeout: 120_000,
+  });
+  const exportedAsset = await readAsset(page, token);
+  expect(exportedAsset.metadata.video_project?.mp4_state).toBe("ready");
+  expect(exportedAsset.metadata.video_project?.mp4_ref).toBeTruthy();
 
   await page.reload();
   await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
