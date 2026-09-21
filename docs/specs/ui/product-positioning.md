@@ -75,7 +75,7 @@ MultiMix 的产品主线是：
 | 技术闭环 v1 | 单镜素材替换冻结影响范围，核验非目标镜头复用，异常时阻断发布并保留旧版本 | 可以在限定操作内证明实际增量执行，而不只是界面上的“局部修改” | 已形成覆盖文字、图片、音频、MG、跨镜连续性和全局时长的通用增量 DAG |
 | 待商业验证 | 已定义总耗时、用户亲自投入、修改轮次、供应商实付成本和发布意愿口径 | 已知道下一阶段应测什么 | 已形成付费、留存或单位经济优势 |
 
-生产证据见 `MultiMix-Backend/docs/qa/issue-test-records/2026-09-20-external-video-scene-edit-production-revalidation.md`；增量执行边界见 `MultiMix-Backend/docs/archive/plans/2026-09-18-scene-incremental-execution-v1.md`；从输入到可发布视频的质量缺口见 `MultiMix-Backend/docs/qa/source-to-publishable-video-validation.md`。
+生产证据见 `MultiMix-Backend/docs/qa/issue-test-records/2026-09-20-external-video-scene-edit-production-revalidation.md`；增量执行边界见 `MultiMix-Backend/docs/archive/plans/2026-09-18-scene-incremental-execution-v1.md`。从输入到可发布视频的质量缺口仍属于待真实商家任务验证的范围，当前没有可引用的独立 QA 报告。
 
 ## 4. 核心卖点与表达顺序
 
