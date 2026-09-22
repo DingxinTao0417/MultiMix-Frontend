@@ -35,10 +35,11 @@ export type VideoProgressInput = {
   submitted: boolean;
   completionConfirmed?: boolean;
   connectionLost?: boolean;
+  providerWaitLabel?: string;
 };
 
 export type VideoProgressMilestone = {
-  key: "submitted" | "preparation" | "working" | "completed";
+  key: string;
   label: string;
   status: "done" | "run" | "fail" | "stopped";
 };
@@ -63,19 +64,29 @@ const COPY = {
 
 const SUBMISSION_EVENTS = new Set(["queued", "create_job"]);
 const TERMINAL_EVENTS = new Set(["completed", "failed", "cancelled", "canceled"]);
-const SOURCE_EVENTS = new Set([
-  "source_importing", "source_staging", "transcribing", "visual_understanding",
-  "audio_analysis", "visual_analysis",
-]);
-const VISUAL_PREPARATION_EVENTS = new Set([
-  "prepare_scenes", "understand", "asset_driven_planning",
-  "planning_assets", "asset_manifest_ready",
+const PUBLIC_STAGE_EVENTS = new Set([
+  "source_importing", "transcribing", "source_staging", "visual_understanding",
+  "audio_analysis", "visual_analysis", "semantic_cleanup", "cleanup_apply",
+  "subtitles", "directing", "chaptering", "candidate_ranking", "top_visual_completion",
+  "drafting", "structuring_director_script", "video_pipeline_selection",
+  "scene_direction", "scene_direction_repair", "grounding_review",
+  "grounding_review_repair", "grounding_review_claim_completion",
+  "scene_semantic_review", "scene_semantic_repair", "scene_semantic_final_review",
+  "creative_profile", "scene_structure", "topic_alignment", "creative_direction",
+  "art_direction", "asset_requirements", "primary_visual_strategy",
+  "global_choreography", "saving", "prepare_scenes", "prepare_media",
+  "build_project", "mg_overlay",
 ]);
 
-function groupKey(kind: VideoProgressKind, key: string): "preparation" | "working" {
-  if (kind === "video_plan" && SOURCE_EVENTS.has(key)) return "preparation";
-  if (kind === "video_create" && VISUAL_PREPARATION_EVENTS.has(key)) return "preparation";
-  return "working";
+function milestoneStatus(
+  current: VideoProgressMilestone["status"] | undefined,
+  next: AgentRunStep["status"],
+  completed: boolean,
+): VideoProgressMilestone["status"] {
+  if (completed) return "done";
+  if (current === "fail" || next === "fail") return "fail";
+  if (current === "run" || next === "run") return "run";
+  return "done";
 }
 
 export function videoProgressPresentation(input: VideoProgressInput) {
@@ -89,21 +100,18 @@ export function videoProgressPresentation(input: VideoProgressInput) {
     milestones.push({ key: "submitted", label: "任务已提交", status: "done" });
   }
 
-  const groups = new Map<"preparation" | "working", VideoProgressMilestone>();
   for (const step of submitted ? steps : []) {
     if (step.status === "wait" || SUBMISSION_EVENTS.has(step.key) || TERMINAL_EVENTS.has(step.key)) {
       continue;
     }
-    const key = groupKey(kind, step.key);
-    const previous = groups.get(key);
-    const state = completed ? "done"
-      : step.status === "fail" || previous?.status === "fail" ? "fail"
-      : step.status === "run" || previous?.status === "run" ? "run" : "done";
-    groups.set(key, { key, label: copy[key], status: state });
-  }
-  for (const key of ["preparation", "working"] as const) {
-    const group = groups.get(key);
-    if (group) milestones.push(group);
+    const key = PUBLIC_STAGE_EVENTS.has(step.key) ? step.key : "working";
+    const label = PUBLIC_STAGE_EVENTS.has(step.key) ? step.label : copy.working;
+    const existing = milestones.find((item) => item.key === key);
+    if (existing) {
+      existing.status = milestoneStatus(existing.status, step.status, completed);
+    } else {
+      milestones.push({ key, label, status: milestoneStatus(undefined, step.status, completed) });
+    }
   }
   const last = milestones.at(-1);
   if (failed && last && last.key !== "submitted") last.status = "fail";
@@ -114,7 +122,7 @@ export function videoProgressPresentation(input: VideoProgressInput) {
   }
   const running = status === "running" || (status === "completed" && !completed);
   if (running && submitted && !failed && !stopped) {
-    if (!groups.size) {
+    if (!milestones.some((item) => item.key !== "submitted")) {
       milestones.push({ key: "working", label: copy.working, status: "run" });
     } else if (!milestones.some((item) => item.status === "run" || item.status === "fail")) {
       // Delivery is still pending even when all currently observed steps ended.
@@ -145,11 +153,14 @@ export function videoProgressPresentation(input: VideoProgressInput) {
     title = "正在提交任务";
     description = "正在确认任务是否已提交。";
   } else {
+    const active = steps.find((step) => step.status === "run");
     if (status === "queued") {
       title = "视频任务已提交";
-      description = "正在等待开始。";
+      description = "正在等待开始。你可以先离开本对话，稍后回来查看。";
+    } else if (active) {
+      title = PUBLIC_STAGE_EVENTS.has(active.key) ? active.label : copy.running;
+      description = input.providerWaitLabel ?? active.elapsedLabel ?? "";
     }
-    description += "你可以先离开本对话，稍后回来查看。";
   }
   return { title, description, tone, completed, milestones };
 }

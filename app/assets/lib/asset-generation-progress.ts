@@ -16,6 +16,48 @@ export function generationElapsedLabel(job: Pick<AssetGenerationJobResponse, "cr
   return elapsedLabelFrom(job.started_at || job.created_at, now);
 }
 
+function secondsLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds} 秒`;
+  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+}
+
+export function generationProviderWaitLabel(
+  wait: AssetGenerationJobResponse["provider_wait"],
+  now = Date.now(),
+): string | null {
+  if (!wait) return null;
+  const requestedAt = Date.parse(wait.request_sent_at);
+  if (!Number.isFinite(requestedAt)) return null;
+  const elapsedSeconds = Math.max(0, Math.floor((now - requestedAt) / 1000));
+  const state = wait.status === "requested"
+    ? "模型服务请求已发出，尚未收到首个响应"
+    : wait.status === "delayed"
+      ? "模型服务响应慢"
+      : "模型服务已开始响应";
+  const idleTimeout = wait.idle_timeout_seconds;
+  const safetyTimeout = wait.safety_timeout_seconds;
+  if (
+    Number.isFinite(idleTimeout)
+    && Number(idleTimeout) > 0
+    && Number.isFinite(safetyTimeout)
+    && Number(safetyTimeout) > 0
+  ) {
+    const activityAt = Date.parse(wait.last_response_at || wait.request_sent_at);
+    const idleElapsedSeconds = Number.isFinite(activityAt)
+      ? Math.max(0, Math.floor((now - activityAt) / 1000))
+      : elapsedSeconds;
+    const idleRemainingSeconds = Math.max(0, Math.ceil(Number(idleTimeout) - idleElapsedSeconds));
+    const safetyRemainingSeconds = Math.max(0, Math.ceil(Number(safetyTimeout) - elapsedSeconds));
+    const activityLabel = wait.status === "requested"
+      ? `首响应等待剩余 ${secondsLabel(idleRemainingSeconds)}`
+      : `最近响应 ${secondsLabel(idleElapsedSeconds)}前 · 停滞保护剩余 ${secondsLabel(idleRemainingSeconds)}`;
+    return `${state} · 已等待 ${secondsLabel(elapsedSeconds)} · ${activityLabel} · 安全上限剩余 ${secondsLabel(safetyRemainingSeconds)}`;
+  }
+  if (!Number.isFinite(wait.budget_seconds) || Number(wait.budget_seconds) <= 0) return null;
+  const remainingSeconds = Math.max(0, Math.ceil(Number(wait.budget_seconds) - elapsedSeconds));
+  return `${state} · 已等待 ${secondsLabel(elapsedSeconds)} · 本阶段剩余 ${secondsLabel(remainingSeconds)}`;
+}
+
 export function generationProgressEvents(job: AssetGenerationJobResponse): GenerationProgressEvent[] {
   const savedEvents = Array.isArray(job.progress_events) ? job.progress_events : [];
   const events = savedEvents.flatMap((event) => {

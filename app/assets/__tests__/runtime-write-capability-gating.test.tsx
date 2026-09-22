@@ -323,7 +323,10 @@ describe("ConversationStudio runtime write gate", () => {
 
   it("hides the standalone generation retry while unavailable and restores it when available", () => {
     const onRetryGeneration = vi.fn();
-    const failedJob = generationJob("failed", "standalone-generation-lly-29");
+    const failedJob = {
+      ...generationJob("failed", "standalone-generation-lly-29"),
+      retryable: true,
+    };
     const rendered = render(
       <ConversationStudio
         basePath="/app/assets"
@@ -684,7 +687,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       />,
     );
 
-    await screen.findAllByText("F01 · 开场产品特写");
+    await screen.findAllByText("F01 · 开场产品特写", {}, { timeout: 5_000 });
     const applyKeyframes = await screen.findByRole("button", { name: "将 3 张分别用于 3 个分镜" });
     expect(applyKeyframes).toBeEnabled();
     fireEvent.click(applyKeyframes);

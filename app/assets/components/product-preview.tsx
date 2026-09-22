@@ -264,6 +264,7 @@ type ProductPreviewProps = {
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
+  onSelectSegment?: (segment: AssetProductSegment) => void;
   onPreviewReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
@@ -290,6 +291,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
+  onSelectSegment,
   onPreviewReadyChange,
   onExportStart,
   onExportProgress,
@@ -575,6 +577,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);
+              onSelectSegment?.(segment);
               const player = browsePlayerRef.current;
               if (showFullVideo && player && player.readyState >= 3 && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;

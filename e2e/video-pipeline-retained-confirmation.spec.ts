@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIResponse, type Page } from "@playwright/test";
 
 
 type RetainedConfirmationSeed = {
@@ -170,17 +170,27 @@ test("confirms the retained director draft without repeating completed provider 
 
   let projectAssetId: number | undefined;
   await expect.poll(async () => {
-    const response = await page.request.get(
-      `${seed.backendUrl}/v1/video/jobs/${videoJobId}`,
-      { headers },
-    );
+    let response: APIResponse;
+    try {
+      response = await page.request.get(
+        `${seed.backendUrl}/v1/video/jobs/${videoJobId}`,
+        { headers },
+      );
+    } catch (error) {
+      return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+    }
     if (!response.ok()) return `http-${response.status()}`;
-    const job = await response.json() as {
+    let job: {
       status?: string;
       error_message?: string;
       asset_id?: number;
       project_ready?: boolean;
     };
+    try {
+      job = await response.json() as typeof job;
+    } catch (error) {
+      return `transport-error:${error instanceof Error ? error.message : String(error)}`;
+    }
     if (job.status === "failed") {
       throw new Error(`retained video project failed: ${job.error_message ?? "unknown"}`);
     }

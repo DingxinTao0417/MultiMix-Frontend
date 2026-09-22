@@ -24,8 +24,9 @@ test("from-scratch video confirmation shows the frozen default and updates the v
   await page.locator(".multimix-auth-switch").getByRole("button", { name: "注册" }).click();
   await page.getByLabel("邮箱").fill(`video-policy-${runId}@example.com`);
   await page.getByLabel("密码").fill("video-policy-e2e-2026");
+  await page.getByRole("checkbox", { name: /我已阅读并同意/ }).check();
   await page.locator("form").getByRole("button", { name: "注册" }).click();
-  await expect(page.getByRole("heading", { name: "今天想做什么短视频？" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeVisible({ timeout: 30_000 });
 
   await page.getByLabel("输入对话内容").fill(
     "为 MultiMix 制作一条 30 秒产品介绍视频，面向需要快速制作营销视频的小团队，重点介绍上传素材、AI 编导和可编辑成片。",

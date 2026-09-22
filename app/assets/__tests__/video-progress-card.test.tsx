@@ -7,26 +7,50 @@ const running: VideoProgressCardProps = {
   kind: "video_create", submitted: true, status: "running",
   steps: [
     { key: "prepare_scenes", label: "内部分析", status: "done", elapsedSeconds: 12 },
-    { key: "mg_overlay", label: "Provider MG", status: "run", retryJobId: "child-1" },
+    { key: "mg_overlay", label: "正在生成动态图形", status: "run", retryJobId: "child-1" },
   ],
 };
 
 describe("compact video progress card", () => {
   afterEach(cleanup);
-  it("starts collapsed with current state and safe background guidance", () => {
+  it("starts collapsed with the current public stage, not generic background guidance", () => {
     const { container } = render(<Card {...running} />);
-    expect(screen.getByText("正在制作视频")).toBeTruthy();
-    expect(screen.getByText(/可以先离开本对话/)).toBeTruthy();
+    expect(screen.getByText("正在生成动态图形")).toBeTruthy();
+    expect(screen.queryByText(/可以先离开本对话/)).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
     expect(screen.getByRole("button", { name: "查看进度详情" }).getAttribute("aria-expanded")).toBe("false");
     expect(container.textContent).not.toMatch(/Provider|MG|12|共.*步|耗时/);
+  });
+
+  it("shows one explicit supplier-delay notice without adding a fake stage", () => {
+    render(<Card {...running} providerWaitLabel="模型服务响应慢 · 已等待 3 分 · 本阶段剩余 0 秒" />);
+
+    expect(screen.getByText("模型服务响应慢 · 已等待 3 分 · 本阶段剩余 0 秒")).toBeTruthy();
+    expect(screen.queryByRole("list")).toBeNull();
   });
   it("shows only concise milestones when explicitly expanded", () => {
     render(<Card {...running} />);
     fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
-    expect(screen.getByText("准备画面")).toBeTruthy();
-    expect(screen.getByText("制作视频")).toBeTruthy();
+    expect(screen.getByText("内部分析")).toBeTruthy();
+    expect(screen.getAllByText("正在生成动态图形")).toHaveLength(2);
+  });
+  it("names the active public stage and retains the completed stage record", () => {
+    render(<Card {...running} steps={[
+      { key: "prepare_scenes", label: "正在匹配素材", status: "done" },
+      {
+        key: "grounding_review",
+        label: "正在审核事实边界",
+        status: "run",
+        elapsedLabel: "已耗时 2 分 8 秒",
+      },
+    ]} />);
+
+    expect(screen.getByText("正在审核事实边界")).toBeTruthy();
+    expect(screen.getByText("已耗时 2 分 8 秒")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
+    expect(screen.getByText("正在匹配素材")).toBeTruthy();
+    expect(screen.getAllByText("正在审核事实边界")).toHaveLength(2);
   });
   it("does not force expansion on failure or retry", () => {
     const { rerender } = render(<Card {...running} />);
@@ -79,7 +103,7 @@ describe("compact video progress card", () => {
     expect(screen.getByText("暂时无法更新进度")).toBeTruthy();
     expect(screen.getAllByRole("listitem")).toHaveLength(3);
     rerender(<Card {...running} connectionLost={false} />);
-    expect(screen.getByText("正在制作视频")).toBeTruthy();
+    expect(screen.getAllByText("正在生成动态图形")).toHaveLength(2);
   });
   it("does not expose stale errors after a successful retry", () => {
     render(<Card {...running} status="completed" completionConfirmed errorMessage="旧的失败" />);

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 export function createRunPaths(prefix, runId) {
   return {
@@ -48,8 +48,140 @@ export function assertPortFree(port) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once("error", () => reject(new Error(`Test port ${port} is already in use`)));
-    server.listen(port, "127.0.0.1", () => server.close(resolve));
+    server.listen({ port, host: "127.0.0.1", exclusive: true }, () => server.close(resolve));
   });
+}
+
+export async function waitForPortFree(
+  port,
+  { timeoutMs = 30_000, intervalMs = 250, assertFree = assertPortFree } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      await assertFree(port);
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+  throw lastError ?? new Error(`Timed out waiting for test port ${port} to become free`);
+}
+
+export function listeningPidsForPort(port) {
+  const result = process.platform === "win32"
+    ? spawnSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8", windowsHide: true })
+    : spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+  if (result.error) {
+    throw new Error(`Cannot inspect test port ${port}: ${result.error.message}`);
+  }
+  if (process.platform !== "win32") {
+    if (result.status === 1) return [];
+    if (result.status !== 0) {
+      throw new Error(`Cannot inspect test port ${port}: lsof exited ${result.status}`);
+    }
+    return [...new Set(
+      String(result.stdout ?? "").split(/\s+/).map(Number).filter(Number.isInteger),
+    )];
+  }
+  if (result.status !== 0) {
+    throw new Error(`Cannot inspect test port ${port}: netstat exited ${result.status}`);
+  }
+  const listener = new RegExp(
+    `^\\s*TCP\\s+\\S+:${port}\\s+\\S+\\s+LISTENING\\s+(\\d+)\\s*$`,
+    "i",
+  );
+  return [...new Set(
+    String(result.stdout ?? "").split(/\r?\n/)
+      .map((line) => line.match(listener)?.[1])
+      .filter(Boolean)
+      .map(Number)
+      .filter(Number.isInteger),
+  )];
+}
+
+function processTable() {
+  const result = process.platform === "win32"
+    ? spawnSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "Get-CimInstance Win32_Process | Select-Object -Property ProcessId,ParentProcessId | ConvertTo-Json -Compress",
+      ],
+      { encoding: "utf8", windowsHide: true },
+    )
+    : spawnSync("ps", ["-eo", "pid=,ppid="], { encoding: "utf8", windowsHide: true });
+  if (result.error || result.status !== 0) {
+    const reason = result.error?.message ?? `exited ${result.status}`;
+    throw new Error(`Cannot inspect test process tree: ${reason}`);
+  }
+  if (process.platform === "win32") {
+    const parsed = JSON.parse(String(result.stdout ?? "[]").trim() || "[]");
+    return (Array.isArray(parsed) ? parsed : [parsed]).map((item) => ({
+      pid: Number(item?.ProcessId),
+      parentPid: Number(item?.ParentProcessId),
+    })).filter((item) => Number.isInteger(item.pid) && Number.isInteger(item.parentPid));
+  }
+  return String(result.stdout ?? "").split(/\r?\n/).map((line) => {
+    const [pid, parentPid] = line.trim().split(/\s+/).map(Number);
+    return { pid, parentPid };
+  }).filter((item) => Number.isInteger(item.pid) && Number.isInteger(item.parentPid));
+}
+
+export function processTreePids(rootPid, { processes = processTable } = {}) {
+  if (!Number.isInteger(rootPid) || rootPid <= 0) {
+    throw new Error("Test process tree requires a positive root PID");
+  }
+  const childrenByParent = new Map();
+  for (const { pid, parentPid } of processes()) {
+    const children = childrenByParent.get(parentPid) ?? [];
+    children.push(pid);
+    childrenByParent.set(parentPid, children);
+  }
+  const descendants = new Set([rootPid]);
+  const pending = [rootPid];
+  while (pending.length > 0) {
+    const parentPid = pending.pop();
+    for (const childPid of childrenByParent.get(parentPid) ?? []) {
+      if (descendants.has(childPid)) continue;
+      descendants.add(childPid);
+      pending.push(childPid);
+    }
+  }
+  return descendants;
+}
+
+export function assertPortOwnedByChild(
+  port,
+  child,
+  {
+    listeningPids = listeningPidsForPort,
+    processTreePids: expectedProcessTreePids = processTreePids,
+  } = {},
+) {
+  if (!Number.isInteger(child?.pid) || child.pid <= 0) {
+    throw new Error(`Test port ${port} cannot be verified because the started child has no PID`);
+  }
+  const pids = listeningPids(port);
+  if (pids.length !== 1) {
+    throw new Error(
+      `Test port ${port} must have exactly one listener after startup; observed: ${pids.join(", ") || "none"}`,
+    );
+  }
+  const ownedPids = expectedProcessTreePids(child.pid);
+  if (!ownedPids.has(pids[0])) {
+    throw new Error(
+      `Test port ${port} listener PID ${pids[0]} does not belong to expected child process tree rooted at PID ${child.pid}`,
+    );
+  }
+  return { port, rootPid: child.pid, listenerPid: pids[0] };
 }
 
 export async function waitFor(url, child, timeoutMs = 60_000) {

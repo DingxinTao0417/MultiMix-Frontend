@@ -6,6 +6,7 @@ import {
   expect,
   test,
   type APIResponse,
+  type Download,
   type Page,
   type Route,
   type Response as PlaywrightResponse,
@@ -175,9 +176,15 @@ async function waitForExportTaskResponseOrFailure(
       callback();
     };
     const onResponse = (response: PlaywrightResponse) => {
+      const responseUrl = new URL(response.url());
+      const matchesExpectedUrl = exportTaskResponsePaths.some((candidate) => {
+        const expectedUrl = new URL(candidate);
+        return responseUrl.origin === expectedUrl.origin
+          && responseUrl.pathname === expectedUrl.pathname;
+      });
       if (
         response.request().method() === "POST"
-        && exportTaskResponsePaths.includes(response.url())
+        && matchesExpectedUrl
       ) {
         finish(() => resolve(response));
       }
@@ -364,6 +371,9 @@ let expectedSceneCount = Number(
 const videoJobTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
 );
+const directorJobTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS ?? 20 * 60_000,
+);
 // A video upload performs both initial understanding and temporal indexing.
 // Their bounded Provider attempts can validly exceed the old three-minute wait.
 const PRODUCTION_MEDIA_UPLOAD_TIMEOUT_MS = 10 * 60_000;
@@ -379,12 +389,16 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
 }
+if (!Number.isInteger(directorJobTimeoutMs) || directorJobTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer");
+}
 if (!Number.isInteger(mediaUploadTimeoutMs) || mediaUploadTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_MEDIA_UPLOAD_TIMEOUT_MS must be a positive integer");
 }
 const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
 const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
 const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+const ideaOnlyInputProfile = inputProfile === "explainer_idea_only";
 const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"
   || singleImageCreativeDraft;
 const supportedVideoExtensions = new Set([".mp4", ".mov", ".webm", ".mkv"]);
@@ -617,6 +631,7 @@ async function enterWorkspace(page: Page) {
       .getByLabel("邮箱")
       .fill(`video-pipeline-${Date.now()}@example.com`);
     await page.getByLabel("密码").fill("local-video-pipeline-2026");
+    await page.getByRole("checkbox", { name: /我已阅读并同意/ }).check();
     await page.locator("form").getByRole("button", { name: "注册" }).click();
   }
   await expect(workspaceHeading).toBeVisible({ timeout: 30_000 });
@@ -678,11 +693,32 @@ async function confirmVideoParametersIfRequired(
   payloadPatch: Record<string, unknown> = {},
   linkedAssetIds: number[] = [],
 ) {
+  type ConfirmationPlan = {
+    production_selection_required?: boolean;
+    production_choice_id?: string | null;
+    production_recommended_id?: string | null;
+    production_options?: Array<{
+      id?: string;
+      label?: string;
+      available?: boolean;
+    }>;
+  };
   type GenerationPayload = {
     generation_job?: { id?: string };
+    plan?: ConfirmationPlan;
+    conversation?: {
+      messages?: Array<{
+        role?: string;
+        metadata?: { plan?: ConfirmationPlan };
+      }>;
+    };
   };
   let payload = (await initialResponse.json()) as GenerationPayload;
   if (payload.generation_job?.id) return payload;
+  const confirmationPlan = () => payload.plan ?? [...(payload.conversation?.messages ?? [])]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.metadata?.plan)
+    ?.metadata?.plan;
 
   const messageRoute = "**/v1/assets/conversations/messages";
   const applyPayloadPatch = async (route: Route) => {
@@ -737,6 +773,43 @@ async function confirmVideoParametersIfRequired(
       : action === "request-director-draft"
         ? requestDirectorDraftButton
         : confirmButton;
+    const currentPlan = confirmationPlan();
+    if (
+      action === "confirm-parameters"
+      && currentPlan?.production_selection_required === true
+      && !currentPlan.production_choice_id
+    ) {
+      const productionOptions = currentPlan.production_options ?? [];
+      const productionOption = productionOptions.find(
+        (option) => option.id === currentPlan.production_recommended_id
+          && option.available !== false,
+      ) ?? productionOptions.find((option) => option.available !== false);
+      expect(
+        productionOption?.id && productionOption.label,
+        "required production selection must expose an available option",
+      ).toBeTruthy();
+      const productionOptionRadio = page.getByRole("radio", {
+        name: `${productionOption!.label}${productionOption!.id === currentPlan.production_recommended_id ? "（推荐）" : ""}`,
+      });
+      await expect(productionOptionRadio).toBeVisible();
+      await expect(productionOptionRadio).toBeEnabled();
+      await productionOptionRadio.click();
+      await expect(productionOptionRadio).toHaveAttribute("aria-checked", "true");
+    }
+    if (action === "confirm-parameters") {
+      const ratioRadio = page.getByRole("radio", {
+        name: ratioAcceptance[ratio].confirmationLabel,
+      });
+      await expect(ratioRadio).toBeVisible();
+      await ratioRadio.click();
+      await expect(ratioRadio).toHaveAttribute("aria-checked", "true");
+      const targetSecondsInput = page
+        .getByRole("spinbutton", { name: "目标时长（秒）" })
+        .last();
+      await expect(targetSecondsInput).toBeVisible();
+      await targetSecondsInput.fill(String(targetSeconds));
+      await expect(targetSecondsInput).toHaveValue(String(targetSeconds));
+    }
     await expect(button).toBeEnabled();
     const responsePromise = page.waitForResponse(
       (response) =>
@@ -760,18 +833,6 @@ async function confirmVideoParametersIfRequired(
         await page.getByRole("button", { name: "发送" }).click();
       }
     } else {
-      const ratioRadio = page.getByRole("radio", {
-        name: ratioAcceptance[ratio].confirmationLabel,
-      });
-      await expect(ratioRadio).toBeVisible();
-      await ratioRadio.click();
-      await expect(ratioRadio).toHaveAttribute("aria-checked", "true");
-      const targetSecondsInput = page
-        .getByRole("spinbutton", { name: "目标时长（秒）" })
-        .last();
-      await expect(targetSecondsInput).toBeVisible();
-      await targetSecondsInput.fill(String(targetSeconds));
-      await expect(targetSecondsInput).toHaveValue(String(targetSeconds));
       await button.click();
     }
     const response = await responsePromise;
@@ -930,7 +991,7 @@ async function waitForGenerationJob(
         if (job.status === "completed") completed = job;
         return job.status;
       },
-      { timeout: 20 * 60_000, intervals: [1000, 2500, 5000] },
+      { timeout: directorJobTimeoutMs, intervals: [1000, 2500, 5000] },
     )
     .toBe("completed");
   expect(completed?.result_asset_id, `${stageLabel} must persist a result asset`).toBeTruthy();
@@ -1139,6 +1200,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   test.setTimeout(60 * 60_000);
   if (
     !savedLibraryInputProfile
+    && !ideaOnlyInputProfile
     && (!sourceDocument || !fs.existsSync(sourceDocument))
   ) {
     throw new Error(
@@ -1203,7 +1265,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   let apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
   let headers: Record<string, string> = {};
   let pdfDerivedImageIds: number[] = [];
-  if (savedLibraryInputProfile) {
+  if (savedLibraryInputProfile || ideaOnlyInputProfile) {
     const sessionSource = await page.evaluate(() =>
       window.localStorage.getItem("multimix_local_user")
     );
@@ -1456,6 +1518,8 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         ? qaGenerationInstructionOverride
           ? qaGenerationInstructionOverride
           : `用我已有的家装素材，做一条家装服务宣传讲解视频${requireMgInstruction}`
+      : ideaOnlyInputProfile
+        ? `我刚开了一家社区早餐店，早餐现做，支持到店购买，但还没有任何素材，营业时间也未确定。请制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的开业介绍视频；不要虚构价格、优惠、地址、营业时间、顾客评价或实拍门店。先给出可执行的无素材画面方案和编导稿，再生成可编辑视频。`
       : inputProfile === "explainer_public_broll"
         ? `严格基于刚上传的 MultiMix 产品资料，制作一条${targetSeconds}秒、${targetRatioAcceptance.instructionLabel}的产品介绍视频。开场或商家痛点/工作场景至少一个分镜必须使用经过网络搜索、视觉验证和授权校验的真实公共图片或视频作为通用 B-roll；产品界面和产品能力镜头继续使用审核产品素材或忠于资料的准确生成画面，不得把公共素材冒充产品界面、客户案例、效果证据或前后对比。先给出编导稿和${expectedSceneCount}个分镜；信息不足按合理默认值处理，不要展示内部制作方式。`
         : inputProfile === "explainer_data_process"
@@ -1611,7 +1675,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     }
     return job.status;
       },
-      { timeout: 20 * 60_000, intervals: [1000, 2500, 5000] },
+      { timeout: directorJobTimeoutMs, intervals: [1000, 2500, 5000] },
     )
     .toBe("completed"));
   } finally {
@@ -1696,6 +1760,11 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     };
   };
   assertDirectorPlanMatchesScenario(directorVideoPlan, expectedVideoType);
+  if (ideaOnlyInputProfile) {
+    expectedSceneCount = directorVideoPlan.scenes?.length ?? 0;
+    expect(expectedSceneCount).toBeGreaterThanOrEqual(1);
+    expect(expectedSceneCount).toBeLessThanOrEqual(8);
+  }
   if (
     savedLibraryInputProfile
     && expectedVideoType !== "presenter"
@@ -2645,6 +2714,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   }
   let exportTaskId = "";
   let terminalMp4Ref = "";
+  let directOriginalDownload: Download | null = null;
   const exportButton = await measureE2EStage("export_preview_ready", async () => {
     await page.reload();
     await expect(page.getByLabel("分镜摘要").locator("li")).toHaveCount(expectedSceneCount, {
@@ -2657,54 +2727,109 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
       .last();
     await expect(exportButton).toHaveText("导出视频", { timeout: 180_000 });
     await expect(exportButton).toBeEnabled();
+    const currentAssetsResponse = await page.request.get(`${apiBase}/v1/assets`, {
+      headers,
+    });
+    expect(currentAssetsResponse.ok()).toBe(true);
+    const currentProjectAsset = ((await currentAssetsResponse.json()) as AssetRow[])
+      .find((asset) => asset.id === projectAsset!.id);
+    expect(currentProjectAsset, "current video project must remain readable before export").toBeTruthy();
+    projectAsset = currentProjectAsset!;
+    const currentMetadata = projectAsset.metadata ?? {};
+    const currentVideoProject = currentMetadata.video_project
+      && typeof currentMetadata.video_project === "object"
+      && !Array.isArray(currentMetadata.video_project)
+      ? currentMetadata.video_project as Record<string, unknown>
+      : null;
+    const currentMp4Artifact = currentMetadata.mp4_artifact
+      && typeof currentMetadata.mp4_artifact === "object"
+      && !Array.isArray(currentMetadata.mp4_artifact)
+      ? currentMetadata.mp4_artifact as Record<string, unknown>
+      : null;
+    const persistedOriginalMp4Ref = currentMetadata.video_export_current === false
+      ? ""
+      : String(
+          currentVideoProject?.mp4_ref
+          ?? currentMp4Artifact?.mp4_ref
+          ?? currentMp4Artifact?.ref
+          ?? "",
+        ).trim();
+    if (persistedOriginalMp4Ref) {
+      terminalMp4Ref = persistedOriginalMp4Ref;
+      const directDownloadPromise = page.waitForEvent("download", { timeout: 180_000 });
+      await exportButton.click();
+      await page.getByRole("menuitem", { name: "原始成片", exact: true }).click();
+      directOriginalDownload = await directDownloadPromise;
+      await expect(exportButton).toBeEnabled({ timeout: 180_000 });
+      return exportButton;
+    }
     const exportTaskResponsePaths = [
       `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/register`,
       `${apiBase}/v1/video/projects/${projectAsset!.id}/exports`,
     ];
-    const exportCreateResponse = waitForExportTaskResponseOrFailure(
-      page,
-      exportButton,
-      exportTaskResponsePaths,
-      projectAsset!.id,
-      videoJobId!,
-      15 * 60_000,
-    );
-    await exportButton.click();
-    const createResponse = await exportCreateResponse;
-    expect(createResponse.status(), "export candidate upload must enqueue an async task").toBe(202);
-    const currentTaskResponse = await page.request.get(
-      `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/current`,
-      { headers },
-    );
-    expect(
-      currentTaskResponse.ok(),
-      `current export task lookup failed: ${currentTaskResponse.status()}`,
-    ).toBe(true);
-    const createdTask = (await currentTaskResponse.json()) as {
-      job_id?: string;
-      status?: string;
-      stage?: string;
-    };
-    expect(createdTask.job_id).toBeTruthy();
-    expect(["queued", "running", "completed"]).toContain(createdTask.status);
-    expect(["uploaded", "verifying", "publishing", "done"]).toContain(createdTask.stage);
-    exportTaskId = createdTask.job_id!;
-    await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
-    await expect
-      .poll(
-        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
-        { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
-      )
-      .toMatch(/^(正在合成视频|正在上传成片|正在检查成片|下载成片)/);
+    if (!persistedOriginalMp4Ref) {
+      const exportCreateResponse = waitForExportTaskResponseOrFailure(
+        page,
+        exportButton,
+        exportTaskResponsePaths,
+        projectAsset!.id,
+        videoJobId!,
+        15 * 60_000,
+      );
+      await exportButton.click();
+      await page.getByRole("menuitem", { name: "原始成片", exact: true }).click();
+      const createResponse = await exportCreateResponse;
+      expect(createResponse.status(), "export candidate upload must enqueue an async task").toBe(202);
+      const currentTaskResponse = await page.request.get(
+        `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/current`,
+        { headers },
+      );
+      expect(
+        currentTaskResponse.ok(),
+        `current export task lookup failed: ${currentTaskResponse.status()}`,
+      ).toBe(true);
+      const createdTask = (await currentTaskResponse.json()) as {
+        job_id?: string;
+        status?: string;
+        stage?: string;
+      };
+      expect(createdTask.job_id).toBeTruthy();
+      expect(["queued", "running", "completed"]).toContain(createdTask.status);
+      expect(["uploaded", "verifying", "publishing", "done"]).toContain(createdTask.stage);
+      exportTaskId = createdTask.job_id!;
+      await expect(page.getByTitle("视频剪辑器")).toHaveCount(0);
+      await expect
+        .poll(
+          () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
+          { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
+        )
+        .toMatch(/^(正在合成视频|正在上传成片|正在检查成片|下载成片|导出视频)/);
+    }
     return exportButton;
   });
   await measureE2EStage("export_browser_render", async () => {
+    if (directOriginalDownload) return;
     await expect
       .poll(
-        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
+        async () => {
+          const response = await page.request.get(
+            `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/${encodeURIComponent(exportTaskId)}`,
+            { headers },
+          );
+          if (!response.ok()) return `http:${response.status()}`;
+          const task = (await response.json()) as {
+            status?: string;
+            stage?: string;
+            error_message?: string;
+          };
+          if (task.status === "failed") {
+            throw new Error(task.error_message || "final export task failed");
+          }
+          return `${task.status ?? "unknown"}:${task.stage ?? "unknown"}`;
+        },
         { timeout: 15 * 60_000, intervals: [1000, 2500, 5000] },
       )
-      .toBe("下载成片");
+      .toBe("completed:done");
     const terminalResponse = await page.request.get(
       `${apiBase}/v1/video/projects/${projectAsset!.id}/exports/${encodeURIComponent(exportTaskId)}`,
       { headers },
@@ -2721,24 +2846,32 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     expect(terminalTask.mp4_ref).toBeTruthy();
     expect(terminalTask.quality_report?.blockers ?? []).toEqual([]);
     terminalMp4Ref = terminalTask.mp4_ref!;
+    await expect(exportButton).toHaveText("导出视频", { timeout: 30_000 });
+    await expect(exportButton).toBeEnabled();
   });
   const candidateVideoPath = await measureE2EStage("export_download", async () => {
+    const outputPath = path.join(resultDir, "multimix-candidate.mp4");
+    if (directOriginalDownload) {
+      await directOriginalDownload.saveAs(outputPath);
+      expect(fs.statSync(outputPath).size).toBeGreaterThan(10_000);
+      return outputPath;
+    }
+    const completedDownloadPromise = page.waitForEvent("download", { timeout: 180_000 });
     await exportButton.click({ timeout: 30_000 });
-    await expect
-      .poll(
-        () => assertExportHasNotFailed(page, exportButton, projectAsset!.id, videoJobId!),
-        { timeout: 30_000, intervals: [500, 1000, 2500] },
-      )
-      .toBe("再次下载");
+    await page.getByRole("menuitem", { name: "原始成片", exact: true }).click();
+    const completedOriginalDownload = await completedDownloadPromise;
+    await completedOriginalDownload.saveAs(outputPath);
+    expect(fs.statSync(outputPath).size).toBeGreaterThan(10_000);
     const candidateBytes = await downloadCandidateMp4ByRange(
       page,
       apiBase,
       headers,
       terminalMp4Ref,
     );
-    const outputPath = path.join(resultDir, "multimix-candidate.mp4");
-    fs.writeFileSync(outputPath, candidateBytes);
-    expect(fs.statSync(outputPath).size).toBeGreaterThan(10_000);
+    expect(
+      crypto.createHash("sha256").update(candidateBytes).digest("hex"),
+      "variant-menu download must match the verified published MP4",
+    ).toBe(crypto.createHash("sha256").update(fs.readFileSync(outputPath)).digest("hex"));
     return outputPath;
   });
   await page.screenshot({
@@ -2751,13 +2884,34 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     /net::ERR_(?:CONNECTION_REFUSED|CONNECTION_RESET|SOCKET_NOT_CONNECTED)/.test(
       failure.error,
     );
-  const currentExportUrl = `${apiBase}/v1/video/projects/${encodeURIComponent(
-    String(projectAsset!.id),
-  )}/exports/current`;
-  const expectedMissingCurrentExportConsoleError = (message: string) =>
-    message.includes(
-      "Failed to load resource: the server responded with a status of 404",
-    ) && message.includes(`@ ${currentExportUrl}:`);
+  const expectedEmptyStateProbeConsoleError = (message: string) => {
+    if (
+      !message.includes(
+        "Failed to load resource: the server responded with a status of 404",
+      )
+    ) {
+      return false;
+    }
+    const locationMatch = message.match(/@ (https?:\/\/\S+):\d+:\d+$/);
+    const matchedUrl = locationMatch?.[1];
+    if (!matchedUrl) return false;
+    let url: URL;
+    try {
+      url = new URL(matchedUrl);
+    } catch {
+      return false;
+    }
+    const apiOrigin = new URL(apiBase).origin;
+    if (url.origin !== apiOrigin) return false;
+    return (
+      /^\/v1\/assets\/conversations\/[^/]+\/requirements\/current$/.test(
+        url.pathname,
+      )
+      || /^\/v1\/video\/projects\/[^/]+\/exports\/current$/.test(
+        url.pathname,
+      )
+    );
+  };
   const actionableRequestFailures = requestFailures.filter(
     (failure) =>
       failure.error !== "net::ERR_ABORTED" && !expectedRestartFailure(failure),
@@ -2769,7 +2923,7 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         /Failed to fetch|ERR_(?:CONNECTION_REFUSED|CONNECTION_RESET)/.test(
           message,
         )
-      ) && !expectedMissingCurrentExportConsoleError(message),
+      ) && !expectedEmptyStateProbeConsoleError(message),
   );
   const resumeReuse = Boolean(
     (

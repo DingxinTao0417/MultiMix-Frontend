@@ -37,13 +37,16 @@ function nonRetryableError(message: string, status?: number): ApiError {
 }
 
 export function apiErrorStatus(error: unknown): number | undefined {
-  if (!error || typeof error !== "object" || !("status" in error)) return undefined;
+  if (!error || typeof error !== "object" || !("status" in error))
+    return undefined;
   const status = (error as { status?: unknown }).status;
   return typeof status === "number" ? status : undefined;
 }
 
 function isConnectionError(error: Error): boolean {
-  return /failed to fetch|networkerror|err_failed|load failed|fetch/i.test(error.message);
+  return /failed to fetch|networkerror|err_failed|load failed|fetch/i.test(
+    error.message,
+  );
 }
 
 function responseErrorMessage(body: unknown, fallback: string): string {
@@ -70,15 +73,19 @@ function responseErrorMessage(body: unknown, fallback: string): string {
   return fallback || "Request failed";
 }
 
-export async function api<T>(path: string, token: string | null, init: RequestInit = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  token: string | null,
+  init: RequestInit = {},
+): Promise<T> {
   try {
     const response = await fetch(`${API_BASE}/v1${path}`, {
       ...init,
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init.headers ?? {})
-      }
+        ...(init.headers ?? {}),
+      },
     });
 
     if (response.ok) {
@@ -90,17 +97,22 @@ export async function api<T>(path: string, token: string | null, init: RequestIn
       notifyAuthExpired();
     }
 
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    const body = await response
+      .json()
+      .catch(() => ({ detail: response.statusText }));
     if (
-      response.status === 503
-      && body
-      && typeof body === "object"
-      && "code" in body
-      && (body as { code?: unknown }).code === "database_temporarily_unavailable"
+      response.status === 503 &&
+      body &&
+      typeof body === "object" &&
+      "code" in body &&
+      (body as { code?: unknown }).code === "database_temporarily_unavailable"
     ) {
       throw new Error(API_CONNECTION_ERROR);
     }
-    throw nonRetryableError(responseErrorMessage(body, response.statusText), response.status);
+    throw nonRetryableError(
+      responseErrorMessage(body, response.statusText),
+      response.status,
+    );
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
     if (init.signal?.aborted || err.name === "AbortError") throw err;
@@ -110,17 +122,23 @@ export async function api<T>(path: string, token: string | null, init: RequestIn
   }
 }
 
-export async function apiBlob(path: string, token: string | null, init: RequestInit = {}): Promise<Blob> {
+export async function apiBlob(
+  path: string,
+  token: string | null,
+  init: RequestInit = {},
+): Promise<Blob> {
   try {
     const response = await fetch(`${API_BASE}/v1${path}`, {
       ...init,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(init.headers ?? {})
-      }
+        ...(init.headers ?? {}),
+      },
     });
     if (response.ok) return await response.blob();
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    const body = await response
+      .json()
+      .catch(() => ({ detail: response.statusText }));
     throw nonRetryableError(responseErrorMessage(body, response.statusText));
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
@@ -131,7 +149,11 @@ export async function apiBlob(path: string, token: string | null, init: RequestI
 }
 
 // Multipart upload (no Content-Type header so the browser sets the boundary).
-export async function apiForm<T>(path: string, token: string | null, formData: FormData): Promise<T> {
+export async function apiForm<T>(
+  path: string,
+  token: string | null,
+  formData: FormData,
+): Promise<T> {
   try {
     let response: Response | undefined;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -139,18 +161,23 @@ export async function apiForm<T>(path: string, token: string | null, formData: F
         method: "POST",
         body: formData,
         headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
-      if (!TRANSIENT_UPLOAD_STATUSES.has(response.status) || attempt === 1) break;
-      await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
+      if (!TRANSIENT_UPLOAD_STATUSES.has(response.status) || attempt === 1)
+        break;
+      await new Promise((resolve) =>
+        setTimeout(resolve, UPLOAD_RETRY_DELAY_MS),
+      );
     }
     if (!response) throw new Error("Request failed");
     if (response.ok) {
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
     }
-    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    const body = await response
+      .json()
+      .catch(() => ({ detail: response.statusText }));
     throw nonRetryableError(responseErrorMessage(body, response.statusText));
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
@@ -200,11 +227,21 @@ export type ContentAsset = {
   product_status?: "generating" | "completed" | "failed" | null;
   product_completed?: boolean;
   failure_reason?: string | null;
-  failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  failure_action?:
+    | "retry"
+    | "retry_scene_generation"
+    | "modify_script"
+    | "replace_scene_asset"
+    | null;
   failure_scene_id?: string | null;
   operation_status?: "generating" | "completed" | "failed" | null;
   operation_failure_reason?: string | null;
-  operation_failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_action?:
+    | "retry"
+    | "retry_scene_generation"
+    | "modify_script"
+    | "replace_scene_asset"
+    | null;
   operation_failure_scene_id?: string | null;
   created_at: string;
   updated_at: string;
@@ -213,7 +250,12 @@ export type ContentAsset = {
 
 export type VideoPrimaryVisualRead = {
   status: "planned" | "persisted" | "failed" | string;
-  source_type: "saved_asset" | "public_asset" | "product_asset" | "generated_scene" | string;
+  source_type:
+    | "saved_asset"
+    | "public_asset"
+    | "product_asset"
+    | "generated_scene"
+    | string;
   asset_id?: number | null;
   artifact_ref?: string | null;
   preview_ref?: string | null;
@@ -243,11 +285,7 @@ export type AssetConversationProjectResourcesResponse = {
 };
 
 export type ProjectProgressCode =
-  | "needs_input"
-  | "script_review"
-  | "generating"
-  | "ready"
-  | "needs_attention";
+  "needs_input" | "script_review" | "generating" | "ready" | "needs_attention";
 
 export type ProjectResourceSummaryResponse = {
   sources: number;
@@ -270,8 +308,22 @@ export type ProjectResourceItemResponse = {
   asset_kind: string;
   content_type: string;
   source_type: string;
-  content_role?: "product_or_service" | "brand_identity" | "fact_evidence" | "style_reference" | "competitor_reference" | "general_material" | null;
-  use_policy?: "must_use" | "can_use" | "reference_only" | "do_not_use" | "rights_unclear" | "unknown" | null;
+  content_role?:
+    | "product_or_service"
+    | "brand_identity"
+    | "fact_evidence"
+    | "style_reference"
+    | "competitor_reference"
+    | "general_material"
+    | null;
+  use_policy?:
+    | "must_use"
+    | "can_use"
+    | "reference_only"
+    | "do_not_use"
+    | "rights_unclear"
+    | "unknown"
+    | null;
   updated_at: string;
 };
 
@@ -423,9 +475,26 @@ export type AssetGenerationJobResponse = {
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   result_asset_id: number | null;
   error_message: string | null;
+  retryable?: boolean;
+  regenerable?: boolean;
   created_at: string;
   updated_at: string;
   started_at?: string | null;
+  provider_wait?: {
+    stage: string;
+    status: "requested" | "first_response_received" | "delayed";
+    budget_seconds?: number;
+    idle_timeout_seconds?: number;
+    safety_timeout_seconds?: number;
+    request_sent_at: string;
+    first_response_at?: string;
+    last_response_at: string;
+  };
+  failure_context?: {
+    stage?: string;
+    reusable_result?: { asset_id?: number };
+    actions?: string[];
+  };
   failure_diagnostic?: {
     error_code?: string;
     stage?: string;
@@ -444,6 +513,14 @@ export type AssetGenerationJobResponse = {
   }>;
   intermediate_results?: AssetGenerationIntermediateResult[];
   checkpoint_resume?: AssetGenerationCheckpointResume;
+  scene_progress?: Array<{
+    scene_id: string;
+    scene_number: number;
+    title: string;
+    status: "processing" | "completed" | "failed";
+    detail: string;
+    updated_at: string;
+  }>;
 };
 
 export type ContentAssetSearchResult = {
@@ -647,17 +724,23 @@ export type AdminProductMetrics = {
 };
 
 // Local auth (MULTIMIX_AUTH_PROVIDER=local). Email verification is off by default.
-export async function authLogin(email: string, password: string): Promise<AuthResponse> {
+export async function authLogin(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/login", null, {
     method: "POST",
-    body: JSON.stringify({ email, password })
+    body: JSON.stringify({ email, password }),
   });
 }
 
-export async function authRegister(email: string, password: string): Promise<AuthResponse> {
+export async function authRegister(
+  email: string,
+  password: string,
+): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/register", null, {
     method: "POST",
-    body: JSON.stringify({ email, password, locale: "zh", region: "global" })
+    body: JSON.stringify({ email, password, locale: "zh", region: "global" }),
   });
 }
 
@@ -676,15 +759,23 @@ export async function getAdminProductMetrics(
   );
 }
 
-export async function getAssetLlmDiagnostics(token: string, probe = true): Promise<AssetLlmDiagnosticsRead> {
-  return api<AssetLlmDiagnosticsRead>(`/assets/llm/diagnostics?probe=${probe ? "true" : "false"}`, token);
+export async function getAssetLlmDiagnostics(
+  token: string,
+  probe = true,
+): Promise<AssetLlmDiagnosticsRead> {
+  return api<AssetLlmDiagnosticsRead>(
+    `/assets/llm/diagnostics?probe=${probe ? "true" : "false"}`,
+    token,
+  );
 }
 
 export type AssetFeatureAvailabilityRead = {
   flux_image_user_entry_enabled: boolean;
 };
 
-export async function getAssetFeatureAvailability(token: string): Promise<AssetFeatureAvailabilityRead> {
+export async function getAssetFeatureAvailability(
+  token: string,
+): Promise<AssetFeatureAvailabilityRead> {
   return api<AssetFeatureAvailabilityRead>("/assets/features", token);
 }
 
@@ -693,13 +784,14 @@ export function formatComposerError(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message) return "发送失败，请稍后重试。";
   if (message === API_CONNECTION_ERROR) return "无法连接后端服务，请稍后重试。";
-  if (message === MESSAGE_NOT_SUBMITTED_ERROR) return "未提交：后端没有记录这次操作，可以重试。";
+  if (message === MESSAGE_NOT_SUBMITTED_ERROR)
+    return "未提交：后端没有记录这次操作，可以重试。";
   const lower = message.toLowerCase();
   if (
-    lower.includes("timed out")
-    || lower.includes("timeout")
-    || lower.includes("provider_timeout")
-    || lower.includes("provider_stalled")
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("provider_timeout") ||
+    lower.includes("provider_stalled")
   ) {
     return "内容生成超时，本轮没有创建产物，可以直接重试。";
   }
@@ -707,13 +799,24 @@ export function formatComposerError(error: unknown): string {
   if (lower.includes("quota exceeded") || lower.includes("payment required")) {
     return "本月生成额度已用完，请升级配额或下月再试。";
   }
-  if (lower.includes("database request failed") || lower.includes("internal server error")) {
+  if (
+    lower.includes("database request failed") ||
+    lower.includes("internal server error")
+  ) {
     return "对话保存或生成失败，请稍后重试。";
   }
-  if (lower.includes("not configured") || lower.includes("llm") || lower.includes("ai provider")) {
+  if (
+    lower.includes("not configured") ||
+    lower.includes("llm") ||
+    lower.includes("ai provider")
+  ) {
     return "LLM 暂时不可用，当前对话还没有生成产物。";
   }
-  if (lower.includes("unreachable") || lower.includes("bad gateway") || lower.includes("service failed")) {
+  if (
+    lower.includes("unreachable") ||
+    lower.includes("bad gateway") ||
+    lower.includes("service failed")
+  ) {
     return "生成服务暂时不可达，请稍后重试。";
   }
   return "发送失败，请稍后重试。";
@@ -794,6 +897,17 @@ export async function retryAssetGenerationJob(
 ): Promise<AssetGenerationJobResponse> {
   return api<AssetGenerationJobResponse>(
     `/assets/generation-jobs/${encodeURIComponent(jobId)}/retry`,
+    token,
+    { method: "POST" },
+  );
+}
+
+export async function regenerateAssetGenerationJob(
+  token: string,
+  jobId: string,
+): Promise<AssetGenerationJobResponse> {
+  return api<AssetGenerationJobResponse>(
+    `/assets/generation-jobs/${encodeURIComponent(jobId)}/regenerate`,
     token,
     { method: "POST" },
   );

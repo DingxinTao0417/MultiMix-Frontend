@@ -24,10 +24,18 @@ function MilestoneIcon({ status }: { status: VideoProgressMilestone["status"] })
 export type VideoProgressCardProps = VideoProgressInput & {
   errorMessage?: string | null;
   actions?: ReactNode;
+  failureContext?: ReactNode;
   completionLabel?: string;
+  sceneProgress?: Array<{
+    scene_id: string;
+    scene_number: number;
+    title: string;
+    status: "processing" | "completed" | "failed";
+    detail: string;
+  }>;
 };
 
-export function VideoProgressCard({ errorMessage, actions, completionLabel, ...input }: VideoProgressCardProps) {
+export function VideoProgressCard({ errorMessage, actions, failureContext, completionLabel, sceneProgress = [], ...input }: VideoProgressCardProps) {
   const presentation = videoProgressPresentation(input);
   const [expanded, setExpanded] = useState(false);
   const collapsedOnSuccess = useRef(false);
@@ -78,6 +86,9 @@ export function VideoProgressCard({ errorMessage, actions, completionLabel, ...i
               {presentation.completed ? completionLabel ?? presentation.title : presentation.title}
             </span>
             {description ? <p className="shadcn-prototype-video-task-progress-description">{description}</p> : null}
+            {input.status === "failed" && failureContext ? (
+              <div className="shadcn-prototype-video-task-progress-description">{failureContext}</div>
+            ) : null}
           </div>
           {presentation.completed ? toggle : null}
         </div>
@@ -88,6 +99,22 @@ export function VideoProgressCard({ errorMessage, actions, completionLabel, ...i
           </div>
         ) : null}
       </div>
+      {sceneProgress.length ? (
+        <ol className="shadcn-prototype-agent-run-steps" aria-label="逐镜制作进度">
+          {sceneProgress.map((scene) => (
+            <li key={scene.scene_id} className={"shadcn-prototype-agent-run-step "
+              + (scene.status === "completed" ? "done" : scene.status === "failed" ? "fail" : "run")}>
+              <span className="shadcn-prototype-agent-run-ic" aria-hidden="true">
+                <MilestoneIcon status={scene.status === "completed" ? "done" : scene.status === "failed" ? "fail" : "run"} />
+              </span>
+              <span className="shadcn-prototype-agent-run-tx">
+                第 {scene.scene_number} 镜 · {scene.title}
+                {scene.detail ? <small>{scene.detail}</small> : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
       {expanded ? (
         <ol id={detailsId} className="shadcn-prototype-agent-run-steps" aria-label="视频关键进展">
           {presentation.milestones.map((milestone) => (

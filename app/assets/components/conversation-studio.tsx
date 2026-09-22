@@ -50,6 +50,8 @@ import AgentRunTimeline from "./agent-run-timeline";
 import AgentTaskStrip from "./agent-task-strip";
 import { AssistantReplyPending, ConversationDetailSkeleton } from "./conversation-waiting-state";
 import { AssetGenerationJobCard } from "./asset-generation-job-card";
+import ExternalVideoStoryboardProgress from "./external-video-storyboard-progress";
+import { confirmVideoStoryboard } from "../lib/video-storyboard-client";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
@@ -112,7 +114,8 @@ export type ChatImageAttachment = {
 
 const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
 const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
-const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后请先说明想怎么处理。";
+const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。";
+const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后可直接发送，再选择是否先整理成片段。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -128,17 +131,108 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
   const progressKind = ["video_plan", "video_create", "video_update", "general"].includes(
     String(metadata.asset_generation_progress_kind),
   ) ? metadata.asset_generation_progress_kind as AssetGenerationJobResponse["progress_kind"] : undefined;
+  const sceneProgress = Array.isArray(metadata.asset_generation_scene_progress)
+    ? metadata.asset_generation_scene_progress.filter((scene) => (
+      Boolean(scene) && typeof scene === "object"
+      && typeof (scene as Record<string, unknown>).scene_id === "string"
+      && typeof (scene as Record<string, unknown>).scene_number === "number"
+      && typeof (scene as Record<string, unknown>).title === "string"
+      && ["processing", "completed", "failed"].includes(
+        String((scene as Record<string, unknown>).status),
+      )
+    )) as AssetGenerationJobResponse["scene_progress"] : [];
   return {
     id,
     status: status as AssetGenerationJobResponse["status"],
     progress_kind: progressKind,
     result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
     error_message: status === "failed" || status === "cancelled" ? message.text : null,
+    retryable: metadata.asset_generation_retryable === true,
     created_at: "",
     updated_at: "",
     started_at: typeof metadata.asset_generation_started_at === "string" ? metadata.asset_generation_started_at : null,
     progress_events: progress,
+    scene_progress: sceneProgress,
   };
+}
+
+function storyboardProgressFromMessage(message: AssetConversationMessage): {
+  sourceAssetId: number;
+  jobId: string;
+} | null {
+  if (message.role !== "assistant") return null;
+  const intent = message.metadata?.intent;
+  if (!intent || typeof intent !== "object" || Array.isArray(intent)) return null;
+  const value = intent as Record<string, unknown>;
+  if (
+    value.capability !== "external_video_storyboard"
+    || value.operation !== "analyze_storyboard"
+    || typeof value.job_id !== "string"
+    || !value.job_id.trim()
+    || typeof value.source_asset_id !== "number"
+    || !Number.isInteger(value.source_asset_id)
+    || value.source_asset_id <= 0
+  ) return null;
+  return { sourceAssetId: value.source_asset_id, jobId: value.job_id.trim() };
+}
+
+function externalVideoIntent(message: VisibleConversationMessage): Record<string, unknown> | null {
+  const intent = message.metadata?.intent;
+  if (!intent || typeof intent !== "object" || Array.isArray(intent)) return null;
+  const value = intent as Record<string, unknown>;
+  return typeof value.capability === "string" && value.capability.startsWith("external_video_")
+    ? value
+    : null;
+}
+
+function storyboardConfirmationFromMessage(message: VisibleConversationMessage): {
+  sourceAssetId: number;
+  storyboardFingerprint: string;
+} | null {
+  if (message.role !== "assistant") return null;
+  const intent = externalVideoIntent(message);
+  if (
+    intent?.operation !== "confirm_storyboard"
+    || typeof intent.source_asset_id !== "number"
+    || !Number.isInteger(intent.source_asset_id)
+    || intent.source_asset_id <= 0
+    || typeof intent.storyboard_fingerprint !== "string"
+    || !intent.storyboard_fingerprint.trim()
+  ) return null;
+  return {
+    sourceAssetId: intent.source_asset_id,
+    storyboardFingerprint: intent.storyboard_fingerprint.trim(),
+  };
+}
+
+function conversationDisplayText(message: VisibleConversationMessage): string {
+  if (message.role === "user") {
+    if (message.text === VIDEO_ONLY_INSTRUCTION) return "我上传了一条视频。";
+    if (message.text === "识别并拆分分镜") return "帮我整理视频";
+    if (message.text === "暂不识别") return "先不用";
+    return message.text;
+  }
+  const intent = externalVideoIntent(message);
+  if (!intent) return message.text;
+  if (intent.operation === "offer_storyboard") {
+    return "视频已上传。要先帮你把它整理成几个片段吗？整理后，你可以更方便地告诉我想调整哪一部分。";
+  }
+  if (intent.operation === "analyze_storyboard") {
+    return "好的，我先看看视频内容，并整理成几个片段。完成后会在这里告诉你。";
+  }
+  if (intent.operation === "decline_storyboard") {
+    return "好的，先不整理。视频已经保存在当前项目里，需要时再告诉我。";
+  }
+  if (intent.operation === "confirm_storyboard") {
+    return "片段已经整理出来了。确认后，我会继续刚才的修改。";
+  }
+  return message.text;
+}
+
+function suggestionDisplayLabel(key: string, label: string): string {
+  if (key === "external-video-storyboard-confirm") return "帮我整理视频";
+  if (key === "external-video-storyboard-decline") return "先不用";
+  return label;
 }
 
 function confirmationPlanKey(plan: AssetMessagePlan): string {
@@ -404,6 +498,7 @@ export default function ConversationStudio({
   const [adjustHint, setAdjustHint] = useState(false);
   const [adjustmentProductId, setAdjustmentProductId] = useState<number | null>(null);
   const [confirmingPlanKey, setConfirmingPlanKey] = useState<string | null>(null);
+  const [confirmingStoryboardKey, setConfirmingStoryboardKey] = useState<string | null>(null);
   const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -617,11 +712,13 @@ export default function ConversationStudio({
 
   const submitInstruction = async () => {
     const explicitInstruction = composerValue.trim();
-    if (hasReadyVideoAttachment && !explicitInstruction) {
-      setSendError("请先描述要制作的讲解视频，或说明要怎么优化这条口播。");
-      return;
-    }
-    const instruction = explicitInstruction || (hasReadyImageAttachment ? IMAGE_ONLY_INSTRUCTION : hasReadySourceAttachment ? DOC_ONLY_INSTRUCTION : "");
+    const instruction = explicitInstruction || (hasReadyImageAttachment
+      ? IMAGE_ONLY_INSTRUCTION
+      : hasReadySourceAttachment
+        ? DOC_ONLY_INSTRUCTION
+        : hasReadyVideoAttachment
+          ? VIDEO_ONLY_INSTRUCTION
+          : "");
     await sendInstruction(instruction, {
       confirmationProductId: adjustmentProductId ?? undefined,
     });
@@ -1187,10 +1284,22 @@ export default function ConversationStudio({
           const directorScriptUsedForVideoProject = renderedGenerationJob
             && renderedGenerationJob.status === "completed"
             && hasReadyVideoProjectForDirectorScript(products, message.assetId);
+          const storyboardProgress = storyboardProgressFromMessage(message);
+          const storyboardConfirmation = storyboardConfirmationFromMessage(message);
+          const storyboardConfirmationKey = storyboardConfirmation
+            ? `${storyboardConfirmation.sourceAssetId}:${storyboardConfirmation.storyboardFingerprint}`
+            : null;
+          const pendingStoryboardInstruction = storyboardConfirmation
+            ? visibleConversationMessages.slice(0, index).reverse().find((candidate) => candidate.role === "user")?.text.trim()
+            : undefined;
+          const rendersStoryboardProgress = storyboardProgress !== null
+            && !visibleConversationMessages.slice(index + 1).some((laterMessage) => (
+              storyboardProgressFromMessage(laterMessage)?.jobId === storyboardProgress.jobId
+            ));
           const agentActionFailed = liveAgentAction
             && ["failed", "blocked", "canceled"].includes(liveAgentAction.status);
           const ownsWorkflowCard = Boolean(
-            message.plan || timelineSteps.length || renderedGenerationJob,
+            message.plan || timelineSteps.length || renderedGenerationJob || rendersStoryboardProgress,
           );
           const showsAssistantWaiting = message.role === "assistant"
             && message.pending === true
@@ -1211,7 +1320,7 @@ export default function ConversationStudio({
               {showsAssistantWaiting ? (
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
-                <p>{message.text}</p>
+                 <p>{conversationDisplayText(message)}</p>
               ) : null}
               {message.role === "assistant" ? (
                 <RequirementEvidenceMedia
@@ -1237,6 +1346,44 @@ export default function ConversationStudio({
                     ))}
                   </p>
                   <p className="shadcn-prototype-confirm-sub">{creativeDraft.releaseNote}</p>
+                </div>
+              ) : null}
+              {rendersStoryboardProgress && storyboardProgress && requirementAnalyticsToken ? (
+                <ExternalVideoStoryboardProgress
+                  token={requirementAnalyticsToken}
+                  sourceAssetId={storyboardProgress.sourceAssetId}
+                  jobId={storyboardProgress.jobId}
+                />
+              ) : null}
+              {storyboardConfirmation && storyboardConfirmationKey && pendingStoryboardInstruction ? (
+                <div className="shadcn-prototype-suggestion-row" aria-label="片段确认操作">
+                  <button
+                    type="button"
+                    disabled={
+                      !requirementAnalyticsToken
+                      || sending
+                      || confirmingStoryboardKey === storyboardConfirmationKey
+                    }
+                    onClick={async () => {
+                      if (!requirementAnalyticsToken || confirmingStoryboardKey) return;
+                      setConfirmingStoryboardKey(storyboardConfirmationKey);
+                      setSendError(null);
+                      try {
+                        await confirmVideoStoryboard(
+                          requirementAnalyticsToken,
+                          storyboardConfirmation.sourceAssetId,
+                          storyboardConfirmation.storyboardFingerprint,
+                        );
+                        await sendInstruction(pendingStoryboardInstruction);
+                      } catch (error) {
+                        setSendError(error instanceof Error ? error.message : "暂时无法确认这些片段，请稍后再试。");
+                      } finally {
+                        setConfirmingStoryboardKey(null);
+                      }
+                    }}
+                  >
+                    {confirmingStoryboardKey === storyboardConfirmationKey ? "正在继续…" : "确认片段并继续"}
+                  </button>
                 </div>
               ) : null}
               {message.plan ? (
@@ -1397,7 +1544,7 @@ export default function ConversationStudio({
                           });
                         }}
                       >
-                        {suggestion.label}
+                        {suggestionDisplayLabel(suggestion.key, suggestion.label)}
                       </button>
                     );
                     })}

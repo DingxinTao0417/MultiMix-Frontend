@@ -12,6 +12,9 @@ const EVENT_NAMES = new Set([
   "requirement_conflict_resolved",
   "requirement_evidence_opened",
   "requirement_clone_created",
+  "video_result_accepted",
+  "video_result_needs_change",
+  "video_result_published",
 ]);
 const PROPERTY_KEYS = new Set([
   "recommendation_key",
@@ -26,8 +29,9 @@ const PROPERTY_KEYS = new Set([
   "question_required",
   "source_count",
   "duration_ms",
+  "version_id",
 ]);
-const NUMBER_PROPERTY_KEYS = new Set(["snapshot_version", "source_count", "duration_ms"]);
+const NUMBER_PROPERTY_KEYS = new Set(["snapshot_version", "source_count", "duration_ms", "version_id"]);
 const BOOLEAN_PROPERTY_KEYS = new Set(["question_required"]);
 const ENUM_PROPERTY_VALUES: Record<string, ReadonlySet<string>> = {
   requirement_status: new Set(["analyzing", "needs_confirmation", "ready", "failed"]),
@@ -115,4 +119,46 @@ export async function trackProductEvent(
   } catch {
     // Analytics must never alter the product action it observes.
   }
+}
+
+export type VideoFeedback = {
+  decision: "accepted" | "needs_change" | null;
+  published: boolean;
+  versionId: number;
+};
+
+export async function loadVideoFeedback(token: string, assetId: number): Promise<VideoFeedback> {
+  const response = await fetch(`${API_BASE}/v1/video-feedback/${assetId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error("成片反馈暂时无法读取，请稍后重试。");
+  const data = await response.json() as {
+    decision: "accepted" | "needs_change" | null;
+    published: boolean;
+    version_id: number;
+  };
+  return { decision: data.decision, published: data.published, versionId: data.version_id };
+}
+
+export async function submitVideoFeedback(
+  token: string,
+  assetId: number,
+  versionId: number,
+  decision: "accepted" | "needs_change" | "published",
+): Promise<VideoFeedback> {
+  const response = await fetch(`${API_BASE}/v1/product-events`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_name: `video_result_${decision}`,
+      asset_id: assetId,
+      properties: { version_id: versionId },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(response.status === 409
+      ? "视频版本已更新，请刷新后再反馈。"
+      : "成片反馈未保存，请稍后重试。");
+  }
+  return loadVideoFeedback(token, assetId);
 }

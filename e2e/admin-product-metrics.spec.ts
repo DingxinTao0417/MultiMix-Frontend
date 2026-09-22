@@ -82,7 +82,7 @@ test("product metrics are visible only to administrators", async ({ page }) => {
   });
 
   await page.goto("/app/assets");
-  await expect(page.getByRole("heading", { name: "今天想做什么短视频？" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
   await expect(page.getByRole("link", { name: /产品指标/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /产品指标/ })).toHaveCount(0);
 

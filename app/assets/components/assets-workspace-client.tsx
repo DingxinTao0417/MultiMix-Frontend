@@ -60,6 +60,7 @@ import type {
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetPresenterAudioSelectionConfirmation,
+  AssetProductSegment,
   AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
@@ -321,6 +322,13 @@ export function executionVideoJobIds(
     }
   }
   return [...ids];
+}
+
+function latestProductVersionId(product: ProductArtifact): number | null {
+  const ids = (product.versions ?? [])
+    .map((version) => Number(version.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  return ids.length ? Math.max(...ids) : null;
 }
 
 export function isExecutionTerminal(job: VideoJobResult): boolean {
@@ -701,6 +709,10 @@ export default function AssetsWorkspaceClient({
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
   const [selectedImageFrameIds, setSelectedImageFrameIds] = useState<Record<string, string>>({});
+  const [clickedSceneFocus, setClickedSceneFocus] = useState<Record<number, {
+    sceneId: string;
+    versionId: number | null;
+  }>>({});
   const selectedConversationIdRef = useRef(selectedConversationId);
   const pendingConversationNavigationRef = useRef<string | null>(null);
   const conversationsRef = useRef(conversations);
@@ -2217,7 +2229,9 @@ export default function AssetsWorkspaceClient({
     const controller = new AbortController();
     const videoPurpose = upload.videoPurpose ?? "creation_source";
     const isVisualMaterialVideo = upload.fileKind === "video" && videoPurpose === "visual_material";
-    if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+    const isLocalConversationVideo = upload.fileKind === "video" && Boolean(upload.file) && !upload.sourceUrl;
+    const usesOrdinaryVideoUpload = isVisualMaterialVideo || isLocalConversationVideo;
+    if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
       longFormSourceControllersRef.current.set(upload.id, controller);
     }
     try {
@@ -2230,7 +2244,7 @@ export default function AssetsWorkspaceClient({
         }));
       };
       let asset;
-      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+      if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
         const input = upload.sourceUrl
           ? { kind: "url" as const, url: upload.sourceUrl }
           : upload.file
@@ -2245,7 +2259,7 @@ export default function AssetsWorkspaceClient({
         });
       } else {
         if (!upload.file) throw new Error("没有可上传的资料。");
-        if (isVisualMaterialVideo) {
+        if (usesOrdinaryVideoUpload) {
           asset = await assetWorkspaceAdapter.uploadAsset(
             token,
             upload.file,
@@ -2267,7 +2281,7 @@ export default function AssetsWorkspaceClient({
         assetId: asset.id,
         fileKind: upload.fileKind,
         status: (
-          (upload.fileKind === "video" && !isVisualMaterialVideo)
+          (upload.fileKind === "video" && !usesOrdinaryVideoUpload)
           || !("status" in asset)
           || asset.status === "ready"
         ) ? "ready" : "processing",
@@ -2309,7 +2323,7 @@ export default function AssetsWorkspaceClient({
         )
       }));
     } finally {
-      if (upload.fileKind === "video" && !isVisualMaterialVideo) {
+      if (upload.fileKind === "video" && !usesOrdinaryVideoUpload) {
         longFormSourceControllersRef.current.delete(upload.id);
       }
     }
@@ -2429,6 +2443,20 @@ export default function AssetsWorkspaceClient({
     const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
       ? undefined
       : confirmationProductId ?? selectedProduct?.backendAssetId;
+    const focusedScene = selectedProduct
+      && selectedProduct.contentType === "video_project"
+      && selectedBackendAssetId != null
+      && selectedProduct.backendAssetId === selectedBackendAssetId
+      && !agentConfirmationId
+      ? clickedSceneFocus[selectedBackendAssetId]
+      : undefined;
+    if (focusedScene && selectedProduct && (
+      focusedScene.versionId === null
+      || latestProductVersionId(selectedProduct) !== focusedScene.versionId
+      || !selectedProduct.segments?.some((segment) => segment.id === focusedScene.sceneId)
+    )) {
+      throw new Error("分镜已更新或版本尚未就绪，请重新选择分镜后再修改。");
+    }
     let assetsForSend = linkedAssets;
     if (assetsForSend.length === 0) {
       const sourceAssets = sourceAttachmentAssets(conversation.id);
@@ -2487,6 +2515,8 @@ export default function AssetsWorkspaceClient({
         conversationId: createdProjectId ?? optimisticConversationId ?? conversation.id,
         instruction,
         selectedProductId: selectedBackendAssetId,
+        selectedSceneId: focusedScene?.sceneId,
+        selectedSceneVersionId: focusedScene?.versionId ?? undefined,
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
@@ -3311,6 +3341,13 @@ export default function AssetsWorkspaceClient({
                     ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
                     : handleRestoreProductVersion}
                   onProductUpdated={(updatedProduct) => {
+                    if (updatedProduct.backendAssetId) {
+                      setClickedSceneFocus((current) => {
+                        const next = { ...current };
+                        delete next[updatedProduct.backendAssetId!];
+                        return next;
+                      });
+                    }
                     setConversations((current) => current.map((conversation) => {
                       if (conversation.id !== selectedConversation.id) return conversation;
                       const products = conversation.products ?? [conversation.product];
@@ -3358,6 +3395,16 @@ export default function AssetsWorkspaceClient({
                   selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
                   onSelectedImageFrameChange={(frameId) => {
                     setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
+                  }}
+                  onSelectSegment={(segment: AssetProductSegment) => {
+                    if (!selectedProduct.backendAssetId) return;
+                    setClickedSceneFocus((current) => ({
+                      ...current,
+                      [selectedProduct.backendAssetId!]: {
+                        sceneId: segment.id,
+                        versionId: latestProductVersionId(selectedProduct),
+                      },
+                    }));
                   }}
                   product={selectedProduct}
                   savedVersion={savedProductIds[selectedProduct.id]}

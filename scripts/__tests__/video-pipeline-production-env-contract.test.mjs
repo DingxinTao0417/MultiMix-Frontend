@@ -222,6 +222,53 @@ test("production video E2E can widen only the candidate MP4 range download timeo
   );
 });
 
+test("production video E2E explicitly chooses a required available production method", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const functionStart = source.indexOf("async function confirmVideoParametersIfRequired");
+  const functionEnd = source.indexOf("function videoProjectConfirmationCard", functionStart);
+  const helper = source.slice(functionStart, functionEnd);
+
+  assert.ok(functionStart > -1 && functionEnd > functionStart);
+  assert.match(helper, /production_selection_required/);
+  assert.match(helper, /production_recommended_id/);
+  assert.match(helper, /production_options/);
+  assert.match(helper, /option\.available !== false/);
+  assert.match(helper, /getByRole\("radio", \{\s*name:.*productionOption/);
+  assert.match(helper, /toHaveAttribute\("aria-checked", "true"\)/);
+  assert.ok(
+    helper.indexOf('toHaveAttribute("aria-checked", "true")')
+      < helper.indexOf("await expect(button).toBeEnabled()"),
+    "the explicit production choice must be completed before the submit button is expected to enable",
+  );
+});
+
+test("production video E2E has an explicit director generation timeout", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+
+  assert.match(
+    runnerSource,
+    /process\.env\.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS \?\? 20 \* 60_000/,
+  );
+  assert.match(
+    runnerSource,
+    /VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer/,
+  );
+  assert.match(
+    runnerSource,
+    /VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS:\s*String\(directorJobTimeoutMs\)/,
+  );
+  assert.match(
+    browserSource,
+    /process\.env\.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS \?\? 20 \* 60_000/,
+  );
+  assert.match(
+    browserSource,
+    /VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer/,
+  );
+  assert.match(browserSource, /timeout:\s*directorJobTimeoutMs/);
+});
+
 test("saved-library A/B instruction override preserves the existing default conversation", () => {
   const browserSource = fs.readFileSync(productionSpecPath, "utf8");
 
@@ -305,7 +352,7 @@ test("production video E2E can disable BGM without dereferencing an absent catal
   assert.match(source, /const stagedBgm = !isResume && expectBgm/);
   assert.match(
     source,
-    /const productMediaManifestRef = \(\s*isResume \|\| savedLibraryInputProfile \|\| expectedVideoType === "presenter"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
+    /const productMediaManifestRef = \(\s*isResume \|\| sourceFreeInputProfile \|\| expectedVideoType === "presenter"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
   );
   assert.doesNotMatch(source, /stagedBgm\.manifestRef/);
   assert.doesNotMatch(source, /stagedBgm\.defaultCatalogId/);
@@ -544,6 +591,20 @@ test("production video E2E continues a completed retained project through browse
   assert.match(productionSpec, /actionableConsoleErrors,/);
 });
 
+test("production video E2E verifies that its backend is the only listener on the isolated port", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(source, /assertPortOwnedByChild/);
+  assert.match(source, /async function waitForVerifiedBackend\(backend, databaseFingerprint\)/);
+  assert.match(source, /await assertPortOwnedByChild\(backendPort, backend\)/);
+  assert.match(
+    source,
+    /const databaseFingerprint = crypto\.createHash\("sha256"\)\.update\(databaseUrl\)\.digest\("hex"\)/,
+  );
+  assert.match(source, /await waitForVerifiedBackend\(backend, databaseFingerprint\)/);
+  assert.match(source, /await waitForPortFree\(backendPort/);
+});
+
 test("retained QA report uses the persisted project scene count", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
   const reportStart = source.indexOf("async function writeQaReport");
@@ -577,20 +638,34 @@ test("production video E2E resumes a retained director confirmation without repe
   )?.[0] ?? "";
 
   assert.match(source, /async function readRetainedDirectorConfirmationSeed/);
-  assert.match(seedReader, /len\(source_assets\) == 3/);
-  assert.match(seedReader, /len\(generation_jobs\) == 1/);
+  assert.match(seedReader, /expected_source_count=len\(benchmark_source_hashes\)/);
+  assert.match(seedReader, /len\(source_assets\) == expected_source_count/);
+  assert.match(seedReader, /len\(source_files\) == expected_source_count/);
+  assert.match(seedReader, /len\(ingest_jobs\) == expected_source_count/);
+  assert.doesNotMatch(seedReader, /len\((?:source_assets|source_files|ingest_jobs)\) == 3/);
+  assert.match(
+    seedReader,
+    /completed_generation_jobs=\[job for job in generation_jobs if job\.status == 'completed'\]/,
+  );
+  assert.match(seedReader, /len\(completed_generation_jobs\) == 1/);
+  assert.match(seedReader, /generation_job is generation_jobs\[-1\]/);
+  assert.match(
+    seedReader,
+    /historical_job\.status == 'failed'[\s\S]*?historical_job\.result_asset_id is None/,
+  );
+  assert.match(seedReader, /restart_of_generation_job_id/);
   assert.match(seedReader, /len\(render_jobs\) == 0/);
   assert.match(seedReader, /benchmark_source_hashes/);
   assert.match(seedReader, /director_script_draft/);
   assert.match(seedReader, /video_creation_policy:v1/);
-  assert.match(seedReader, /content_driven_scene_count=sys\.argv\[6\] == 'true'/);
+  assert.match(seedReader, /content_driven_scene_min=int\(sys\.argv\[6\]\)/);
   assert.match(
     seedReader,
-    /if content_driven_scene_count:[\s\S]{0,160}?4 <= len\(scenes\) <= 8[\s\S]{0,220}?else:[\s\S]{0,160}?len\(scenes\) == expected_scene_count/,
+    /if content_driven_scene_min > 0:[\s\S]{0,200}?content_driven_scene_min <= len\(scenes\) <= 8[\s\S]{0,220}?else:[\s\S]{0,160}?len\(scenes\) == expected_scene_count/,
   );
   assert.match(
     seedReader,
-    /String\(savedLibraryInputProfile && expectedVideoType !== "presenter"\)/,
+    /String\(\s*ideaOnlyInputProfile\s*\?\s*1\s*:\s*savedLibraryInputProfile && expectedVideoType !== "presenter"\s*\?\s*4\s*:\s*0,?\s*\)/,
   );
   assert.match(source, /function snapshotProviderRequestEvidence/);
   assert.match(source, /function assertProviderRequestEvidenceUnchanged/);
@@ -606,6 +681,10 @@ test("production video E2E resumes a retained director confirmation without repe
   assert.match(retainedConfirmationSpec, /preserve_source_audio/);
   assert.match(retainedConfirmationSpec, /latest_job_public_id/);
   assert.match(retainedConfirmationSpec, /project_ready/);
+  assert.match(
+    retainedConfirmationSpec,
+    /catch \(error\)[\s\S]*?transport-error:/,
+  );
   assert.doesNotMatch(retainedConfirmationSpec, /setInputFiles|generation-jobs\/.*retry/);
 });
 
@@ -617,7 +696,7 @@ test("production video runner explicitly enables only its retained-resume paid-g
   assert.match(gateCall, /allowRetainedResume:\s*true/);
 });
 
-test("production video E2E retries one retained authorized director failure without repeating ingestion", () => {
+test("production video E2E retries any retained authorized director attempt without repeating ingestion", () => {
   const source = fs.readFileSync(runnerPath, "utf8");
 
   assert.ok(
@@ -625,39 +704,114 @@ test("production video E2E retries one retained authorized director failure with
     "retained director retry browser contract must exist",
   );
   const retainedRetrySpec = fs.readFileSync(retainedDirectorRetrySpecPath, "utf8");
+  assert.match(
+    retainedRetrySpec,
+    /process\.env\.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS \?\? 20 \* 60_000/,
+  );
+  assert.match(
+    retainedRetrySpec,
+    /VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer/,
+  );
+  assert.match(retainedRetrySpec, /timeout:\s*directorJobTimeoutMs/);
+  assert.match(
+    retainedRetrySpec,
+    /test\.setTimeout\(directorJobTimeoutMs \+ 5 \* 60_000\)/,
+  );
   const seedReader = source.match(
     /async function readRetainedDirectorRetrySeed[\s\S]*?\r?\n}\r?\n\r?\nasync function readRetainedDirectorConfirmationSeed/,
   )?.[0] ?? "";
 
-  assert.match(seedReader, /len\(source_assets\) == 3/);
+  assert.match(seedReader, /expected_source_count=len\(benchmark_source_hashes\)/);
+  assert.match(seedReader, /len\(source_assets\) == expected_source_count/);
+  assert.match(seedReader, /len\(source_files\) == expected_source_count/);
   assert.match(seedReader, /benchmark_source_hashes/);
-  assert.match(seedReader, /len\(ingest_jobs\) == 3/);
+  assert.match(seedReader, /len\(ingest_jobs\) == expected_source_count/);
+  assert.doesNotMatch(seedReader, /len\((?:source_assets|source_files|ingest_jobs)\) == 3/);
   assert.match(seedReader, /job\.attempts == 1/);
   assert.match(seedReader, /generation_job\.status == 'failed'/);
-  assert.match(seedReader, /generation_job\.error_code == 'quality_rejected'/);
-  assert.match(seedReader, /generation_job\.error_code == 'internal_error'/);
+  assert.match(seedReader, /generation_job\.attempts >= 1/);
+  assert.doesNotMatch(seedReader, /generation_job\.attempts == 1/);
+  assert.match(
+    seedReader,
+    /from app\.services\.asset_generation_jobs import generation_job_is_retryable/,
+  );
+  assert.match(
+    seedReader,
+    /from app\.services\.asset_generation_retryability import generation_job_is_regenerable/,
+  );
+  assert.match(
+    seedReader,
+    /generation_job_is_retryable\(generation_job\) or generation_job_is_regenerable\(generation_job\)/,
+  );
+  assert.doesNotMatch(seedReader, /'quality_rejected'/);
+  assert.doesNotMatch(seedReader, /'internal_error'/);
+  assert.doesNotMatch(seedReader, /'director_provider_rejected'/);
   assert.match(seedReader, /VideoDecisionEvent/);
   assert.match(seedReader, /director_generation_failed/);
-  assert.match(seedReader, /diagnostics\.get\('exception_type'\) == 'ValueError'/);
-  assert.match(seedReader, /diagnostics\.get\('detail'\) == 'choreography source ranges must not overlap'/);
+  assert.match(seedReader, /details\.get\('attempt'\) == generation_job\.attempts/);
+  assert.match(seedReader, /len\(current_failure_events\) == 1/);
+  assert.match(seedReader, /current_failure_event\.reason_code == generation_job\.error_code/);
+  assert.doesNotMatch(seedReader, /choreography source ranges must not overlap/);
+  assert.doesNotMatch(seedReader, /diagnostics\.get\('exception_type'\)/);
   assert.doesNotMatch(seedReader, /backend\.log/);
   assert.match(seedReader, /generation_job\.result_asset_id is None/);
-  assert.match(seedReader, /len\(director_assets\) == 0/);
+  assert.doesNotMatch(seedReader, /len\(director_assets\) == 0/);
+  assert.match(seedReader, /len\(visible_director_assets\) == 0/);
+  assert.match(seedReader, /director_save_checkpoint/);
+  assert.match(seedReader, /len\(hidden_director_reservations\) == 1/);
+  assert.match(seedReader, /reservation_asset\.id == int\(checkpoint\['asset_id'\]\)/);
+  assert.match(seedReader, /reservation_asset\.generation_state == 'generation_reserved'/);
+  assert.match(seedReader, /reservation_metadata\.get\('job_id'\) == generation_job\.id/);
+  assert.match(seedReader, /reservation_metadata\.get\('request_fingerprint'\) == checkpoint\.get\('request_fingerprint'\)/);
   assert.match(seedReader, /len\(render_jobs\) == 0/);
+  assert.match(source, /const expectedRetainedDirectorAttempts = retainedDirectorRetrySeed/);
   assert.match(
     source,
-    /retainedDirectorRetrySeed[\s\S]*?video-pipeline-retained-director-retry\.spec\.ts[\s\S]*?expectedGenerationAttempts:\s*2[\s\S]*?video-pipeline-retained-confirmation\.spec\.ts/,
+    /retainedDirectorRetrySeed\.regenerable[\s\S]*?\? 1[\s\S]*?: retainedDirectorRetrySeed\.generationAttemptsBefore \+ 1/,
+  );
+  assert.match(
+    source,
+    /expectedGenerationAttempts:\s*expectedRetainedDirectorAttempts/,
+  );
+  assert.match(
+    source,
+    /video-pipeline-retained-director-retry\.spec\.ts[\s\S]*?expectedGenerationAttempts:\s*retainedDirectorRetrySeed\.regenerable[\s\S]*?\? 1[\s\S]*?: retainedDirectorRetrySeed\.generationAttemptsBefore \+ 1[\s\S]*?video-pipeline-retained-confirmation\.spec\.ts/,
   );
   assert.match(source, /VIDEO_PIPELINE_RETAINED_DIRECTOR_RETRY_SEED/);
   assert.match(retainedRetrySpec, /VIDEO_PIPELINE_RETAINED_DIRECTOR_RETRY_SEED/);
-  assert.match(retainedRetrySpec, /\/v1\/assets\/generation-jobs\/\$\{seed\.generationJobId\}\/retry/);
+  assert.match(retainedRetrySpec, /getByRole\("region", \{ name: "视频任务进度" \}\)/);
+  assert.match(retainedRetrySpec, /name: \/\^\(重试\|重新执行此步骤\|重新生成\)\$\//);
+  assert.match(
+    retainedRetrySpec,
+    /const recoveryAction = seed\.regenerable \? "regenerate" : "retry"/,
+  );
+  assert.match(
+    retainedRetrySpec,
+    /\/v1\/assets\/generation-jobs\/\$\{seed\.generationJobId\}\/\$\{recoveryAction\}/,
+  );
   assert.match(retainedRetrySpec, /toHaveLength\(1\)/);
+  assert.match(
+    retainedRetrySpec,
+    /generationAttemptsAfterExpected: seed\.regenerable[\s\S]*?\? 1[\s\S]*?: seed\.generationAttemptsBefore \+ 1/,
+  );
   assert.match(retainedRetrySpec, /status === "completed"/);
+  assert.match(
+    retainedRetrySpec,
+    /failure_diagnostic\?\.error_code/,
+  );
+  assert.match(retainedRetrySpec, /catch \(error\)[\s\S]*?transport-error:/);
   assert.match(
     retainedRetrySpec,
     /mutatingRequests\.filter\(\(\{ url \}\) => url\.includes\("\/v1\/assets\/upload"\)\)[\s\S]*?toEqual\(\[\]\)/,
   );
   assert.doesNotMatch(retainedRetrySpec, /setInputFiles/);
+  assert.match(source, /async function recoverRetainedDirectorJob/);
+  assert.match(
+    source,
+    /await recoverRetainedDirectorJob\(backendEnv\);[\s\S]*?readRetainedDirectorRetrySeed\(backendEnv\)/,
+  );
+  assert.match(source, /recover_asset_generation_jobs/);
+  assert.match(source, /stale_after_seconds=1/);
 });
 
 test("retained resume compares the benchmark case through the persisted manifest key", () => {
@@ -702,15 +856,38 @@ test("production video E2E warns but does not reject a final MP4 for duration dr
   assert.doesNotMatch(source, /failures\.push\([\s\S]{0,120}?duration_seconds=/);
 });
 
-test("saved-library E2E profiles do not inject an unrelated source document", () => {
+test("source-free E2E profiles do not inject an unrelated source document", () => {
   const runnerSource = fs.readFileSync(runnerPath, "utf8");
   const browserSource = fs.readFileSync(productionSpecPath, "utf8");
 
   assert.match(browserSource, /const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"\s*\|\| singleImageCreativeDraft/);
-  assert.match(browserSource, /!savedLibraryInputProfile[\s\S]*?VIDEO_PIPELINE_SOURCE_DOCUMENT is missing/);
-  assert.match(browserSource, /if \(savedLibraryInputProfile\)[\s\S]*?multimix_local_user/);
+  assert.match(browserSource, /!savedLibraryInputProfile\s*&&\s*!ideaOnlyInputProfile[\s\S]*?VIDEO_PIPELINE_SOURCE_DOCUMENT is missing/);
+  assert.match(browserSource, /if \(savedLibraryInputProfile \|\| ideaOnlyInputProfile\)[\s\S]*?multimix_local_user/);
   assert.match(runnerSource, /const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"\s*\|\| singleImageCreativeDraft/);
-  assert.match(runnerSource, /const sourceDocumentFingerprint = savedLibraryInputProfile\s*\? null\s*:\s*fingerprintFile\(sourceDocument\)/);
+  assert.match(runnerSource, /const sourceFreeInputProfile = savedLibraryInputProfile \|\| ideaOnlyInputProfile/);
+  assert.match(runnerSource, /const sourceDocumentFingerprint = sourceFreeInputProfile\s*\? null\s*:\s*fingerprintFile\(sourceDocument\)/);
+});
+
+test("retained video E2E restores its frozen input identity before configuration defaults", () => {
+  const runnerSource = fs.readFileSync(runnerPath, "utf8");
+
+  assert.match(runnerSource, /readRetainedE2ERunState/);
+  assert.match(runnerSource, /const retainedRunManifest = isResume \? readRetainedRunManifest\(retainedRunState\) : null/);
+  assert.match(runnerSource, /const expectedVideoType = suppliedVideoType \|\| retainedRunManifest\?\.videoType \|\| productionE2EProfiles\[0\]/);
+  assert.match(runnerSource, /const inputProfile = suppliedInputProfile \|\| retainedRunManifest\?\.inputProfile \|\| `\$\{expectedVideoType\}_default`/);
+  assert.match(runnerSource, /retained run manifest conflicts with VIDEO_PIPELINE_VIDEO_TYPE/);
+  assert.match(runnerSource, /retained run manifest conflicts with VIDEO_PIPELINE_INPUT_PROFILE/);
+});
+
+test("idea-only E2E accepts a model-owned nonempty scene count", () => {
+  const browserSource = fs.readFileSync(productionSpecPath, "utf8");
+  const ideaOnlySceneGate = browserSource.match(
+    /if \(ideaOnlyInputProfile\) \{[\s\S]*?\n  \}/,
+  )?.[0] ?? "";
+
+  assert.match(ideaOnlySceneGate, /toBeGreaterThanOrEqual\(1\)/);
+  assert.doesNotMatch(ideaOnlySceneGate, /toBeGreaterThanOrEqual\(4\)/);
+  assert.match(ideaOnlySceneGate, /toBeLessThanOrEqual\(8\)/);
 });
 
 test("quality-baseline E2E fails closed without approved product or presenter inputs", () => {
@@ -932,11 +1109,15 @@ test("quality-baseline presenter asks to preserve the source ratio without forci
   assert.doesNotMatch(presenterInstruction, /targetRatioAcceptance\.instructionLabel/);
 });
 
-test("production video E2E keeps the browser download action separate from candidate retrieval", () => {
+test("production video E2E accepts a current persisted MP4 without creating another export task", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.match(source, /await exportButton\.click\(\{ timeout: 30_000 \}\);/);
-  assert.match(source, /toBe\("再次下载"\)/);
+  assert.match(source, /const persistedOriginalMp4Ref =/);
+  assert.match(source, /if \(persistedOriginalMp4Ref\)/);
+  assert.match(source, /const directDownloadPromise = page\.waitForEvent\("download"/);
+  assert.match(source, /directOriginalDownload = await directDownloadPromise/);
+  assert.match(source, /if \(directOriginalDownload\)[\s\S]*?await directOriginalDownload\.saveAs\(outputPath\)/);
+  assert.match(source, /if \(!persistedOriginalMp4Ref\)[\s\S]*?waitForExportTaskResponseOrFailure\(/);
   assert.match(
     source,
     /\/v1\/video\/media\?ref=\$\{encodeURIComponent\(mp4Ref\)\}/,
@@ -950,8 +1131,6 @@ test("production video E2E keeps the browser download action separate from candi
   assert.match(source, /timeout: CANDIDATE_MP4_RANGE_TIMEOUT_MS/);
   assert.match(source, /Buffer\.concat\(chunks\)/);
   assert.doesNotMatch(source, /const candidateBytes = await candidateResponse\.body\(\);/);
-  assert.doesNotMatch(source, /page\.waitForEvent\("download"/);
-  assert.doesNotMatch(source, /download\.saveAs\(/);
 });
 
 test("production video E2E observes both supported asynchronous export task responses", () => {
@@ -966,7 +1145,13 @@ test("production video E2E observes both supported asynchronous export task resp
     source,
     /`\$\{apiBase\}\/v1\/video\/projects\/\$\{projectAsset!\.id\}\/exports`/,
   );
-  assert.match(source, /exportTaskResponsePaths\.includes\(response\.url\(\)\)/);
+  assert.match(source, /const responseUrl = new URL\(response\.url\(\)\)/);
+  assert.match(source, /const expectedUrl = new URL\(candidate\)/);
+  assert.match(
+    source,
+    /responseUrl\.origin === expectedUrl\.origin\s*&&\s*responseUrl\.pathname === expectedUrl\.pathname/,
+  );
+  assert.doesNotMatch(source, /exportTaskResponsePaths\.includes\(response\.url\(\)\)/);
 });
 
 test("production video E2E fails fast when export preparation reports a visible error", () => {
@@ -1022,6 +1207,36 @@ test("production video E2E reads the persisted export task before long render po
   );
 });
 
+test("production video E2E accepts terminal export state and verifies the variant-menu download", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const renderStart = source.indexOf('measureE2EStage("export_browser_render"');
+  const downloadStart = source.indexOf('measureE2EStage("export_download"', renderStart);
+  const resultStart = source.indexOf('page.screenshot({', downloadStart);
+  const renderStage = source.slice(renderStart, downloadStart);
+  const downloadStage = source.slice(downloadStart, resultStart);
+
+  assert.ok(renderStart >= 0 && downloadStart > renderStart && resultStart > downloadStart);
+  assert.match(renderStage, /terminalTask\.status\)\.toBe\("completed"\)/);
+  assert.match(renderStage, /terminalTask\.stage\)\.toBe\("done"\)/);
+  assert.match(renderStage, /terminalTask\.quality_report\?\.blockers \?\? \[\]\)\.toEqual\(\[\]\)/);
+  assert.match(renderStage, /expect\(exportButton\)\.toHaveText\("导出视频"/);
+  assert.doesNotMatch(renderStage, /\.toBe\("下载成片"\)/);
+  assert.match(downloadStage, /page\.waitForEvent\("download"/);
+  assert.match(downloadStage, /getByRole\("menuitem", \{ name: "原始成片", exact: true \}\)\.click\(\)/);
+  assert.match(downloadStage, /await completedOriginalDownload\.saveAs\(outputPath\)/);
+  assert.doesNotMatch(downloadStage, /\.toBe\("再次下载"\)/);
+});
+
+test("production video E2E lets a restored export menu advance to explicit task verification", () => {
+  const source = fs.readFileSync(productionSpecPath, "utf8");
+  const stageStart = source.indexOf('measureE2EStage("export_preview_ready"');
+  const stageEnd = source.indexOf('measureE2EStage("export_browser_render"', stageStart);
+  const exportStage = source.slice(stageStart, stageEnd);
+
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+  assert.match(exportStage, /正在合成视频\|正在上传成片\|正在检查成片\|下载成片\|导出视频/);
+});
+
 test("production video browser flow records its major user-visible pipeline waits", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
@@ -1043,8 +1258,8 @@ test("production video browser flow records its major user-visible pipeline wait
 
 test("production video E2E writes a pending human review only after its candidate MP4 exists", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
-  const candidateWrite = source.indexOf('fs.writeFileSync(outputPath, candidateBytes)');
   const resultWrite = source.indexOf('path.join(resultDir, "browser-result.json")');
+  const candidateWrite = source.lastIndexOf("saveAs(outputPath)", resultWrite);
   const reviewWrite = source.indexOf("const humanReviewReportPath = writeVideoHumanReviewReport");
 
   assert.ok(candidateWrite > -1, "candidate MP4 must be written before review evidence");
@@ -1359,18 +1574,29 @@ test("production video E2E retries a transient transport failure while waiting f
   assert.match(generationJobPoll, /job\.status === "failed"/);
 });
 
-test("production video E2E treats only the current export 404 as an expected console miss", () => {
+test("production video E2E ignores only registered empty-state 404 probes", () => {
   const source = fs.readFileSync(productionSpecPath, "utf8");
 
-  assert.match(source, /const expectedMissingCurrentExportConsoleError = \(message: string\) =>/);
+  assert.match(source, /const expectedEmptyStateProbeConsoleError = \(message: string\) =>/);
   assert.match(
     source,
     /message\.includes\(\s*"Failed to load resource: the server responded with a status of 404",?\s*\)/s,
   );
-  assert.match(source, /message\.includes\(`@ \$\{currentExportUrl\}:`\)/);
+  assert.ok(
+    source.includes(
+      "/^\\/v1\\/assets\\/conversations\\/[^/]+\\/requirements\\/current$/",
+    ),
+  );
+  assert.ok(
+    source.includes(
+      "/^\\/v1\\/video\\/projects\\/[^/]+\\/exports\\/current$/",
+    ),
+  );
+  assert.match(source, /new URL\(matchedUrl\)/);
+  assert.match(source, /url\.origin !== apiOrigin/);
   assert.match(
     source,
-    /!expectedMissingCurrentExportConsoleError\(message\)/,
+    /!expectedEmptyStateProbeConsoleError\(message\)/,
   );
 });
 
@@ -1618,4 +1844,16 @@ test("retained recovery accepts either a queued dispatch or a stale-running resu
   assert.match(recoveryBlock, /assert result\.get\('queued'\) == 1, result/);
   assert.match(recoveryBlock, /assert result\.get\('dispatched'\) == 1, result/);
   assert.doesNotMatch(recoveryBlock, /assert result\.get\('resume_queued'\) == 1, result/);
+});
+
+test("retained completed recovery retries when the recovery scan invalidates the project", () => {
+  const source = fs.readFileSync(runnerPath, "utf8");
+  const start = source.indexOf("async function resumeRetainedVideoJob");
+  const end = source.indexOf("function assertResumeManifest", start);
+  const block = source.slice(start, end);
+
+  assert.ok(start > -1 && end > start);
+  assert.match(block, /await readRetainedVideoJob\(backendEnv\)/);
+  assert.match(block, /recoveredJob\.status === "failed"/);
+  assert.match(block, /\/retry/);
 });

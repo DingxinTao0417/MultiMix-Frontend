@@ -43,6 +43,7 @@ import {
   getConversationAgentAction,
   isApiConfigured,
   retryConversationAgentAction,
+  regenerateAssetGenerationJob,
   retryAssetGenerationJob,
   type AgentActionRunResponse as ApiAgentActionRunResponse,
   type AssetIngestJobActionRead,
@@ -501,6 +502,8 @@ export function buildConversationMessagePayload({
   conversationId,
   instruction,
   selectedProductId,
+  selectedSceneId,
+  selectedSceneVersionId,
   linkedAssetIds,
   clientRequestId,
   videoParameterConfirmation,
@@ -523,6 +526,8 @@ export function buildConversationMessagePayload({
   conversationId: string;
   instruction: string;
   selectedProductId?: number;
+  selectedSceneId?: string;
+  selectedSceneVersionId?: number;
   linkedAssetIds?: number[];
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
@@ -560,6 +565,7 @@ export function buildConversationMessagePayload({
     instruction,
     conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
     selected_product_id: selectedProductId,
+    ...(selectedSceneId ? { selected_scene_id: selectedSceneId, selected_scene_version_id: selectedSceneVersionId } : {}),
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
@@ -851,6 +857,8 @@ export type AssetWorkspaceAdapter = {
     conversationId: string;
     instruction: string;
     selectedProductId?: number;
+    selectedSceneId?: string;
+    selectedSceneVersionId?: number;
     linkedAssetIds?: number[];
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
@@ -891,6 +899,7 @@ export type AssetWorkspaceAdapter = {
   } | null>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
+  regenerateGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   cancelGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   getAgentAction(
     token: string,
@@ -1616,6 +1625,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       conversationId,
       instruction,
       selectedProductId,
+      selectedSceneId,
+      selectedSceneVersionId,
       linkedAssetIds,
       clientRequestId,
       videoParameterConfirmation,
@@ -1652,6 +1663,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           conversationId,
           instruction,
           selectedProductId,
+          selectedSceneId,
+          selectedSceneVersionId,
           linkedAssetIds,
           clientRequestId,
           videoParameterConfirmation,
@@ -1746,6 +1759,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     retryGenerationJob(token, jobId) {
       return retryAssetGenerationJob(token, jobId);
+    },
+    regenerateGenerationJob(token, jobId) {
+      return regenerateAssetGenerationJob(token, jobId);
     },
     cancelGenerationJob(token, jobId) {
       return cancelAssetGenerationJob(token, jobId);

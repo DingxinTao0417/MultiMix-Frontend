@@ -300,6 +300,16 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("button", { name: /#2.*服务过程/s })).toHaveClass("active");
   });
 
+  it("passes an explicitly clicked segment to the conversation workspace", () => {
+    const onSelectSegment = vi.fn();
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    render(<ProductPreview product={product} onSelectSegment={onSelectSegment} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /#2.*服务过程/s }));
+
+    expect(onSelectSegment).toHaveBeenCalledWith(product.segments?.[1]);
+  });
+
   it("starts a real recovery for a failed full video", async () => {
     const retryVideo = vi.fn(async () => undefined);
     const product = displayProducts["case-07-project-ready-mp4"];

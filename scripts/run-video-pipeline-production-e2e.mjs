@@ -6,14 +6,17 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 import {
+  assertPortOwnedByChild,
   assertPortFree,
   startLogged,
   stopChild,
+  waitForPortFree,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
 import {
   assertSqliteDatabaseUsable,
   createE2ERunLifecycle,
+  readRetainedE2ERunState,
   resumeRetainedE2ERunLifecycle,
 } from "./e2e-run-lifecycle.mjs";
 import { repairNextGeneratedTypeReferences } from "./next-generated-types.mjs";
@@ -36,7 +39,7 @@ Optional arguments:
   --resume <run-id>           Resume an explicitly retained E2E run.
 
 Core environment variables:
-  VIDEO_PIPELINE_VIDEO_TYPE   One production E2E profile: explainer, source_excerpt, or presenter.
+  VIDEO_PIPELINE_VIDEO_TYPE   One production E2E profile: explainer, source_excerpt, or presenter. Recovered from a retained manifest on --resume.
   VIDEO_PIPELINE_QUALITY_BASELINE=true
                               Require approved product inputs for a single explainer or presenter quality run.
   VIDEO_PIPELINE_BENCHMARK_CASE
@@ -59,6 +62,8 @@ Core environment variables:
                               Optional fixed plain-language instruction for explainer_saved_library_simple QA.
   VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS
                               Optional positive integer applied only to the isolated backend.
+  VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS
+                              Optional positive integer for director generation completion.
   VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS
                               Optional positive integer for each candidate MP4 range request.
 
@@ -218,23 +223,53 @@ const resumeRunId = resumeArgIndex >= 0 ? process.argv[resumeArgIndex + 1] : "";
 if (resumeArgIndex >= 0 && (!resumeRunId || resumeRunId.startsWith("--"))) {
   throw new Error("--resume requires a retained VIDEO_PIPELINE_RUN_ID");
 }
+const isResume = resumeArgIndex >= 0;
+const retainedRunState = isResume
+  ? readRetainedE2ERunState({ suite: "video-pipeline-production", runId: resumeRunId })
+  : null;
+function readRetainedRunManifest(state) {
+  if (!state || typeof state.resultDir !== "string" || !state.resultDir.trim()) {
+    throw new Error("Cannot resume: retained run state has no result directory.");
+  }
+  const manifestPath = path.join(state.resultDir, "run-manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error("Cannot resume: run-manifest.json is missing.");
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (
+    !manifest
+    || typeof manifest.videoType !== "string"
+    || !manifest.videoType.trim()
+    || typeof manifest.inputProfile !== "string"
+    || !manifest.inputProfile.trim()
+  ) {
+    throw new Error("Cannot resume: retained run manifest has no valid input identity.");
+  }
+  return manifest;
+}
+const retainedRunManifest = isResume ? readRetainedRunManifest(retainedRunState) : null;
 const productionE2EProfiles = [
   "explainer",
   "source_excerpt",
   "presenter",
 ];
-if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
-  throw new Error("Resuming a retained run requires VIDEO_PIPELINE_VIDEO_TYPE");
+const suppliedVideoType = (process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? "").trim();
+if (
+  isResume
+  && suppliedVideoType
+  && suppliedVideoType !== retainedRunManifest?.videoType
+) {
+  throw new Error("Cannot resume: retained run manifest conflicts with VIDEO_PIPELINE_VIDEO_TYPE.");
 }
 const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
-if (qualityBaselineRun && !process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+if (qualityBaselineRun && !suppliedVideoType) {
   throw new Error("quality baseline requires one explicitly selected production E2E profile");
 }
 const benchmarkCaseFilename = (process.env.VIDEO_PIPELINE_BENCHMARK_CASE ?? "").trim();
 if (qualityBaselineRun && !benchmarkCaseFilename) {
   throw new Error("quality baseline requires VIDEO_PIPELINE_BENCHMARK_CASE");
 }
-if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+if (!suppliedVideoType && !isResume) {
   const matrixResultRoot = path.resolve(
     process.env.VIDEO_PIPELINE_RESULT_DIR
       ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
@@ -260,7 +295,7 @@ if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   }
   process.exit(0);
 }
-const expectedVideoType = process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? productionE2EProfiles[0];
+const expectedVideoType = suppliedVideoType || retainedRunManifest?.videoType || productionE2EProfiles[0];
 if (!expectedVideoType || !productionE2EProfiles.includes(expectedVideoType)) {
   throw new Error(`Unsupported production E2E profile: ${expectedVideoType ?? "missing"}`);
 }
@@ -312,6 +347,9 @@ let qaSceneCount = expectedSceneCount;
 const videoJobTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
 );
+const directorJobTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS ?? 20 * 60_000,
+);
 const candidateRangeTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS ?? 60_000,
 );
@@ -331,6 +369,9 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
 }
+if (!Number.isInteger(directorJobTimeoutMs) || directorJobTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer");
+}
 if (!Number.isInteger(candidateRangeTimeoutMs) || candidateRangeTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS must be a positive integer");
 }
@@ -347,8 +388,17 @@ const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFE
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const retainRemoteCheckpoint = process.env.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false";
-const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
+const suppliedInputProfile = (process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? "").trim();
+if (
+  isResume
+  && suppliedInputProfile
+  && suppliedInputProfile !== retainedRunManifest?.inputProfile
+) {
+  throw new Error("Cannot resume: retained run manifest conflicts with VIDEO_PIPELINE_INPUT_PROFILE.");
+}
+const inputProfile = suppliedInputProfile || retainedRunManifest?.inputProfile || `${expectedVideoType}_default`;
 const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+const ideaOnlyInputProfile = inputProfile === "explainer_idea_only";
 const generationInstructionOverride = (
   process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? ""
 ).trim();
@@ -393,7 +443,6 @@ const defaultResultDir = path.resolve(
   process.env.VIDEO_PIPELINE_RESULT_DIR
     ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
 );
-const isResume = resumeArgIndex >= 0;
 const lifecycle = isResume
   ? resumeRetainedE2ERunLifecycle({ suite: "video-pipeline-production", runId: resumeRunId })
   : createE2ERunLifecycle({ suite: "video-pipeline-production", runId: requestedRunId, resultDir: defaultResultDir });
@@ -403,7 +452,8 @@ const resultDir = lifecycle.readState().resultDir;
 const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
 const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"
   || singleImageCreativeDraft;
-const sourceDocumentFingerprint = savedLibraryInputProfile
+const sourceFreeInputProfile = savedLibraryInputProfile || ideaOnlyInputProfile;
+const sourceDocumentFingerprint = sourceFreeInputProfile
   ? null
   : fingerprintFile(sourceDocument);
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
@@ -1144,6 +1194,17 @@ function startProcess(command, args, cwd, env, logName) {
   return started.child;
 }
 
+async function waitForVerifiedBackend(backend, databaseFingerprint) {
+  await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+  const listener = await assertPortOwnedByChild(backendPort, backend);
+  lifecycle.record("backend_listener_identity", "verified", {
+    port: backendPort,
+    rootProcessId: listener.rootPid,
+    listenerProcessId: listener.listenerPid,
+    databaseFingerprint,
+  });
+}
+
 async function verifyCandidateVideo() {
   const candidatePath = path.join(resultDir, "multimix-candidate.mp4");
   if (!fs.existsSync(candidatePath)) throw new Error(`Exported candidate is missing: ${candidatePath}`);
@@ -1375,51 +1436,75 @@ async function readRetainedDirectorRetrySeed(backendEnv) {
     "import json, sys",
     "from app.db import SessionLocal",
     "from app.models import AssetConversation, AssetConversationMessage, AssetFile, AssetGenerationJob, AssetIngestJob, ContentAsset, User, VideoDecisionEvent, VideoRenderJob",
+    "from app.services.asset_generation_jobs import generation_job_is_retryable",
+    "from app.services.asset_generation_retryability import generation_job_is_regenerable",
     "benchmark_source_hashes=sorted(json.loads(sys.argv[1]))",
+    "expected_source_count=len(benchmark_source_hashes)",
     "run_id=sys.argv[2]",
     "with SessionLocal() as db:",
     " render_jobs=db.query(VideoRenderJob).all()",
     " generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
-    " if render_jobs or len(generation_jobs) != 1 or generation_jobs[0].status != 'failed':",
+    " if render_jobs or not generation_jobs or generation_jobs[-1].status != 'failed':",
     "  print('null')",
     " else:",
     "  assert len(render_jobs) == 0, 'retained director retry already has a video job'",
     "  source_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'uploaded_video').order_by(ContentAsset.id).all()",
-    "  assert len(source_assets) == 3, 'retained director retry requires exactly three source assets'",
+    "  assert len(source_assets) == expected_source_count, 'retained source asset count changed from the input profile'",
     "  assert all(asset.status == 'ready' and asset.generation_state == 'source_ready' for asset in source_assets), 'retained source asset is not ready'",
     "  understandings=[dict((asset.metadata_json or {}).get('understanding') or {}) for asset in source_assets]",
     "  assert all(item.get('status') == 'ready' for item in understandings), 'retained source understanding is not ready'",
     "  assert all(dict(item.get('temporal_index') or {}).get('status') == 'ready' for item in understandings), 'retained temporal index is not ready'",
     "  source_files=db.query(AssetFile).filter(AssetFile.asset_id.in_([asset.id for asset in source_assets]), AssetFile.file_role == 'original').order_by(AssetFile.asset_id).all()",
-    "  assert len(source_files) == 3, 'retained source originals are incomplete'",
+    "  assert len(source_files) == expected_source_count, 'retained source originals are incomplete'",
     "  assert sorted(str(item.content_hash or '').removeprefix('sha256:') for item in source_files) == benchmark_source_hashes, 'retained source fingerprints changed'",
     "  namespace=f'e2e/video-pipeline-production/{run_id}/'",
     "  assert all(namespace in str(item.storage_ref or '') for item in source_files), 'retained source ref left the isolated namespace'",
     "  ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
-    "  assert len(ingest_jobs) == 3, 'retained director retry requires exactly three ingest jobs'",
+    "  assert len(ingest_jobs) == expected_source_count, 'retained ingest job count changed from the input profile'",
     "  assert all(job.status == 'completed' and job.stage == 'ready' and job.attempts == 1 for job in ingest_jobs), 'retained ingest stage is not complete'",
-    "  generation_job=generation_jobs[0]",
+    "  generation_job=generation_jobs[-1]",
+    "  for index, historical_job in enumerate(generation_jobs[:-1]):",
+    "   assert historical_job.status == 'failed' and historical_job.stage == 'failed' and historical_job.result_asset_id is None, 'retained director history contains a non-failed predecessor'",
+    "   successor=generation_jobs[index + 1]",
+    "   successor_payload=dict(successor.request_payload or {})",
+    "   assert successor_payload.get('restart_of_generation_job_id') == historical_job.public_id, 'retained director regeneration chain is broken'",
+    "   assert successor.user_id == historical_job.user_id and successor.conversation_id == historical_job.conversation_id, 'retained director regeneration identity changed'",
     "  assert generation_job.status == 'failed' and generation_job.stage == 'failed', 'retained director job is not failed'",
-    "  assert generation_job.attempts == 1, 'retained director retry requires exactly one prior attempt'",
+    "  assert generation_job.attempts >= 1, 'retained director retry requires a prior attempt'",
     "  failure_events=db.query(VideoDecisionEvent).filter(VideoDecisionEvent.generation_job_id == generation_job.id, VideoDecisionEvent.event_type == 'director_generation_failed').all()",
-    "  choreography_overlap_failure=False",
-    "  if generation_job.error_code == 'internal_error':",
-    "   assert len(failure_events) == 1, 'retained internal failure requires one durable decision event'",
-    "   failure_event=failure_events[0]",
+    "  current_failure_events=[]",
+    "  for failure_event in failure_events:",
     "   details=dict(failure_event.details or {})",
-    "   diagnostics=dict(details.get('diagnostics') or {})",
-    "   choreography_overlap_failure=(failure_event.reason_code == 'internal_error' and details.get('attempt') == 1 and diagnostics.get('exception_type') == 'ValueError' and diagnostics.get('detail') == 'choreography source ranges must not overlap')",
-    "  retryable_failure=(generation_job.error_code == 'quality_rejected' or (generation_job.error_code == 'internal_error' and choreography_overlap_failure))",
-    "  assert retryable_failure, 'retained director failure is not an authorized retry case'",
+    "   if details.get('attempt') == generation_job.attempts:",
+    "    current_failure_events.append(failure_event)",
+    "  assert len(current_failure_events) == 1, 'retained director failure requires one durable event for the current attempt'",
+    "  current_failure_event=current_failure_events[0]",
+    "  assert current_failure_event.reason_code == generation_job.error_code, 'retained director failure event does not match the job error'",
+    "  assert generation_job_is_retryable(generation_job) or generation_job_is_regenerable(generation_job), 'retained director failure is not eligible for recovery'",
     "  assert generation_job.result_asset_id is None, 'retained failed director unexpectedly has a result asset'",
     "  director_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'video_script').all()",
-    "  assert len(director_assets) == 0, 'retained director retry must not have a persisted director asset'",
+    "  visible_director_assets=[asset for asset in director_assets if not asset.archived]",
+    "  hidden_director_reservations=[asset for asset in director_assets if asset.archived]",
+    "  assert len(visible_director_assets) == 0, 'retained director retry must not have a visible director asset'",
+    "  checkpoint=dict((generation_job.result_payload or {}).get('director_save_checkpoint') or {})",
+    "  if hidden_director_reservations:",
+    "   assert checkpoint.get('version') == 'director-save:v1', 'hidden director reservation has no matching checkpoint'",
+    "   assert len(hidden_director_reservations) == 1, 'retained director retry has multiple hidden reservations'",
+    "   reservation_asset=hidden_director_reservations[0]",
+    "   assert reservation_asset.id == int(checkpoint['asset_id']), 'hidden director reservation asset does not match checkpoint'",
+    "   assert reservation_asset.user_id == generation_job.user_id, 'hidden director reservation owner changed'",
+    "   assert reservation_asset.status == 'processing' and reservation_asset.generation_state == 'generation_reserved', 'hidden director reservation state is invalid'",
+    "   reservation_metadata=dict((reservation_asset.metadata_json or {}).get('internal_generation_reservation') or {})",
+    "   assert reservation_metadata.get('job_id') == generation_job.id, 'hidden director reservation job does not match'",
+    "   assert reservation_metadata.get('request_fingerprint') == checkpoint.get('request_fingerprint'), 'hidden director reservation fingerprint changed'",
+    "  else:",
+    "   assert not checkpoint, 'retained director checkpoint has no hidden reservation asset'",
     "  conversation=db.get(AssetConversation, generation_job.conversation_id)",
     "  user=db.get(User, generation_job.user_id)",
     "  queued_message=db.get(AssetConversationMessage, generation_job.queued_message_id)",
     "  assert conversation is not None and user is not None and queued_message is not None, 'retained director retry identity is missing'",
     "  assert conversation.user_id == user.id and queued_message.conversation_id == conversation.id, 'retained director retry ownership changed'",
-    "  result={'email': user.email, 'conversationId': conversation.public_id, 'generationJobId': generation_job.public_id, 'generationAttemptsBefore': generation_job.attempts, 'ingestJobIds': [job.public_id for job in ingest_jobs], 'sourceAssetIds': [asset.id for asset in source_assets], 'benchmarkSourceHashes': benchmark_source_hashes}",
+    "  result={'email': user.email, 'conversationId': conversation.public_id, 'generationJobId': generation_job.public_id, 'generationAttemptsBefore': generation_job.attempts, 'regenerable': generation_job_is_regenerable(generation_job), 'ingestJobIds': [job.public_id for job in ingest_jobs], 'sourceAssetIds': [asset.id for asset in source_assets], 'benchmarkSourceHashes': benchmark_source_hashes}",
     "  print(json.dumps(result, ensure_ascii=False))",
   ].join("\n");
   const { stdout } = await run(
@@ -1442,6 +1527,31 @@ async function readRetainedDirectorRetrySeed(backendEnv) {
   return hydrated;
 }
 
+async function recoverRetainedDirectorJob(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.services.asset_generation_worker import recover_asset_generation_jobs, run_asset_generation_job",
+    "dispatched=[]",
+    "def dispatch(job_id):",
+    " dispatched.append(job_id)",
+    " return run_asset_generation_job(job_id)",
+    "with SessionLocal() as db:",
+    " summary=recover_asset_generation_jobs(db, dispatch=dispatch, stale_after_seconds=1)",
+    "print(json.dumps({'summary': summary, 'dispatched': dispatched}, ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot,
+    env: backendEnv,
+  });
+  const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  fs.writeFileSync(
+    path.join(resultDir, "retained-director-recovery.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return result;
+}
+
 async function readRetainedDirectorConfirmationSeed(
   backendEnv,
   { expectedGenerationAttempts = 1 } = {},
@@ -1452,11 +1562,12 @@ async function readRetainedDirectorConfirmationSeed(
     "from app.db import SessionLocal",
     "from app.models import AssetConversation, AssetConversationMessage, AssetFile, AssetGenerationJob, AssetIngestJob, ContentAsset, User, VideoRenderJob",
     "benchmark_source_hashes=sorted(json.loads(sys.argv[1]))",
+    "expected_source_count=len(benchmark_source_hashes)",
     "run_id=sys.argv[2]",
     "target_ratio=sys.argv[3]",
     "target_seconds=int(sys.argv[4])",
     "expected_scene_count=int(sys.argv[5])",
-    "content_driven_scene_count=sys.argv[6] == 'true'",
+    "content_driven_scene_min=int(sys.argv[6])",
     "expected_generation_attempts=int(sys.argv[7])",
     "with SessionLocal() as db:",
     " render_jobs=db.query(VideoRenderJob).all()",
@@ -1465,22 +1576,29 @@ async function readRetainedDirectorConfirmationSeed(
     " else:",
     "  assert len(render_jobs) == 0, 'retained director confirmation already has a video job'",
     "  source_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'uploaded_video').order_by(ContentAsset.id).all()",
-    "  assert len(source_assets) == 3, 'retained director confirmation requires exactly three source assets'",
+    "  assert len(source_assets) == expected_source_count, 'retained source asset count changed from the input profile'",
     "  assert all(asset.status == 'ready' and asset.generation_state == 'source_ready' for asset in source_assets), 'retained source asset is not ready'",
     "  understandings=[dict((asset.metadata_json or {}).get('understanding') or {}) for asset in source_assets]",
     "  assert all(item.get('status') == 'ready' for item in understandings), 'retained source understanding is not ready'",
     "  assert all(dict(item.get('temporal_index') or {}).get('status') == 'ready' for item in understandings), 'retained temporal index is not ready'",
     "  source_files=db.query(AssetFile).filter(AssetFile.asset_id.in_([asset.id for asset in source_assets]), AssetFile.file_role == 'original').order_by(AssetFile.asset_id).all()",
-    "  assert len(source_files) == 3, 'retained source originals are incomplete'",
+    "  assert len(source_files) == expected_source_count, 'retained source originals are incomplete'",
     "  assert sorted(str(item.content_hash or '').removeprefix('sha256:') for item in source_files) == benchmark_source_hashes, 'retained source fingerprints changed'",
     "  namespace=f'e2e/video-pipeline-production/{run_id}/'",
     "  assert all(namespace in str(item.storage_ref or '') for item in source_files), 'retained source ref left the isolated namespace'",
     "  ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
-    "  assert len(ingest_jobs) == 3, 'retained director confirmation requires exactly three ingest jobs'",
+    "  assert len(ingest_jobs) == expected_source_count, 'retained ingest job count changed from the input profile'",
     "  assert all(job.status == 'completed' and job.stage == 'ready' and job.attempts == 1 for job in ingest_jobs), 'retained ingest stage is not complete'",
     "  generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
-    "  assert len(generation_jobs) == 1, 'retained director confirmation requires exactly one generation job'",
-    "  generation_job=generation_jobs[0]",
+    "  completed_generation_jobs=[job for job in generation_jobs if job.status == 'completed']",
+    "  assert len(completed_generation_jobs) == 1, 'retained director confirmation requires exactly one completed generation job'",
+    "  generation_job=completed_generation_jobs[0]",
+    "  assert generation_job is generation_jobs[-1], 'retained director confirmation must use the latest generation job'",
+    "  for index, historical_job in enumerate(generation_jobs[:-1]):",
+    "   assert historical_job.status == 'failed' and historical_job.stage == 'failed' and historical_job.result_asset_id is None, 'retained director history contains a non-failed predecessor'",
+    "   successor_payload=dict(generation_jobs[index + 1].request_payload or {})",
+    "   assert successor_payload.get('restart_of_generation_job_id') == historical_job.public_id, 'retained director regeneration chain is broken'",
+    "   assert generation_jobs[index + 1].user_id == historical_job.user_id and generation_jobs[index + 1].conversation_id == historical_job.conversation_id, 'retained director regeneration identity changed'",
     "  assert generation_job.status == 'completed' and generation_job.stage == 'completed' and generation_job.attempts == expected_generation_attempts, 'retained director job is not complete'",
     "  director_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'video_script').all()",
     "  assert len(director_assets) == 1, 'retained director confirmation requires exactly one director asset'",
@@ -1493,8 +1611,8 @@ async function readRetainedDirectorConfirmationSeed(
     "  scenes=[item for item in (plan.get('scenes') or []) if isinstance(item, dict)]",
     "  assert policy.get('schema_version') == 'video_creation_policy:v1' and policy.get('confirmed') is True, 'retained video creation policy is not confirmed'",
     "  assert policy.get('ratio') == target_ratio and int(policy.get('target_seconds') or 0) == target_seconds, 'retained delivery policy changed'",
-    "  if content_driven_scene_count:",
-    "   assert 4 <= len(scenes) <= 8, 'retained content-driven scene count left the production contract'",
+    "  if content_driven_scene_min > 0:",
+    "   assert content_driven_scene_min <= len(scenes) <= 8, 'retained content-driven scene count left the production contract'",
     "  else:",
     "   assert len(scenes) == expected_scene_count, 'retained director scene count changed'",
     "  assert profile.get('schema_version') == 'video_creative_profile:v1', 'retained creative profile is missing'",
@@ -1516,7 +1634,13 @@ async function readRetainedDirectorConfirmationSeed(
       targetRatio,
       String(targetSeconds),
       String(expectedSceneCount),
-      String(savedLibraryInputProfile && expectedVideoType !== "presenter"),
+      String(
+        ideaOnlyInputProfile
+          ? 1
+          : savedLibraryInputProfile && expectedVideoType !== "presenter"
+            ? 4
+            : 0,
+      ),
       String(expectedGenerationAttempts),
     ],
     { cwd: backendRoot, env: backendEnv },
@@ -1534,6 +1658,20 @@ async function readRetainedDirectorConfirmationSeed(
     `${JSON.stringify(hydrated, null, 2)}\n`,
   );
   return hydrated;
+}
+
+function expectedRetainedDirectorAttemptsFromRecordedSeed() {
+  const seedPath = path.join(resultDir, "retained-director-retry-seed.json");
+  if (!fs.existsSync(seedPath)) return 1;
+  try {
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    const attemptsBefore = Number(seed?.generationAttemptsBefore);
+    return Number.isInteger(attemptsBefore) && attemptsBefore >= 1
+      ? seed?.regenerable === true ? 1 : attemptsBefore + 1
+      : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function snapshotProviderRequestEvidence() {
@@ -1679,13 +1817,7 @@ async function waitForRetainedVideoJob(job, accessToken) {
 async function resumeRetainedVideoJob(backendEnv) {
   const job = await readRetainedVideoJob(backendEnv);
   const accessToken = await authenticateRetainedVideoUser(job);
-  let mode;
-  let completed;
-  if (job.status === "completed" && job.renderStage === "done") {
-    mode = "already_completed";
-    await recoverInterruptedVideoJob(backendEnv, { requireMainResume: false });
-    completed = await waitForRetainedVideoJob(job, accessToken);
-  } else if (job.status === "failed") {
+  const retryFailedJob = async () => {
     const response = await fetch(
       `http://127.0.0.1:${backendPort}/v1/video/jobs/${job.publicId}/retry`,
       {
@@ -1696,6 +1828,20 @@ async function resumeRetainedVideoJob(backendEnv) {
     if (!response.ok) {
       throw new Error(`Retained video job retry failed: ${response.status} ${await response.text()}`);
     }
+  };
+  let mode;
+  let completed;
+  if (job.status === "completed" && job.renderStage === "done") {
+    mode = "already_completed";
+    await recoverInterruptedVideoJob(backendEnv, { requireMainResume: false });
+    const recoveredJob = await readRetainedVideoJob(backendEnv);
+    if (recoveredJob.status === "failed") {
+      await retryFailedJob();
+      mode = "invalid_completed_retry";
+    }
+    completed = await waitForRetainedVideoJob(job, accessToken);
+  } else if (job.status === "failed") {
+    await retryFailedJob();
     mode = "failed_retry";
     completed = await waitForRetainedVideoJob(job, accessToken);
   } else {
@@ -1750,9 +1896,10 @@ async function verifyRetainedDirectorContinuation(backendEnv, seed) {
     "from app.models import AssetGenerationJob, AssetIngestJob, ContentAsset, VideoRenderJob",
     "expected=json.loads(sys.argv[1])",
     "with SessionLocal() as db:",
-    " generation_jobs=db.query(AssetGenerationJob).all()",
-    " assert len(generation_jobs) == 1, 'retained continuation created another director job'",
-    " generation_job=generation_jobs[0]",
+    " generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " generation_job=next((job for job in generation_jobs if job.public_id == expected['generationJobId']), None)",
+    " assert generation_job is not None and generation_job is generation_jobs[-1], 'retained continuation lost the selected latest director job'",
+    " assert all(job.status == 'failed' and job.result_asset_id is None for job in generation_jobs[:-1]), 'retained continuation changed a failed predecessor'",
     " assert generation_job.public_id == expected['generationJobId'] and generation_job.attempts == expected['generationAttempts'] and generation_job.status == 'completed', 'retained director job was repeated or changed'",
     " ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
     " assert [job.public_id for job in ingest_jobs] == expected['ingestJobIds'], 'retained ingest jobs changed'",
@@ -2009,7 +2156,7 @@ try {
     frontendPort,
     visionPort: usesExternalVisionService ? null : visionPort,
   });
-  if (!savedLibraryInputProfile && !fs.existsSync(sourceDocument)) {
+  if (!sourceFreeInputProfile && !fs.existsSync(sourceDocument)) {
     throw new Error(`Source document not found: ${sourceDocument}`);
   }
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
@@ -2030,7 +2177,7 @@ try {
   }
   const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
   const productMediaManifestRef = (
-    isResume || savedLibraryInputProfile || expectedVideoType === "presenter"
+    isResume || sourceFreeInputProfile || expectedVideoType === "presenter"
   )
     ? ""
     : stageApprovedProductMediaCatalog();
@@ -2126,6 +2273,7 @@ try {
     }, null, 2));
   }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
+  const databaseFingerprint = crypto.createHash("sha256").update(databaseUrl).digest("hex");
   const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"
     || configuredInputIncludesVideo(savedLibraryMediaFiles);
   const remoteWriteLedgerPath = path.join(lifecycle.runDir, "remote-artifact-writes.ndjson");
@@ -2258,19 +2406,22 @@ try {
       backendEnv,
       "backend.log",
     );
-    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    await waitForVerifiedBackend(backend, databaseFingerprint);
   });
   if (isResume) {
+    await recoverRetainedDirectorJob(backendEnv);
     const retainedDirectorRetrySeed = await readRetainedDirectorRetrySeed(backendEnv);
-    const retainedDirectorRetryWasStarted = fs.existsSync(
-      path.join(resultDir, "retained-director-retry-seed.json"),
-    );
+    const expectedRetainedDirectorAttempts = retainedDirectorRetrySeed
+      ? retainedDirectorRetrySeed.regenerable
+        ? 1
+        : retainedDirectorRetrySeed.generationAttemptsBefore + 1
+      : expectedRetainedDirectorAttemptsFromRecordedSeed();
     let retainedDirectorSeed = retainedDirectorRetrySeed
       ? null
       : await readRetainedDirectorConfirmationSeed(
           backendEnv,
           {
-            expectedGenerationAttempts: retainedDirectorRetryWasStarted ? 2 : 1,
+            expectedGenerationAttempts: expectedRetainedDirectorAttempts,
           },
         );
     if (!retainedDirectorRetrySeed && !retainedDirectorSeed) {
@@ -2311,7 +2462,11 @@ try {
       ));
       retainedDirectorSeed = await readRetainedDirectorConfirmationSeed(
         backendEnv,
-        { expectedGenerationAttempts: 2 },
+        {
+          expectedGenerationAttempts: retainedDirectorRetrySeed.regenerable
+            ? 1
+            : retainedDirectorRetrySeed.generationAttemptsBefore + 1,
+        },
       );
       if (!retainedDirectorSeed) {
         throw new Error("Retained director retry produced no confirmable draft");
@@ -2402,6 +2557,7 @@ try {
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
       VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
+      VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS: String(directorJobTimeoutMs),
       VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS: String(candidateRangeTimeoutMs),
       VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
       VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
@@ -2445,6 +2601,7 @@ try {
     }
     manifestAbort.abort();
     await stopChild(backend);
+    await waitForPortFree(backendPort);
     backend = startProcess(
       pythonCommand,
       ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
@@ -2452,7 +2609,7 @@ try {
       backendEnv,
       "backend-restarted.log",
     );
-    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    await waitForVerifiedBackend(backend, databaseFingerprint);
       await recoverInterruptedVideoJob(backendEnv);
     }
     await playwrightRun;

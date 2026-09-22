@@ -401,7 +401,10 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
       productionOptions: value.production_options.filter(isRecord).slice(0, 3)
         .filter((option) => ["public_stock", "graphics", "ai_visual"].includes(stringValue(option.id)))
         .map((option) => ({ id: stringValue(option.id), label: stringValue(option.label),
-          effect: stringValue(option.effect), requiredInputs: stringValue(option.required_inputs), costNote: stringValue(option.cost_note) })),
+          effect: stringValue(option.effect), requiredInputs: stringValue(option.required_inputs),
+          waitNote: stringValue(option.wait_note) || undefined, costNote: stringValue(option.cost_note),
+          available: option.available !== false,
+          unavailableReason: stringValue(option.unavailable_reason) || undefined })),
       productionChoiceId: stringValue(value.production_choice_id) || undefined,
       productionRecommendedId: stringValue(value.production_recommended_id) || undefined,
       productionSelectionRequired: value.production_selection_required === true,

@@ -408,7 +408,8 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
-  productionOptions?: { id: string; label: string; effect: string; requiredInputs: string; costNote: string }[];
+  productionOptions?: { id: string; label: string; effect: string; requiredInputs: string;
+    waitNote?: string; costNote: string; available?: boolean; unavailableReason?: string }[];
   productionChoiceId?: string;
   productionRecommendedId?: string;
   productionSelectionRequired?: boolean;

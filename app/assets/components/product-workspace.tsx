@@ -37,7 +37,7 @@ import {
   isPresenterSourceVideoPlan,
 } from "../lib/video-creative-profile";
 import VoiceoverDialog from "./voiceover-dialog";
-import { trackProductEvent } from "../../../lib/product-analytics";
+import { loadVideoFeedback, submitVideoFeedback, trackProductEvent, type VideoFeedback } from "../../../lib/product-analytics";
 import { ExportVariantMenu } from "../../../components/export-variant-menu";
 import {
   BRAND_SHOWCASE_SPEC_VERSION,
@@ -199,6 +199,7 @@ export default function ProductWorkspace({
   onApplyGeneratedImageSet,
   selectedImageFrameId,
   onSelectedImageFrameChange,
+  onSelectSegment,
   product,
   savedVersion,
   selectedConversation,
@@ -219,6 +220,7 @@ export default function ProductWorkspace({
   onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void>;
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
+  onSelectSegment?: (segment: AssetProductSegment) => void;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -244,6 +246,9 @@ export default function ProductWorkspace({
   const [activeExportVariant, setActiveExportVariant] = useState<ExportVariant>("original");
   const [imageExportError, setImageExportError] = useState("");
   const [projectEditedSinceExport, setProjectEditedSinceExport] = useState(false);
+  const [videoFeedback, setVideoFeedback] = useState<VideoFeedback | null>(null);
+  const [videoFeedbackBusy, setVideoFeedbackBusy] = useState(false);
+  const [videoFeedbackError, setVideoFeedbackError] = useState("");
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
   const [materialPickerState, setMaterialPickerState] = useState<"idle" | "submitting">("idle");
   const [materialError, setMaterialError] = useState("");
@@ -426,6 +431,31 @@ export default function ProductWorkspace({
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
   // because no MP4 was exported yet (spec §251: 工作视图默认放详情不占主展示区).
   const canBrowseVideo = hasVideoProject && videoProductCompleted;
+  const feedbackVersionId = Math.max(0, ...(product.versions ?? [])
+    .map((version) => Number(version.id))
+    .filter((id) => Number.isInteger(id) && id > 0));
+  useEffect(() => {
+    setVideoFeedback(null);
+    setVideoFeedbackError("");
+    if (!canBrowseVideo || !hasCurrentPersistedExport || !token || !product.backendAssetId || !feedbackVersionId) return;
+    let current = true;
+    void loadVideoFeedback(token, product.backendAssetId)
+      .then((result) => { if (current && result.versionId === feedbackVersionId) setVideoFeedback(result); })
+      .catch(() => { if (current) setVideoFeedbackError("成片反馈暂时无法读取，请稍后重试。"); });
+    return () => { current = false; };
+  }, [canBrowseVideo, hasCurrentPersistedExport, token, product.backendAssetId, feedbackVersionId]);
+  const recordVideoFeedback = async (decision: "accepted" | "needs_change" | "published") => {
+    if (!token || !product.backendAssetId || !feedbackVersionId || videoFeedbackBusy) return;
+    setVideoFeedbackBusy(true);
+    setVideoFeedbackError("");
+    try {
+      setVideoFeedback(await submitVideoFeedback(token, product.backendAssetId, feedbackVersionId, decision));
+    } catch (error) {
+      setVideoFeedbackError(error instanceof Error ? error.message : "成片反馈未保存，请稍后重试。");
+    } finally {
+      setVideoFeedbackBusy(false);
+    }
+  };
   const videoBgmSummary = canBrowseVideo ? browseBgmSummary(product) : "";
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = canBrowseVideo && editorRequested && videoSurface === "edit";
@@ -1407,8 +1437,28 @@ export default function ProductWorkspace({
         completed={videoProductCompleted && effectiveProductStatus === "completed"}
       />
     ) : null;
-  const videoBrowseFooter = filmReviewPanel || creativeMemoryPrompt
-    ? <>{filmReviewPanel}{creativeMemoryPrompt}</>
+  const videoResultFeedback = canBrowseVideo && hasCurrentPersistedExport && token && product.backendAssetId && feedbackVersionId
+    && (videoFeedback || videoFeedbackError) ? (
+    <section className="mx-5 my-3 rounded-xl border border-[#e5e0d8] bg-[#faf8f4] px-4 py-3 text-sm" aria-label="成片结果反馈">
+      <p className="text-[#4d4944]">这版视频是否已经可以发布？</p>
+      {videoFeedback ? <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" className="rounded-lg border px-3 py-1.5" disabled={videoFeedbackBusy}
+          aria-pressed={videoFeedback?.decision === "accepted"}
+          onClick={() => void recordVideoFeedback("accepted")}>这版可以发布</button>
+        <button type="button" className="rounded-lg border px-3 py-1.5" disabled={videoFeedbackBusy}
+          aria-pressed={videoFeedback?.decision === "needs_change"}
+          onClick={() => void recordVideoFeedback("needs_change")}>还需要修改</button>
+        {videoFeedback?.decision === "accepted" ? (
+          <button type="button" className="rounded-lg border px-3 py-1.5" disabled={videoFeedbackBusy || videoFeedback.published}
+            onClick={() => void recordVideoFeedback("published")}>我已发布</button>
+        ) : null}
+      </div> : null}
+      {videoFeedback?.published ? <p className="mt-2" role="status">已记录你的实际发布反馈</p> : null}
+      {videoFeedbackError ? <p className="mt-2 text-[#a43b32]" role="alert">{videoFeedbackError}</p> : null}
+    </section>
+  ) : null;
+  const videoBrowseFooter = filmReviewPanel || creativeMemoryPrompt || videoResultFeedback
+    ? <>{filmReviewPanel}{creativeMemoryPrompt}{videoResultFeedback}</>
     : null;
 
   return (
@@ -1896,6 +1946,7 @@ export default function ProductWorkspace({
               onSelectedImageFrameChange={onSelectedImageFrameChange}
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
+              onSelectSegment={onSelectSegment}
               onEditVoiceover={
                 token && product.backendAssetId
                   ? (segment) => setVoiceoverSegment(segment)

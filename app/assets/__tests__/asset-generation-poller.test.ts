@@ -23,6 +23,10 @@ describe("asset generation poller", () => {
       key: "source_staging", label: "正在准备原片", detail: "",
       status: "active", occurred_at: "2026-09-15T06:00:00Z",
     };
+    const scene = {
+      scene_id: "scene-1", scene_number: 1, title: "开场",
+      status: "completed", detail: "本镜素材已确认。", updated_at: "2026-09-15T06:00:01Z",
+    };
     const restored = assetGenerationJobsFromConversations([{
       id: "conversation-1",
       messages: [{
@@ -30,10 +34,13 @@ describe("asset generation poller", () => {
         metadata: {
           asset_generation_job_id: "video-job-1", asset_generation_status: "running",
           asset_generation_progress_kind: "video_plan", asset_generation_progress: [event],
+          asset_generation_scene_progress: [scene],
         },
       }],
     }]);
-    expect(restored[0].job).toMatchObject({ progress_kind: "video_plan", progress_events: [event] });
+    expect(restored[0].job).toMatchObject({
+      progress_kind: "video_plan", progress_events: [event], scene_progress: [scene],
+    });
   });
   it("moves queued to running without refreshing the conversation", () => {
     const result = nextAssetGenerationPollState({
@@ -105,6 +112,7 @@ describe("asset generation poller", () => {
           asset_generation_status: "failed",
           asset_generation_stage: "failed",
           asset_generation_error_code: "provider_timeout",
+          asset_generation_retryable: true,
         },
       }],
     }]);
@@ -114,5 +122,6 @@ describe("asset generation poller", () => {
     expect(jobs[0].job).not.toHaveProperty("stage");
     expect(jobs[0].job).not.toHaveProperty("error_code");
     expect(jobs[0].job.error_message).toContain("内容生成超时");
+    expect(jobs[0].job.retryable).toBe(true);
   });
 });
