@@ -1233,6 +1233,19 @@ mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认�
 客户端连接状态是本地展示字段，不回写任务，也不创建替代任务。轮询或完成后的会话刷新失败时，卡片保留
 最后一次服务端进展并显示重新连接；下一次成功读取清除此状态。视频修改失败继续展示上一稳定工程。
 
+视频工作在产品层只区分“视频制作”和“已有视频优化”。人声检测及相关处理属于已有视频优化内部能力，
+不形成第三条任务分类；已有视频未检测到人声并复用编导能力时，客户端仍沿用原 generation job。
+
+`AssetGenerationJobResponse` 还可返回以下安全断点投影：
+
+- `intermediate_results[]`：包含 `stage`、可选 `scene_id`、`state=completed` 和服务端裁剪后的
+  `public_projection`。客户端只将其标记为“生成中结果”，不得显示为正式编导稿或视频工程。
+- `checkpoint_resume`：包含 `reused_stages`、`invalidation_boundary`、`invalidation_reason` 和
+  `rerun_scene_ids`。客户端把阶段 ID 映射为普通用户可读名称，只说明已复用数量、继续位置和需重跑分镜数，
+  不展示内部原因代码。
+- 服务端不会返回 artifact 引用、执行 ID、提示词/Schema 指纹、模型响应或内部内容哈希；客户端也不得根据
+  投影自行判断 checkpoint 是否有效、改变重试边界或绕过确认与质量门。
+
 ## 15. 项目需求理解与项目级素材用途
 
 工作台通过 adapter 消费以下服务端资源，不在前端按文案重新判断意图、冲突或素材角色：

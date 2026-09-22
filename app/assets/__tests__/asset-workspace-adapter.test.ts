@@ -1308,6 +1308,20 @@ describe("runtime data boundary", () => {
           status: "queued",
           result_asset_id: null,
           error_message: null,
+          intermediate_results: [{
+            stage: "creative_direction",
+            state: "completed",
+            public_projection: {
+              selected_id: "direction-a",
+              selected_candidate: { angle: "结果先行" },
+            },
+          }],
+          checkpoint_resume: {
+            version: "video-generation-checkpoint-resume:v1",
+            reused_stages: ["creative_direction"],
+            invalidation_boundary: "scene_structure",
+            rerun_scene_ids: [],
+          },
           created_at: now,
           updated_at: now,
         },
@@ -1325,6 +1339,10 @@ describe("runtime data boundary", () => {
     expect(result.product).toBeNull();
     expect(result.generationJob?.id).toBe("asset-generation-job-1");
     expect(result.generationJob?.status).toBe("queued");
+    expect(result.generationJob?.intermediate_results?.[0]?.public_projection)
+      .toMatchObject({ selected_candidate: { angle: "结果先行" } });
+    expect(result.generationJob?.checkpoint_resume?.invalidation_boundary)
+      .toBe("scene_structure");
     expect(result.conversation.detailsLoaded).toBe(true);
     vi.unstubAllGlobals();
   });

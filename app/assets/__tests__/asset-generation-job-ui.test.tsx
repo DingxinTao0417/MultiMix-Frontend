@@ -49,6 +49,73 @@ describe("AssetGenerationJobCard", () => {
     expect(screen.queryByRole("list")).toBeNull();
   });
 
+  it("shows safe in-progress results without presenting them as a finished script", () => {
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "video_plan",
+      status: "running",
+      intermediate_results: [
+        {
+          stage: "creative_direction",
+          state: "completed",
+          public_projection: {
+            selected_id: "direction-a",
+            selected_candidate: { angle: "结果先行" },
+          },
+        },
+        {
+          stage: "scene_structure",
+          state: "completed",
+          public_projection: {
+            scene_count: 1,
+            scenes: [{
+              id: "scene-1",
+              title: "开场",
+              role: "吸引注意",
+              duration_seconds: 5,
+            }],
+          },
+        },
+        {
+          stage: "scene_direction",
+          scene_id: "scene-1",
+          state: "completed",
+          public_projection: {
+            id: "scene-1",
+            title: "开场",
+            narration: "先展示核心结果。",
+            visual_brief: "快速展示使用前后对比。",
+          },
+        },
+      ],
+    })} />);
+
+    expect(screen.getByText("生成中结果")).toBeTruthy();
+    expect(screen.getByText("创意方向")).toBeTruthy();
+    expect(screen.getByText("结果先行")).toBeTruthy();
+    expect(screen.getAllByText(/开场/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/先展示核心结果/)).toBeTruthy();
+    expect(screen.queryByText("scene_direction")).toBeNull();
+    expect(screen.queryByText(/编导稿已完成/)).toBeNull();
+  });
+
+  it("explains what a retry reused and where processing continues", () => {
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "video_plan",
+      status: "failed",
+      checkpoint_resume: {
+        version: "video-generation-checkpoint-resume:v1",
+        reused_stages: ["creative_direction", "scene_direction/scene-1"],
+        invalidation_boundary: "topic_alignment",
+        invalidation_reason: "missing",
+        rerun_scene_ids: ["scene-2"],
+      },
+    })} />);
+
+    expect(screen.getByText("已复用 2 个已完成阶段，将从整体校对继续。")).toBeTruthy();
+    expect(screen.getByText("将重新处理 1 个分镜。")).toBeTruthy();
+    expect(screen.queryByText(/topic_alignment|scene_direction|missing/)).toBeNull();
+  });
+
   it("shows queued and running progress", () => {
     const { rerender } = render(<AssetGenerationJobCard job={job({})} />);
     expect(screen.getAllByText("内容生成已排队").length).toBeGreaterThan(0);

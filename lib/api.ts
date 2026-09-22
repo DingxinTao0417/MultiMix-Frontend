@@ -367,6 +367,56 @@ export type AgentTaskCollectionResponse = {
   paused: AgentTaskSummaryResponse[];
 };
 
+export type AssetGenerationIntermediateResult = {
+  stage: string;
+  state: "completed";
+  scene_id?: string;
+  public_projection: {
+    title?: string;
+    body_preview?: string;
+    content_goal?: string;
+    style_profile?: string;
+    production_mode?: string;
+    selected_id?: string;
+    selected_candidate?: {
+      id?: string;
+      angle?: string;
+      hook?: string;
+      narrative_structure?: string;
+      visual_language?: string;
+      asset_strategy?: string;
+      audio_direction?: string;
+      evidence_strategy?: string;
+    };
+    id?: string;
+    role?: string;
+    purpose?: string;
+    duration_seconds?: number;
+    narration?: string;
+    subtitle_focus?: string;
+    visual_brief?: string;
+    scene_count?: number;
+    scenes?: Array<{
+      id?: string;
+      title?: string;
+      role?: string;
+      purpose?: string;
+      duration_seconds?: number;
+      narration?: string;
+      subtitle_focus?: string;
+      visual_brief?: string;
+    }>;
+  };
+};
+
+export type AssetGenerationCheckpointResume = {
+  version?: "video-generation-checkpoint-resume:v1";
+  reused_stages?: string[];
+  invalidation_boundary?: string;
+  invalidation_reason?: string;
+  rerun_scene_ids?: string[];
+};
+
 export type AssetGenerationJobResponse = {
   id: string;
   progress_kind?: "video_plan" | "video_create" | "video_update" | "general";
@@ -392,6 +442,8 @@ export type AssetGenerationJobResponse = {
     status: "active" | "completed";
     occurred_at: string;
   }>;
+  intermediate_results?: AssetGenerationIntermediateResult[];
+  checkpoint_resume?: AssetGenerationCheckpointResume;
 };
 
 export type ContentAssetSearchResult = {
