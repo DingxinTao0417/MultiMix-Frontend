@@ -33,10 +33,10 @@ describe("desktop sidebar project navigation contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-conversation-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*min-height:\s*42px;/s);
     expect(workspaceClient).toContain('className="shadcn-prototype-nav-title">资源库');
     expect(workspaceClient).toContain("shadcn-prototype-nav-icon");
-    expect(workspaceClient).toContain("资产\n");
-    expect(workspaceClient).toContain("文案\n");
-    expect(workspaceClient).toContain("图片\n");
-    expect(workspaceClient).toContain("视频\n");
+    expect(workspaceClient).toMatch(/<Package size=\{16\} \/><\/span>\s*资产/);
+    expect(workspaceClient).toMatch(/<FileText size=\{16\} \/><\/span>\s*文案/);
+    expect(workspaceClient).toMatch(/<ImageIcon size=\{16\} \/><\/span>\s*图片/);
+    expect(workspaceClient).toMatch(/<Video size=\{16\} \/><\/span>\s*视频/);
     expect(css).toMatch(/\.shadcn-prototype-nav\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*gap:\s*7px;/s);
     expect(css).toMatch(/\.shadcn-prototype-nav-title\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/s);
     expect(css).toMatch(/\.shadcn-prototype-nav button\s*\{[^}]*min-height:\s*54px;[^}]*border:\s*1px solid #e9e5de;[^}]*border-radius:\s*11px;/s);

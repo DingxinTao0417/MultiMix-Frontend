@@ -500,20 +500,6 @@ button:disabled {
     transform var(--motion-fast);
 }
 
-.shadcn-prototype-conversation-main {
-  display: flex;
-  min-height: 34px;
-  align-items: center;
-  gap: 9px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #3d3a36;
-  padding: 0 9px;
-  font-size: 13px;
-  text-align: left;
-}
-
 .shadcn-prototype-nav button:hover {
   background: #fff;
   color: var(--sp-text);

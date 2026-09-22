@@ -130,8 +130,8 @@ describe("conversation generation card order", () => {
       />,
     );
 
-    const productTitle = screen.getByText("文案 · v1");
+    const productCard = screen.getByRole("link", { name: /daniel-vertical-english.*编导脚本.*完成.*v1/ });
     const suggestion = screen.getByRole("button", { name: "确认默认清理" });
-    expect(productTitle.compareDocumentPosition(suggestion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(productCard.compareDocumentPosition(suggestion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
 });
