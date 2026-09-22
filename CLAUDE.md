@@ -6,7 +6,7 @@
 
 ## 项目概述
 
-MultiMix 是一个内容生成工作台（content generation workspace），用对话驱动生成文案、图片、视频、音频、数字人口播、MG 动画等产物，并内嵌浏览器端视频剪辑器。
+MultiMix 是对话式 AI 短视频创作工作台，帮助商家通过对话完成需求理解、编导、视频制作与修改，得到可编辑、可导出的短视频。文案和图片保留独立生成与复用能力，默认服务于视频生产；配音、真人口播和 MG 属于视频制作能力，浏览器端剪辑器作为编辑能力保留。完整定位与对外文案统一见 `docs/specs/ui/product-positioning.md`。
 
 本仓库是 **前端仓库**（`MultiMix-Frontend`）。后端是独立仓库 `MultiMix-Backend`。本机两仓库并排放置：
 

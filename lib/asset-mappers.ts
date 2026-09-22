@@ -397,6 +397,17 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     confirmUtterance: stringValue(value.confirm_utterance) || undefined,
     ratioOptions: ratioOptions.length ? ratioOptions : undefined,
     ratioDefault: stringValue(value.ratio_default) || undefined,
+    ...(Array.isArray(value.production_options) ? {
+      productionOptions: value.production_options.filter(isRecord).slice(0, 3)
+        .filter((option) => ["public_stock", "graphics", "ai_visual"].includes(stringValue(option.id)))
+        .map((option) => ({ id: stringValue(option.id), label: stringValue(option.label),
+          effect: stringValue(option.effect), requiredInputs: stringValue(option.required_inputs), costNote: stringValue(option.cost_note) })),
+      productionChoiceId: stringValue(value.production_choice_id) || undefined,
+      productionRecommendedId: stringValue(value.production_recommended_id) || undefined,
+      productionSelectionRequired: value.production_selection_required === true,
+      productionRestriction: value.production_restriction === "only" ? "only" as const : "prefer" as const,
+      productionBlockedReason: stringValue(value.production_blocked_reason) || undefined,
+    } : {}),
     ratioConfirmationRequired: value.ratio_confirmation_required === true,
     voiceOptions: voiceOptions.length ? voiceOptions : undefined,
     voiceDefault: typeof value.voice_default === "boolean" ? value.voice_default : undefined,
@@ -1425,14 +1436,18 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     || ratioFromVideoProjectGeometry(videoProject);
   const ratio = normalizeRatioLabel(rawRatio) || (mode === "copy" ? "Markdown" : "按指令");
   const timelineDurationSeconds = durationFromVideoProjectTimeline(videoProject);
+  const videoProjectMetadata = isRecord(videoProject?.metadata) ? videoProject.metadata : undefined;
+  const currentProjectDurationSeconds = numberOrUndefined(videoProject?.duration_seconds)
+    ?? timelineDurationSeconds
+    ?? numberOrUndefined(videoProjectMetadata?.duration)
+    ?? numberOrUndefined(rawVideoPlan?.duration_seconds);
   const duration = mode === "image" && Array.isArray(metadata.generated_images) && metadata.generated_images.length
     ? `${metadata.generated_images.length} 张`
-    : videoProject?.duration_seconds
-    ? `${videoProject.duration_seconds}秒`
+    : currentProjectDurationSeconds
+    ? `${currentProjectDurationSeconds}秒`
     : mp4Artifact?.duration_seconds
       ? `${mp4Artifact.duration_seconds}秒`
       : stringValue(intent.duration)
-        || (timelineDurationSeconds ? `${timelineDurationSeconds}秒` : "")
         || (capability.includes("video") ? "待确认" : `${body.length} 段`);
   const capabilityLabel = artifactCategory(asset);
   const sections = [

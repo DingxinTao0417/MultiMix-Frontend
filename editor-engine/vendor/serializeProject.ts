@@ -53,6 +53,7 @@ function serializeElement(el: {
     | "presenter_graphic"
     | "edit_overlay";
   fontSize?: number;
+  fitMode?: "cover" | "contain";
   transform?: {
     scaleX: number;
     scaleY: number;
@@ -77,6 +78,7 @@ function serializeElement(el: {
   };
   if (el.mediaId) out.mediaId = el.mediaId;
   const visual = el.type === "video" || el.type === "image";
+  if (visual && (el.fitMode === "contain" || el.fitMode === "cover")) out.fitMode = el.fitMode;
   const presenterEvent = presenterEventByElementId[el.id];
   if (el.type === "text") {
     out.content = el.content || "";

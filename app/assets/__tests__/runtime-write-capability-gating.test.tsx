@@ -323,7 +323,10 @@ describe("ConversationStudio runtime write gate", () => {
 
   it("hides the standalone generation retry while unavailable and restores it when available", () => {
     const onRetryGeneration = vi.fn();
-    const failedJob = generationJob("failed", "standalone-generation-lly-29");
+    const failedJob = {
+      ...generationJob("failed", "standalone-generation-lly-29"),
+      retryable: true,
+    };
     const rendered = render(
       <ConversationStudio
         basePath="/app/assets"

@@ -1049,6 +1049,7 @@ button:disabled {
 .shadcn-prototype-start {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   height: 100%;
   padding: 24px;
@@ -1071,6 +1072,7 @@ button:disabled {
   position: relative;
   width: min(920px, 100%);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   text-align: left;
   margin-top: -3vh;
@@ -1102,6 +1104,7 @@ button:disabled {
 .shadcn-prototype-start-dock {
   position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   border: 1px solid transparent;
   border-radius: 18px;
@@ -1245,6 +1248,7 @@ button:disabled {
 
 .shadcn-prototype-start-capability-list {
   display: flex;
+  max-width: 100%;
   gap: 7px;
   overflow-x: auto;
   scrollbar-width: none;

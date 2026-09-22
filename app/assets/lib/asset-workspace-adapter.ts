@@ -671,6 +671,7 @@ export function buildConversationMessagePayload({
         version: videoParameterConfirmation.version,
         ratio: videoParameterConfirmation.ratio,
         target_seconds: videoParameterConfirmation.targetSeconds,
+        ...(videoParameterConfirmation.productionChoiceId ? { production_choice_id: videoParameterConfirmation.productionChoiceId } : {}),
         ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
           ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
           : {}),

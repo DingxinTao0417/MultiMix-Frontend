@@ -66,6 +66,16 @@ function getFirstTrackIsMain(result: ReturnType<typeof buildProject>) {
   return (track as Record<string, unknown>).isMain;
 }
 
+it('preserves explicit contain after a ratio revision without changing legacy defaults', () => {
+  const { project } = buildProject(makeProject({ tracks: [{ id: 'video', name: '主画面', type: 'video', elements: [
+    { id: 'revised', type: 'video', mediaId: 'a', startTime: 0, duration: 10, fitMode: 'contain' },
+    { id: 'legacy', type: 'video', mediaId: 'b', startTime: 10, duration: 10 },
+  ] }] }));
+  const elements = project.scenes[0].tracks[0].elements;
+  expect(elements[0]).toHaveProperty('fitMode', 'contain');
+  expect(elements[1]).not.toHaveProperty('fitMode');
+});
+
 describe('edit decision execution v2', () => {
   it('exposes the exact current atom catalog consumed by the editor', () => {
     expect([...EDIT_LAYOUTS].sort()).toEqual([
@@ -494,6 +504,26 @@ describe('buildProject - overlay/hasAlpha logic', () => {
     expect(result.text.split('\n')).toHaveLength(2);
     expect(result.lines).toBe(2);
     expect(result.fontPx).toBeGreaterThanOrEqual(36);
+  });
+
+  it('keeps a long English presenter cue inside the subtitle safe width', () => {
+    const cue = 'So for all those future aspiring astronauts, at their particular kids and you know, I was a kid watching.';
+    const measureText = (text: string, fontPx: number) => text.length * fontPx * 0.52;
+    const availableWidth = 1612;
+
+    const result = layoutCaption(cue, {
+      availableWidth,
+      preferredFontPx: 50,
+      minimumFontPx: 42,
+      maxLineChars: 20,
+      measureText,
+    });
+
+    expect(result.lines).toBe(2);
+    expect(result.text.split('\n')).toHaveLength(2);
+    for (const line of result.text.split('\n')) {
+      expect(measureText(line, result.fontPx)).toBeLessThanOrEqual(availableWidth);
+    }
   });
 
   it('converts backend BGM fades and ducking keyframes to editor dB once', () => {

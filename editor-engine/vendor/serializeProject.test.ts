@@ -455,6 +455,17 @@ describe('scene transition editor round-trip', () => {
   });
 });
 
+it('keeps contain through save and reopen after a ratio revision', () => {
+  const backend = makeBgmProject();
+  backend.tracks = [{ id: 'video', name: '主画面', type: 'video', elements: [{ id: 'clip', type: 'video',
+    startTime: 0, duration: 10, mediaId: 'media-bgm', fitMode: 'contain' }] }];
+  prepareEditorRoundTrip(backend);
+  const serialized = serializeBackendProject(editorMock as never) as unknown as BackendProject;
+  expect(serialized.tracks[0].elements[0].fitMode).toBe('contain');
+  const reopened = buildProject(serialized);
+  expect(reopened.project.scenes[0].tracks[0].elements[0]).toHaveProperty('fitMode', 'contain');
+});
+
 describe('edit decision execution v2 round-trip', () => {
   it('keeps a user visual override through save and reopen', () => {
     const execution = {

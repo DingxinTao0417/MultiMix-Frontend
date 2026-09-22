@@ -109,6 +109,7 @@ interface BaseTimelineElement {
 }
 
 interface BaseVisualElement extends BaseTimelineElement {
+    fitMode?: "cover" | "contain";
 	hidden?: boolean;
 	transform: Transform;
 	opacity: number;
