@@ -95,7 +95,7 @@ describe("library workshop performance boundaries", () => {
 
     const grid = await screen.findByLabelText("视频库列表");
     expect(within(grid).getAllByRole("button")).toHaveLength(48);
-    const loadMore = screen.getByRole("button", { name: "加载更多" });
+    const loadMore = screen.getByRole("button", { name: "加载更多内容" });
     fireEvent.click(loadMore);
 
     await waitFor(() => expect(within(grid).getAllByRole("button")).toHaveLength(60));
@@ -106,7 +106,7 @@ describe("library workshop performance boundaries", () => {
       "",
       expect.objectContaining({ offset: 48, limit: 48, signal: expect.any(AbortSignal) }),
     );
-    expect(screen.queryByRole("button", { name: "加载更多" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加载更多内容" })).not.toBeInTheDocument();
   });
 
   it("reuses a fresh first page until the refresh revision changes", async () => {

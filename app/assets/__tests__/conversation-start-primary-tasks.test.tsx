@@ -46,6 +46,9 @@ describe("ConversationStart primary video tasks", () => {
       "我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。",
     );
     expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /只有一段原视频/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /推广产品/ })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /只有一张图片/ })).not.toHaveClass("featured");
   });
 
   it("starts an idea-only conversation without attachments or automatic submission", () => {
@@ -97,7 +100,7 @@ describe("ConversationStart primary video tasks", () => {
     fireEvent.click(screen.getByRole("button", { name: "这些会限制制作方式吗？" }));
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "目标只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。",
+      "目标和示例只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。",
     );
   });
 });

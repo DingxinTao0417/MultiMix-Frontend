@@ -21,6 +21,8 @@ function videoConversation(message: AssetConversationMessage) {
     mode: "video" as const,
     contentType: "video_project",
     title: "上一稳定版本",
+    status: "已完成",
+    version: "v1",
     videoProjectReady: true,
   };
   return {
@@ -98,7 +100,7 @@ describe("video progress integration", () => {
 
     expect(screen.getByText("本次修改未完成")).toBeInTheDocument();
     expect(screen.getByText(action.message)).toBeInTheDocument();
-    expect(screen.getByText("上一稳定版本")).toBeInTheDocument();
+    expect(screen.getByText("视频工程 · v1")).toBeInTheDocument();
     expect(screen.queryByText("内部版本处理")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
   });

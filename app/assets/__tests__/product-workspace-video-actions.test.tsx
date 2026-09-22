@@ -1044,6 +1044,36 @@ describe("video browse actions", () => {
     expect(screen.queryByText("视频工程生成中")).not.toBeInTheDocument();
   });
 
+  it("leaves recovery to the conversation timeline when the failed step has a retry id", () => {
+    const product = displayProducts["case-05-project-failed"];
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onRetryVideoJob={vi.fn(async () => undefined)}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        videoJobLive={{
+          jobId: "job-failed-with-retry",
+          status: "failed",
+          workflowStage: "video_project_failed",
+          steps: [{ key: "compose_audio", label: "合成配音", status: "fail", retryJobId: "retry-audio-1" }],
+          errorMessage: "配音服务超时。",
+          completionConfirmed: false,
+          productStatus: "failed",
+          productCompleted: false,
+          failureAction: "retry",
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent("请在左侧重试失败步骤");
+    expect(screen.queryByRole("button", { name: /重试生成/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+  });
+
   it("asks before finding a replacement for a confirmed missing scene asset", () => {
     const product = {
       ...displayProducts["case-05-project-failed"],

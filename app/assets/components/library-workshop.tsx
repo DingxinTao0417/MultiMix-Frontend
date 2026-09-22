@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
+import { CircleAlert, Copy, Download, FileText, Globe2, Image as ImageIcon, Image as LibraryBigImageIcon, LoaderCircle, MoreHorizontal, PackageOpen, Plus, RefreshCw, Search, Sparkles, Trash2, Video, X } from "lucide-react";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { ActiveView } from "../lib/asset-workspace-shared";
 import type { PublicMaterialCandidate, PublicSourceRead } from "../../../lib/api";
@@ -49,6 +49,13 @@ const UPLOAD_LABEL: Record<Exclude<ActiveView, "conversation">, string> = {
   copy: "上传",
   image: "上传",
   video: "上传"
+};
+
+const LIBRARY_VIEW_DESCRIPTIONS: Record<Exclude<ActiveView, "conversation">, string> = {
+  assets: "管理上传、采集和对话沉淀的来源资料。",
+  copy: "集中查看选题方案、文案稿和已确认的编导稿。",
+  image: "管理封面图、素材图和可以复用的分镜画面。",
+  video: "查看已保存的视频工程，并继续编辑或用于创作。",
 };
 
 const LIBRARY_PAGE_SIZE = 48;
@@ -744,6 +751,19 @@ function LibraryWorkshop({
     }
   };
 
+  const hasActiveLibraryCriteria = Boolean(
+    searchQuery.trim()
+    || activeFilter !== "全部"
+    || statusFilter,
+  );
+
+  const handleClearLibraryCriteria = () => {
+    setSearchQuery("");
+    setDebouncedQuery("");
+    setActiveFilter("全部");
+    setStatusFilter(null);
+  };
+
   useDialogFocusManagement({
     open: Boolean(selectedRow),
     dialogRef: detailDialogRef,
@@ -966,6 +986,21 @@ function LibraryWorkshop({
     setLocalRefreshKey((value) => value + 1);
   };
 
+  const EmptyLibraryIcon = view === "image"
+    ? ImageIcon
+    : view === "video"
+      ? Video
+      : view === "copy"
+        ? FileText
+        : PackageOpen;
+  const DetailIcon = view === "image"
+    ? ImageIcon
+    : view === "video"
+      ? Video
+      : view === "copy"
+        ? FileText
+        : PackageOpen;
+
   return (
     <section className="shadcn-prototype-card shadcn-prototype-workshop" aria-label={workshop.title}>
       <div className="shadcn-prototype-workshop-body">
@@ -975,9 +1010,90 @@ function LibraryWorkshop({
             <button type="button" onClick={onExitProjectTarget}>完成</button>
           </div>
         ) : null}
-        <div className="shadcn-prototype-library-toolbar">
+        <div className="shadcn-prototype-library-page-header">
+          <div className="shadcn-prototype-library-page-heading">
+            <h1>{workshop.title}</h1>
+            <p>{LIBRARY_VIEW_DESCRIPTIONS[view]}</p>
+          </div>
+          <div className="shadcn-prototype-library-page-actions">
+            <label className="shadcn-prototype-library-search compact">
+              <Search size={15} aria-hidden="true" />
+              <input
+                aria-label={`搜索${workshop.title}`}
+                placeholder={SEARCH_PLACEHOLDER[view]}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+            </label>
+            {loadingRows ? <span className="shadcn-prototype-library-loading" aria-label="正在搜索" /> : null}
+            {view === "assets" ? (
+              <>
+                <button type="button" disabled={!canUseBackend} onClick={() => setAssetModal("web")}>
+                  <FileText size={15} aria-hidden="true" />
+                  读取网页
+                </button>
+                <button type="button" disabled={!canUseBackend} onClick={() => setPublicSearchOpen(true)}>
+                  <Globe2 size={15} aria-hidden="true" />
+                  公开素材搜索
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => {
+                if (writeCapabilities.canUpload) onUploadClick?.();
+              }}
+              disabled={!onUploadClick || uploading || !writeCapabilities.canUpload}
+              aria-describedby={runtimeWriteStatusId}
+            >
+              <Plus size={15} aria-hidden="true" />
+              {uploading ? "上传中" : UPLOAD_LABEL[view]}
+            </button>
+          </div>
+        </div>
+        <div className="shadcn-prototype-library-filter-bar">
           <div className="shadcn-prototype-library-filters" aria-label={`${workshop.title}筛选`}>
-            {FILTERS[view].map((filter) => (
+            {view === "image" ? (
+              <>
+                <div className="shadcn-prototype-library-filter-group" role="group" aria-label="内容类型">
+                  <span className="shadcn-prototype-library-filter-label">内容类型</span>
+                  <div className="shadcn-prototype-library-filter-options">
+                    {FILTERS[view].map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        className={filter === activeFilter ? "active" : undefined}
+                        onClick={() => setActiveFilter(filter)}
+                      >
+                        {filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="shadcn-prototype-library-filter-group" role="group" aria-label="处理状态">
+                  <span className="shadcn-prototype-library-filter-label">处理状态</span>
+                  <div className="shadcn-prototype-library-filter-options">
+                    <button
+                      type="button"
+                      className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
+                      onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
+                    >
+                      <i className="dot-ok" aria-hidden="true" />
+                      已解析
+                    </button>
+                    <button
+                      type="button"
+                      className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
+                      onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
+                    >
+                      <i className="dot-wait" aria-hidden="true" />
+                      待处理
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : FILTERS[view].map((filter) => (
               <button
                 key={filter}
                 type="button"
@@ -987,62 +1103,7 @@ function LibraryWorkshop({
                 {filter}
               </button>
             ))}
-            {view === "image" ? (
-              <>
-                <span className="shadcn-prototype-library-filter-sep" aria-hidden="true" />
-                <button
-                  type="button"
-                  className={statusFilter === "ok" ? "active with-dot" : "with-dot"}
-                  onClick={() => setStatusFilter((current) => current === "ok" ? null : "ok")}
-                >
-                  <i className="dot-ok" aria-hidden="true" />
-                  已解析
-                </button>
-                <button
-                  type="button"
-                  className={statusFilter === "wait" ? "active with-dot" : "with-dot"}
-                  onClick={() => setStatusFilter((current) => current === "wait" ? null : "wait")}
-                >
-                  <i className="dot-wait" aria-hidden="true" />
-                  待处理
-                </button>
-              </>
-            ) : null}
           </div>
-          <label className="shadcn-prototype-library-search compact">
-            <Search size={15} aria-hidden="true" />
-            <input
-              aria-label={`搜索${workshop.title}`}
-              placeholder={SEARCH_PLACEHOLDER[view]}
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
-          {loadingRows ? <span className="shadcn-prototype-library-loading" aria-label="正在搜索" /> : null}
-          <button
-            type="button"
-            className="primary"
-            onClick={() => {
-              if (writeCapabilities.canUpload) onUploadClick?.();
-            }}
-            disabled={!onUploadClick || uploading || !writeCapabilities.canUpload}
-            aria-describedby={runtimeWriteStatusId}
-          >
-            <Plus size={15} aria-hidden="true" />
-            {uploading ? "上传中" : UPLOAD_LABEL[view]}
-          </button>
-          {view === "assets" ? (
-            <>
-              <button type="button" disabled={!canUseBackend} onClick={() => setAssetModal("web")}>
-                <FileText size={15} aria-hidden="true" />
-                读取网页
-              </button>
-              <button type="button" disabled={!canUseBackend} onClick={() => setPublicSearchOpen(true)}>
-                <Globe2 size={15} aria-hidden="true" />
-                公开素材搜索
-              </button>
-            </>
-          ) : null}
         </div>
         {writeCapabilities.reason ? (
           <p
@@ -1059,16 +1120,39 @@ function LibraryWorkshop({
         {actionMessage ? <p className="shadcn-prototype-library-action-message" role="status">{actionMessage}</p> : null}
 
         {libraryState === "unconfigured" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>创作服务尚未连接</strong><p>请联系管理员完成配置后重试。</p></div></article>
+          <article className="shadcn-prototype-workshop-empty">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon"><PackageOpen size={21} aria-hidden="true" /></span>
+              <strong>创作服务尚未连接</strong>
+              <p>请联系管理员完成配置后重试。</p>
+            </div>
+          </article>
         ) : libraryState === "error" ? (
-          <article className="shadcn-prototype-workshop-empty"><div><strong>资源库加载失败</strong><p>没有展示本地样例，避免与真实数据混淆。</p><button type="button" onClick={handleRetryLibraryConnection}>重新加载</button></div></article>
+          <article className="shadcn-prototype-workshop-empty" role="alert">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon is-error"><CircleAlert size={21} aria-hidden="true" /></span>
+              <strong>资源库加载失败</strong>
+              <p>没有展示本地样例，避免与真实数据混淆。</p>
+              <button type="button" onClick={handleRetryLibraryConnection}>重新加载</button>
+            </div>
+          </article>
         ) : libraryState === "loading" ? (
-          <article className="shadcn-prototype-workshop-empty" role="status"><div><strong>正在加载{workshop.title}…</strong></div></article>
+          <article className="shadcn-prototype-workshop-empty" role="status">
+            <div>
+              <span className="shadcn-prototype-workshop-empty-icon is-loading"><LoaderCircle size={21} aria-hidden="true" /></span>
+              <strong>正在加载{workshop.title}…</strong>
+              <p>内容准备好后会自动显示。</p>
+            </div>
+          </article>
         ) : filteredRows.length === 0 ? (
           <article className="shadcn-prototype-workshop-empty">
             <div>
-              <strong>这个分类还没有内容</strong>
-              <p>{activeFilter === "全部" && !statusFilter ? "上传资料或在对话中生成产物后，会在这里出现。" : "在对话里生成后会自动归档到这里。"}</p>
+              <span className="shadcn-prototype-workshop-empty-icon"><EmptyLibraryIcon size={21} aria-hidden="true" /></span>
+              <strong>{hasActiveLibraryCriteria ? "没有找到匹配内容" : "这个分类还没有内容"}</strong>
+              <p>{hasActiveLibraryCriteria ? "试试更换关键词，或者清除当前筛选条件。" : "上传资料或在对话中生成产物后，会在这里出现。"}</p>
+              {hasActiveLibraryCriteria ? (
+                <button type="button" onClick={handleClearLibraryCriteria}>清除搜索和筛选</button>
+              ) : null}
             </div>
           </article>
         ) : (
@@ -1147,9 +1231,10 @@ function LibraryWorkshop({
               })}
             </div>
             {nextOffset !== null ? (
-              <div className="shadcn-prototype-library-load-more">
+              <div className="shadcn-prototype-library-results-footer" role="status">
+                <span>当前显示 {filteredRows.length} 项</span>
                 <button type="button" disabled={loadingMore} onClick={() => void handleLoadMore()}>
-                  {loadingMore ? "正在加载…" : "加载更多"}
+                  {loadingMore ? "正在加载更多…" : "加载更多内容"}
                 </button>
               </div>
             ) : null}
@@ -1160,17 +1245,29 @@ function LibraryWorkshop({
         <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
           <aside
             ref={detailDialogRef}
-            className="shadcn-prototype-library-detail shadcn-prototype-library-modal"
+            className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-library-detail-dialog"
             aria-label={`${selectedRow.title}详情`}
+            aria-describedby="library-detail-supporting-meta"
             aria-modal="true"
             role="dialog"
             tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <header>
-              <div>
-                <span>{displayMeta(selectedRow, view)}</span>
-                <h2>{selectedRow.title}</h2>
+            <header className="shadcn-prototype-library-detail-header">
+              <div className="shadcn-prototype-library-detail-identity">
+                <span className="shadcn-prototype-library-detail-icon" aria-hidden="true">
+                  <DetailIcon size={20} />
+                </span>
+                <div>
+                  <span className="shadcn-prototype-library-detail-eyebrow">
+                    <em>{selectedRow.category ?? selectedRow.contentType ?? workshop.title}</em>
+                    {selectedRow.statusLabel ? <i>{selectedRow.statusLabel}</i> : null}
+                  </span>
+                  <h2>{selectedRow.title}</h2>
+                  <p id="library-detail-supporting-meta">
+                    {[selectedRow.updatedLabel, referenceCountLabel(selectedRow)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
@@ -1179,6 +1276,8 @@ function LibraryWorkshop({
                 </button>
               </div>
             </header>
+
+            <div className="shadcn-prototype-library-detail-body">
 
             {/* Preview (demo md-preview) */}
             {view === "image" ? (
@@ -1438,56 +1537,82 @@ function LibraryWorkshop({
                 </div>
               </section>
             ) : null}
+            </div>
 
             {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
               {view === "copy" ? (
                 <>
                   <button type="button" onClick={() => { if (selectedRow) void handleCopyRow(selectedRow); }}><Copy size={14} aria-hidden="true" />复制</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Video size={14} aria-hidden="true" />生成视频</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "copy"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : view === "image" ? (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  {isReparsableMedia(selectedRow) ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      {isReparsableMedia(selectedRow) ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} title="重新解析素材" onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
+                      ) : null}
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "image"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : view === "video" ? (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
-                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  {isReparsableMedia(selectedRow) ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
                   {selectedRow.contentTypeCode === "video_project" ? (
                     <button
+                      className="shadcn-prototype-library-detail-primary"
                       type="button"
                       disabled={!selectedRow.assetId || selectedRow.productStatus !== "completed"}
                       title={selectedRow.productStatus === "completed" ? "打开剪辑器" : "视频工程完成后可编辑"}
                       onClick={() => { if (selectedRow) handleOpenEditor(selectedRow); }}
                     ><Video size={14} aria-hidden="true" />打开剪辑器</button>
+                  ) : (
+                    <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  )}
+                  <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
+                  {selectedRow.contentTypeCode === "video_project" ? (
+                    <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "video"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   ) : null}
-                  {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      {isReparsableMedia(selectedRow) ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
+                      ) : null}
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               ) : (
                 <>
-                  <button type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
+                  <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>
                   <button type="button" disabled={!selectedRow.assetId || !onAddAssetToConversation || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) onAddAssetToConversation?.(selectedRow); }}><Plus size={14} aria-hidden="true" />加入项目…</button>
-                  <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
-                  <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
-                  {selectedRow.statusLabel === "解析失败" ? (
-                    <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleRetry(selectedRow); }}><RefreshCw size={14} aria-hidden="true" />重试处理</button>
-                  ) : null}
-                  <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                  <details className="shadcn-prototype-library-detail-overflow">
+                    <summary aria-label="更多操作"><MoreHorizontal size={16} aria-hidden="true" />更多</summary>
+                    <div className="shadcn-prototype-library-detail-overflow-menu">
+                      <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button>
+                      <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "asset"); }}><Download size={14} aria-hidden="true" />下载</button>
+                      {selectedRow.statusLabel === "解析失败" ? (
+                        <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleRetry(selectedRow); }}><RefreshCw size={14} aria-hidden="true" />重试处理</button>
+                      ) : null}
+                      <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
+                    </div>
+                  </details>
                 </>
               )}
             </div>

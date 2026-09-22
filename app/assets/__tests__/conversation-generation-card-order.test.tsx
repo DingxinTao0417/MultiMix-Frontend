@@ -130,7 +130,7 @@ describe("conversation generation card order", () => {
       />,
     );
 
-    const productTitle = screen.getByText("daniel-vertical-english · 口播清理");
+    const productTitle = screen.getByText("文案 · v1");
     const suggestion = screen.getByRole("button", { name: "确认默认清理" });
     expect(productTitle.compareDocumentPosition(suggestion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
