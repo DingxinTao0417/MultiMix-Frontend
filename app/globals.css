@@ -1744,8 +1744,7 @@ button:disabled {
   box-shadow: 0 8px 22px rgba(24, 24, 27, 0.04);
 }
 
-.shadcn-prototype-thread strong,
-.shadcn-prototype-thread .assistant span {
+.shadcn-prototype-thread strong {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1800,10 +1799,10 @@ button:disabled {
 
 .shadcn-prototype-product-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 56px;
+  min-height: 60px;
   border: 1px solid #eae7e1;
   border-radius: 18px;
   background: #ffffff;
@@ -1871,8 +1870,28 @@ button:disabled {
   font-weight: 650;
 }
 
+.shadcn-prototype-product-card-thumbnail {
+  display: grid;
+  width: 44px;
+  height: 34px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #eae7e1;
+  border-radius: 9px;
+  background: #f8f6f3;
+}
+
+.shadcn-prototype-product-card-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .shadcn-prototype-product-card-arrow {
   display: grid;
+  width: 20px;
+  height: 20px;
   place-items: center;
   color: var(--sp-faint);
 }
@@ -4201,10 +4220,6 @@ button:disabled {
   gap: 8px;
 }
 
-.shadcn-prototype-product.has-creative-direction {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
 .shadcn-prototype-artifact .shadcn-prototype-product.video-project-mode .shadcn-prototype-product-header {
   min-height: 32px;
   padding-bottom: 7px;
@@ -4642,15 +4657,10 @@ button:disabled {
 
 .shadcn-prototype-creative-direction {
   display: grid;
-  place-self: start center;
+  place-self: start;
   align-content: start;
-  width: min(100%, 620px);
+  width: min(100%, 560px);
   min-width: 0;
-  min-height: 0;
-  max-height: min(42vh, 360px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
   border: 1px solid #e5e0d8;
   border-radius: 16px;
   background: #faf8f4;

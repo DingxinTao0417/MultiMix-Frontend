@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, ChevronRight, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
@@ -54,12 +54,18 @@ import ExternalVideoStoryboardProgress from "./external-video-storyboard-progres
 import { confirmVideoStoryboard } from "../lib/video-storyboard-client";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
+import CreativeDirectionSelector from "./creative-direction-selector";
+import { finishedVideoPosterUrl } from "./product-preview";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
 import { requirementConversationMediaFromValue } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
 } from "../lib/runtime-write-capabilities";
+import {
+  isFiveLayerVideoPlan,
+  isPresenterSourceVideoPlan,
+} from "../lib/video-creative-profile";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -315,6 +321,59 @@ function hasReadyVideoProjectForDirectorScript(
   ));
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function browserImageUrl(value: unknown): string {
+  const url = typeof value === "string" ? value.trim() : "";
+  return /^(?:https?:\/\/|data:|blob:)/i.test(url) ? url : "";
+}
+
+function creativeDirectionForProduct(product: ProductArtifact): unknown | null {
+  if (!['video_script', 'short_video_narration'].includes(product.contentType ?? "")) return null;
+  const videoPlan = recordValue(product.metadata?.video_plan);
+  if (!videoPlan || !isFiveLayerVideoPlan(videoPlan) || isPresenterSourceVideoPlan(videoPlan)) return null;
+  return videoPlan.creative_direction ?? null;
+}
+
+function ProductCardVisual({ product }: { product: ProductArtifact }) {
+  const [failed, setFailed] = useState(false);
+  const metadata = recordValue(product.metadata);
+  const thumbnailUrl = product.mode === "video"
+    ? finishedVideoPosterUrl(product)
+      || browserImageUrl(metadata?.thumbnail_url)
+      || browserImageUrl(metadata?.poster_url)
+    : product.mode === "image"
+      ? browserImageUrl(metadata?.preview_url) || browserImageUrl(metadata?.thumbnail_url)
+      : "";
+
+  if (thumbnailUrl && !failed) {
+    return (
+      <span className="shadcn-prototype-product-card-thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element -- API and artifact-store preview URLs are runtime values. */}
+        <img src={thumbnailUrl} alt="" loading="lazy" onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="shadcn-prototype-context-icon" aria-hidden="true">
+      {product.mode === "image" ? (
+        <ImageIcon size={15} />
+      ) : product.mode === "audio" ? (
+        <Play size={14} />
+      ) : product.mode === "video" || product.mode === "mg-overlay" ? (
+        <Video size={15} />
+      ) : (
+        <FileText size={15} />
+      )}
+    </span>
+  );
+}
+
 export function resolveExecutionTimelineSteps(
   liveRunState: {
     jobId: string;
@@ -367,6 +426,7 @@ export default function ConversationStudio({
   selectedConversation,
   selectedProduct,
   onSelectProduct,
+  onApplyCreativeDirection,
   selectedImageFrameIds = {},
   onSelectImageFrame,
   imageAttachments = [],
@@ -404,6 +464,7 @@ export default function ConversationStudio({
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
+  onApplyCreativeDirection?: (product: ProductArtifact, selection: AssetCreativeDirectionSelection) => Promise<void>;
   selectedImageFrameIds?: Record<string, string>;
   onSelectImageFrame?: (productId: string, frameId: string) => void;
   imageAttachments?: ChatImageAttachment[];
@@ -1066,34 +1127,35 @@ export default function ConversationStudio({
             />;
           }
           const displayIdentity = getProductDisplayIdentity(product);
-          return <Link
-            className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
-            href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
-            key={product.id}
-            onClick={(event) => {
-              event.preventDefault();
-              onSelectProduct(selectedConversation.id, product.id);
-            }}
-          >
-            <span className="shadcn-prototype-context-icon">
-              {product.mode === "image" ? (
-                <ImageIcon size={15} aria-hidden="true" />
-              ) : product.mode === "audio" ? (
-                <Play size={14} aria-hidden="true" />
-              ) : product.mode === "video" || product.mode === "mg-overlay" ? (
-                <Video size={15} aria-hidden="true" />
-              ) : (
-                <FileText size={15} aria-hidden="true" />
-              )}
-            </span>
-            <span>
-              <strong>{displayIdentity.title}</strong>
-              <em>{product.status}</em>
-            </span>
-            <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </span>
-          </Link>;
+          const creativeDirection = creativeDirectionForProduct(product);
+          return <Fragment key={product.id}>
+            <Link
+              className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
+              href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
+              onClick={(event) => {
+                event.preventDefault();
+                onSelectProduct(selectedConversation.id, product.id);
+              }}
+            >
+              <ProductCardVisual product={product} />
+              <span>
+                <strong>{displayIdentity.title}</strong>
+                <em>{product.status}</em>
+              </span>
+              <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </span>
+            </Link>
+            {creativeDirection ? (
+              <CreativeDirectionSelector
+                direction={creativeDirection}
+                disabled={!writeCapabilities.canGenerate || readonly}
+                onApply={onApplyCreativeDirection
+                  ? (selection) => onApplyCreativeDirection(product, selection)
+                  : undefined}
+              />
+            ) : null}
+          </Fragment>;
         })}
       </div>
     );

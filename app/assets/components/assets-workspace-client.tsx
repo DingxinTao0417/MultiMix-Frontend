@@ -3320,6 +3320,11 @@ export default function AssetsWorkspaceClient({
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
+                onApplyCreativeDirection={
+                  !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
+                    ? undefined
+                    : handleApplyCreativeDirection
+                }
                 selectedImageFrameIds={selectedImageFrameIds}
                 onSelectImageFrame={(productId, frameId) => {
                   setSelectedImageFrameIds((current) => ({ ...current, [productId]: frameId }));
@@ -3427,11 +3432,6 @@ export default function AssetsWorkspaceClient({
                     }));
                   }}
                   onLongFormAction={(action) => void handleLongFormSelect(action)}
-                  onApplyCreativeDirection={
-                    !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
-                      ? undefined
-                      : (selection) => handleApplyCreativeDirection(selectedProduct, selection)
-                  }
                   onApplyGeneratedImage={
                     !canApplyExistingGeneratedImage
                       ? undefined

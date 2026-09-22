@@ -403,6 +403,11 @@ body.side-collapsed .expand-btn{display:grid}
 .prod-card .t{font-size:13px;font-weight:650}
 .prod-card .m{font-size:11.5px;color:var(--ink-3)}
 .prod-card .arrow{margin-left:auto;color:var(--ink-3)}
+.prod-card .thumb{width:44px;height:34px;border-radius:9px;overflow:hidden;flex:none;border:1px solid var(--line);background:var(--surface-2)}
+.creative-direction{margin-left:37px;max-width:400px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:11px 13px;display:grid;gap:5px}
+.creative-direction .k{font-size:11px;color:var(--ink-3)}
+.creative-direction .t{font-size:13px;font-weight:650}
+.creative-direction button{justify-self:start;color:var(--accent);font-size:11.5px;font-weight:600}
 .artifact{position:relative}
 .art-head{display:flex;align-items:flex-start;gap:10px}
 .art-head .hgroup{display:grid;gap:2px;min-width:0}
@@ -602,13 +607,16 @@ body.side-collapsed .expand-btn{display:grid}
 
       <!-- 产物卡：对话流内的产物切换机制 -->
       <div class="prod-card" onclick="toast('已切换展示区到「全屋定制 · 获客视频」')">
-        <span class="ic">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-        </span>
+        <span class="thumb"><span class="ph ph-living"></span></span>
         <span class="tx"><span class="t">视频工程 · v1</span><span class="m">已完成 · 正在右侧展示</span></span>
         <span class="arrow">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
+      </div>
+      <div class="creative-direction">
+        <span class="k">创意方向 · 当前采用</span>
+        <span class="t">结果先行：先展示完工效果，再解释过程</span>
+        <button type="button" onclick="toast('展示本轮其他创意方向')">查看其他方向</button>
       </div>
     </div>
   </div>
