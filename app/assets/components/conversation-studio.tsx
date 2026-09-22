@@ -1367,6 +1367,12 @@ export default function ConversationStudio({
                 message.pending ? "pending" : "",
                 message.localState ? `local-${message.localState}` : ""
               ].filter(Boolean).join(" ")}>
+              {message.role === "assistant" && shouldRenderMessageBody(message) && message.text.trim() ? (
+                <div className="shadcn-prototype-assistant-message-meta" aria-label="AI 编导回复">
+                  <span aria-hidden="true">M</span>
+                  <strong>AI 编导</strong>
+                </div>
+              ) : null}
               {showsAssistantWaiting ? (
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (

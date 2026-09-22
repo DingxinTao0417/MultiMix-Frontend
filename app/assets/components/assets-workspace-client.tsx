@@ -2866,6 +2866,7 @@ export default function AssetsWorkspaceClient({
 
   const shellClassName = [
     "shadcn-prototype-shell",
+    "agent-visual-refresh",
     sidebarState === "collapsed" ? "sidebar-collapsed" : "",
     sidebarState === "expanded" ? "sidebar-expanded" : "",
     isSidebarVisuallyCollapsed ? "sidebar-visual-collapsed" : ""

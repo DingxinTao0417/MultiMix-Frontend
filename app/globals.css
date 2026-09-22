@@ -11159,3 +11159,251 @@ label {
   .creative-profile-header { padding: 20px 18px 16px; }
   .creative-profile-scroll { padding: 18px 18px 28px; }
 }
+
+/* Agent workspace visual refresh (2026-09-23).
+   Existing message, confirmation, progress and video contracts remain intact;
+   this layer only makes the current project, decision and result easier to scan. */
+.agent-visual-refresh .shadcn-prototype-sidebar {
+  background: #faf9f7;
+}
+
+.agent-visual-refresh .shadcn-prototype-team {
+  min-height: 58px;
+}
+
+.agent-visual-refresh .shadcn-prototype-team span.shadcn-prototype-brand-mark {
+  border-radius: 9px;
+  box-shadow: 0 5px 14px rgba(92, 69, 224, 0.16);
+}
+
+.agent-visual-refresh .shadcn-prototype-brand strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.agent-visual-refresh .shadcn-prototype-new-conversation {
+  min-height: 42px;
+  margin: 4px 2px 0;
+  border-radius: 11px;
+  box-shadow: 0 5px 16px rgba(32, 31, 30, 0.12);
+}
+
+.agent-visual-refresh .shadcn-prototype-conversation-section {
+  margin-top: 18px;
+}
+
+.agent-visual-refresh .shadcn-prototype-section-title {
+  padding: 0 8px 6px;
+  letter-spacing: 0.025em;
+}
+
+.agent-visual-refresh .shadcn-prototype-conversation-row,
+.agent-visual-refresh .shadcn-prototype-conversation-main {
+  min-height: 48px;
+}
+
+.agent-visual-refresh .shadcn-prototype-conversation-row {
+  border-radius: 10px;
+}
+
+.agent-visual-refresh .shadcn-prototype-conversation-main {
+  padding: 6px 11px;
+}
+
+.agent-visual-refresh .shadcn-prototype-conversation-row.active {
+  background: #f0ede8;
+  box-shadow: inset 0 0 0 1px rgba(221, 217, 209, 0.74);
+}
+
+.agent-visual-refresh .shadcn-prototype-nav {
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.agent-visual-refresh .shadcn-prototype-nav button {
+  min-height: 64px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 12px;
+  padding: 8px;
+  font-weight: 650;
+}
+
+.agent-visual-refresh .shadcn-prototype-nav-icon {
+  width: 31px;
+  height: 31px;
+}
+
+.agent-visual-refresh .shadcn-prototype-chat {
+  background: #ffffff;
+}
+
+.agent-visual-refresh .shadcn-prototype-card .shadcn-prototype-chat-head {
+  min-height: 56px;
+  padding: 10px clamp(22px, 4vw, 32px);
+}
+
+.agent-visual-refresh .shadcn-prototype-chat-head strong {
+  font-size: 15px;
+  letter-spacing: -0.015em;
+}
+
+.agent-visual-refresh .shadcn-prototype-project-resources {
+  min-height: 34px;
+  background: #fdfcfa;
+}
+
+.agent-visual-refresh .shadcn-prototype-thread {
+  gap: 18px;
+  padding: 28px clamp(22px, 4vw, 34px);
+}
+
+.agent-visual-refresh .shadcn-prototype-message-group {
+  gap: 10px;
+}
+
+.agent-visual-refresh .shadcn-prototype-thread article {
+  max-width: min(600px, 92%);
+}
+
+.agent-visual-refresh .shadcn-prototype-thread article.user {
+  border-radius: 18px 18px 7px 18px;
+  background: #f3f1ed;
+  padding: 13px 15px;
+}
+
+.agent-visual-refresh .shadcn-prototype-thread article.assistant {
+  display: grid;
+  gap: 7px;
+}
+
+.shadcn-prototype-assistant-message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  color: var(--sp-subtle);
+}
+
+.shadcn-prototype-assistant-message-meta > span {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--sp-ai-soft);
+  color: var(--sp-accent);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.shadcn-prototype-assistant-message-meta > strong {
+  color: #4a4640;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+.agent-visual-refresh .shadcn-prototype-thread article.assistant > p {
+  max-width: 560px;
+  color: #302d29;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.agent-visual-refresh .shadcn-prototype-product-card-list,
+.agent-visual-refresh .shadcn-prototype-thread article.shadcn-prototype-workflow-card-message {
+  width: min(100%, 590px);
+  max-width: min(100%, 590px);
+}
+
+.agent-visual-refresh .shadcn-prototype-product-card {
+  min-height: 62px;
+  border-radius: 14px;
+  box-shadow: 0 8px 22px rgba(32, 31, 30, 0.045);
+}
+
+.agent-visual-refresh .shadcn-prototype-product-card.active {
+  background: #fcfbff;
+  box-shadow: inset 3px 0 0 var(--sp-accent), 0 9px 24px rgba(92, 69, 224, 0.08);
+}
+
+.agent-visual-refresh .shadcn-prototype-confirm-card {
+  max-width: 590px;
+  border: 1px solid var(--sp-border);
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(32, 31, 30, 0.055);
+}
+
+.agent-visual-refresh .shadcn-prototype-confirm-head {
+  padding: 16px 18px 2px;
+}
+
+.agent-visual-refresh .shadcn-prototype-confirm-title {
+  font-size: 16px;
+}
+
+.agent-visual-refresh .shadcn-prototype-confirm-fields {
+  gap: 8px;
+  padding: 12px 18px 16px;
+}
+
+.agent-visual-refresh .shadcn-prototype-suggestion-row {
+  gap: 8px;
+}
+
+.agent-visual-refresh .shadcn-prototype-suggestion-row button {
+  min-height: 30px;
+  background: #ffffff;
+  padding: 0 12px;
+}
+
+.agent-visual-refresh .shadcn-prototype-agent-run {
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(32, 31, 30, 0.045);
+}
+
+.agent-visual-refresh .shadcn-prototype-composer {
+  padding: 12px clamp(18px, 4vw, 30px) 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), #ffffff 26%);
+}
+
+.agent-visual-refresh .shadcn-prototype-composer-control {
+  min-height: 58px;
+  border-color: var(--sp-border-strong);
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(32, 31, 30, 0.07);
+  padding: 9px 11px;
+}
+
+.agent-visual-refresh .shadcn-prototype-composer-control:focus-within {
+  border-color: rgba(92, 69, 224, 0.55);
+  box-shadow: 0 0 0 3px rgba(92, 69, 224, 0.1), 0 8px 24px rgba(32, 31, 30, 0.07);
+}
+
+.agent-visual-refresh .shadcn-prototype-composer-control > button.primary {
+  background: #2c2926;
+  box-shadow: 0 7px 17px rgba(32, 31, 30, 0.18);
+}
+
+.agent-visual-refresh .shadcn-prototype-composer-control > button.stop,
+.agent-visual-refresh .shadcn-prototype-composer-control > button.stop:hover:not(:disabled) {
+  background: var(--sp-danger);
+}
+
+.agent-visual-refresh .shadcn-prototype-artifact .shadcn-prototype-product-header {
+  min-height: 58px;
+  padding: 12px 24px;
+}
+
+.agent-visual-refresh .shadcn-prototype-artifact .shadcn-prototype-product-main {
+  padding-top: 4px;
+}
+
+.agent-visual-refresh .shadcn-prototype-segment-cards li {
+  border-radius: 13px;
+  padding: 12px 14px;
+}
