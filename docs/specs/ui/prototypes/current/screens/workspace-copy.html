@@ -19,7 +19,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{
   height:100vh;overflow:hidden;background:var(--bg);color:var(--ink);
-  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei UI","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;
   -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
   display:grid;grid-template-rows:44px minmax(0,1fr);min-width:1280px;
 }
@@ -125,11 +125,9 @@ svg{flex:none;display:block}
 .chat-head{display:flex;align-items:center;height:56px;padding:0 24px;border-bottom:1px solid var(--line);gap:12px}
 .chat-head .title{font-size:15px;font-weight:650;letter-spacing:.01em}
 .chat-head .right{margin-left:auto;display:flex;align-items:center;gap:8px}
-.project-resources{display:flex;align-items:center;gap:7px;min-height:30px;padding:5px 30px;
-  border-bottom:1px solid var(--line);background:#FCFBF9;color:var(--ink-2);font-size:11.5px;cursor:pointer}
-.project-resources b{color:var(--ink);font-weight:650}
-.project-resources em{font-style:normal;border-radius:999px;background:var(--surface-2);padding:2px 7px}
-.project-resources .arrow{margin-left:auto;color:var(--ink-3)}
+.project-resources{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:4px 9px;
+  border:1px solid var(--line);border-radius:999px;background:#FCFBF9;color:var(--ink-2);font-size:11.5px;font-weight:650;cursor:pointer}
+.project-resources strong{display:grid;min-width:17px;height:17px;place-items:center;border-radius:999px;background:#686159;color:#fff;font-size:9.5px}
 .replay{display:flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:999px;
   border:1px solid var(--line);font-size:12px;color:var(--ink-3);background:var(--surface)}
 .replay:hover{color:var(--ink-2);border-color:var(--line-2);transform:translateY(-1px)}
@@ -461,6 +459,10 @@ body.side-collapsed .expand-btn{display:grid}
   <div class="chat-head">
     <div class="title">门窗案例小红书内容</div>
     <div class="right">
+      <button class="project-resources" aria-label="项目资料，共 6 项">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4.5h4l1.2 1.4H14v6.6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+        <b>资料</b><strong>6</strong>
+      </button>
       <span class="live-badge"><span class="gdot"></span>已引用 4 张素材</span>
       <button class="replay" onclick="location.reload()">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.7 8a5.3 5.3 0 1 1 1.6 3.8M2.7 12V8.8h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -468,11 +470,6 @@ body.side-collapsed .expand-btn{display:grid}
       </button>
     </div>
   </div>
-  <button class="project-resources">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 4.5h4l1.2 1.4H14v6.6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-    <b>项目资源</b><strong>6</strong><em>素材 4</em><em>封面 1</em><em>文案 1</em><span class="arrow">›</span>
-  </button>
-
   <div class="msgs" id="msgs">
     <!-- 更早的产物：封面图（演示多产物切换） -->
     <div class="msg-ai">

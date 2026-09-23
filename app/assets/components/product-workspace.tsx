@@ -2086,7 +2086,7 @@ export default function ProductWorkspace({
           />
         ) : null}
 
-        {!orchestrationPending && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
+        {!orchestrationPending && !isFailedStatus && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}

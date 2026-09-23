@@ -134,7 +134,6 @@ describe("project requirement cross-stack contract", () => {
           }], total: 1, offset: 0, limit: 20,
         })}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={remove}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}

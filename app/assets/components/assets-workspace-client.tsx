@@ -3487,12 +3487,6 @@ export default function AssetsWorkspaceClient({
         summary={projectResourceSummary}
         loadResources={loadSelectedProjectResources}
         onClose={() => setProjectResourcesOpen(false)}
-        onAddSource={() => {
-          setLibraryTargetProjectId(selectedConversation.id);
-          setProjectResourcesOpen(false);
-          setActiveView("assets");
-          toast.info(`正在为项目「${selectedConversation.title}」添加素材。`);
-        }}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
         onPermanentDeleteSource={async (assetId) => {

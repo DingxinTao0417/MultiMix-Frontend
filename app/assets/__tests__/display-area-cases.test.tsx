@@ -422,6 +422,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("素材合成步骤失败，请重试");
     expect(screen.getByRole("button", { name: /重试生成/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("时间轴预览")).not.toBeInTheDocument();
   });
 
   it("makes the paid scene-only H3 retry explicit before dispatch", async () => {

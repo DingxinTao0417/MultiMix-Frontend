@@ -41,7 +41,6 @@ describe("ProjectResourcesDrawer", () => {
         summary={{ sources: 1, historicalSources: 0, copies: 1, covers: 0, videos: 0 }}
         loadResources={loadResources}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={vi.fn()}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
@@ -57,7 +56,6 @@ describe("ProjectResourcesDrawer", () => {
         summary={{ sources: 1, historicalSources: 0, copies: 1, covers: 0, videos: 0 }}
         loadResources={loadResources}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={vi.fn()}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
@@ -71,6 +69,29 @@ describe("ProjectResourcesDrawer", () => {
     await waitFor(() => expect(loadResources).toHaveBeenCalledWith("copy", "all", 0, 20));
   });
 
+  it("hides zero-count categories and keeps history as a secondary source view", async () => {
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="门店讲解视频"
+        summary={{ sources: 1, historicalSources: 2, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue(sourcePage)}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("本项目资料")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "素材 1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "文案 0" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "封面 0" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "视频 0" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "可用于后续生成" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "已移出 2" })).toBeInTheDocument();
+  });
+
   it("explains future-only removal before changing project membership", async () => {
     const loadResources = vi.fn().mockResolvedValue(sourcePage);
     const onRemoveSource = vi.fn().mockResolvedValue(undefined);
@@ -82,7 +103,6 @@ describe("ProjectResourcesDrawer", () => {
         summary={{ sources: 1, historicalSources: 0, copies: 0, covers: 0, videos: 0 }}
         loadResources={loadResources}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={onRemoveSource}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
@@ -114,7 +134,6 @@ describe("ProjectResourcesDrawer", () => {
         summary={{ sources: 1, historicalSources: 0, copies: 0, covers: 0, videos: 0 }}
         loadResources={vi.fn().mockResolvedValue(sourcePage)}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={vi.fn()}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}

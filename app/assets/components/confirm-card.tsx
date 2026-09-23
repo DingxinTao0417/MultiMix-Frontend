@@ -199,6 +199,7 @@ export default function ConfirmCard({
   const [bgmCatalog, setBgmCatalog] = useState<AssetPlanBgmCatalog | null>(null);
   const [bgmCatalogError, setBgmCatalogError] = useState(false);
   const isVideoParameterConfirmation = plan.kind === "video_parameter_confirmation";
+  const isVideoProjectConfirmation = plan.kind === "video_project_confirmation";
   const [selectedProductionId, setSelectedProductionId] = useState(plan.productionChoiceId);
   const productionOptions = plan.productionOptions ?? [];
   useEffect(() => {
@@ -277,6 +278,15 @@ export default function ConfirmCard({
         return true;
       })
     : currentFields;
+  const primaryFields = isVideoProjectConfirmation
+    ? pendingFields.filter((field) => field.key !== "creative_approach")
+    : pendingFields;
+  const productionDetailFields = isVideoProjectConfirmation
+    ? pendingFields.filter((field) => field.key === "creative_approach")
+    : [];
+  const selectedBgmTitle = bgmEnabled
+    ? bgmOptions.find((option) => option.id === selectedBgmId)?.title ?? "推荐配乐"
+    : "无配乐";
   const hasCleanupSelectionChanged = cleanupSelectionChanged(
     initialCleanupIds,
     selectedCleanupIds,
@@ -343,6 +353,63 @@ export default function ConfirmCard({
       </div>
     );
   };
+  const backgroundMusicSection = bgmOptions.length ? (
+    <section className="shadcn-prototype-confirm-bgm" aria-label="背景音乐">
+      <div className="shadcn-prototype-confirm-section-head">
+        <strong>背景音乐</strong>
+        <span>
+          {bgmOptions.some((option) => option.selectionMode === "semantic_structured")
+            ? "智能推荐 · 可试听"
+            : "自动推荐 · 可试听"}
+        </span>
+      </div>
+      <div className="shadcn-prototype-confirm-bgm-options" role="radiogroup" aria-label="背景音乐">
+        {bgmOptions.map((option) => {
+          const track = bgmCatalog?.tracks.find((item) => item.id === option.id);
+          return (
+            <label key={option.id} data-selected={bgmEnabled && selectedBgmId === option.id}>
+              <input
+                type="radio"
+                name={`confirmation-bgm-${plan.bgmCatalogVersion ?? "current"}`}
+                aria-label={option.title}
+                checked={bgmEnabled && selectedBgmId === option.id}
+                disabled={disabled}
+                onChange={() => {
+                  setBgmEnabled(true);
+                  setSelectedBgmId(option.id);
+                }}
+              />
+              <span>
+                <strong>{option.title}</strong>
+                <small>{option.reason}</small>
+              </span>
+              {track?.previewUrl ? (
+                <audio aria-label={`试听 ${option.title}`} controls preload="none" src={track.previewUrl} />
+              ) : null}
+            </label>
+          );
+        })}
+        <label data-selected={!bgmEnabled}>
+          <input
+            type="radio"
+            name={`confirmation-bgm-${plan.bgmCatalogVersion ?? "current"}`}
+            aria-label="无配乐"
+            checked={!bgmEnabled}
+            disabled={disabled}
+            onChange={() => setBgmEnabled(false)}
+          />
+          <span>
+            <strong>无配乐</strong>
+            <small>只保留配音、原声和必要音效</small>
+          </span>
+        </label>
+      </div>
+      {bgmCatalogError ? <p role="status">试听暂不可用，仍可确认当前选曲。</p> : null}
+    </section>
+  ) : null;
+  const hasProductionDetails = isVideoProjectConfirmation && Boolean(
+    productionDetailFields.length || plan.visualPreviews?.scenes.length || backgroundMusicSection,
+  );
 
   if (
     isImageGenerationConfirmation
@@ -403,8 +470,13 @@ export default function ConfirmCard({
         </span>
       </div>
       <div className="shadcn-prototype-confirm-fields">
-        <PlanFieldRows fields={pendingFields} />
+        <PlanFieldRows fields={primaryFields} />
       </div>
+      {isVideoProjectConfirmation && bgmOptions.length ? (
+        <p className="shadcn-prototype-confirm-delivery-summary">
+          已选：{selectedBgmTitle}<span>可在制作细节中调整</span>
+        </p>
+      ) : null}
       {isImageGenerationConfirmation && plan.preservationSummary ? (
         <section className="shadcn-prototype-confirm-preservation" aria-label="商品保真条件">
           <div className="shadcn-prototype-confirm-section-head">
@@ -427,60 +499,21 @@ export default function ConfirmCard({
           </div>
         </section>
       ) : null}
-      <VisualPreviewReview plan={plan} />
-      {bgmOptions.length ? (
-        <section className="shadcn-prototype-confirm-bgm" aria-label="背景音乐">
-          <div className="shadcn-prototype-confirm-section-head">
-            <strong>背景音乐</strong>
-            <span>
-              {bgmOptions.some((option) => option.selectionMode === "semantic_structured")
-                ? "智能推荐 · 可试听"
-                : "自动推荐 · 可试听"}
-            </span>
+      {!isVideoProjectConfirmation ? <VisualPreviewReview plan={plan} /> : null}
+      {!isVideoProjectConfirmation ? backgroundMusicSection : null}
+      {hasProductionDetails ? (
+        <details className="shadcn-prototype-confirm-production-details">
+          <summary>查看制作细节与预览</summary>
+          <div>
+            {productionDetailFields.length ? (
+              <div className="shadcn-prototype-confirm-production-detail-fields">
+                <PlanFieldRows fields={productionDetailFields} />
+              </div>
+            ) : null}
+            <VisualPreviewReview plan={plan} />
+            {backgroundMusicSection}
           </div>
-          <div className="shadcn-prototype-confirm-bgm-options" role="radiogroup" aria-label="背景音乐">
-            {bgmOptions.map((option) => {
-              const track = bgmCatalog?.tracks.find((item) => item.id === option.id);
-              return (
-                <label key={option.id} data-selected={bgmEnabled && selectedBgmId === option.id}>
-                  <input
-                    type="radio"
-                    name={`confirmation-bgm-${plan.bgmCatalogVersion ?? "current"}`}
-                    aria-label={option.title}
-                    checked={bgmEnabled && selectedBgmId === option.id}
-                    disabled={disabled}
-                    onChange={() => {
-                      setBgmEnabled(true);
-                      setSelectedBgmId(option.id);
-                    }}
-                  />
-                  <span>
-                    <strong>{option.title}</strong>
-                    <small>{option.reason}</small>
-                  </span>
-                  {track?.previewUrl ? (
-                    <audio aria-label={`试听 ${option.title}`} controls preload="none" src={track.previewUrl} />
-                  ) : null}
-                </label>
-              );
-            })}
-            <label data-selected={!bgmEnabled}>
-              <input
-                type="radio"
-                name={`confirmation-bgm-${plan.bgmCatalogVersion ?? "current"}`}
-                aria-label="无配乐"
-                checked={!bgmEnabled}
-                disabled={disabled}
-                onChange={() => setBgmEnabled(false)}
-              />
-              <span>
-                <strong>无配乐</strong>
-                <small>只保留配音、原声和必要音效</small>
-              </span>
-            </label>
-          </div>
-          {bgmCatalogError ? <p role="status">试听暂不可用，仍可确认当前选曲。</p> : null}
-        </section>
+        </details>
       ) : null}
       {cleanupItems.length ? (
         <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">

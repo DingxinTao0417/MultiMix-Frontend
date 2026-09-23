@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
-import { ArrowUp, ChevronRight, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
@@ -1187,7 +1187,6 @@ export default function ConversationStudio({
     ["封面", selectedConversation.projectResourceSummary?.covers ?? selectedConversation.projectResources?.covers.length ?? 0],
     ["视频", selectedConversation.projectResourceSummary?.videos ?? selectedConversation.projectResources?.videos.length ?? 0],
   ];
-  const visibleProjectResourceCounts = projectResourceCounts.filter(([, count]) => count > 0);
   const projectResourceTotal = projectResourceCounts.reduce((total, [, count]) => total + count, 0);
 
   return (
@@ -1206,24 +1205,24 @@ export default function ConversationStudio({
       <div className="shadcn-prototype-chat-context">
         <header className="shadcn-prototype-chat-head">
           <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-          {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
+          {projectResourceTotal > 0 || diagnosticsSlot ? (
+            <div className="shadcn-prototype-chat-head-actions">
+              {projectResourceTotal > 0 ? (
+                <button
+                  type="button"
+                  className="shadcn-prototype-project-resources"
+                  aria-label={`项目资料，共 ${projectResourceTotal} 项`}
+                  onClick={onOpenProjectResources}
+                >
+                  <FolderOpen size={15} aria-hidden="true" />
+                  <span>资料</span>
+                  <strong>{projectResourceTotal}</strong>
+                </button>
+              ) : null}
+              {diagnosticsSlot}
+            </div>
+          ) : null}
         </header>
-        {visibleProjectResourceCounts.length || onOpenProjectResources ? (
-          <button
-            type="button"
-            className="shadcn-prototype-project-resources"
-            aria-label="项目资源"
-            onClick={onOpenProjectResources}
-          >
-            <FolderOpen size={15} aria-hidden="true" />
-            <span>项目资源</span>
-            <strong>{projectResourceTotal}</strong>
-            {visibleProjectResourceCounts.map(([label, count]) => (
-              <em key={label}>{label} {count}</em>
-            ))}
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
-        ) : null}
         {inheritedRequirementNotice ? (
           <p className="shadcn-prototype-requirement-inherited" role="status">
             已继承上一项目的需求；这是一个独立项目，对话和产物从空白开始。

@@ -2,6 +2,7 @@
 
 :root {
   color-scheme: light;
+  --multimix-ui-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
   /* V3 agentic-workbench palette (spec: docs/specs/ui/agentic-workbench-design.md) */
   --background: #faf9f7;
   --rail: #201f1e;
@@ -78,8 +79,12 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font-family:
-    Aptos, "Aptos Display", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  font-family: var(--multimix-ui-font);
+  font-size: 14px;
+  line-height: 1.5;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
@@ -112,8 +117,8 @@ button:disabled {
   --sp-border: #eae7e1;
   --sp-border-strong: #ddd9d1;
   --sp-text: #201f1e;
-  --sp-subtle: #6e6a64;
-  --sp-faint: #746f68;
+  --sp-subtle: #625d56;
+  --sp-faint: #6f6a62;
   --sp-green: #0e8a6b;
   --sp-green-soft: #e7f4ef;
   --sp-green-line: #bfe3d5;
@@ -141,8 +146,9 @@ button:disabled {
   overflow: hidden;
   background: var(--sp-bg);
   color: var(--sp-text);
-  font-family:
-    Inter, Aptos, "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  font-family: var(--multimix-ui-font);
+  font-size: 14px;
+  font-synthesis: none;
   letter-spacing: 0;
   transition: grid-template-columns 180ms ease;
 }
@@ -1367,16 +1373,17 @@ button:disabled {
 
 .shadcn-prototype-start-capability {
   display: inline-flex;
-  height: 27px;
+  min-height: 28px;
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 0 10px;
+  padding: 4px 10px;
   border: 1px solid var(--sp-border);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.74);
   color: var(--sp-subtle);
-  font-size: var(--sp-text-meta);
+  font-size: 12.5px;
+  line-height: 1.3;
 }
 
 .shadcn-prototype-start-capability-help {
@@ -2064,8 +2071,8 @@ button:disabled {
   border-radius: 0;
   background: transparent;
   padding: 8px 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 15px;
+  line-height: 22px;
   overflow: hidden;
   box-shadow: none;
 }
@@ -3146,8 +3153,8 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   color: var(--sp-text);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3184,48 +3191,41 @@ button:disabled {
 }
 
 .shadcn-prototype-project-resources {
-  display: flex;
+  display: inline-flex;
   min-height: 30px;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  border: 0;
-  border-bottom: 1px solid var(--sp-border);
+  gap: 5px;
+  border: 1px solid var(--sp-border);
+  border-radius: 999px;
   background: #fcfbf9;
-  padding: 5px clamp(18px, 4vw, 30px);
-  color: #807a73;
-  font-size: 11px;
+  padding: 4px 9px;
+  color: #5f5952;
+  font-size: 11.5px;
   line-height: 1.3;
+  font-weight: 600;
   cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.shadcn-prototype-project-resources:hover {
+  border-color: var(--sp-accent-line);
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent);
 }
 
 .shadcn-prototype-project-resources > span {
-  color: #5d5750;
-  font-weight: 650;
+  white-space: nowrap;
 }
 
 .shadcn-prototype-project-resources > strong {
   display: inline-grid;
-  min-width: 19px;
-  height: 19px;
+  min-width: 17px;
+  height: 17px;
   place-items: center;
   border-radius: 999px;
-  background: var(--sp-text);
+  background: #686159;
   color: #fff;
-  font-size: 10px;
-}
-
-.shadcn-prototype-project-resources > svg:last-child {
-  margin-left: auto;
-}
-
-.shadcn-prototype-project-resources em {
-  border-radius: 999px;
-  background: #f1eee9;
-  padding: 2px 7px;
-  color: #6e6860;
-  font-style: normal;
-  white-space: nowrap;
+  font-size: 9.5px;
 }
 
 .shadcn-prototype-requirement-turn-text {
@@ -3310,12 +3310,12 @@ button:disabled {
 }
 
 .shadcn-prototype-project-resources-drawer {
-  width: min(420px, 100vw);
+  width: min(390px, 100vw);
   height: 100%;
   overflow: auto;
-  background: var(--sp-card);
-  box-shadow: -18px 0 50px rgba(32, 31, 30, 0.14);
-  padding: 18px;
+  background: #fffefd;
+  box-shadow: -20px 0 60px rgba(32, 31, 30, 0.16);
+  padding: 22px 18px 18px;
 }
 
 .shadcn-prototype-project-resources-head,
@@ -3332,7 +3332,7 @@ button:disabled {
 
 .shadcn-prototype-project-resources-head > div {
   display: grid;
-  gap: 3px;
+  gap: 5px;
 }
 
 .shadcn-prototype-project-resources-head span,
@@ -3341,9 +3341,22 @@ button:disabled {
   font-size: 12px;
 }
 
+.shadcn-prototype-project-resources-head strong {
+  color: var(--sp-text);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.shadcn-prototype-project-resources-head p {
+  margin: 0;
+  color: var(--sp-subtle);
+  font-size: 12px;
+}
+
 .shadcn-prototype-project-resources-tabs,
 .shadcn-prototype-project-resources-scope {
-  margin-top: 16px;
+  margin-top: 18px;
   justify-content: flex-start;
   flex-wrap: wrap;
 }
@@ -3354,18 +3367,30 @@ button:disabled {
 .shadcn-prototype-project-resources-pagination button,
 .shadcn-prototype-project-target-picker button,
 .shadcn-prototype-library-project-target button {
-  border: 1px solid var(--sp-border-strong);
-  border-radius: 9px;
-  background: var(--sp-card);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #f5f3f0;
   color: var(--sp-text);
-  padding: 7px 10px;
+  padding: 6px 9px;
+  font-size: 12px;
 }
 
 .shadcn-prototype-project-resources-tabs button[aria-pressed="true"],
 .shadcn-prototype-project-resources-scope button[aria-pressed="true"] {
-  border-color: var(--sp-accent-line);
+  border-color: #d9d0ff;
   background: var(--sp-accent-soft);
   color: var(--sp-accent);
+}
+
+.shadcn-prototype-project-resources-scope-caption,
+.shadcn-prototype-project-resources-empty {
+  margin: 17px 0 0;
+  border: 1px dashed var(--sp-border-strong);
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--sp-subtle);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .shadcn-prototype-project-resources-list,
@@ -3381,10 +3406,11 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border: 1px solid var(--sp-border);
-  border-radius: 11px;
-  padding: 10px;
+  border-radius: 12px;
+  background: #fff;
+  padding: 11px;
 }
 
 .shadcn-prototype-project-resource-identity {
@@ -3413,19 +3439,31 @@ button:disabled {
 .shadcn-prototype-project-resource-icon {
   display: grid;
   grid-row: 1 / 3;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   place-items: center;
-  border-radius: 9px;
-  background: var(--sp-muted);
+  border-radius: 10px;
+  background: #f1eee9;
   color: var(--sp-subtle);
+}
+
+.shadcn-prototype-project-resource-icon[data-kind="cover"],
+.shadcn-prototype-project-resource-icon[data-kind="video"] {
+  background: #eeeaff;
+  color: #6655b8;
+}
+
+.shadcn-prototype-project-resource-icon[data-kind="copy"] {
+  background: #eaf5f0;
+  color: #4c8b76;
 }
 
 .shadcn-prototype-project-resource-identity button {
   overflow: hidden;
   border: 0;
   padding: 0;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 600;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3444,6 +3482,49 @@ button:disabled {
   justify-content: flex-end;
   gap: 6px;
   flex-wrap: wrap;
+}
+
+.shadcn-prototype-project-resource-actions > button {
+  padding: 5px 7px;
+  color: var(--sp-subtle);
+  font-size: 11px;
+}
+
+.shadcn-prototype-project-resource-actions > button:last-of-type {
+  color: var(--sp-accent);
+}
+
+.shadcn-prototype-project-resource-more {
+  position: relative;
+}
+
+.shadcn-prototype-project-resource-more summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: #f5f3f0;
+  padding: 5px 7px;
+  color: var(--sp-subtle);
+  font-size: 11px;
+}
+
+.shadcn-prototype-project-resource-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.shadcn-prototype-project-resource-more[open] > button {
+  position: absolute;
+  right: 0;
+  z-index: 1;
+  width: max-content;
+  margin-top: 5px;
+  border: 1px solid var(--sp-danger-line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 7px 8px;
+  box-shadow: 0 7px 18px rgba(32, 31, 30, 0.12);
+  font-size: 11px;
 }
 
 .shadcn-prototype-project-source-permanent-delete {
@@ -9689,6 +9770,57 @@ label {
   padding: 13px 18px 15px;
 }
 
+.shadcn-prototype-confirm-delivery-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: -5px 18px 14px;
+  color: var(--sp-text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.shadcn-prototype-confirm-delivery-summary span {
+  color: var(--sp-faint);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.shadcn-prototype-confirm-production-details {
+  border-top: 1px solid var(--sp-border);
+}
+
+.shadcn-prototype-confirm-production-details > summary {
+  color: var(--sp-accent);
+  cursor: pointer;
+  list-style: none;
+  padding: 13px 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.shadcn-prototype-confirm-production-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.shadcn-prototype-confirm-production-details > summary::after {
+  content: "⌄";
+  float: right;
+  color: var(--sp-faint);
+}
+
+.shadcn-prototype-confirm-production-details[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.shadcn-prototype-confirm-production-details > div {
+  display: grid;
+}
+
+.shadcn-prototype-confirm-production-detail-fields {
+  padding: 0 18px 14px;
+}
+
 .shadcn-prototype-confirm-visual-review,
 .shadcn-prototype-confirm-bgm,
 .shadcn-prototype-confirm-preservation {
@@ -11247,6 +11379,7 @@ label {
 
 .agent-visual-refresh .shadcn-prototype-chat-head strong {
   font-size: 15px;
+  font-weight: 600;
   letter-spacing: -0.015em;
 }
 
@@ -11303,15 +11436,15 @@ label {
 .shadcn-prototype-assistant-message-meta > strong {
   color: #4a4640;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.015em;
 }
 
 .agent-visual-refresh .shadcn-prototype-thread article.assistant > p {
   max-width: 560px;
   color: #302d29;
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.65;
 }
 
 .agent-visual-refresh .shadcn-prototype-product-card-list,

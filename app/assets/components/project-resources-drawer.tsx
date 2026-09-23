@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { File, FileText, Image as ImageIcon, Plus, RefreshCw, Video, X } from "lucide-react";
+import { File, FileText, Image as ImageIcon, RefreshCw, Video, X } from "lucide-react";
 
 import ConfirmationDialog from "../../components/confirmation-dialog";
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
@@ -48,7 +48,6 @@ export default function ProjectResourcesDrawer({
   summary,
   loadResources,
   onClose,
-  onAddSource,
   onRemoveSource,
   onReaddSource,
   onOpenResource,
@@ -65,7 +64,6 @@ export default function ProjectResourcesDrawer({
     limit: number,
   ) => Promise<ProjectResourcePage>;
   onClose: () => void;
-  onAddSource: () => void;
   onRemoveSource: (assetId: number) => Promise<void>;
   onReaddSource: (assetId: number) => Promise<void>;
   onOpenResource: (item: ProjectResourceItem) => void;
@@ -86,8 +84,21 @@ export default function ProjectResourcesDrawer({
   const [reloadRevision, setReloadRevision] = useState(0);
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  const scope: ProjectResourceScope = kind === "source" ? sourceScope : "all";
+  const tabs: Array<{ kind: ProjectResourceKind; label: string; count: number }> = [
+    { kind: "source", label: "素材", count: summary.sources },
+    { kind: "copy", label: "文案", count: summary.copies },
+    { kind: "cover", label: "封面", count: summary.covers },
+    { kind: "video", label: "视频", count: summary.videos },
+  ];
+  const visibleTabs = tabs.filter((tab) => tab.count > 0);
+  const activeKind = visibleTabs.some((tab) => tab.kind === kind)
+    ? kind
+    : visibleTabs[0]?.kind ?? "source";
+  const activeSourceScope = sourceScope === "history" || summary.sources > 0
+    ? sourceScope
+    : "history";
+  const scope: ProjectResourceScope = activeKind === "source" ? activeSourceScope : "all";
+  const totalResources = tabs.reduce((total, tab) => total + tab.count, 0);
 
   useDialogFocusManagement({
     open: open && pendingConfirmation === null,
@@ -101,7 +112,7 @@ export default function ProjectResourcesDrawer({
     let cancelled = false;
     setLoading(true);
     setError("");
-    void loadResources(kind, scope, offset, PAGE_SIZE)
+    void loadResources(activeKind, scope, offset, PAGE_SIZE)
       .then((nextPage) => {
         if (!cancelled) setPage(nextPage);
       })
@@ -117,7 +128,7 @@ export default function ProjectResourcesDrawer({
     return () => {
       cancelled = true;
     };
-  }, [kind, loadResources, offset, open, reloadRevision, scope]);
+  }, [activeKind, loadResources, offset, open, reloadRevision, scope]);
 
   if (!open) return null;
 
@@ -180,13 +191,6 @@ export default function ProjectResourcesDrawer({
     return <File size={18} aria-hidden="true" />;
   };
 
-  const tabs: Array<{ kind: ProjectResourceKind; label: string; count: number }> = [
-    { kind: "source", label: "素材", count: summary.sources + summary.historicalSources },
-    { kind: "copy", label: "文案", count: summary.copies },
-    { kind: "cover", label: "封面", count: summary.covers },
-    { kind: "video", label: "视频", count: summary.videos },
-  ];
-
   return (
     <>
       <div className="shadcn-prototype-project-resources-mask" role="presentation" onClick={onClose}>
@@ -198,23 +202,23 @@ export default function ProjectResourcesDrawer({
         aria-label={`${projectTitle}的项目资源`}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
-      >
+        >
         <header className="shadcn-prototype-project-resources-head">
           <div>
-            <strong>项目资源</strong>
-            <span>{projectTitle}</span>
+            <strong>本项目资料 <span>· {totalResources}</span></strong>
+            <p>会用于后续对话与生成</p>
           </div>
           <button ref={closeButtonRef} type="button" aria-label="关闭项目资源" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </button>
         </header>
 
-        <nav className="shadcn-prototype-project-resources-tabs" aria-label="项目资源分类">
-          {tabs.map((tab) => (
+        <nav className="shadcn-prototype-project-resources-tabs" aria-label="项目资料分类">
+          {visibleTabs.map((tab) => (
             <button
               type="button"
               key={tab.kind}
-              aria-pressed={kind === tab.kind}
+              aria-pressed={activeKind === tab.kind}
               onClick={() => selectKind(tab.kind)}
             >
               {tab.label} {tab.count}
@@ -222,26 +226,27 @@ export default function ProjectResourcesDrawer({
           ))}
         </nav>
 
-        {kind === "source" ? (
+        {activeKind === "source" && summary.sources > 0 && summary.historicalSources > 0 ? (
           <div className="shadcn-prototype-project-resources-scope" aria-label="素材使用状态">
             <button
               type="button"
-              aria-pressed={sourceScope === "active"}
+              aria-pressed={activeSourceScope === "active"}
               onClick={() => { setSourceScope("active"); setOffset(0); setPage(null); }}
             >
-              当前使用 {summary.sources}
+              可用于后续生成
             </button>
             <button
               type="button"
-              aria-pressed={sourceScope === "history"}
+              aria-pressed={activeSourceScope === "history"}
               onClick={() => { setSourceScope("history"); setOffset(0); setPage(null); }}
             >
-              历史使用 {summary.historicalSources}
-            </button>
-            <button type="button" onClick={onAddSource}>
-              <Plus size={14} aria-hidden="true" />添加素材
+              已移出 {summary.historicalSources}
             </button>
           </div>
+        ) : null}
+
+        {activeKind === "source" && summary.historicalSources > 0 && summary.sources === 0 ? (
+          <p className="shadcn-prototype-project-resources-scope-caption">已移出项目的资料仍保留历史引用，可随时重新加入。</p>
         ) : null}
 
         {loading ? <p role="status">项目资源加载中…</p> : null}
@@ -255,7 +260,9 @@ export default function ProjectResourcesDrawer({
         ) : null}
 
         {!loading && !error && page?.items.length === 0 ? (
-          <p>{kind === "source" && sourceScope === "history" ? "还没有历史使用素材。" : "这一类资源还没有内容。"}</p>
+          <p className="shadcn-prototype-project-resources-empty">
+            {activeKind === "source" && activeSourceScope === "history" ? "还没有已移出的资料。" : "这里还没有资料。"}
+          </p>
         ) : null}
 
         {!loading && page?.items.length ? (
@@ -263,7 +270,7 @@ export default function ProjectResourcesDrawer({
             {page.items.map((item) => (
               <li key={`${item.kind}-${item.id}`}>
                 <div className="shadcn-prototype-project-resource-identity">
-                  <span className="shadcn-prototype-project-resource-icon">{resourceIcon(item)}</span>
+                    <span className="shadcn-prototype-project-resource-icon" data-kind={item.kind}>{resourceIcon(item)}</span>
                   <button type="button" onClick={() => onOpenResource(item)}>{item.title}</button>
                   <small>
                     {item.membershipState === "removed" ? "历史使用" : item.status === "ready" ? "可使用" : item.status}
@@ -292,14 +299,17 @@ export default function ProjectResourcesDrawer({
                           : "重新加入项目"}
                     </button>
                     {onPermanentDeleteSource ? (
-                      <button
-                        type="button"
-                        className="shadcn-prototype-project-source-permanent-delete"
-                        disabled={pendingAssetId === item.id}
-                        onClick={() => void permanentlyDelete(item)}
-                      >
-                        永久删除源文件
-                      </button>
+                      <details className="shadcn-prototype-project-resource-more">
+                        <summary>更多</summary>
+                        <button
+                          type="button"
+                          className="shadcn-prototype-project-source-permanent-delete"
+                          disabled={pendingAssetId === item.id}
+                          onClick={() => void permanentlyDelete(item)}
+                        >
+                          永久删除源文件
+                        </button>
+                      </details>
                     ) : null}
                     </>
                   ) : (

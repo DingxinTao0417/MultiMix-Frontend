@@ -1451,7 +1451,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain('placeholder="搜索项目"');
     expect(workspaceClient).toContain("没有找到匹配项目");
     expect(conversationStudio).toContain("FolderOpen");
-    expect(conversationStudio).toContain("ChevronRight");
+    expect(conversationStudio).toContain("项目资料，共");
   });
 
   it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {
@@ -1521,7 +1521,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-chat-attachment-tray");
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
     expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
-    expect(conversationStudio).toContain("添加视频后可直接发送，再选择是否识别分镜");
+    expect(conversationStudio).toContain("添加视频后可直接发送，再选择是否先整理成片段");
     expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
     expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");

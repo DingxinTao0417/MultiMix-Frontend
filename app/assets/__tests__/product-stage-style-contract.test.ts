@@ -77,6 +77,13 @@ describe("product stage style contract", () => {
     expect(css).toMatch(/\.shadcn-prototype-confirm-card\.confirmed\s*\{[^}]*border:\s*1px solid var\(--sp-border\);[^}]*background:\s*var\(--sp-card\);/s);
   });
 
+  test("uses one non-synthesized system font stack for Chinese and Latin workspace copy", () => {
+    expect(css).toContain('--multimix-ui-font: -apple-system, BlinkMacSystemFont, "PingFang SC"');
+    expect(css).toMatch(/html,\s*body\s*\{[^}]*font-family:\s*var\(--multimix-ui-font\);[^}]*font-synthesis:\s*none;/s);
+    expect(css).toMatch(/\.shadcn-prototype-shell\s*\{[^}]*font-family:\s*var\(--multimix-ui-font\);[^}]*font-synthesis:\s*none;/s);
+    expect(css).not.toContain('Inter, Aptos');
+  });
+
   test("keeps the video preview in the current natural-scroll browse layout", () => {
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*overflow:\s*visible;/s);
     expect(css).toMatch(/\.shadcn-prototype-video-browse\s*>\s*\.shadcn-prototype-product-video\s*\{[^}]*flex:\s*0 0 auto;/s);

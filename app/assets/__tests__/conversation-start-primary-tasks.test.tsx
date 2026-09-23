@@ -9,7 +9,7 @@ import ConversationStart from "../components/conversation-start";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 
 describe("ConversationStart primary video tasks", () => {
-  it("shows four goals, idea/image/video starts and six composable capabilities", () => {
+  it("shows four goals, idea/image/video starts and five composable capability groups", () => {
     const onSend = vi.fn(async () => undefined);
     render(
       <ConversationStart
@@ -21,7 +21,7 @@ describe("ConversationStart primary video tasks", () => {
 
     expect(screen.getByRole("heading", { name: "新建视频项目" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "可组合的视频制作能力" })).toHaveTextContent(
-      "我的素材AI 生成镜头公开素材图形动画口播优化配音与音乐",
+      "我的素材AI 生成镜头公开素材字幕、图文与图形动画原片优化、配音与音乐",
     );
     expect(screen.getAllByTestId("conversation-start-goal")).toHaveLength(4);
     expect(screen.getByRole("button", { name: /讲清楚/ })).toHaveTextContent("概念、过程或结果");
