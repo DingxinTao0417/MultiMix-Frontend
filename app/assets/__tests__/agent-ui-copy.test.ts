@@ -1347,7 +1347,7 @@ describe("agent conversation UI copy", () => {
     const productWorkspace = readAssetFile("app/assets/components/product-workspace.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
-    expect(productWorkspace).toContain("继续左侧对话");
+    expect(productWorkspace).toContain("先在左侧说说想做什么，或加入资料。");
     expect(productWorkspace).not.toContain("明确要文案、图片或视频后");
     expect(workspaceClient).not.toContain("短视频脚本");
     expect(workspaceClient).not.toContain("图片提示词");

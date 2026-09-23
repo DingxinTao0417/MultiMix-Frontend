@@ -28,17 +28,18 @@ describe("compact video progress card", () => {
     expect(screen.getByText("准备画面")).toBeTruthy();
     expect(screen.getByText("制作视频")).toBeTruthy();
   });
-  it("does not force expansion on failure or retry", () => {
+  it("opens the failed step when a task fails, then keeps it open while retrying", () => {
     const { rerender } = render(<Card {...running} />);
     rerender(<Card {...running} status="failed" errorMessage="配音生成失败，可以重试。" />);
-    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getByRole("list")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "收起失败步骤" }).getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("配音生成失败，可以重试。")).toBeTruthy();
     rerender(<Card {...running} status="queued" />);
-    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getByRole("list")).toBeTruthy();
   });
   it("preserves an open panel while retrying", () => {
     const { rerender } = render(<Card {...running} status="failed" />);
-    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
+    expect(screen.getByRole("button", { name: "收起失败步骤" })).toBeTruthy();
     rerender(<Card {...running} status="queued" />);
     expect(screen.getByRole("list")).toBeTruthy();
   });
@@ -56,9 +57,10 @@ describe("compact video progress card", () => {
     const retry = vi.fn();
     render(<Card {...running} status="failed"
       actions={<button onClick={() => retry("child-1")}>重试</button>} />);
+    expect(screen.getByRole("list")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(retry).toHaveBeenCalledExactlyOnceWith("child-1");
-    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getByRole("list")).toBeTruthy();
   });
   it("does not invent a retry or stop action", () => {
     render(<Card {...running} status="failed" />);

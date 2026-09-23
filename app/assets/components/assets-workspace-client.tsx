@@ -3296,23 +3296,26 @@ export default function AssetsWorkspaceClient({
             : undefined}
         >
           {isNewConversation ? (
-            <ConversationStart
-              suggestions={selectedConversation.suggestions ?? []}
-              conversation={selectedConversation}
-              accountName={accountName}
-              imageAttachments={currentChatImageUploads}
-              onUploadImages={handleChatImageUpload}
-              onRemoveImageAttachment={handleRemoveChatImage}
-              onRetryImageAttachment={handleRetryChatImage}
-              onImportVideoUrl={handleImportVideoUrl}
-              onSend={handleSendConversationMessage}
-              creativeProfileVisible={creativeProfileVisible}
-              ignoreProfile={newConversationIgnoreProfile}
-              onIgnoreProfileChange={setNewConversationIgnoreProfile}
-              token={token}
-              writeCapabilities={runtimeWriteCapabilities}
-              onRetryWriteAvailability={handleRetryWriteAvailability}
-            />
+            <>
+              <ConversationStart
+                suggestions={selectedConversation.suggestions ?? []}
+                conversation={selectedConversation}
+                accountName={accountName}
+                imageAttachments={currentChatImageUploads}
+                onUploadImages={handleChatImageUpload}
+                onRemoveImageAttachment={handleRemoveChatImage}
+                onRetryImageAttachment={handleRetryChatImage}
+                onImportVideoUrl={handleImportVideoUrl}
+                onSend={handleSendConversationMessage}
+                creativeProfileVisible={creativeProfileVisible}
+                ignoreProfile={newConversationIgnoreProfile}
+                onIgnoreProfileChange={setNewConversationIgnoreProfile}
+                token={token}
+                writeCapabilities={runtimeWriteCapabilities}
+                onRetryWriteAvailability={handleRetryWriteAvailability}
+              />
+              <EmptyProductWorkspace />
+            </>
           ) : activeView === "conversation" ? (
             <>
               <ConversationStudio

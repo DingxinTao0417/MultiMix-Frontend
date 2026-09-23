@@ -137,9 +137,27 @@ async function expectApprovedVideoPreviewShell(
   await resizeProductPaneAndExpectRatio(page, screen, expectedRatio);
 }
 
-test("CASE-01 shows a director draft without project controls", async ({ page }) => {
+test("new conversation shows a non-interactive creative start in the display area", async ({ page }) => {
+  await page.goto("/app/assets?conversation=new");
+
+  const start = page.getByRole("region", { name: "创作起点" });
+  await expect(start).toBeVisible();
+  await expect(start.getByRole("heading", { name: "你的作品会在这里逐步成形" })).toBeVisible();
+  const steps = start.getByRole("list", { name: "作品形成路径" });
+  await expect(steps).toContainText("明确目标");
+  await expect(steps).toContainText("形成编导方案");
+  await expect(steps).toContainText("生成可编辑视频");
+  await expect(start.getByText("先在左侧说说想做什么，或加入资料。", { exact: true })).toBeVisible();
+  await expect(start.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
+  await captureDesktopEvidence(page, "creative-start");
+});
+
+test("CASE-01 shows a director draft with its bound video-plan confirmation", async ({ page }) => {
   const workspace = await openCase(page, "case-01-director-draft");
   await expect(workspace.locator("article.shadcn-prototype-copy-document")).toBeVisible();
+  await expect(page.getByText("确认视频方案", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认生成视频工程" })).toBeVisible();
   await expect(workspace.getByLabel("视频预览")).toHaveCount(0);
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);

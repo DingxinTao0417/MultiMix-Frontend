@@ -163,19 +163,32 @@ export function findLongFormCandidateProduct(
 
 export function EmptyProductWorkspace() {
   return (
-    <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Empty product workspace">
+    <section
+      className="shadcn-prototype-card shadcn-prototype-artifact shadcn-prototype-empty-product-workspace"
+      aria-label="创作起点"
+    >
       <div className="shadcn-prototype-product">
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3>创作结果</h3>
-            <p>还没有生成产物</p>
+            <h3>你的作品会在这里逐步成形</h3>
+            <p>从一句需求到可编辑的视频，过程始终在这里可见。</p>
           </div>
         </header>
         <div className="shadcn-prototype-product-main">
-          <div className="shadcn-prototype-product-preview">
-            <div>
-              <strong>继续左侧对话</strong>
-              <span>产物生成后会自动显示在这里，你可以继续编辑、保存或导出。</span>
+          <div className="shadcn-prototype-product-preview shadcn-prototype-empty-product-preview">
+            <div className="shadcn-prototype-empty-product-shell">
+              <div className="shadcn-prototype-empty-product-canvas" data-testid="empty-product-storyboard" aria-hidden="true">
+                <span className="frame frame-one" />
+                <span className="frame frame-two" />
+                <span className="frame frame-three" />
+                <span className="timeline"><i /><i /><i /><i /></span>
+              </div>
+              <ol className="shadcn-prototype-empty-product-steps" aria-label="作品形成路径">
+                <li><span>01</span><strong>明确目标</strong><small>说清想做什么</small></li>
+                <li><span>02</span><strong>形成编导方案</strong><small>一起确定内容与画面</small></li>
+                <li><span>03</span><strong>生成可编辑视频</strong><small>继续调整并导出</small></li>
+              </ol>
+              <p className="shadcn-prototype-empty-product-hint">先在左侧说说想做什么，或加入资料。</p>
             </div>
           </div>
         </div>

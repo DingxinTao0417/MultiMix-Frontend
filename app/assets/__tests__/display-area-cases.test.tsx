@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProductPreview, { browseBgmSummary } from "../components/product-preview";
-import ProductWorkspace from "../components/product-workspace";
+import ProductWorkspace, { EmptyProductWorkspace } from "../components/product-workspace";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import * as brandImageExport from "../lib/brand-image-export";
@@ -65,6 +65,21 @@ function chooseVideoExport(variant: "原始成片" | "品牌展示版" = "原始
 }
 
 describe("display-area eight-case matrix", () => {
+  it("uses a static creative start before a conversation has a real product", () => {
+    render(<EmptyProductWorkspace />);
+
+    const start = screen.getByRole("region", { name: "创作起点" });
+    expect(start).toHaveTextContent("你的作品会在这里逐步成形");
+    const steps = screen.getByRole("list", { name: "作品形成路径" });
+    expect(steps).toHaveTextContent("明确目标");
+    expect(steps).toHaveTextContent("形成编导方案");
+    expect(steps).toHaveTextContent("生成可编辑视频");
+    expect(screen.getByTestId("empty-product-storyboard")).toHaveAttribute("aria-hidden", "true");
+    expect(start).toHaveTextContent("先在左侧说说想做什么，或加入资料。");
+    expect(start.querySelectorAll("button")).toHaveLength(0);
+    expect(screen.queryByText("还没有生成产物")).not.toBeInTheDocument();
+  });
+
   it("renders a director script as continuous text without video chrome", () => {
     render(<ProductPreview product={{
       ...displayProducts["case-01-director-draft"],

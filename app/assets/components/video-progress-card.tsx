@@ -29,9 +29,18 @@ export type VideoProgressCardProps = VideoProgressInput & {
 
 export function VideoProgressCard({ errorMessage, actions, completionLabel, ...input }: VideoProgressCardProps) {
   const presentation = videoProgressPresentation(input);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(input.status === "failed");
   const collapsedOnSuccess = useRef(false);
+  const previousStatus = useRef(input.status);
   const detailsId = useId();
+
+  useEffect(() => {
+    if (input.status === "failed" && previousStatus.current !== "failed") {
+      setExpanded(true);
+    }
+    previousStatus.current = input.status;
+  }, [input.status]);
+
   useEffect(() => {
     if (presentation.completed && !collapsedOnSuccess.current) {
       collapsedOnSuccess.current = true;
@@ -41,16 +50,17 @@ export function VideoProgressCard({ errorMessage, actions, completionLabel, ...i
 
   const description = input.status === "failed" && errorMessage?.trim()
     ? errorMessage.trim() : presentation.description;
+  const detailLabel = input.status === "failed" ? "失败步骤" : "进度详情";
   const toggle = presentation.milestones.length ? (
     <button
       type="button"
       className="shadcn-prototype-video-task-progress-toggle"
-      aria-label={expanded ? "收起进度详情" : "查看进度详情"}
+      aria-label={expanded ? `收起${detailLabel}` : `查看${detailLabel}`}
       aria-expanded={expanded}
       aria-controls={detailsId}
       onClick={() => setExpanded((current) => !current)}
     >
-      {!presentation.completed ? (expanded ? "收起进度详情" : "查看进度详情") : null}
+      {!presentation.completed ? (expanded ? `收起${detailLabel}` : `查看${detailLabel}`) : null}
       <ChevronDown
         className={expanded ? "shadcn-prototype-agent-run-chevron expanded" : "shadcn-prototype-agent-run-chevron"}
         size={15}
