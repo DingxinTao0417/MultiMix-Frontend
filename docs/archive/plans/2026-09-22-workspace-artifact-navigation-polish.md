@@ -1,8 +1,8 @@
 # 工作台产物导航与展示区收敛
 
-> Status: active-plan
+> Status: completed
 > Owner: frontend
-> Last verified: 2026-09-22
+> Last verified: 2026-09-23
 
 ## 背景与根因
 
@@ -41,3 +41,9 @@
 - 单元测试：创意方向只在聊天内显示，应用回调携带原 ID 和 fingerprint，右侧不重复显示。
 - 样式/静态测试：产物卡文字与缩略位布局不被助手文本样式覆盖；桌面外层仍为视口边界。
 - 运行 `npm run test -- creative-direction-selector`、相关展示区测试、`npm run docs:check`、`npm run lint`、`npm run typecheck`；必要时运行浏览器截图/E2E 验证桌面滚动边界和缩略图回退。
+
+## 实施结果（2026-09-23）
+
+- 已在 `4f92a53 fix: polish workspace artifact navigation` 完成：创意方向迁移到对应助手消息、右侧展示区移除重复选择器、产物卡使用真实预览并保持正式图标降级、桌面滚动边界收敛。
+- 已同步工作台设计文档、视频/文案原型和创意方向位置测试。
+- 复核通过：`npm run test -- creative-direction-selector`（7/7）、`npm run typecheck`、`npm run lint`、`npm run docs:check`。
