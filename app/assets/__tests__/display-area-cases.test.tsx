@@ -2,12 +2,13 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProductPreview, { browseBgmSummary } from "../components/product-preview";
 import ProductWorkspace, { EmptyProductWorkspace } from "../components/product-workspace";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { resolveConversationEmptyDisplayTutorialStage } from "../lib/conversation-empty-display-tutorial";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import * as brandImageExport from "../lib/brand-image-export";
 import type { VideoQualityReport } from "../lib/video-quality";
@@ -78,6 +79,25 @@ describe("display-area eight-case matrix", () => {
     expect(start).toHaveTextContent("先在左侧说说想做什么，或加入资料。");
     expect(start.querySelectorAll("button")).toHaveLength(0);
     expect(screen.queryByText("还没有生成产物")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [{ hasPendingConfirmation: false, hasExplicitMaterials: false }, "brief", "先说清给谁看、想达到什么效果；不用先写完整脚本。", "明确目标"],
+    [{ hasPendingConfirmation: false, hasExplicitMaterials: true }, "materials", "资料不用先整理；它会优先作为内容和画面依据。", "明确目标"],
+    [{ hasPendingConfirmation: true, hasExplicitMaterials: true }, "confirmation", "先确认关键选择再生成，能减少后续返工。", "形成编导方案"],
+  ] as const)("shows a single conversation tutorial for %s", (input, stage, guidance, activeStep) => {
+    expect(resolveConversationEmptyDisplayTutorialStage(input)).toBe(stage);
+    render(<EmptyProductWorkspace variant="conversation" tutorialStage={stage} />);
+
+    const tutorial = screen.getByRole("region", { name: "对话创作提示" });
+    const tutorialQueries = within(tutorial);
+    expect(tutorial).toHaveTextContent("对话会在这里变成作品");
+    expect(tutorialQueries.getByText(guidance, { exact: true })).toBeInTheDocument();
+    expect(within(tutorialQueries.getByRole("list", { name: "创作路径" })).getByText(activeStep, { exact: true }).closest("li")).toHaveAttribute("aria-current", "step");
+    expect(tutorial.querySelectorAll("button")).toHaveLength(0);
+    expect(tutorial).not.toHaveTextContent("当前目标");
+    expect(tutorial).not.toHaveTextContent("已加入资料");
+    expect(tutorial).not.toHaveTextContent("待确认事项");
   });
 
   it("renders a director script as continuous text without video chrome", () => {

@@ -77,6 +77,7 @@ import {
   type ProductArtifact
 } from "../lib/asset-workspace-shared";
 import dynamic from "next/dynamic";
+import { resolveConversationEmptyDisplayTutorialStage } from "../lib/conversation-empty-display-tutorial";
 import ConversationStart from "./conversation-start";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import type {
@@ -879,6 +880,14 @@ export default function AssetsWorkspaceClient({
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
+  const conversationEmptyDisplayTutorialStage = resolveConversationEmptyDisplayTutorialStage({
+    hasPendingConfirmation: (selectedConversation.messages ?? []).some((message) => (
+      message.role === "assistant"
+      && message.plan != null
+      && ["pending", "awaiting_confirmation", "awaiting_selection"].includes(message.plan.status)
+    )),
+    hasExplicitMaterials: currentContextAssets.length > 0 || currentChatImageUploads.length > 0,
+  });
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
@@ -3314,7 +3323,7 @@ export default function AssetsWorkspaceClient({
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
               />
-              <EmptyProductWorkspace />
+              <EmptyProductWorkspace variant="start" />
             </>
           ) : activeView === "conversation" ? (
             <>
@@ -3458,7 +3467,10 @@ export default function AssetsWorkspaceClient({
                   videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
                 />
               ) : (
-                <EmptyProductWorkspace />
+                <EmptyProductWorkspace
+                  variant="conversation"
+                  tutorialStage={conversationEmptyDisplayTutorialStage}
+                />
               )}
             </>
           ) : (

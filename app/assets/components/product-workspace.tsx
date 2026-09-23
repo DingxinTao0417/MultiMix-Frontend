@@ -44,6 +44,10 @@ import {
   type ExportVariant,
 } from "../../../lib/brand-showcase";
 import { createBrandedImageBlob } from "../lib/brand-image-export";
+import {
+  conversationEmptyDisplayTutorial,
+  type ConversationEmptyDisplayTutorialStage,
+} from "../lib/conversation-empty-display-tutorial";
 
 type EditorBridgeMessage = {
   source?: string;
@@ -161,34 +165,51 @@ export function findLongFormCandidateProduct(
   return candidates.at(-1) ?? uniqueMessageReferencedCandidate;
 }
 
-export function EmptyProductWorkspace() {
+export function EmptyProductWorkspace({
+  variant = "start",
+  tutorialStage = "brief",
+}: {
+  variant?: "start" | "conversation";
+  tutorialStage?: ConversationEmptyDisplayTutorialStage;
+} = {}) {
+  const isConversationTutorial = variant === "conversation";
+  const tutorial = conversationEmptyDisplayTutorial(tutorialStage);
+  const pathLabel = isConversationTutorial ? "创作路径" : "作品形成路径";
   return (
     <section
-      className="shadcn-prototype-card shadcn-prototype-artifact shadcn-prototype-empty-product-workspace"
-      aria-label="创作起点"
+      className={
+        isConversationTutorial
+          ? "shadcn-prototype-card shadcn-prototype-artifact shadcn-prototype-empty-product-workspace conversation-tutorial"
+          : "shadcn-prototype-card shadcn-prototype-artifact shadcn-prototype-empty-product-workspace"
+      }
+      aria-label={isConversationTutorial ? "对话创作提示" : "创作起点"}
     >
       <div className="shadcn-prototype-product">
         <header className="shadcn-prototype-product-header">
           <div>
-            <h3>你的作品会在这里逐步成形</h3>
-            <p>从一句需求到可编辑的视频，过程始终在这里可见。</p>
+            <h3>{isConversationTutorial ? "对话会在这里变成作品" : "你的作品会在这里逐步成形"}</h3>
+            <p>{isConversationTutorial ? "还没有可展示的结果时，用三步了解创作如何推进。" : "从一句需求到可编辑的视频，过程始终在这里可见。"}</p>
           </div>
         </header>
         <div className="shadcn-prototype-product-main">
-          <div className="shadcn-prototype-product-preview shadcn-prototype-empty-product-preview">
-            <div className="shadcn-prototype-empty-product-shell">
+          <div className={isConversationTutorial ? "shadcn-prototype-product-preview shadcn-prototype-empty-product-preview conversation-tutorial" : "shadcn-prototype-product-preview shadcn-prototype-empty-product-preview"}>
+            <div className={isConversationTutorial ? "shadcn-prototype-empty-product-shell conversation-tutorial" : "shadcn-prototype-empty-product-shell"}>
               <div className="shadcn-prototype-empty-product-canvas" data-testid="empty-product-storyboard" aria-hidden="true">
                 <span className="frame frame-one" />
                 <span className="frame frame-two" />
                 <span className="frame frame-three" />
                 <span className="timeline"><i /><i /><i /><i /></span>
               </div>
-              <ol className="shadcn-prototype-empty-product-steps" aria-label="作品形成路径">
-                <li><span>01</span><strong>明确目标</strong><small>说清想做什么</small></li>
-                <li><span>02</span><strong>形成编导方案</strong><small>一起确定内容与画面</small></li>
+              <ol className="shadcn-prototype-empty-product-steps" aria-label={pathLabel}>
+                <li className={!isConversationTutorial || tutorial.activeStep === 0 ? "active" : undefined} aria-current={isConversationTutorial && tutorial.activeStep === 0 ? "step" : undefined}><span>01</span><strong>明确目标</strong><small>说清想做什么</small></li>
+                <li className={!isConversationTutorial || tutorial.activeStep === 1 ? "active" : undefined} aria-current={isConversationTutorial && tutorial.activeStep === 1 ? "step" : undefined}><span>02</span><strong>形成编导方案</strong><small>一起确定内容与画面</small></li>
                 <li><span>03</span><strong>生成可编辑视频</strong><small>继续调整并导出</small></li>
               </ol>
-              <p className="shadcn-prototype-empty-product-hint">先在左侧说说想做什么，或加入资料。</p>
+              {isConversationTutorial ? (
+                <p className="shadcn-prototype-empty-product-tutorial-hint"><span>本轮提示</span>{tutorial.guidance}</p>
+              ) : (
+                <p className="shadcn-prototype-empty-product-hint">先在左侧说说想做什么，或加入资料。</p>
+              )}
             </div>
           </div>
         </div>

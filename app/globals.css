@@ -4251,6 +4251,16 @@ button:disabled {
   text-align: center;
 }
 
+.shadcn-prototype-empty-product-shell.conversation-tutorial {
+  width: min(100%, 470px);
+  gap: 18px;
+}
+
+.shadcn-prototype-empty-product-workspace.conversation-tutorial .shadcn-prototype-empty-product-canvas {
+  min-height: 106px;
+  opacity: 0.9;
+}
+
 .shadcn-prototype-empty-product-canvas {
   position: relative;
   display: grid;
@@ -4319,6 +4329,15 @@ button:disabled {
   color: #6e6a64;
 }
 
+.shadcn-prototype-empty-product-workspace.conversation-tutorial .shadcn-prototype-empty-product-steps li:not(.active) {
+  opacity: 0.54;
+}
+
+.shadcn-prototype-empty-product-workspace.conversation-tutorial .shadcn-prototype-empty-product-steps li.active strong,
+.shadcn-prototype-empty-product-workspace.conversation-tutorial .shadcn-prototype-empty-product-steps li.active span {
+  color: var(--sp-accent);
+}
+
 .shadcn-prototype-empty-product-steps span {
   color: #9b958e;
   font-size: 11px;
@@ -4342,6 +4361,24 @@ button:disabled {
   color: #6e6a64;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.shadcn-prototype-empty-product-tutorial-hint {
+  margin: 0;
+  border-top: 1px solid #eae7e1;
+  color: #4d4944;
+  padding-top: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.shadcn-prototype-empty-product-tutorial-hint span {
+  display: block;
+  margin-bottom: 3px;
+  color: #8d877f;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 @media (max-width: 520px) {
