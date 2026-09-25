@@ -77,7 +77,6 @@ import {
   type ProductArtifact
 } from "../lib/asset-workspace-shared";
 import dynamic from "next/dynamic";
-import { resolveConversationEmptyDisplayTutorialStage } from "../lib/conversation-empty-display-tutorial";
 import ConversationStart from "./conversation-start";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import type {
@@ -138,10 +137,6 @@ import {
 // initial bundle; only the active view's chunk is fetched. Auth gating already
 // makes this subtree client-only, so ssr: false loses nothing.
 const ProductWorkspace = dynamic(() => import("./product-workspace"), { ssr: false, loading: () => null });
-const EmptyProductWorkspace = dynamic(
-  () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
-  { ssr: false, loading: () => null }
-);
 
 const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="素材库" /> });
 
@@ -880,14 +875,7 @@ export default function AssetsWorkspaceClient({
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
-  const conversationEmptyDisplayTutorialStage = resolveConversationEmptyDisplayTutorialStage({
-    hasPendingConfirmation: (selectedConversation.messages ?? []).some((message) => (
-      message.role === "assistant"
-      && message.plan != null
-      && ["pending", "awaiting_confirmation", "awaiting_selection"].includes(message.plan.status)
-    )),
-    hasExplicitMaterials: currentContextAssets.length > 0 || currentChatImageUploads.length > 0,
-  });
+  const hasProductStage = activeView === "conversation" && selectedProduct !== null;
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
@@ -3294,37 +3282,34 @@ export default function AssetsWorkspaceClient({
         <div
           ref={workspaceRef}
           className={
-            isNewConversation
-              ? "shadcn-prototype-workspace empty-mode"
-              : activeView === "conversation"
+            activeView === "conversation"
+              ? hasProductStage
                 ? "shadcn-prototype-workspace conversation-mode"
+                : "shadcn-prototype-workspace conversation-only-mode"
                 : "shadcn-prototype-workspace workshop-mode"
           }
-          style={!isNewConversation && activeView === "conversation"
+          style={hasProductStage
             ? { "--chat-panel-width": `${chatPanelWidth}px` } as CSSProperties
             : undefined}
         >
           {isNewConversation ? (
-            <>
-              <ConversationStart
-                suggestions={selectedConversation.suggestions ?? []}
-                conversation={selectedConversation}
-                accountName={accountName}
-                imageAttachments={currentChatImageUploads}
-                onUploadImages={handleChatImageUpload}
-                onRemoveImageAttachment={handleRemoveChatImage}
-                onRetryImageAttachment={handleRetryChatImage}
-                onImportVideoUrl={handleImportVideoUrl}
-                onSend={handleSendConversationMessage}
-                creativeProfileVisible={creativeProfileVisible}
-                ignoreProfile={newConversationIgnoreProfile}
-                onIgnoreProfileChange={setNewConversationIgnoreProfile}
-                token={token}
-                writeCapabilities={runtimeWriteCapabilities}
-                onRetryWriteAvailability={handleRetryWriteAvailability}
-              />
-              <EmptyProductWorkspace variant="start" />
-            </>
+            <ConversationStart
+              suggestions={selectedConversation.suggestions ?? []}
+              conversation={selectedConversation}
+              accountName={accountName}
+              imageAttachments={currentChatImageUploads}
+              onUploadImages={handleChatImageUpload}
+              onRemoveImageAttachment={handleRemoveChatImage}
+              onRetryImageAttachment={handleRetryChatImage}
+              onImportVideoUrl={handleImportVideoUrl}
+              onSend={handleSendConversationMessage}
+              creativeProfileVisible={creativeProfileVisible}
+              ignoreProfile={newConversationIgnoreProfile}
+              onIgnoreProfileChange={setNewConversationIgnoreProfile}
+              token={token}
+              writeCapabilities={runtimeWriteCapabilities}
+              onRetryWriteAvailability={handleRetryWriteAvailability}
+            />
           ) : activeView === "conversation" ? (
             <>
               <ConversationStudio
@@ -3389,89 +3374,86 @@ export default function AssetsWorkspaceClient({
                 }
                 requirementAnalyticsToken={token}
               />
-              <div
-                className="shadcn-prototype-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuemin={isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN}
-                aria-valuemax={isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX}
-                aria-valuenow={chatPanelWidth}
-                aria-label="调整对话和展示区宽度"
-                tabIndex={0}
-                title="拖动调整宽度"
-                onPointerDown={handleDividerPointerDown}
-                onMouseDown={handleDividerMouseDown}
-                onKeyDown={handleDividerKeyDown}
-              >
-                <GripVertical size={14} aria-hidden="true" />
-              </div>
               {selectedProduct ? (
-                <ProductWorkspace
-                  copied={copiedProductId === selectedProduct.id}
-                  onCopyProduct={handleCopyProduct}
-                  onSaveProduct={isConversationSnapshot
-                    ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
-                    : handleSaveProduct}
-                  onRestoreVersion={isConversationSnapshot
-                    ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
-                    : handleRestoreProductVersion}
-                  onProductUpdated={(updatedProduct) => {
-                    setConversations((current) => current.map((conversation) => {
-                      if (conversation.id !== selectedConversation.id) return conversation;
-                      const products = conversation.products ?? [conversation.product];
-                      const nextProducts = products.some((item) => item.id === updatedProduct.id)
-                        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
-                        : [...products, updatedProduct];
-                      return {
-                        ...conversation,
-                        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
-                        products: nextProducts,
-                        canvasTitle: updatedProduct.title,
-                        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
-                        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
-                        updatedAt: "刚刚"
-                      };
-                    }));
-                  }}
-                  onRetryVideoJob={!runtimeWriteCapabilities.canGenerate
-                    ? undefined
-                    : isConversationSnapshot
-                      ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
-                      : handleRetryVideoJob}
-                  onOpenLongFormCandidates={(candidateProduct) => {
-                    setSelectedProductIds((current) => ({
-                      ...current,
-                      [selectedConversation.id]: candidateProduct.id,
-                    }));
-                  }}
-                  onLongFormAction={(action) => void handleLongFormSelect(action)}
-                  onApplyGeneratedImage={
-                    !canApplyExistingGeneratedImage
+                <>
+                  <div
+                    className="shadcn-prototype-resize-handle"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-valuemin={isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN}
+                    aria-valuemax={isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX}
+                    aria-valuenow={chatPanelWidth}
+                    aria-label="调整对话和展示区宽度"
+                    tabIndex={0}
+                    title="拖动调整宽度"
+                    onPointerDown={handleDividerPointerDown}
+                    onMouseDown={handleDividerMouseDown}
+                    onKeyDown={handleDividerKeyDown}
+                  >
+                    <GripVertical size={14} aria-hidden="true" />
+                  </div>
+                  <ProductWorkspace
+                    copied={copiedProductId === selectedProduct.id}
+                    onCopyProduct={handleCopyProduct}
+                    onSaveProduct={isConversationSnapshot
+                      ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
+                      : handleSaveProduct}
+                    onRestoreVersion={isConversationSnapshot
+                      ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
+                      : handleRestoreProductVersion}
+                    onProductUpdated={(updatedProduct) => {
+                      setConversations((current) => current.map((conversation) => {
+                        if (conversation.id !== selectedConversation.id) return conversation;
+                        const products = conversation.products ?? [conversation.product];
+                        const nextProducts = products.some((item) => item.id === updatedProduct.id)
+                          ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
+                          : [...products, updatedProduct];
+                        return {
+                          ...conversation,
+                          product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
+                          products: nextProducts,
+                          canvasTitle: updatedProduct.title,
+                          canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
+                          raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
+                          updatedAt: "刚刚"
+                        };
+                      }));
+                    }}
+                    onRetryVideoJob={!runtimeWriteCapabilities.canGenerate
                       ? undefined
-                      : handleApplyGeneratedImage
-                  }
-                  onApplyGeneratedImageSet={
-                    !canApplyExistingGeneratedImage
-                      ? undefined
-                      : handleApplyGeneratedImageSet
-                  }
-                  selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
-                  onSelectedImageFrameChange={(frameId) => {
-                    setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
-                  }}
-                  product={selectedProduct}
-                  savedVersion={savedProductIds[selectedProduct.id]}
-                  selectedConversation={selectedConversation}
-                  token={token}
-                  creativeProfileVisible={creativeProfileVisible}
-                  videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
-                />
-              ) : (
-                <EmptyProductWorkspace
-                  variant="conversation"
-                  tutorialStage={conversationEmptyDisplayTutorialStage}
-                />
-              )}
+                      : isConversationSnapshot
+                        ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
+                        : handleRetryVideoJob}
+                    onOpenLongFormCandidates={(candidateProduct) => {
+                      setSelectedProductIds((current) => ({
+                        ...current,
+                        [selectedConversation.id]: candidateProduct.id,
+                      }));
+                    }}
+                    onLongFormAction={(action) => void handleLongFormSelect(action)}
+                    onApplyGeneratedImage={
+                      !canApplyExistingGeneratedImage
+                        ? undefined
+                        : handleApplyGeneratedImage
+                    }
+                    onApplyGeneratedImageSet={
+                      !canApplyExistingGeneratedImage
+                        ? undefined
+                        : handleApplyGeneratedImageSet
+                    }
+                    selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
+                    onSelectedImageFrameChange={(frameId) => {
+                      setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
+                    }}
+                    product={selectedProduct}
+                    savedVersion={savedProductIds[selectedProduct.id]}
+                    selectedConversation={selectedConversation}
+                    token={token}
+                    creativeProfileVisible={creativeProfileVisible}
+                    videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
+                  />
+                </>
+              ) : null}
             </>
           ) : (
             <LibraryWorkspaceErrorBoundary key={activeView}>

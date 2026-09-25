@@ -1137,6 +1137,23 @@ button:disabled {
   padding: 0;
 }
 
+.shadcn-prototype-workspace.conversation-only-mode {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--background);
+  box-shadow: none;
+  padding: 0;
+}
+
+.shadcn-prototype-workspace.conversation-only-mode > .shadcn-prototype-chat {
+  width: min(100%, 960px);
+  justify-self: center;
+  border-right: 1px solid var(--sp-border);
+  border-left: 1px solid var(--sp-border);
+}
+
 .shadcn-prototype-workspace.workshop-mode {
   grid-template-columns: minmax(0, 1fr);
   padding: 0;
@@ -1149,22 +1166,6 @@ button:disabled {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-}
-
-.shadcn-prototype-workspace.empty-mode {
-  grid-template-columns: minmax(480px, 1.15fr) minmax(420px, 0.85fr);
-  gap: 0;
-  padding: 0;
-  border: 0;
-  background: var(--sp-card);
-}
-
-.shadcn-prototype-workspace.empty-mode > .shadcn-prototype-start {
-  border-right: 1px solid var(--sp-border);
-}
-
-.shadcn-prototype-workspace.empty-mode > .shadcn-prototype-empty-product-workspace {
-  min-width: 0;
 }
 
 .shadcn-prototype-start {
@@ -8163,8 +8164,8 @@ button:disabled {
     grid-template-columns: minmax(320px, var(--chat-panel-width, 340px)) 6px minmax(0, 1fr);
   }
 
-  .shadcn-prototype-workspace.empty-mode {
-    grid-template-columns: minmax(320px, 1.1fr) minmax(280px, 0.9fr);
+  .shadcn-prototype-workspace.conversation-only-mode {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .shadcn-prototype-workspace.workshop-mode {
@@ -8203,7 +8204,7 @@ button:disabled {
   }
 
   .shadcn-prototype-workspace.conversation-mode,
-  .shadcn-prototype-workspace.empty-mode,
+  .shadcn-prototype-workspace.conversation-only-mode,
   .shadcn-prototype-workspace.workshop-mode {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -8216,21 +8217,10 @@ button:disabled {
     padding: 14px;
   }
 
-  .shadcn-prototype-workspace.empty-mode {
-    padding: 16px;
-    gap: 14px;
-    background: transparent;
-  }
-
-  .shadcn-prototype-workspace.empty-mode > .shadcn-prototype-start {
+  .shadcn-prototype-workspace.conversation-only-mode > .shadcn-prototype-chat {
+    width: 100%;
     border-right: 0;
-  }
-
-  .shadcn-prototype-workspace.empty-mode > .shadcn-prototype-empty-product-workspace {
-    min-height: 360px;
-    border: 1px solid var(--sp-border);
-    border-radius: 8px;
-    box-shadow: var(--sp-shadow);
+    border-left: 0;
   }
 
   .shadcn-prototype-workspace.conversation-mode .shadcn-prototype-card {

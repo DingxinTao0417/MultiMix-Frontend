@@ -550,7 +550,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
     vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockReturnValue(pendingSummaries);
 
-    render(
+    const rendered = render(
       <AssetsWorkspaceClient
         basePath="/app/assets"
         accountEmail="checking@multimix.local"
@@ -559,11 +559,63 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     );
 
     expect(screen.getByText("正在连接后端，短视频创作、素材上传和保存暂不可用。")).toHaveAttribute("role", "status");
+    expect(rendered.container.querySelector(".shadcn-prototype-workspace")).toHaveClass("conversation-only-mode");
+    expect(screen.queryByRole("region", { name: "创作起点" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: "调整对话和展示区宽度" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上传图片素材" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
 
     resolveSummaries([]);
     await waitFor(() => expect(screen.getByRole("button", { name: "发送" })).toBeEnabled());
+  });
+
+  it("keeps an existing project without a product in the conversation and fills its composer from Agent suggestions", async () => {
+    const conversationId = "brief-only-conversation";
+    const emptyConversation = {
+      ...conversation(),
+      id: conversationId,
+      title: "只有需求沟通的项目",
+      messages: [{
+        role: "assistant" as const,
+        text: "先告诉我这条视频主要给谁看。",
+        suggestions: ["主要给第一次了解产品的人看。"],
+      }],
+    };
+    window.history.replaceState(null, "", `/app/assets?conversation=${conversationId}`);
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockResolvedValue([{
+      id: conversationId,
+      title: emptyConversation.title,
+      status: "needs_input",
+      project_state: { code: "needs_input" },
+      metadata: {},
+      created_at: "2026-09-25T08:00:00Z",
+      updated_at: "2026-09-25T08:00:05Z",
+    }]);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSnapshot").mockResolvedValue({
+      ...emptyConversation,
+      detailsLoaded: false,
+    });
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(emptyConversation);
+
+    const rendered = render(
+      <AssetsWorkspaceClient
+        basePath="/app/assets"
+        accountEmail="brief-only@multimix.local"
+        token="brief-only-token"
+        initialConversationId={conversationId}
+      />,
+    );
+
+    const suggestion = await screen.findByRole("button", { name: "主要给第一次了解产品的人看。" });
+    await waitFor(() => {
+      expect(rendered.container.querySelector(".shadcn-prototype-workspace")).toHaveClass("conversation-only-mode");
+    });
+    expect(screen.queryByRole("region", { name: "对话创作提示" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: "调整对话和展示区宽度" })).not.toBeInTheDocument();
+
+    fireEvent.click(suggestion);
+    expect(screen.getByLabelText("输入对话内容")).toHaveValue("主要给第一次了解产品的人看。");
   });
 
   it("renders an unconfigured workspace with upload and send disabled before interaction", async () => {
@@ -675,7 +727,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       agentAction: null,
     });
 
-    render(
+    const rendered = render(
       <AssetsWorkspaceClient
         basePath="/app/assets"
         accountEmail="keyframes@multimix.local"
@@ -685,6 +737,8 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
     );
 
     await screen.findAllByText("F01 · 开场产品特写");
+    expect(rendered.container.querySelector(".shadcn-prototype-workspace")).toHaveClass("conversation-mode");
+    expect(screen.getByRole("separator", { name: "调整对话和展示区宽度" })).toBeInTheDocument();
     const applyKeyframes = await screen.findByRole("button", { name: "将 3 张分别用于 3 个分镜" });
     expect(applyKeyframes).toBeEnabled();
     fireEvent.click(applyKeyframes);
