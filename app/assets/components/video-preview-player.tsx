@@ -16,6 +16,7 @@ export type VideoPreviewPlayerProps = {
   posterSrc?: string;
   label: string;
   ratioClassName: string;
+  muted?: boolean;
   initialTime?: number;
   onTimeUpdate?: (time: number) => void;
   onError?: () => void;
@@ -34,6 +35,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     posterSrc,
     label,
     ratioClassName,
+    muted = false,
     initialTime = 0,
     onTimeUpdate,
     onError,
@@ -116,6 +118,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             poster={posterSrc || undefined}
             preload="auto"
             playsInline
+            muted={muted}
             onLoadedMetadata={(event) => {
               const video = event.currentTarget;
               setDuration(Number.isFinite(video.duration) ? video.duration : 0);

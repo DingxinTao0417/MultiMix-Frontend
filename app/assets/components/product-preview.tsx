@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from "react";
 import { API_BASE } from "../../../lib/api";
 import { getProductDisplayIdentity, getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetImageGenerationTarget, AssetProductSegment } from "../lib/asset-workspace-types";
@@ -12,13 +12,19 @@ import GeneratedImageGallery, {
 import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock, { type GenerationAnimationSummary } from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
-import VideoPreviewPlayer from "./video-preview-player";
+import VideoPreviewPlayer, { formatPreviewTime } from "./video-preview-player";
 import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import type { VideoQualityReport } from "../lib/video-quality";
 import reviewStyles from "./video-film-review-panel.module.css";
 import type { ExportVariant } from "../../../lib/brand-showcase";
+import {
+  compareVideoVersionSegments,
+  videoSegmentChangeSummary,
+  videoSegmentChangeDetails,
+  type VideoVersionSegmentChange,
+} from "../lib/video-version-comparison";
 
 // Resolve a directly playable URL for a video-like product: exported MP4s live
 // behind the backend media proxy (store refs), external sources pass through.
@@ -259,6 +265,13 @@ export type ProductPreviewHandle = {
 type ProductPreviewProps = {
   footer?: import("react").ReactNode;
   product: ProductArtifact;
+  comparisonAvailable?: boolean;
+  comparisonProduct?: ProductArtifact | null;
+  comparisonLoading?: boolean;
+  comparisonError?: string;
+  comparisonOpen?: boolean;
+  onOpenComparison?: () => void;
+  onCloseComparison?: () => void;
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
@@ -285,6 +298,13 @@ type ProductPreviewProps = {
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
   product,
   footer,
+  comparisonAvailable = false,
+  comparisonProduct = null,
+  comparisonLoading = false,
+  comparisonError = "",
+  comparisonOpen = false,
+  onOpenComparison,
+  onCloseComparison,
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
@@ -309,12 +329,23 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
+  const comparisonPreviousPlayerRef = useRef<HTMLVideoElement | null>(null);
+  const comparisonCurrentPlayerRef = useRef<HTMLVideoElement | null>(null);
   const projectPreviewRef = useRef<VideoProjectPreviewHandle | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [activeComparisonSegmentId, setActiveComparisonSegmentId] = useState<string | null>(null);
+  const [expandedComparisonSegmentId, setExpandedComparisonSegmentId] = useState<string | null>(null);
+  const [audibleComparisonVersion, setAudibleComparisonVersion] = useState<"previous" | "current">("current");
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
   const [fullVideoRecoveryPending, setFullVideoRecoveryPending] = useState(false);
   const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
   const exportedVideoUrl = playableVideoUrl(product);
+  const comparisonPreviousVideoUrl = comparisonProduct ? playableVideoUrl(comparisonProduct) : "";
+  const comparisonHasStructure = Boolean(comparisonProduct?.segments?.length && product.segments?.length);
+  const comparisonChanges = useMemo(() => comparisonHasStructure ? compareVideoVersionSegments(
+    comparisonProduct?.segments,
+    product.segments,
+  ) : [], [comparisonHasStructure, comparisonProduct?.segments, product.segments]);
   const displayIdentity = getProductDisplayIdentity(product);
 
   useEffect(() => {
@@ -322,6 +353,15 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     setProjectPreviewRequested(true);
     setFullVideoRecoveryPending(false);
   }, [exportedVideoUrl, product.id]);
+
+  useEffect(() => {
+    setActiveComparisonSegmentId(comparisonChanges[0]?.id ?? null);
+    setExpandedComparisonSegmentId(null);
+  }, [comparisonChanges]);
+
+  useEffect(() => {
+    if (!comparisonOpen) setAudibleComparisonVersion("current");
+  }, [comparisonOpen]);
 
   useImperativeHandle(forwardedRef, () => ({
     export: (exportVariant) => projectPreviewRef.current?.export(exportVariant) ?? false,
@@ -509,6 +549,52 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0,
     allSegmentsCovered,
   );
+  const videoBrowseModeSwitch = comparisonAvailable ? (
+    <div className="shadcn-prototype-video-browse-mode" aria-label="视频展示模式">
+      <button
+        type="button"
+        aria-label="单视频"
+        aria-pressed={!comparisonOpen}
+        onClick={onCloseComparison}
+      >
+        单视频
+      </button>
+      <button
+        type="button"
+        aria-label="版本对比"
+        aria-pressed={comparisonOpen}
+        disabled={comparisonLoading}
+        onClick={onOpenComparison}
+      >
+        {comparisonLoading
+          ? "读取中…"
+          : `版本对比${comparisonProduct && comparisonChanges.length ? ` · ${comparisonChanges.length}` : ""}`}
+      </button>
+    </div>
+  ) : null;
+
+  const seekComparisonSegment = (change: VideoVersionSegmentChange) => {
+    setActiveComparisonSegmentId(change.id);
+    setExpandedComparisonSegmentId((previous) => previous === change.id ? null : change.id);
+    const targets: Array<[HTMLVideoElement | null, number | null]> = [
+      [comparisonPreviousPlayerRef.current, change.previousStartSeconds],
+      [comparisonCurrentPlayerRef.current, change.currentStartSeconds],
+    ];
+    for (const [player] of targets) player?.pause();
+    for (const [player, time] of targets) {
+      if (!player || time == null) continue;
+      const seekAndPlay = () => {
+        player.currentTime = time;
+        void player.play().catch(() => undefined);
+      };
+      if (player.readyState >= HTMLMediaElement.HAVE_METADATA) seekAndPlay();
+      else player.addEventListener("loadedmetadata", seekAndPlay, { once: true });
+    }
+  };
+
+  const comparisonTimeLabel = (time: number | null) => (
+    time == null ? "无对应分镜" : formatPreviewTime(time)
+  );
   // Demo-final browse state for any generated project (workspace-video.html
   // 默认态): centered 9:16 player + jumpable segment cards + source block.
   // With a real MP4 the player is playable; before export it shows the poster
@@ -516,8 +602,128 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   if (hasVideoProject) {
     const showFullVideo = Boolean(exportedVideoUrl && !fullVideoFailed && !exportRequestVariant);
     const durationSeconds = Math.max(0, ...(product.segments ?? []).map((segment) => segment.endSeconds ?? 0));
+    if (
+      comparisonOpen
+      && comparisonProduct
+      && comparisonPreviousVideoUrl
+      && exportedVideoUrl
+      && !exportRequestVariant
+    ) {
+      const activeChange = comparisonChanges.find((change) => change.id === activeComparisonSegmentId)
+        ?? comparisonChanges[0]
+        ?? null;
+      return (
+        <section
+          className="shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface shadcn-prototype-video-version-comparison"
+          aria-label="版本对比"
+        >
+          {videoBrowseModeSwitch}
+          <div className="shadcn-prototype-video-comparison-players">
+            <article>
+              <header>
+                <strong>修改前 · {comparisonProduct.version ?? "上一版"}</strong>
+                <span>完整视频</span>
+              </header>
+              <VideoPreviewPlayer
+                key={`comparison-previous-${comparisonPreviousVideoUrl}`}
+                ref={comparisonPreviousPlayerRef}
+                src={comparisonPreviousVideoUrl}
+                posterSrc={finishedVideoPosterUrl(comparisonProduct)}
+                label={`修改前 · ${comparisonProduct.version ?? "上一版"}`}
+                ratioClassName={getProductRatioClass(comparisonProduct.ratio)}
+                initialTime={activeChange?.previousStartSeconds ?? 0}
+                muted={audibleComparisonVersion !== "previous"}
+              />
+            </article>
+            <article>
+              <header>
+                <strong>修改后 · {product.version ?? "当前版"}</strong>
+                <span>完整视频</span>
+              </header>
+              <VideoPreviewPlayer
+                key={`comparison-current-${exportedVideoUrl}`}
+                ref={comparisonCurrentPlayerRef}
+                src={exportedVideoUrl}
+                posterSrc={finishedVideoPosterUrl(product)}
+                label={`修改后 · ${product.version ?? "当前版"}`}
+                ratioClassName={getProductRatioClass(product.ratio)}
+                initialTime={activeChange?.currentStartSeconds ?? 0}
+                muted={audibleComparisonVersion !== "current"}
+              />
+            </article>
+          </div>
+          {activeChange ? (
+            <p className="shadcn-prototype-video-comparison-sync" aria-live="polite">
+              已同步定位 · {comparisonProduct.version ?? "上一版"} {comparisonTimeLabel(activeChange.previousStartSeconds)}
+              <span aria-hidden="true"> ↔ </span>
+              {product.version ?? "当前版"} {comparisonTimeLabel(activeChange.currentStartSeconds)}
+            </p>
+          ) : null}
+          <div className="shadcn-prototype-video-comparison-audio" aria-label="对比试听">
+            <span>当前试听：{audibleComparisonVersion === "current" ? "修改后" : "修改前"}</span>
+            <button type="button" onClick={() => setAudibleComparisonVersion((value) => value === "current" ? "previous" : "current")}
+              aria-label={`试听${audibleComparisonVersion === "current" ? "修改前" : "修改后"}`}>
+              改听{audibleComparisonVersion === "current" ? "修改前" : "修改后"}
+            </button>
+          </div>
+          <section className="shadcn-prototype-video-comparison-changes" aria-label="受影响的分镜">
+            <header>
+              <strong>受影响的分镜</strong>
+              <span>点击后同步跳转完整视频</span>
+            </header>
+            {comparisonChanges.length ? (
+              <ol>
+                {comparisonChanges.map((change) => (
+                  <li key={change.id}>
+                    <button
+                      type="button"
+                      className={change.id === activeComparisonSegmentId ? "active" : undefined}
+                      aria-pressed={change.id === activeComparisonSegmentId}
+                      aria-expanded={change.id === expandedComparisonSegmentId}
+                      onClick={() => seekComparisonSegment(change)}
+                    >
+                      <span>
+                        <strong>{change.title}</strong>
+                        <em>{videoSegmentChangeSummary(change)}</em>
+                      </span>
+                      <span className="shadcn-prototype-video-comparison-times">
+                        <span>{comparisonProduct.version ?? "上一版"} {comparisonTimeLabel(change.previousStartSeconds)}</span>
+                        <i aria-hidden="true">→</i>
+                        <span>{product.version ?? "当前版"} {comparisonTimeLabel(change.currentStartSeconds)}</span>
+                      </span>
+                    </button>
+                    {change.id === expandedComparisonSegmentId ? (
+                      <dl className="shadcn-prototype-video-comparison-details">
+                        {videoSegmentChangeDetails(change).length ? videoSegmentChangeDetails(change).map((detail) => (
+                          <div key={detail.label}>
+                            <dt>{detail.label}</dt>
+                            <dd><span>{detail.before}</span><i aria-hidden="true">→</i><span>{detail.after}</span></dd>
+                          </div>
+                        )) : <div><dt>详情</dt><dd>{!change.previousSegment
+                          ? "修改前没有对应分镜"
+                          : !change.currentSegment
+                            ? "修改后没有对应分镜"
+                            : "历史版本未提供可逐项核对的信息"}</dd></div>}
+                      </dl>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : comparisonHasStructure ? (
+              <p>两个版本的分镜结构没有可识别差异，可直接播放完整视频复核。</p>
+            ) : (
+              <p>历史版本缺少可核对的分镜结构，请直接播放两条完整视频复核。</p>
+            )}
+          </section>
+        </section>
+      );
+    }
     return (
       <div className={`shadcn-prototype-video-browse shadcn-prototype-stage-scroll-surface${footer ? ` ${reviewStyles.withReview}` : ""}`} aria-label={showFullVideo ? "成片预览" : "分镜预览"}>
+        {videoBrowseModeSwitch}
+        {comparisonError ? (
+          <p className="shadcn-prototype-video-comparison-error" role="alert">{comparisonError}</p>
+        ) : null}
         <div className="shadcn-prototype-product-video">
           {showFullVideo ? (
             <VideoPreviewPlayer

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { API_BASE, getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
+import { contentAssetToProduct } from "../../../lib/asset-mappers";
 import { getProductDisplayIdentity, getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
@@ -204,6 +205,10 @@ export default function ProductWorkspace({
   const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
   const [historicalPreview, setHistoricalPreview] = useState<ContentAsset | null>(null);
   const [historicalPreviewError, setHistoricalPreviewError] = useState("");
+  const [videoComparisonProduct, setVideoComparisonProduct] = useState<ProductArtifact | null>(null);
+  const [videoComparisonLoading, setVideoComparisonLoading] = useState(false);
+  const [videoComparisonError, setVideoComparisonError] = useState("");
+  const [videoComparisonOpen, setVideoComparisonOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
@@ -249,6 +254,9 @@ export default function ProductWorkspace({
   const verifiedExportBlobsRef = useRef(new Map<ExportVariant, Blob>());
   const recoverableExportJobsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const imageSourceBlobRef = useRef<{ url: string; promise: Promise<Blob> } | null>(null);
+  const lastCompletedVideoVersionRef = useRef<string | null>(null);
+  const videoComparisonRequestRef = useRef(0);
+  const videoComparisonIdentityRef = useRef<string | null>(null);
   const onProductUpdatedRef = useRef(onProductUpdated);
   onProductUpdatedRef.current = onProductUpdated;
 
@@ -257,6 +265,15 @@ export default function ProductWorkspace({
     setHistoricalPreviewError("");
     setPreviewingVersionId(null);
   }, [product.backendAssetId]);
+
+  useEffect(() => {
+    videoComparisonRequestRef.current += 1;
+    videoComparisonIdentityRef.current = null;
+    setVideoComparisonProduct(null);
+    setVideoComparisonLoading(false);
+    setVideoComparisonError("");
+    setVideoComparisonOpen(false);
+  }, [product.backendAssetId, product.version]);
 
   const previewHistoricalVersion = useCallback(async (versionId: string) => {
     const assetId = product.backendAssetId;
@@ -419,6 +436,89 @@ export default function ProductWorkspace({
     && !isFailedStatus
     && presenterVideoPlan?.video_type === "source_excerpt"
     && Boolean(token && product.backendAssetId);
+  const comparisonPreviousVersion = product.versions && product.versions.length > 1
+    ? product.versions[product.versions.length - 2]
+    : null;
+  const comparisonPreviousVersionId = Number(comparisonPreviousVersion?.id);
+  const videoComparisonIdentity = `${product.backendAssetId ?? ""}:${product.version ?? ""}:${comparisonPreviousVersionId}`;
+  const videoComparisonAvailable = canBrowseVideo
+    && Boolean(
+      token
+      && product.backendAssetId
+      && hasCurrentPersistedExport
+      && Number.isInteger(comparisonPreviousVersionId)
+      && comparisonPreviousVersionId > 0,
+    );
+  const loadVideoComparison = useCallback(async () => {
+    if (
+      !videoComparisonAvailable
+      || !token
+      || !product.backendAssetId
+      || !comparisonPreviousVersion
+    ) return;
+    if (videoComparisonProduct && videoComparisonIdentityRef.current === videoComparisonIdentity) {
+      setVideoComparisonOpen(true);
+      return;
+    }
+
+    const requestId = ++videoComparisonRequestRef.current;
+    setVideoComparisonLoading(true);
+    setVideoComparisonError("");
+    try {
+      const snapshot = await getContentAssetVersionPreview(
+        token,
+        product.backendAssetId,
+        comparisonPreviousVersionId,
+      );
+      const previousProduct = {
+        ...contentAssetToProduct(snapshot),
+        version: comparisonPreviousVersion.label,
+      };
+      if (!previousProduct.videoProjectReady || !playableVideoUrl(previousProduct)) {
+        throw new Error("上一版本没有可播放的完整视频，暂时无法进行双视频对比。");
+      }
+      if (requestId !== videoComparisonRequestRef.current) return;
+      videoComparisonIdentityRef.current = videoComparisonIdentity;
+      setVideoComparisonProduct(previousProduct);
+      setVideoComparisonOpen(true);
+    } catch (error) {
+      if (requestId !== videoComparisonRequestRef.current) return;
+      setVideoComparisonOpen(false);
+      setVideoComparisonError(
+        error instanceof Error
+          ? error.message
+          : "上一版本读取失败，请稍后重试。",
+      );
+    } finally {
+      if (requestId === videoComparisonRequestRef.current) setVideoComparisonLoading(false);
+    }
+  }, [
+    comparisonPreviousVersion,
+    comparisonPreviousVersionId,
+    product.backendAssetId,
+    token,
+    videoComparisonAvailable,
+    videoComparisonIdentity,
+    videoComparisonProduct,
+  ]);
+  const completedVideoVersionIdentity = canBrowseVideo && product.backendAssetId
+    ? `${product.backendAssetId}:${product.version ?? ""}`
+    : null;
+
+  useEffect(() => {
+    const previousIdentity = lastCompletedVideoVersionRef.current;
+    if (!completedVideoVersionIdentity) return;
+    if (!previousIdentity) {
+      lastCompletedVideoVersionRef.current = completedVideoVersionIdentity;
+      return;
+    }
+    if (previousIdentity === completedVideoVersionIdentity) return;
+    const sameAsset = previousIdentity.split(":", 1)[0] === completedVideoVersionIdentity.split(":", 1)[0];
+    if (!sameAsset || videoComparisonAvailable) {
+      lastCompletedVideoVersionRef.current = completedVideoVersionIdentity;
+      if (sameAsset) void loadVideoComparison();
+    }
+  }, [completedVideoVersionIdentity, loadVideoComparison, videoComparisonAvailable]);
   const longFormCandidateProduct = findLongFormCandidateProduct(
     product,
     selectedConversation.products,
@@ -1860,6 +1960,13 @@ export default function ProductWorkspace({
               selectedImageFrameId={selectedImageFrameId}
               onSelectedImageFrameChange={onSelectedImageFrameChange}
               onRetryVideoJob={onRetryVideoJob}
+              comparisonAvailable={videoComparisonAvailable}
+              comparisonProduct={videoComparisonProduct}
+              comparisonLoading={videoComparisonLoading}
+              comparisonError={videoComparisonError}
+              comparisonOpen={videoComparisonOpen}
+              onOpenComparison={() => void loadVideoComparison()}
+              onCloseComparison={() => setVideoComparisonOpen(false)}
               onReplaceMaterial={openBrowseMaterialPicker}
               onEditVoiceover={
                 token && product.backendAssetId

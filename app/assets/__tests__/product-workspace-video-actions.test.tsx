@@ -2,12 +2,22 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ContentAsset } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import ProductWorkspace from "../components/product-workspace";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
+
+const apiMocks = vi.hoisted(() => ({
+  getContentAssetVersionPreview: vi.fn(),
+}));
+
+vi.mock("../../../lib/api", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../lib/api")>(),
+  getContentAssetVersionPreview: apiMocks.getContentAssetVersionPreview,
+}));
 
 // The independent advisory panel owns its own API tests; keep these playback
 // and editing tests' ordered fetch fixtures scoped to the operation under test.
@@ -20,9 +30,52 @@ vi.mock("../../../lib/video-project-client", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
+  apiMocks.getContentAssetVersionPreview.mockReset();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+function historicalVideoAsset({ mp4Ref = "previous.mp4" }: { mp4Ref?: string } = {}): ContentAsset {
+  return {
+    id: 9100,
+    project_id: 1,
+    parent_asset_id: null,
+    asset_kind: "video",
+    content_type: "video_project",
+    title: "门店获客短视频",
+    status: "ready",
+    source_filename: null,
+    source_content_type: null,
+    original_ref: null,
+    markdown_ref: null,
+    content_hash: "historical-v1",
+    body: "历史稳定版本",
+    metadata: {
+      orchestration_pending: false,
+      video_workflow_stage: "video_project_ready",
+      video_project: {
+        ratio: "9:16",
+        duration_seconds: 3,
+        mp4_ref: mp4Ref || null,
+        tracks: [{ id: "main", type: "video", clips: [] }],
+        media: [{ id: "media-1", type: "image", ref: "display-sample.png" }],
+        segments: [
+          { id: "segment-1", title: "门店外观", startTime: 0, duration: 1.5, narration: "原始开场" },
+          { id: "segment-2", title: "服务过程", startTime: 1.5, duration: 1.5, narration: "原始过程" },
+        ],
+      },
+    },
+    linked_asset_ids: [],
+    linked_event_ids: [],
+    archived: false,
+    error_message: null,
+    product_status: "completed",
+    product_completed: true,
+    created_at: "2026-09-26T00:00:00Z",
+    updated_at: "2026-09-26T00:00:00Z",
+    versions: [],
+  };
+}
 
 function chooseVideoExport(variant: "原始成片" | "品牌展示版" = "原始成片") {
   fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
@@ -30,6 +83,190 @@ function chooseVideoExport(variant: "原始成片" | "品牌展示版" = "原始
 }
 
 describe("video browse actions", () => {
+  it("separates single-video production from dual-player version review", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const currentProduct = {
+      ...base,
+      version: "v2",
+      versions: [
+        { id: "41", label: "v1", savedAt: "1 分钟前", status: "初始版本" },
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订：节奏更紧凑" },
+      ],
+      segments: [
+        { ...base.segments![0], endSeconds: 1.2, line: "新版开场" },
+        { ...base.segments![1], startSeconds: 1.2, line: "新版过程" },
+      ],
+    };
+    apiMocks.getContentAssetVersionPreview.mockResolvedValueOnce(historicalVideoAsset());
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={currentProduct}
+        selectedConversation={conversationForDisplayProduct(currentProduct)}
+        token="token"
+      />,
+    );
+
+    expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
+
+    const comparison = await screen.findByRole("region", { name: "版本对比" });
+    expect(apiMocks.getContentAssetVersionPreview).toHaveBeenCalledWith("token", 9100, 41);
+    expect(screen.queryByLabelText("分镜摘要")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("修改前 · v1")).toBeInTheDocument();
+    expect(screen.getByLabelText("修改后 · v2")).toBeInTheDocument();
+    expect(comparison).toHaveTextContent("受影响的分镜");
+
+    const beforeVideo = screen.getByLabelText("修改前 · v1").querySelector("video")!;
+    const afterVideo = screen.getByLabelText("修改后 · v2").querySelector("video")!;
+    expect(beforeVideo.muted).toBe(true);
+    expect(afterVideo.muted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "试听修改前" }));
+    expect(beforeVideo.muted).toBe(false);
+    expect(afterVideo.muted).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "试听修改后" }));
+    expect(beforeVideo.muted).toBe(true);
+    expect(afterVideo.muted).toBe(false);
+    for (const video of [beforeVideo, afterVideo]) {
+      Object.defineProperty(video, "duration", { configurable: true, value: 3 });
+      Object.defineProperty(video, "readyState", { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
+      fireEvent.loadedMetadata(video);
+      fireEvent.canPlay(video);
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /服务过程/ }));
+    expect(beforeVideo.currentTime).toBe(1.5);
+    expect(afterVideo.currentTime).toBe(1.2);
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: /服务过程/ })).toHaveAttribute("aria-expanded", "true");
+    expect(comparison).toHaveTextContent("原始过程");
+    expect(comparison).toHaveTextContent("新版过程");
+
+    fireEvent.click(screen.getByRole("button", { name: "单视频" }));
+    expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "版本对比" })).not.toBeInTheDocument();
+  });
+
+  it("opens version review when a mounted completed video publishes the next version", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const firstVersion = {
+      ...base,
+      version: "v1",
+      versions: [{ id: "41", label: "v1", savedAt: "刚刚", status: "初始版本" }],
+    };
+    const nextVersion = {
+      ...base,
+      version: "v2",
+      versions: [
+        firstVersion.versions[0],
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订版本" },
+      ],
+    };
+    apiMocks.getContentAssetVersionPreview.mockResolvedValueOnce(historicalVideoAsset());
+    const { rerender } = render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={firstVersion}
+        selectedConversation={conversationForDisplayProduct(firstVersion)}
+        token="token"
+      />,
+    );
+    expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
+
+    rerender(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={nextVersion}
+        selectedConversation={conversationForDisplayProduct(nextVersion)}
+        token="token"
+      />,
+    );
+
+    expect(await screen.findByRole("region", { name: "版本对比" })).toBeInTheDocument();
+    expect(apiMocks.getContentAssetVersionPreview).toHaveBeenCalledWith("token", 9100, 41);
+  });
+
+  it("keeps single-video mode when the previous version has no playable full video", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const currentProduct = {
+      ...base,
+      version: "v2",
+      versions: [
+        { id: "41", label: "v1", savedAt: "1 分钟前", status: "初始版本" },
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订版本" },
+      ],
+    };
+    apiMocks.getContentAssetVersionPreview.mockResolvedValueOnce(historicalVideoAsset({ mp4Ref: "" }));
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={currentProduct}
+        selectedConversation={conversationForDisplayProduct(currentProduct)}
+        token="token"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("上一版本没有可播放的完整视频");
+    expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "版本对比" })).not.toBeInTheDocument();
+  });
+
+  it("discards a historical preview that arrives after switching to another video", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const oldProduct = {
+      ...base,
+      version: "v2",
+      versions: [
+        { id: "41", label: "v1", savedAt: "稍早", status: "初始版本" },
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订版本" },
+      ],
+    };
+    let completePreview!: (asset: ContentAsset) => void;
+    apiMocks.getContentAssetVersionPreview.mockImplementationOnce(() => new Promise<ContentAsset>((resolve) => {
+      completePreview = resolve;
+    }));
+    const props = {
+      copied: false,
+      onCopyProduct: vi.fn(async () => undefined),
+      onSaveProduct: vi.fn(async () => undefined),
+      token: "token",
+    };
+    const { rerender } = render(
+      <ProductWorkspace
+        {...props}
+        product={oldProduct}
+        selectedConversation={conversationForDisplayProduct(oldProduct)}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
+
+    const nextProduct = { ...base, backendAssetId: 9200, version: "v1", versions: [] };
+    rerender(
+      <ProductWorkspace
+        {...props}
+        product={nextProduct}
+        selectedConversation={conversationForDisplayProduct(nextProduct)}
+      />,
+    );
+    await act(async () => { completePreview(historicalVideoAsset()); });
+
+    expect(screen.queryByRole("region", { name: "版本对比" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
+  });
+
   it("sends an optional Presenter material failure back to the script instead of issuing a fake retry", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
     const product = {

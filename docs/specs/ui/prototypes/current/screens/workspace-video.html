@@ -216,6 +216,40 @@ svg{flex:none;display:block}
 .pbar{display:flex;align-items:center;gap:8px;padding:8px 6px 4px;font-size:10.5px;color:var(--ink-3)}
 .pbar .track{flex:1;height:3px;border-radius:3px;background:var(--surface-2);position:relative;overflow:hidden}
 .pbar .fill{position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--ai-grad);border-radius:inherit}
+/* 同一视频工程内的制作 / 版本验收模式；播放器外壳沿用上方合同。 */
+.version-mode{display:flex;justify-content:center;gap:5px;padding-bottom:2px}
+.version-mode button{min-height:29px;padding:0 13px;border:1px solid var(--line-2);border-radius:999px;background:var(--surface);font-size:12px;font-weight:600;color:var(--ink-2)}
+.version-mode button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.version-comparison{display:none;gap:10px}
+.artifact.comparing .version-comparison{display:grid}
+.artifact.comparing .preview-wrap,.artifact.comparing .seg-sec,.artifact.comparing .source{display:none}
+.compare-players{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.compare-player{min-width:0;display:grid;justify-items:center;align-content:start;gap:7px}
+.compare-player header{width:100%;display:flex;justify-content:space-between;align-items:center;gap:5px;font-size:12px}
+.compare-player header span{color:var(--ink-2)}
+.compare-player .player{width:min(100%,280px)}
+.compare-player .screen{cursor:default}
+.compare-player .screen > .ph{display:block;border-radius:0}
+.compare-player .pbar{font-variant-numeric:tabular-nums}
+.compare-sync{font-size:12px;color:var(--ink-2);text-align:center;font-variant-numeric:tabular-nums}
+.compare-sync::before{display:inline-block;width:7px;height:7px;margin-right:8px;border-radius:50%;background:var(--ok);content:""}
+.compare-audio{display:flex;justify-content:center;align-items:center;gap:8px;color:var(--ink-2);font-size:12px}
+.compare-audio button{min-height:28px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font-size:12px;font-weight:600}
+.compare-changes{display:grid;gap:8px}
+.compare-changes header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12px}
+.compare-changes header span{color:var(--ink-2)}
+.compare-changes button{display:flex;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left}
+.compare-changes button.on{border-color:transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;box-shadow:0 4px 14px rgba(124,92,255,.09)}
+.compare-changes button .diff{display:grid;min-width:0}
+.compare-changes button strong{overflow:hidden;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}
+.compare-changes button em{overflow:hidden;color:var(--ink-2);font-size:12px;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.compare-changes button .times{flex:none;color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
+.compare-detail{display:none;gap:5px;margin:0;padding:6px 11px 6px 15px;border-left:2px solid var(--line);color:var(--ink-2);font-size:12px}
+.compare-detail.on{display:grid}
+.compare-detail div{display:grid;grid-template-columns:58px minmax(0,1fr);gap:8px}
+.compare-detail strong{font-weight:600}
+.compare-detail span{overflow-wrap:anywhere}
+.artifact.editing .version-mode,.artifact.editing .version-comparison{display:none}
 /* 分镜列表 */
 .seg-sec{display:grid;gap:9px}
 .seg-label{font-size:11px;letter-spacing:.06em;color:var(--ink-3);font-weight:600;display:flex;align-items:center;gap:8px}
@@ -608,7 +642,7 @@ body.side-collapsed .expand-btn{display:grid}
       <!-- 产物卡：对话流内的产物切换机制 -->
       <div class="prod-card" onclick="toast('已切换展示区到「全屋定制 · 获客视频」')">
         <span class="thumb"><span class="ph ph-living"></span></span>
-        <span class="tx"><span class="t">视频工程 · v1</span><span class="m">已完成 · 正在右侧展示</span></span>
+        <span class="tx"><span class="t">视频工程 · v2</span><span class="m">已完成 · 正在右侧展示</span></span>
         <span class="arrow">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
@@ -639,13 +673,13 @@ body.side-collapsed .expand-btn{display:grid}
 <aside class="artifact">
   <div class="art-head">
     <div class="hgroup">
-      <div class="t">视频工程 · v1
+      <div class="t">视频工程 · v2
         <span class="ok-badge" id="stBadge">
           <svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M2.8 8.4 6.4 12l6.8-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
           已完成
         </span>
       </div>
-      <div class="m"><span id="vMeta">视频 · v1 · 00:30 · 9:16 · 来源已标注</span> · <span class="state-link" id="cycleState">演示其他状态 ▸</span></div>
+      <div class="m"><span id="vMeta">视频 · v2 · 00:30 · 9:16 · 来源已标注</span> · <span class="state-link" id="cycleState">演示其他状态 ▸</span></div>
     </div>
     <div class="art-acts" id="artActs">
       <button class="hbtn ghost" id="btnDetail">详情</button>
@@ -658,14 +692,19 @@ body.side-collapsed .expand-btn{display:grid}
     </div>
   </div>
   <div class="detail-pop" id="detailPop">
-    <div class="dp-row"><span class="k">状态</span><span>已完成 · v1</span></div>
+    <div class="dp-row"><span class="k">状态</span><span>已完成 · v2</span></div>
     <div class="dp-row"><span class="k">来源</span><span>基于 3 张已解析素材 + 1 段图形动效收束</span></div>
     <div class="dp-row"><span class="k">规格</span><span>00:30 · 9:16 · 1080×1920 · 30fps</span></div>
     <div class="dp-sec">版本历史</div>
-    <div class="dp-ver"><span class="tag">v1</span>今天 15:02 生成<span class="cur">当前</span></div>
+    <div class="dp-ver"><span class="tag">v2</span>今天 15:18 完成修改<span class="cur">当前</span></div>
+    <div class="dp-ver"><span class="tag">v1</span>今天 15:02 生成</div>
   </div>
 
   <div class="art-scroll">
+    <div class="version-mode" aria-label="视频展示模式">
+      <button type="button" class="on" id="modeSingle" aria-pressed="true">单视频</button>
+      <button type="button" id="modeCompare" aria-pressed="false">版本对比 · 2</button>
+    </div>
     <!-- 演示态：视频编排进行中 -->
     <div class="vp-card gone2" id="statePending">
       <div class="t"><span class="gdot"></span>视频工程生成中 · 约还需 40 秒</div>
@@ -697,6 +736,28 @@ body.side-collapsed .expand-btn{display:grid}
         </div>
       </div>
     </div>
+
+    <section class="version-comparison" id="versionComparison" aria-label="版本对比">
+      <div class="compare-players">
+        <article class="compare-player">
+          <header><strong>修改前 · v1</strong><span>完整视频</span></header>
+          <div class="player"><div class="screen"><span class="ph ph-panorama" id="compareBeforeCover"></span><span class="subtitle">先看交付成果</span><span class="playbtn"><span class="pb"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5 3.4v9.2L12.6 8 5 3.4Z" fill="currentColor"/></svg></span></span></div><div class="pbar"><span id="compareBeforeTime">00:05</span><span class="track"><span class="fill" id="compareBeforeFill" style="width:17%"></span></span><span>00:30</span></div></div>
+        </article>
+        <article class="compare-player">
+          <header><strong>修改后 · v2</strong><span>完整视频</span></header>
+          <div class="player"><div class="screen"><span class="ph ph-panorama" id="compareAfterCover"></span><span class="subtitle">先看交付成果，再说工艺</span><span class="playbtn"><span class="pb"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5 3.4v9.2L12.6 8 5 3.4Z" fill="currentColor"/></svg></span></span></div><div class="pbar"><span id="compareAfterTime">00:04</span><span class="track"><span class="fill" id="compareAfterFill" style="width:13%"></span></span><span>00:28</span></div></div>
+        </article>
+      </div>
+      <p class="compare-sync" id="compareSync">已同步定位 · v1 00:05 ↔ v2 00:04</p>
+      <div class="compare-audio" aria-label="对比试听"><span id="compareAudible">当前试听：修改后</span><button type="button" id="compareAudioSwitch" aria-label="试听修改前">改听修改前</button></div>
+      <div class="compare-changes" aria-label="受影响的分镜">
+        <header><strong>受影响的分镜</strong><span>点击后同步跳转完整视频</span></header>
+        <button type="button" class="on" data-compare-scene="2" aria-expanded="false"><span class="diff"><strong>#2 案例展示</strong><em>时长 9→8 秒；口播已调整</em></span><span class="times">v1 00:05 → v2 00:04</span></button>
+        <div class="compare-detail" data-compare-detail="2"><div><strong>时长</strong><span>9 秒 → 8 秒</span></div><div><strong>口播</strong><span>先看交付成果 → 先看交付成果，再说工艺</span></div></div>
+        <button type="button" data-compare-scene="3" aria-expanded="false"><span class="diff"><strong>#3 工艺细节</strong><em>素材已更换；图形动效已调整</em></span><span class="times">v1 00:14 → v2 00:12</span></button>
+        <div class="compare-detail" data-compare-detail="3"><div><strong>素材</strong><span>施工过程 → 完工细节</span></div><div><strong>图形动效</strong><span>工艺步骤 → 工艺要点</span></div></div>
+      </div>
+    </section>
 
     <!-- 编辑态：胶片条（唯一编辑形态，点底部「编辑」原地切换） -->
     <div class="filmstrip-editor active" id="fs">
@@ -826,7 +887,7 @@ function recalc(){
   SEGS.forEach(function(s){ s.t0 = t; t += s.dur; s.t1 = t; });
   TOTAL = t;
   document.getElementById('tcTotal').textContent = fmt(TOTAL);
-  document.getElementById('vMeta').textContent = '视频 · v1 · ' + fmt(TOTAL) + ' · 9:16 · 来源已标注';
+  document.getElementById('vMeta').textContent = '视频 · v2 · ' + fmt(TOTAL) + ' · 9:16 · 来源已标注';
   document.getElementById('fsTotal').textContent = '总时长 ' + fmt(TOTAL);
 }
 
@@ -967,7 +1028,50 @@ $('screen').addEventListener('click', function(e){
   if(e.target.closest('.playbtn') || e.currentTarget === e.target || e.target.closest('.ph')) play();
 });
 var artifactEl = document.querySelector('.artifact');
+function setComparisonMode(enabled){
+  artifactEl.classList.toggle('comparing', enabled);
+  $('modeSingle').classList.toggle('on', !enabled);
+  $('modeCompare').classList.toggle('on', enabled);
+  $('modeSingle').setAttribute('aria-pressed', String(!enabled));
+  $('modeCompare').setAttribute('aria-pressed', String(enabled));
+  if(!enabled){
+    $('compareAudible').textContent = '当前试听：修改后';
+    $('compareAudioSwitch').textContent = '改听修改前';
+    $('compareAudioSwitch').setAttribute('aria-label', '试听修改前');
+  }
+}
+$('modeSingle').addEventListener('click', function(){ setComparisonMode(false); });
+$('modeCompare').addEventListener('click', function(){ setComparisonMode(true); });
+$('compareAudioSwitch').addEventListener('click', function(){
+  var next = $('compareAudible').textContent.includes('修改后') ? '修改前' : '修改后';
+  $('compareAudible').textContent = '当前试听：' + next;
+  this.textContent = '改听' + (next === '修改前' ? '修改后' : '修改前');
+  this.setAttribute('aria-label', '试听' + (next === '修改前' ? '修改后' : '修改前'));
+});
+$('versionComparison').addEventListener('click', function(e){
+  var button = e.target.closest('[data-compare-scene]');
+  if(!button) return;
+  var scene = button.getAttribute('data-compare-scene');
+  var beforeTime = scene === '2' ? 5 : 14;
+  var afterTime = scene === '2' ? 4 : 12;
+  document.querySelectorAll('[data-compare-scene]').forEach(function(item){ item.classList.toggle('on', item === button); });
+  document.querySelectorAll('[data-compare-detail]').forEach(function(item){
+    var shown = item.getAttribute('data-compare-detail') === scene && !item.classList.contains('on');
+    item.classList.toggle('on', shown);
+  });
+  document.querySelectorAll('[data-compare-scene]').forEach(function(item){
+    item.setAttribute('aria-expanded', String(document.querySelector('[data-compare-detail="' + item.getAttribute('data-compare-scene') + '"]').classList.contains('on')));
+  });
+  $('compareBeforeTime').textContent = fmt(beforeTime);
+  $('compareAfterTime').textContent = fmt(afterTime);
+  $('compareBeforeFill').style.width = (beforeTime / 30 * 100) + '%';
+  $('compareAfterFill').style.width = (afterTime / 28 * 100) + '%';
+  $('compareBeforeCover').className = 'ph ' + (scene === '2' ? 'ph-panorama' : 'ph-work');
+  $('compareAfterCover').className = 'ph ' + (scene === '2' ? 'ph-panorama' : 'ph-seal');
+  $('compareSync').textContent = '已同步定位 · v1 ' + fmt(beforeTime) + ' ↔ v2 ' + fmt(afterTime);
+});
 $('btnEdit').addEventListener('click', function(){
+  setComparisonMode(false);
   var editing = artifactEl.classList.toggle('editing');
   $('editLbl').textContent = editing ? '完成编辑' : '编辑';
   if(editing){
@@ -1086,8 +1190,10 @@ $('cycleState').addEventListener('click', function(){
   stIdx = (stIdx + 1) % 3;
   var st = STATES[stIdx];
   artifactEl.classList.remove('editing');
+  setComparisonMode(false);
   $('editLbl').textContent = '编辑';
   var showDone = (st === 'done');
+  document.querySelector('.version-mode').classList.toggle('gone2', !showDone);
   document.querySelector('.preview-wrap').classList.toggle('gone2', !showDone);
   document.querySelector('.seg-sec').classList.toggle('gone2', !showDone);
   document.querySelector('.source').classList.toggle('gone2', !showDone);
