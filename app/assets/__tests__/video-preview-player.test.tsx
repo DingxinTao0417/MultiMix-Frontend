@@ -36,18 +36,18 @@ describe("video preview player", () => {
     fireEvent.loadedMetadata(video);
     fireEvent.canPlay(video);
 
-    fireEvent.click(screen.getByRole("button", { name: "点击画面播放视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
     expect(play).toHaveBeenCalledOnce();
     fireEvent.play(video);
-    expect(screen.getByRole("button", { name: "点击画面暂停视频" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "成片播放器：暂停视频" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("slider", { name: "播放进度" }), { target: { value: "12" } });
+    fireEvent.change(screen.getByRole("slider", { name: "成片播放器：播放进度" }), { target: { value: "12" } });
     expect(video.currentTime).toBe(12);
     fireEvent.timeUpdate(video);
     expect(onTimeUpdate).toHaveBeenLastCalledWith(12);
 
     expect(screen.queryByRole("button", { name: "暂停视频" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "点击画面暂停视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：暂停视频" }));
     expect(pause).toHaveBeenCalledOnce();
   });
 
@@ -73,13 +73,13 @@ describe("video preview player", () => {
     Object.defineProperty(video, "duration", { configurable: true, value: 30 });
 
     expect(screen.getByRole("status")).toHaveTextContent("正在加载视频");
-    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeDisabled();
-    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "成片播放器：播放进度" })).toBeDisabled();
 
     fireEvent.canPlay(video);
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "点击画面播放视频" }));
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
     expect(play).toHaveBeenCalledOnce();
   });
 
@@ -96,8 +96,8 @@ describe("video preview player", () => {
     fireEvent.waiting(video);
 
     expect(screen.queryByRole("status")).toBeNull();
-    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeEnabled();
-    expect(screen.getByRole("slider", { name: "播放进度" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled();
+    expect(screen.getByRole("slider", { name: "成片播放器：播放进度" })).toBeEnabled();
   });
 
   it("shows the actual buffered percentage while the video is loading", () => {
@@ -148,7 +148,8 @@ describe("video preview player", () => {
 
     fireEvent.error(container.querySelector("video")!);
     expect(screen.getByRole("alert")).toHaveTextContent("视频暂时无法加载");
-    expect(screen.getByRole("button", { name: "重新加载视频" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "成片播放器" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "成片播放器：重新加载视频" })).toBeInTheDocument();
     expect(onError).toHaveBeenCalledOnce();
   });
 });

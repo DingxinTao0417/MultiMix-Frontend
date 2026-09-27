@@ -1459,6 +1459,51 @@ describe("asset product mapper", () => {
     expect(product.segments?.[0]?.assetThumbnailUrl).not.toContain("content-assets");
   });
 
+  it("only exposes a saved reference as the used asset when it matches the persisted primary visual", () => {
+    const mapped = (primaryAssetId: number) => contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      metadata: {
+        capability: "video_project",
+        video_project: {
+          segments: [{
+            id: "scene-saved-reference",
+            asset_reference: { status: "matched", chosen_asset_id: 12, source_snapshot: { title: "已选素材" } },
+            primary_visual: {
+              status: "persisted", source_type: "saved_asset", asset_id: primaryAssetId,
+              artifact_ref: `local://video-orchestration/1/materials/${primaryAssetId}.mp4`,
+            },
+          }],
+        },
+      },
+    }));
+
+    expect(mapped(13).segments?.[0]?.assetReferenceId).toBeUndefined();
+    expect(mapped(12).segments?.[0]?.assetReferenceId).toBe(12);
+  });
+
+  it("preserves explicitly cleared copy separately from fields absent in the historical snapshot", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      metadata: {
+        capability: "video_project",
+        video_project: {
+          segments: [
+            { id: "scene-cleared", title: "", narration: "", subtitle_focus: "", voice: { name: "" } },
+            { id: "scene-unknown" },
+          ],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({ title: "", line: "", subLine: "", voiceName: "" });
+    expect(product.segments?.[1]?.title).toBeUndefined();
+    expect(product.segments?.[1]?.line).toBeUndefined();
+  });
+
   it("does not request private saved refs before manifest materialization", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",

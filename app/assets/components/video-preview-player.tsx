@@ -88,10 +88,10 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
 
     if (failed) {
       return (
-        <div className={`shadcn-prototype-preview-player ${ratioClassName}`} aria-label={label}>
+        <div className={`shadcn-prototype-preview-player ${ratioClassName}`} role="group" aria-label={label}>
           <div className="shadcn-prototype-preview-player-error" role="alert">
             <strong>视频暂时无法加载</strong>
-            <button type="button" onClick={() => {
+            <button type="button" aria-label={`${label}：重新加载视频`} onClick={() => {
               setFailed(false);
               setReloadRevision((value) => value + 1);
             }}>
@@ -103,11 +103,11 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     }
 
     return (
-      <div className={`shadcn-prototype-preview-player ${ratioClassName}`} aria-label={label}>
+      <div className={`shadcn-prototype-preview-player ${ratioClassName}`} role="group" aria-label={label}>
         <button
           type="button"
           className="shadcn-prototype-preview-player-screen"
-          aria-label={playing ? "点击画面暂停视频" : "点击画面播放视频"}
+          aria-label={`${label}：${playing ? "暂停视频" : "播放视频"}`}
           disabled={!ready}
           onClick={togglePlayback}
         >
@@ -162,7 +162,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
           <span>{formatPreviewTime(currentTime)}</span>
           <input
             type="range"
-            aria-label="播放进度"
+            aria-label={`${label}：播放进度`}
             min="0"
             max={duration || 0}
             step="0.01"

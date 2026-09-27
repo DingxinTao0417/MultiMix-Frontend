@@ -64,6 +64,7 @@ export type AssetProductSourceSummary = {
 export type AssetProductSegment = {
   id: string;
   index: number;
+  // For optional text snapshots, undefined means unavailable; an empty string is a known blank value.
   title?: string;
   startSeconds?: number;
   endSeconds?: number;
@@ -71,6 +72,8 @@ export type AssetProductSegment = {
   subLine?: string;
   voiceName?: string;
   assetTitle?: string;
+  // Saved asset reference only when it also entered the persisted main track.
+  assetReferenceId?: number;
   assetThumbnailUrl?: string;
   isFallback: boolean;
   // Mirrors the authoritative draft-stage material_resolution.fill_status.
@@ -79,6 +82,8 @@ export type AssetProductSegment = {
   visualStatusLabel?: "已生成画面" | "产品界面";
   businessHint?: "建议补充真实案例素材";
   primaryVisualSourceType?: "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
+  // Final persisted main-track visual, not a thumbnail or display title.
+  primaryVisualIdentity?: string;
   primaryVisualPersisted?: boolean;
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;

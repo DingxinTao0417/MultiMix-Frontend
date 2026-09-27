@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
+import type { AssetConversationResponse, ContentAsset, ContentAssetVersion } from "../lib/api";
+
+const execFileAsync = promisify(execFile);
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
@@ -663,6 +669,178 @@ test("library cross-type details and interaction states stay consistent", async 
   await detail.getByLabel("更多操作").click();
   await expect(detail.getByRole("button", { name: "查看来源", exact: true })).toBeVisible();
   await captureDesktopEvidence(page, "asset-detail");
+});
+
+test("CASE-07 version comparison keeps unmatched scenes honest across viewports", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-07-project-ready-mp4"];
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-07 identity");
+  const evidenceDir = process.env.MULTIMIX_VISUAL_EVIDENCE_DIR;
+  const runId = process.env.DISPLAY_COVERAGE_RUN_ID;
+  let previousMp4Ref = "local://video-orchestration/display-sample.mp4";
+  let currentMp4Ref = previousMp4Ref;
+  if (evidenceDir && runId) {
+    const mediaDir = resolve(homedir(), "Desktop", "multimix-test-results", "e2e-runtime", "display-coverage", runId, "artifacts", "video-orchestration");
+    const source = resolve(mediaDir, "display-sample.mp4");
+    const makeVisualVersion = async (name: string, filter: string) => {
+      await execFileAsync("ffmpeg", [
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", source,
+        "-vf", filter, "-an", "-c:v", "libx264", "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart", resolve(mediaDir, name),
+      ]);
+      return `local://video-orchestration/${name}`;
+    };
+    [previousMp4Ref, currentMp4Ref] = await Promise.all([
+      makeVisualVersion("display-comparison-before.mp4", "transpose=1,hue=s=0"),
+      makeVisualVersion("display-comparison-after.mp4", "transpose=1"),
+    ]);
+  }
+
+  const versionRows: ContentAssetVersion[] = [1, 2].map((version) => ({
+    id: 41000 + version,
+    asset_id: assetId,
+    version,
+    title: "CASE-07 视频工程",
+    body: "",
+    instruction: version === 2 ? "调整开场和收束" : null,
+    created_at: "2026-09-27T00:00:00Z",
+  }));
+  const comparisonAsset = (original: ContentAsset, side: "previous" | "current"): ContentAsset => {
+    const asset = structuredClone(original);
+    const metadata = asset.metadata;
+    const project = metadata.video_project as Record<string, unknown>;
+    const scenes = project.segments as Array<Record<string, unknown>>;
+    const endScene = scenes[2];
+    endScene.id = side === "previous" ? "scene-removed" : "scene-added";
+    endScene.title = side === "previous" ? "旧版收束" : "新版收束";
+    endScene.narration = side === "previous" ? "旧版结束" : "新版结束";
+    scenes[0].narration = side === "previous" ? "旧版开场" : "新版开场";
+    const mainTrack = (project.tracks as Array<Record<string, unknown>>)[0];
+    const elements = mainTrack.elements as Array<Record<string, unknown>>;
+    elements[2].id = `element-${endScene.id}`;
+    elements[2].segmentId = endScene.id;
+    elements[2].name = endScene.title;
+    project.ratio = "9:16";
+    project.mp4_ref = side === "previous" ? previousMp4Ref : currentMp4Ref;
+    (project.settings as Record<string, unknown>).width = 1080;
+    (project.settings as Record<string, unknown>).height = 1920;
+    metadata.video_segments = scenes;
+    (metadata.video_plan as Record<string, unknown>).scenes = scenes;
+    asset.versions = side === "previous" ? versionRows.slice(0, 1) : versionRows;
+    return asset;
+  };
+
+  let historicalAsset: ContentAsset | null = null;
+  const targetConversationPath = `/v1/assets/conversations/${conversationId}`;
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET"
+      || (pathname !== "/v1/assets/conversations" && pathname !== targetConversationPath)) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse | AssetConversationResponse[];
+    const rows = Array.isArray(payload) ? payload : [payload];
+    for (const row of rows) {
+      if (row.id !== conversationId) continue;
+      row.products = row.products.map((asset) => {
+        if (asset.id !== assetId) return asset;
+        historicalAsset = comparisonAsset(asset, "previous");
+        return comparisonAsset(asset, "current");
+      });
+    }
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route(`**/v1/assets/${assetId}/versions/${versionRows[0].id}/preview`, async (route) => {
+    if (!historicalAsset) throw new Error("Historical comparison asset was not prepared");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(historicalAsset) });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    // This seeded conversation has no optional requirements snapshot; the
+    // adapter deliberately handles that endpoint's 404 as an empty snapshot.
+    const expectedMissingRequirements = message.location().url.endsWith(`${targetConversationPath}/requirements/current`)
+      && message.text().includes("404");
+    if (!expectedMissingRequirements) browserErrors.push(message.text());
+  });
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  expect(await page.title()).toContain("MultiMix");
+  await workspace.getByRole("button", { name: "版本对比" }).click();
+  const comparison = workspace.getByRole("region", { name: "版本对比" });
+  await expect(comparison).toBeVisible();
+  await expect(comparison.getByText("修改后已保存", { exact: false })).toBeVisible();
+  const players = comparison.locator(".shadcn-prototype-preview-player");
+  await expect(players).toHaveCount(2);
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-sync")).toHaveCount(0);
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-player-media[inert]")).toHaveCount(0);
+  await expect(comparison.getByRole("button", { name: /查看 \d+ 处受影响分镜/ })).toHaveCSS("font-size", "12px");
+  await expect(comparison.getByRole("button", { name: "修改前 · v1：播放视频" })).toBeVisible();
+  await expect(comparison.getByRole("slider", { name: "修改前 · v1：播放进度" })).toBeVisible();
+  await expect(comparison.getByRole("button", { name: "修改后 · v2：播放视频" })).toBeVisible();
+  await expect(comparison.getByRole("slider", { name: "修改后 · v2：播放进度" })).toBeVisible();
+  if (evidenceDir && runId) {
+    const refs = await comparison.locator("video").evaluateAll((nodes) => nodes.map((node) => (node as HTMLVideoElement).currentSrc));
+    expect(refs[0]).not.toBe(refs[1]);
+  }
+  for (const video of await comparison.locator("video").all()) {
+    await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(1);
+  }
+  const sceneJump = comparison.getByRole("button", { name: /查看 3 处受影响分镜/ });
+  const jumpBox = await sceneJump.boundingBox();
+  expect(jumpBox).not.toBeNull();
+  if (jumpBox) expect(jumpBox.y + jumpBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) {
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, "comparison-1280x720.png"), animations: "disabled" });
+  }
+
+  await comparison.getByRole("button", { name: "试听修改前" }).click();
+  await sceneJump.focus();
+  await page.keyboard.press("Enter");
+  const changesRegion = comparison.getByRole("region", { name: "受影响的分镜" });
+  await expect(changesRegion).toBeFocused();
+  const firstChange = comparison.locator(".shadcn-prototype-video-comparison-changes ol li button").first();
+  const firstBox = await firstChange.boundingBox();
+  expect(firstBox).not.toBeNull();
+  if (firstBox) expect(firstBox.y + firstBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-scenes-1280x720.png"), animations: "disabled" });
+  await comparison.getByRole("button", { name: /新版收束/ }).click();
+  const previousAbsent = comparison.getByText("修改前无对应分镜", { exact: true });
+  await expect(previousAbsent).toBeVisible();
+  await expect(previousAbsent).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(comparison.getByText("仅定位有此分镜的一侧", { exact: false })).toBeVisible();
+  await expect(comparison.getByRole("button", { name: "试听修改前" })).toHaveCount(0);
+  await expect(comparison.locator("#comparison-active-details")).toContainText("修改前没有对应分镜");
+  await expect(comparison.getByRole("group", { name: "对比分镜播放器" })).toBeFocused();
+  const beforeVideo = comparison.locator("video").nth(0);
+  const afterVideo = comparison.locator("video").nth(1);
+  await expect.poll(() => beforeVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(5);
+  const playersBox = await players.first().boundingBox();
+  expect(playersBox).not.toBeNull();
+  if (playersBox) expect(playersBox.y + playersBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-added-1280x720.png"), animations: "disabled" });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await comparison.getByRole("button", { name: /旧版收束/ }).click();
+  await expect(comparison.getByText("修改后无对应分镜", { exact: true })).toBeVisible();
+  await expect.poll(() => beforeVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-removed-1440x900.png"), animations: "disabled" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await comparison.getByRole("button", { name: /新版收束/ }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  await expect(comparison.getByText("修改前无对应分镜", { exact: true })).toBeVisible();
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-changes > header")).toHaveCSS("flex-direction", "column");
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-added-390x844.png"), animations: "disabled" });
+  expect(browserErrors).toEqual([]);
 });
 
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compareVideoVersionSegments, videoSegmentChangeDetails, videoSegmentChangeSummary } from "../lib/video-version-comparison";
+import { compareVideoVersionOverview, compareVideoVersionSegments, videoSegmentChangeDetails, videoSegmentChangeSummary } from "../lib/video-version-comparison";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
 
 function segment(overrides: Partial<AssetProductSegment> = {}): AssetProductSegment {
@@ -107,17 +107,82 @@ describe("video version segment comparison", () => {
     expect(videoSegmentChangeDetails(change)).toEqual(expect.arrayContaining([
       { label: "时长", before: "5 秒", after: "3 秒" },
       { label: "口播", before: "原口播", after: "新口播" },
-      { label: "素材", before: "客厅近景", after: "完工全景" },
+      { label: "素材名称", before: "客厅近景", after: "完工全景" },
     ]));
   });
 
-  it("does not invent a material identity when only its thumbnail changes", () => {
-    const [change] = compareVideoVersionSegments(
+  it("shows an explicitly cleared value but does not infer a value for an unknown historical field", () => {
+    const [clearedLine] = compareVideoVersionSegments(
+      [segment({ line: "原口播" })],
+      [segment({ line: "" })],
+    );
+    expect(videoSegmentChangeDetails(clearedLine)).toContainEqual({
+      label: "口播", before: "原口播", after: "已清除",
+    });
+
+    const [unknownLine] = compareVideoVersionSegments(
+      [segment({ line: "原口播" })],
+      [segment({ line: undefined })],
+    );
+    expect(videoSegmentChangeDetails(unknownLine)).not.toContainEqual(expect.objectContaining({ label: "口播" }));
+  });
+
+  it("does not report an affected scene when only its thumbnail URL changes", () => {
+    expect(compareVideoVersionSegments(
       [segment()],
       [segment({ assetThumbnailUrl: "updated-thumbnail.png" })],
-    );
+    )).toEqual([]);
 
-    expect(videoSegmentChangeSummary(change)).toBe("画面已调整");
-    expect(videoSegmentChangeDetails(change)).toEqual([]);
+    expect(compareVideoVersionSegments(
+      [segment({ primaryVisualIdentity: "saved_asset:asset:12", primaryVisualPersisted: true, primaryVisualSourceType: "saved_asset" })],
+      [segment({ primaryVisualIdentity: "saved_asset:asset:13", primaryVisualPersisted: true, primaryVisualSourceType: "saved_asset" })],
+    )).toHaveLength(1);
+  });
+
+  it("does not call a renamed asset a replacement without a changed authoritative reference", () => {
+    const [renamed] = compareVideoVersionSegments(
+      [segment({ assetReferenceId: 12, assetTitle: "拍摄素材" })],
+      [segment({ assetReferenceId: 12, assetTitle: "重新命名的素材" })],
+    );
+    expect(videoSegmentChangeSummary(renamed)).toBe("素材信息已调整");
+    expect(videoSegmentChangeDetails(renamed)).toContainEqual({
+      label: "素材名称", before: "拍摄素材", after: "重新命名的素材",
+    });
+
+    const [replaced] = compareVideoVersionSegments(
+      [segment({ assetReferenceId: 12, primaryVisualIdentity: "saved_asset:asset:12", primaryVisualPersisted: true, primaryVisualSourceType: "saved_asset" })],
+      [segment({ assetReferenceId: 13, primaryVisualIdentity: "saved_asset:asset:13", primaryVisualPersisted: true, primaryVisualSourceType: "saved_asset" })],
+    );
+    expect(videoSegmentChangeSummary(replaced)).toBe("素材已更换");
+
+    expect(compareVideoVersionSegments(
+      [segment({ assetReferenceId: 12 })],
+      [segment({ assetReferenceId: 13 })],
+    )).toEqual([]);
+  });
+
+  it("shows only verifiable whole-video changes", () => {
+    const base = {
+      id: "video", mode: "video" as const, title: "视频", status: "完成", summary: "",
+      ratio: "9:16", duration: "30 秒", phase: "完成", sections: [], timeline: [], actions: [],
+    };
+    const previous = { ...base, metadata: { video_project: {
+      duration_seconds: 30,
+      metadata: { bgm_choice: { enabled: true, catalog_id: "calm" } },
+      media: [{ file_path: "bgm://calm", name: "轻快" }],
+    } } };
+    const current = { ...base, ratio: "16:9", metadata: { video_project: {
+      duration_seconds: 32,
+      metadata: { bgm_choice: { enabled: false } },
+    } } };
+    expect(compareVideoVersionOverview(previous, current)).toEqual([
+      { label: "画幅", before: "9:16", after: "16:9" },
+      { label: "全片时长", before: "30 秒", after: "32 秒" },
+      { label: "背景音乐", before: "轻快", after: "已关闭" },
+    ]);
+    expect(compareVideoVersionOverview(previous, { ...previous })).toEqual([]);
+    expect(compareVideoVersionOverview({ ...base }, { ...base, ratio: "16:9" })).toEqual([
+      { label: "画幅", before: "9:16", after: "16:9" },
+    ]);
   });
 });

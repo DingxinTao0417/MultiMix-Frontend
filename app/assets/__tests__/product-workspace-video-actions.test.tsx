@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ContentAsset } from "../../../lib/api";
@@ -147,9 +147,99 @@ describe("video browse actions", () => {
     expect(comparison).toHaveTextContent("原始过程");
     expect(comparison).toHaveTextContent("新版过程");
 
+    play.mockRejectedValueOnce(new DOMException("Autoplay blocked", "NotAllowedError"));
+    fireEvent.click(screen.getByRole("button", { name: /服务过程/ }));
+    await waitFor(() => expect(comparison).toHaveTextContent("浏览器阻止了自动播放"));
+
+    play.mockRejectedValueOnce(new DOMException("Unsupported codec", "NotSupportedError"));
+    fireEvent.click(screen.getByRole("button", { name: /服务过程/ }));
+    await waitFor(() => expect(comparison).toHaveTextContent("当前视频无法解码"));
+    expect(comparison).not.toHaveTextContent("浏览器阻止了自动播放，请点击画面播放。");
+
     fireEvent.click(screen.getByRole("button", { name: "单视频" }));
     expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "版本对比" })).not.toBeInTheDocument();
+  });
+
+  it("does not present a stale counterpart or a silent audio choice for an added scene", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const currentProduct = {
+      ...base,
+      version: "v2",
+      versions: [
+        { id: "41", label: "v1", savedAt: "稍早", status: "初始版本" },
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订版本" },
+      ],
+      segments: [{ id: "segment-added", index: 3, title: "新增收束", startSeconds: 3, endSeconds: 4, isFallback: false }],
+    };
+    apiMocks.getContentAssetVersionPreview.mockResolvedValueOnce(historicalVideoAsset());
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={currentProduct}
+      selectedConversation={conversationForDisplayProduct(currentProduct)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
+    const comparison = await screen.findByRole("region", { name: "版本对比" });
+    const playersRegion = within(comparison).getByRole("group", { name: "对比分镜播放器" });
+    expect(within(playersRegion).getByRole("group", { name: "修改前 · v1" })).toBeInTheDocument();
+    expect(within(playersRegion).getByRole("button", { name: "修改前 · v1：播放视频" })).toBeInTheDocument();
+    expect(within(playersRegion).getByRole("slider", { name: "修改前 · v1：播放进度" })).toBeInTheDocument();
+    expect(within(playersRegion).getByRole("group", { name: "修改后 · v2" })).toBeInTheDocument();
+    expect(within(playersRegion).getByRole("button", { name: "修改后 · v2：播放视频" })).toBeInTheDocument();
+    expect(within(playersRegion).getByRole("slider", { name: "修改后 · v2：播放进度" })).toBeInTheDocument();
+    expect(within(comparison).queryByText("修改前无对应分镜")).not.toBeInTheDocument();
+    expect(playersRegion.querySelectorAll(".shadcn-prototype-video-comparison-player-media[inert]")).toHaveLength(0);
+    expect(within(comparison).queryByText("已定位到对应位置")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "试听修改前" }));
+    const beforeVideo = screen.getByLabelText("修改前 · v1").querySelector("video")!;
+    const afterVideo = screen.getByLabelText("修改后 · v2").querySelector("video")!;
+    for (const video of [beforeVideo, afterVideo]) {
+      Object.defineProperty(video, "readyState", { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
+    }
+    fireEvent.click(screen.getByRole("button", { name: /新增收束/ }));
+    expect(comparison).toHaveTextContent("修改前无对应分镜");
+    expect(comparison).toHaveTextContent("修改前没有对应分镜");
+    expect(playersRegion).toHaveFocus();
+    expect(comparison).not.toHaveTextContent("已同步定位");
+    expect(beforeVideo.muted).toBe(true);
+    expect(afterVideo.muted).toBe(false);
+    expect(afterVideo.currentTime).toBe(3);
+    expect(screen.queryByRole("button", { name: "试听修改前" })).not.toBeInTheDocument();
+  });
+
+  it("routes a removed scene to the previous player only", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const currentProduct = {
+      ...base, version: "v2",
+      versions: [
+        { id: "41", label: "v1", savedAt: "稍早", status: "初始版本" },
+        { id: "42", label: "v2", savedAt: "刚刚", status: "修订版本" },
+      ],
+    };
+    const historical = historicalVideoAsset();
+    const videoProject = historical.metadata.video_project as Record<string, unknown>;
+    videoProject.segments = [
+      ...(videoProject.segments as unknown[]),
+      { id: "segment-removed", title: "旧收束", startTime: 3, duration: 1, narration: "旧版结束" },
+    ];
+    apiMocks.getContentAssetVersionPreview.mockResolvedValueOnce(historical);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={currentProduct}
+      selectedConversation={conversationForDisplayProduct(currentProduct)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
+    const comparison = await screen.findByRole("region", { name: "版本对比" });
+    const beforeVideo = screen.getByLabelText("修改前 · v1").querySelector("video")!;
+    const afterVideo = screen.getByLabelText("修改后 · v2").querySelector("video")!;
+    for (const video of [beforeVideo, afterVideo]) {
+      Object.defineProperty(video, "readyState", { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
+    }
+    fireEvent.click(screen.getByRole("button", { name: /旧收束/ }));
+    expect(comparison).toHaveTextContent("修改后无对应分镜");
+    expect(beforeVideo.muted).toBe(false);
+    expect(afterVideo.muted).toBe(true);
+    expect(beforeVideo.currentTime).toBe(3);
   });
 
   it("opens version review when a mounted completed video publishes the next version", async () => {

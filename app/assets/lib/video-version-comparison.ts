@@ -1,4 +1,5 @@
-import type { AssetProductSegment } from "./asset-workspace-types";
+import type { AssetProduct, AssetProductSegment } from "./asset-workspace-types";
+import { isRecord, stringValue } from "./asset-workspace-shared";
 
 export type VideoSegmentChangeKind = "timing" | "visual" | "copy" | "mg" | "structure";
 
@@ -17,11 +18,11 @@ export type VideoVersionSegmentChange = {
 
 const VISUAL_FIELDS: Array<keyof AssetProductSegment> = [
   "assetTitle",
-  "assetThumbnailUrl",
   "isFallback",
   "materialFillStatus",
   "visualStatusLabel",
   "primaryVisualSourceType",
+  "primaryVisualIdentity",
   "primaryVisualPersisted",
   "primaryVisualMediaType",
   "primaryVisualTreatment",
@@ -162,16 +163,20 @@ export function videoSegmentChangeDetails(change: VideoVersionSegmentChange): Vi
   }
   const textFields: Array<[keyof AssetProductSegment, string]> = [
     ["title", "标题"], ["line", "口播"], ["subLine", "字幕"], ["voiceName", "声音"],
-    ["assetTitle", "素材"], ["visualTreatmentLabel", "画面处理"],
+    ["assetTitle", "素材名称"], ["visualTreatmentLabel", "画面处理"],
     ["backgroundTreatmentLabel", "背景"], ["mgLabel", "图形动效"],
     ["graphicComponentLabel", "图形组件"],
   ];
   for (const [field, label] of textFields) {
     const before = previous[field];
     const after = current[field];
-    if (typeof before === "string" && before.trim() && typeof after === "string" && after.trim()
+    if (typeof before === "string" && typeof after === "string"
       && before.trim() !== after.trim()) {
-      details.push({ label, before: before.trim(), after: after.trim() });
+      details.push({
+        label,
+        before: before.trim() || "未设置",
+        after: after.trim() || "已清除",
+      });
     }
   }
   return details;
@@ -187,9 +192,67 @@ export function videoSegmentChangeSummary(change: VideoVersionSegmentChange): st
   } else if (change.changeKinds.includes("timing")) summary.push("位置已调整");
   if (change.changeKinds.includes("copy")) summary.push(change.previousSegment.line !== change.currentSegment.line
     ? "口播已调整" : "文案已调整");
-  if (change.changeKinds.includes("visual")) summary.push(change.previousSegment.assetTitle !== change.currentSegment.assetTitle
-    && change.previousSegment.assetTitle && change.currentSegment.assetTitle ? "素材已更换" : "画面已调整");
+  if (change.changeKinds.includes("visual")) {
+    const previousAssetId = change.previousSegment.assetReferenceId;
+    const currentAssetId = change.currentSegment.assetReferenceId;
+    const previousPrimaryIdentity = change.previousSegment.primaryVisualIdentity;
+    const currentPrimaryIdentity = change.currentSegment.primaryVisualIdentity;
+    const isConfirmedSavedAssetReplacement = previousAssetId != null
+      && currentAssetId != null
+      && previousAssetId !== currentAssetId
+      && change.previousSegment.primaryVisualSourceType === "saved_asset"
+      && change.currentSegment.primaryVisualSourceType === "saved_asset"
+      && change.previousSegment.primaryVisualPersisted === true
+      && change.currentSegment.primaryVisualPersisted === true
+      && previousPrimaryIdentity === `saved_asset:asset:${previousAssetId}`
+      && currentPrimaryIdentity === `saved_asset:asset:${currentAssetId}`;
+    summary.push(isConfirmedSavedAssetReplacement
+      ? "素材已更换"
+      : change.previousSegment.assetTitle !== change.currentSegment.assetTitle
+        ? "素材信息已调整" : "画面已调整");
+  }
   if (change.changeKinds.includes("mg")) summary.push("图形动效已调整");
   if (change.changeKinds.includes("structure")) summary.push("顺序已调整");
   return summary.join("；");
+}
+
+export type VideoVersionOverviewChange = { label: string; before: string; after: string };
+
+function videoProject(product: AssetProduct): Record<string, unknown> | null {
+  const metadata = isRecord(product.metadata) ? product.metadata : null;
+  return metadata && isRecord(metadata.video_project) ? metadata.video_project : null;
+}
+
+function bgmChoice(product: AssetProduct): { identity: string; label: string } | null {
+  const project = videoProject(product);
+  const metadata = isRecord(product.metadata) ? product.metadata : null;
+  const projectMetadata = project && isRecord(project.metadata) ? project.metadata : null;
+  const choice = isRecord(projectMetadata?.bgm_choice) ? projectMetadata.bgm_choice
+    : isRecord(metadata?.bgm_choice) ? metadata.bgm_choice : null;
+  if (!choice) return null;
+  if (choice.enabled === false) return { identity: "off", label: "已关闭" };
+  const catalogId = stringValue(choice.catalog_id);
+  if (!catalogId) return null;
+  const media = Array.isArray(project?.media) ? project.media.filter(isRecord) : [];
+  const selected = media.find((item) => stringValue(item.file_path) === `bgm://${catalogId}`
+    || (isRecord(item.metadata) && stringValue(item.metadata.catalog_id) === catalogId));
+  return { identity: `catalog:${catalogId}`, label: stringValue(selected?.name) || catalogId };
+}
+
+export function compareVideoVersionOverview(previous: AssetProduct, current: AssetProduct): VideoVersionOverviewChange[] {
+  const changes: VideoVersionOverviewChange[] = [];
+  if (previous.ratio && current.ratio && previous.ratio !== current.ratio) {
+    changes.push({ label: "画幅", before: previous.ratio, after: current.ratio });
+  }
+  const previousDuration = normalizedNumber(videoProject(previous)?.duration_seconds as number | undefined);
+  const currentDuration = normalizedNumber(videoProject(current)?.duration_seconds as number | undefined);
+  if (previousDuration != null && currentDuration != null && !sameNumber(previousDuration, currentDuration)) {
+    changes.push({ label: "全片时长", before: secondsLabel(previousDuration), after: secondsLabel(currentDuration) });
+  }
+  const previousBgm = bgmChoice(previous);
+  const currentBgm = bgmChoice(current);
+  if (previousBgm && currentBgm && previousBgm.identity !== currentBgm.identity) {
+    changes.push({ label: "背景音乐", before: previousBgm.label, after: currentBgm.label });
+  }
+  return changes;
 }
