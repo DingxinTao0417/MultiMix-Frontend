@@ -41,6 +41,8 @@ import {
   assetWorkspaceAdapter,
   createLibraryCreationDraftConversation,
   type LibraryRow,
+  type ImageToVideoCostSummary,
+  type NarrationUsageSummary,
   type VideoJobResult,
   type VideoJobStepResult,
 } from "../lib/asset-workspace-adapter";
@@ -251,6 +253,8 @@ export type VideoJobLiveStatus = {
   workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
+  imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+  narrationUsageSummary?: NarrationUsageSummary | null;
   completionConfirmed: boolean;
   progressKind?: "video_create" | "video_update";
   connectionLost?: boolean;
@@ -272,6 +276,8 @@ export function videoJobLiveStatusFromResult(job: VideoJobResult): VideoJobLiveS
     workflowStage: job.workflowStage,
     steps: job.steps,
     errorMessage: job.errorMessage,
+    imageToVideoCostSummary: job.imageToVideoCostSummary,
+    narrationUsageSummary: job.narrationUsageSummary,
     completionConfirmed: false,
     progressKind: job.operationStatus == null ? "video_create" : "video_update",
     connectionLost: false,
@@ -1487,6 +1493,8 @@ export default function AssetsWorkspaceClient({
       status: string;
       steps: AgentRunStep[];
       errorMessage: string | null;
+      imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+      narrationUsageSummary?: NarrationUsageSummary | null;
       completionConfirmed: boolean;
       progressKind: "video_create" | "video_update";
       connectionLost: boolean;
@@ -1503,6 +1511,8 @@ export default function AssetsWorkspaceClient({
         errorMessage: (live.progressKind === "video_update" || live.operationStatus != null)
           ? live.operationFailureReason ?? live.failureReason ?? null
           : live.failureReason ?? live.operationFailureReason ?? null,
+        imageToVideoCostSummary: live.imageToVideoCostSummary,
+        narrationUsageSummary: live.narrationUsageSummary,
         completionConfirmed: live.completionConfirmed,
         progressKind: live.progressKind ?? (live.operationStatus == null ? "video_create" : "video_update"),
         connectionLost: live.connectionLost === true,

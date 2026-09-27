@@ -55,7 +55,7 @@ import { confirmVideoStoryboard } from "../lib/video-storyboard-client";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
-import { requirementConversationMediaFromValue } from "../lib/asset-workspace-adapter";
+import { requirementConversationMediaFromValue, type ImageToVideoCostSummary, type NarrationUsageSummary } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -461,6 +461,8 @@ export default function ConversationStudio({
     status: string;
     steps: AgentRunStep[];
     errorMessage: string | null;
+    imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+    narrationUsageSummary?: NarrationUsageSummary | null;
     completionConfirmed: boolean;
     progressKind?: "video_create" | "video_update";
     connectionLost?: boolean;
@@ -1435,6 +1437,8 @@ export default function ConversationStudio({
                       ? liveAgentAction.message
                       : liveRunState?.errorMessage
                         ?? (message.localState === "failed" ? message.text : undefined)}
+                    imageToVideoCostSummary={liveRunState?.imageToVideoCostSummary}
+                    narrationUsageSummary={liveRunState?.narrationUsageSummary}
                     actions={writeCapabilities.canGenerate ? videoProgressActions : undefined}
                   />
                 ) : (

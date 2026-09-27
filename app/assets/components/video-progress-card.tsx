@@ -7,6 +7,7 @@ import {
   type VideoProgressInput,
   type VideoProgressMilestone,
 } from "../lib/video-progress-presentation";
+import type { ImageToVideoCostSummary, NarrationUsageSummary } from "../lib/asset-workspace-adapter";
 
 function MilestoneIcon({ status }: { status: VideoProgressMilestone["status"] }) {
   if (status === "done") {
@@ -22,6 +23,8 @@ function MilestoneIcon({ status }: { status: VideoProgressMilestone["status"] })
 }
 
 export type VideoProgressCardProps = VideoProgressInput & {
+  imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+  narrationUsageSummary?: NarrationUsageSummary | null;
   errorMessage?: string | null;
   actions?: ReactNode;
   failureContext?: ReactNode;
@@ -35,7 +38,7 @@ export type VideoProgressCardProps = VideoProgressInput & {
   }>;
 };
 
-export function VideoProgressCard({ errorMessage, actions, failureContext, completionLabel, sceneProgress = [], ...input }: VideoProgressCardProps) {
+export function VideoProgressCard({ errorMessage, actions, failureContext, completionLabel, imageToVideoCostSummary, narrationUsageSummary, sceneProgress = [], ...input }: VideoProgressCardProps) {
   const presentation = videoProgressPresentation(input);
   const [expanded, setExpanded] = useState(false);
   const collapsedOnSuccess = useRef(false);
@@ -86,6 +89,39 @@ export function VideoProgressCard({ errorMessage, actions, failureContext, compl
               {presentation.completed ? completionLabel ?? presentation.title : presentation.title}
             </span>
             {description ? <p className="shadcn-prototype-video-task-progress-description">{description}</p> : null}
+            {imageToVideoCostSummary && imageToVideoCostSummary.recordedCallCount > 0 ? (
+              <p className="shadcn-prototype-video-task-progress-description">
+                图生视频已记录 {imageToVideoCostSummary.recordedCallCount} 次调用：
+                {imageToVideoCostSummary.pricedCallCount > 0
+                  ? `¥${imageToVideoCostSummary.standardPriceCostCny.toFixed(2)} 标准原价估算；`
+                  : "可计价金额未知；"}
+                {imageToVideoCostSummary.unknownCostCallCount > 0
+                  ? `${imageToVideoCostSummary.unknownCostCallCount} 次调用费用未知；`
+                  : ""}
+                不含留账前调用、渲染和配音，实际账单以供应商为准。
+              </p>
+            ) : null}
+            {narrationUsageSummary && narrationUsageSummary.recordedCallCount > 0 ? (
+              <p className="shadcn-prototype-video-task-progress-description">
+                主工程配音已记录 {narrationUsageSummary.recordedCallCount} 次调用：
+                {narrationUsageSummary.knownUsageCallCount > 0
+                  ? `供应商返回 ${narrationUsageSummary.billedTextWords} 个计费字符；`
+                  : "计费字符数未知；"}
+                {narrationUsageSummary.unknownUsageCallCount > 0
+                  ? `${narrationUsageSummary.unknownUsageCallCount} 次用量未知；`
+                  : ""}
+                配音金额未知，不含留账前调用及试听、局部改配音。
+              </p>
+            ) : null}
+            {imageToVideoCostSummary || narrationUsageSummary ? (
+              <p className="shadcn-prototype-video-task-progress-description">
+                {(imageToVideoCostSummary?.recordedCallCount ?? 0) === 0
+                  && (narrationUsageSummary?.recordedCallCount ?? 0) === 0
+                  ? "尚无已留账的调用；"
+                  : ""}
+                渲染金额未知：当前没有可归属到本工程的供应商账单。
+              </p>
+            ) : null}
             {input.status === "failed" && failureContext ? (
               <div className="shadcn-prototype-video-task-progress-description">{failureContext}</div>
             ) : null}

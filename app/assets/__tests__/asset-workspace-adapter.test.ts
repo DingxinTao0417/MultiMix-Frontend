@@ -19,6 +19,35 @@ import type {
 } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
+it("maps the public video job's recorded cost without treating it as a bill", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+    id: "job-1", asset_id: 42, status: "running", workflow_stage: "video",
+    steps: [], error_message: null, project: null,
+    image_to_video_cost_summary: {
+      recorded_call_count: 2, priced_call_count: 1, unknown_cost_call_count: 1,
+      standard_price_cost_cny: 0.75, historical_coverage: "since_ledger_enabled",
+    },
+    narration_usage_summary: {
+      recorded_call_count: 1, known_usage_call_count: 1,
+      unknown_usage_call_count: 0, billed_text_words: 12,
+      historical_coverage: "since_ledger_enabled", scope: "main_project_narration",
+    },
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const job = await assetWorkspaceAdapter.getVideoJob("token", "job-1");
+    expect(job.imageToVideoCostSummary).toMatchObject({
+      recordedCallCount: 2, pricedCallCount: 1, unknownCostCallCount: 1,
+      standardPriceCostCny: 0.75,
+    });
+    expect(job.narrationUsageSummary).toMatchObject({
+      recordedCallCount: 1, billedTextWords: 12,
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
     id: 1,

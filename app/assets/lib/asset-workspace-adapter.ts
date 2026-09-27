@@ -1040,6 +1040,23 @@ export type VideoJobStepResult = {
   retryJobId: string | null;
 };
 
+export type ImageToVideoCostSummary = {
+  recordedCallCount: number;
+  pricedCallCount: number;
+  unknownCostCallCount: number;
+  standardPriceCostCny: number;
+  historicalCoverage: "since_ledger_enabled";
+};
+
+export type NarrationUsageSummary = {
+  recordedCallCount: number;
+  knownUsageCallCount: number;
+  unknownUsageCallCount: number;
+  billedTextWords: number;
+  historicalCoverage: "since_ledger_enabled";
+  scope: "main_project_narration";
+};
+
 export type VideoJobResult = {
   id: string;
   assetId: number;
@@ -1047,6 +1064,8 @@ export type VideoJobResult = {
   workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
+  imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+  narrationUsageSummary?: NarrationUsageSummary | null;
   project: Record<string, unknown> | null;
   productStatus?: "generating" | "completed" | "failed";
   productCompleted: boolean;
@@ -1071,6 +1090,21 @@ type RawVideoJob = {
     retry_job_id?: string | null;
   }> | null;
   error_message: string | null;
+  image_to_video_cost_summary?: {
+    recorded_call_count: number;
+    priced_call_count: number;
+    unknown_cost_call_count: number;
+    standard_price_cost_cny: number;
+    historical_coverage: "since_ledger_enabled";
+  } | null;
+  narration_usage_summary?: {
+    recorded_call_count: number;
+    known_usage_call_count: number;
+    unknown_usage_call_count: number;
+    billed_text_words: number;
+    historical_coverage: "since_ledger_enabled";
+    scope: "main_project_narration";
+  } | null;
   project: Record<string, unknown> | null;
   product_status?: "generating" | "completed" | "failed";
   product_completed?: boolean;
@@ -1106,6 +1140,21 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     workflowStage: raw.workflow_stage || raw.status,
     steps,
     errorMessage: raw.error_message,
+    imageToVideoCostSummary: raw.image_to_video_cost_summary ? {
+      recordedCallCount: raw.image_to_video_cost_summary.recorded_call_count,
+      pricedCallCount: raw.image_to_video_cost_summary.priced_call_count,
+      unknownCostCallCount: raw.image_to_video_cost_summary.unknown_cost_call_count,
+      standardPriceCostCny: raw.image_to_video_cost_summary.standard_price_cost_cny,
+      historicalCoverage: raw.image_to_video_cost_summary.historical_coverage,
+    } : null,
+    narrationUsageSummary: raw.narration_usage_summary ? {
+      recordedCallCount: raw.narration_usage_summary.recorded_call_count,
+      knownUsageCallCount: raw.narration_usage_summary.known_usage_call_count,
+      unknownUsageCallCount: raw.narration_usage_summary.unknown_usage_call_count,
+      billedTextWords: raw.narration_usage_summary.billed_text_words,
+      historicalCoverage: raw.narration_usage_summary.historical_coverage,
+      scope: raw.narration_usage_summary.scope,
+    } : null,
     project: raw.project,
     productStatus: raw.product_status,
     productCompleted: raw.product_completed === true,

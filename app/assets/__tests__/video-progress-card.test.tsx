@@ -109,4 +109,33 @@ describe("compact video progress card", () => {
     render(<Card {...running} status="completed" completionConfirmed errorMessage="旧的失败" />);
     expect(screen.queryByText("旧的失败")).toBeNull();
   });
+  it("shows only the recorded list-price subtotal and its missing coverage", () => {
+    render(<Card {...running} imageToVideoCostSummary={{
+      recordedCallCount: 2, pricedCallCount: 1, unknownCostCallCount: 1,
+      standardPriceCostCny: 0.75, historicalCoverage: "since_ledger_enabled",
+    }} />);
+    expect(screen.getByText(/图生视频.*¥0\.75.*标准原价估算/)).toBeTruthy();
+    expect(screen.getByText(/1 次调用费用未知/)).toBeTruthy();
+    expect(screen.getByText(/不含留账前调用、渲染和配音/)).toBeTruthy();
+  });
+  it("shows provider-reported narration characters without inventing a price", () => {
+    render(<Card {...running} narrationUsageSummary={{
+      recordedCallCount: 2, knownUsageCallCount: 1, unknownUsageCallCount: 1,
+      billedTextWords: 12, historicalCoverage: "since_ledger_enabled",
+      scope: "main_project_narration",
+    }} />);
+    expect(screen.getByText(/配音.*12.*计费字符/)).toBeTruthy();
+    expect(screen.getByText(/1 次用量未知/)).toBeTruthy();
+    expect(screen.getByText(/配音金额未知/)).toBeTruthy();
+    expect(screen.getByText(/渲染金额未知/)).toBeTruthy();
+  });
+  it("does not mistake an empty post-ledger record for zero lifetime spend", () => {
+    render(<Card {...running} narrationUsageSummary={{
+      recordedCallCount: 0, knownUsageCallCount: 0, unknownUsageCallCount: 0,
+      billedTextWords: 0, historicalCoverage: "since_ledger_enabled",
+      scope: "main_project_narration",
+    }} />);
+    expect(screen.getByText(/尚无已留账的调用/)).toBeTruthy();
+    expect(screen.queryByText(/¥0\.00/)).toBeNull();
+  });
 });
