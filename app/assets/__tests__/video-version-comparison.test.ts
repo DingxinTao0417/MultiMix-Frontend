@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { compareVideoVersionOverview, compareVideoVersionSegments, videoSegmentChangeDetails, videoSegmentChangeSummary } from "../lib/video-version-comparison";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
+import { contentAssetToProduct } from "../../../lib/asset-mappers";
+import type { ContentAsset } from "../../../lib/api";
 
 function segment(overrides: Partial<AssetProductSegment> = {}): AssetProductSegment {
   return {
@@ -120,11 +122,46 @@ describe("video version segment comparison", () => {
       label: "口播", before: "原口播", after: "已清除",
     });
 
-    const [unknownLine] = compareVideoVersionSegments(
+    const unknownLine = compareVideoVersionSegments(
       [segment({ line: "原口播" })],
       [segment({ line: undefined })],
     );
-    expect(videoSegmentChangeDetails(unknownLine)).not.toContainEqual(expect.objectContaining({ label: "口播" }));
+    expect(unknownLine).toEqual([]);
+  });
+
+  it("does not invent copy, timing, visual, or motion differences from one-sided missing evidence", () => {
+    expect(compareVideoVersionSegments(
+      [segment({ primaryVisualIdentity: "saved_asset:asset:12" })],
+      [segment({ line: undefined, startSeconds: undefined, endSeconds: undefined,
+        primaryVisualIdentity: undefined, mgLabel: undefined })],
+    )).toEqual([]);
+  });
+
+  it("does not treat a mapper-derived fallback false as proof of a visual change", () => {
+    const mapped = (scene: Record<string, unknown>) => contentAssetToProduct({
+      id: 1, project_id: null, parent_asset_id: null, asset_kind: "video",
+      content_type: "video_project", title: "视频", status: "ready",
+      source_filename: null, source_content_type: null, original_ref: null,
+      markdown_ref: null, content_hash: null, body: "",
+      metadata: { video_project: { segments: [scene] } },
+      linked_asset_ids: [], linked_event_ids: [], archived: false, error_message: null,
+      created_at: "2026-09-27T00:00:00Z", updated_at: "2026-09-27T00:00:00Z",
+      versions: [],
+    } as ContentAsset).segments;
+    const previous = mapped({ id: "scene-1", title: "开场", primary_visual: {
+      source_type: "public_asset", status: "persisted", artifact_ref: "local://public.mp4",
+    } });
+    const current = mapped({ id: "scene-1", title: "开场" });
+
+    expect(previous?.[0]?.isFallback).toBe(true);
+    expect(current?.[0]?.isFallback).toBe(false);
+    expect(current?.[0]?.primaryVisualSourceType).toBeUndefined();
+    expect(compareVideoVersionSegments(previous, current)).toEqual([]);
+
+    expect(compareVideoVersionSegments(
+      [segment({ primaryVisualSourceType: "public_asset", primaryVisualIdentity: "public_asset:ref:before" })],
+      [segment({ primaryVisualSourceType: "saved_asset", primaryVisualIdentity: "saved_asset:asset:12" })],
+    )).toEqual([expect.objectContaining({ changeKinds: ["visual"] })]);
   });
 
   it("does not report an affected scene when only its thumbnail URL changes", () => {
@@ -183,6 +220,22 @@ describe("video version segment comparison", () => {
     expect(compareVideoVersionOverview(previous, { ...previous })).toEqual([]);
     expect(compareVideoVersionOverview({ ...base }, { ...base, ratio: "16:9" })).toEqual([
       { label: "画幅", before: "9:16", after: "16:9" },
+    ]);
+  });
+
+  it("ignores placeholder ratios and never exposes a raw BGM catalog ID", () => {
+    const base = {
+      id: "video", mode: "video" as const, title: "视频", status: "完成", summary: "",
+      ratio: "按指令", duration: "30 秒", phase: "完成", sections: [], timeline: [], actions: [],
+    };
+    const previous = { ...base, metadata: { video_project: {
+      metadata: { bgm_choice: { enabled: true, catalog_id: "bgm_7f91" } },
+    } } };
+    const current = { ...base, ratio: "9:16", metadata: { video_project: {
+      metadata: { bgm_choice: { enabled: false } },
+    } } };
+    expect(compareVideoVersionOverview(previous, current)).toEqual([
+      { label: "背景音乐", before: "旧配乐（名称未记录）", after: "已关闭" },
     ]);
   });
 });

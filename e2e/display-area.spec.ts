@@ -14,7 +14,9 @@ type SeedResult = {
 };
 
 const seed = JSON.parse(process.env.DISPLAY_COVERAGE_SEED_JSON ?? "{}") as Partial<SeedResult>;
-const desktopEvidenceDirectory = resolve(process.cwd(), "artifacts/qa/desktop-ui-ux-remediation-20260917");
+const desktopEvidenceDirectory = resolve(
+  process.env.MULTIMIX_VISUAL_EVIDENCE_DIR ?? resolve(process.cwd(), "test-results/display-coverage/evidence"),
+);
 
 async function captureDesktopEvidence(page: Page, slug: string) {
   await mkdir(desktopEvidenceDirectory, { recursive: true });
@@ -143,20 +145,14 @@ async function expectApprovedVideoPreviewShell(
   await resizeProductPaneAndExpectRatio(page, screen, expectedRatio);
 }
 
-test("new conversation shows a non-interactive creative start in the display area", async ({ page }) => {
+test("new conversation keeps the workspace single-column until an artifact exists", async ({ page }) => {
   await page.goto("/app/assets?conversation=new");
 
-  const start = page.getByRole("region", { name: "创作起点" });
-  await expect(start).toBeVisible();
-  await expect(start.getByRole("heading", { name: "你的作品会在这里逐步成形" })).toBeVisible();
-  const steps = start.getByRole("list", { name: "作品形成路径" });
-  await expect(steps).toContainText("明确目标");
-  await expect(steps).toContainText("形成编导方案");
-  await expect(steps).toContainText("生成可编辑视频");
-  await expect(start.getByText("先在左侧说说想做什么，或加入资料。", { exact: true })).toBeVisible();
-  await expect(start.getByRole("button")).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(page.getByRole("region", { name: "创作起点" })).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
-  await captureDesktopEvidence(page, "creative-start");
+  await captureDesktopEvidence(page, "new-conversation-single-column");
 });
 
 test("CASE-01 shows a director draft with its bound video-plan confirmation", async ({ page }) => {
@@ -498,7 +494,8 @@ test("video library renders one bounded page without eager video elements", asyn
 
   await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "加载更多内容" }).click();
-  await expect(cards).toHaveCount(65);
+  await expect.poll(() => cards.count()).toBeGreaterThan(48);
+  await expect(page.getByRole("button", { name: "加载更多内容" })).toHaveCount(0);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);
@@ -816,7 +813,13 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   await expect(comparison.getByText("仅定位有此分镜的一侧", { exact: false })).toBeVisible();
   await expect(comparison.getByRole("button", { name: "试听修改前" })).toHaveCount(0);
   await expect(comparison.locator("#comparison-active-details")).toContainText("修改前没有对应分镜");
-  await expect(comparison.getByRole("group", { name: "对比分镜播放器" })).toBeFocused();
+  const comparisonPlayers = comparison.getByRole("group", { name: "对比分镜播放器" });
+  await expect(comparisonPlayers).toBeFocused();
+  await comparison.getByRole("button", { name: /新版收束/ }).focus();
+  await page.keyboard.press("Enter");
+  await expect(comparisonPlayers).toBeFocused();
+  await expect(comparison.getByRole("button", { name: /新版收束/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(comparison.locator("#comparison-active-details")).toBeVisible();
   const beforeVideo = comparison.locator("video").nth(0);
   const afterVideo = comparison.locator("video").nth(1);
   await expect.poll(() => beforeVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);

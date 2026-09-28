@@ -173,8 +173,8 @@ describe("display-area eight-case matrix", () => {
   it("uses the shared player for a playable finished video", () => {
     render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "成片播放器：播放进度" })).toBeDisabled();
     expect(screen.queryByRole("separator", { name: "调整视频预览高度" })).not.toBeInTheDocument();
   });
 

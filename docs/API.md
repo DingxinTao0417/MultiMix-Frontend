@@ -783,6 +783,19 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   重新导出，不伪造续跑。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
   返回可重试失败，前端调用现有 `POST /v1/video/jobs/{job_public_id}/retry` 复用服务端候选文件，刷新
   页面后也不重新合成。
+- `failed` 任务携带 `quality_report` 时，刷新恢复和重试失败都必须同时展示本次任务的具体 blocker、
+  说明与建议；本次失败没有报告时清除上一任务的报告，不能只留下笼统任务错误或误用旧问题。
+- “重新检查”只用于 `export_preflight`，不能用工程预检结果覆盖 `export_file` 文件失败报告。
+  文件级报告引导用户通过导出菜单重新导出，并由新导出任务结果更新；带质量 blocker 的失败摘要
+  使用中文说明，原报告保留具体原因。
+- 等待已有品牌展示版导出任务时，任务失败须展示本次报告并停止当前流程，不自动重试或重新合成。
+  可重试任务保留身份供用户下一次明确操作；首次导出、刷新恢复和服务端重试共用质量失败中文摘要。
+- 独立剪辑器的导出菜单统一进入 EditorView 校验实时编辑内容身份；缓存只有在 tracks/media/settings/metadata
+  与本次编辑内容一致时才可下载。未保存内容不能复用旧服务端 current 任务，必须走保存、预检和正常导出。
+  保存、配乐变更和真实内容修改使旧恢复/下载请求失效；合成中内容变化时旧结果不得继续上传。
+- 工作台编辑 bridge 只接受当前 iframe 的 `MessageEvent.source`；导出命令携带唯一 `requestId`，编辑器
+  在所有导出进度、报告、成功及失败消息中回显。工作台匹配请求 ID 与启动工程内容身份，旧窗口、旧请求、
+  换版后的回复及其详情刷新均不得写回。独立 `previewChannel` 与时间线 flush 的请求合同保持不变。
 - 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、
   `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
   `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖

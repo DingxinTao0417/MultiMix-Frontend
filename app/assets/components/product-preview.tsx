@@ -602,7 +602,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 
   const seekComparisonSegment = (change: VideoVersionSegmentChange) => {
     setActiveComparisonSegmentId(change.id);
-    setExpandedComparisonSegmentId((previous) => previous === change.id ? null : change.id);
+    setExpandedComparisonSegmentId(change.id);
     setComparisonPlaybackNotice("");
     const requestId = ++comparisonSeekRequestRef.current;
     const targets: Array<[HTMLVideoElement | null, number | null]> = [
@@ -625,6 +625,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
       else player.addEventListener("loadedmetadata", seekAndPlay, { once: true });
     }
     comparisonPlayersRef.current?.scrollIntoView?.({ block: "start" });
+    comparisonPlayersRef.current?.focus({ preventScroll: true });
   };
 
   const comparisonTimeLabel = (time: number | null) => (
@@ -751,7 +752,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
                 ? "修改前没有对应分镜"
                 : !activeChange.currentSegment
                   ? "修改后没有对应分镜"
-                  : "历史版本未提供可逐项核对的信息"}</dd></div>
+                  : "两个版本的信息不足，无法逐项核对"}</dd></div>
               : null}
           </dl>
           {comparisonOverviewChanges.length ? (

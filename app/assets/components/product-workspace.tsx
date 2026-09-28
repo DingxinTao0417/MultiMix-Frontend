@@ -8,7 +8,7 @@ import { getProductDisplayIdentity, getProductModeLabel, getProductRatioClass, s
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
-import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
+import { videoExportFailureMessage, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import {
   findLocalExportMarker,
   type ExportFinalizeJob,
@@ -217,10 +217,11 @@ export default function ProductWorkspace({
   const [editorSaveState, setEditorSaveState] = useState<EditorBridgeMessage["status"]>("saved");
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
-  const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [qualityReports, setQualityReports] = useState<Partial<Record<ExportVariant, VideoQualityReport | null>>>({});
   const [exportError, setExportError] = useState("");
   const [projectSyncError, setProjectSyncError] = useState("");
   const [activeExportVariant, setActiveExportVariant] = useState<ExportVariant>("original");
+  const qualityReport = qualityReports[activeExportVariant] ?? null;
   const [imageExportError, setImageExportError] = useState("");
   const [projectEditedSinceExport, setProjectEditedSinceExport] = useState(false);
   const [materialPickerSegment, setMaterialPickerSegment] = useState<AssetProductSegment | null>(null);
@@ -251,6 +252,11 @@ export default function ProductWorkspace({
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef<ExportVariant | null>(null);
   const activeExportVariantRef = useRef<ExportVariant>("original");
+  const exportRequestEpochRef = useRef(0);
+  const editorExportRequestRef = useRef<{ id: string; identity: string } | null>(null);
+  const setQualityReport = useCallback((report: VideoQualityReport | null, variant = activeExportVariantRef.current) => {
+    setQualityReports((previous) => ({ ...previous, [variant]: report }));
+  }, []);
   const verifiedExportBlobsRef = useRef(new Map<ExportVariant, Blob>());
   const recoverableExportJobsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const imageSourceBlobRef = useRef<{ url: string; promise: Promise<Blob> } | null>(null);
@@ -410,6 +416,12 @@ export default function ProductWorkspace({
   const canReplaceFailedScene = Boolean(product.backendAssetId && replacementSceneId);
   const retrySceneNumber = /^(?:seg|scene)-(\d+)$/.exec(replacementSceneId || "")?.[1];
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
+  const projectApproval = productMetadata.video_project_quality_approval as { fingerprint?: unknown } | undefined;
+  const exportProjectIdentity = JSON.stringify([
+    currentAssetId, product.contentHash ?? "", product.version ?? "", stringValue(projectApproval?.fingerprint),
+  ]);
+  const exportProjectIdentityRef = useRef(exportProjectIdentity);
+  exportProjectIdentityRef.current = exportProjectIdentity;
   // Demo-final video surfaces (workspace-video.html): "browse" (player when an
   // MP4 exists, otherwise segment cards from video_project) is the default;
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
@@ -597,6 +609,8 @@ export default function ProductWorkspace({
   };
 
   useEffect(() => {
+    exportRequestEpochRef.current += 1;
+    editorExportRequestRef.current = null;
     setEditorRequested(false);
     setEditorReady(false);
     setEditorExitState("idle");
@@ -605,7 +619,7 @@ export default function ProductWorkspace({
     editorFlushRequestRef.current = null;
     setExportState("idle");
     setExportProgress(null);
-    setQualityReport(null);
+    setQualityReports({});
     setExportError("");
     setActiveExportVariant("original");
     activeExportVariantRef.current = "original";
@@ -615,7 +629,7 @@ export default function ProductWorkspace({
     verifiedExportBlobsRef.current.clear();
     recoverableExportJobsRef.current.clear();
     imageSourceBlobRef.current = null;
-  }, [currentAssetId, hasVideoProject]);
+  }, [exportProjectIdentity, hasVideoProject]);
 
   useEffect(() => {
     if (activeExportVariant === "original") {
@@ -638,12 +652,16 @@ export default function ProductWorkspace({
     setMaterialError("");
   }, [currentAssetId]);
 
-  const refreshPersistedVideoProject = useCallback(async (): Promise<boolean> => {
+  const refreshPersistedVideoProject = useCallback(async (requestIsCurrent?: () => boolean): Promise<boolean> => {
     const updateProduct = onProductUpdatedRef.current;
     if (!token || !updateProduct || selectedConversation.id === "new" || !product.backendAssetId) return false;
+    const refreshIsCurrent = () => exportProjectIdentityRef.current === exportProjectIdentity
+      && (requestIsCurrent?.() ?? true);
+    if (!refreshIsCurrent()) return false;
     setProjectSyncError("");
     try {
       const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+      if (!refreshIsCurrent()) return false;
       const updated = (refreshed.products ?? [refreshed.product]).find(
         (item) => item.backendAssetId === product.backendAssetId,
       );
@@ -651,14 +669,17 @@ export default function ProductWorkspace({
       updateProduct(updated);
       return true;
     } catch {
+      if (!refreshIsCurrent()) return false;
       setProjectSyncError("已保存编辑，但浏览态刷新失败。");
       return false;
     }
-  }, [product.backendAssetId, selectedConversation.id, token]);
+  }, [exportProjectIdentity, product.backendAssetId, selectedConversation.id, token]);
 
   const startEditorExport = useCallback((exportVariant: ExportVariant): boolean => {
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return false;
+    const requestId = crypto.randomUUID();
+    editorExportRequestRef.current = { id: requestId, identity: exportProjectIdentityRef.current };
     pendingExportRef.current = null;
     activeExportVariantRef.current = exportVariant;
     setActiveExportVariant(exportVariant);
@@ -669,6 +690,7 @@ export default function ProductWorkspace({
       {
         source: "multimix-workspace",
         type: "multimix-editor-export",
+        requestId,
         exportVariant,
         brandSpecVersion: exportVariant === "brand_showcase" ? BRAND_SHOWCASE_SPEC_VERSION : null,
       },
@@ -738,11 +760,17 @@ export default function ProductWorkspace({
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
+      if (!editorFrameRef.current?.contentWindow || event.source !== editorFrameRef.current.contentWindow) return;
       const data = event.data as EditorBridgeMessage;
       if (!data || typeof data !== "object" || data.source !== "multimix-editor") return;
       if (String(data.assetId ?? "") !== currentAssetId) return;
       if (data.previewChannel) return;
+      const exportRequest = editorExportRequestRef.current;
+      const exportMessageIsCurrent = () => exportRequest !== null
+        && editorExportRequestRef.current === exportRequest
+        && exportRequest.identity === exportProjectIdentityRef.current;
       if (data.type?.startsWith("multimix-editor-export")) {
+        if (!exportMessageIsCurrent() || data.requestId !== exportRequest?.id) return;
         const messageVariant = data.exportVariant === "brand_showcase" ? "brand_showcase" : "original";
         if (messageVariant !== activeExportVariantRef.current) return;
       }
@@ -817,17 +845,18 @@ export default function ProductWorkspace({
           break;
         case "multimix-editor-export-success":
           pendingExportRef.current = null;
-          if (data.report) setQualityReport(data.report);
+          setQualityReport(data.report ?? null);
           if (data.blob instanceof Blob) {
             verifiedExportBlobsRef.current.set(activeExportVariantRef.current, data.blob);
             setProjectEditedSinceExport(false);
             setExportState("done");
             setExportProgress(100);
             setExportError("");
-            void refreshPersistedVideoProject();
+            void refreshPersistedVideoProject(exportMessageIsCurrent);
           } else {
             setExportState("verifying");
-            void refreshPersistedVideoProject().then((refreshed) => {
+            void refreshPersistedVideoProject(exportMessageIsCurrent).then((refreshed) => {
+              if (!exportMessageIsCurrent()) return;
               if (refreshed) {
                 setProjectEditedSinceExport(false);
                 setExportState("done");
@@ -848,6 +877,8 @@ export default function ProductWorkspace({
           setExportError(data.message || "成片合成失败，请重试。");
           break;
         case "multimix-editor-recompose-started":
+          editorExportRequestRef.current = null;
+          exportRequestEpochRef.current += 1;
           // The film strip kicked off a segment recompose: the embed reloads
           // itself when the rebuilt project lands, so just gate export until
           // the fresh editor says ready again.
@@ -858,11 +889,15 @@ export default function ProductWorkspace({
           pendingExportRef.current = null;
           verifiedExportBlobsRef.current.clear();
           recoverableExportJobsRef.current.clear();
+          setQualityReports({});
           break;
         case "multimix-editor-project-updated":
+          editorExportRequestRef.current = null;
+          exportRequestEpochRef.current += 1;
           setProjectEditedSinceExport(true);
           verifiedExportBlobsRef.current.clear();
           recoverableExportJobsRef.current.clear();
+          setQualityReports({});
           setExportState("idle");
           setExportProgress(null);
           setExportError("");
@@ -901,6 +936,7 @@ export default function ProductWorkspace({
     currentAssetId,
     hasVideoProject,
     refreshPersistedVideoProject,
+    setQualityReport,
     showEditorEmbed,
     startEditorExport,
   ]);
@@ -917,6 +953,10 @@ export default function ProductWorkspace({
     ) return;
 
     const controller = new AbortController();
+    const epoch = exportRequestEpochRef.current;
+    const recoveryIsCurrent = () => !controller.signal.aborted
+      && epoch === exportRequestEpochRef.current
+      && exportProjectIdentityRef.current === exportProjectIdentity;
     let foundExport = false;
     void (async () => {
       try {
@@ -926,6 +966,7 @@ export default function ProductWorkspace({
           "original",
           controller.signal,
         );
+        if (!recoveryIsCurrent()) return;
         if (!current) {
           const localExport = findLocalExportMarker(product.backendAssetId!);
           if (localExport) {
@@ -953,26 +994,28 @@ export default function ProductWorkspace({
             current,
             controller.signal,
             (job) => {
+              if (!recoveryIsCurrent()) return;
               if (job.status !== "queued" && job.status !== "running") return;
               setExportState(serverExportState(job));
               setExportProgress(null);
             },
           );
         }
+        if (!recoveryIsCurrent()) return;
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableExportJobsRef.current.set("original", terminal);
           else recoverableExportJobsRef.current.delete("original");
+          const failedReport = terminal.qualityReport as VideoQualityReport | null;
+          setQualityReport(failedReport, "original");
           setExportState("error");
           setExportProgress(null);
-          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
           return;
         }
-        if (terminal.qualityReport) {
-          setQualityReport(terminal.qualityReport as VideoQualityReport);
-        }
+        setQualityReport(terminal.qualityReport as VideoQualityReport | null, "original");
         recoverableExportJobsRef.current.delete("original");
-        const refreshed = await refreshPersistedVideoProject();
-        if (controller.signal.aborted) return;
+        const refreshed = await refreshPersistedVideoProject(recoveryIsCurrent);
+        if (!recoveryIsCurrent()) return;
         if (!refreshed) {
           setExportState("error");
           setExportProgress(null);
@@ -984,7 +1027,7 @@ export default function ProductWorkspace({
         setExportProgress(100);
         setExportError("");
       } catch (error) {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        if (!recoveryIsCurrent() || (error instanceof DOMException && error.name === "AbortError")) return;
         if (!foundExport) return;
         setExportState("error");
         setExportProgress(null);
@@ -994,6 +1037,7 @@ export default function ProductWorkspace({
     return () => controller.abort();
   }, [
     currentAssetId,
+    exportProjectIdentity,
     hasCurrentPersistedExport,
     hasVideoProject,
     hasProductUpdateHandler,
@@ -1001,6 +1045,7 @@ export default function ProductWorkspace({
     projectEditedSinceExport,
     refreshPersistedVideoProject,
     selectedConversation.id,
+    setQualityReport,
     token,
   ]);
 
@@ -1068,7 +1113,7 @@ export default function ProductWorkspace({
   }, [beginPreviewExport]);
 
   const handlePreviewExportSuccess = useCallback((report: VideoQualityReport | undefined, blob: Blob | undefined) => {
-    if (report) setQualityReport(report);
+    setQualityReport(report ?? null);
     if (blob instanceof Blob) {
       verifiedExportBlobsRef.current.set(activeExportVariantRef.current, blob);
       setExportState("done");
@@ -1079,25 +1124,34 @@ export default function ProductWorkspace({
     setExportState("error");
     setExportProgress(null);
     setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
-  }, []);
+  }, [setQualityReport]);
 
-  const downloadPublishedExportJob = async (job: ExportFinalizeJob, exportVariant: ExportVariant) => {
+  const downloadPublishedExportJob = async (job: ExportFinalizeJob, exportVariant: ExportVariant, isCurrent: () => boolean) => {
     if (!job.mp4Ref) throw new Error("已完成的成片任务缺少下载文件");
     const response = await fetch(`${API_BASE}/v1/video/media?ref=${encodeURIComponent(job.mp4Ref)}`);
+    if (!isCurrent()) return;
     if (!response.ok) throw new Error(`media download failed with ${response.status}`);
     const blob = await response.blob();
+    if (!isCurrent()) return;
     if (blob.size <= 0) throw new Error("media download returned an empty body");
+    setQualityReport(job.qualityReport as VideoQualityReport | null, exportVariant);
     verifiedExportBlobsRef.current.set(exportVariant, blob);
     downloadExportBlob(blob, exportVariant);
   };
 
   const handleExportVideo = async (exportVariant: ExportVariant) => {
     if (!currentAssetId || ["exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading"].includes(exportState)) return;
+    const epoch = ++exportRequestEpochRef.current;
+    const isCurrent = () => epoch === exportRequestEpochRef.current
+      && exportProjectIdentityRef.current === exportProjectIdentity;
     activeExportVariantRef.current = exportVariant;
     setActiveExportVariant(exportVariant);
     const cachedBlob = verifiedExportBlobsRef.current.get(exportVariant);
     if (cachedBlob) {
       downloadExportBlob(cachedBlob, exportVariant);
+      setExportState("done");
+      setExportProgress(100);
+      setExportError("");
       return;
     }
     let recoverableJob = recoverableExportJobsRef.current.get(exportVariant);
@@ -1111,6 +1165,7 @@ export default function ProductWorkspace({
           product.backendAssetId,
           exportVariant,
         );
+        if (!isCurrent()) return;
         if (current?.status === "queued" || current?.status === "running") {
           setExportState(serverExportState(current));
           setExportProgress(null);
@@ -1120,29 +1175,43 @@ export default function ProductWorkspace({
             current,
             undefined,
             (job) => {
+              if (!isCurrent()) return;
               if (job.status !== "queued" && job.status !== "running") return;
               setExportState(serverExportState(job));
               setExportProgress(null);
             },
           );
+          if (!isCurrent()) return;
           if (terminal.status === "completed") {
-            await downloadPublishedExportJob(terminal, exportVariant);
+            await downloadPublishedExportJob(terminal, exportVariant, isCurrent);
+            if (!isCurrent()) return;
             setExportState("done");
             setExportProgress(100);
-            void refreshPersistedVideoProject();
+            void refreshPersistedVideoProject(isCurrent);
             return;
           }
-          recoverableJob = terminal.retryable ? terminal : undefined;
+          if (terminal.status === "failed") {
+            if (terminal.retryable) recoverableExportJobsRef.current.set(exportVariant, terminal);
+            else recoverableExportJobsRef.current.delete(exportVariant);
+            const failedReport = terminal.qualityReport as VideoQualityReport | null;
+            setQualityReport(failedReport);
+            setExportState("error");
+            setExportProgress(null);
+            setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
+            return;
+          }
         } else if (current?.status === "completed") {
-          await downloadPublishedExportJob(current, exportVariant);
+          await downloadPublishedExportJob(current, exportVariant, isCurrent);
+          if (!isCurrent()) return;
           setExportState("done");
           setExportProgress(100);
-          void refreshPersistedVideoProject();
+          void refreshPersistedVideoProject(isCurrent);
           return;
         } else if (current?.retryable) {
           recoverableJob = current;
         }
       } catch (error) {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportError(error instanceof Error ? error.message : "品牌展示版恢复失败，请重试。");
         return;
@@ -1158,35 +1227,39 @@ export default function ProductWorkspace({
           product.backendAssetId,
           recoverableJob,
         );
+        if (!isCurrent()) return;
         const terminal = await assetWorkspaceAdapter.waitForVideoExport(
           token,
           product.backendAssetId,
           retried,
           undefined,
           (job) => {
+            if (!isCurrent()) return;
             if (job.status !== "queued" && job.status !== "running") return;
             setExportState(serverExportState(job));
             setExportProgress(null);
           },
         );
+        if (!isCurrent()) return;
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableExportJobsRef.current.set(exportVariant, terminal);
           else recoverableExportJobsRef.current.delete(exportVariant);
+          const failedReport = terminal.qualityReport as VideoQualityReport | null;
+          setQualityReport(failedReport);
           setExportState("error");
           setExportProgress(null);
-          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
           return;
         }
-        if (terminal.qualityReport) {
-          setQualityReport(terminal.qualityReport as VideoQualityReport);
-        }
         recoverableExportJobsRef.current.delete(exportVariant);
-        await downloadPublishedExportJob(terminal, exportVariant);
-        void refreshPersistedVideoProject();
+        await downloadPublishedExportJob(terminal, exportVariant, isCurrent);
+        if (!isCurrent()) return;
+        void refreshPersistedVideoProject(isCurrent);
         setProjectEditedSinceExport(false);
         setExportState("done");
         setExportProgress(100);
       } catch (error) {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportProgress(null);
         setExportError(error instanceof Error ? error.message : "成片任务重试失败，请稍后再试。");
@@ -1206,13 +1279,17 @@ export default function ProductWorkspace({
       setExportError("");
       try {
         const response = await fetch(persistedExportUrl);
+        if (!isCurrent()) return;
         if (!response.ok) throw new Error(`media download failed with ${response.status}`);
         const blob = await response.blob();
+        if (!isCurrent()) return;
         if (blob.size <= 0) throw new Error("media download returned an empty body");
+        setQualityReport(null, exportVariant);
         verifiedExportBlobsRef.current.set(exportVariant, blob);
         downloadExportBlob(blob, exportVariant);
         setExportState("done");
       } catch {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportError("成片已生成，但下载文件暂时不可用，请重试。");
       }
@@ -1751,6 +1828,7 @@ export default function ProductWorkspace({
                   setExportError("");
                   verifiedExportBlobsRef.current.clear();
                   recoverableExportJobsRef.current.clear();
+                  setQualityReports({});
                 }}
               >
                 <Pencil size={12} aria-hidden="true" />
@@ -1865,7 +1943,9 @@ export default function ProductWorkspace({
             onLocate={locateQualityIssue}
             onRepair={repairQualityIssue}
             canRepair={canRepairQualityIssue}
-            onRecheck={() => void requestExportQuality()}
+            onRecheck={qualityReport.stage === "export_preflight"
+              ? () => void requestExportQuality()
+              : undefined}
           />
         ) : null}
 

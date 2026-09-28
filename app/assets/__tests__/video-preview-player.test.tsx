@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import VideoPreviewPlayer, { formatPreviewTime } from "../components/video-preview-player";
@@ -151,5 +151,60 @@ describe("video preview player", () => {
     expect(screen.getByRole("group", { name: "成片播放器" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "成片播放器：重新加载视频" })).toBeInTheDocument();
     expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("does not present an interrupted play request as a failed video load", async () => {
+    const onError = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(new DOMException("Interrupted", "AbortError"));
+    const { container } = render(<VideoPreviewPlayer src="/demo.mp4" label="成片播放器"
+      ratioClassName="ratio-landscape" onError={onError} />);
+    fireEvent.canPlay(container.querySelector("video")!);
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled());
+    expect(screen.queryByText("视频暂时无法加载")).not.toBeInTheDocument();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("explains a browser playback refusal without replacing the usable player", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(new DOMException("Blocked", "NotAllowedError"));
+    const { container } = render(<VideoPreviewPlayer src="/demo.mp4" label="成片播放器"
+      ratioClassName="ratio-landscape" />);
+    fireEvent.canPlay(container.querySelector("video")!);
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("浏览器阻止了播放");
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled();
+    expect(screen.queryByText("视频暂时无法加载")).not.toBeInTheDocument();
+  });
+
+  it("keeps a real decode rejection distinct from browser playback permission", async () => {
+    const onError = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(new DOMException("Unsupported", "NotSupportedError"));
+    const { container } = render(<VideoPreviewPlayer src="/unsupported.mp4" label="成片播放器"
+      ratioClassName="ratio-landscape" onError={onError} />);
+    fireEvent.canPlay(container.querySelector("video")!);
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("当前视频无法解码");
+    expect(screen.getByRole("button", { name: "成片播放器：重新加载视频" })).toBeInTheDocument();
+    expect(onError).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a stale playback refusal after a newer request starts playing", async () => {
+    let rejectFirst: ((reason: unknown) => void) | undefined;
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectFirst = reject; }))
+      .mockResolvedValueOnce();
+    const { container } = render(<VideoPreviewPlayer src="/demo.mp4" label="成片播放器"
+      ratioClassName="ratio-landscape" />);
+    const video = container.querySelector("video")!;
+    fireEvent.canPlay(video);
+
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
+    fireEvent.click(screen.getByRole("button", { name: "成片播放器：播放视频" }));
+    fireEvent.play(video);
+    expect(play).toHaveBeenCalledTimes(2);
+    await act(async () => rejectFirst?.(new DOMException("Old request blocked", "NotAllowedError")));
+
+    expect(screen.getByRole("button", { name: "成片播放器：暂停视频" })).toBeInTheDocument();
+    expect(screen.queryByText("浏览器阻止了播放", { exact: false })).not.toBeInTheDocument();
   });
 });

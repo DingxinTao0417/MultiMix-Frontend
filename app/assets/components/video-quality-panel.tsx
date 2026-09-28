@@ -31,8 +31,13 @@ export default function VideoQualityPanel({
               ? `${report.blockers.length} 个问题必须修复后才能导出。`
               : `${report.warnings.length} 个提醒不阻止导出。`}
           </span>
+          {report.stage === "export_file" ? (
+            <span>这是导出文件的检查结果，请通过导出菜单重新导出验证。</span>
+          ) : null}
         </div>
-        {onRecheck ? <button type="button" onClick={onRecheck}>重新检查</button> : null}
+        {onRecheck && report.stage === "export_preflight" ? (
+          <button type="button" onClick={onRecheck}>重新检查</button>
+        ) : null}
       </header>
       <div className="shadcn-prototype-video-quality-list">
         {issues.map((issue, index) => {
@@ -43,6 +48,9 @@ export default function VideoQualityPanel({
               <div>
                 <strong>{videoQualityIssueTitle(issue)}</strong>
                 <p>{issue.message}</p>
+                {!repairable && issue.suggested_actions[0] ? (
+                  <small>建议：{issue.suggested_actions[0]}</small>
+                ) : null}
               </div>
               <div className="shadcn-prototype-video-quality-actions">
                 {issue.segment_id ? (

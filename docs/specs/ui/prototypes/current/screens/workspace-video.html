@@ -1074,17 +1074,16 @@ $('versionComparison').addEventListener('click', function(e){
   var button = e.target.closest('[data-compare-scene]');
   if(!button) return;
   var scene = button.getAttribute('data-compare-scene');
-  var wasExpanded = button.getAttribute('aria-expanded') === 'true';
   var beforeTime = scene === '4' ? null : scene === '2' ? 5 : 14;
   var afterTime = scene === '4' ? 20 : scene === '2' ? 4 : 12;
   document.querySelectorAll('[data-compare-scene]').forEach(function(item){ item.classList.toggle('on', item === button); });
   var activeDetail = $('compareActiveDetail');
   var detailTemplate = $('compareDetail' + scene);
-  activeDetail.innerHTML = detailTemplate ? detailTemplate.innerHTML : '<div><strong>详情</strong><span>历史版本未提供可逐项核对的信息</span></div>';
-  activeDetail.hidden = wasExpanded;
-  activeDetail.classList.toggle('on', !wasExpanded);
+  activeDetail.innerHTML = detailTemplate ? detailTemplate.innerHTML : '<div><strong>详情</strong><span>两个版本的信息不足，无法逐项核对</span></div>';
+  activeDetail.hidden = false;
+  activeDetail.classList.add('on');
   document.querySelectorAll('[data-compare-scene]').forEach(function(item){
-    item.setAttribute('aria-expanded', String(item === button && !wasExpanded));
+    item.setAttribute('aria-expanded', String(item === button));
   });
   $('compareBeforeTime').textContent = beforeTime === null ? '--:--' : fmt(beforeTime);
   $('compareAfterTime').textContent = fmt(afterTime);

@@ -35,15 +35,13 @@ export function ExportButton({
   onExport,
   exportState,
   activeExportVariant,
-  verifiedBlobs,
   errorText = "",
   disabled = false,
   disabledReason = "",
 }: {
-  onExport: (variant: ExportVariant) => Promise<void>;
+  onExport: (variant: ExportVariant) => Promise<Blob | void>;
   exportState: ExportProgressState;
   activeExportVariant: ExportVariant;
-  verifiedBlobs: Partial<Record<ExportVariant, Blob>>;
   errorText?: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -68,12 +66,11 @@ export function ExportButton({
   }
 
   async function handleVariant(variant: ExportVariant) {
-    const verifiedBlob = verifiedBlobs[variant];
+    const verifiedBlob = await onExport(variant);
     if (verifiedBlob) {
       handleDownload(verifiedBlob, variant);
       return;
     }
-    await onExport(variant);
   }
 
   return (

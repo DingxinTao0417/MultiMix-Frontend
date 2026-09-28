@@ -18,7 +18,6 @@ export type VideoVersionSegmentChange = {
 
 const VISUAL_FIELDS: Array<keyof AssetProductSegment> = [
   "assetTitle",
-  "isFallback",
   "materialFillStatus",
   "visualStatusLabel",
   "primaryVisualSourceType",
@@ -64,7 +63,11 @@ function anyFieldChanged(
   current: AssetProductSegment,
   fields: Array<keyof AssetProductSegment>,
 ): boolean {
-  return fields.some((field) => JSON.stringify(previous[field] ?? null) !== JSON.stringify(current[field] ?? null));
+  return fields.some((field) => {
+    const before = previous[field];
+    const after = current[field];
+    return before != null && after != null && JSON.stringify(before) !== JSON.stringify(after);
+  });
 }
 
 function segmentChange(
@@ -84,8 +87,10 @@ function segmentChange(
   } else {
     if (previousSegment.index !== currentSegment.index) changeKinds.push("structure");
     if (
-      !sameNumber(previousStartSeconds, currentStartSeconds)
-      || !sameNumber(previousDurationSeconds, currentDurationSeconds)
+      (previousStartSeconds != null && currentStartSeconds != null
+        && !sameNumber(previousStartSeconds, currentStartSeconds))
+      || (previousDurationSeconds != null && currentDurationSeconds != null
+        && !sameNumber(previousDurationSeconds, currentDurationSeconds))
     ) changeKinds.push("timing");
     if (anyFieldChanged(previousSegment, currentSegment, VISUAL_FIELDS)) changeKinds.push("visual");
     if (anyFieldChanged(previousSegment, currentSegment, COPY_FIELDS)) changeKinds.push("copy");
@@ -190,7 +195,9 @@ export function videoSegmentChangeSummary(change: VideoVersionSegmentChange): st
     && !sameNumber(change.previousDurationSeconds, change.currentDurationSeconds)) {
     summary.push(`时长 ${Number(change.previousDurationSeconds.toFixed(2))}→${Number(change.currentDurationSeconds.toFixed(2))} 秒`);
   } else if (change.changeKinds.includes("timing")) summary.push("位置已调整");
-  if (change.changeKinds.includes("copy")) summary.push(change.previousSegment.line !== change.currentSegment.line
+  if (change.changeKinds.includes("copy")) summary.push(change.previousSegment.line != null
+    && change.currentSegment.line != null
+    && change.previousSegment.line !== change.currentSegment.line
     ? "口播已调整" : "文案已调整");
   if (change.changeKinds.includes("visual")) {
     const previousAssetId = change.previousSegment.assetReferenceId;
@@ -208,7 +215,9 @@ export function videoSegmentChangeSummary(change: VideoVersionSegmentChange): st
       && currentPrimaryIdentity === `saved_asset:asset:${currentAssetId}`;
     summary.push(isConfirmedSavedAssetReplacement
       ? "素材已更换"
-      : change.previousSegment.assetTitle !== change.currentSegment.assetTitle
+      : change.previousSegment.assetTitle != null
+        && change.currentSegment.assetTitle != null
+        && change.previousSegment.assetTitle !== change.currentSegment.assetTitle
         ? "素材信息已调整" : "画面已调整");
   }
   if (change.changeKinds.includes("mg")) summary.push("图形动效已调整");
@@ -223,7 +232,7 @@ function videoProject(product: AssetProduct): Record<string, unknown> | null {
   return metadata && isRecord(metadata.video_project) ? metadata.video_project : null;
 }
 
-function bgmChoice(product: AssetProduct): { identity: string; label: string } | null {
+function bgmChoice(product: AssetProduct): { identity: string; label: string | null } | null {
   const project = videoProject(product);
   const metadata = isRecord(product.metadata) ? product.metadata : null;
   const projectMetadata = project && isRecord(project.metadata) ? project.metadata : null;
@@ -236,12 +245,13 @@ function bgmChoice(product: AssetProduct): { identity: string; label: string } |
   const media = Array.isArray(project?.media) ? project.media.filter(isRecord) : [];
   const selected = media.find((item) => stringValue(item.file_path) === `bgm://${catalogId}`
     || (isRecord(item.metadata) && stringValue(item.metadata.catalog_id) === catalogId));
-  return { identity: `catalog:${catalogId}`, label: stringValue(selected?.name) || catalogId };
+  return { identity: `catalog:${catalogId}`, label: stringValue(selected?.name) || null };
 }
 
 export function compareVideoVersionOverview(previous: AssetProduct, current: AssetProduct): VideoVersionOverviewChange[] {
   const changes: VideoVersionOverviewChange[] = [];
-  if (previous.ratio && current.ratio && previous.ratio !== current.ratio) {
+  const knownRatios = new Set(["9:16", "16:9", "1:1"]);
+  if (knownRatios.has(previous.ratio) && knownRatios.has(current.ratio) && previous.ratio !== current.ratio) {
     changes.push({ label: "画幅", before: previous.ratio, after: current.ratio });
   }
   const previousDuration = normalizedNumber(videoProject(previous)?.duration_seconds as number | undefined);
@@ -252,7 +262,8 @@ export function compareVideoVersionOverview(previous: AssetProduct, current: Ass
   const previousBgm = bgmChoice(previous);
   const currentBgm = bgmChoice(current);
   if (previousBgm && currentBgm && previousBgm.identity !== currentBgm.identity) {
-    changes.push({ label: "背景音乐", before: previousBgm.label, after: currentBgm.label });
+    changes.push({ label: "背景音乐", before: previousBgm.label || "旧配乐（名称未记录）",
+      after: currentBgm.label || "新配乐（名称未记录）" });
   }
   return changes;
 }
