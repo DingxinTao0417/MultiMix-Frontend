@@ -3,11 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExportFinalizeJob } from "../video-export-client";
+import { useEffect } from "react";
 import EditorView from "../EditorView";
 
 const mocks = vi.hoisted(() => ({
   getCurrent: vi.fn(), wait: vi.fn(), retry: vi.fn(), upload: vi.fn(),
-  serialize: vi.fn(), init: vi.fn(), inspect: vi.fn(), render: vi.fn(), listeners: new Set<() => void>(),
+  serialize: vi.fn(), init: vi.fn(), inspect: vi.fn(), render: vi.fn(), flush: vi.fn(), listeners: new Set<() => void>(),
 }));
 vi.mock("@/editor-engine/vendor/bootstrap", () => ({
   disposeEditor: vi.fn(), hydrateAssetFilesForExport: vi.fn(async () => []),
@@ -17,13 +18,18 @@ vi.mock("@editor/core", () => {
   const subscribe = (listener: () => void) => { mocks.listeners.add(listener); return () => mocks.listeners.delete(listener); };
   return { EditorCore: { getInstance: vi.fn(() => ({
     scenes: { subscribe }, project: { subscribe }, media: { subscribe, getAssets: () => [], setAssets: vi.fn() },
+    playback: { subscribe, getCurrentTime: () => 0, getIsPlaying: () => false },
+    timeline: { getTotalDuration: () => 3 },
     renderer: { setRenderTree: vi.fn(), exportProject: mocks.render },
   })) } };
 });
 vi.mock("@editor/components/editor/panels/timeline", () => ({ Timeline: () => null }));
 vi.mock("@editor/components/editor/panels/preview", () => ({ PreviewPanel: () => null }));
 vi.mock("@/editor-engine/vendor/ReplacePanel", () => ({ ReplacePanel: () => null }));
-vi.mock("../FilmStrip", () => ({ default: () => null }));
+vi.mock("../FilmStrip", () => ({ default: function MockFilmStrip({ onFlushReady }: { onFlushReady?: (flush: typeof mocks.flush | null) => void }) {
+  useEffect(() => { onFlushReady?.(mocks.flush); return () => onFlushReady?.(null); }, [onFlushReady]);
+  return null;
+} }));
 vi.mock("../BgmPanel", () => ({ default: ({ onPrepareChange, onProjectChanged }: {
   onPrepareChange: () => Promise<void>; onProjectChanged: (result: {project: Record<string, unknown>}) => Promise<void>;
 }) => <button onClick={async () => {
@@ -60,6 +66,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.listeners.clear();
   mocks.init.mockResolvedValue(undefined);
+  mocks.flush.mockResolvedValue({ status: "saved" });
   mocks.getCurrent.mockImplementation(async ({ exportVariant }) => exportVariant === "original" ? null : running);
   mocks.serialize.mockReturnValue({ tracks: [] });
   mocks.inspect.mockReturnValue({ stage: "export_preflight", status: "blocked", warnings: [],
@@ -76,6 +83,103 @@ function chooseExport(label: "原始成片" | "品牌展示版") {
   fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
   fireEvent.click(screen.getByRole("menuitem", { name: label }));
 }
+
+describe("embedded export live content guard", () => {
+  it("exports from the read-only preview without a filmstrip save coordinator", async () => {
+    const parent = { postMessage: vi.fn() };
+    vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    const report = { stage: "export_file", status: "pass", blockers: [], warnings: [] };
+    mocks.inspect.mockReturnValue({ ...report, stage: "export_preflight" });
+    vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
+      ? { ...report, stage: "export_preflight" }
+      : { status: "completed", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+    mocks.render.mockImplementation(async ({ onProgress }) => {
+      onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
+      return { success: true, buffer: new ArrayBuffer(3), format: "mp4" };
+    });
+    mocks.upload.mockResolvedValue({ ...running, exportVariant: "original" });
+    mocks.wait.mockResolvedValue({ ...running, exportVariant: "original", status: "completed", stage: "done", mp4Ref: "new.mp4", qualityReport: report });
+    render(<EditorView assetId="42" jobId={null} token="token" embed mode="preview" />);
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-ready" }), window.location.origin));
+    act(() => window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+      data: { source: "multimix-workspace", type: "multimix-editor-export", requestId: "preview-export" } })));
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-export-success", requestId: "preview-export" }), window.location.origin));
+    expect(mocks.flush).not.toHaveBeenCalled();
+    expect(mocks.upload).toHaveBeenCalledOnce();
+  });
+
+  it("does not render or upload when pending timeline save fails", async () => {
+    const parent = { postMessage: vi.fn() };
+    vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    mocks.flush.mockResolvedValue({ status: "error", message: "保存失败，请先重试" });
+    render(<EditorView assetId="42" jobId={null} token="token" embed />);
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-ready" }), window.location.origin));
+    act(() => window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+      data: { source: "multimix-workspace", type: "multimix-editor-export", requestId: "request-save-failure" } })));
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-export-error", message: "保存失败，请先重试" }), window.location.origin));
+    expect(mocks.render).not.toHaveBeenCalled();
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("aborts verification and discards a late result even if content is reverted", async () => {
+    const parent = { postMessage: vi.fn() };
+    vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    const report = { stage: "export_file", status: "pass", blockers: [], warnings: [] };
+    mocks.inspect.mockReturnValue({ ...report, stage: "export_preflight" });
+    vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
+      ? { ...report, stage: "export_preflight" }
+      : { status: "completed", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+    mocks.render.mockImplementation(async ({ onProgress }) => {
+      onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
+      return { success: true, buffer: new ArrayBuffer(3), format: "mp4" };
+    });
+    mocks.upload.mockResolvedValue({ ...running, exportVariant: "original" });
+    let finish!: (job: ExportFinalizeJob) => void;
+    const pending = new Promise<ExportFinalizeJob>((resolve) => { finish = resolve; });
+    mocks.wait.mockReturnValue(pending);
+    render(<EditorView assetId="42" jobId={null} token="token" embed />);
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-ready" }), window.location.origin));
+    act(() => window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+      data: { source: "multimix-workspace", type: "multimix-editor-export", requestId: "old-verification" } })));
+    await waitFor(() => expect(mocks.wait).toHaveBeenCalledOnce());
+    const reads = vi.mocked(fetch).mock.calls.length;
+    act(() => { mocks.listeners.forEach((listener) => listener()); });
+    expect(parent.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-content-changed" }), expect.anything());
+    mocks.serialize.mockReturnValue({ tracks: [{ id: "edited-then-undone", elements: [] }] });
+    act(() => { mocks.listeners.forEach((listener) => listener()); });
+    expect(mocks.upload.mock.calls[0][0].signal.aborted).toBe(true);
+    mocks.serialize.mockReturnValue({ tracks: [] });
+    act(() => { mocks.listeners.forEach((listener) => listener()); });
+    await act(async () => { finish({ ...running, status: "completed", stage: "done", qualityReport: report, mp4Ref: "old.mp4" }); await pending; });
+    expect(fetch).toHaveBeenCalledTimes(reads);
+    expect(parent.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-export-success" }), expect.anything());
+  });
+
+  it.each(["original", "brand_showcase"])("does not upload %s after content changes during rendering", async (exportVariant) => {
+    const parent = { postMessage: vi.fn() };
+    vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    mocks.inspect.mockReturnValue({ stage: "export_preflight", status: "pass", blockers: [], warnings: [] });
+    vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
+      ? { stage: "export_preflight", status: "pass", blockers: [], warnings: [] }
+      : { status: "completed", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+    let finish!: (result: { success: boolean; buffer: ArrayBuffer }) => void;
+    const pending = new Promise<{ success: boolean; buffer: ArrayBuffer }>((resolve) => { finish = resolve; });
+    mocks.render.mockImplementation(({ onProgress }) => {
+      onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
+      return pending;
+    });
+    render(<EditorView assetId="42" jobId={null} token="token" embed />);
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-ready" }), window.location.origin));
+    act(() => window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+      data: { source: "multimix-workspace", type: "multimix-editor-export", requestId: "request-render", exportVariant } })));
+    await waitFor(() => expect(mocks.render).toHaveBeenCalledOnce());
+    mocks.serialize.mockReturnValue({ tracks: [{ id: "edited-during-render", elements: [] }] });
+    act(() => { mocks.listeners.forEach((listener) => listener()); });
+    await act(async () => { finish({ success: true, buffer: new ArrayBuffer(3) }); await pending; });
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(parent.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: "multimix-editor-export-success" }), expect.anything());
+  });
+});
 
 describe("standalone branded export recovery", () => {
   it("does not restart recovery for unsaved content when the auth callback changes", async () => {

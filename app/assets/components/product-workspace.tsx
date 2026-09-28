@@ -215,6 +215,7 @@ export default function ProductWorkspace({
   const [editorExitState, setEditorExitState] = useState<EditorExitState>("idle");
   const [editorExitError, setEditorExitError] = useState("");
   const [editorSaveState, setEditorSaveState] = useState<EditorBridgeMessage["status"]>("saved");
+  const editorSaveStateRef = useRef<EditorBridgeMessage["status"]>("saved");
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [qualityReports, setQualityReports] = useState<Partial<Record<ExportVariant, VideoQualityReport | null>>>({});
@@ -608,6 +609,19 @@ export default function ProductWorkspace({
     setIsTextEditing(false);
   };
 
+  const invalidateEditorExports = useCallback(() => {
+    editorExportRequestRef.current = null;
+    exportRequestEpochRef.current += 1;
+    pendingExportRef.current = null;
+    verifiedExportBlobsRef.current.clear();
+    recoverableExportJobsRef.current.clear();
+    setProjectEditedSinceExport(true);
+    setQualityReports({});
+    setExportState("idle");
+    setExportProgress(null);
+    setExportError("");
+  }, []);
+
   useEffect(() => {
     exportRequestEpochRef.current += 1;
     editorExportRequestRef.current = null;
@@ -616,6 +630,7 @@ export default function ProductWorkspace({
     setEditorExitState("idle");
     setEditorExitError("");
     setEditorSaveState("saved");
+    editorSaveStateRef.current = "saved";
     editorFlushRequestRef.current = null;
     setExportState("idle");
     setExportProgress(null);
@@ -676,6 +691,7 @@ export default function ProductWorkspace({
   }, [exportProjectIdentity, product.backendAssetId, selectedConversation.id, token]);
 
   const startEditorExport = useCallback((exportVariant: ExportVariant): boolean => {
+    if (["dirty", "saving", "error"].includes(editorSaveStateRef.current ?? "saved")) return false;
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return false;
     const requestId = crypto.randomUUID();
@@ -891,20 +907,25 @@ export default function ProductWorkspace({
           recoverableExportJobsRef.current.clear();
           setQualityReports({});
           break;
+        case "multimix-editor-content-changed":
+          invalidateEditorExports();
+          break;
         case "multimix-editor-project-updated":
-          editorExportRequestRef.current = null;
-          exportRequestEpochRef.current += 1;
-          setProjectEditedSinceExport(true);
-          verifiedExportBlobsRef.current.clear();
-          recoverableExportJobsRef.current.clear();
-          setQualityReports({});
-          setExportState("idle");
-          setExportProgress(null);
-          setExportError("");
+          invalidateEditorExports();
           void refreshPersistedVideoProject();
           break;
         case "multimix-editor-save-state":
+          if (!data.status) break;
+          editorSaveStateRef.current = data.status;
           setEditorSaveState(data.status);
+          if (["dirty", "saving", "error"].includes(data.status)) invalidateEditorExports();
+          if (data.status === "error") {
+            setEditorExitState("error");
+            setEditorExitError(data.message || "保存失败，请检查网络后重试。");
+          } else if (data.status === "saved") {
+            setEditorExitState((previous) => previous === "error" ? "idle" : previous);
+            setEditorExitError("");
+          }
           break;
         case "multimix-editor-flush-result":
           if (!data.requestId || data.requestId !== editorFlushRequestRef.current) break;
@@ -916,6 +937,7 @@ export default function ProductWorkspace({
               setEditorExitState("idle");
               setEditorExitError("");
               setEditorSaveState("saved");
+              editorSaveStateRef.current = "saved";
               setEditorRequested(false);
               setVideoSurface("browse");
             })();
@@ -924,6 +946,7 @@ export default function ProductWorkspace({
             setEditorExitState("error");
             setEditorExitError(data.message || "保存失败，请检查网络后重试。");
             setEditorSaveState("error");
+            editorSaveStateRef.current = "error";
           }
           break;
         default:
@@ -935,6 +958,7 @@ export default function ProductWorkspace({
   }, [
     currentAssetId,
     hasVideoProject,
+    invalidateEditorExports,
     refreshPersistedVideoProject,
     setQualityReport,
     showEditorEmbed,
@@ -1140,6 +1164,7 @@ export default function ProductWorkspace({
   };
 
   const handleExportVideo = async (exportVariant: ExportVariant) => {
+    if (["dirty", "saving", "error"].includes(editorSaveStateRef.current ?? "saved")) return;
     if (!currentAssetId || ["exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading"].includes(exportState)) return;
     const epoch = ++exportRequestEpochRef.current;
     const isCurrent = () => epoch === exportRequestEpochRef.current
@@ -1155,7 +1180,7 @@ export default function ProductWorkspace({
       return;
     }
     let recoverableJob = recoverableExportJobsRef.current.get(exportVariant);
-    if (!recoverableJob && exportVariant === "brand_showcase" && token && product.backendAssetId) {
+    if (!recoverableJob && !projectEditedSinceExport && exportVariant === "brand_showcase" && token && product.backendAssetId) {
       setExportState("checking");
       setExportProgress(null);
       setExportError("");
@@ -1319,7 +1344,10 @@ export default function ProductWorkspace({
   };
 
   const activeExportVariantLabel = activeExportVariant === "brand_showcase" ? "品牌展示版" : "原始成片";
-  const exportButtonLabel = exportState === "checking"
+  const editorSaveBlocksExport = ["dirty", "saving", "error"].includes(editorSaveState ?? "saved");
+  const exportButtonLabel = editorSaveBlocksExport
+    ? editorSaveState === "error" ? "保存失败，先重试" : "正在保存修改…"
+    : exportState === "checking"
     ? `${activeExportVariantLabel} · 正在查找…`
     : exportState === "preparing"
       ? `${activeExportVariantLabel} · 正在准备…`
@@ -1850,7 +1878,7 @@ export default function ProductWorkspace({
                 triggerLabel={exportButtonLabel}
                 triggerClassName="shadcn-prototype-open-editor"
                 menuAriaLabel="选择视频导出版本"
-                disabled={[
+                disabled={editorSaveBlocksExport || [
                   "exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading",
                 ].includes(exportState)}
                 options={[

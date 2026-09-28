@@ -465,6 +465,7 @@ export default function EditorView({
     }
 
     const controller = new AbortController();
+    ensureCurrent();
     activeExportAbortRef.current?.abort();
     activeExportAbortRef.current = controller;
     try {
@@ -539,19 +540,37 @@ export default function EditorView({
   }, [assetId, getExportToken, persistCurrentProject, refreshExportToken]);
 
   const handleEmbeddedExport = useCallback(async (exportVariant: ExportVariant, requestId?: string) => {
-    if (exportBusyRef.current) return;
-    exportBusyRef.current = true;
     const brandSpecVersion = exportVariant === "brand_showcase"
       ? BRAND_SHOWCASE_SPEC_VERSION
       : null;
-    const postExportUpdate = (payload: Record<string, unknown>) => postToParent({
+    const postReply = (payload: Record<string, unknown>) => postToParent({
       ...payload,
       exportVariant,
       brandSpecVersion,
       requestId,
     });
+    if (exportBusyRef.current) {
+      postReply({ type: "multimix-editor-export-error", message: "上一次导出正在结束，请稍后重试。" });
+      return;
+    }
+    const identity = editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
+    const epoch = ++standaloneExportEpochRef.current;
+    const isCurrent = () => epoch === standaloneExportEpochRef.current
+      && identity === editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
+    const postExportUpdate = (payload: Record<string, unknown>) => {
+      if (isCurrent()) postReply(payload);
+    };
+    exportBusyRef.current = true;
     try {
+      if (!previewOnly) {
+        const flush = timelineFlushRef.current;
+        if (!flush) throw new Error("剪辑器尚未准备好保存修改，请稍后重试。");
+        const saved = await flush();
+        if (!isCurrent()) return;
+        if (saved.status !== "saved") throw new Error(saved.message);
+      }
       const result = await performVerifiedExport(exportVariant, {
+        isCurrent,
         onStart: () => postExportUpdate({ type: "multimix-editor-export-start" }),
         onProgress: ({ progress }) => postExportUpdate({
           type: "multimix-editor-export-progress",
@@ -572,7 +591,7 @@ export default function EditorView({
           report,
         }),
       });
-      if (result) {
+      if (result && isCurrent()) {
         // The original click's browser activation expires during rendering and
         // verification, so the parent exposes a fresh explicit download action.
         postExportUpdate({
@@ -583,6 +602,7 @@ export default function EditorView({
         });
       }
     } catch (cause) {
+      if (!isCurrent()) return;
       if (cause instanceof ProjectSaveError && cause.qualityReport) {
         postExportUpdate({
           type: "multimix-editor-export-quality-report",
@@ -596,7 +616,7 @@ export default function EditorView({
     } finally {
       exportBusyRef.current = false;
     }
-  }, [performVerifiedExport, postToParent]);
+  }, [performVerifiedExport, postToParent, previewOnly]);
 
   const handleStandaloneExport = useCallback(async (exportVariant: ExportVariant): Promise<Blob | void> => {
     if (exportBusyRef.current) return;
@@ -875,18 +895,20 @@ export default function EditorView({
   }, [jobId, assetId, getExportToken, postToParent, token]);
 
   useEffect(() => {
-    if (embed || state !== "ready") return;
+    if (state !== "ready") return;
     const editor = EditorCore.getInstance();
     const initialIdentity = editorContentIdentity(serializeBackendProject(editor));
     standaloneContentIdentityRef.current = initialIdentity;
     savedStandaloneContentIdentityRef.current = initialIdentity;
     const onContentChange = () => {
       const identity = editorContentIdentity(serializeBackendProject(editor));
-      if (identity !== standaloneContentIdentityRef.current) invalidateStandaloneExports(identity);
+      if (identity === standaloneContentIdentityRef.current) return;
+      invalidateStandaloneExports(identity);
+      if (embed) postToParent({ type: "multimix-editor-content-changed" });
     };
     const unsubscribe = [editor.scenes.subscribe(onContentChange), editor.project.subscribe(onContentChange), editor.media.subscribe(onContentChange)];
     return () => { unsubscribe.forEach((stop) => stop()); };
-  }, [embed, invalidateStandaloneExports, state]);
+  }, [embed, invalidateStandaloneExports, postToParent, state]);
 
   useEffect(() => {
     const currentToken = getExportToken();

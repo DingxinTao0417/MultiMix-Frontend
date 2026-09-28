@@ -35,6 +35,61 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("embedded export freshness", () => {
+  it.each(["dirty", "saving", "error"] as const)("invalidates both cached variants when save state is %s", async (status) => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:old-export"), revokeObjectURL: vi.fn() });
+    const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" });
+    for (const variant of ["原始成片", "品牌展示版"] as const) {
+      chooseVideoExport(variant);
+      dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+        exportVariant: variant === "品牌展示版" ? "brand_showcase" : "original",
+        type: "multimix-editor-export-success", blob: new Blob(["old-video"]),
+        report: { stage: "export_file", status: "pass", blockers: [], warnings: [] } });
+    }
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status });
+    expect(screen.getByRole("button", { name: status === "error" ? "保存失败，先重试" : "正在保存修改…" })).toBeDisabled();
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status: "saved" });
+    for (const variant of ["原始成片", "品牌展示版"] as const) {
+      chooseVideoExport(variant);
+      expect(download).not.toHaveBeenCalled();
+      dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+        exportVariant: variant === "品牌展示版" ? "brand_showcase" : "original",
+        type: "multimix-editor-export-error", message: "新导出" });
+    }
+  });
+
+  it.each(["multimix-editor-export-success", "multimix-editor-export-error", "multimix-editor-export-progress"])("ignores late %s after an unsaved edit", async (type) => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const download = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" });
+    chooseVideoExport();
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status: "dirty" });
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type, progress: 0.8, message: "旧导出失败", blob: new Blob(["stale"]),
+      report: { stage: "export_file", status: "pass", blockers: [], warnings: [] } });
+    expect(screen.getByRole("button", { name: "正在保存修改…" })).toBeDisabled();
+    expect(screen.queryByText("旧导出失败")).not.toBeInTheDocument();
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status: "saved" });
+    chooseVideoExport();
+    expect(download).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /原始成片 · 正在合成/ })).toBeDisabled();
+  });
+});
+
 function historicalVideoAsset({ mp4Ref = "previous.mp4" }: { mp4Ref?: string } = {}): ContentAsset {
   return {
     id: 9100,

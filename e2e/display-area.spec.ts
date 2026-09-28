@@ -982,6 +982,89 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
 });
 
+test("CASE-07 embedded exports reject edits during preflight and recover failed saves", async ({ page }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  const consoleMessages: Array<{ level: string; text: string }> = [];
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) consoleMessages.push({ level: message.type(), text: message.text() });
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded asset id for CASE-07");
+  await expect(page).toHaveURL(/app\/assets/);
+  expect(await page.title()).not.toBe("");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  await clips.first().click();
+
+  let finishPreflight!: () => void;
+  const heldPreflight = new Promise<void>((resolve) => { finishPreflight = resolve; });
+  let preflightStarted = false;
+  let exportRequests = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === `/v1/video/projects/${assetId}/exports`) exportRequests += 1;
+  });
+  await page.route(`**/v1/video/projects/${assetId}/quality?stage=export_preflight`, async (route) => {
+    preflightStarted = true;
+    await heldPreflight;
+    await route.continue();
+  });
+  await chooseVideoExport(workspace);
+  await expect.poll(() => preflightStarted).toBe(true);
+
+  let finishSave!: () => void;
+  const heldSave = new Promise<void>((resolve) => { finishSave = resolve; });
+  let saveStarted = false;
+  await page.route(`**/v1/video/projects/${assetId}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    saveStarted = true;
+    await heldSave;
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Test save failure" }) });
+  });
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect(workspace.getByRole("button", { name: "正在保存修改…", exact: true })).toBeDisabled();
+  await expect.poll(() => saveStarted).toBe(true);
+  await captureDesktopEvidence(page, "embedded-export-saving");
+  finishPreflight();
+  // This response belongs to the pre-edit export and must never register a candidate.
+  await page.waitForResponse((response) => response.url().includes("stage=export_preflight"));
+  expect(exportRequests).toBe(0);
+  finishSave();
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await expect(workspace.getByRole("button", { name: "重试保存", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "embedded-export-save-failure");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "embedded-export-save-failure-390x844.png"), animations: "disabled" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.unroute(`**/v1/video/projects/${assetId}`);
+  await page.unroute(`**/v1/video/projects/${assetId}/quality?stage=export_preflight`);
+  await workspace.getByRole("button", { name: "重试保存", exact: true }).dispatchEvent("click");
+  const exportButton = workspace.getByRole("button", { name: "导出视频", exact: true });
+  await expect(exportButton).toBeEnabled({ timeout: 60_000 });
+  await chooseVideoExport(workspace);
+  await expect.poll(() => exportRequests, { timeout: 180_000 }).toBe(1);
+  await expect(exportButton).toBeEnabled({ timeout: 180_000 });
+  const downloadPromise = page.waitForEvent("download");
+  await chooseVideoExport(workspace);
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  if (downloadPath) expect((await stat(downloadPath)).size).toBeGreaterThan(0);
+  expect(exportRequests).toBe(1);
+  await captureDesktopEvidence(page, "embedded-export-recovered");
+  // The devtools portal exists on healthy Next.js pages too.
+  await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await writeFile(resolve(desktopEvidenceDirectory, "embedded-export-console.json"), JSON.stringify(consoleMessages, null, 2));
+});
+
 test("desktop start and image library keep the approved hierarchy", async ({ page }) => {
   await page.goto("/app/assets");
   await page.getByRole("button", { name: "新建项目", exact: true }).first().click();

@@ -796,6 +796,12 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 工作台编辑 bridge 只接受当前 iframe 的 `MessageEvent.source`；导出命令携带唯一 `requestId`，编辑器
   在所有导出进度、报告、成功及失败消息中回显。工作台匹配请求 ID 与启动工程内容身份，旧窗口、旧请求、
   换版后的回复及其详情刷新均不得写回。独立 `previewChannel` 与时间线 flush 的请求合同保持不变。
+- 工作台收到 `dirty/saving/error` 保存状态或 `multimix-editor-content-changed` 时，立即使两种导出
+  版本的缓存、旧恢复任务、请求身份与迟到报告失效，不等待成功 PUT。保存中导出入口显示“正在保存修改…”，
+  保存失败显示“保存失败，先重试”，通过既有“重试保存”入口恢复；未保存的修改不得查询旧品牌任务替代新导出。
+- 内嵌导出绑定点击时的实时 tracks/media/settings/metadata 与本地请求 epoch，先 flush 时间线保存协调器再预检/合成；
+  渲染、上传、验证及回填共用同一 `isCurrent`。内容变化后不继续上传旧候选，旧进度/失败/成功不覆盖新状态。
+  播放或选中等未改变序列化内容的通知不清除有效缓存；上次合成仍在结束时，新请求明确提示稍后重试，不静默丢弃。
 - 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、
   `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
   `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖
