@@ -5,6 +5,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import BgmPanel from "../BgmPanel";
+import type { BGMUpdateResponse } from "@/editor-engine/vendor/api";
+
+function changeHandler(prepare = vi.fn(), changed = vi.fn()) {
+  return async (mutation: () => Promise<BGMUpdateResponse>) => {
+    await prepare();
+    const result = await mutation();
+    await changed(result);
+    return result;
+  };
+}
 
 const catalog = {
   catalog_version: "v1",
@@ -57,6 +67,7 @@ beforeEach(() => {
     if (init?.method === "PUT") {
       return jsonResponse({
         catalog_version: "v1",
+        project_fingerprint: "revision-bgm",
         choice: { ...catalog.current_choice, catalog_id: "bgm-fun-01", locked_by_user: true },
         project: { metadata: { title: "Updated", duration: 30 }, settings: {}, media: [], tracks: [] },
       });
@@ -72,6 +83,16 @@ afterEach(() => {
 });
 
 describe("BgmPanel", () => {
+  it("rejects a successful response without a project revision before applying it", async () => {
+    const changed = vi.fn();
+    vi.mocked(fetch).mockImplementation(async (_input, init) => init?.method === "PUT"
+      ? jsonResponse({ choice: catalog.current_choice, project: { tracks: [] } })
+      : jsonResponse(catalog));
+    render(<BgmPanel assetId="12" token="token" onChange={changeHandler(vi.fn(), changed)} />);
+    fireEvent.click(await screen.findByRole("button", { name: "选择 轻松一步" }));
+    expect(await screen.findByText(/缺少工程版本/)).toBeInTheDocument();
+    expect(changed).not.toHaveBeenCalled();
+  });
   it("stays closed until the detail entry opens it, then closes and stops preview audio", async () => {
     const instances: Array<{ pause: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> }> = [];
     class PreviewAudio {
@@ -91,8 +112,7 @@ describe("BgmPanel", () => {
         token="token"
         open={false}
         onOpenChange={onOpenChange}
-        onPrepareChange={vi.fn()}
-        onProjectChanged={vi.fn()}
+        onChange={changeHandler()}
       />,
     );
 
@@ -104,8 +124,7 @@ describe("BgmPanel", () => {
         token="token"
         open
         onOpenChange={onOpenChange}
-        onPrepareChange={vi.fn()}
-        onProjectChanged={vi.fn()}
+        onChange={changeHandler()}
       />,
     );
     const card = (await screen.findByText("科技脉冲")).closest("article");
@@ -121,8 +140,7 @@ describe("BgmPanel", () => {
       <BgmPanel
         assetId="12"
         token="token"
-        onPrepareChange={vi.fn()}
-        onProjectChanged={vi.fn()}
+        onChange={changeHandler()}
       />,
     );
 
@@ -157,8 +175,7 @@ describe("BgmPanel", () => {
       <BgmPanel
         assetId="12"
         token="token"
-        onPrepareChange={prepare}
-        onProjectChanged={changed}
+        onChange={changeHandler(prepare, changed)}
       />,
     );
 
@@ -177,8 +194,7 @@ describe("BgmPanel", () => {
       <BgmPanel
         assetId="12"
         token="token"
-        onPrepareChange={prepare}
-        onProjectChanged={changed}
+        onChange={changeHandler(prepare, changed)}
       />,
     );
 
@@ -213,8 +229,7 @@ describe("BgmPanel", () => {
           selected_by: "auto",
           locked_by_user: false,
         }}
-        onPrepareChange={prepare}
-        onProjectChanged={changed}
+        onChange={changeHandler(prepare, changed)}
       />,
     );
 
@@ -251,8 +266,7 @@ describe("BgmPanel", () => {
       <BgmPanel
         assetId="12"
         token="token"
-        onPrepareChange={vi.fn()}
-        onProjectChanged={vi.fn()}
+        onChange={changeHandler()}
       />,
     );
 
@@ -275,8 +289,7 @@ describe("BgmPanel", () => {
       <BgmPanel
         assetId="12"
         token="token"
-        onPrepareChange={vi.fn()}
-        onProjectChanged={vi.fn()}
+        onChange={changeHandler()}
       />,
     );
 

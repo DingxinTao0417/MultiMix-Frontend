@@ -976,7 +976,7 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(currentBrand.mp4_ref).toBeTruthy();
   expect(currentBrand.mp4_ref).not.toBe(currentOriginal.mp4_ref);
 
-  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(2);
+  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(0);
   expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(2);
   expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports"))).toHaveLength(2);
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
@@ -1063,6 +1063,121 @@ test("CASE-07 embedded exports reject edits during preflight and recover failed 
   await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
   expect(errors).toEqual([]);
   await writeFile(resolve(desktopEvidenceDirectory, "embedded-export-console.json"), JSON.stringify(consoleMessages, null, 2));
+});
+
+test("CASE-07 serializes slow saves and preserves edits during exit refresh", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  const conversationId = seed.conversation_ids?.["case-07-project-ready-mp4"];
+  if (!assetId || !conversationId) throw new Error("Missing seeded CASE-07 identity");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  const initialCount = await clips.count();
+  const revisions: string[] = [];
+  const acknowledgements: string[] = [];
+  let releaseSave!: () => void;
+  const heldSave = new Promise<void>((resolve) => { releaseSave = resolve; });
+  page.on("response", async (response) => {
+    if (response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}` && response.ok()) {
+      const body = await response.json() as { project_fingerprint: string };
+      acknowledgements.push(body.project_fingerprint);
+    }
+  });
+  await page.route(`**/v1/video/projects/${assetId}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    revisions.push(route.request().headers()["if-match"]);
+    if (revisions.length === 1) await heldSave;
+    await route.continue();
+  });
+  await clips.first().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect.poll(() => revisions.length).toBe(1);
+  await clips.last().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect(clips).toHaveCount(initialCount + 2);
+  await captureDesktopEvidence(page, "save-queue-latest-edit");
+  expect(revisions).toHaveLength(1);
+  releaseSave();
+  await expect.poll(() => acknowledgements.length, { timeout: 60_000 }).toBe(2);
+  expect(revisions[1]).toBe(`"${acknowledgements[0]}"`);
+  await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toBeEnabled();
+
+  let releaseRefresh!: () => void;
+  const heldRefresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  let refreshStarted = false;
+  await page.route(`**/v1/assets/conversations/${conversationId}?**`, async (route) => {
+    if (route.request().method() !== "GET" || refreshStarted) return route.continue();
+    const response = await route.fetch();
+    refreshStarted = true;
+    await heldRefresh;
+    await route.fulfill({ response });
+  });
+  await workspace.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect.poll(() => refreshStarted).toBe(true);
+  await clips.last().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  releaseRefresh();
+  await expect(clips).toHaveCount(initialCount + 3);
+  await expect.poll(() => acknowledgements.length, { timeout: 60_000 }).toBe(3);
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toBeVisible();
+  await captureDesktopEvidence(page, "exit-refresh-new-edit-preserved");
+  await page.unroute(`**/v1/assets/conversations/${conversationId}?**`);
+  await workspace.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toHaveCount(0);
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  await expect(clips).toHaveCount(initialCount + 3, { timeout: 90_000 });
+  const storedUser = await page.evaluate(() => JSON.parse(window.localStorage.getItem("multimix_local_user") ?? "{}") as { token: string });
+  const response = await page.request.get(`http://127.0.0.1:${process.env.DISPLAY_COVERAGE_BACKEND_PORT}/v1/video/projects/${assetId}`, {
+    headers: { Authorization: `Bearer ${storedUser.token}` },
+  });
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).project_fingerprint).toBe(acknowledgements[2]);
+  await captureDesktopEvidence(page, "saved-edit-reopened");
+  await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("CASE-07 rejects an obsolete editor without overwriting a newer project", async ({ page }) => {
+  test.setTimeout(180_000);
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded CASE-07 identity");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  const initialCount = await clips.count();
+  const storedUser = await page.evaluate(() => JSON.parse(window.localStorage.getItem("multimix_local_user") ?? "{}") as { token: string });
+  const url = `http://127.0.0.1:${process.env.DISPLAY_COVERAGE_BACKEND_PORT}/v1/video/projects/${assetId}`;
+  const headers = { Authorization: `Bearer ${storedUser.token}` };
+  const current = await (await page.request.get(url, { headers })).json();
+  const project = { ...current.project, metadata: { ...current.project.metadata, title: "另一编辑窗口保存的新版本" } };
+  const updated = await page.request.put(url, { headers: { ...headers, "If-Match": `"${current.project_fingerprint}"` }, data: project });
+  expect(updated.status()).toBe(200);
+  const updatedBody = await updated.json();
+  expect(updatedBody.project_fingerprint).not.toBe(current.project_fingerprint);
+  const rejectedSave = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}`);
+  await clips.first().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  expect((await rejectedSave).status()).toBe(412);
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await expect(workspace.getByText(/工程已有新的修改/).first()).toBeVisible();
+  await expect(clips).toHaveCount(initialCount + 1);
+  const rejectedRetry = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}`);
+  await workspace.getByRole("button", { name: "重试保存", exact: true }).dispatchEvent("click");
+  expect((await rejectedRetry).status()).toBe(412);
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toBeVisible();
+  const persisted = await (await page.request.get(url, { headers })).json();
+  expect(persisted.project.metadata.title).toBe(project.metadata.title);
+  expect(persisted.project_fingerprint).toBe(updatedBody.project_fingerprint);
+  await captureDesktopEvidence(page, "version-conflict-edit-preserved");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "version-conflict-edit-preserved-390x844.png"), animations: "disabled" });
 });
 
 test("desktop start and image library keep the approved hierarchy", async ({ page }) => {

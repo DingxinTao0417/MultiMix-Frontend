@@ -248,7 +248,11 @@ export default function ProductWorkspace({
     enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
   });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const productDetailRef = useRef<HTMLDetailsElement | null>(null);
+  const editorActiveRef = useRef(false);
   const editorFlushRequestRef = useRef<string | null>(null);
+  const editorExitRefreshRef = useRef<string | null>(null);
+  const editorChangeEpochRef = useRef(0);
   const editorFlushSequenceRef = useRef(0);
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef<ExportVariant | null>(null);
@@ -431,6 +435,7 @@ export default function ProductWorkspace({
   const videoBgmSummary = canBrowseVideo ? browseBgmSummary(product) : "";
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = canBrowseVideo && editorRequested && videoSurface === "edit";
+  editorActiveRef.current = showEditorEmbed;
   // ProductPreview renders its own browse state (poster/player + segment cards)
   // for any generated project — with or without an exported MP4, and even
   // without a backendAssetId (mock / externally-hosted). Mirror that here so the
@@ -610,6 +615,12 @@ export default function ProductWorkspace({
   };
 
   const invalidateEditorExports = useCallback(() => {
+    editorChangeEpochRef.current += 1;
+    if (editorExitRefreshRef.current) {
+      editorExitRefreshRef.current = null;
+      editorFlushRequestRef.current = null;
+      setEditorExitState((previous) => previous === "flushing" ? "idle" : previous);
+    }
     editorExportRequestRef.current = null;
     exportRequestEpochRef.current += 1;
     pendingExportRef.current = null;
@@ -632,6 +643,7 @@ export default function ProductWorkspace({
     setEditorSaveState("saved");
     editorSaveStateRef.current = "saved";
     editorFlushRequestRef.current = null;
+    editorExitRefreshRef.current = null;
     setExportState("idle");
     setExportProgress(null);
     setQualityReports({});
@@ -668,6 +680,9 @@ export default function ProductWorkspace({
   }, [currentAssetId]);
 
   const refreshPersistedVideoProject = useCallback(async (requestIsCurrent?: () => boolean): Promise<boolean> => {
+    // Routine save/BGM notifications must not change the host version and
+    // unmount an active editor. Explicit flush/export flows supply a guard.
+    if (editorActiveRef.current && !requestIsCurrent) return false;
     const updateProduct = onProductUpdatedRef.current;
     if (!token || !updateProduct || selectedConversation.id === "new" || !product.backendAssetId) return false;
     const refreshIsCurrent = () => exportProjectIdentityRef.current === exportProjectIdentity
@@ -727,6 +742,7 @@ export default function ProductWorkspace({
   const requestBgmPanelOpen = useCallback(() => {
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow || typeof window === "undefined") return;
+    if (productDetailRef.current) productDetailRef.current.open = false;
     frameWindow.postMessage(
       { source: "multimix-workspace", type: "multimix-editor-bgm-open" },
       window.location.origin,
@@ -914,6 +930,9 @@ export default function ProductWorkspace({
           invalidateEditorExports();
           void refreshPersistedVideoProject();
           break;
+        case "multimix-editor-bgm-closed":
+          productDetailRef.current?.querySelector("summary")?.focus();
+          break;
         case "multimix-editor-save-state":
           if (!data.status) break;
           editorSaveStateRef.current = data.status;
@@ -930,14 +949,23 @@ export default function ProductWorkspace({
         case "multimix-editor-flush-result":
           if (!data.requestId || data.requestId !== editorFlushRequestRef.current) break;
           if (data.status === "saved") {
+            const epoch = editorChangeEpochRef.current;
+            editorExitRefreshRef.current = data.requestId;
+            editorSaveStateRef.current = "saved";
+            setEditorSaveState("saved");
+            const exitIsCurrent = () => editorFlushRequestRef.current === data.requestId
+              && editorChangeEpochRef.current === epoch
+              && editorSaveStateRef.current === "saved";
             void (async () => {
-              await refreshPersistedVideoProject();
-              if (editorFlushRequestRef.current !== data.requestId) return;
+              const refreshed = await refreshPersistedVideoProject(exitIsCurrent);
+              if (!exitIsCurrent()) return;
               editorFlushRequestRef.current = null;
+              editorExitRefreshRef.current = null;
               setEditorExitState("idle");
               setEditorExitError("");
               setEditorSaveState("saved");
               editorSaveStateRef.current = "saved";
+              if (!refreshed) return;
               setEditorRequested(false);
               setVideoSurface("browse");
             })();
@@ -1622,7 +1650,7 @@ export default function ProductWorkspace({
             </p>
           </div>
           <div className="shadcn-prototype-product-actions">
-            <details className="shadcn-prototype-product-detail-popover">
+            <details ref={productDetailRef} className="shadcn-prototype-product-detail-popover">
               <summary className="shadcn-prototype-product-detail-trigger">详情</summary>
               <aside className="shadcn-prototype-product-detail-drawer" aria-label="生成详情">
                 <header>
@@ -1994,7 +2022,7 @@ export default function ProductWorkspace({
         {projectSyncError ? (
           <div className="shadcn-prototype-video-preview-fallback" role="alert">
             <span>{projectSyncError}</span>
-            <button type="button" onClick={() => void refreshPersistedVideoProject()}>重试刷新</button>
+            <button type="button" onClick={() => showEditorEmbed ? requestEditorFlushBeforeExit() : void refreshPersistedVideoProject()}>重试刷新</button>
           </div>
         ) : null}
 

@@ -5,7 +5,7 @@ import {
   disposeEditor,
   hydrateAssetFilesForExport,
   initEditorWithProject,
-  updateEditorProject,
+  updateEditorBgm,
 } from "@/editor-engine/vendor/bootstrap";
 import type { BackendProject } from "@/editor-engine/vendor/buildProject";
 import { EditorCore } from "@editor/core";
@@ -30,6 +30,7 @@ import { getExportMimeType } from "@editor/lib/export";
 import { videoCache } from "@editor/services/video-cache/service";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
+import { mergeBgmProjectPatch } from "./bgm-project-patch";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
 import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
@@ -83,6 +84,7 @@ function errorMessageFromPayload(payload: unknown, fallback: string): string {
 }
 
 type LoadedProject = {
+  fingerprint: string | null;
   project: BackendProject;
 };
 
@@ -116,12 +118,6 @@ function editorContentIdentity(serialized: BackendProject | Record<string, unkno
   return JSON.stringify({ tracks: project.tracks, media: project.media, settings: project.settings, metadata: project.metadata });
 }
 
-async function refreshMountedEditorProject(project: BackendProject): Promise<void> {
-  const editor = EditorCore.getInstance();
-  editor.renderer.setRenderTree({ renderTree: null });
-  await updateEditorProject(project);
-}
-
 async function fetchProject(endpoint: string, token: string | null, isCurrent?: () => boolean): Promise<LoadedProject> {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -139,6 +135,7 @@ async function fetchProject(endpoint: string, token: string | null, isCurrent?: 
   rememberRawProject(raw);
   return {
     project: unwrapProject(raw),
+    fingerprint: typeof data.project_fingerprint === "string" ? data.project_fingerprint : null,
   };
 }
 
@@ -213,6 +210,8 @@ export default function EditorView({
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
+  const projectRevisionRef = useRef<string | null>(null);
+  const projectSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
   const recoverableStandaloneExportsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const standaloneExportEpochRef = useRef(0);
@@ -223,6 +222,7 @@ export default function EditorView({
   const standaloneVerifiedIdentityRef = useRef(new Map<ExportVariant, string>());
   const activeExportAbortRef = useRef<AbortController | null>(null);
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
+  const bgmSessionRef = useRef(0);
   const previewOnly = mode === "preview";
 
   useEffect(() => {
@@ -260,11 +260,17 @@ export default function EditorView({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const onPageHide = () => {
+      bgmSessionRef.current += 1;
+    };
+    window.addEventListener("pagehide", onPageHide);
     window.addEventListener("pagehide", disposeEditor);
     return () => {
+      bgmSessionRef.current += 1;
       activeExportAbortRef.current?.abort();
       standaloneRequestAbortRef.current?.abort();
       standaloneExportEpochRef.current += 1;
+      window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pagehide", disposeEditor);
     };
   }, []);
@@ -304,28 +310,51 @@ export default function EditorView({
     return () => window.clearInterval(timer);
   }, [embed, postToParent, state]);
 
-  const persistCurrentProject = useCallback(async (project?: BackendProject) => {
+  const persistCurrentProject = useCallback((project?: BackendProject) => {
     if (!assetId) throw new ProjectSaveError("缺少项目 ID");
-    const currentToken = getExportToken();
-    const body = project ?? serializeBackendProject(EditorCore.getInstance());
-    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    const payload = await res.json().catch(() => null) as unknown;
-    if (!res.ok) {
-      throw new ProjectSaveError(
-        errorMessageFromPayload(payload, `工程保存检查失败（HTTP ${res.status}）`),
-        qualityReportFromPayload(payload),
-      );
-    }
-    rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
-    loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
-    if (!embed) savedStandaloneContentIdentityRef.current = editorContentIdentity(body);
+    const session = bgmSessionRef.current;
+    const save = async () => {
+      if (session !== bgmSessionRef.current) throw new DOMException("Save session ended", "AbortError");
+      // Music mutations use the same lane. Ordinary saves take their snapshot
+      // when the lane is available, not before the music response is applied.
+      const body = project ?? serializeBackendProject(EditorCore.getInstance());
+      const identity = editorContentIdentity(body);
+      const serializedBody = JSON.stringify(body);
+      if (identity !== editorContentIdentity(serializeBackendProject(EditorCore.getInstance()))) {
+        throw new DOMException("Save superseded", "AbortError");
+      }
+      const revision = projectRevisionRef.current;
+      if (!revision) throw new ProjectSaveError("缺少工程版本，请刷新剪辑器后重试。");
+      const currentToken = getExportToken();
+      const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "If-Match": `"${revision}"`,
+          ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
+        },
+        body: serializedBody,
+      });
+      const payload = await res.json().catch(() => null) as { project_fingerprint?: string } | null;
+      if (session !== bgmSessionRef.current) throw new DOMException("Save session ended", "AbortError");
+      if (!res.ok) {
+        throw new ProjectSaveError(
+          errorMessageFromPayload(payload, `工程保存检查失败（HTTP ${res.status}）`),
+          qualityReportFromPayload(payload),
+        );
+      }
+      // Advance the server base even if a new edit arrived during the PUT;
+      // the next queued save is based on this acknowledged version.
+      projectRevisionRef.current = payload?.project_fingerprint ?? null;
+      if (identity === editorContentIdentity(serializeBackendProject(EditorCore.getInstance()))) {
+        rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
+        loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
+        if (!embed) savedStandaloneContentIdentityRef.current = identity;
+      }
+    };
+    const pending = projectSaveQueueRef.current.then(save, save);
+    projectSaveQueueRef.current = pending.catch(() => undefined);
+    return pending;
   }, [assetId, embed, getExportToken]);
 
   const performVerifiedExport = useCallback(async (
@@ -339,6 +368,15 @@ export default function EditorView({
     const preparingStartedAt = performance.now();
     hooks.onPreparing?.();
     if (assetId) writeLocalExportMarker(assetId, exportVariant, "preparing");
+    await projectSaveQueueRef.current;
+    ensureCurrent();
+    if (embed && !previewOnly) {
+      const flush = timelineFlushRef.current;
+      if (!flush) throw new Error("剪辑器尚未准备好保存修改，请稍后重试。");
+      const saved = await flush();
+      ensureCurrent();
+      if (saved.status !== "saved") throw new Error(saved.message);
+    }
     const brandSpecVersion = exportVariant === "brand_showcase"
       ? BRAND_SHOWCASE_SPEC_VERSION
       : null;
@@ -360,8 +398,10 @@ export default function EditorView({
     const currentToken = getExportToken();
     if (!assetId || !currentToken) throw new Error("缺少成片验证所需的项目身份信息");
 
-    await persistCurrentProject(currentProject);
+    if (!embed && !previewOnly) await persistCurrentProject(currentProject);
     ensureCurrent();
+    const expectedProjectFingerprint = projectRevisionRef.current;
+    if (!expectedProjectFingerprint) throw new Error("缺少工程版本，请重新打开剪辑器后导出。");
     const preflightResponse = await fetch(
       `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/quality?stage=export_preflight`,
       { headers: { Authorization: `Bearer ${currentToken}` } },
@@ -476,6 +516,7 @@ export default function EditorView({
         getToken: getExportToken,
         refreshToken: refreshExportToken,
         blob: candidate.blob,
+        expectedProjectFingerprint,
         format: candidate.format,
         exportVariant,
         brandSpecVersion,
@@ -530,6 +571,7 @@ export default function EditorView({
       );
       ensureCurrent();
       loadedProjectRef.current = confirmedProject.project;
+      projectRevisionRef.current = confirmedProject.fingerprint;
       candidateBlobRef.current = null;
       return { blob: candidate.blob, report: verifiedReport, job: terminalJob };
     } finally {
@@ -537,7 +579,7 @@ export default function EditorView({
         activeExportAbortRef.current = null;
       }
     }
-  }, [assetId, getExportToken, persistCurrentProject, refreshExportToken]);
+  }, [assetId, embed, getExportToken, persistCurrentProject, previewOnly, refreshExportToken]);
 
   const handleEmbeddedExport = useCallback(async (exportVariant: ExportVariant, requestId?: string) => {
     const brandSpecVersion = exportVariant === "brand_showcase"
@@ -562,13 +604,6 @@ export default function EditorView({
     };
     exportBusyRef.current = true;
     try {
-      if (!previewOnly) {
-        const flush = timelineFlushRef.current;
-        if (!flush) throw new Error("剪辑器尚未准备好保存修改，请稍后重试。");
-        const saved = await flush();
-        if (!isCurrent()) return;
-        if (saved.status !== "saved") throw new Error(saved.message);
-      }
       const result = await performVerifiedExport(exportVariant, {
         isCurrent,
         onStart: () => postExportUpdate({ type: "multimix-editor-export-start" }),
@@ -616,7 +651,7 @@ export default function EditorView({
     } finally {
       exportBusyRef.current = false;
     }
-  }, [performVerifiedExport, postToParent, previewOnly]);
+  }, [performVerifiedExport, postToParent]);
 
   const handleStandaloneExport = useCallback(async (exportVariant: ExportVariant): Promise<Blob | void> => {
     if (exportBusyRef.current) return;
@@ -815,44 +850,79 @@ export default function EditorView({
     }
   }, [assetId, getExportToken, invalidateStandaloneExports, performVerifiedExport, refreshExportToken, standaloneExportBlobs]);
 
-  const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse) => {
+  const handleBgmProjectChanged = useCallback(async (result: BGMUpdateResponse, isCurrent: () => boolean) => {
+    if (!result.project_fingerprint) throw new ProjectSaveError("配乐响应缺少工程版本，当前编辑已保留。");
     if (!embed) invalidateStandaloneExports();
     else candidateBlobRef.current = null;
-    rememberRawProject(result.project);
     const project = unwrapProject(result.project);
-    loadedProjectRef.current = project;
-    await refreshMountedEditorProject(project);
+    await updateEditorBgm(project, isCurrent);
+    if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+    const current = serializeBackendProject(EditorCore.getInstance());
+    const patched = mergeBgmProjectPatch(unwrapProject(current), project);
+    rememberRawProject(current.timeline ? { ...current, timeline: patched } : patched as unknown as Record<string, unknown>);
+    loadedProjectRef.current = patched;
+    projectRevisionRef.current = result.project_fingerprint;
     if (!embed) {
       const identity = editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
       standaloneContentIdentityRef.current = identity;
-      savedStandaloneContentIdentityRef.current = identity;
+      // The server saved music, not edits made while its reply was pending.
+      setSaveState("idle");
     }
     postToParent({ type: "multimix-editor-project-updated", reason: "bgm" });
   }, [embed, invalidateStandaloneExports, postToParent]);
 
   const prepareBgmChange = useCallback(async () => {
+    const identity = editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
     if (!embed) {
       if (exportBusyRef.current) throw new Error("请等待当前导出结束后再修改配乐。");
       invalidateStandaloneExports();
     }
-    await persistCurrentProject();
+    if (embed && timelineFlushRef.current) {
+      const result = await timelineFlushRef.current();
+      if (result.status !== "saved") throw new Error(result.message);
+    } else await persistCurrentProject();
+    if (identity !== editorContentIdentity(serializeBackendProject(EditorCore.getInstance()))) {
+      throw new Error("保存期间内容已变化，请确认最新修改后再次更换配乐。");
+    }
   }, [embed, invalidateStandaloneExports, persistCurrentProject]);
+
+  const changeBgm = useCallback(async (mutation: () => Promise<BGMUpdateResponse>) => {
+    const session = bgmSessionRef.current;
+    const isCurrent = () => session === bgmSessionRef.current;
+    await prepareBgmChange();
+    const update = async () => {
+      if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+      const result = await mutation();
+      if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+      await handleBgmProjectChanged(result, isCurrent);
+      return result;
+    };
+    const pending = projectSaveQueueRef.current.then(update, update);
+    projectSaveQueueRef.current = pending.catch(() => undefined);
+    return pending;
+  }, [handleBgmProjectChanged, prepareBgmChange]);
+
+  const handleBgmOpenChange = useCallback((open: boolean) => {
+    setIsBgmPanelOpen(open);
+    if (!open) postToParent({ type: "multimix-editor-bgm-closed" });
+  }, [postToParent]);
 
   const handleSave = async () => {
     if (!assetId || saveState === "saving") return;
+    const identity = editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
     if (!embed) invalidateStandaloneExports();
     setSaveState("saving");
+    setStandaloneExportError("");
     try {
       await persistCurrentProject();
       candidateBlobRef.current = null;
       recoverableStandaloneExportsRef.current.clear();
       setStandaloneExportBlobs({});
       postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
-      setSaveState("saved");
-      setTimeout(() => setSaveState("idle"), 2000);
-    } catch {
+      setSaveState(identity === editorContentIdentity(serializeBackendProject(EditorCore.getInstance())) ? "saved" : "idle");
+    } catch (cause) {
       setSaveState("error");
-      setTimeout(() => setSaveState("idle"), 4000);
+      setStandaloneExportError(cause instanceof Error ? cause.message : "保存失败，请检查网络后重试。");
     }
   };
 
@@ -878,6 +948,7 @@ export default function EditorView({
         recoverableStandaloneExportsRef.current.clear();
         setStandaloneExportBlobs({});
         loadedProjectRef.current = loadedProject.project;
+        projectRevisionRef.current = loadedProject.fingerprint;
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
         });
@@ -904,6 +975,7 @@ export default function EditorView({
       const identity = editorContentIdentity(serializeBackendProject(editor));
       if (identity === standaloneContentIdentityRef.current) return;
       invalidateStandaloneExports(identity);
+      setSaveState((previous) => previous === "saved" ? "idle" : previous);
       if (embed) postToParent({ type: "multimix-editor-content-changed" });
     };
     const unsubscribe = [editor.scenes.subscribe(onContentChange), editor.project.subscribe(onContentChange), editor.media.subscribe(onContentChange)];
@@ -1041,7 +1113,10 @@ export default function EditorView({
           });
           return;
         }
-        void timelineFlushRef.current().then((result) => {
+        void (async () => {
+          await projectSaveQueueRef.current;
+          return timelineFlushRef.current?.() ?? { status: "error" as const, message: "剪辑器已关闭，请重新打开。" };
+        })().then((result) => {
           postToParent({
             type: "multimix-editor-flush-result",
             requestId,
@@ -1149,9 +1224,8 @@ export default function EditorView({
                   token={token}
                   initialChoice={projectBgmChoice(loadedProjectRef.current)}
                   open={isBgmPanelOpen}
-                  onOpenChange={setIsBgmPanelOpen}
-                  onPrepareChange={prepareBgmChange}
-                  onProjectChanged={handleBgmProjectChanged}
+                  onOpenChange={handleBgmOpenChange}
+                  onChange={changeBgm}
                 />
               ) : null}
             </div>
@@ -1165,6 +1239,7 @@ export default function EditorView({
                   initialSegmentId={initialSegmentId}
                   openMaterialPicker={openMaterialPicker}
                   onFlushReady={registerTimelineFlush}
+                  onPersistTimeline={persistCurrentProject}
                 />
               ) : (
                 <Timeline />

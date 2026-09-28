@@ -157,10 +157,13 @@ describe("video project browse-player contract", () => {
 
   test("keeps the mounted preview on one editor instance without a review sidecar", () => {
     expect(editorView.match(/await initEditorWithProject\(/g)).toHaveLength(1);
-    expect(editorView.match(/await refreshMountedEditorProject\(/g)).toHaveLength(1);
-    expect(editorView).toMatch(
-      /async function refreshMountedEditorProject[\s\S]*?setRenderTree\(\{\s*renderTree:\s*null\s*\}\)[\s\S]*?await updateEditorProject\(project\)/,
-    );
+    expect(editorView).not.toContain("refreshMountedEditorProject");
+    expect(editorView.match(/await updateEditorBgm\(/g)).toHaveLength(1);
+    const bgmPatch = editorBootstrap.slice(editorBootstrap.indexOf("export async function updateEditorBgm"),
+      editorBootstrap.indexOf("async function applyProject"));
+    expect(bgmPatch).not.toContain("clearAllAssets");
+    expect(bgmPatch).not.toContain("initializeScenes");
+    expect(bgmPatch).toMatch(/await hydrateAssetFiles[\s\S]*?editor\.timeline\.getTracks\(\)/);
     expect(editorBootstrap).toMatch(
       /updateEditorProject[\s\S]*?editor\.media\.clearAllAssets\(\)[\s\S]*?applyProject\(editor,\s*bp\)/,
     );

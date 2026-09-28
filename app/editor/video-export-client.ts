@@ -526,6 +526,7 @@ async function createUploadSession(
     format: ExportCandidateFormat;
     exportVariant: ExportVariant;
     brandSpecVersion: string | null;
+    expectedProjectFingerprint?: string;
   },
 ): Promise<ExportUploadSession> {
   const response = await fetchAuthenticated(
@@ -535,6 +536,7 @@ async function createUploadSession(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(args.expectedProjectFingerprint ? { "If-Match": `"${args.expectedProjectFingerprint}"` } : {}),
       },
       body: JSON.stringify({
         sha256: args.sha256,
@@ -554,7 +556,11 @@ async function createUploadSession(
       payload,
     );
   }
-  return parseUploadSession(payload, args);
+  const session = parseUploadSession(payload, args);
+  if (args.expectedProjectFingerprint && session.projectFingerprint !== args.expectedProjectFingerprint) {
+    throw new Error("工程版本已变化，请保留修改并重新核对后导出。");
+  }
+  return session;
 }
 
 export async function uploadExportCandidate(
@@ -568,6 +574,7 @@ export async function uploadExportCandidate(
     clientTimingEvents?: ExportTimingEvent[];
     now?: () => number;
     resumableUploadFactory?: ResumableUploadFactory;
+    expectedProjectFingerprint?: string;
   },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
@@ -652,6 +659,7 @@ export async function uploadExportCandidate(
     new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
     {
       method: "POST",
+      headers: { "If-Match": `"${session.projectFingerprint}"` },
       body: formData,
       signal: args.signal,
     },

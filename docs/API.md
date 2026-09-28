@@ -712,7 +712,10 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - `stage=project` 只在主工程发布或用户保存了变化后的工程时运行；通过后后端保存
   `video_project_quality_approval` 指纹。相同工程重复保存复用批准，不重新执行内容审查。
-- 用户从导出菜单选择“原始成片”或“品牌展示版”后，编辑器先保存当前序列，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
+- 工程/任务读取返回 `project_fingerprint`；时间线 `PUT /v1/video/projects/{asset_id}` 必须用 `If-Match: "<project_fingerprint>"` 提交编辑基础版本，成功响应返回新指纹。合法写入缺少版本返回 `428 project_revision_required`，版本过期或校验后并发更新返回 `412 project_version_conflict`，不覆盖新工程。旧页面需刷新；前后端须配套发布。
+- 自动保存、手动保存、配乐 mutation 和独立编辑器导出共用单一写入队列；普通保存在实际执行时读取最新快照，显式导出快照过期时不再写入。内嵌编辑导出及配乐准备 flush 同一协调器；完成编辑与导出还须等待已发出的配乐写入及其本地应用。只读浏览预览导出不执行时间线 PUT。版本冲突保留本地编辑现场，禁止自动读取新版本后盲目重试覆盖。
+- `PUT /v1/video/projects/{asset_id}/bgm` 返回实际已保存稳定工程的必需 `project_fingerprint`，前端应用前校验。回包仅更新 BGM 轨、媒体、`bgm_choice`/`audio_mix`，不得重建场景或覆盖请求/下载期间的其他编辑。工作台编辑态中的常规 `project-updated` 不刷新产物；只有显式完成编辑保存及受代次保护的刷新成功后退出。刷新失败保留编辑器，重试刷新仍先 flush。
+- 用户从导出菜单选择“原始成片”或“品牌展示版”后，可编辑剪辑器先确认当前序列已保存，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
   该阶段只核对批准指纹和 MG 等异步状态，不重新审查主画面、证据、字幕或时间线内容。
 - `stage=project` 时，`mg_failed`、`mg_not_ready`、`mg_stale` 只记录内部 warning，允许主工程先持久化以供恢复。
 - `stage=export_preflight` 时，上述 overlay 状态均为 blocker；用户可见视频在未完成时为“生成中”、失败时为“失败”，不能编辑或导出。
@@ -722,7 +725,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
 - 导出版本枚举固定为 `original | brand_showcase`。缺少 `export_variant` 时按 `original` 处理；
   `brand_showcase` 必须携带 `brand_spec_version: "multimix-brand-showcase:v1"`，原始版将版本归一为 `null`。
-- 浏览器完成编码后，先调用 `POST /v1/video/projects/{asset_id}/exports/uploads` 申请上传会话。请求示例：
+- 浏览器完成编码后，先调用 `POST /v1/video/projects/{asset_id}/exports/uploads` 申请上传会话，`If-Match` 绑定开始导出时已确认的工程指纹；协商返回指纹必须相同，不得把旧视频绑定成新工程。请求体示例：
 
 ```json
 {
@@ -736,7 +739,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - 直传模式完成后调用 `POST /v1/video/projects/{asset_id}/exports/register`，并在上述字段之外携带
   `project_fingerprint` 和可选 `client_timing_events`；本地兼容模式使用上传会话返回的带版本查询参数的
-  `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址。两条路径都只做工程与上传边界检查、
+  `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址，并携带同一 `If-Match`。两条路径在登记前锁定并重查当前工程指纹，只做工程与上传边界检查、
   持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测和最终发布由现有
   视频 worker 继续执行。multipart 的 `client_timing_events` 是 JSON 字符串字段。
 - `client_timing_events` 只接受浏览器已经完成的 `preparing | composing | hashing | uploading`；
@@ -802,6 +805,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 内嵌导出绑定点击时的实时 tracks/media/settings/metadata 与本地请求 epoch，先 flush 时间线保存协调器再预检/合成；
   渲染、上传、验证及回填共用同一 `isCurrent`。内容变化后不继续上传旧候选，旧进度/失败/成功不覆盖新状态。
   播放或选中等未改变序列化内容的通知不清除有效缓存；上次合成仍在结束时，新请求明确提示稍后重试，不静默丢弃。
+- “完成编辑”先 flush，再刷新浏览态；刷新回调与最终退出同时绑定本次请求、内容变化代次和 saved 状态。等待期间再次修改或保存失败时取消本次退出，保留剪辑器；旧刷新不得更新产物并卸载未保存的时间线。后续 saved 通知不能复活已取消的退出。
 - 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、
   `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
   `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖

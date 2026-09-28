@@ -17,9 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorCore } from "@editor/core";
 import type { TimelineElement, TimelineTrack } from "@editor/lib/timeline/types";
-import { API_BASE } from "@/editor-engine/vendor/api";
 import { useConfirmationDialog } from "../components/confirmation-dialog";
-import { serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import {
   copyElementPersistenceMetadata,
   segmentIdByElementId,
@@ -62,12 +60,14 @@ export default function FilmStrip({
   initialSegmentId = null,
   openMaterialPicker = false,
   onFlushReady,
+  onPersistTimeline,
 }: {
   assetId: string | null;
   token: string | null;
   initialSegmentId?: string | null;
   openMaterialPicker?: boolean;
   onFlushReady?: ((flush: (() => Promise<TimelineFlushResult>) | null) => void) | undefined;
+  onPersistTimeline: () => Promise<void>;
 }) {
   const core = EditorCore.getInstance();
   const [revision, setRevision] = useState(0);
@@ -172,11 +172,6 @@ export default function FilmStrip({
     return () => window.removeEventListener("message", onLocateMessage);
   }, [clips, core]);
 
-  const authHeaders = useMemo(
-    () => (token ? { Authorization: `Bearer ${token}` } : ({} as Record<string, string>)),
-    [token],
-  );
-
   const postToParent = useCallback(
     (payload: Record<string, unknown>) => {
       if (typeof window === "undefined" || window.parent === window) return;
@@ -196,21 +191,16 @@ export default function FilmStrip({
     if (!assetId || !token) {
       throw new Error("缺少保存时间线所需的项目信息。");
     }
-    const body = serializeBackendProject(EditorCore.getInstance());
-    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await onPersistTimeline();
     postToParent({ type: "multimix-editor-project-updated", reason: "timeline" });
-  }, [assetId, authHeaders, postToParent, token]);
+  }, [assetId, onPersistTimeline, postToParent, token]);
   persistTimelineRef.current = persistTimeline;
 
   if (!saveCoordinatorRef.current) {
     saveCoordinatorRef.current = new TimelineSaveCoordinator({
       save: () => persistTimelineRef.current(),
       onStateChange: (status, message) => timelineSaveNoteRef.current(status, message),
+      formatError: (error) => error instanceof Error && error.name === "ProjectSaveError" ? error.message : null,
     });
   }
 

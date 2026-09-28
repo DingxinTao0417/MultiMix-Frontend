@@ -36,6 +36,71 @@ afterEach(() => {
 });
 
 describe("embedded export freshness", () => {
+  it("defers BGM and timeline refresh while editing, without discarding the iframe", async () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const load = vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({
+      ...conversationForDisplayProduct(product), product, products: [product],
+    });
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onProductUpdated={vi.fn()} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const frame = screen.getByTitle("视频剪辑器");
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status: "dirty" });
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-project-updated", reason: "bgm" });
+    await act(async () => { await Promise.resolve(); });
+    expect(load).not.toHaveBeenCalled();
+    expect(screen.getByTitle("视频剪辑器")).toBe(frame);
+  });
+
+  it("closes the detail layer before opening BGM", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" });
+    const trigger = screen.getByText("详情", { selector: "summary" });
+    const details = trigger.closest("details")!;
+    details.open = true;
+    fireEvent.click(screen.getByRole("button", { name: "更换配乐" }));
+    expect(details.open).toBe(false);
+  });
+  it.each(["dirty", "saving", "error", "content-changed", "saved"])("does not discard %s arriving during exit refresh", async (status) => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    let finish!: (value: Awaited<ReturnType<typeof assetWorkspaceAdapter.loadConversationDetail>>) => void;
+    const pending = new Promise<Awaited<ReturnType<typeof assetWorkspaceAdapter.loadConversationDetail>>>((resolve) => { finish = resolve; });
+    const loadDetail = vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockReturnValue(pending);
+    const update = vi.fn();
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onProductUpdated={update} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const send = vi.spyOn(frame.contentWindow!, "postMessage");
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" });
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    const request = send.mock.calls.map(([message]) => message as { type: string; requestId: string })
+      .find((message) => message.type === "multimix-editor-flush")!;
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-flush-result", requestId: request.requestId, status: "saved" });
+    await waitFor(() => expect(loadDetail).toHaveBeenCalledOnce());
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: status === "content-changed" ? "multimix-editor-content-changed" : "multimix-editor-save-state",
+      status, message: status === "error" ? "新改动保存失败" : undefined });
+    await act(async () => { finish({ ...conversationForDisplayProduct(product), product, products: [product] }); await pending; });
+    if (status === "saved") {
+      expect(screen.queryByTitle("视频剪辑器")).not.toBeInTheDocument();
+      expect(update).toHaveBeenCalledOnce();
+    } else {
+      expect(screen.queryByTitle("视频剪辑器")).toBeInTheDocument();
+      expect(update).not.toHaveBeenCalled();
+      if (status === "error") expect(screen.getByRole("alert")).toHaveTextContent("新改动保存失败");
+    }
+  });
+
   it.each(["dirty", "saving", "error"] as const)("invalidates both cached variants when save state is %s", async (status) => {
     const product = displayProducts["case-07-project-ready-mp4"];
     vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:old-export"), revokeObjectURL: vi.fn() });
@@ -2091,7 +2156,7 @@ describe("video browse actions", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /施工过程记录/ })).toBeInTheDocument());
   });
 
-  it("refreshes the browse product after the embedded editor persists an update", async () => {
+  it("refreshes the browse product only after explicit finish and a successful flush", async () => {
     const product = displayProducts["case-06-project-ready-no-mp4"];
     const updated = {
       ...product,
@@ -2125,6 +2190,15 @@ describe("video browse actions", () => {
         type: "multimix-editor-project-updated",
       });
 
+    expect(onProductUpdated).not.toHaveBeenCalled();
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-ready" });
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const send = vi.mocked(frame.contentWindow!.postMessage);
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    const request = send.mock.calls.map(([payload]) => payload).findLast((payload) => payload.type === "multimix-editor-flush");
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-flush-result", requestId: request.requestId, status: "saved" });
+
     await waitFor(() => expect(onProductUpdated).toHaveBeenCalledWith(updated));
   });
 
@@ -2147,8 +2221,15 @@ describe("video browse actions", () => {
     dispatchEditorMessage({
         source: "multimix-editor",
         assetId: product.backendAssetId,
-        type: "multimix-editor-project-updated",
+        type: "multimix-editor-ready",
       });
+
+    const frame = screen.getByTitle("视频剪辑器") as HTMLIFrameElement;
+    const send = vi.mocked(frame.contentWindow!.postMessage);
+    fireEvent.click(screen.getByRole("button", { name: "完成编辑" }));
+    const request = send.mock.calls.map(([payload]) => payload).findLast((payload) => payload.type === "multimix-editor-flush");
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-flush-result", requestId: request.requestId, status: "saved" });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("已保存编辑，但浏览态刷新失败");
     expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
