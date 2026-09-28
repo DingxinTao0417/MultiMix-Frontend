@@ -1916,7 +1916,7 @@ export default function ProductWorkspace({
                 onSelect={handleExportVideo}
               />
             ) : null}
-            {stableHeaderActionsAvailable && !editableTextArtifact ? (
+            {stableHeaderActionsAvailable && !editableTextArtifact && !showEditorEmbed ? (
               <button type="button" onClick={() => void onSaveProduct(product)}>
                 {savedVersion ? `已保存 ${savedVersion}` : "保存"}
               </button>

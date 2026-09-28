@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-16
+> Last verified: 2026-09-29
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -143,6 +143,8 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 
 #### `saveProduct(product, token?): Promise<{ version: string; savedAt: string }>`
 保存产物（异步）。只有真实 token、API 和后端资产 ID 齐全时才请求后端；否则抛出“未连接后端”，不伪造成功。
+返回版本取自 PATCH 响应中 `versions[].version` 的最大合法正整数，保存时间取自 `updated_at`；重复保存可能返回同一版本，禁止按客户端版本加一。响应缺失合法版本或保存时间时不能显示伪成功，需刷新核对。
+视频内嵌编辑态不显示通用产物保存按钮；时间线手动保存与退出统一由“完成编辑 / 重试保存”执行 flush，失败保留编辑现场。浏览态普通保存不承担时间线保存职责。
 
 ### 2.3 真实后端边界
 

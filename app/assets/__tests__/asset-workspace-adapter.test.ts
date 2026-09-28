@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -15,6 +15,59 @@ import {
 } from "../lib/asset-workspace-adapter";
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
+import { displayProducts } from "./fixtures/display-products";
+
+const saveApiState = vi.hoisted(() => ({ configured: undefined as boolean | undefined }));
+vi.mock("../../../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/api")>();
+  return { ...actual, get isApiConfigured() { return saveApiState.configured ?? actual.isApiConfigured; } };
+});
+
+describe("confirmed product save feedback", () => {
+  beforeEach(() => { saveApiState.configured = true; });
+  afterEach(() => { saveApiState.configured = undefined; vi.unstubAllGlobals(); });
+
+  it.each([{ numbers: [1] }, { numbers: [5, 1, 3] }])("uses returned version numbers $numbers instead of guessing from the client", async ({ numbers }) => {
+    const savedAt = "2026-09-28T12:00:00Z";
+    const response = asset({ updated_at: savedAt, versions: numbers.map((version) => ({
+      id: version, asset_id: 1, version, title: "已保存", body: "正文", created_at: savedAt,
+    })) });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(response)));
+    vi.stubGlobal("fetch", fetchMock);
+    const product = { ...displayProducts["case-07-project-ready-mp4"], version: "v40" };
+    for (let i = 0; i < 2; i++) {
+      await expect(assetWorkspaceAdapter.saveProduct(product, "token")).resolves.toEqual({
+        version: `v${Math.max(...numbers)}`, savedAt,
+      });
+    }
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PATCH" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("metadata");
+  });
+
+  it.each([undefined, [], [{ version: 0 }], [{ version: 1.5 }], [{ version: "2" }]].map((versions) => ({ versions })))(
+    "does not fabricate success when the response has invalid versions $versions", async ({ versions }) => {
+      vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ versions }))));
+      await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+        .rejects.toThrow("无法核验保存版本");
+    },
+  );
+
+  it("keeps a failed asset PATCH as a failure", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify({ detail: "fixture: save unavailable" }), { status: 503 },
+    )));
+    await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+      .rejects.toThrow("fixture: save unavailable");
+  });
+
+  it.each([undefined, "not-a-timestamp"])("does not claim a confirmed save with invalid savedAt %s", async (updated_at) => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      versions: [{ version: 1 }], updated_at,
+    }))));
+    await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+      .rejects.toThrow("无法核验保存版本");
+  });
+});
 
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {

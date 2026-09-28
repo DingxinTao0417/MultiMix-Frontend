@@ -1417,15 +1417,20 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async saveProduct(product, token) {
       if (isApiConfigured && token && product.backendAssetId) {
-        await api<unknown>(`/assets/${product.backendAssetId}`, token, {
+        const saved = await api<ContentAsset>(`/assets/${product.backendAssetId}`, token, {
           method: "PATCH",
           body: JSON.stringify({
             title: product.title,
             body: product.body?.join("\n\n") ?? product.summary,
           })
         });
-        const nextVersion = product.version ? `v${parseInt(product.version.replace("v", "")) + 1}` : "v2";
-        return { version: nextVersion, savedAt: new Date().toISOString() };
+        const versions = saved?.versions;
+        if (!Array.isArray(versions) || versions.length === 0 || versions.some((item) =>
+          !Number.isSafeInteger(item?.version) || item.version < 1,
+        ) || typeof saved.updated_at !== "string" || !Number.isFinite(Date.parse(saved.updated_at))) {
+          throw new Error("无法核验保存版本，请刷新后核对当前产物。");
+        }
+        return { version: `v${Math.max(...versions.map((item) => item.version))}`, savedAt: saved.updated_at };
       }
       throw new Error("未连接后端，无法保存产物。");
     },

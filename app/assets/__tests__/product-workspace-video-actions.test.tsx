@@ -36,6 +36,32 @@ afterEach(() => {
 });
 
 describe("embedded export freshness", () => {
+  it.each(["dirty", "saving", "error", "saved"])("offers only the timeline save/exit path while editing (%s)", (status) => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const genericSave = vi.fn(async () => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={genericSave} savedVersion="v1" product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "已保存 v1" }));
+    expect(genericSave).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    dispatchEditorMessage({ source: "multimix-editor", assetId: product.backendAssetId,
+      type: "multimix-editor-save-state", status, message: status === "error" ? "时间线保存失败" : undefined });
+    expect(screen.queryByRole("button", { name: /^(保存|已保存 v\d+)$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: status === "error" ? "重试保存" : "完成编辑" })).toBeInTheDocument();
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+    expect(genericSave).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the generic save available in video browse mode", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const save = vi.fn(async () => undefined);
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={save} product={product} selectedConversation={conversationForDisplayProduct(product)} />);
+    fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
+    expect(save).toHaveBeenCalledWith(product);
+  });
+
   it("defers BGM and timeline refresh while editing, without discarding the iframe", async () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     const load = vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({
