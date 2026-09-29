@@ -82,6 +82,12 @@ body {
     Aptos, "Aptos Display", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
 }
 
+html:has(> body > .shadcn-prototype-shell),
+body:has(> .shadcn-prototype-shell) {
+  height: 100svh;
+  overflow: clip;
+}
+
 a {
   color: inherit;
   text-decoration: none;
