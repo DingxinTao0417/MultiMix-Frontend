@@ -13,6 +13,7 @@ import {
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
 import { formatComposerError } from "../../../lib/api";
 import type { ChatImageAttachment } from "./conversation-studio";
+import HomepageShowcase from "./homepage-showcase";
 import styles from "./creative-memory-ui.module.css";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
@@ -37,55 +38,27 @@ const START_CAPABILITIES = [
   "配音与音乐",
 ] as const;
 
-const START_GOALS = [
+const START_PATHS = [
   {
-    key: "goal-explain",
-    title: "讲清楚",
-    hint: "概念、过程或结果",
-    imageClass: "goal-explain",
-    fill: "我想用一条短视频讲清楚一个概念、过程或结果。请先帮我明确要讲的重点，再规划结构和画面。",
+    key: "start-idea",
+    title: "从想法开始",
+    hint: "说出目标，一起确定内容和画面。",
+    imageClass: "goal-idea",
+    fill: "我想做一条新视频，先从想法开始。请先帮我明确目标，再和我讨论内容、画面，以及需要哪些素材。",
   },
   {
-    key: "goal-promote",
-    title: "推广产品",
-    hint: "商品、服务或品牌",
-    imageClass: "goal-promote",
-    fill: "我想做一条推广产品或品牌的短视频。请先帮我明确目标用户和核心卖点，再规划有吸引力的表达方式。",
+    key: "start-material",
+    title: "用素材创作",
+    hint: "上传照片、人物、资料或参考片，制作新作品。",
+    imageClass: "goal-material",
+    fill: "我想用素材或参考片制作一条新视频。请先问我会提供哪些照片、人物、资料或参考片，确认各自的用途，再讨论内容和画面方案。",
   },
   {
-    key: "goal-story",
-    title: "讲个故事",
-    hint: "人物、物品或过程",
-    imageClass: "goal-story",
-    fill: "我想用短视频讲一个故事。请先帮我梳理人物、事件和想传达的感受，再规划开场、转折和结尾。",
-  },
-  {
-    key: "goal-optimize",
-    title: "优化已有视频",
-    hint: "保留主体和原声",
-    imageClass: "goal-optimize",
-    fill: "我想优化一条已有视频，尽量保留原有内容和声音。请先帮我明确希望改善的地方和需要提供的原片。",
-  },
-] as const;
-
-const START_EXAMPLES = [
-  {
-    key: "example-idea",
-    tag: "只有一个想法",
-    prompt: "我想给新开的咖啡店做一条短视频，目前只有一个想法，还没有图片或视频。请先和我讨论创作方向。",
-    outcome: "从想法开始梳理视频内容",
-  },
-  {
-    key: "example-image",
-    tag: "只有一张图片",
-    prompt: "我想用一张产品图片做一条 15 秒短视频，突出产品的使用场景。请先讨论内容和画面方案，再明确需要哪些图片。",
-    outcome: "围绕产品规划内容与画面",
-  },
-  {
-    key: "example-video",
-    tag: "只有一段原视频",
-    prompt: "我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。",
-    outcome: "保留原声，讨论节奏与删留",
+    key: "start-edit",
+    title: "修改现有视频",
+    hint: "上传原片，说明要保留和调整的部分。",
+    imageClass: "goal-edit",
+    fill: "我想修改一条现有视频。请先让我提供原片，并确认要保留什么、调整什么，再讨论修改方案。",
   },
 ] as const;
 
@@ -473,58 +446,33 @@ export default function ConversationStart({
         </section>
         {showGoalExplanation ? (
           <p className="shadcn-prototype-start-goal-explanation" role="status">
-            目标和示例只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。
+            入口只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。
           </p>
         ) : null}
-        <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-goals">
+        <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-paths">
           <div className="shadcn-prototype-start-section-head">
-            <h2 id="conversation-start-goals">不知道怎么描述？从一个目标开始</h2>
+            <h2 id="conversation-start-paths">你想怎么开始？</h2>
           </div>
           <div className="shadcn-prototype-start-goal-grid">
-            {START_GOALS.map((goal) => (
+            {START_PATHS.map((path) => (
               <button
                 type="button"
-                key={goal.key}
+                key={path.key}
                 data-testid="conversation-start-goal"
-                className={`shadcn-prototype-start-goal-card ${goal.imageClass}${selectedStarter === goal.key ? " selected" : ""}`}
-                aria-pressed={selectedStarter === goal.key}
+                className={`shadcn-prototype-start-goal-card ${path.imageClass}${selectedStarter === path.key ? " selected" : ""}`}
+                aria-pressed={selectedStarter === path.key}
                 disabled={sending}
-                onClick={() => selectStarter(goal.key, goal.fill)}
+                onClick={() => selectStarter(path.key, path.fill)}
               >
                 <span>
-                  <strong>{goal.title}</strong>
-                  <small>{goal.hint}</small>
+                  <strong>{path.title}</strong>
+                  <small>{path.hint}</small>
                 </span>
               </button>
             ))}
           </div>
         </section>
-        <section className="shadcn-prototype-start-starter-section" aria-labelledby="conversation-start-examples">
-          <div className="shadcn-prototype-start-section-head">
-            <h2 id="conversation-start-examples">从一个想法、一张图片或一段视频开始</h2>
-          </div>
-          <div className="shadcn-prototype-start-example-grid">
-            {START_EXAMPLES.map((example) => (
-              <button
-                type="button"
-                key={example.key}
-                data-testid="conversation-start-example"
-                className={`shadcn-prototype-start-example-card${selectedStarter === example.key ? " selected" : ""}`}
-                aria-pressed={selectedStarter === example.key}
-                disabled={sending}
-                onClick={() => selectStarter(example.key, example.prompt)}
-              >
-                <span className="shadcn-prototype-start-example-copy">
-                  <span className="shadcn-prototype-start-example-tag">{example.tag}</span>
-                  <span>{example.prompt}</span>
-                </span>
-                <span className="shadcn-prototype-start-example-foot">
-                  {example.outcome}<i aria-hidden="true">→</i>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <HomepageShowcase />
       </div>
     </section>
   );

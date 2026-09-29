@@ -1546,8 +1546,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-goal-card");
-    expect(conversationStart).toContain("不知道怎么描述？从一个目标开始");
-    expect(conversationStart).toContain("从一个想法、一张图片或一段视频开始");
+    expect(conversationStart).toContain("你想怎么开始？");
     expect(conversationStart).toContain("AI 生成镜头");
     expect(conversationStart).not.toContain("制作讲解型视频");
     expect(conversationStart).not.toContain("优化真人口播视频");
@@ -1557,7 +1556,6 @@ describe("agent conversation UI copy", () => {
     expect(backgroundStatus).toContain("完成后可用于视频创作");
     expect(globals).toContain(".shadcn-prototype-start-dock");
     expect(globals).toContain(".shadcn-prototype-start-goal-grid");
-    expect(globals).toContain(".shadcn-prototype-start-example-grid");
     expect(globals).toContain("min-height: 52px");
   });
 

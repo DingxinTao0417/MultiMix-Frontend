@@ -177,7 +177,7 @@ svg{flex:none;display:block}
 .section-head{display:flex;align-items:flex-end;gap:10px;margin-bottom:11px}
 .section-head h2{font-size:13px;font-weight:700}
 .section-head span{color:var(--ink-3);font-size:11.5px}
-.goal-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:25px}
+.goal-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:25px}
 .goal-card{position:relative;min-height:88px;display:flex;align-items:flex-end;padding:12px 13px;overflow:hidden;
   border:1px solid rgba(255,255,255,.28);border-radius:13px;background-color:#34312e;background-position:center;
   background-size:cover;text-align:left}
@@ -185,25 +185,42 @@ svg{flex:none;display:block}
   background:linear-gradient(90deg,rgba(18,17,16,.86) 0%,rgba(18,17,16,.58) 54%,rgba(18,17,16,.1) 100%)}
 .goal-card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,.5);box-shadow:0 10px 26px rgba(32,31,30,.16)}
 .goal-card.selected{border-color:rgba(139,117,255,.95);box-shadow:0 0 0 2px rgba(124,92,255,.18),0 10px 28px rgba(32,31,30,.16)}
-.goal-explain{background-image:url("../assets/start-goal-explain.webp")}
-.goal-promote{background-image:url("../assets/start-goal-promote.webp")}
-.goal-story{background-image:url("../assets/start-goal-story.webp")}
-.goal-optimize{background-image:url("../assets/start-goal-optimize.webp")}
+.goal-idea{background-image:url("../assets/start-goal-explain.webp")}
+.goal-material{background-image:url("../assets/start-goal-promote.webp")}
+.goal-edit{background-image:url("../assets/start-goal-optimize.webp")}
 .goal-copy{position:relative;z-index:1;min-width:0;display:grid;gap:2px}
 .goal-copy strong{color:#fff;font-size:13px;font-weight:650;text-shadow:0 1px 4px rgba(0,0,0,.32)}
 .goal-copy small{color:rgba(255,255,255,.76);font-size:10.5px;line-height:1.4;text-shadow:0 1px 4px rgba(0,0,0,.38)}
-.examples{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.example{min-height:104px;display:grid;align-content:space-between;gap:11px;padding:13px 14px;overflow:hidden;
-  border:1px solid var(--line);border-radius:14px;background:var(--surface);text-align:left}
-.example:hover{transform:translateY(-2px);border-color:var(--line-2);box-shadow:var(--shadow-card)}
-.example.selected{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 2px rgba(91,69,224,.12)}
-.example-copy{display:grid;align-content:space-between;gap:14px;min-width:0}
-.example-tag{width:max-content;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.78);
-  color:var(--accent);font-size:10.5px;font-weight:650}
-.example p{color:var(--ink);font-size:12.5px;line-height:1.58}
-.example-foot{display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:10.5px}
-.example-arrow{margin-left:auto;width:27px;height:27px;display:grid;place-items:center;border:1px solid var(--line);
-  border-radius:50%;background:rgba(255,255,255,.84);color:var(--ink-2)}
+.showcase{margin:8px 0 28px}
+.showcase-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.showcase-head h2{font-size:14px;font-weight:700}
+.showcase-head span{font-size:11px;color:var(--ink-3)}
+.case-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.case-card{display:grid;min-width:0;overflow:hidden;padding:0;border:1px solid var(--line);border-radius:14px;
+  background:var(--surface);text-align:left}
+.case-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-card)}
+.case-poster{display:grid;aspect-ratio:16/9;place-items:center;background:linear-gradient(135deg,#23212a,#534861 55%,#242f35);
+  color:rgba(255,255,255,.9);font-size:11px}
+.case-card:nth-child(2) .case-poster{background:linear-gradient(135deg,#283d43,#4c5a61 55%,#211e2b)}
+.case-card:nth-child(3) .case-poster{background:linear-gradient(135deg,#251f2c,#3b345a 55%,#161a26)}
+.case-copy{display:grid;gap:6px;padding:12px;color:var(--ink-2);font-size:11.5px;line-height:1.4}
+.case-copy .path{color:var(--accent);font-size:11px;font-weight:650}
+.case-copy strong{color:var(--ink);font-size:13px}
+.case-copy .link{margin-top:3px;color:var(--accent);font-weight:650}
+.case-dialog{width:min(860px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:20px;
+  border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--ink);box-shadow:0 24px 80px rgba(32,31,30,.24)}
+.case-dialog::backdrop{background:rgba(22,20,28,.55)}
+.case-dialog-head{display:flex;justify-content:space-between;align-items:start;gap:16px;margin-bottom:16px}
+.case-dialog-head h2{font-size:20px;margin-top:4px}
+.case-dialog-head button{padding:6px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.case-media{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.case-media h3{font-size:12px;margin-bottom:7px}
+.case-media .slot{display:grid;height:min(42vh,280px);place-items:center;border-radius:10px;background:#171719;
+  color:rgba(255,255,255,.75);font-size:12px}
+.case-process{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:16px 0 0;padding:0;list-style:none}
+.case-process li{display:grid;gap:5px;align-content:start;padding:11px;border:1px solid var(--line);border-radius:10px;
+  color:var(--ink-2);font-size:11.5px;line-height:1.5}
+.case-process strong{color:var(--ink);font-size:12px}
 .cap-popover{display:none;margin:-4px 0 18px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;
   background:var(--surface-2);color:var(--ink-2);font-size:12px;line-height:1.6}
 .cap-popover.show{display:block}
@@ -235,8 +252,8 @@ body.side-collapsed .expand-btn{display:grid}
   .app{grid-template-columns:210px minmax(0,1fr)}
   .hero{max-width:760px;margin-top:0}
   .goal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .examples{grid-template-columns:1fr 1fr}
-  .example:last-child{grid-column:1/-1}
+  .goal-card:last-child{grid-column:1/-1}
+  .case-grid,.case-process{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:768px){
   body{height:auto;min-height:100vh;overflow:auto;grid-template-rows:44px auto}
@@ -245,8 +262,6 @@ body.side-collapsed .expand-btn{display:grid}
   .stage-col{min-height:calc(100vh - 44px);place-items:start center;overflow:visible}
   .hero{max-width:680px;padding:36px 16px 52px}
   .capabilities{align-items:flex-start;flex-direction:column}
-  .examples{grid-template-columns:1fr}
-  .example:last-child{grid-column:auto}
 }
 @media (max-width:480px){
   .hero{padding:28px 12px 44px}
@@ -255,10 +270,13 @@ body.side-collapsed .expand-btn{display:grid}
   .input-card{padding:15px 13px 10px 15px}
   .hint-eg{display:none}
   .icon-btn,.send{min-width:44px;min-height:44px}
-  .goal-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .goal-grid{grid-template-columns:1fr;gap:8px}
+  .goal-card:last-child{grid-column:auto}
   .goal-card{min-height:88px;padding:11px}
   .goal-copy small{font-size:10px}
-  .example{min-height:98px}
+  .showcase-head{display:block}
+  .showcase-head span{display:block;margin-top:4px}
+  .case-grid,.case-process,.case-media{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -384,60 +402,61 @@ body.side-collapsed .expand-btn{display:grid}
       </div>
       <button class="why" id="whyButton" type="button" aria-expanded="false">这些会限制制作方式吗？</button>
     </div>
-    <div class="cap-popover" id="capPopover">目标和示例都只会帮你写好第一句话，不会锁定制作方式。发送后，系统仍会根据素材和内容决定每个分镜怎么制作。</div>
+    <div class="cap-popover" id="capPopover">入口只会帮你写好第一句话，不会锁定制作方式。发送后，系统仍会根据素材和内容决定每个分镜怎么制作。</div>
 
     <section aria-labelledby="goal-title">
       <div class="section-head">
-        <h2 id="goal-title">不知道怎么描述？从一个目标开始</h2>
+        <h2 id="goal-title">你想怎么开始？</h2>
         <span>选择后仍可继续修改</span>
       </div>
       <div class="goal-grid">
-        <button class="goal-card goal-explain" type="button" data-fill="我想用一条短视频讲清楚一个概念、过程或结果。请先帮我明确要讲的重点，再规划结构和画面。">
-          <span class="goal-copy"><strong>讲清楚内容</strong><small>知识、产品功能、过程说明</small></span>
+        <button class="goal-card goal-idea" type="button" data-fill="我想做一条新视频，先从想法开始。请先帮我明确目标，再和我讨论内容、画面，以及需要哪些素材。">
+          <span class="goal-copy"><strong>从想法开始</strong><small>说出目标，一起确定内容和画面。</small></span>
         </button>
-        <button class="goal-card goal-promote" type="button" data-fill="我想做一条推广产品或品牌的短视频。请先帮我明确目标用户和核心卖点，再规划有吸引力的表达方式。">
-          <span class="goal-copy"><strong>推广产品</strong><small>种草、带货、品牌宣传</small></span>
+        <button class="goal-card goal-material" type="button" data-fill="我想用素材或参考片制作一条新视频。请先问我会提供哪些照片、人物、资料或参考片，确认各自的用途，再讨论内容和画面方案。">
+          <span class="goal-copy"><strong>用素材创作</strong><small>上传照片、人物、资料或参考片，制作新作品。</small></span>
         </button>
-        <button class="goal-card goal-story" type="button" data-fill="我想用短视频讲一个故事。请先帮我梳理人物、事件和想传达的感受，再规划开场、转折和结尾。">
-          <span class="goal-copy"><strong>讲一个故事</strong><small>品牌故事、人物、过程记录</small></span>
-        </button>
-        <button class="goal-card goal-optimize" type="button" data-fill="我想优化一条已有视频，尽量保留原有内容和声音。请先帮我明确希望改善的地方和需要提供的原片。">
-          <span class="goal-copy"><strong>优化已有视频</strong><small>真人口播、长视频、素材重剪</small></span>
+        <button class="goal-card goal-edit" type="button" data-fill="我想修改一条现有视频。请先让我提供原片，并确认要保留什么、调整什么，再讨论修改方案。">
+          <span class="goal-copy"><strong>修改现有视频</strong><small>上传原片，说明要保留和调整的部分。</small></span>
         </button>
       </div>
     </section>
 
-    <section aria-labelledby="example-title">
-      <div class="section-head">
-        <h2 id="example-title">从一个想法、一张图片或一段视频开始</h2>
-        <span>点击后继续补充</span>
+    <section class="showcase" aria-labelledby="showcase-title">
+      <div class="showcase-head">
+        <h2 id="showcase-title">看看能做出什么</h2>
+        <span>结构示意 · 真实案例待授权后展示</span>
       </div>
-      <div class="examples">
-        <button class="example" type="button" data-fill="我想给新开的咖啡店做一条短视频，目前只有一个想法，还没有图片或视频。请先和我讨论创作方向。">
-          <span class="example-copy">
-            <span class="example-tag">只有一个想法</span>
-            <p>“想给新开的咖啡店做一条短视频，还没有图片或视频，先聊聊方向。”</p>
-            <span class="example-foot">从想法开始梳理视频内容<span class="example-arrow">→</span></span>
-          </span>
+      <div class="case-grid">
+        <button class="case-card" type="button" data-title="从想法开始的案例" data-original="false">
+          <span class="case-poster">案例视频待确认</span>
+          <span class="case-copy"><span class="path">从想法开始</span><strong>案例标题待定</strong>
+            <span>提供了：一句话目标</span><span>做成了：待审核成片</span><span class="link">查看案例与制作过程 →</span></span>
         </button>
-        <button class="example" type="button" data-fill="我想用一张产品图片做一条 15 秒短视频，突出产品的使用场景。请先讨论内容和画面方案，再明确需要哪些图片。">
-          <span class="example-copy">
-            <span class="example-tag">只有一张图片</span>
-            <p>“想用一张产品图做 15 秒短视频，先讨论内容和画面方案。”</p>
-            <span class="example-foot">围绕产品规划内容与画面<span class="example-arrow">→</span></span>
-          </span>
+        <button class="case-card" type="button" data-title="用素材创作的案例" data-original="false">
+          <span class="case-poster">案例视频待确认</span>
+          <span class="case-copy"><span class="path">用素材创作</span><strong>案例标题待定</strong>
+            <span>提供了：已授权素材与目标</span><span>做成了：待审核成片</span><span class="link">查看案例与制作过程 →</span></span>
         </button>
-        <button class="example" type="button" data-fill="我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。">
-          <span class="example-copy">
-            <span class="example-tag">只有一段原视频</span>
-            <p>“想优化一段真人口播，保留原声，先讨论节奏和哪些内容可以删减。”</p>
-            <span class="example-foot">保留原声，讨论节奏与删留<span class="example-arrow">→</span></span>
-          </span>
+        <button class="case-card" type="button" data-title="修改现有视频的案例" data-original="true">
+          <span class="case-poster">案例视频待确认</span>
+          <span class="case-copy"><span class="path">修改现有视频</span><strong>案例标题待定</strong>
+            <span>提供了：原片与修改要求</span><span>做成了：修改后成片，可对比</span><span class="link">查看案例与制作过程 →</span></span>
         </button>
       </div>
     </section>
   </div>
 </main>
+
+<dialog class="case-dialog" id="caseDialog" aria-labelledby="caseDialogTitle">
+  <div class="case-dialog-head"><div><span class="path">结构示意 · 非真实案例</span><h2 id="caseDialogTitle">案例标题待定</h2></div>
+    <button id="caseDialogClose" type="button" aria-label="关闭案例详情">关闭</button></div>
+  <div class="case-media"><div id="caseOriginal"><h3>原片</h3><div class="slot">原片预览位置</div></div>
+    <div><h3>最终成片</h3><div class="slot">成片预览位置</div></div></div>
+  <p style="margin:16px 0 8px;color:var(--ink-2);font-size:12px">真实案例上架后，这里只展示可核对的关键制作步骤，不公开完整聊天记录。</p>
+  <ol class="case-process"><li><strong>需求</strong><span>待真实案例补充</span></li><li><strong>方案</strong><span>待真实案例补充</span></li>
+    <li><strong>修改</strong><span>仅在实际发生时展示</span></li><li><strong>成片</strong><span>待审核与授权</span></li></ol>
+</dialog>
 
 </div><!-- /.app -->
 
@@ -462,13 +481,23 @@ input.addEventListener('focus', function(){ card.classList.add('focus'); });
 input.addEventListener('blur', function(){ card.classList.remove('focus'); });
 document.querySelectorAll('[data-fill]').forEach(function(b){
   b.addEventListener('click', function(){
-    document.querySelectorAll('.goal-card,.example').forEach(function(starter){ starter.classList.remove('selected'); });
+    document.querySelectorAll('.goal-card').forEach(function(starter){ starter.classList.remove('selected'); });
     b.classList.add('selected');
     input.value = b.getAttribute('data-fill');
     input.focus();
     toast('好，补充细节后点发送');
   });
 });
+var caseDialog = document.getElementById('caseDialog');
+document.querySelectorAll('.case-card').forEach(function(caseCard){
+  caseCard.addEventListener('click', function(){
+    document.getElementById('caseDialogTitle').textContent = caseCard.getAttribute('data-title');
+    document.getElementById('caseOriginal').hidden = caseCard.getAttribute('data-original') !== 'true';
+    caseDialog.showModal();
+  });
+});
+document.getElementById('caseDialogClose').addEventListener('click', function(){ caseDialog.close(); });
+caseDialog.addEventListener('click', function(event){ if(event.target === caseDialog) caseDialog.close(); });
 var whyButton = document.getElementById('whyButton');
 var capPopover = document.getElementById('capPopover');
 whyButton.addEventListener('click', function(){

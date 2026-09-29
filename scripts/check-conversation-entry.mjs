@@ -39,7 +39,6 @@ try {
         ".shadcn-prototype-start-inner",
         ".shadcn-prototype-start-dock",
         ".shadcn-prototype-start-goal-grid",
-        ".shadcn-prototype-start-example-grid",
         ".shadcn-prototype-start-dock textarea",
         ".shadcn-prototype-start-dock-send",
       ];
@@ -58,15 +57,14 @@ try {
         `${width}px: ${item.selector} clips internal content: ${JSON.stringify(item)}`);
     }
 
-    await expect(page.getByTestId("conversation-start-goal")).toHaveCount(4);
-    await expect(page.getByTestId("conversation-start-example")).toHaveCount(3);
-    for (const goal of ["讲清楚", "推广产品", "讲个故事", "优化已有视频"]) {
-      await page.getByRole("button", { name: new RegExp(goal) }).click();
+    await expect(page.getByTestId("conversation-start-goal")).toHaveCount(3);
+    for (const path of ["从想法开始", "用素材创作", "修改现有视频"]) {
+      await page.getByTestId("conversation-start-goal").filter({ hasText: path }).click();
       const prompt = await page.getByLabel("输入对话内容").inputValue();
-      assert(!/我的素材|我提供的素材|我上传的/.test(prompt), `${goal} invents uploaded materials`);
+      assert(!/我的素材|我提供的素材|我上传的/.test(prompt), `${path} invents uploaded materials`);
     }
-    await page.getByRole("button", { name: /只有一个想法/ }).click();
-    await expect(page.getByLabel("输入对话内容")).toHaveValue(/还没有图片或视频/);
+    await page.getByTestId("conversation-start-goal").first().click();
+    await expect(page.getByLabel("输入对话内容")).toHaveValue(/先从想法开始/);
     assert.equal(conversationWrites, 0, "Selecting a starter must not send a conversation message");
     await page.getByRole("heading", { name: "新建视频项目" }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, `entry-${width}.png`), fullPage: true });

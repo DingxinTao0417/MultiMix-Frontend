@@ -2,14 +2,14 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ConversationStart from "../components/conversation-start";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 
 describe("ConversationStart primary video tasks", () => {
-  it("shows four goals, idea/image/video starts and six composable capabilities", () => {
+  it("shows three ways to start and six composable capabilities without duplicate example cards", () => {
     const onSend = vi.fn(async () => undefined);
     render(
       <ConversationStart
@@ -23,32 +23,32 @@ describe("ConversationStart primary video tasks", () => {
     expect(screen.getByRole("region", { name: "可组合的视频制作能力" })).toHaveTextContent(
       "我的素材AI 生成镜头公开素材图形动画口播优化配音与音乐",
     );
-    expect(screen.getAllByTestId("conversation-start-goal")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: /讲清楚/ })).toHaveTextContent("概念、过程或结果");
-    expect(screen.getByRole("button", { name: /推广产品/ })).toHaveTextContent("商品、服务或品牌");
-    expect(screen.getByRole("button", { name: /讲个故事/ })).toHaveTextContent("人物、物品或过程");
-    expect(screen.getByRole("button", { name: /优化已有视频/ })).toHaveTextContent("保留主体和原声");
-    expect(screen.getAllByTestId("conversation-start-example")).toHaveLength(3);
+    expect(screen.getByRole("heading", { name: "你想怎么开始？" })).toBeInTheDocument();
+    const startPaths = within(screen.getByRole("region", { name: "你想怎么开始？" }));
+    expect(startPaths.getAllByTestId("conversation-start-goal")).toHaveLength(3);
+    expect(startPaths.getByRole("button", { name: /从想法开始/ })).toHaveTextContent("说出目标，一起确定内容和画面。");
+    expect(startPaths.getByRole("button", { name: /用素材创作/ })).toHaveTextContent("上传照片、人物、资料或参考片，制作新作品。");
+    expect(startPaths.getByRole("button", { name: /修改现有视频/ })).toHaveTextContent("上传原片，说明要保留和调整的部分。");
+    expect(screen.queryByTestId("conversation-start-example")).not.toBeInTheDocument();
     expect(screen.queryByText("制作讲解型视频")).not.toBeInTheDocument();
     expect(screen.queryByText("优化真人口播视频")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /推广产品/ }));
+    fireEvent.click(startPaths.getByRole("button", { name: /用素材创作/ }));
 
     expect(screen.getByLabelText("输入对话内容")).toHaveValue(
-      "我想做一条推广产品或品牌的短视频。请先帮我明确目标用户和核心卖点，再规划有吸引力的表达方式。",
+      "我想用素材或参考片制作一条新视频。请先问我会提供哪些照片、人物、资料或参考片，确认各自的用途，再讨论内容和画面方案。",
     );
     expect(onSend).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /推广产品/ })).toHaveAttribute("aria-pressed", "true");
+    expect(startPaths.getByRole("button", { name: /用素材创作/ })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: /只有一段原视频/ }));
+    fireEvent.click(startPaths.getByRole("button", { name: /修改现有视频/ }));
 
     expect(screen.getByLabelText("输入对话内容")).toHaveValue(
-      "我想优化一段真人口播，保留原声和人物主体。请先讨论如何改善节奏，再确认原片中哪些内容可以删减。",
+      "我想修改一条现有视频。请先让我提供原片，并确认要保留什么、调整什么，再讨论修改方案。",
     );
     expect(onSend).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /只有一段原视频/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /推广产品/ })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: /只有一张图片/ })).not.toHaveClass("featured");
+    expect(startPaths.getByRole("button", { name: /修改现有视频/ })).toHaveAttribute("aria-pressed", "true");
+    expect(startPaths.getByRole("button", { name: /用素材创作/ })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("starts an idea-only conversation without attachments or automatic submission", () => {
@@ -60,8 +60,8 @@ describe("ConversationStart primary video tasks", () => {
       "placeholder",
       "例如：我想给新开的咖啡店做一条短视频，吸引附近的人来看看…",
     );
-    fireEvent.click(screen.getByRole("button", { name: /只有一个想法/ }));
-    const prompt = "我想给新开的咖啡店做一条短视频，目前只有一个想法，还没有图片或视频。请先和我讨论创作方向。";
+    fireEvent.click(within(screen.getByRole("region", { name: "你想怎么开始？" })).getByRole("button", { name: /从想法开始/ }));
+    const prompt = "我想做一条新视频，先从想法开始。请先帮我明确目标，再和我讨论内容、画面，以及需要哪些素材。";
     expect(screen.getByLabelText("输入对话内容")).toHaveValue(prompt);
     expect(onSend).not.toHaveBeenCalled();
     expect(screen.queryByRole("region", { name: "本次上传资料" })).not.toBeInTheDocument();
@@ -70,7 +70,7 @@ describe("ConversationStart primary video tasks", () => {
     expect(onSend).toHaveBeenCalledWith(conversation, prompt, expect.any(AbortSignal));
   });
 
-  it.each(["讲清楚", "推广产品", "讲个故事", "优化已有视频"])(
+  it.each(["从想法开始", "用素材创作", "修改现有视频"])(
     "does not invent attached materials when choosing %s",
     (goal) => {
       const onSend = vi.fn(async () => undefined);
@@ -81,7 +81,8 @@ describe("ConversationStart primary video tasks", () => {
           onSend={onSend}
         />,
       );
-      fireEvent.click(screen.getByRole("button", { name: new RegExp(goal) }));
+      const startPaths = within(screen.getByRole("region", { name: "你想怎么开始？" }));
+      fireEvent.click(startPaths.getByRole("button", { name: new RegExp(goal) }));
       const composer = screen.getByLabelText<HTMLTextAreaElement>("输入对话内容");
       expect(composer.value).not.toMatch(/我的素材|我提供的素材|我上传的/);
       expect(composer.value).toContain("我想");
@@ -89,7 +90,7 @@ describe("ConversationStart primary video tasks", () => {
     },
   );
 
-  it("explains that goals are starting points instead of fixed types", () => {
+  it("explains that entry cards are starting points instead of fixed types", () => {
     render(
       <ConversationStart
         suggestions={[]}
@@ -100,7 +101,7 @@ describe("ConversationStart primary video tasks", () => {
     fireEvent.click(screen.getByRole("button", { name: "这些会限制制作方式吗？" }));
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "目标和示例只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。",
+      "入口只会填入一段可编辑的需求，不会锁定视频类型、模型或制作工具。",
     );
   });
 });
