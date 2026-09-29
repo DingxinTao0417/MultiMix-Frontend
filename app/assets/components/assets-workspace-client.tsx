@@ -35,6 +35,7 @@ import {
   type AssetLlmDiagnosticsRead,
 } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
+import { reconcileSavedProduct, runExclusiveProductSave, savedVersionForProduct, type ProductSaveFeedback } from "../lib/product-save-state";
 import { trackProductEvent } from "../../../lib/product-analytics";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
@@ -777,7 +778,11 @@ export default function AssetsWorkspaceClient({
   const inFlightAgentActionsRef = useRef(new Set<string>());
   const refreshedAgentActionsRef = useRef(new Set<string>());
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
-  const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
+  const [savedProductIds, setSavedProductIds] = useState<Record<string, ProductSaveFeedback>>({});
+  const [savingProductIds, setSavingProductIds] = useState<Record<string, boolean>>({});
+  const inFlightProductSavesRef = useRef(new Set<string>());
+  const saveTokenRef = useRef(token);
+  useEffect(() => { saveTokenRef.current = token; }, [token]);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -1852,17 +1857,29 @@ export default function AssetsWorkspaceClient({
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能保存。");
       return;
     }
-    try {
-      const result = await assetWorkspaceAdapter.saveProduct(product, token);
-      setSavedProductIds((current) => ({
-        ...current,
-        [product.id]: result.version
-      }));
-      toast.success("已保存");
-    } catch (error) {
-      reportRuntimeWriteFailure(error);
-      toast.error("保存失败，请稍后重试。");
-    }
+    const conversationId = selectedConversation.id;
+    const requestToken = token;
+    await runExclusiveProductSave(inFlightProductSavesRef.current, product.id, async () => {
+      setSavingProductIds((current) => ({ ...current, [product.id]: true }));
+      try {
+        const result = await assetWorkspaceAdapter.saveProduct(product, requestToken);
+        if (saveTokenRef.current !== requestToken) return;
+        setConversations((current) => saveTokenRef.current === requestToken
+          ? reconcileSavedProduct(current, conversationId, product, result.product) : current);
+        setSavedProductIds((current) => ({ ...current,
+          [product.id]: { version: result.version, updatedAt: result.savedAt },
+        }));
+        toast.success("已保存");
+      } catch (error) {
+        if (saveTokenRef.current !== requestToken) return;
+        reportRuntimeWriteFailure(error);
+        toast.error(apiErrorStatus(error) === 409
+          ? "产物已有新的修改，本次保存未覆盖它。请刷新后核对最新版本。"
+          : error instanceof Error ? error.message : "保存失败，请稍后重试。");
+      } finally {
+        setSavingProductIds((current) => ({ ...current, [product.id]: false }));
+      }
+    });
   };
 
   const updateConversationProduct = (conversationId: string, updatedProduct: ProductArtifact) => {
@@ -1885,6 +1902,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
+    if (inFlightProductSavesRef.current.has(product.id)) return;
     if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       toast.error("请先登录并配置后端后再基于历史版本继续。");
       return;
@@ -1894,7 +1912,8 @@ export default function AssetsWorkspaceClient({
       updateConversationProduct(selectedConversation.id, result.product);
       setSavedProductIds((current) => ({
         ...current,
-        [result.product.id]: result.product.version ?? result.diffSummary
+        [result.product.id]: { version: result.product.version ?? result.diffSummary,
+          updatedAt: result.product.backendUpdatedAt }
       }));
       toast.success(result.assistantMessage || "已基于历史版本生成新版本");
     } catch (error) {
@@ -3446,7 +3465,8 @@ export default function AssetsWorkspaceClient({
                       setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
                     }}
                     product={selectedProduct}
-                    savedVersion={savedProductIds[selectedProduct.id]}
+                    savedVersion={savedVersionForProduct(selectedProduct, savedProductIds[selectedProduct.id])}
+                    savingProduct={savingProductIds[selectedProduct.id] === true}
                     selectedConversation={selectedConversation}
                     token={token}
                     creativeProfileVisible={creativeProfileVisible}

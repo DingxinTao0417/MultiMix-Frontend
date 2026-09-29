@@ -36,6 +36,23 @@ afterEach(() => {
 });
 
 describe("embedded export freshness", () => {
+  it("disables duplicate saves and entering editing while a checkpoint is pending", () => {
+    const product = displayProducts["case-07-project-ready-mp4"];
+    const save = vi.fn(async () => undefined);
+    const props = { copied: false, onCopyProduct: vi.fn(async () => undefined), onSaveProduct: save,
+      product, selectedConversation: conversationForDisplayProduct(product) };
+    const { rerender } = render(<ProductWorkspace {...props} savingProduct />);
+    const saving = screen.getByRole("button", { name: "保存中…" });
+    expect(saving).toBeDisabled();
+    expect(saving).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    fireEvent.click(saving);
+    expect(save).not.toHaveBeenCalled();
+    rerender(<ProductWorkspace {...props} savingProduct={false} />);
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeEnabled();
+  });
+
   it.each(["dirty", "saving", "error", "saved"])("offers only the timeline save/exit path while editing (%s)", (status) => {
     const product = displayProducts["case-07-project-ready-mp4"];
     const genericSave = vi.fn(async () => undefined);

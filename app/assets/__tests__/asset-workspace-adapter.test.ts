@@ -16,6 +16,7 @@ import {
 import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import { displayProducts } from "./fixtures/display-products";
+import { contentAssetToProduct } from "../../../lib/asset-mappers";
 
 const saveApiState = vi.hoisted(() => ({ configured: undefined as boolean | undefined }));
 vi.mock("../../../lib/api", async (importOriginal) => {
@@ -24,6 +25,8 @@ vi.mock("../../../lib/api", async (importOriginal) => {
 });
 
 describe("confirmed product save feedback", () => {
+  const saveProduct = { ...displayProducts["case-07-project-ready-mp4"], backendAssetId: 1,
+    backendUpdatedAt: "2026-09-28T11:00:00Z" };
   beforeEach(() => { saveApiState.configured = true; });
   afterEach(() => { saveApiState.configured = undefined; vi.unstubAllGlobals(); });
 
@@ -34,29 +37,31 @@ describe("confirmed product save feedback", () => {
     })) });
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(response)));
     vi.stubGlobal("fetch", fetchMock);
-    const product = { ...displayProducts["case-07-project-ready-mp4"], version: "v40" };
+    const product = { ...saveProduct, version: "v40" };
     for (let i = 0; i < 2; i++) {
       await expect(assetWorkspaceAdapter.saveProduct(product, "token")).resolves.toEqual({
         version: `v${Math.max(...numbers)}`, savedAt,
+        product: contentAssetToProduct(response),
       });
     }
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PATCH" });
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).not.toHaveProperty("metadata");
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/assets/1/save");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ base_updated_at: product.backendUpdatedAt });
   });
 
   it.each([undefined, [], [{ version: 0 }], [{ version: 1.5 }], [{ version: "2" }]].map((versions) => ({ versions })))(
     "does not fabricate success when the response has invalid versions $versions", async ({ versions }) => {
       vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ versions }))));
-      await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+      await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
         .rejects.toThrow("无法核验保存版本");
     },
   );
 
-  it("keeps a failed asset PATCH as a failure", async () => {
+  it("keeps a failed checkpoint as a failure", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(
       JSON.stringify({ detail: "fixture: save unavailable" }), { status: 503 },
     )));
-    await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
       .rejects.toThrow("fixture: save unavailable");
   });
 
@@ -64,8 +69,30 @@ describe("confirmed product save feedback", () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       versions: [{ version: 1 }], updated_at,
     }))));
-    await expect(assetWorkspaceAdapter.saveProduct(displayProducts["case-07-project-ready-mp4"], "token"))
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
       .rejects.toThrow("无法核验保存版本");
+  });
+  it("refuses a missing server basis without sending a request", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(assetWorkspaceAdapter.saveProduct({ ...saveProduct, backendUpdatedAt: undefined }, "token"))
+      .rejects.toThrow("缺少可校验的保存版本");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("preserves conflicts without retrying with a newer basis", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ detail: {
+      code: "asset_save_version_conflict", message: "请刷新后核对最新版本。",
+    } }), { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
+      .rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+  it("rejects a response belonging to a different asset", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(asset({
+      id: 2, versions: [{ id: 1, asset_id: 2, version: 1, title: "标题", body: "正文", created_at: "2026-09-29T00:00:00Z" }],
+    })))));
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token")).rejects.toThrow("无法核验保存版本");
   });
 });
 

@@ -177,6 +177,7 @@ export default function ProductWorkspace({
   onSelectedImageFrameChange,
   product,
   savedVersion,
+  savingProduct = false,
   selectedConversation,
   token,
   creativeProfileVisible = false,
@@ -196,6 +197,7 @@ export default function ProductWorkspace({
   onSelectedImageFrameChange?: (frameId: string) => void;
   product: ProductArtifact;
   savedVersion?: string;
+  savingProduct?: boolean;
   selectedConversation: Conversation;
   token?: string | null;
   creativeProfileVisible?: boolean;
@@ -1747,7 +1749,7 @@ export default function ProductWorkspace({
                             </button>
                             <button
                               type="button"
-                              disabled={isCurrent || !onRestoreVersion || restoringVersionId === version.id}
+                              disabled={savingProduct || isCurrent || !onRestoreVersion || restoringVersionId === version.id}
                               onClick={async () => {
                                 if (!onRestoreVersion) return;
                                 setRestoringVersionId(version.id);
@@ -1875,6 +1877,7 @@ export default function ProductWorkspace({
             {canBrowseVideo && !isFailedStatus && videoSurface === "browse" ? (
               <button
                 type="button"
+                disabled={savingProduct}
                 className="primary"
                 onClick={() => {
                   setEditorRequested(true);
@@ -1917,8 +1920,9 @@ export default function ProductWorkspace({
               />
             ) : null}
             {stableHeaderActionsAvailable && !editableTextArtifact && !showEditorEmbed ? (
-              <button type="button" onClick={() => void onSaveProduct(product)}>
-                {savedVersion ? `已保存 ${savedVersion}` : "保存"}
+              <button type="button" disabled={savingProduct} aria-busy={savingProduct}
+                onClick={() => void onSaveProduct(product)}>
+                {savingProduct ? "保存中…" : savedVersion ? `已保存 ${savedVersion}` : "保存"}
               </button>
             ) : textEditSaved ? (
               <span className="shadcn-prototype-text-edit-saved" role="status">已保存</span>

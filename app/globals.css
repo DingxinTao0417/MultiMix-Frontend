@@ -4980,6 +4980,7 @@ button:disabled {
   right: 12px;
   bottom: 12px;
   display: grid;
+  grid-auto-rows: max-content;
   align-content: start;
   gap: 12px;
   width: min(360px, calc(100% - 24px));

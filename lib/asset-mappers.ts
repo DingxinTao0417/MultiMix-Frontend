@@ -1528,6 +1528,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
+    backendUpdatedAt: asset.updated_at,
     contentType: asset.content_type,
     contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
@@ -1548,7 +1549,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     ratio,
     duration,
     phase: capabilityLabel,
-    version: asset.versions?.length ? `v${asset.versions.length}` : "v1",
+    version: asset.versions?.length ? `v${Math.max(...asset.versions.map((item) => item.version))}` : "v1",
     body,
     markdownBody: asset.body,
     sections,

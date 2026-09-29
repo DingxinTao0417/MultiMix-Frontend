@@ -19,6 +19,16 @@ const newConversationProduct = {
 } as AssetProduct;
 
 describe("project conversation mapping", () => {
+  it("preserves the server save basis and real version numbers", () => {
+    const updatedAt = "2026-09-29T00:00:00Z";
+    const result = contentAssetToProduct(asset({ updated_at: updatedAt, versions: [1, 5, 3].map((version) => ({
+      id: version, asset_id: 1, version, title: "标题", body: "正文", created_at: updatedAt,
+    })) }));
+    expect(result.backendUpdatedAt).toBe(updatedAt);
+    expect(result.version).toBe("v5");
+    expect(result.versions?.map((item) => item.label)).toEqual(["v1", "v5", "v3"]);
+  });
+
   it("maps bounded source-resolution actions without dropping stable ids", () => {
     const conversation = conversationFromPersisted({
       id: "asset-conversation-source-choice", title: "门窗视频", status: "active", metadata: {},

@@ -206,6 +206,8 @@ export type AssetProduct = {
   preview?: AssetProductPreview;
   // Set when this product is backed by a real backend ContentAsset.
   backendAssetId?: number;
+  // Server revision used by browse-mode checkpoint saves.
+  backendUpdatedAt?: string;
   // Backend identity used by guarded Markdown edits.
   contentType?: string;
   contentHash?: string | null;

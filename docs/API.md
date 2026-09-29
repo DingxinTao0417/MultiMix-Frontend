@@ -141,9 +141,11 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 #### `getProductText(product): string`
 把产物转为可复制 / 可保存的纯文本。**规则**：`body` 非空则用 `body`，否则用 `[summary]`，再 `join("\n\n")`。供「复制」按钮使用。
 
-#### `saveProduct(product, token?): Promise<{ version: string; savedAt: string }>`
+#### `saveProduct(product, token?): Promise<{ version: string; savedAt: string; product: AssetProduct }>`
 保存产物（异步）。只有真实 token、API 和后端资产 ID 齐全时才请求后端；否则抛出“未连接后端”，不伪造成功。
-返回版本取自 PATCH 响应中 `versions[].version` 的最大合法正整数，保存时间取自 `updated_at`；重复保存可能返回同一版本，禁止按客户端版本加一。响应缺失合法版本或保存时间时不能显示伪成功，需刷新核对。
+浏览态使用 `POST /v1/assets/{id}/save`，只发送 `base_updated_at=product.backendUpdatedAt`，不回传缓存标题、正文或 metadata。后端按用户归属及服务端时间原子校验，在同一事务中为服务器当前内容创建去重版本快照；过期返回 409，缺失/非法基准或额外字段返回 422。客户端缺少基准直接要求刷新，不回退旧 PATCH。
+返回版本取自完整资产响应中 `versions[].version` 的最大合法正整数，保存时间取自 `updated_at`，同时返回映射产物；重复保存可能返回同一版本，禁止按客户端版本加一。响应身份、版本或保存时间无法核验时不能显示伪成功。
+成功时同步产物、标题和版本历史，回填需仍匹配请求的会话、资产、基准时间和认证范围；晚到结果不能覆盖新产物。已保存提示绑定返回的服务端时间和版本，下一次产物更新后自动失效。请求期间显示“保存中…”、同步阻止重复请求，暂停进入视频编辑和版本恢复；失败释放，409 提示刷新核对，不自动换新基准强写。
 视频内嵌编辑态不显示通用产物保存按钮；时间线手动保存与退出统一由“完成编辑 / 重试保存”执行 flush，失败保留编辑现场。浏览态普通保存不承担时间线保存职责。
 
 ### 2.3 真实后端边界

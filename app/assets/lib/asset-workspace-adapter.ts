@@ -802,7 +802,7 @@ export type AssetWorkspaceAdapter = {
   getNewConversation(): AssetConversation;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
-  saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
+  saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string; product: AssetProduct }>;
   saveTextEdit(args: {
     token: string;
     product: AssetProduct;
@@ -1417,20 +1417,21 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async saveProduct(product, token) {
       if (isApiConfigured && token && product.backendAssetId) {
-        const saved = await api<ContentAsset>(`/assets/${product.backendAssetId}`, token, {
-          method: "PATCH",
-          body: JSON.stringify({
-            title: product.title,
-            body: product.body?.join("\n\n") ?? product.summary,
-          })
+        if (!product.backendUpdatedAt || !Number.isFinite(Date.parse(product.backendUpdatedAt))) {
+          throw new Error("当前产物缺少可校验的保存版本，请刷新后重试。");
+        }
+        const saved = await api<ContentAsset>(`/assets/${product.backendAssetId}/save`, token, {
+          method: "POST",
+          body: JSON.stringify({ base_updated_at: product.backendUpdatedAt })
         });
         const versions = saved?.versions;
-        if (!Array.isArray(versions) || versions.length === 0 || versions.some((item) =>
+        if (saved?.id !== product.backendAssetId || !Array.isArray(versions) || versions.length === 0 || versions.some((item) =>
           !Number.isSafeInteger(item?.version) || item.version < 1,
         ) || typeof saved.updated_at !== "string" || !Number.isFinite(Date.parse(saved.updated_at))) {
           throw new Error("无法核验保存版本，请刷新后核对当前产物。");
         }
-        return { version: `v${Math.max(...versions.map((item) => item.version))}`, savedAt: saved.updated_at };
+        return { version: `v${Math.max(...versions.map((item) => item.version))}`, savedAt: saved.updated_at,
+          product: contentAssetToProduct(saved) };
       }
       throw new Error("未连接后端，无法保存产物。");
     },
