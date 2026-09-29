@@ -1168,6 +1168,25 @@ button:disabled {
   box-shadow: none;
 }
 
+.shadcn-prototype-navigation-surface {
+  display: contents;
+}
+
+.shadcn-prototype-navigation-surface[hidden] {
+  display: none;
+}
+
+.shadcn-prototype-start-navigation {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 1;
+}
+
+.shadcn-prototype-start:has(.shadcn-prototype-start-navigation) {
+  padding-top: 72px;
+}
+
 .shadcn-prototype-start {
   position: relative;
   display: grid;
@@ -3166,6 +3185,10 @@ button:disabled {
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.shadcn-prototype-chat-head > strong {
+  flex: 1;
 }
 
 .shadcn-prototype-chat-head-actions {
@@ -12167,4 +12190,55 @@ label {
 .agent-visual-refresh .shadcn-prototype-segment-cards li {
   border-radius: 13px;
   padding: 12px 14px;
+}
+
+/* Narrow navigation overlays the existing workspace; it never consumes a column. */
+@media (max-width: 1180px) {
+  .shadcn-prototype-shell.sidebar-expanded {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shadcn-prototype-shell .shadcn-prototype-topbar-sidebar-toggle {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+  }
+
+  .shadcn-prototype-navigation-surface[role="dialog"] {
+    position: fixed;
+    inset: 0;
+    z-index: 180;
+    display: block;
+  }
+
+  .shadcn-prototype-navigation-backdrop {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: rgb(31 28 25 / 28%);
+  }
+
+  .shadcn-prototype-shell .shadcn-prototype-navigation-surface[role="dialog"] .shadcn-prototype-sidebar {
+    position: relative;
+    display: grid;
+    width: min(320px, calc(100vw - 48px));
+    height: 100%;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
+    background: var(--sp-bg, #f8f7f4);
+    box-shadow: 8px 0 30px rgb(31 28 25 / 12%);
+  }
+
+  .shadcn-prototype-shell .shadcn-prototype-navigation-surface .shadcn-prototype-team {
+    grid-template-columns: 30px minmax(0, 1fr) 30px 30px;
+  }
 }

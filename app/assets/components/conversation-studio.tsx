@@ -421,6 +421,7 @@ export function resolveAgentActionTimelineSteps(
 }
 
 export default function ConversationStudio({
+  navigationSlot,
   basePath,
   contextAssets = [],
   selectedConversation,
@@ -459,6 +460,7 @@ export default function ConversationStudio({
   inheritedRequirementNotice = false,
   requirementAnalyticsToken,
 }: {
+  navigationSlot?: ReactNode;
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
   selectedConversation: Conversation;
@@ -1204,6 +1206,7 @@ export default function ConversationStudio({
     >
       <div className="shadcn-prototype-chat-context">
         <header className="shadcn-prototype-chat-head">
+          {navigationSlot}
           <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
           {projectResourceTotal > 0 || diagnosticsSlot ? (
             <div className="shadcn-prototype-chat-head-actions">

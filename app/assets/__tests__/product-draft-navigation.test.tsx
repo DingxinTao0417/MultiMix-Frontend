@@ -52,6 +52,50 @@ async function mountDraft(omitProduct = false) {
 }
 
 describe("workspace draft navigation", () => {
+  it("keeps narrow navigation reachable and releases it before draft confirmation", async () => {
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) });
+    vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [], nextOffset: null });
+    const { container } = await mountDraft();
+    const header = container.querySelector(".shadcn-prototype-chat-head")!;
+    const opener = within(header as HTMLElement).getByRole("button", { name: "展开侧边栏" });
+    opener.focus();
+    fireEvent.click(opener);
+    const navigation = await screen.findByRole("dialog", { name: "工作台导航" });
+    await waitFor(() => expect(within(navigation).getByRole("button", { name: "隐藏侧边栏" })).toHaveFocus());
+    expect(container.querySelector(".shadcn-prototype-inset")).toHaveAttribute("inert");
+    fireEvent.click(within(navigation).getAllByRole("button", { name: "资产库" }).at(-1)!);
+    expect(screen.queryByRole("dialog", { name: "工作台导航" })).not.toBeInTheDocument();
+    const confirmation = await screen.findByRole("dialog");
+    fireEvent.click(within(confirmation).getByRole("button", { name: "取消" }));
+    const restored = await screen.findByRole("dialog", { name: "工作台导航" });
+    fireEvent.keyDown(restored, { key: "Escape" });
+    await waitFor(() => expect(opener).toHaveFocus());
+    expect(screen.getByRole("textbox", { name: "编辑文案稿" })).toHaveValue("重要的未保存草稿");
+    fireEvent.click(opener);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "工作台导航" })).getAllByRole("button", { name: "资产库" }).at(-1)!);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "放弃修改并离开" })); });
+    await screen.findByRole("heading", { name: "资产库" });
+    expect(screen.queryByRole("dialog", { name: "工作台导航" })).not.toBeInTheDocument();
+    expect(container.querySelector(".shadcn-prototype-topbar button[aria-label='展开侧边栏']")).toBeInTheDocument();
+  });
+
+  it("exposes navigation on the new-project screen without submitting a message", async () => {
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({
+      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) });
+    window.history.replaceState(null, "", "/app/assets");
+    render(<AssetsWorkspaceClient accountEmail="draft@multimix.local" token="token" />);
+    const start = await screen.findByRole("region", { name: "新建对话" });
+    fireEvent.click(within(start).getByRole("button", { name: "展开侧边栏" }));
+    const navigation = await screen.findByRole("dialog", { name: "工作台导航" });
+    expect(within(navigation).getByRole("navigation", { name: "资源库" })).toBeInTheDocument();
+    fireEvent.click(within(navigation).getByRole("button", { name: "关闭导航遮罩" }));
+    expect(screen.queryByRole("dialog", { name: "工作台导航" })).not.toBeInTheDocument();
+    expect(within(start).getByRole("textbox")).toHaveValue("");
+  });
+
   it.each(["project", "other-library", "same-library"])(
     "keeps the user's current destination when a library upload finishes (%s)", async (destination) => {
       const listLibrary = vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [], nextOffset: null });

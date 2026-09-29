@@ -79,6 +79,7 @@ import {
 } from "../lib/asset-workspace-shared";
 import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
+import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import type {
   GeneratedImageGalleryApplication,
@@ -743,13 +744,19 @@ export default function AssetsWorkspaceClient({
   }, []);
   const navigateWorkspace = (action: () => void, onDenied?: () => void) => {
     if (navigationPendingRef.current) { onDenied?.(); return; }
+    const reopenNavigation = isNarrowViewport && narrowNavigationOpen;
+    if (reopenNavigation) setNarrowNavigationOpen(false);
+    const denied = () => {
+      if (reopenNavigation) setNarrowNavigationOpen(true);
+      onDenied?.();
+    };
     const guard = productBeforeLeaveRef.current;
     const allowed = guard?.() ?? true;
-    if (typeof allowed === "boolean") { if (allowed) action(); else onDenied?.(); return; }
+    if (typeof allowed === "boolean") { if (allowed) action(); else denied(); return; }
     navigationPendingRef.current = true;
     void allowed.then((confirmed) => {
       if (!workspaceMountedRef.current || productBeforeLeaveRef.current !== guard) return;
-      if (confirmed) action(); else onDenied?.();
+      if (confirmed) action(); else denied();
     }).finally(() => { navigationPendingRef.current = false; });
   };
   const navigateView = (view: ActiveView) => navigateWorkspace(() => setActiveView(view));
@@ -768,6 +775,20 @@ export default function AssetsWorkspaceClient({
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
+  const [narrowNavigationOpen, setNarrowNavigationOpen] = useState(false);
+  const navigationDialogRef = useRef<HTMLDivElement | null>(null);
+  const navigationCloseRef = useRef<HTMLButtonElement | null>(null);
+  const navigationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeNarrowNavigation = () => {
+    setNarrowNavigationOpen(false);
+    window.requestAnimationFrame(() => navigationTriggerRef.current?.focus({ preventScroll: true }));
+  };
+  useDialogFocusManagement({
+    open: isNarrowViewport && narrowNavigationOpen,
+    dialogRef: navigationDialogRef,
+    initialFocusRef: navigationCloseRef,
+    onEscape: closeNarrowNavigation,
+  });
   const [chatPanelWidth, setChatPanelWidth] = useState(640);
   // Desktop starts from the approved 52/48 balance and then respects the
   // shared chat/result bounds. Dragging continues to override this default.
@@ -1064,7 +1085,10 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1180px)");
-    const syncViewport = () => setIsNarrowViewport(mediaQuery.matches);
+    const syncViewport = () => {
+      setIsNarrowViewport(mediaQuery.matches);
+      if (!mediaQuery.matches) setNarrowNavigationOpen(false);
+    };
 
     syncViewport();
     mediaQuery.addEventListener("change", syncViewport);
@@ -1866,15 +1890,25 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleCollapseSidebar = () => {
-    setSidebarState("collapsed");
+    if (isNarrowViewport) closeNarrowNavigation();
+    else setSidebarState("collapsed");
   };
 
   const handleExpandSidebar = () => {
-    setSidebarState("expanded");
+    if (isNarrowViewport) setNarrowNavigationOpen(true);
+    else setSidebarState("expanded");
+  };
+
+  const handleOpenCreativeProfile = () => {
+    setNarrowNavigationOpen(false);
+    setCreativeProfileOpen(true);
   };
 
   const handleSelectConversation = (conversationId: string) => {
-    if (conversationId === selectedConversation.id && activeView === "conversation") return;
+    if (conversationId === selectedConversation.id && activeView === "conversation") {
+      setNarrowNavigationOpen(false);
+      return;
+    }
     navigateWorkspace(() => {
     pendingConversationNavigationRef.current = conversationId;
     selectedConversationIdRef.current = conversationId;
@@ -2958,13 +2992,31 @@ export default function AssetsWorkspaceClient({
     }, () => setProjectResourcesOpen(true));
   };
 
-  const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
+  const effectiveSidebarState = isNarrowViewport ? narrowNavigationOpen ? "expanded" : "auto" : sidebarState;
+  const isSidebarVisuallyCollapsed = effectiveSidebarState === "auto" && isNarrowViewport;
+  const navigationSlot = isNarrowViewport ? (
+    <button
+      className="shadcn-prototype-topbar-sidebar-toggle"
+      type="button"
+      aria-label="展开侧边栏"
+      aria-haspopup="dialog"
+      aria-expanded={narrowNavigationOpen}
+      aria-controls="workspace-navigation"
+      title="展开侧边栏"
+      onClick={(event) => {
+        navigationTriggerRef.current = event.currentTarget;
+        handleExpandSidebar();
+      }}
+    >
+      <PanelLeftOpen size={16} aria-hidden="true" />
+    </button>
+  ) : null;
 
   const shellClassName = [
     "shadcn-prototype-shell",
     "agent-visual-refresh",
-    sidebarState === "collapsed" ? "sidebar-collapsed" : "",
-    sidebarState === "expanded" ? "sidebar-expanded" : "",
+    effectiveSidebarState === "collapsed" ? "sidebar-collapsed" : "",
+    effectiveSidebarState === "expanded" ? "sidebar-expanded" : "",
     isSidebarVisuallyCollapsed ? "sidebar-visual-collapsed" : ""
   ].filter(Boolean).join(" ");
   const insetClassName = activeView === "conversation" ? "shadcn-prototype-inset conversation-inset" : "shadcn-prototype-inset";
@@ -3024,6 +3076,20 @@ export default function AssetsWorkspaceClient({
 
   return (
     <main className={shellClassName}>
+      <div
+        ref={navigationDialogRef}
+        id="workspace-navigation"
+        className="shadcn-prototype-navigation-surface"
+        role={isNarrowViewport && narrowNavigationOpen ? "dialog" : undefined}
+        aria-modal={isNarrowViewport && narrowNavigationOpen ? true : undefined}
+        aria-label={isNarrowViewport && narrowNavigationOpen ? "工作台导航" : undefined}
+        hidden={isNarrowViewport && !narrowNavigationOpen}
+        tabIndex={-1}
+      >
+      {isNarrowViewport && narrowNavigationOpen ? (
+        <button type="button" className="shadcn-prototype-navigation-backdrop" aria-label="关闭导航遮罩"
+          tabIndex={-1} onClick={handleCollapseSidebar} />
+      ) : null}
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
           <span className="shadcn-prototype-brand-mark" aria-hidden="true">
@@ -3039,6 +3105,7 @@ export default function AssetsWorkspaceClient({
             <House size={15} aria-hidden="true" />
           </Link>
           <button
+            ref={navigationCloseRef}
             className="shadcn-prototype-sidebar-toggle"
             type="button"
             aria-label="隐藏侧边栏"
@@ -3121,7 +3188,7 @@ export default function AssetsWorkspaceClient({
 
           <div className="shadcn-prototype-collapsed-rail-user" aria-label="账户">
             {creativeProfileVisible ? (
-              <button type="button" title="创作档案" aria-label="创作档案" onClick={() => setCreativeProfileOpen(true)}>
+              <button type="button" title="创作档案" aria-label="创作档案" onClick={handleOpenCreativeProfile}>
                 <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
               </button>
             ) : <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>}
@@ -3337,7 +3404,7 @@ export default function AssetsWorkspaceClient({
           <div>
             <strong>{accountName}</strong>
             <em title={accountEmail}>{accountEmail}</em>
-            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={() => setCreativeProfileOpen(true)}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
+            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={handleOpenCreativeProfile}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
           </div>
           {onLogout ? (
             <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={() => navigateWorkspace(onLogout)}>
@@ -3346,21 +3413,12 @@ export default function AssetsWorkspaceClient({
           ) : null}
         </div>
       </aside>
+      </div>
 
       <section className={insetClassName}>
         {activeView !== "conversation" ? (
           <header className="shadcn-prototype-topbar">
-            {sidebarState === "auto" && isNarrowViewport ? (
-              <button
-                className="shadcn-prototype-topbar-sidebar-toggle"
-                type="button"
-                aria-label="展开侧边栏"
-                title="展开侧边栏"
-                onClick={handleExpandSidebar}
-              >
-                <PanelLeftOpen size={16} aria-hidden="true" />
-              </button>
-            ) : null}
+            {navigationSlot}
             <div className="shadcn-prototype-breadcrumb">
               <span>资源库</span>
               <span className="shadcn-prototype-library-breadcrumb-separator" aria-hidden="true">/</span>
@@ -3398,6 +3456,7 @@ export default function AssetsWorkspaceClient({
         >
           {isNewConversation ? (
             <ConversationStart
+              navigationSlot={navigationSlot}
               suggestions={selectedConversation.suggestions ?? []}
               conversation={selectedConversation}
               accountName={accountName}
@@ -3417,6 +3476,7 @@ export default function AssetsWorkspaceClient({
           ) : activeView === "conversation" ? (
             <>
               <ConversationStudio
+                navigationSlot={navigationSlot}
                 basePath={basePath}
                 contextAssets={currentContextAssets}
                 selectedConversation={selectedConversation}
