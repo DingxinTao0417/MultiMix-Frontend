@@ -170,6 +170,7 @@ export default function ProductWorkspace({
   onCopyProduct,
   onSaveProduct,
   onProductUpdated,
+  onRegisterBeforeLeave,
   onRestoreVersion,
   onRetryVideoJob,
   onOpenLongFormCandidates,
@@ -194,6 +195,7 @@ export default function ProductWorkspace({
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
   onProductUpdated?: (product: ProductArtifact, baseProduct?: ProductArtifact) => void;
+  onRegisterBeforeLeave?: (guard: () => boolean | Promise<boolean>, canLeaveSilently: () => boolean) => () => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
@@ -275,6 +277,7 @@ export default function ProductWorkspace({
   textEditorRef.current = { editing: isTextEditing, body: textEditBody, product };
   const textEditEchoRef = useRef<{ product: ProductArtifact; conversationId: string; auth: ProductAuthScope } | null>(null);
   const textEditReadRef = useRef<object | null>(null);
+  const textEditContextRef = useRef({ product, conversationId: selectedConversation.id, token });
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
   const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
@@ -607,6 +610,8 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
+    const previous = textEditContextRef.current;
+    textEditContextRef.current = { product, conversationId: selectedConversation.id, token };
     const echo = textEditEchoRef.current;
     if (echo && echo.auth === productAuthScopeRef.current && echo.conversationId === selectedConversation.id
       && echo.product.id === product.id && echo.product.backendAssetId === product.backendAssetId
@@ -616,6 +621,20 @@ export default function ProductWorkspace({
       return;
     }
     textEditEchoRef.current = null;
+    if (previous.token === token && previous.conversationId === selectedConversation.id
+      && previous.product.id === product.id && previous.product.backendAssetId === product.backendAssetId
+      && textEditorRef.current.editing
+      && textEditorRef.current.body !== ((textEditBase ?? previous.product).markdownBody ?? "")) {
+      setTextEditBase(textEditBase ?? previous.product);
+      textEditReadRef.current = null;
+      setTextEditReading(false);
+      setTextEditConflict(true);
+      setTextEditLatest(product.contentHash ? product : null);
+      setTextEditError("产物已有外部更新。草稿已保留，请对照最新正文后继续。");
+      setTextEditSaved(false);
+      setStructuralChange(null);
+      return;
+    }
     textEditReadRef.current = null;
     setTextEditReading(false);
     setTextEditBase(null);
@@ -627,7 +646,33 @@ export default function ProductWorkspace({
     setTextEditSaved(false);
     setStructuralChange(null);
     setSubtitleVersionMenuOpen(false);
+    // Only authoritative product/context changes trigger reconciliation, not typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product.id, product.backendAssetId, product.contentHash, product.markdownBody, product.backendUpdatedAt, selectedConversation.id, token]);
+
+  const beforeLeaveRef = useRef<() => boolean | Promise<boolean>>(() => true);
+  beforeLeaveRef.current = () => {
+    if (!isTextEditing) return true;
+    if (textEditSaving || textEditReading) {
+      setTextEditError("正在保存或读取正文，请等待完成后再切换。");
+      return false;
+    }
+    if (!textEditDirty) return true;
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
+    return confirm({
+      title: "放弃未保存的修改并离开？",
+      description: "当前草稿尚未保存。取消可继续编辑，离开将放弃这些修改。",
+      confirmLabel: "放弃修改并离开",
+      tone: "danger",
+    }).then((confirmed) => confirmed && productMountedRef.current
+      && productViewScopeRef.current === view && textEditorRef.current.body === body);
+  };
+  const canLeaveSilentlyRef = useRef<() => boolean>(() => true);
+  canLeaveSilentlyRef.current = () => !isTextEditing || (!textEditDirty && !textEditSaving && !textEditReading);
+  useEffect(() => onRegisterBeforeLeave?.(
+    () => beforeLeaveRef.current(), () => canLeaveSilentlyRef.current(),
+  ), [onRegisterBeforeLeave, isTextEditing, textEditDirty]);
 
   useEffect(() => {
     if (!isTextEditing || !textEditDirty) return;
@@ -756,6 +801,7 @@ export default function ProductWorkspace({
   };
 
   const startTextEditing = () => {
+    setTextEditBase(textEditBase ?? product);
     setTextEditBody((textEditBase ?? product).markdownBody ?? "");
     setTextEditError("");
     setTextEditSaved(false);

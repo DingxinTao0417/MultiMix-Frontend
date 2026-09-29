@@ -68,6 +68,42 @@ function edit(body: string) {
 
 
 describe("text artifact editing", () => {
+  it.each(["cancel", "confirm", "typing"])("checks dirty draft navigation (%s)", async (choice) => {
+    let guard!: () => boolean | Promise<boolean>;
+    let canLeaveSilently!: () => boolean;
+    const unregister = vi.fn();
+    const register = vi.fn((next: typeof guard, silent: () => boolean) => {
+      guard = next; canLeaveSilently = silent; return unregister;
+    });
+    const { unmount } = render(<ProductWorkspace copied={false} onCopyProduct={vi.fn()} onSaveProduct={vi.fn()}
+      product={product} selectedConversation={conversation} token="token" onRegisterBeforeLeave={register} />);
+    expect(guard()).toBe(true);
+    expect(canLeaveSilently()).toBe(true);
+    edit("未保存草稿");
+    expect(canLeaveSilently()).toBe(false);
+    let result!: boolean | Promise<boolean>;
+    act(() => { result = guard(); });
+    if (choice === "typing") fireEvent.change(screen.getByRole("textbox", { name: editorName, hidden: true }), { target: { value: "后续输入" } });
+    fireEvent.click(screen.getByRole("dialog")
+      .querySelector(choice === "cancel" ? "footer button:first-child" : "footer button:last-child")!);
+    expect(await result).toBe(choice === "confirm");
+    expect(screen.getByRole("textbox", { name: editorName })).toHaveValue(choice === "typing" ? "后续输入" : "未保存草稿");
+    unmount();
+    expect(unregister).toHaveBeenCalled();
+  });
+
+  it("preserves a dirty draft and its base when the same product is externally updated", () => {
+    const props = { copied: false, onCopyProduct: vi.fn(), onSaveProduct: vi.fn(),
+      product, selectedConversation: conversation, token: "token" };
+    const { rerender } = render(<ProductWorkspace {...props} />);
+    edit("我的未保存草稿");
+    rerender(<ProductWorkspace {...props} product={{ ...product, contentHash: "external-hash", markdownBody: "外部新正文" }} />);
+    expect(screen.getByRole("textbox", { name: editorName })).toHaveValue("我的未保存草稿");
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
+    fireEvent.click(screen.getByText("查看最新已保存正文"));
+    expect(screen.getByText("外部新正文")).toBeVisible();
+  });
+
   it("preserves typing during save, including parent echo, and uses the accepted hash next time", async () => {
     const pending = pendingSave();
     const updated = { ...product, contentHash: "accepted-hash", markdownBody: "# 提交正文" };
@@ -108,8 +144,9 @@ describe("text artifact editing", () => {
     const newer = { ...product, contentHash: "newer-server", markdownBody: "已经同步的更新版本" };
     rerender(<ProductWorkspace {...props} product={newer} />);
     await act(async () => { pending.resolve({ kind: "saved", product: { ...product, contentHash: "older-response", markdownBody: "旧提交" } }); });
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
-    expect(screen.getByRole("textbox", { name: editorName })).toHaveValue("已经同步的更新版本");
+    expect(screen.getByRole("textbox", { name: editorName })).toHaveValue("旧提交");
+    fireEvent.click(screen.getByText("查看最新已保存正文"));
+    expect(screen.getByText("已经同步的更新版本")).toBeVisible();
     expect(props.onProductUpdated).not.toHaveBeenCalled();
   });
 

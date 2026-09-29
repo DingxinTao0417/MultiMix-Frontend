@@ -721,6 +721,38 @@ export default function AssetsWorkspaceClient({
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
+  const productBeforeLeaveRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
+  const productCanLeaveSilentlyRef = useRef<(() => boolean) | null>(null);
+  const selectedProductIdRef = useRef<string | null>(null);
+  const navigationPendingRef = useRef(false);
+  const registerProductBeforeLeave = useCallback((guard: () => boolean | Promise<boolean>, canLeaveSilently: () => boolean) => {
+    productBeforeLeaveRef.current = guard;
+    productCanLeaveSilentlyRef.current = canLeaveSilently;
+    const editingProductId = !canLeaveSilently() ? selectedProductIdRef.current : null;
+    if (editingProductId) {
+      const conversationId = selectedConversationIdRef.current;
+      setSelectedProductIds((current) => current[conversationId] === editingProductId
+        ? current : { ...current, [conversationId]: editingProductId });
+    }
+    return () => {
+      if (productBeforeLeaveRef.current === guard) {
+        productBeforeLeaveRef.current = null;
+        productCanLeaveSilentlyRef.current = null;
+      }
+    };
+  }, []);
+  const navigateWorkspace = (action: () => void, onDenied?: () => void) => {
+    if (navigationPendingRef.current) { onDenied?.(); return; }
+    const guard = productBeforeLeaveRef.current;
+    const allowed = guard?.() ?? true;
+    if (typeof allowed === "boolean") { if (allowed) action(); else onDenied?.(); return; }
+    navigationPendingRef.current = true;
+    void allowed.then((confirmed) => {
+      if (!workspaceMountedRef.current || productBeforeLeaveRef.current !== guard) return;
+      if (confirmed) action(); else onDenied?.();
+    }).finally(() => { navigationPendingRef.current = false; });
+  };
+  const navigateView = (view: ActiveView) => navigateWorkspace(() => setActiveView(view));
   const [selectedConversationId, setSelectedConversationId] = useState(() => initialConversationId ?? "new");
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
     const conversationId = initialConversationId ?? "new";
@@ -857,6 +889,7 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  selectedProductIdRef.current = selectedProduct?.id ?? null;
   const selectedAssetGenerationJobLives = assetGenerationJobsForConversation(selectedConversation.id);
   const selectedAssetGenerationJobs = selectedAssetGenerationJobLives.map((live) => live.job);
   const selectedAssetGenerationJobConnectionLostById = Object.fromEntries(
@@ -1049,9 +1082,20 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     const nextView = resolveInitialView(initialView);
+    const restoreCurrentRoute = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", activeView);
+      url.searchParams.set("conversation", selectedConversationIdRef.current);
+      if (selectedProduct?.id) url.searchParams.set("product", selectedProduct.id);
+      else url.searchParams.delete("product");
+      router.replace(`${url.pathname}${url.search}${url.hash}`);
+    };
     if (nextView !== "conversation") {
-      setActiveView(nextView);
-      setConversationMenuId(null);
+      if (nextView === activeView) return;
+      navigateWorkspace(() => {
+        setActiveView(nextView);
+        setConversationMenuId(null);
+      }, restoreCurrentRoute);
       return;
     }
     const routeConversationId = new URL(window.location.href).searchParams.get("conversation");
@@ -1067,6 +1111,9 @@ export default function AssetsWorkspaceClient({
     const conversationId = initialConversationId && initialConversationId !== "new"
       ? initialConversationId
       : resolveInitialConversationId(initialConversationId, conversations);
+    if (activeView === "conversation" && selectedConversationIdRef.current === conversationId
+      && (!initialProductId || selectedProduct?.id === initialProductId)) return;
+    navigateWorkspace(() => {
     selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
     if (initialProductId) {
@@ -1077,6 +1124,7 @@ export default function AssetsWorkspaceClient({
     }
     setActiveView("conversation");
     setConversationMenuId(null);
+    }, restoreCurrentRoute);
     // conversations intentionally omitted: only re-run when the URL params change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId, initialProductId, initialView]);
@@ -1118,8 +1166,12 @@ export default function AssetsWorkspaceClient({
         });
         setRuntimeWriteConnectionState("available");
         setConversationLoadState("ready");
-        const currentRouteConversationId = new URL(window.location.href).searchParams.get("conversation");
-        if (initialConversationId && shouldRestoreInitialConversationFocus({
+        const currentRoute = new URL(window.location.href);
+        const currentRouteConversationId = currentRoute.searchParams.get("conversation");
+        if (initialConversationId && !navigationPendingRef.current
+          && productCanLeaveSilentlyRef.current?.() !== false
+          && currentRoute.searchParams.get("product") === (initialProductId ?? null)
+          && shouldRestoreInitialConversationFocus({
           pendingConversationId: pendingConversationNavigationRef.current,
           routeConversationId: currentRouteConversationId,
           initialConversationId,
@@ -1275,12 +1327,15 @@ export default function AssetsWorkspaceClient({
               live.conversationId,
             );
             if (cancelled) return;
+            const editingProductId = selectedConversationIdRef.current === live.conversationId
+              && productCanLeaveSilentlyRef.current?.() === false ? selectedProductIdRef.current : null;
             setConversations((items) => items.map((item) => (
               item.id === detail.id
                 ? mergeProjectConversationDetail(item, detail)
                 : item
             )));
             setSelectedProductIds((currentIds) => {
+              if (editingProductId) return { ...currentIds, [live.conversationId]: editingProductId };
               if (
                 currentIds[live.conversationId]
                 || !outcome.assetId
@@ -1819,6 +1874,8 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleSelectConversation = (conversationId: string) => {
+    if (conversationId === selectedConversation.id && activeView === "conversation") return;
+    navigateWorkspace(() => {
     pendingConversationNavigationRef.current = conversationId;
     selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
@@ -1828,13 +1885,17 @@ export default function AssetsWorkspaceClient({
     url.searchParams.set("conversation", conversationId);
     url.searchParams.delete("product");
     router.replace(`${url.pathname}${url.search}${url.hash}`);
+    });
   };
 
   const handleSelectProduct = (conversationId: string, productId: string) => {
+    if (conversationId === selectedConversation.id && productId === selectedProduct?.id) return;
+    navigateWorkspace(() => {
     setSelectedProductIds((current) => ({
       ...current,
       [conversationId]: productId
     }));
+    });
   };
 
   const handleCopyProduct = async (product: ProductArtifact) => {
@@ -1935,6 +1996,7 @@ export default function AssetsWorkspaceClient({
     });
 
   const handleStartConversation = () => {
+    navigateWorkspace(() => {
     setNewConversationIgnoreProfile(false);
     pendingConversationNavigationRef.current = "new";
     selectedConversationIdRef.current = "new";
@@ -1943,6 +2005,7 @@ export default function AssetsWorkspaceClient({
     setSelectedConversationId("new");
     const url = newConversationUrl(new URL(window.location.href));
     router.replace(`${url.pathname}${url.search}${url.hash}`);
+    });
   };
 
   const handleCloneProjectFromRequirements = async (conversation: Conversation) => {
@@ -2692,7 +2755,10 @@ export default function AssetsWorkspaceClient({
         return next;
       });
     }
+    const preserveEditingFocus = shouldKeepFocusOnResult && productCanLeaveSilentlyRef.current?.() === false;
+    const editingProductId = preserveEditingFocus ? selectedProductIdRef.current : null;
     setSelectedProductIds((current) => {
+      if (editingProductId) return { ...current, [targetConversationId]: editingProductId };
       if (product) {
         return {
           ...current,
@@ -2873,6 +2939,9 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleOpenProjectResource = (item: ProjectResourceItem) => {
+    // Only one focus-isolating surface may be active during cross-drawer navigation.
+    setProjectResourcesOpen(false);
+    navigateWorkspace(() => {
     if (item.kind === "source") {
       setLibraryTargetProjectId(selectedConversation.id);
       setActiveView(item.assetKind === "video" ? "video" : "image");
@@ -2887,7 +2956,7 @@ export default function AssetsWorkspaceClient({
         }));
       }
     }
-    setProjectResourcesOpen(false);
+    }, () => setProjectResourcesOpen(true));
   };
 
   const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
@@ -2966,7 +3035,8 @@ export default function AssetsWorkspaceClient({
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
           </div>
-          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页">
+          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页"
+            onClick={(event) => { event.preventDefault(); navigateWorkspace(() => router.push("/")); }}>
             <House size={15} aria-hidden="true" />
           </Link>
           <button
@@ -2991,7 +3061,8 @@ export default function AssetsWorkspaceClient({
             >
               <PanelLeftOpen size={17} aria-hidden="true" />
             </button>
-            <Link className="shadcn-prototype-collapsed-rail-button" href="/" aria-label="返回主页" title="返回主页">
+            <Link className="shadcn-prototype-collapsed-rail-button" href="/" aria-label="返回主页" title="返回主页"
+              onClick={(event) => { event.preventDefault(); navigateWorkspace(() => router.push("/")); }}>
               <House size={17} aria-hidden="true" />
             </Link>
           </div>
@@ -3016,7 +3087,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="资产库"
               title="资产库"
-              onClick={() => setActiveView("assets")}
+              onClick={() => navigateView("assets")}
             >
               <Package size={17} aria-hidden="true" />
             </button>
@@ -3025,7 +3096,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="文案库"
               title="文案库"
-              onClick={() => setActiveView("copy")}
+              onClick={() => navigateView("copy")}
             >
               <FileText size={17} aria-hidden="true" />
             </button>
@@ -3034,7 +3105,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="图片库"
               title="图片库"
-              onClick={() => setActiveView("image")}
+              onClick={() => navigateView("image")}
             >
               <ImageIcon size={17} aria-hidden="true" />
             </button>
@@ -3043,7 +3114,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="视频库"
               title="视频库"
-              onClick={() => setActiveView("video")}
+              onClick={() => navigateView("video")}
             >
               <Video size={17} aria-hidden="true" />
             </button>
@@ -3188,7 +3259,10 @@ export default function AssetsWorkspaceClient({
                       <Pencil size={13} aria-hidden="true" />
                       重命名
                     </button>
-                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleDeleteConversation(conversation.id)}>
+                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => {
+                      if (conversation.id === selectedConversation.id) navigateWorkspace(() => handleDeleteConversation(conversation.id));
+                      else handleDeleteConversation(conversation.id);
+                    }}>
                       <Trash2 size={13} aria-hidden="true" />
                       删除项目
                     </button>
@@ -3217,7 +3291,7 @@ export default function AssetsWorkspaceClient({
             aria-label="资产库"
             aria-current={activeView === "assets" ? "page" : undefined}
             title="资产库"
-            onClick={() => setActiveView("assets")}
+            onClick={() => navigateView("assets")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Package size={16} /></span>
             资产
@@ -3228,7 +3302,7 @@ export default function AssetsWorkspaceClient({
             aria-label="文案库"
             aria-current={activeView === "copy" ? "page" : undefined}
             title="文案库"
-            onClick={() => setActiveView("copy")}
+            onClick={() => navigateView("copy")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><FileText size={16} /></span>
             文案
@@ -3239,7 +3313,7 @@ export default function AssetsWorkspaceClient({
             aria-label="图片库"
             aria-current={activeView === "image" ? "page" : undefined}
             title="图片库"
-            onClick={() => setActiveView("image")}
+            onClick={() => navigateView("image")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><ImageIcon size={16} /></span>
             图片
@@ -3250,7 +3324,7 @@ export default function AssetsWorkspaceClient({
             aria-label="视频库"
             aria-current={activeView === "video" ? "page" : undefined}
             title="视频库"
-            onClick={() => setActiveView("video")}
+            onClick={() => navigateView("video")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Video size={16} /></span>
             视频
@@ -3267,7 +3341,7 @@ export default function AssetsWorkspaceClient({
             {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={() => setCreativeProfileOpen(true)}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
           </div>
           {onLogout ? (
-            <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={onLogout}>
+            <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={() => navigateWorkspace(onLogout)}>
               <LogOut size={14} aria-hidden="true" />
             </button>
           ) : null}
@@ -3424,6 +3498,7 @@ export default function AssetsWorkspaceClient({
                     <GripVertical size={14} aria-hidden="true" />
                   </div>
                   <ProductWorkspace
+                    onRegisterBeforeLeave={registerProductBeforeLeave}
                     copied={copiedProductId === selectedProduct.id}
                     onCopyProduct={handleCopyProduct}
                     onSaveProduct={isConversationSnapshot
@@ -3460,10 +3535,7 @@ export default function AssetsWorkspaceClient({
                         ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
                         : handleRetryVideoJob}
                     onOpenLongFormCandidates={(candidateProduct) => {
-                      setSelectedProductIds((current) => ({
-                        ...current,
-                        [selectedConversation.id]: candidateProduct.id,
-                      }));
+                      handleSelectProduct(selectedConversation.id, candidateProduct.id);
                     }}
                     onLongFormAction={(action) => void handleLongFormSelect(action)}
                     onApplyGeneratedImage={
