@@ -819,12 +819,22 @@ export default function ProductWorkspace({
         confirmLabel: "放弃修改",
         tone: "danger",
       });
-      if (!confirmed || productViewScopeRef.current !== view || textEditorRef.current.body !== body || !productMountedRef.current) return;
+      if (!confirmed || productViewScopeRef.current !== view || textEditorRef.current.body !== body
+        || !textEditorRef.current.editing || !productMountedRef.current) return;
     }
-    setTextEditBody((textEditBase ?? product).markdownBody ?? "");
+    const latest = textEditLatest ?? product;
+    textEditReadRef.current = null;
+    textEditEchoRef.current = null;
+    setTextEditReading(false);
+    setTextEditBase(latest === product ? null : latest);
+    setTextEditBody(latest.markdownBody ?? "");
+    setTextEditConflict(false);
+    setTextEditLatest(null);
+    setTextEditSaved(false);
     setTextEditError("");
     setStructuralChange(null);
     setIsTextEditing(false);
+    if (latest !== product) onProductUpdated?.(latest, product);
   };
 
   const invalidateEditorExports = useCallback(() => {

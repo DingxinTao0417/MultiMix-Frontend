@@ -52,6 +52,43 @@ async function mountDraft(omitProduct = false) {
 }
 
 describe("workspace draft navigation", () => {
+  it.each(["project", "other-library", "same-library"])(
+    "keeps the user's current destination when a library upload finishes (%s)", async (destination) => {
+      const listLibrary = vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [], nextOffset: null });
+      let finishUpload!: (asset: Awaited<ReturnType<typeof assetWorkspaceAdapter.uploadAsset>>) => void;
+      const upload = vi.spyOn(assetWorkspaceAdapter, "uploadAsset").mockReturnValueOnce(
+        new Promise((resolve) => { finishUpload = resolve; }),
+      );
+      const { container } = await mountDraft();
+      fireEvent.click(screen.getAllByRole("button", { name: "资产库" })[0]);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "放弃修改并离开" })); });
+      await screen.findByRole("heading", { name: "资产库" });
+      const input = container.querySelector('header input[type="file"]')!;
+      const file = new File(["source"], "source.txt", { type: "text/plain" });
+      fireEvent.change(input, { target: { files: [file] } });
+      expect(upload).toHaveBeenCalledWith("token", file, "assets");
+      if (destination === "project") {
+        fireEvent.click(screen.getByRole("link", { name: "草稿项目" }));
+        const workspace = await screen.findByRole("region", { name: "Current product workspace" });
+        fireEvent.click(within(workspace).getByRole("button", { name: "编辑" }));
+        fireEvent.change(screen.getByRole("textbox", { name: "编辑文案稿" }), { target: { value: "上传期间的新草稿" } });
+      } else if (destination === "other-library") {
+        fireEvent.click(screen.getAllByRole("button", { name: "文案库" })[0]);
+        await screen.findByRole("heading", { name: "文案库" });
+      }
+      const readsBeforeCompletion = listLibrary.mock.calls.length;
+      await act(async () => { finishUpload({} as Awaited<ReturnType<typeof assetWorkspaceAdapter.uploadAsset>>); });
+      if (destination === "project") {
+        expect(screen.getByRole("textbox", { name: "编辑文案稿" })).toHaveValue("上传期间的新草稿");
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByRole("heading", { name: destination === "other-library" ? "文案库" : "资产库" })).toBeVisible();
+        await waitFor(() => expect(listLibrary.mock.calls.length).toBeGreaterThan(readsBeforeCompletion));
+      }
+      expect(upload).toHaveBeenCalledOnce();
+    },
+  );
+
   it.each(["product", "project", "library", "new", "home", "logout"])(
     "keeps the draft when cancelling %s navigation", async (entry) => {
       const { container, editor, logout } = await mountDraft();

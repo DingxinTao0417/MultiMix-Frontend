@@ -2854,7 +2854,6 @@ export default function AssetsWorkspaceClient({
     try {
       await assetWorkspaceAdapter.uploadAsset(token, file, activeView);
       setLibraryRefreshKey((value) => value + 1);
-      setActiveView(activeView);
     } catch (error) {
       reportRuntimeWriteFailure(error);
       const msg = error instanceof Error ? error.message : "上传失败，请稍后重试。";

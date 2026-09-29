@@ -68,6 +68,60 @@ function edit(body: string) {
 
 
 describe("text artifact editing", () => {
+  it.each(["discard", "keep", "typing", "external-update"])(
+    "ends only an explicitly discarded conflict session (%s)", async (choice) => {
+      const latest = { ...product, contentHash: "external-hash", markdownBody: "外部已保存的最新正文" };
+      const save = vi.spyOn(assetWorkspaceAdapter, "saveTextEdit").mockResolvedValue({ kind: "saved", product: latest });
+      const props = { copied: false, onCopyProduct: vi.fn(), onSaveProduct: vi.fn(), onProductUpdated: vi.fn(),
+        product, selectedConversation: conversation, token: "token" };
+      const { rerender } = render(<ProductWorkspace {...props} />);
+      edit("未保存草稿");
+      rerender(<ProductWorkspace {...props} product={latest} />);
+      fireEvent.click(screen.getByRole("button", { name: "取消" }));
+      if (choice === "typing") fireEvent.change(screen.getByRole("textbox", { name: editorName, hidden: true }), { target: { value: "确认期间的新输入" } });
+      if (choice === "external-update") rerender(<ProductWorkspace {...props} product={{ ...latest, contentHash: "newer-hash", markdownBody: "更晚的外部正文" }} />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: choice === "keep" ? "取消" : "放弃修改" })); });
+      if (choice !== "discard") {
+        expect(screen.getByRole("textbox", { name: editorName })).toHaveValue(choice === "typing" ? "确认期间的新输入" : "未保存草稿");
+        expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
+        expect(save).not.toHaveBeenCalled();
+        return;
+      }
+      expect(screen.queryByRole("textbox", { name: editorName })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+      expect(screen.getByRole("textbox", { name: editorName })).toHaveValue(latest.markdownBody);
+      expect(screen.queryByRole("button", { name: "读取最新版本" })).not.toBeInTheDocument();
+      expect(screen.getByText("尚未修改")).toBeVisible();
+      expect(save).not.toHaveBeenCalled();
+      fireEvent.change(screen.getByRole("textbox", { name: editorName }), { target: { value: "基于最新正文继续修改" } });
+      expect(screen.getByRole("button", { name: "保存修改" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+      await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ product: latest, body: "基于最新正文继续修改" })));
+    },
+  );
+
+  it("uses the latest read-only conflict snapshot after discarding without posting it", async () => {
+    const latest = { ...product, contentHash: "latest-read-hash", markdownBody: "只读取得的最新正文" };
+    const save = vi.spyOn(assetWorkspaceAdapter, "saveTextEdit").mockRejectedValue(Object.assign(new Error("版本冲突"), { code: "edit_version_conflict" }));
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({ ...conversation, product: latest, products: [latest] });
+    const props = { copied: false, onCopyProduct: vi.fn(), onSaveProduct: vi.fn(), onProductUpdated: vi.fn(),
+      product, selectedConversation: conversation, token: "token" };
+    const { rerender } = render(<ProductWorkspace {...props} />);
+    edit("待放弃草稿");
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await screen.findByText(/版本冲突：/);
+    fireEvent.click(screen.getByRole("button", { name: "读取最新版本" }));
+    await screen.findByRole("button", { name: "采用最新正文" });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "放弃修改" })); });
+    expect(props.onProductUpdated).toHaveBeenCalledWith(latest, product);
+    rerender(<ProductWorkspace {...props} product={latest} />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByRole("textbox", { name: editorName })).toHaveValue(latest.markdownBody);
+    expect(screen.queryByRole("button", { name: "读取最新版本" })).not.toBeInTheDocument();
+    expect(save).toHaveBeenCalledOnce();
+  });
+
   it.each(["cancel", "confirm", "typing"])("checks dirty draft navigation (%s)", async (choice) => {
     let guard!: () => boolean | Promise<boolean>;
     let canLeaveSilently!: () => boolean;
