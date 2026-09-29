@@ -7,7 +7,7 @@ export function savedVersionForProduct(product: AssetProduct, feedback?: Product
     && product.version === feedback?.version ? feedback.version : undefined;
 }
 
-export function reconcileSavedProduct(
+export function reconcileProductMutation(
   current: AssetConversation[], conversationId: string, base: AssetProduct, saved: AssetProduct,
 ): AssetConversation[] {
   if (!base.backendUpdatedAt || saved.id !== base.id || saved.backendAssetId !== base.backendAssetId) return current;
@@ -26,7 +26,7 @@ export function reconcileSavedProduct(
   });
 }
 
-export async function runExclusiveProductSave(
+export async function runExclusiveProductMutation(
   inFlight: Set<string>, productId: string, operation: () => Promise<void>,
 ): Promise<boolean> {
   if (inFlight.has(productId)) return false;

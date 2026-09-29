@@ -36,6 +36,142 @@ afterEach(() => {
 });
 
 describe("embedded export freshness", () => {
+  const historicalProduct = () => ({ ...displayProducts["case-07-project-ready-mp4"], version: "v3",
+    versions: [1, 2, 3].map(version => ({ id: String(version), label: `v${version}`, savedAt: "今天", status: "已保存" })) });
+
+  it.each(["success", "error"])("accepts only the last historical preview selection (%s)", async (outcome) => {
+    const product = historicalProduct();
+    let resolveFirst!: (value: ContentAsset) => void;
+    let rejectFirst!: (error: Error) => void;
+    let resolveSecond!: (value: ContentAsset) => void;
+    apiMocks.getContentAssetVersionPreview.mockImplementationOnce(() => new Promise<ContentAsset>((resolve, reject) => {
+      resolveFirst = resolve; rejectFirst = reject;
+    })).mockImplementationOnce(() => new Promise<ContentAsset>(resolve => { resolveSecond = resolve; }));
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    fireEvent.click(screen.getAllByRole("button", { name: "预览" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "预览" })[0]);
+    await act(async () => {
+      if (outcome === "success") resolveFirst({ ...historicalVideoAsset(), id: product.backendAssetId!, title: "旧版本标题" });
+      else rejectFirst(new Error("过时读取错误"));
+    });
+    expect(screen.getByRole("button", { name: "读取中..." })).toBeDisabled();
+    expect(screen.queryByText("过时读取错误")).not.toBeInTheDocument();
+    expect(screen.queryByText("旧版本标题")).not.toBeInTheDocument();
+    await act(async () => { resolveSecond({ ...historicalVideoAsset(), id: product.backendAssetId!, title: "最后选择的标题" }); });
+    expect(screen.getByLabelText("历史版本预览")).toHaveTextContent("历史版本预览 · v2");
+    expect(screen.getByLabelText("历史版本预览")).toHaveTextContent("最后选择的标题");
+  });
+
+  it.each(["exit", "identity", "auth", "unmount"])("invalidates pending historical preview on %s", async (change) => {
+    const product = historicalProduct();
+    let finish!: (value: ContentAsset) => void;
+    apiMocks.getContentAssetVersionPreview.mockImplementationOnce(() => new Promise<ContentAsset>(resolve => { finish = resolve; }));
+    const props = { copied: false, onCopyProduct: vi.fn(async () => undefined), onSaveProduct: vi.fn(async () => undefined),
+      product, selectedConversation: conversationForDisplayProduct(product), token: "token" };
+    const { rerender, unmount } = render(<ProductWorkspace {...props} />);
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    fireEvent.click(screen.getAllByRole("button", { name: "预览" })[0]);
+    if (change === "exit") fireEvent.click(screen.getByRole("button", { name: "取消预览" }));
+    if (change === "identity") {
+      rerender(<ProductWorkspace {...props} product={{ ...product, id: "other", backendAssetId: 999 }} />);
+      rerender(<ProductWorkspace {...props} />);
+    }
+    if (change === "auth") {
+      rerender(<ProductWorkspace {...props} token="other-token" />);
+      rerender(<ProductWorkspace {...props} />);
+    }
+    if (change === "unmount") unmount();
+    await act(async () => { finish({ ...historicalVideoAsset(), id: product.backendAssetId!, title: "失效读取标题" }); });
+    expect(screen.queryByText("失效读取标题")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "读取中..." })).not.toBeInTheDocument();
+  });
+
+  it("blocks all restores, saving and editing while any historical restore is pending", async () => {
+    const product = historicalProduct();
+    let finish!: () => void;
+    const restore = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onRestoreVersion={restore} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    fireEvent.click(screen.getAllByRole("button", { name: "基于此版本继续" })[0]);
+    expect(screen.getByRole("button", { name: "基于此版本继续" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "基于此版本继续" }));
+    expect(restore).toHaveBeenCalledOnce();
+    await act(async () => { finish(); });
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "编辑" })).toBeEnabled();
+  });
+
+  it("does not allow history restoration while the embedded editor is active", () => {
+    const product = historicalProduct();
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onRestoreVersion={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    for (const button of screen.getAllByRole("button", { name: "基于此版本继续" })) expect(button).toBeDisabled();
+    expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
+  });
+
+  it("keeps restore busy state scoped to its product and does not clear a newer request", async () => {
+    const product = historicalProduct();
+    const finishes: Array<() => void> = [];
+    const restore = vi.fn(() => new Promise<void>(resolve => { finishes.push(resolve); }));
+    const props = { copied: false, onCopyProduct: vi.fn(async () => undefined), onSaveProduct: vi.fn(async () => undefined),
+      onRestoreVersion: restore, product, selectedConversation: conversationForDisplayProduct(product), token: "token" };
+    const { rerender } = render(<ProductWorkspace {...props} />);
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    fireEvent.click(screen.getAllByRole("button", { name: "基于此版本继续" })[0]);
+    const other = { ...product, id: "other-product", backendAssetId: 999 };
+    rerender(<ProductWorkspace {...props} product={other} />);
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+    fireEvent.click(screen.getAllByRole("button", { name: "基于此版本继续" })[0]);
+    await act(async () => { finishes[0](); });
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    await act(async () => { finishes[1](); });
+    expect(screen.getByRole("button", { name: "保存" })).toBeEnabled();
+  });
+
+  it("offers explicit conflict reading and disables mutations while reading", () => {
+    const product = historicalProduct();
+    const reload = vi.fn(async () => undefined);
+    const props = { copied: false, onCopyProduct: vi.fn(async () => undefined), onSaveProduct: vi.fn(async () => undefined),
+      onRestoreVersion: vi.fn(async () => undefined), product, selectedConversation: conversationForDisplayProduct(product), token: "token",
+      productSaveConflict: "产物已有新的修改，请读取最新版本后核对。", onReloadProduct: reload };
+    const { rerender } = render(<ProductWorkspace {...props} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(props.productSaveConflict);
+    expect(screen.getByRole("alert").parentElement).toContainElement(screen.getByRole("button", { name: "保存" }).closest("header"));
+    fireEvent.click(screen.getByRole("button", { name: "读取最新版本" }));
+    expect(reload).toHaveBeenCalledWith(product);
+    rerender(<ProductWorkspace {...props} refreshingProduct />);
+    const reading = screen.getByRole("button", { name: "正在读取…" });
+    expect(reading).toBeDisabled();
+    expect(reading).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "编辑" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    fireEvent.click(reading);
+    expect(reload).toHaveBeenCalledOnce();
+    rerender(<ProductWorkspace {...props} productSaveConflict="读取最新版本失败，原产物与输入已保留，请重试。" />);
+    expect(screen.getByRole("button", { name: "读取最新版本" })).toBeEnabled();
+  });
+
+  it("keeps historical restores disabled while the text editor is active", () => {
+    const product = { ...displayProducts["case-01-director-draft"], contentType: "video_script", contentHash: "text-hash",
+      markdownBody: "# 编导稿\n\n原正文", version: "v3", versions: historicalProduct().versions };
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onRestoreVersion={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    screen.getByText("详情", { selector: "summary" }).closest("details")!.open = true;
+    for (const button of screen.getAllByRole("button", { name: "基于此版本继续" })) expect(button).toBeDisabled();
+  });
+
   it("disables duplicate saves and entering editing while a checkpoint is pending", () => {
     const product = displayProducts["case-07-project-ready-mp4"];
     const save = vi.fn(async () => undefined);

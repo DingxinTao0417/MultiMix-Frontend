@@ -65,6 +65,9 @@ type EditorBridgeMessage = {
 type ExportState = "idle" | "checking" | "preparing" | "exporting" | "hashing" | "uploading" | "registering" | "verifying" | "publishing"
   | "downloading" | "blocked" | "done" | "error";
 type EditorExitState = "idle" | "flushing" | "error";
+type ProductViewScope = { identity: string; productId: string; conversationId: string };
+type ProductAuthScope = { token?: string | null };
+type TextEditRequest = { view: ProductViewScope; auth: ProductAuthScope };
 
 function serverExportState(job: ExportFinalizeJob): Extract<ExportState, "verifying" | "publishing"> {
   return job.stage === "publishing" ? "publishing" : "verifying";
@@ -178,6 +181,10 @@ export default function ProductWorkspace({
   product,
   savedVersion,
   savingProduct = false,
+  restoringProduct = false,
+  refreshingProduct = false,
+  productSaveConflict,
+  onReloadProduct,
   selectedConversation,
   token,
   creativeProfileVisible = false,
@@ -186,7 +193,7 @@ export default function ProductWorkspace({
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
-  onProductUpdated?: (product: ProductArtifact) => void;
+  onProductUpdated?: (product: ProductArtifact, baseProduct?: ProductArtifact) => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
@@ -198,14 +205,35 @@ export default function ProductWorkspace({
   product: ProductArtifact;
   savedVersion?: string;
   savingProduct?: boolean;
+  restoringProduct?: boolean;
+  refreshingProduct?: boolean;
+  productSaveConflict?: string;
+  onReloadProduct?: (product: ProductArtifact) => Promise<void>;
   selectedConversation: Conversation;
   token?: string | null;
   creativeProfileVisible?: boolean;
   videoJobLive?: VideoJobLiveStatus | null;
 }) {
-  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const viewIdentity = JSON.stringify([selectedConversation.id, product.id, product.backendAssetId,
+    product.contentHash, product.markdownBody, product.backendUpdatedAt, product.version, token]);
+  const productViewScopeRef = useRef<ProductViewScope>({ identity: viewIdentity, productId: product.id, conversationId: selectedConversation.id });
+  if (productViewScopeRef.current.identity !== viewIdentity) {
+    productViewScopeRef.current = { identity: viewIdentity, productId: product.id, conversationId: selectedConversation.id };
+  }
+  const productAuthScopeRef = useRef<ProductAuthScope>({ token });
+  if (productAuthScopeRef.current.token !== token) productAuthScopeRef.current = { token };
+  const productMountedRef = useRef(true);
+  useEffect(() => {
+    productMountedRef.current = true;
+    return () => { productMountedRef.current = false; };
+  }, []);
+  const [restoringVersion, setRestoringVersion] = useState<{ productId: string; versionId: string; token?: string | null } | null>(null);
+  const restoringVersionId = restoringVersion?.productId === product.id && restoringVersion.token === token
+    ? restoringVersion.versionId : null;
+  const productMutationPending = savingProduct || restoringProduct || refreshingProduct || restoringVersionId !== null;
   const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
-  const [historicalPreview, setHistoricalPreview] = useState<ContentAsset | null>(null);
+  const [historicalPreview, setHistoricalPreview] = useState<{ asset: ContentAsset; label: string } | null>(null);
+  const historicalPreviewRequestRef = useRef(0);
   const [historicalPreviewError, setHistoricalPreviewError] = useState("");
   const [videoComparisonProduct, setVideoComparisonProduct] = useState<ProductArtifact | null>(null);
   const [videoComparisonLoading, setVideoComparisonLoading] = useState(false);
@@ -234,9 +262,19 @@ export default function ProductWorkspace({
   const [voiceoverSegment, setVoiceoverSegment] = useState<AssetProductSegment | null>(null);
   const [isTextEditing, setIsTextEditing] = useState(false);
   const [textEditBody, setTextEditBody] = useState(product.markdownBody ?? "");
-  const [textEditSaving, setTextEditSaving] = useState(false);
+  const [textEditRequests, setTextEditRequests] = useState<Record<string, TextEditRequest | undefined>>({});
+  const textEditRequestsRef = useRef(new Map<string, TextEditRequest>());
+  const textEditSaving = textEditRequests[product.id]?.auth === productAuthScopeRef.current;
   const [textEditError, setTextEditError] = useState("");
   const [textEditSaved, setTextEditSaved] = useState(false);
+  const [textEditBase, setTextEditBase] = useState<ProductArtifact | null>(null);
+  const [textEditConflict, setTextEditConflict] = useState(false);
+  const [textEditLatest, setTextEditLatest] = useState<ProductArtifact | null>(null);
+  const [textEditReading, setTextEditReading] = useState(false);
+  const textEditorRef = useRef({ editing: isTextEditing, body: textEditBody, product });
+  textEditorRef.current = { editing: isTextEditing, body: textEditBody, product };
+  const textEditEchoRef = useRef<{ product: ProductArtifact; conversationId: string; auth: ProductAuthScope } | null>(null);
+  const textEditReadRef = useRef<object | null>(null);
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
   const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
@@ -274,10 +312,11 @@ export default function ProductWorkspace({
   onProductUpdatedRef.current = onProductUpdated;
 
   useEffect(() => {
+    historicalPreviewRequestRef.current += 1;
     setHistoricalPreview(null);
     setHistoricalPreviewError("");
     setPreviewingVersionId(null);
-  }, [product.backendAssetId]);
+  }, [viewIdentity]);
 
   useEffect(() => {
     videoComparisonRequestRef.current += 1;
@@ -289,6 +328,10 @@ export default function ProductWorkspace({
   }, [product.backendAssetId, product.version]);
 
   const previewHistoricalVersion = useCallback(async (versionId: string) => {
+    const requestId = ++historicalPreviewRequestRef.current;
+    const requestView = productViewScopeRef.current;
+    const isCurrentRequest = () => productMountedRef.current
+      && productViewScopeRef.current === requestView && historicalPreviewRequestRef.current === requestId;
     const assetId = product.backendAssetId;
     const parsedVersionId = Number(versionId);
     if (!token || !assetId || !Number.isInteger(parsedVersionId) || parsedVersionId < 1) {
@@ -296,15 +339,25 @@ export default function ProductWorkspace({
       return;
     }
     setPreviewingVersionId(versionId);
+    setHistoricalPreview(null);
     setHistoricalPreviewError("");
     try {
-      setHistoricalPreview(await getContentAssetVersionPreview(token, assetId, parsedVersionId));
+      const asset = await getContentAssetVersionPreview(token, assetId, parsedVersionId);
+      if (!isCurrentRequest()) return;
+      if (asset.id !== assetId) throw new Error("历史版本与当前产物不匹配，请重新读取。");
+      setHistoricalPreview({ asset, label: product.versions?.find(version => version.id === versionId)?.label ?? `版本 ${versionId}` });
     } catch (error) {
-      setHistoricalPreviewError(error instanceof Error ? error.message : "历史版本读取失败，请重试。");
+      if (isCurrentRequest()) setHistoricalPreviewError(error instanceof Error ? error.message : "历史版本读取失败，请重试。");
     } finally {
-      setPreviewingVersionId(null);
+      if (isCurrentRequest()) setPreviewingVersionId(null);
     }
-  }, [product.backendAssetId, token]);
+  }, [product.backendAssetId, product.versions, token]);
+  const exitHistoricalPreview = useCallback(() => {
+    historicalPreviewRequestRef.current += 1;
+    setHistoricalPreview(null);
+    setHistoricalPreviewError("");
+    setPreviewingVersionId(null);
+  }, []);
   const handleSourceEvidenceClickCapture = useCallback((event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null;
     const summary = target?.closest("summary");
@@ -324,7 +377,7 @@ export default function ProductWorkspace({
     && ["social_post", "content_plan", "manual_text", "copy_draft", "video_script", "short_video_narration"].includes(product.contentType ?? ""),
   );
   const isDirectorText = ["video_script", "short_video_narration"].includes(product.contentType ?? "");
-  const textEditDirty = textEditBody !== (product.markdownBody ?? "");
+  const textEditDirty = textEditBody !== ((textEditBase ?? product).markdownBody ?? "");
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
     : {}) as Record<string, unknown>;
@@ -554,13 +607,27 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
+    const echo = textEditEchoRef.current;
+    if (echo && echo.auth === productAuthScopeRef.current && echo.conversationId === selectedConversation.id
+      && echo.product.id === product.id && echo.product.backendAssetId === product.backendAssetId
+      && echo.product.contentHash === product.contentHash && echo.product.markdownBody === product.markdownBody
+      && echo.product.backendUpdatedAt === product.backendUpdatedAt) {
+      textEditEchoRef.current = null;
+      return;
+    }
+    textEditEchoRef.current = null;
+    textEditReadRef.current = null;
+    setTextEditReading(false);
+    setTextEditBase(null);
+    setTextEditConflict(false);
+    setTextEditLatest(null);
     setIsTextEditing(false);
     setTextEditBody(product.markdownBody ?? "");
     setTextEditError("");
     setTextEditSaved(false);
     setStructuralChange(null);
     setSubtitleVersionMenuOpen(false);
-  }, [product.id, product.contentHash, product.markdownBody]);
+  }, [product.id, product.backendAssetId, product.contentHash, product.markdownBody, product.backendUpdatedAt, selectedConversation.id, token]);
 
   useEffect(() => {
     if (!isTextEditing || !textEditDirty) return;
@@ -573,34 +640,132 @@ export default function ProductWorkspace({
   }, [isTextEditing, textEditDirty]);
 
   const saveTextEdit = async (acceptStructuralChange: boolean) => {
-    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty) return;
-    setTextEditSaving(true);
+    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty || textEditConflict || textEditReading) return;
+    const base = textEditBase ?? product;
+    const submittedBody = textEditBody;
+    const request: TextEditRequest = { view: productViewScopeRef.current, auth: productAuthScopeRef.current };
+    if (textEditRequestsRef.current.get(product.id)?.auth === request.auth) return;
+    textEditRequestsRef.current.set(product.id, request);
+    setTextEditRequests((current) => ({ ...current, [product.id]: request }));
+    const isCurrentAuth = () => productMountedRef.current && productAuthScopeRef.current === request.auth;
+    const isCurrentView = () => isCurrentAuth() && productViewScopeRef.current === request.view;
+    const isCurrentProduct = () => productViewScopeRef.current.productId === product.id
+      && productViewScopeRef.current.conversationId === request.view.conversationId;
     setTextEditError("");
     setTextEditSaved(false);
     try {
       const result = await assetWorkspaceAdapter.saveTextEdit({
         token,
-        product,
-        body: textEditBody,
+        product: base,
+        body: submittedBody,
         acceptStructuralChange,
       });
+      if (!isCurrentAuth()) return;
       if (result.kind === "structural_change") {
-        setStructuralChange({ message: result.message, changes: result.changes });
+        if (isCurrentView() && textEditorRef.current.body === submittedBody) setStructuralChange({ message: result.message, changes: result.changes });
         return;
       }
-      setStructuralChange(null);
-      setTextEditBody(result.product.markdownBody ?? textEditBody);
-      setTextEditSaved(true);
-      setIsTextEditing(false);
-      onProductUpdated?.(result.product);
+      if (result.product.id !== product.id || result.product.backendAssetId !== product.backendAssetId) {
+        throw new Error("无法核验保存的产物，请核对当前内容后重试。");
+      }
+      if (isCurrentView()) {
+        setStructuralChange(null);
+        setTextEditBase(result.product);
+        setTextEditSaved(true);
+        if (textEditorRef.current.body === submittedBody) {
+          setTextEditBody(result.product.markdownBody ?? submittedBody);
+          setIsTextEditing(false);
+        }
+      } else if (isCurrentProduct()) {
+        // A newer parent update wins over an older request, including browse mode.
+        const visible = textEditorRef.current.product;
+        if (visible.contentHash !== base.contentHash || visible.backendUpdatedAt !== base.backendUpdatedAt) return;
+        if (textEditorRef.current.editing) {
+          setTextEditConflict(true);
+          setTextEditLatest(result.product);
+          setTextEditError("此前提交已保存。当前草稿已保留，请比较最新正文后继续。");
+          return;
+        }
+        setTextEditBase(result.product);
+        setTextEditBody(result.product.markdownBody ?? submittedBody);
+      }
+      if (isCurrentProduct()) {
+        textEditEchoRef.current = { product: result.product, conversationId: selectedConversation.id, auth: request.auth };
+      }
+      onProductUpdated?.(result.product, base);
     } catch (error) {
-      setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+      if (isCurrentView()) {
+        if (error instanceof Error && "code" in error && error.code === "edit_version_conflict") {
+          setTextEditConflict(true);
+          setTextEditError("版本冲突：产物已在其他位置更新。草稿已保留，请读取最新版本后对照。");
+        } else setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+      }
     } finally {
-      setTextEditSaving(false);
+      if (textEditRequestsRef.current.get(product.id) === request) textEditRequestsRef.current.delete(product.id);
+      if (productMountedRef.current) setTextEditRequests((current) => current[product.id] === request
+        ? { ...current, [product.id]: undefined } : current);
     }
   };
 
+  const readLatestText = async () => {
+    if (!token || textEditReadRef.current || textEditSaving) return;
+    const view = productViewScopeRef.current;
+    const auth = productAuthScopeRef.current;
+    const request = {};
+    textEditReadRef.current = request;
+    setTextEditReading(true);
+    setTextEditLatest(null);
+    setTextEditError("");
+    const isCurrent = () => productMountedRef.current && productViewScopeRef.current === view
+      && productAuthScopeRef.current === auth && textEditReadRef.current === request;
+    try {
+      const detail = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+      if (!isCurrent()) return;
+      const latest = (detail.products ?? [detail.product]).find((item) => item.id === product.id && item.backendAssetId === product.backendAssetId);
+      if (!latest?.contentHash || typeof latest.markdownBody !== "string") throw new Error("无法核验最新正文，请重试读取。草稿未改变。");
+      setTextEditLatest(latest);
+    } catch (error) {
+      if (isCurrent()) setTextEditError(error instanceof Error ? error.message : "读取失败，草稿已保留，请重试。");
+    } finally {
+      if (isCurrent()) { textEditReadRef.current = null; setTextEditReading(false); }
+    }
+  };
+
+  const resolveTextConflict = async (keepDraft: boolean) => {
+    if (!textEditLatest || textEditSaving || textEditReading) return;
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
+    const latest = textEditLatest;
+    const confirmed = await confirm({
+      title: keepDraft ? "保留草稿并继续编辑？" : "采用最新已保存正文？",
+      description: keepDraft ? "当前草稿不会丢失。下次手动保存将用草稿替换最新正文，请先完成对照。" : "当前未保存的草稿将被最新正文替换，此操作不会再次保存。",
+      confirmLabel: keepDraft ? "确认保留草稿" : "确认采用最新正文",
+      tone: keepDraft ? "default" : "danger",
+    });
+    if (!confirmed || !productMountedRef.current || productViewScopeRef.current !== view
+      || textEditorRef.current.body !== body || !textEditorRef.current.editing) return;
+    textEditEchoRef.current = { product: latest, conversationId: selectedConversation.id, auth: productAuthScopeRef.current };
+    setTextEditBase(latest);
+    if (!keepDraft) setTextEditBody(latest.markdownBody ?? "");
+    setTextEditConflict(false);
+    setTextEditLatest(null);
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+    onProductUpdated?.(latest, product);
+  };
+
+  const startTextEditing = () => {
+    setTextEditBody((textEditBase ?? product).markdownBody ?? "");
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+    setIsTextEditing(true);
+  };
+
   const cancelTextEdit = async () => {
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
     if (textEditDirty) {
       const confirmed = await confirm({
         title: "放弃未保存的修改？",
@@ -608,9 +773,9 @@ export default function ProductWorkspace({
         confirmLabel: "放弃修改",
         tone: "danger",
       });
-      if (!confirmed) return;
+      if (!confirmed || productViewScopeRef.current !== view || textEditorRef.current.body !== body || !productMountedRef.current) return;
     }
-    setTextEditBody(product.markdownBody ?? "");
+    setTextEditBody((textEditBase ?? product).markdownBody ?? "");
     setTextEditError("");
     setStructuralChange(null);
     setIsTextEditing(false);
@@ -1194,6 +1359,7 @@ export default function ProductWorkspace({
   };
 
   const handleExportVideo = async (exportVariant: ExportVariant) => {
+    if (productMutationPending) return;
     if (["dirty", "saving", "error"].includes(editorSaveStateRef.current ?? "saved")) return;
     if (!currentAssetId || ["exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading"].includes(exportState)) return;
     const epoch = ++exportRequestEpochRef.current;
@@ -1404,6 +1570,7 @@ export default function ProductWorkspace({
           : "导出视频";
 
   const openBrowseMaterialPicker = useCallback((segment: AssetProductSegment) => {
+    if (productMutationPending) return;
     setMaterialError("");
     setMaterialPickerState("idle");
     if (!token || !product.backendAssetId) {
@@ -1413,10 +1580,10 @@ export default function ProductWorkspace({
     // The shared candidate hook loads local first, then public, keyed off the
     // selected segment; opening the picker is enough to trigger it.
     setMaterialPickerSegment(segment);
-  }, [product.backendAssetId, token]);
+  }, [product.backendAssetId, productMutationPending, token]);
 
   const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
-    Boolean(issue.segment_id)
+    !productMutationPending && Boolean(issue.segment_id)
     && ["main_track_gap", "naked_black_interval"].includes(issue.code)
     && Boolean(product.segments?.some((segment) => segment.id === issue.segment_id))
   );
@@ -1541,7 +1708,7 @@ export default function ProductWorkspace({
   };
 
   const handleDownloadImage = async (exportVariant: ExportVariant) => {
-    if (!imageDownloadUrl) return;
+    if (productMutationPending || !imageDownloadUrl) return;
     setImageExportError("");
     try {
       const sourceBlob = await getImageSourceBlob();
@@ -1590,20 +1757,16 @@ export default function ProductWorkspace({
             token={token}
             assetId={product.backendAssetId}
             revisionKey={`${product.contentHash ?? product.version ?? ""}:${String(videoProjectMetadata?.mp4_ref ?? "")}:${projectEditedSinceExport}:${materialJobId}`}
-            disabled={hasVideoProject && (projectEditedSinceExport || editorSaveState !== "saved")}
+            disabled={productMutationPending || hasVideoProject && (projectEditedSinceExport || editorSaveState !== "saved")}
             onLocate={(issue) => locateQualityIssue(issue.scene_id, "main_track")}
             onRevise={(issue, action) => {
+              if (productMutationPending) return;
               const segment = product.segments?.find((item) => item.id === issue.scene_id);
               if (action === "material" && segment) openBrowseMaterialPicker(segment);
               else if (action === "voice" && segment) setVoiceoverSegment(segment);
               else locateQualityIssue(issue.scene_id, "main_track");
             }}
-            onEditScript={editableTextArtifact ? () => {
-              setTextEditBody(product.markdownBody ?? "");
-              setTextEditError("");
-              setStructuralChange(null);
-              setIsTextEditing(true);
-            } : undefined}
+            onEditScript={editableTextArtifact && !productMutationPending ? startTextEditing : undefined}
           />
         ) : null;
   const creativeMemoryPrompt = creativeProfileVisible && token && product.backendAssetId
@@ -1625,6 +1788,7 @@ export default function ProductWorkspace({
       onClickCapture={handleSourceEvidenceClickCapture}
     >
       <div className={productClassName}>
+        <div>
         <header className="shadcn-prototype-product-header">
           <div>
             <h3 title={displayIdentity.title}>
@@ -1720,15 +1884,16 @@ export default function ProductWorkspace({
                     {historicalPreview ? (
                       <div className="rounded-xl border border-[#e5e0d8] bg-[#faf8f4] p-3" aria-label="历史版本预览">
                         <div className="flex items-center justify-between gap-3">
-                          <strong className="text-sm">历史版本预览</strong>
-                          <button type="button" onClick={() => setHistoricalPreview(null)}>退出预览</button>
+                          <strong className="text-sm">历史版本预览 · {historicalPreview.label}</strong>
+                          <button type="button" onClick={exitHistoricalPreview}>退出预览</button>
                         </div>
-                        <p className="mt-2 text-sm font-medium">{historicalPreview.title}</p>
+                        <p className="mt-2 text-sm font-medium">{historicalPreview.asset.title}</p>
                         <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-[#736e67]">
-                          {historicalPreview.body || "此版本没有可显示的正文。"}
+                          {historicalPreview.asset.body || "此版本没有可显示的正文。"}
                         </p>
                       </div>
                     ) : null}
+                    {previewingVersionId ? <button type="button" onClick={exitHistoricalPreview}>取消预览</button> : null}
                     {historicalPreviewError ? <p role="alert">{historicalPreviewError}</p> : null}
                     <div className="shadcn-prototype-version-list">
                       {product.versions.map((version) => {
@@ -1749,14 +1914,16 @@ export default function ProductWorkspace({
                             </button>
                             <button
                               type="button"
-                              disabled={savingProduct || isCurrent || !onRestoreVersion || restoringVersionId === version.id}
+                              disabled={productMutationPending || isTextEditing || showEditorEmbed || Boolean(materialPickerSegment || voiceoverSegment)
+                                || isCurrent || !onRestoreVersion}
                               onClick={async () => {
                                 if (!onRestoreVersion) return;
-                                setRestoringVersionId(version.id);
+                                const request = { productId: product.id, versionId: version.id, token };
+                                setRestoringVersion(request);
                                 try {
                                   await onRestoreVersion(product, version.id);
                                 } finally {
-                                  setRestoringVersionId(null);
+                                  setRestoringVersion((current) => current === request ? null : current);
                                 }
                               }}
                             >
@@ -1832,13 +1999,8 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="primary"
-                onClick={() => {
-                  setTextEditBody(product.markdownBody ?? "");
-                  setTextEditError("");
-                  setTextEditSaved(false);
-                  setStructuralChange(null);
-                  setIsTextEditing(true);
-                }}
+                disabled={productMutationPending}
+                onClick={startTextEditing}
               >
                 <Pencil size={12} aria-hidden="true" />
                 编辑
@@ -1846,11 +2008,11 @@ export default function ProductWorkspace({
             ) : null}
             {isTextEditing ? (
               <>
-                <button type="button" onClick={() => void cancelTextEdit()} disabled={textEditSaving}>取消</button>
+                <button type="button" onClick={() => void cancelTextEdit()} disabled={textEditSaving || textEditReading}>取消</button>
                 <button
                   type="button"
                   className="primary"
-                  disabled={!textEditDirty || textEditSaving}
+                  disabled={!textEditDirty || textEditSaving || textEditConflict || textEditReading}
                   onClick={() => void saveTextEdit(false)}
                 >
                   {textEditSaving ? "校验并保存中…" : "保存修改"}
@@ -1867,6 +2029,7 @@ export default function ProductWorkspace({
                 triggerLabel="下载"
                 triggerClassName="primary"
                 menuAriaLabel="选择图片下载版本"
+                disabled={productMutationPending}
                 options={[
                   { variant: "original", label: "下载原图" },
                   { variant: "brand_showcase", label: "下载品牌展示版" },
@@ -1877,7 +2040,7 @@ export default function ProductWorkspace({
             {canBrowseVideo && !isFailedStatus && videoSurface === "browse" ? (
               <button
                 type="button"
-                disabled={savingProduct}
+                disabled={productMutationPending}
                 className="primary"
                 onClick={() => {
                   setEditorRequested(true);
@@ -1909,7 +2072,7 @@ export default function ProductWorkspace({
                 triggerLabel={exportButtonLabel}
                 triggerClassName="shadcn-prototype-open-editor"
                 menuAriaLabel="选择视频导出版本"
-                disabled={editorSaveBlocksExport || [
+                disabled={productMutationPending || editorSaveBlocksExport || [
                   "exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading",
                 ].includes(exportState)}
                 options={[
@@ -1920,15 +2083,27 @@ export default function ProductWorkspace({
               />
             ) : null}
             {stableHeaderActionsAvailable && !editableTextArtifact && !showEditorEmbed ? (
-              <button type="button" disabled={savingProduct} aria-busy={savingProduct}
+              <button type="button" disabled={productMutationPending} aria-busy={productMutationPending}
                 onClick={() => void onSaveProduct(product)}>
                 {savingProduct ? "保存中…" : savedVersion ? `已保存 ${savedVersion}` : "保存"}
               </button>
-            ) : textEditSaved ? (
+            ) : textEditSaved && !isTextEditing ? (
               <span className="shadcn-prototype-text-edit-saved" role="status">已保存</span>
             ) : null}
           </div>
         </header>
+
+        {productSaveConflict ? (
+          <div className="shadcn-prototype-product-conflict" role="alert">
+            <span>{productSaveConflict}</span>
+            <button type="button" disabled={productMutationPending || isTextEditing || showEditorEmbed || !onReloadProduct}
+              className="shadcn-prototype-product-conflict-action"
+              aria-busy={refreshingProduct} onClick={() => void onReloadProduct?.(product)}>
+              {refreshingProduct ? "正在读取…" : "读取最新版本"}
+            </button>
+          </div>
+        ) : null}
+        </div>
 
         {creativeProfileVisible && token && selectedConversation.id !== "new" && product.mode === "video" ? (
           <CreativeProjectUsage token={token} conversationId={selectedConversation.id} product={product} />
@@ -1966,17 +2141,33 @@ export default function ProductWorkspace({
               <span>{isDirectorText ? "整篇 Markdown 编导脚本" : "整篇 Markdown 文案"}</span>
               <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
             </div>
+            {textEditSaved && textEditDirty ? <p role="status">本次已保存，新增文字仍未保存</p> : null}
             <textarea
               aria-label={isDirectorText ? "编辑编导脚本" : "编辑文案稿"}
               value={textEditBody}
               onChange={(event) => {
                 setTextEditBody(event.target.value);
-                setTextEditError("");
+                if (!textEditConflict) setTextEditError("");
+                setTextEditSaved(false);
                 setStructuralChange(null);
               }}
               spellCheck={false}
             />
             {textEditError ? <p className="shadcn-prototype-text-edit-error" role="alert">{textEditError}</p> : null}
+            {textEditConflict ? (
+              <div className="shadcn-prototype-text-structure-review">
+                <strong>最新正文需要对照</strong>
+                <p>草稿已保留，不会自动覆盖或重新提交。请先查看最新已保存正文，再选择如何继续。</p>
+                {textEditLatest ? <details><summary>查看最新已保存正文</summary><pre className="shadcn-prototype-text-latest-body">{textEditLatest.markdownBody}</pre></details> : null}
+                <div>
+                  <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void readLatestText()}>{textEditReading ? "读取中…" : "读取最新版本"}</button>
+                  {textEditLatest ? <>
+                    <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void resolveTextConflict(false)}>采用最新正文</button>
+                    <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void resolveTextConflict(true)}>保留草稿，继续编辑</button>
+                  </> : null}
+                </div>
+              </div>
+            ) : null}
             {structuralChange ? (
               <div className="shadcn-prototype-text-structure-review" role="alert">
                 <strong>检测到关键结构变化</strong>
@@ -1986,7 +2177,7 @@ export default function ProductWorkspace({
                   <button
                     type="button"
                     className="primary"
-                    disabled={textEditSaving}
+                    disabled={textEditSaving || textEditConflict || textEditReading}
                     onClick={() => void saveTextEdit(true)}
                   >
                     {textEditSaving ? "校验并保存中…" : "按新结构保存"}
@@ -2095,8 +2286,8 @@ export default function ProductWorkspace({
               product={product}
               footer={videoBrowseFooter}
               onLongFormAction={onLongFormAction}
-              onApplyGeneratedImage={onApplyGeneratedImage}
-              onApplyGeneratedImageSet={onApplyGeneratedImageSet}
+              onApplyGeneratedImage={productMutationPending ? undefined : onApplyGeneratedImage}
+              onApplyGeneratedImageSet={productMutationPending ? undefined : onApplyGeneratedImageSet}
               selectedImageFrameId={selectedImageFrameId}
               onSelectedImageFrameChange={onSelectedImageFrameChange}
               onRetryVideoJob={onRetryVideoJob}
@@ -2107,9 +2298,9 @@ export default function ProductWorkspace({
               comparisonOpen={videoComparisonOpen}
               onOpenComparison={() => void loadVideoComparison()}
               onCloseComparison={() => setVideoComparisonOpen(false)}
-              onReplaceMaterial={openBrowseMaterialPicker}
+              onReplaceMaterial={productMutationPending ? undefined : openBrowseMaterialPicker}
               onEditVoiceover={
-                token && product.backendAssetId
+                !productMutationPending && token && product.backendAssetId
                   ? (segment) => setVoiceoverSegment(segment)
                   : undefined
               }

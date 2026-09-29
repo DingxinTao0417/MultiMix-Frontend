@@ -1470,6 +1470,18 @@ describe("runtime data boundary", () => {
     vi.unstubAllGlobals();
   });
 
+  it("preserves structured text version conflict without relying on translated messages", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ detail: {
+      code: "edit_version_conflict", message: "changed elsewhere",
+    } }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await expect(assetWorkspaceAdapter.saveTextEdit({ token: "token", product: { backendAssetId: 88, contentHash: "old" } as AssetProduct,
+        body: "草稿", acceptStructuralChange: false })).rejects.toMatchObject({ status: 409, code: "edit_version_conflict" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it("maps unified local candidates into current/recommended/library groups", async () => {
     const candidate = (overrides: Record<string, unknown>) => ({
       candidate_id: "cand-1",

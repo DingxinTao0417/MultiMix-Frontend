@@ -35,7 +35,7 @@ import {
   type AssetLlmDiagnosticsRead,
 } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
-import { reconcileSavedProduct, runExclusiveProductSave, savedVersionForProduct, type ProductSaveFeedback } from "../lib/product-save-state";
+import { reconcileProductMutation, runExclusiveProductMutation, savedVersionForProduct, type ProductSaveFeedback } from "../lib/product-save-state";
 import { trackProductEvent } from "../../../lib/product-analytics";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
@@ -779,10 +779,16 @@ export default function AssetsWorkspaceClient({
   const refreshedAgentActionsRef = useRef(new Set<string>());
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
   const [savedProductIds, setSavedProductIds] = useState<Record<string, ProductSaveFeedback>>({});
-  const [savingProductIds, setSavingProductIds] = useState<Record<string, boolean>>({});
-  const inFlightProductSavesRef = useRef(new Set<string>());
-  const saveTokenRef = useRef(token);
-  useEffect(() => { saveTokenRef.current = token; }, [token]);
+  const [productMutationStates, setProductMutationStates] = useState<Record<string, "saving" | "restoring" | "refreshing" | undefined>>({});
+  const [productSaveConflicts, setProductSaveConflicts] = useState<Record<string, { baseUpdatedAt?: string; message: string } | undefined>>({});
+  const inFlightProductMutationsRef = useRef(new Set<string>());
+  const productMutationScopeRef = useRef({ token, accountEmail });
+  useEffect(() => {
+    productMutationScopeRef.current = { token, accountEmail };
+    setProductMutationStates({});
+    setProductSaveConflicts({});
+    setSavedProductIds({});
+  }, [token, accountEmail]);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
@@ -1852,75 +1858,81 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleSaveProduct = async (product: ProductArtifact) => {
-    if (!runtimeWriteCapabilities.canPersist) {
+  const runProductMutation = async (
+    product: ProductArtifact,
+    kind: "saving" | "restoring" | "refreshing",
+    operation: (requestToken: string, conversationId: string) => Promise<{ product: ProductArtifact; message: string }>,
+  ) => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      toast.error("请先登录并连接后端。");
+      return;
+    }
+    if (kind !== "refreshing" && !runtimeWriteCapabilities.canPersist) {
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能保存。");
       return;
     }
     const conversationId = selectedConversation.id;
     const requestToken = token;
-    await runExclusiveProductSave(inFlightProductSavesRef.current, product.id, async () => {
-      setSavingProductIds((current) => ({ ...current, [product.id]: true }));
+    const requestScope = productMutationScopeRef.current;
+    const isCurrentScope = () => workspaceMountedRef.current && productMutationScopeRef.current === requestScope;
+    const mutationKey = `${accountEmail}:${product.id}`;
+    await runExclusiveProductMutation(inFlightProductMutationsRef.current, mutationKey, async () => {
+      setProductMutationStates((current) => ({ ...current, [product.id]: kind }));
       try {
-        const result = await assetWorkspaceAdapter.saveProduct(product, requestToken);
-        if (saveTokenRef.current !== requestToken) return;
-        setConversations((current) => saveTokenRef.current === requestToken
-          ? reconcileSavedProduct(current, conversationId, product, result.product) : current);
-        setSavedProductIds((current) => ({ ...current,
-          [product.id]: { version: result.version, updatedAt: result.savedAt },
-        }));
-        toast.success("已保存");
+        const result = await operation(requestToken, conversationId);
+        if (!isCurrentScope()) return;
+        const current = conversationsRef.current;
+        if (reconcileProductMutation(current, conversationId, product, result.product) === current) {
+          toast.info("产物已更新，已忽略过期响应，请核对当前版本。");
+          return;
+        }
+        setConversations((items) => isCurrentScope()
+          ? reconcileProductMutation(items, conversationId, product, result.product) : items);
+        if (kind !== "refreshing") {
+          setSavedProductIds((items) => ({ ...items,
+            [product.id]: { version: result.product.version ?? "", updatedAt: result.product.backendUpdatedAt },
+          }));
+        }
+        setProductSaveConflicts((items) => ({ ...items, [product.id]: undefined }));
+        toast.success(result.message);
       } catch (error) {
-        if (saveTokenRef.current !== requestToken) return;
+        if (!isCurrentScope()) return;
         reportRuntimeWriteFailure(error);
-        toast.error(apiErrorStatus(error) === 409
-          ? "产物已有新的修改，本次保存未覆盖它。请刷新后核对最新版本。"
-          : error instanceof Error ? error.message : "保存失败，请稍后重试。");
+        const message = kind === "refreshing"
+          ? "读取最新版本失败，原产物与输入已保留，请重试。"
+          : apiErrorStatus(error) === 409
+            ? "产物已有新的修改，本次操作未覆盖它。请读取最新版本后核对。"
+            : error instanceof Error ? error.message : "操作失败，请稍后重试。";
+        if (kind === "refreshing" || apiErrorStatus(error) === 409) {
+          setProductSaveConflicts((items) => ({ ...items,
+            [product.id]: { baseUpdatedAt: product.backendUpdatedAt, message },
+          }));
+        }
+        toast.error(message);
       } finally {
-        setSavingProductIds((current) => ({ ...current, [product.id]: false }));
+        if (isCurrentScope()) setProductMutationStates((items) => ({ ...items, [product.id]: undefined }));
       }
     });
   };
 
-  const updateConversationProduct = (conversationId: string, updatedProduct: ProductArtifact) => {
-    setConversations((current) => current.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      const products = conversation.products ?? [conversation.product];
-      const nextProducts = products.some((item) => item.id === updatedProduct.id)
-        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
-        : [...products, updatedProduct];
-      return {
-        ...conversation,
-        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
-        products: nextProducts,
-        canvasTitle: updatedProduct.title,
-        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
-        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
-        updatedAt: "刚刚"
-      };
-    }));
-  };
+  const handleSaveProduct = (product: ProductArtifact) => runProductMutation(product, "saving", async (requestToken) => {
+    const result = await assetWorkspaceAdapter.saveProduct(product, requestToken);
+    return { product: result.product, message: "已保存" };
+  });
 
-  const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
-    if (inFlightProductSavesRef.current.has(product.id)) return;
-    if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      toast.error("请先登录并配置后端后再基于历史版本继续。");
-      return;
-    }
-    try {
-      const result = await assetWorkspaceAdapter.restoreProductVersion({ token, product, versionId });
-      updateConversationProduct(selectedConversation.id, result.product);
-      setSavedProductIds((current) => ({
-        ...current,
-        [result.product.id]: { version: result.product.version ?? result.diffSummary,
-          updatedAt: result.product.backendUpdatedAt }
-      }));
-      toast.success(result.assistantMessage || "已基于历史版本生成新版本");
-    } catch (error) {
-      reportRuntimeWriteFailure(error);
-      toast.error("基于历史版本继续失败，请稍后重试。");
-    }
-  };
+  const handleReloadProduct = (product: ProductArtifact) => runProductMutation(product, "refreshing", async (requestToken, conversationId) => {
+    const refreshed = await assetWorkspaceAdapter.loadConversationDetail(requestToken, conversationId);
+    const latest = (refreshed.products ?? [refreshed.product]).find((item) =>
+      item.id === product.id && item.backendAssetId === product.backendAssetId);
+    if (!latest) throw new Error("当前项目中未找到该产物。");
+    return { product: latest, message: "已读取最新版本，请核对后再决定是否修改。" };
+  });
+
+  const handleRestoreProductVersion = (product: ProductArtifact, versionId: string) =>
+    runProductMutation(product, "restoring", async (requestToken) => {
+      const result = await assetWorkspaceAdapter.restoreProductVersion({ token: requestToken, product, versionId });
+      return { product: result.product, message: result.assistantMessage || "已基于历史版本生成新版本" };
+    });
 
   const handleStartConversation = () => {
     setNewConversationIgnoreProfile(false);
@@ -3420,7 +3432,11 @@ export default function AssetsWorkspaceClient({
                     onRestoreVersion={isConversationSnapshot
                       ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
                       : handleRestoreProductVersion}
-                    onProductUpdated={(updatedProduct) => {
+                    onProductUpdated={(updatedProduct, baseProduct) => {
+                      if (baseProduct) {
+                        setConversations((current) => reconcileProductMutation(current, selectedConversation.id, baseProduct, updatedProduct));
+                        return;
+                      }
                       setConversations((current) => current.map((conversation) => {
                         if (conversation.id !== selectedConversation.id) return conversation;
                         const products = conversation.products ?? [conversation.product];
@@ -3466,7 +3482,12 @@ export default function AssetsWorkspaceClient({
                     }}
                     product={selectedProduct}
                     savedVersion={savedVersionForProduct(selectedProduct, savedProductIds[selectedProduct.id])}
-                    savingProduct={savingProductIds[selectedProduct.id] === true}
+                    savingProduct={productMutationStates[selectedProduct.id] === "saving"}
+                    restoringProduct={productMutationStates[selectedProduct.id] === "restoring"}
+                    refreshingProduct={productMutationStates[selectedProduct.id] === "refreshing"}
+                    productSaveConflict={productSaveConflicts[selectedProduct.id]?.baseUpdatedAt === selectedProduct.backendUpdatedAt
+                      ? productSaveConflicts[selectedProduct.id]?.message : undefined}
+                    onReloadProduct={handleReloadProduct}
                     selectedConversation={selectedConversation}
                     token={token}
                     creativeProfileVisible={creativeProfileVisible}

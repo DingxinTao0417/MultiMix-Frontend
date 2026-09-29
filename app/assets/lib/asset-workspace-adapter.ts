@@ -1461,10 +1461,10 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         };
       }
       if (!response.ok) {
-        throw new Error(
+        throw Object.assign(new Error(
           stringValue(detail.message)
           || (stringValue(detail.code) === "edit_version_conflict" ? "产物已更新，请刷新后再编辑。" : "保存失败，请返回编辑后重试。"),
-        );
+        ), { status: response.status, code: stringValue(detail.code) });
       }
       return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
     },
