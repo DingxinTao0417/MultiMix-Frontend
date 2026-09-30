@@ -407,12 +407,36 @@ function LibraryWorkshop({
   const [directorImportImageId, setDirectorImportImageId] = useState<number | null>(null);
   const [directorImportLegacyId, setDirectorImportLegacyId] = useState("");
   const [directorImportBusy, setDirectorImportBusy] = useState(false);
+  const [directorImportError, setDirectorImportError] = useState<string | null>(null);
+  const [directorImportQuery, setDirectorImportQuery] = useState("");
+  const [directorImportNextOffset, setDirectorImportNextOffset] = useState<number | null>(null);
   useEffect(() => {
     setDirectorImportOpen(false);
     setDirectorImportImages([]);
     setDirectorImportImageId(null);
     setDirectorImportLegacyId("");
+    setDirectorImportError(null);
+    setDirectorImportQuery("");
+    setDirectorImportNextOffset(null);
   }, [selectedRowIdentity]);
+  const loadDirectorImportImages = async (query: string, offset = 0) => {
+    if (!token) return;
+    setDirectorImportBusy(true);
+    setDirectorImportError(null);
+    try {
+      const page = await assetWorkspaceAdapter.listLibrary(token, "image", query, {
+        limit: LIBRARY_PAGE_SIZE, offset,
+      });
+      const readyRows = page.rows.filter(understandingReady);
+      setDirectorImportImages((current) => offset ? mergeLibraryRows(current, readyRows) : readyRows);
+      setDirectorImportNextOffset(page.nextOffset);
+    } catch (error) {
+      setDirectorImportError(error instanceof Error && !isRuntimeConnectionError(error)
+        ? error.message : "参考图加载失败，请重新连接后重试。");
+    } finally {
+      setDirectorImportBusy(false);
+    }
+  };
   const { confirm, confirmationDialog } = useConfirmationDialog();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [assetModal, setAssetModal] = useState<"web" | null>(null);
@@ -1601,30 +1625,33 @@ function LibraryWorkshop({
                 </div>
               </section>
             ) : null}
-            </div>
-
-            {/* Actions at the bottom (demo md-acts) */}
             {canImportDirector && selectedRow ? (
-              <section aria-label="导入编导稿" style={{ padding: "8px 0" }}>
+              <section className="shadcn-prototype-library-content" aria-label="导入编导稿">
                 <button type="button" disabled={directorImportBusy} onClick={() => {
                   if (!directorImportOpen && token) {
-                    setDirectorImportBusy(true);
-                    void assetWorkspaceAdapter.listLibrary(token, "image", "", { limit: 100 })
-                      .then((page) => setDirectorImportImages(page.rows.filter((row) => row.understandingStatus === "ready")))
-                      .catch((error) => setActionMessage(error instanceof Error ? error.message : "参考图加载失败。"))
-                      .finally(() => setDirectorImportBusy(false));
+                    void loadDirectorImportImages("");
                   }
                   setDirectorImportOpen((open) => !open);
                 }}>导入为可编辑编导稿</button>
                 {directorImportOpen ? (
                   <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                     <p>导入到「{importProjectTitle}」。原文档保留；导入稿须重新审查，当前不能生成视频工程。</p>
+                    <label>搜索参考图
+                      <input aria-label="搜索参考图" value={directorImportQuery} onChange={(event) => setDirectorImportQuery(event.target.value)} />
+                    </label>
+                    <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>搜索参考图</button>
+                    {directorImportError ? (
+                      <p role="alert">{directorImportError} <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>重试加载参考图</button></p>
+                    ) : null}
                     <label>生产参考图
                       <select aria-label="生产参考图" value={directorImportImageId ?? ""} onChange={(event) => setDirectorImportImageId(event.target.value ? Number(event.target.value) : null)}>
                         <option value="">暂不选择</option>
                         {directorImportImages.map((image) => <option key={image.assetId} value={image.assetId}>{image.title}（#{image.assetId}）</option>)}
                       </select>
                     </label>
+                    {directorImportNextOffset !== null ? (
+                      <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim(), directorImportNextOffset)}>加载更多参考图</button>
+                    ) : null}
                     {legacyReferenceIds.length > 0 ? (
                       <label>将参考图替换原稿中的编号
                         <select aria-label="旧素材编号映射" value={directorImportLegacyId} onChange={(event) => setDirectorImportLegacyId(event.target.value)} disabled={!directorImportImageId}>
@@ -1639,13 +1666,16 @@ function LibraryWorkshop({
                       const mapping = imageId && directorImportLegacyId ? { [directorImportLegacyId]: imageId } : {};
                       setDirectorImportBusy(true);
                       void onImportDirectorDraft?.(selectedRow, imageId ? [imageId] : [], mapping)
-                        .catch((error) => setActionMessage(error instanceof Error ? error.message : "导入失败，请重试。"))
+                        .catch((error) => setDirectorImportError(error instanceof Error ? error.message : "导入失败，请重试。"))
                         .finally(() => setDirectorImportBusy(false));
                     }}>确认导入</button>
                   </div>
                 ) : null}
               </section>
             ) : null}
+            </div>
+
+            {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
               {view === "copy" ? (
                 <>
