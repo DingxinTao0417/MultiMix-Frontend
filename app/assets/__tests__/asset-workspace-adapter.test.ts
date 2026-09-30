@@ -19,6 +19,32 @@ import type {
 } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
+it("sends a project-bound versioned director import with explicit image mapping", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ id: 88 }), {
+      status: 201, headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const result = await assetWorkspaceAdapter.importDirectorDraft({
+      token: "token", source: {
+        assetId: 44, contentHash: "source-hash", title: "早餐店稿件",
+        kind: "copy", meta: "已入库", note: "原稿",
+      }, conversationId: "project-1", referenceAssetIds: [201],
+      legacyReferenceMappings: { "23": 201 },
+    });
+    expect(result.id).toBe(88);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/44/director-draft-import");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      conversation_id: "project-1", base_content_hash: "source-hash",
+      reference_asset_ids: [201], legacy_reference_mappings: { "23": 201 },
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("maps the public video job's recorded cost without treating it as a bill", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
     id: "job-1", asset_id: 42, status: "running", workflow_stage: "video",
