@@ -264,7 +264,7 @@ export type ProjectResourceItemResponse = {
   id: number;
   title: string;
   kind: ProjectResourceKind;
-  membership_state: "active" | "removed" | null;
+  membership_state: "active" | "removed" | "unavailable" | null;
   historical_reference_count: number;
   status: string;
   readd_status?: "available" | "archived" | "not_ready" | null;

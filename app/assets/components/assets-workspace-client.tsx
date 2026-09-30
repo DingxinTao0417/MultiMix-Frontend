@@ -3693,12 +3693,6 @@ export default function AssetsWorkspaceClient({
         onClose={() => setProjectResourcesOpen(false)}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
-        onPermanentDeleteSource={async (assetId) => {
-          if (!token) throw new Error("请先登录后再删除源文件。");
-          await assetWorkspaceAdapter.deleteAsset(token, assetId, "permanent");
-          await reloadCurrentRequirements(selectedConversation.id).catch(() => null);
-          toast.success("源文件已永久删除。");
-        }}
         onOpenResource={handleOpenProjectResource}
         onUseSourceForNextMessage={(item) => {
           if (item.kind !== "source" || item.membershipState !== "active") return;

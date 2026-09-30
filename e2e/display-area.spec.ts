@@ -200,7 +200,7 @@ test("project source opens exact detail and remains recoverable when it is the o
   await expect(resourceEntry).toBeVisible();
   await resourceEntry.click();
   await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
-  await expect(drawer.getByText("已移出项目的资料仍保留历史引用；源文件可用时可重新加入。")).toBeVisible();
+  await expect(drawer.getByText("已移出或从资源库归档的资料仍保留历史引用；仅可用的已移出资料可重新加入。")).toBeVisible();
   await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
   await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-historical-only-390.png"), animations: "disabled" });
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
@@ -216,10 +216,21 @@ test("project source opens exact detail and remains recoverable when it is the o
   expect(pageErrors).toEqual([]);
 });
 
-test("archived historical source stays traceable without an impossible rejoin action", async ({ page }) => {
+test("archived project source stays traceable and opens read-only history detail", async ({ page }) => {
   const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
   const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
   if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.route(`**/v1/assets/detail/${assetId}`, async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as { asset: ContentAsset };
+    payload.asset.title = "测试门店素材";
+    payload.asset.asset_kind = "image";
+    payload.asset.content_type = "uploaded_image";
+    payload.asset.archived = true;
+    payload.asset.status = "archived";
+    await route.fulfill({ response, json: payload });
+  });
 
   await page.route("**/v1/assets/conversations**", async (route) => {
     const requestUrl = new URL(route.request().url());
@@ -233,9 +244,9 @@ test("archived historical source stays traceable without an impossible rejoin ac
           id: assetId,
           title: "测试门店素材",
           kind: "source",
-          membership_state: "removed",
+          membership_state: "unavailable",
           historical_reference_count: 1,
-          status: "ready",
+          status: "archived",
           readd_status: "archived",
           asset_kind: "image",
           content_type: "uploaded_image",
@@ -265,11 +276,25 @@ test("archived historical source stays traceable without an impossible rejoin ac
     await chat.getByRole("button", { name: /^项目资料/ }).click();
     const drawer = page.getByRole("dialog", { name: /的项目资源/ });
     await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
-    await expect(drawer.getByText("源文件已从资源库删除，无法重新加入")).toBeVisible();
+    await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
     await expect(drawer.getByRole("button", { name: "重新加入项目" })).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "移出项目" })).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "永久删除源文件" })).toHaveCount(0);
     await mkdir(desktopEvidenceDirectory, { recursive: true });
     await page.screenshot({
       path: resolve(desktopEvidenceDirectory, `project-source-archived-history-${width}.png`),
+      animations: "disabled",
+    });
+    await drawer.getByRole("button", { name: "测试门店素材", exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+    await expect(detail.getByText(/仅可查看历史内容/)).toBeVisible();
+    await expect(detail.getByText(/归档前未完成素材理解/)).toBeVisible();
+    await expect(detail.getByText(/等待开始素材理解/)).toHaveCount(0);
+    for (const action of ["用于创作", "加入项目…", "重新解析素材", "下载", "删除"]) {
+      await expect(detail.getByRole("button", { name: action })).toHaveCount(0);
+    }
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-source-archived-detail-${width}.png`),
       animations: "disabled",
     });
   }

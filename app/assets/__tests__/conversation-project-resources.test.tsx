@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AssetConversationResponse } from "../../../lib/api";
@@ -200,7 +200,6 @@ describe("conversation project resources", () => {
   });
 
   it("keeps Agent understanding out of the resource drawer while management actions remain", async () => {
-    const onPermanentDeleteSource = vi.fn().mockResolvedValue(undefined);
     render(
       <ProjectResourcesDrawer
         open
@@ -229,7 +228,6 @@ describe("conversation project resources", () => {
         onRemoveSource={vi.fn()}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
-        onPermanentDeleteSource={onPermanentDeleteSource}
       />,
     );
 
@@ -240,11 +238,6 @@ describe("conversation project resources", () => {
     expect(screen.queryByText("不可用于成片")).not.toBeInTheDocument();
     expect(screen.queryByText("需要调整时，直接在项目对话里告诉 Agent。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "移出项目" })).toBeVisible();
-    fireEvent.click(screen.getByText("更多"));
-    const permanentDelete = screen.getByRole("button", { name: "永久删除源文件" });
-    await waitFor(() => expect(permanentDelete).not.toBeDisabled());
-    fireEvent.click(permanentDelete);
-    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
-    await waitFor(() => expect(onPermanentDeleteSource).toHaveBeenCalledWith(31));
+    expect(screen.queryByRole("button", { name: "永久删除源文件" })).not.toBeInTheDocument();
   });
 });

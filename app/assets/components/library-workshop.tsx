@@ -644,13 +644,14 @@ function LibraryWorkshop({
     ? [...new Set([...selectedRow.fullBody.matchAll(/素材#(\d+)(?!\d)/g)].map((match) => match[1]))]
     : [];
   const canImportDirector = view === "copy"
+    && !selectedRow?.archived
     && Boolean(selectedRow?.assetId && selectedRow?.contentHash && selectedRow?.fullBody?.includes("### "))
     && selectedRow?.contentTypeCode !== "video_script"
     && ["upload", "manual_text"].includes(selectedRow?.sourceTypeCode ?? "")
     && Boolean(onImportDirectorDraft && importProjectTitle && writeCapabilities.canPersist);
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
-  const selectedUploadedVideoId = view === "video" && selectedRow?.contentTypeCode === "uploaded_video"
+  const selectedUploadedVideoId = view === "video" && !selectedRow?.archived && selectedRow?.contentTypeCode === "uploaded_video"
     ? selectedRow.assetId ?? null
     : null;
   const [videoStoryboard, setVideoStoryboard] = useState<VideoStoryboard | null>(null);
@@ -1426,6 +1427,8 @@ function LibraryWorkshop({
                   </h3>
                   {understandingReady(selectedRow) ? (
                     <div className="shadcn-prototype-library-understand">{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</div>
+                  ) : selectedRow.archived ? (
+                    <div className="shadcn-prototype-library-understand">归档前未完成素材理解；此处只保留历史资料，不会继续解析。</div>
                   ) : selectedRow.understandingStatus === "failed" ? (
                     <div className="shadcn-prototype-library-understand">
                       素材理解失败，请重新解析后再用于检索和分镜匹配。
@@ -1577,7 +1580,9 @@ function LibraryWorkshop({
                       <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />已解析</span>
                     ) : null}
                   </h3>
-                  {selectedRow.statusLabel === "解析失败" ? (
+                  {selectedRow.archived && !understandingReady(selectedRow) ? (
+                    <div className="shadcn-prototype-library-understand">归档前未完成资料解析；此处只保留历史内容，不会继续处理。</div>
+                  ) : selectedRow.statusLabel === "解析失败" ? (
                     <div className="shadcn-prototype-library-understand">这份资料解析失败，可重试处理后再查看摘要。</div>
                   ) : understandingReady(selectedRow) ? (
                     <div className="shadcn-prototype-library-understand">{selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`} style={index > 0 ? { marginTop: 8 } : undefined}>{paragraph}</p>)}</div>
@@ -1600,7 +1605,7 @@ function LibraryWorkshop({
                   <div><dt>内容类型</dt><dd>{selectedRow.contentType ?? "资料"}</dd></div>
                   <div><dt>处理状态</dt><dd>{selectedRow.statusLabel ?? "待解析"}</dd></div>
                   <div><dt>来源</dt><dd>{selectedRow.sourceLabel ?? selectedRow.meta}</dd></div>
-                  <div><dt>索引状态</dt><dd>{selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
+                  <div><dt>索引状态</dt><dd>{selectedRow.archived ? "已从检索中移除" : selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
                 </dl>
                 {sourceOpen ? (
                   <section className="shadcn-prototype-library-content">
@@ -1677,7 +1682,12 @@ function LibraryWorkshop({
 
             {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
-              {view === "copy" ? (
+              {selectedRow.archived ? (
+                <>
+                  <span role="status">已从资源库归档，仅可查看历史内容，不可用于新创作。</span>
+                  {view === "assets" ? <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button> : null}
+                </>
+              ) : view === "copy" ? (
                 <>
                   <button type="button" onClick={() => { if (selectedRow) void handleCopyRow(selectedRow); }}><Copy size={14} aria-hidden="true" />复制</button>
                   <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>

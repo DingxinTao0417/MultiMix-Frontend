@@ -155,6 +155,20 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
   };
 }
 
+it("preserves the archived state when opening an exact project-source detail", async () => {
+  saveApiState.configured = true;
+  const archived = asset({ id: 903, asset_kind: "image", content_type: "uploaded_image", archived: true, status: "archived" });
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ asset: archived }))));
+  try {
+    const row = await assetWorkspaceAdapter.getLibraryAsset("token", 903);
+    expect(row.archived).toBe(true);
+    expect(row.statusLabel).toBe("已归档");
+  } finally {
+    saveApiState.configured = undefined;
+    vi.unstubAllGlobals();
+  }
+});
+
 describe("asset workspace category inference", () => {
   it("keeps uploaded PPT assets in 上传资料 even when the body mentions 对话", () => {
     expect(libraryCategoryForAsset(asset({}))).toBe("上传资料");

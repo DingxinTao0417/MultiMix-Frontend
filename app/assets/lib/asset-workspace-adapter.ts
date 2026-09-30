@@ -80,6 +80,7 @@ import {
 
 export type LibraryRow = {
   assetId?: number;
+  archived?: boolean;
   contentHash?: string;
   sourceTypeCode?: string;
   fullBody?: string;
@@ -1288,7 +1289,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
   const noAssetHit = Boolean(metadata.no_asset_hit);
   const mediaUnavailable = metadata.media_availability === "missing";
-  const status = category === "编导稿"
+  const status = asset.archived ? "已归档" : category === "编导稿"
     ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
     : (videoProjectStatusLabel(asset)
       ?? (mediaUnavailable
@@ -1301,6 +1302,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
+    archived: asset.archived,
     contentHash: asset.content_hash ?? undefined,
     sourceTypeCode: asset.source_type,
     fullBody: asset.body,

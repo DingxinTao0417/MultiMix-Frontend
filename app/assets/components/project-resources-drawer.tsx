@@ -14,7 +14,7 @@ export type ProjectResourceItem = {
   id: number;
   title: string;
   kind: ProjectResourceKind;
-  membershipState: "active" | "removed" | null;
+  membershipState: "active" | "removed" | "unavailable" | null;
   historicalReferenceCount: number;
   status: string;
   readdStatus?: "available" | "archived" | "not_ready" | null;
@@ -58,7 +58,6 @@ type ProjectResourcesDrawerProps = {
   onReaddSource: (assetId: number) => Promise<void>;
   onOpenResource: (item: ProjectResourceItem) => void;
   onUseSourceForNextMessage?: (item: ProjectResourceItem) => void;
-  onPermanentDeleteSource?: (assetId: number) => Promise<void>;
 };
 
 export default function ProjectResourcesDrawer(props: ProjectResourcesDrawerProps) {
@@ -75,7 +74,6 @@ function ProjectResourcesDrawerContent({
   onReaddSource,
   onOpenResource,
   onUseSourceForNextMessage,
-  onPermanentDeleteSource,
 }: ProjectResourcesDrawerProps) {
   const [kind, setKind] = useState<ProjectResourceKind>("source");
   const [sourceScope, setSourceScope] = useState<"active" | "history">("active");
@@ -85,7 +83,6 @@ function ProjectResourcesDrawerContent({
   const [error, setError] = useState("");
   const [pendingAssetId, setPendingAssetId] = useState<number | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<{
-    action: "remove" | "delete";
     item: ProjectResourceItem;
   } | null>(null);
   const [reloadRevision, setReloadRevision] = useState(0);
@@ -165,10 +162,10 @@ function ProjectResourcesDrawerContent({
 
   const changeMembership = async (item: ProjectResourceItem) => {
     if (item.membershipState === "active") {
-      setPendingConfirmation({ action: "remove", item });
+      setPendingConfirmation({ item });
       return;
     }
-    if (item.readdStatus !== "available") return;
+    if (item.membershipState !== "removed" || item.readdStatus !== "available") return;
     setPendingAssetId(item.id);
     setError("");
     try {
@@ -181,30 +178,17 @@ function ProjectResourcesDrawerContent({
     }
   };
 
-  const permanentlyDelete = async (item: ProjectResourceItem) => {
-    if (!onPermanentDeleteSource) return;
-    setPendingConfirmation({ action: "delete", item });
-  };
-
   const confirmPendingAction = async () => {
     if (!pendingConfirmation) return;
-    const { action, item } = pendingConfirmation;
+    const { item } = pendingConfirmation;
     setPendingAssetId(item.id);
     setError("");
     try {
-      if (action === "remove") {
-        await onRemoveSource(item.id);
-      } else if (onPermanentDeleteSource) {
-        await onPermanentDeleteSource(item.id);
-      }
+      await onRemoveSource(item.id);
       setReloadRevision((value) => value + 1);
       setPendingConfirmation(null);
     } catch (cause) {
-      setError(cause instanceof Error
-        ? cause.message
-        : action === "remove"
-          ? "项目资源操作失败，请重试。"
-          : "源文件无法永久删除。");
+      setError(cause instanceof Error ? cause.message : "项目资源操作失败，请重试。");
     } finally {
       setPendingAssetId(null);
     }
@@ -236,7 +220,7 @@ function ProjectResourcesDrawerContent({
               ? "会用于后续对话与生成"
               : summary.sources + summary.copies + summary.covers + summary.videos > 0
                 ? "包含可用于后续创作的资料与历史记录"
-                : "保留已移出资料的历史记录"}</p>
+                : "保留项目资料的历史记录"}</p>
           </div>
           <button ref={closeButtonRef} type="button" aria-label="关闭项目资源" onClick={onClose}>
             <X size={16} aria-hidden="true" />
@@ -270,13 +254,13 @@ function ProjectResourcesDrawerContent({
               aria-pressed={activeSourceScope === "history"}
               onClick={() => { setSourceScope("history"); setPagination({ selection: "source:history", offset: 0 }); setLoadedPage(null); }}
             >
-              已移出 {summary.historicalSources}
+              历史资料 {summary.historicalSources}
             </button>
           </div>
         ) : null}
 
         {activeKind === "source" && summary.historicalSources > 0 && summary.sources === 0 ? (
-          <p className="shadcn-prototype-project-resources-scope-caption">已移出项目的资料仍保留历史引用；源文件可用时可重新加入。</p>
+          <p className="shadcn-prototype-project-resources-scope-caption">已移出或从资源库归档的资料仍保留历史引用；仅可用的已移出资料可重新加入。</p>
         ) : null}
 
         {loading ? <p role="status">项目资源加载中…</p> : null}
@@ -291,7 +275,7 @@ function ProjectResourcesDrawerContent({
 
         {!loading && !error && page?.items.length === 0 ? (
           <p className="shadcn-prototype-project-resources-empty">
-            {activeKind === "source" && activeSourceScope === "history" ? "还没有已移出的资料。" : "这里还没有资料。"}
+            {activeKind === "source" && activeSourceScope === "history" ? "还没有历史资料。" : "这里还没有资料。"}
           </p>
         ) : null}
 
@@ -303,15 +287,17 @@ function ProjectResourcesDrawerContent({
                     <span className="shadcn-prototype-project-resource-icon" data-kind={item.kind}>{resourceIcon(item)}</span>
                   <button type="button" onClick={() => onOpenResource(item)}>{item.title}</button>
                   <small>
-                    {item.membershipState === "removed" ? "历史使用" : item.status === "ready" ? "可使用" : item.status}
-                    {item.membershipState === "removed" && item.historicalReferenceCount > 0
+                    {item.membershipState === "unavailable" ? "已归档" : item.membershipState === "removed" ? "历史使用" : item.status === "ready" ? "可使用" : item.status}
+                    {item.membershipState !== "active" && item.historicalReferenceCount > 0
                       ? ` · 旧版本引用 ${item.historicalReferenceCount} 次`
                       : ""}
                   </small>
-                  {item.kind === "source" && item.membershipState === "removed" && item.readdStatus !== "available" ? (
+                  {item.kind === "source" && item.membershipState !== "active" && item.readdStatus !== "available" ? (
                     <small style={{ gridColumn: 2, whiteSpace: "normal" }}>
                       {item.readdStatus === "archived"
-                        ? "源文件已从资源库删除，无法重新加入"
+                        ? item.membershipState === "unavailable"
+                          ? "源文件已从资源库归档，暂不能用于后续创作"
+                          : "源文件已从资源库删除，无法重新加入"
                         : item.readdStatus === "not_ready"
                           ? "源文件暂不可用，无法重新加入"
                           : "源文件状态待确认，暂不能重新加入"}
@@ -326,7 +312,7 @@ function ProjectResourcesDrawerContent({
                         用于本轮
                       </button>
                     ) : null}
-                    {item.membershipState === "active" || item.readdStatus === "available" ? (
+                    {item.membershipState === "active" || item.membershipState === "removed" && item.readdStatus === "available" ? (
                       <button
                         type="button"
                         disabled={pendingAssetId === item.id}
@@ -338,19 +324,6 @@ function ProjectResourcesDrawerContent({
                             ? "移出项目"
                             : "重新加入项目"}
                       </button>
-                    ) : null}
-                    {onPermanentDeleteSource ? (
-                      <details className="shadcn-prototype-project-resource-more">
-                        <summary>更多</summary>
-                        <button
-                          type="button"
-                          className="shadcn-prototype-project-source-permanent-delete"
-                          disabled={pendingAssetId === item.id}
-                          onClick={() => void permanentlyDelete(item)}
-                        >
-                          永久删除源文件
-                        </button>
-                      </details>
                     ) : null}
                     </>
                   ) : (
@@ -373,12 +346,10 @@ function ProjectResourcesDrawerContent({
       </div>
       <ConfirmationDialog
         open={pendingConfirmation !== null}
-        title={pendingConfirmation?.action === "delete" ? "永久删除源文件？" : "将素材移出项目？"}
-        description={pendingConfirmation?.action === "delete"
-          ? "源文件会从资产库移除。若仍被项目或历史版本引用，系统会拒绝删除。"
-          : "这只影响之后的生成；已有文案、封面和视频不会改变。"}
-        confirmLabel={pendingConfirmation?.action === "delete" ? "永久删除" : "移出项目"}
-        tone={pendingConfirmation?.action === "delete" ? "danger" : "default"}
+        title="将素材移出项目？"
+        description="这只影响之后的生成；已有文案、封面和视频不会改变。"
+        confirmLabel="移出项目"
+        tone="default"
         busy={pendingAssetId !== null}
         onCancel={() => setPendingConfirmation(null)}
         onConfirm={() => void confirmPendingAction()}
