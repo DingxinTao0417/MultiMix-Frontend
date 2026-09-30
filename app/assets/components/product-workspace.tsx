@@ -389,6 +389,14 @@ export default function ProductWorkspace({
     && !Array.isArray(productMetadata.video_plan)
     ? productMetadata.video_plan as Record<string, unknown>
     : null;
+  const importedDirectorDraft = product.contentType === "video_script"
+    && String(productMetadata.director_draft_phase ?? "").startsWith("editable_");
+  const unresolvedImportedReferences = Array.isArray(productMetadata.unresolved_legacy_reference_ids)
+    ? productMetadata.unresolved_legacy_reference_ids.filter((value): value is number => typeof value === "number")
+    : [];
+  const importedReferenceIds = Array.isArray(presenterVideoPlan?.selected_reference_asset_ids)
+    ? presenterVideoPlan.selected_reference_asset_ids.filter((value): value is number => typeof value === "number")
+    : [];
   const isPresenterSourcePlan = isPresenterSourceVideoPlan(presenterVideoPlan);
   const hasSpeechTimeline = product.mode === "video"
     && isPresenterSourcePlan
@@ -2191,6 +2199,18 @@ export default function ProductWorkspace({
           <p className="mx-5 mb-3 text-sm text-[#a43b32]" role="alert">{sourceExcerptAuditError}</p>
         ) : null}
 
+        {importedDirectorDraft ? (
+          <section className="mx-5 mb-4 rounded-xl border border-[#eae7e1] bg-white p-4 text-sm" aria-label="导入编导稿状态">
+            <strong>可编辑初稿 · 待审查</strong>
+            <p className="mt-2 text-[#4d4944]">这份稿件已导入项目，可直接编辑；制作检查尚未完成，当前不能生成视频工程。</p>
+            {importedReferenceIds.length ? (
+              <p className="mt-2 text-[#736e67]">参考素材 {importedReferenceIds.map((id) => `#${id}`).join("、")} 仅作画面示意。</p>
+            ) : null}
+            {unresolvedImportedReferences.length ? (
+              <p className="mt-2 text-[#a43b32]" role="alert">原稿素材编号 {unresolvedImportedReferences.map((id) => `#${id}`).join("、")} 尚未映射到当前素材库。请编辑稿件并核实引用。</p>
+            ) : null}
+          </section>
+        ) : null}
         {isTextEditing ? (
           <div className="shadcn-prototype-text-editor-shell">
             <div className="shadcn-prototype-text-editor-status">

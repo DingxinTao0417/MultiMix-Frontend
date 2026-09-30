@@ -24,6 +24,34 @@ vi.mock("../../../lib/api", async (importOriginal) => {
   return { ...actual, get isApiConfigured() { return saveApiState.configured ?? actual.isApiConfigured; } };
 });
 
+it("sends a project-bound versioned director import with explicit image mapping", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ id: 88 }), {
+      status: 201, headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  saveApiState.configured = true;
+  try {
+    const result = await assetWorkspaceAdapter.importDirectorDraft({
+      token: "token", source: {
+        assetId: 44, contentHash: "source-hash", title: "早餐店稿件",
+        kind: "copy", meta: "已入库", note: "原稿",
+      }, conversationId: "project-1", referenceAssetIds: [201],
+      legacyReferenceMappings: { "23": 201 },
+    });
+    expect(result.id).toBe(88);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/44/director-draft-import");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      conversation_id: "project-1", base_content_hash: "source-hash",
+      reference_asset_ids: [201], legacy_reference_mappings: { "23": 201 },
+    });
+  } finally {
+    saveApiState.configured = undefined;
+    vi.unstubAllGlobals();
+  }
+});
+
 describe("confirmed product save feedback", () => {
   const saveProduct = { ...displayProducts["case-07-project-ready-mp4"], backendAssetId: 1,
     backendUpdatedAt: "2026-09-28T11:00:00Z" };

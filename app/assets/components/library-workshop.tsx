@@ -356,6 +356,8 @@ function LibraryWorkshop({
   onUploadClick,
   uploading = false,
   onUseAsset,
+  onImportDirectorDraft,
+  importProjectTitle,
   onAddAssetToConversation,
   targetProjectTitle,
   onExitProjectTarget,
@@ -371,6 +373,8 @@ function LibraryWorkshop({
   onUploadClick?: () => void;
   uploading?: boolean;
   onUseAsset?: (row: LibraryRow, intent: LibraryActionIntent) => Promise<void>;
+  onImportDirectorDraft?: (row: LibraryRow, referenceAssetIds: number[], legacyReferenceMappings: Record<string, number>) => Promise<void>;
+  importProjectTitle?: string | null;
   onAddAssetToConversation?: (row: LibraryRow) => void;
   targetProjectTitle?: string | null;
   onExitProjectTarget?: () => void;
@@ -398,6 +402,41 @@ function LibraryWorkshop({
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [directorImportOpen, setDirectorImportOpen] = useState(false);
+  const [directorImportImages, setDirectorImportImages] = useState<LibraryRow[]>([]);
+  const [directorImportImageId, setDirectorImportImageId] = useState<number | null>(null);
+  const [directorImportLegacyId, setDirectorImportLegacyId] = useState("");
+  const [directorImportBusy, setDirectorImportBusy] = useState(false);
+  const [directorImportError, setDirectorImportError] = useState<string | null>(null);
+  const [directorImportQuery, setDirectorImportQuery] = useState("");
+  const [directorImportNextOffset, setDirectorImportNextOffset] = useState<number | null>(null);
+  useEffect(() => {
+    setDirectorImportOpen(false);
+    setDirectorImportImages([]);
+    setDirectorImportImageId(null);
+    setDirectorImportLegacyId("");
+    setDirectorImportError(null);
+    setDirectorImportQuery("");
+    setDirectorImportNextOffset(null);
+  }, [selectedRowIdentity]);
+  const loadDirectorImportImages = async (query: string, offset = 0) => {
+    if (!token) return;
+    setDirectorImportBusy(true);
+    setDirectorImportError(null);
+    try {
+      const page = await assetWorkspaceAdapter.listLibrary(token, "image", query, {
+        limit: LIBRARY_PAGE_SIZE, offset,
+      });
+      const readyRows = page.rows.filter(understandingReady);
+      setDirectorImportImages((current) => offset ? mergeLibraryRows(current, readyRows) : readyRows);
+      setDirectorImportNextOffset(page.nextOffset);
+    } catch (error) {
+      setDirectorImportError(error instanceof Error && !isRuntimeConnectionError(error)
+        ? error.message : "参考图加载失败，请重新连接后重试。");
+    } finally {
+      setDirectorImportBusy(false);
+    }
+  };
   const { confirm, confirmationDialog } = useConfirmationDialog();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [assetModal, setAssetModal] = useState<"web" | null>(null);
@@ -601,6 +640,14 @@ function LibraryWorkshop({
     setFocusedRow(null);
     onFocusAssetClose?.();
   };
+  const legacyReferenceIds = selectedRow?.fullBody
+    ? [...new Set([...selectedRow.fullBody.matchAll(/素材#(\d+)(?!\d)/g)].map((match) => match[1]))]
+    : [];
+  const canImportDirector = view === "copy"
+    && Boolean(selectedRow?.assetId && selectedRow?.contentHash && selectedRow?.fullBody?.includes("### "))
+    && selectedRow?.contentTypeCode !== "video_script"
+    && ["upload", "manual_text"].includes(selectedRow?.sourceTypeCode ?? "")
+    && Boolean(onImportDirectorDraft && importProjectTitle && writeCapabilities.canPersist);
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedUploadedVideoId = view === "video" && selectedRow?.contentTypeCode === "uploaded_video"
@@ -1576,6 +1623,54 @@ function LibraryWorkshop({
                     <span key={version}>{version}</span>
                   ))}
                 </div>
+              </section>
+            ) : null}
+            {canImportDirector && selectedRow ? (
+              <section className="shadcn-prototype-library-content" aria-label="导入编导稿">
+                <button type="button" disabled={directorImportBusy} onClick={() => {
+                  if (!directorImportOpen && token) {
+                    void loadDirectorImportImages("");
+                  }
+                  setDirectorImportOpen((open) => !open);
+                }}>导入为可编辑编导稿</button>
+                {directorImportOpen ? (
+                  <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                    <p>导入到「{importProjectTitle}」。原文档保留；导入稿须重新审查，当前不能生成视频工程。</p>
+                    <label>搜索参考图
+                      <input aria-label="搜索参考图" value={directorImportQuery} onChange={(event) => setDirectorImportQuery(event.target.value)} />
+                    </label>
+                    <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>搜索参考图</button>
+                    {directorImportError ? (
+                      <p role="alert">{directorImportError} <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>重试加载参考图</button></p>
+                    ) : null}
+                    <label>生产参考图
+                      <select aria-label="生产参考图" value={directorImportImageId ?? ""} onChange={(event) => setDirectorImportImageId(event.target.value ? Number(event.target.value) : null)}>
+                        <option value="">暂不选择</option>
+                        {directorImportImages.map((image) => <option key={image.assetId} value={image.assetId}>{image.title}（#{image.assetId}）</option>)}
+                      </select>
+                    </label>
+                    {directorImportNextOffset !== null ? (
+                      <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim(), directorImportNextOffset)}>加载更多参考图</button>
+                    ) : null}
+                    {legacyReferenceIds.length > 0 ? (
+                      <label>将参考图替换原稿中的编号
+                        <select aria-label="旧素材编号映射" value={directorImportLegacyId} onChange={(event) => setDirectorImportLegacyId(event.target.value)} disabled={!directorImportImageId}>
+                          <option value="">不替换，全部待核对</option>
+                          {legacyReferenceIds.map((id) => <option key={id} value={id}>素材#{id}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
+                    <p>未映射的旧编号会保留为待核对项；请在编辑稿中核实后再继续制作。</p>
+                    <button type="button" disabled={directorImportBusy || !writeCapabilities.canPersist} onClick={() => {
+                      const imageId = directorImportImageId;
+                      const mapping = imageId && directorImportLegacyId ? { [directorImportLegacyId]: imageId } : {};
+                      setDirectorImportBusy(true);
+                      void onImportDirectorDraft?.(selectedRow, imageId ? [imageId] : [], mapping)
+                        .catch((error) => setDirectorImportError(error instanceof Error ? error.message : "导入失败，请重试。"))
+                        .finally(() => setDirectorImportBusy(false));
+                    }}>确认导入</button>
+                  </div>
+                ) : null}
               </section>
             ) : null}
             </div>
