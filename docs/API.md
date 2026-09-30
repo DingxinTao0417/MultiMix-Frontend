@@ -123,6 +123,7 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 - 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。旧缓存缺少 `project_state` 时直接失效，不在浏览器猜测状态。
 - `GET /v1/assets/conversations/{conversation_id}` 在用户选中项目后加载消息、产物和 `project_resource_summary`。新客户端传 `include_project_resource_items=false`，不再把完整项目资源塞进详情首屏。
 - `GET /v1/assets/conversations/{conversation_id}/resources?kind=&scope=&offset=&limit=` 按需分页读取项目资源；`source` 支持 `active / history / all`，文案、封面和视频使用 `all`。默认 20 条，最多 50 条。
+- 项目资源项的 `readd_status` 仅用于已移出的源素材：`available` 表示可重新加入，`archived` 表示源文件已从资源库删除，`not_ready` 表示尚不可用；其他资源项为 `null`。服务端依据归档标记和就绪状态判定，不可仅用 `status=ready` 推断可重新加入。
 - `PUT /v1/assets/conversations/{conversation_id}/sources/{asset_id}` 与同路径 `DELETE` 立即持久化加入/移出。重复操作幂等；项目和素材都必须属于当前用户。
 - “移出项目”只改变今后生成使用的素材集合，不回写历史消息、历史产物、`video_plan`、分镜 `asset_reference` 或视频工程。已被旧版本使用的素材进入“历史使用”；从未被使用的素材移出后不伪造历史记录。
 - `GET /v1/assets/{asset_id}/versions/{version_id}/preview` 只读预览历史版本；`POST .../restore` 在 UI 中表达为“基于此版本继续”，继续追加新版本，不覆盖历史版本。

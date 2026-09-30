@@ -17,6 +17,7 @@ export type ProjectResourceItem = {
   membershipState: "active" | "removed" | null;
   historicalReferenceCount: number;
   status: string;
+  readdStatus?: "available" | "archived" | "not_ready" | null;
   assetKind: string;
   contentType: string;
   sourceType: string;
@@ -42,18 +43,7 @@ export type ProjectResourceSummary = {
 
 const PAGE_SIZE = 20;
 
-export default function ProjectResourcesDrawer({
-  open,
-  projectTitle,
-  summary,
-  loadResources,
-  onClose,
-  onRemoveSource,
-  onReaddSource,
-  onOpenResource,
-  onUseSourceForNextMessage,
-  onPermanentDeleteSource,
-}: {
+type ProjectResourcesDrawerProps = {
   open: boolean;
   projectTitle: string;
   summary: ProjectResourceSummary;
@@ -69,11 +59,28 @@ export default function ProjectResourcesDrawer({
   onOpenResource: (item: ProjectResourceItem) => void;
   onUseSourceForNextMessage?: (item: ProjectResourceItem) => void;
   onPermanentDeleteSource?: (assetId: number) => Promise<void>;
-}) {
+};
+
+export default function ProjectResourcesDrawer(props: ProjectResourcesDrawerProps) {
+  return props.open ? <ProjectResourcesDrawerContent {...props} /> : null;
+}
+
+function ProjectResourcesDrawerContent({
+  open,
+  projectTitle,
+  summary,
+  loadResources,
+  onClose,
+  onRemoveSource,
+  onReaddSource,
+  onOpenResource,
+  onUseSourceForNextMessage,
+  onPermanentDeleteSource,
+}: ProjectResourcesDrawerProps) {
   const [kind, setKind] = useState<ProjectResourceKind>("source");
   const [sourceScope, setSourceScope] = useState<"active" | "history">("active");
-  const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState<ProjectResourcePage | null>(null);
+  const [pagination, setPagination] = useState({ selection: "source:active", offset: 0 });
+  const [loadedPage, setLoadedPage] = useState<{ request: string; page: ProjectResourcePage } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingAssetId, setPendingAssetId] = useState<number | null>(null);
@@ -94,11 +101,24 @@ export default function ProjectResourcesDrawer({
   const activeKind = visibleTabs.some((tab) => tab.kind === kind)
     ? kind
     : visibleTabs[0]?.kind ?? "source";
-  const activeSourceScope = sourceScope === "history" || summary.sources > 0
-    ? sourceScope
-    : "history";
+  const activeSourceScope = sourceScope === "history"
+    ? summary.historicalSources > 0 || summary.sources === 0 ? "history" : "active"
+    : summary.sources > 0 || summary.historicalSources === 0 ? "active" : "history";
   const scope: ProjectResourceScope = activeKind === "source" ? activeSourceScope : "all";
+  const selection = `${activeKind}:${scope}`;
+  const selectedCount = activeKind === "source"
+    ? activeSourceScope === "active" ? summary.sources : summary.historicalSources
+    : tabs.find((tab) => tab.kind === activeKind)?.count ?? 0;
+  const offset = pagination.selection === selection ? pagination.offset : 0;
+  const request = `${selection}:${offset}:${selectedCount}`;
+  const page = loadedPage?.request === request ? loadedPage.page : null;
   const totalResources = tabs.reduce((total, tab) => total + tab.count, 0);
+
+  useEffect(() => {
+    if (!open) return;
+    if (kind !== activeKind) setKind(activeKind);
+    if (sourceScope !== activeSourceScope) setSourceScope(activeSourceScope);
+  }, [activeKind, activeSourceScope, kind, open, sourceScope]);
 
   useDialogFocusManagement({
     open: open && pendingConfirmation === null,
@@ -114,11 +134,18 @@ export default function ProjectResourcesDrawer({
     setError("");
     void loadResources(activeKind, scope, offset, PAGE_SIZE)
       .then((nextPage) => {
-        if (!cancelled) setPage(nextPage);
+        if (cancelled) return;
+        if (offset > 0 && offset >= nextPage.total) {
+          const lastServerOffset = Math.max(0, Math.ceil(nextPage.total / PAGE_SIZE) - 1) * PAGE_SIZE;
+          setPagination({ selection, offset: lastServerOffset });
+          setLoadedPage(null);
+          return;
+        }
+        setLoadedPage({ request, page: nextPage });
       })
       .catch((cause: unknown) => {
         if (!cancelled) {
-          setPage(null);
+          setLoadedPage(null);
           setError(cause instanceof Error ? cause.message : "项目资源加载失败，请重试。");
         }
       })
@@ -128,14 +155,12 @@ export default function ProjectResourcesDrawer({
     return () => {
       cancelled = true;
     };
-  }, [activeKind, loadResources, offset, open, reloadRevision, scope]);
-
-  if (!open) return null;
+  }, [activeKind, loadResources, offset, open, reloadRevision, request, scope, selection]);
 
   const selectKind = (nextKind: ProjectResourceKind) => {
     setKind(nextKind);
-    setOffset(0);
-    setPage(null);
+    setPagination({ selection: `${nextKind}:${nextKind === "source" ? activeSourceScope : "all"}`, offset: 0 });
+    setLoadedPage(null);
   };
 
   const changeMembership = async (item: ProjectResourceItem) => {
@@ -143,6 +168,7 @@ export default function ProjectResourcesDrawer({
       setPendingConfirmation({ action: "remove", item });
       return;
     }
+    if (item.readdStatus !== "available") return;
     setPendingAssetId(item.id);
     setError("");
     try {
@@ -235,14 +261,14 @@ export default function ProjectResourcesDrawer({
             <button
               type="button"
               aria-pressed={activeSourceScope === "active"}
-              onClick={() => { setSourceScope("active"); setOffset(0); setPage(null); }}
+              onClick={() => { setSourceScope("active"); setPagination({ selection: "source:active", offset: 0 }); setLoadedPage(null); }}
             >
               可用于后续生成
             </button>
             <button
               type="button"
               aria-pressed={activeSourceScope === "history"}
-              onClick={() => { setSourceScope("history"); setOffset(0); setPage(null); }}
+              onClick={() => { setSourceScope("history"); setPagination({ selection: "source:history", offset: 0 }); setLoadedPage(null); }}
             >
               已移出 {summary.historicalSources}
             </button>
@@ -250,7 +276,7 @@ export default function ProjectResourcesDrawer({
         ) : null}
 
         {activeKind === "source" && summary.historicalSources > 0 && summary.sources === 0 ? (
-          <p className="shadcn-prototype-project-resources-scope-caption">已移出项目的资料仍保留历史引用，可随时重新加入。</p>
+          <p className="shadcn-prototype-project-resources-scope-caption">已移出项目的资料仍保留历史引用；源文件可用时可重新加入。</p>
         ) : null}
 
         {loading ? <p role="status">项目资源加载中…</p> : null}
@@ -282,6 +308,15 @@ export default function ProjectResourcesDrawer({
                       ? ` · 旧版本引用 ${item.historicalReferenceCount} 次`
                       : ""}
                   </small>
+                  {item.kind === "source" && item.membershipState === "removed" && item.readdStatus !== "available" ? (
+                    <small style={{ gridColumn: 2, whiteSpace: "normal" }}>
+                      {item.readdStatus === "archived"
+                        ? "源文件已从资源库删除，无法重新加入"
+                        : item.readdStatus === "not_ready"
+                          ? "源文件暂不可用，无法重新加入"
+                          : "源文件状态待确认，暂不能重新加入"}
+                    </small>
+                  ) : null}
                 </div>
                 <div className="shadcn-prototype-project-resource-actions">
                   {item.kind === "source" ? (
@@ -291,17 +326,19 @@ export default function ProjectResourcesDrawer({
                         用于本轮
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      disabled={pendingAssetId === item.id}
-                      onClick={() => void changeMembership(item)}
-                    >
-                      {pendingAssetId === item.id
-                        ? "处理中…"
-                        : item.membershipState === "active"
-                          ? "移出项目"
-                          : "重新加入项目"}
-                    </button>
+                    {item.membershipState === "active" || item.readdStatus === "available" ? (
+                      <button
+                        type="button"
+                        disabled={pendingAssetId === item.id}
+                        onClick={() => void changeMembership(item)}
+                      >
+                        {pendingAssetId === item.id
+                          ? "处理中…"
+                          : item.membershipState === "active"
+                            ? "移出项目"
+                            : "重新加入项目"}
+                      </button>
+                    ) : null}
                     {onPermanentDeleteSource ? (
                       <details className="shadcn-prototype-project-resource-more">
                         <summary>更多</summary>
@@ -327,9 +364,9 @@ export default function ProjectResourcesDrawer({
 
         {page && page.total > page.limit ? (
           <footer className="shadcn-prototype-project-resources-pagination">
-            <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>上一页</button>
+            <button type="button" disabled={offset === 0} onClick={() => setPagination({ selection, offset: Math.max(0, offset - PAGE_SIZE) })}>上一页</button>
             <span>{Math.floor(offset / PAGE_SIZE) + 1} / {Math.ceil(page.total / PAGE_SIZE)}</span>
-            <button type="button" disabled={offset + PAGE_SIZE >= page.total} onClick={() => setOffset(offset + PAGE_SIZE)}>下一页</button>
+            <button type="button" disabled={offset + PAGE_SIZE >= page.total} onClick={() => setPagination({ selection, offset: offset + PAGE_SIZE })}>下一页</button>
           </footer>
         ) : null}
         </aside>

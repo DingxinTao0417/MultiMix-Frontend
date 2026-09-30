@@ -95,7 +95,7 @@ describe("ProjectResourcesDrawer", () => {
   it("shows historical sources as the only category and allows rejoining", async () => {
     const historicalPage = {
       ...sourcePage,
-      items: sourcePage.items.map((item) => ({ ...item, membershipState: "removed" as const })),
+      items: sourcePage.items.map((item) => ({ ...item, membershipState: "removed" as const, readdStatus: "available" as const })),
     };
     const loadResources = vi.fn().mockResolvedValue(historicalPage);
     const onReaddSource = vi.fn().mockResolvedValue(undefined);
@@ -117,6 +117,75 @@ describe("ProjectResourcesDrawer", () => {
     expect(loadResources).toHaveBeenCalledWith("source", "history", 0, 20);
     fireEvent.click(screen.getByRole("button", { name: "重新加入项目" }));
     await waitFor(() => expect(onReaddSource).toHaveBeenCalledWith(11));
+  });
+
+  it("keeps an archived historical source visible without offering a rejected rejoin", async () => {
+    const onReaddSource = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="历史素材项目"
+        summary={{ sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue({
+          ...sourcePage,
+          items: [{ ...sourcePage.items[0], membershipState: "removed", readdStatus: "archived" }],
+        })}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={onReaddSource}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+    expect(screen.getByText(/源文件已从资源库删除，无法重新加入/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新加入项目" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/可随时重新加入/)).not.toBeInTheDocument();
+    expect(onReaddSource).not.toHaveBeenCalled();
+  });
+
+  it("does not offer rejoining while a historical source is not ready", async () => {
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="历史素材项目"
+        summary={{ sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue({
+          ...sourcePage,
+          items: [{ ...sourcePage.items[0], membershipState: "removed", readdStatus: "not_ready", status: "processing" }],
+        })}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+    expect(screen.getByText(/源文件暂不可用，无法重新加入/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新加入项目" })).not.toBeInTheDocument();
+  });
+
+  it("does not guess rejoin eligibility when an older server omits the field", async () => {
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="历史素材项目"
+        summary={{ sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue({
+          ...sourcePage,
+          items: [{ ...sourcePage.items[0], membershipState: "removed" }],
+        })}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+    expect(screen.getByText(/源文件状态待确认，暂不能重新加入/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新加入项目" })).not.toBeInTheDocument();
   });
 
   it("explains future-only removal before changing project membership", async () => {
@@ -171,5 +240,159 @@ describe("ProjectResourcesDrawer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "用于本轮" }));
 
     expect(onUseSourceForNextMessage).toHaveBeenCalledWith(sourcePage.items[0]);
+  });
+
+  it("returns to the current-source view when the last historical source is rejoined", async () => {
+    const historicalPage: ProjectResourcePage = {
+      ...sourcePage,
+      items: [{ ...sourcePage.items[0], id: 12, title: "旧素材", membershipState: "removed" }],
+    };
+    const loadResources = vi.fn().mockImplementation(async (_kind, scope) => scope === "history" ? historicalPage : sourcePage);
+    const sharedProps = {
+      open: true,
+      projectTitle: "门店讲解视频",
+      loadResources,
+      onClose: vi.fn(),
+      onRemoveSource: vi.fn(),
+      onReaddSource: vi.fn(),
+      onOpenResource: vi.fn(),
+    };
+    const view = render(
+      <ProjectResourcesDrawer {...sharedProps} summary={{ sources: 1, historicalSources: 1, copies: 0, covers: 0, videos: 0 }} />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "已移出 1" }));
+    expect(await screen.findByRole("button", { name: "旧素材" })).toBeInTheDocument();
+    view.rerender(
+      <ProjectResourcesDrawer {...sharedProps} summary={{ sources: 2, historicalSources: 0, copies: 0, covers: 0, videos: 0 }} />,
+    );
+
+    await waitFor(() => expect(loadResources).toHaveBeenLastCalledWith("source", "active", 0, 20));
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+    expect(screen.queryByText("还没有已移出的资料。")).not.toBeInTheDocument();
+  });
+
+  it("forgets the prior scope and page when the drawer closes and reopens", async () => {
+    const historicalPage: ProjectResourcePage = {
+      ...sourcePage,
+      items: [{ ...sourcePage.items[0], id: 12, title: "旧素材", membershipState: "removed" }],
+    };
+    const loadResources = vi.fn().mockImplementation(async (_kind, scope) => scope === "history" ? historicalPage : sourcePage);
+    const sharedProps = {
+      projectTitle: "门店讲解视频",
+      summary: { sources: 1, historicalSources: 1, copies: 0, covers: 0, videos: 0 },
+      loadResources,
+      onClose: vi.fn(),
+      onRemoveSource: vi.fn(),
+      onReaddSource: vi.fn(),
+      onOpenResource: vi.fn(),
+    };
+    const view = render(<ProjectResourcesDrawer {...sharedProps} open />);
+    fireEvent.click(await screen.findByRole("button", { name: "已移出 1" }));
+    expect(await screen.findByRole("button", { name: "旧素材" })).toBeInTheDocument();
+
+    view.rerender(<ProjectResourcesDrawer {...sharedProps} open={false} />);
+    view.rerender(<ProjectResourcesDrawer {...sharedProps} open />);
+
+    await waitFor(() => expect(loadResources).toHaveBeenLastCalledWith("source", "active", 0, 20));
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+  });
+
+  it("returns to the last valid page when the server total shrinks", async () => {
+    const firstPage: ProjectResourcePage = { ...sourcePage, total: 21 };
+    const lastPage: ProjectResourcePage = {
+      ...sourcePage,
+      items: [{ ...sourcePage.items[0], id: 31, title: "最后一条素材" }],
+      total: 21,
+      offset: 20,
+    };
+    const loadResources = vi.fn().mockImplementation(async (_kind, _scope, offset) => offset === 20 ? lastPage : firstPage);
+    const shrunkLoadResources = vi.fn().mockImplementation(async (_kind, _scope, offset) => offset === 20
+      ? { ...lastPage, items: [], total: 20 }
+      : { ...firstPage, total: 20 });
+    const sharedProps = {
+      open: true,
+      projectTitle: "门店讲解视频",
+      summary: { sources: 21, historicalSources: 0, copies: 0, covers: 0, videos: 0 },
+      onClose: vi.fn(),
+      onRemoveSource: vi.fn(),
+      onReaddSource: vi.fn(),
+      onOpenResource: vi.fn(),
+    };
+    const view = render(
+      <ProjectResourcesDrawer
+        {...sharedProps}
+        loadResources={loadResources}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
+    expect(await screen.findByRole("button", { name: "最后一条素材" })).toBeInTheDocument();
+    view.rerender(<ProjectResourcesDrawer {...sharedProps} loadResources={shrunkLoadResources} />);
+    await waitFor(() => expect(shrunkLoadResources).toHaveBeenLastCalledWith("source", "active", 0, 20));
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+    expect(screen.queryByText("这里还没有资料。")).not.toBeInTheDocument();
+  });
+
+  it("clamps the page immediately when the project summary loses its last page", async () => {
+    const pageOne: ProjectResourcePage = { ...sourcePage, total: 21 };
+    const pageTwo: ProjectResourcePage = {
+      ...sourcePage,
+      items: [{ ...sourcePage.items[0], id: 31, title: "最后一条素材" }],
+      total: 21,
+      offset: 20,
+    };
+    let serverTotal = 21;
+    const loadResources = vi.fn().mockImplementation(async (_kind, _scope, offset) => serverTotal === 20
+      ? { ...pageOne, total: 20, offset, items: offset === 20 ? [] : pageOne.items }
+      : offset === 20 ? pageTwo : pageOne);
+    const sharedProps = {
+      open: true,
+      projectTitle: "门店讲解视频",
+      loadResources,
+      onClose: vi.fn(),
+      onRemoveSource: vi.fn(),
+      onReaddSource: vi.fn(),
+      onOpenResource: vi.fn(),
+    };
+    const view = render(
+      <ProjectResourcesDrawer {...sharedProps} summary={{ sources: 21, historicalSources: 0, copies: 0, covers: 0, videos: 0 }} />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
+    expect(await screen.findByRole("button", { name: "最后一条素材" })).toBeInTheDocument();
+
+    serverTotal = 20;
+    view.rerender(
+      <ProjectResourcesDrawer {...sharedProps} summary={{ sources: 20, historicalSources: 0, copies: 0, covers: 0, videos: 0 }} />,
+    );
+    await waitFor(() => expect(loadResources).toHaveBeenLastCalledWith("source", "active", 0, 20));
+    expect(await screen.findByRole("button", { name: "门店实拍" })).toBeInTheDocument();
+  });
+
+  it("keeps a real next page available when the summary briefly undercounts the list", async () => {
+    const firstPage: ProjectResourcePage = { ...sourcePage, total: 21 };
+    const secondPage: ProjectResourcePage = {
+      ...sourcePage,
+      items: [{ ...sourcePage.items[0], id: 31, title: "服务端第二页素材" }],
+      total: 21,
+      offset: 20,
+    };
+    const loadResources = vi.fn().mockImplementation(async (_kind, _scope, offset) => offset === 20 ? secondPage : firstPage);
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="门店讲解视频"
+        summary={{ sources: 20, historicalSources: 0, copies: 0, covers: 0, videos: 0 }}
+        loadResources={loadResources}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={vi.fn()}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(loadResources).toHaveBeenLastCalledWith("source", "active", 20, 20));
+    expect(await screen.findByRole("button", { name: "服务端第二页素材" })).toBeInTheDocument();
   });
 });

@@ -200,7 +200,7 @@ test("project source opens exact detail and remains recoverable when it is the o
   await expect(resourceEntry).toBeVisible();
   await resourceEntry.click();
   await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
-  await expect(drawer.getByText("已移出项目的资料仍保留历史引用，可随时重新加入。")).toBeVisible();
+  await expect(drawer.getByText("已移出项目的资料仍保留历史引用；源文件可用时可重新加入。")).toBeVisible();
   await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
   await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-historical-only-390.png"), animations: "disabled" });
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
@@ -214,6 +214,65 @@ test("project source opens exact detail and remains recoverable when it is the o
   await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
   await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-restored-1280.png"), animations: "disabled" });
   expect(pageErrors).toEqual([]);
+});
+
+test("archived historical source stays traceable without an impossible rejoin action", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (requestUrl.pathname === `/v1/assets/conversations/${conversationId}/resources`) {
+      await route.fulfill({ json: {
+        items: [{
+          id: assetId,
+          title: "测试门店素材",
+          kind: "source",
+          membership_state: "removed",
+          historical_reference_count: 1,
+          status: "ready",
+          readd_status: "archived",
+          asset_kind: "image",
+          content_type: "uploaded_image",
+          source_type: "upload",
+          updated_at: "2026-09-30T00:00:00Z",
+        }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      } });
+      return;
+    }
+    if (requestUrl.pathname !== `/v1/assets/conversations/${conversationId}`) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.project_resource_summary = { sources: 0, historical_sources: 1, copies: 0, covers: 0, videos: 0 };
+    await route.fulfill({ response, json: payload });
+  });
+
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await chat.getByRole("button", { name: /^项目资料/ }).click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+    await expect(drawer.getByText("源文件已从资源库删除，无法重新加入")).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toHaveCount(0);
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-source-archived-history-${width}.png`),
+      animations: "disabled",
+    });
+  }
 });
 
 async function chooseVideoExport(

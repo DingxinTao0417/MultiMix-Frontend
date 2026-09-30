@@ -2951,6 +2951,7 @@ export default function AssetsWorkspaceClient({
         membershipState: item.membership_state,
         historicalReferenceCount: item.historical_reference_count,
         status: item.status,
+        readdStatus: item.readd_status ?? null,
         assetKind: item.asset_kind,
         contentType: item.content_type,
         sourceType: item.source_type,
@@ -3658,8 +3659,9 @@ export default function AssetsWorkspaceClient({
           )}
         </div>
       </section>
-      <ProjectResourcesDrawer
-        open={projectResourcesOpen && selectedConversation.id !== "new"}
+      {projectResourcesOpen && selectedConversation.id !== "new" ? <ProjectResourcesDrawer
+        key={selectedConversation.id}
+        open
         projectTitle={selectedConversation.title}
         summary={projectResourceSummary}
         loadResources={loadSelectedProjectResources}
@@ -3682,7 +3684,7 @@ export default function AssetsWorkspaceClient({
           setProjectResourcesOpen(false);
           toast.info(`已将「${item.title}」用于本轮。`);
         }}
-      />
+      /> : null}
       <ProjectTargetPicker
         open={Boolean(projectTargetRow)}
         projects={projectTargetOptions}
