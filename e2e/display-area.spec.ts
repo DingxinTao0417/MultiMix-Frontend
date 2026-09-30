@@ -50,6 +50,119 @@ async function openCase(page: Page, caseId: string) {
   return workspace;
 }
 
+test("narrow existing-project chat keeps header actions and send control inside the viewport", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-01-director-draft"];
+  const assetId = seed.asset_ids?.["case-01-director-draft"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-01 project");
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const expectedMissingRequirements = message.location().url.endsWith(`/v1/assets/conversations/${conversationId}/requirements/current`)
+      && message.text().includes("404");
+    if (!expectedMissingRequirements) consoleErrors.push(message.text());
+  });
+
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET"
+      || (pathname !== "/v1/assets/conversations" && pathname !== `/v1/assets/conversations/${conversationId}`)) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse | AssetConversationResponse[];
+    for (const row of Array.isArray(payload) ? payload : [payload]) {
+      if (row.id !== conversationId) continue;
+      row.project_resource_summary = { sources: 1, historical_sources: 0, copies: 0, covers: 0, videos: 0 };
+    }
+    await route.fulfill({ response, json: payload });
+  });
+
+  for (const width of [320, 375, 390, 430, 520, 521, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    await expect(page).toHaveTitle("MultiMix");
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await expect(chat).toBeVisible();
+    await expect(chat.getByText("确认视频方案")).toBeVisible();
+    await expect(page.locator("[data-nextjs-dialog-overlay], .nextjs-dialog-overlay")).toHaveCount(0);
+    const composer = chat.getByRole("textbox", { name: "输入对话内容" });
+    await composer.fill("窄屏草稿，不发送");
+    await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeVisible();
+
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `narrow-existing-project-${width}x844.png`),
+      animations: "disabled",
+    });
+
+    const controls = [
+      ...(width <= 1180 ? [chat.getByRole("button", { name: "展开侧边栏" })] : []),
+      chat.getByRole("button", { name: /^项目资料/ }),
+      chat.getByRole("button", { name: "诊断", exact: true }),
+      composer,
+      chat.getByRole("button", { name: "发送", exact: true }),
+    ];
+    for (const control of controls) {
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box, `Missing control box at ${width}px`).not.toBeNull();
+      if (box) {
+        expect(box.x, `Control starts outside the ${width}px viewport`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `Control ends outside the ${width}px viewport`).toBeLessThanOrEqual(width);
+      }
+    }
+    const titleBox = await chat.locator(".shadcn-prototype-chat-head > strong").boundingBox();
+    expect(titleBox?.width, `Project title has too little readable space at ${width}px`).toBeGreaterThanOrEqual(120);
+    if (width <= 520) {
+      const actionsBox = await chat.locator(".shadcn-prototype-chat-head-actions").boundingBox();
+      expect(actionsBox?.y, `Header actions should be below the title at ${width}px`).toBeGreaterThanOrEqual(
+        (titleBox?.y ?? 0) + (titleBox?.height ?? 0),
+      );
+    }
+    await expect(composer).toHaveValue("窄屏草稿，不发送");
+  }
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("narrow project resources keep real saved-asset names readable", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+
+  for (const width of [320, 375, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    const resourcesButton = page.getByRole("region", { name: "Content generation conversation" })
+      .getByRole("button", { name: /^项目资料/ });
+    await expect(resourcesButton).toBeVisible();
+    await resourcesButton.click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer).toBeVisible();
+    const resourceName = drawer.getByRole("button", { name: "测试门店素材", exact: true });
+    await expect(resourceName).toBeVisible();
+    if (width <= 380) {
+      const isNameUnclipped = await resourceName.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+      expect(isNameUnclipped, `Saved-asset name is visually clipped at ${width}px`).toBe(true);
+      const nameBox = await resourceName.boundingBox();
+      const actionsBox = await drawer.locator(".shadcn-prototype-project-resource-actions").first().boundingBox();
+      expect(actionsBox?.y, `Resource actions should follow the name at ${width}px`).toBeGreaterThanOrEqual(
+        (nameBox?.y ?? 0) + (nameBox?.height ?? 0),
+      );
+    }
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-resources-${width}x844.png`),
+      animations: "disabled",
+    });
+    await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+    await expect(drawer).toBeHidden();
+  }
+});
+
 async function chooseVideoExport(
   workspace: ReturnType<Page["locator"]>,
   variant: "原始成片" | "品牌展示版" = "原始成片",

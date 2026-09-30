@@ -1711,8 +1711,10 @@ button:disabled {
 
 .shadcn-prototype-chat {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   background: #ffffff;
@@ -1720,7 +1722,9 @@ button:disabled {
 
 .shadcn-prototype-chat-context {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-auto-rows: max-content;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -3561,6 +3565,17 @@ button:disabled {
 
 .shadcn-prototype-project-source-permanent-delete {
   color: var(--sp-danger) !important;
+}
+
+@media (max-width: 380px) {
+  .shadcn-prototype-project-resources-list li {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .shadcn-prototype-project-resource-actions {
+    justify-content: flex-end;
+  }
 }
 
 .multimix-confirmation-mask {
@@ -12037,6 +12052,24 @@ label {
 .agent-visual-refresh .shadcn-prototype-project-resources {
   min-height: 34px;
   background: #fdfcfa;
+}
+
+@media (max-width: 520px) {
+  .agent-visual-refresh .shadcn-prototype-card .shadcn-prototype-chat-head {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 8px;
+    row-gap: 6px;
+  }
+
+  .agent-visual-refresh .shadcn-prototype-chat-head > strong {
+    grid-column: 2;
+  }
+
+  .agent-visual-refresh .shadcn-prototype-chat-head-actions {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
 }
 
 .agent-visual-refresh .shadcn-prototype-thread {
