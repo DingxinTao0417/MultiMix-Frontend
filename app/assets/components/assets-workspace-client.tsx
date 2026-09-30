@@ -2167,6 +2167,26 @@ export default function AssetsWorkspaceClient({
     }
   };
 
+  const handleImportDirectorDraft = async (
+    row: LibraryRow,
+    referenceAssetIds: number[],
+    legacyReferenceMappings: Record<string, number>,
+  ) => {
+    const projectId = libraryTargetProjectId ?? selectedConversation.id;
+    if (!token || projectId === "new" || !runtimeWriteCapabilities.canPersist) {
+      throw new Error("请先打开已保存的项目，再导入编导稿。");
+    }
+    const draft = await assetWorkspaceAdapter.importDirectorDraft({
+      token, source: row, conversationId: projectId,
+      referenceAssetIds, legacyReferenceMappings,
+    });
+    await refreshProjectConversation(projectId);
+    setSelectedProductIds((current) => ({ ...current, [projectId]: `asset-${draft.id}` }));
+    setLibraryTargetProjectId(null);
+    handleSelectConversation(projectId);
+    toast.success("已导入可编辑编导稿；请核对旧素材编号并重新审查。");
+  };
+
   const hydrateConversationForImageApplication = async (): Promise<Conversation> => {
     const current = conversationsRef.current.find(
       (conversation) => conversation.id === selectedConversation.id,
@@ -2924,6 +2944,7 @@ export default function AssetsWorkspaceClient({
 
   const stableHandleUploadClick = useStableCallback(handleUploadClick);
   const stableHandleUseLibraryAsset = useStableCallback(handleUseLibraryAsset);
+  const stableHandleImportDirectorDraft = useStableCallback(handleImportDirectorDraft);
   const stableHandleAddAssetToConversation = useStableCallback(handleAddAssetToConversation);
   const loadSelectedProjectResources = useCallback(async (
     kind: ProjectResourceKind,
@@ -3642,6 +3663,10 @@ export default function AssetsWorkspaceClient({
                 onUploadClick={stableHandleUploadClick}
                 uploading={uploading}
                 onUseAsset={stableHandleUseLibraryAsset}
+                onImportDirectorDraft={stableHandleImportDirectorDraft}
+                importProjectTitle={libraryTargetProjectId
+                  ? conversations.find((item) => item.id === libraryTargetProjectId)?.title ?? null
+                  : selectedConversation.id !== "new" ? selectedConversation.title : null}
                 onAddAssetToConversation={stableHandleAddAssetToConversation}
                 targetProjectTitle={libraryTargetProjectTitle}
                 focusAssetId={libraryFocusedAssetId}

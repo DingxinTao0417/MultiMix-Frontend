@@ -80,6 +80,9 @@ import {
 
 export type LibraryRow = {
   assetId?: number;
+  contentHash?: string;
+  sourceTypeCode?: string;
+  fullBody?: string;
   title: string;
   meta: string;
   note: string;
@@ -802,6 +805,13 @@ export type AssetWorkspaceAdapter = {
   getNewConversation(): AssetConversation;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
+  importDirectorDraft(args: {
+    token: string;
+    source: LibraryRow;
+    conversationId: string;
+    referenceAssetIds: number[];
+    legacyReferenceMappings: Record<string, number>;
+  }): Promise<ContentAsset>;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string; product: AssetProduct }>;
   saveTextEdit(args: {
     token: string;
@@ -1291,6 +1301,9 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
+    contentHash: asset.content_hash ?? undefined,
+    sourceTypeCode: asset.source_type,
+    fullBody: asset.body,
     title: normalizeAssetTitle(asset.title),
     meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
     note: understandingCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
@@ -1415,6 +1428,20 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     getProductText(product) {
       return (product.body && product.body.length > 0 ? product.body : [product.summary]).join("\n\n");
+    },
+    async importDirectorDraft({ token, source, conversationId, referenceAssetIds, legacyReferenceMappings }) {
+      if (!source.assetId || !source.contentHash) {
+        throw new Error("来源文案缺少可校验版本，请刷新后重试。");
+      }
+      return api<ContentAsset>(`/assets/${source.assetId}/director-draft-import`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          base_content_hash: source.contentHash,
+          reference_asset_ids: referenceAssetIds,
+          legacy_reference_mappings: legacyReferenceMappings,
+        }),
+      });
     },
     async saveProduct(product, token) {
       if (isApiConfigured && token && product.backendAssetId) {
