@@ -955,6 +955,7 @@ export type AssetWorkspaceAdapter = {
     query?: string,
     options?: LibraryListOptions,
   ): Promise<LibraryPage>;
+  getLibraryAsset(token: string, assetId: number, options?: { signal?: AbortSignal }): Promise<LibraryRow>;
   uploadAsset(
     token: string,
     file: File,
@@ -1905,6 +1906,15 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         rows,
         nextOffset: hasMore ? offset + limit : null,
       };
+    },
+    async getLibraryAsset(token, assetId, options = {}) {
+      const detail = await api<{ asset: ContentAsset }>(`/assets/detail/${assetId}`, token, {
+        signal: options.signal,
+      });
+      if (detail.asset?.id !== assetId) {
+        throw new Error("项目资料详情与所选素材不一致，请重试。");
+      }
+      return contentAssetToLibraryRow(detail.asset);
     },
     async uploadAsset(token, file, view, onProgress, idempotencyKey) {
       const formData = new FormData();

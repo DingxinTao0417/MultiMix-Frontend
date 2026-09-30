@@ -163,6 +163,59 @@ test("narrow project resources keep real saved-asset names readable", async ({ p
   }
 });
 
+test("project source opens exact detail and remains recoverable when it is the only historical source", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+  await expect(page).toHaveTitle("MultiMix");
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "测试门店素材", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await expect(detail).toBeVisible();
+  await expect(page.getByText(/正在为项目.*添加素材/)).toHaveCount(0);
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-exact-detail-390.png"), animations: "disabled" });
+
+  await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+  await page.reload();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("已移出项目的资料仍保留历史引用，可随时重新加入。")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-historical-only-390.png"), animations: "disabled" });
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.reload();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-restored-1280.png"), animations: "disabled" });
+  expect(pageErrors).toEqual([]);
+});
+
 async function chooseVideoExport(
   workspace: ReturnType<Page["locator"]>,
   variant: "原始成片" | "品牌展示版" = "原始成片",

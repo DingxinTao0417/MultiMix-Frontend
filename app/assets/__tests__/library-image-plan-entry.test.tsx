@@ -47,4 +47,29 @@ describe("image library entry", () => {
 
     expect(onUseAsset).not.toHaveBeenCalled();
   });
+
+  it("opens the exact requested source detail even when it is absent from the current library page", async () => {
+    const row = { ...imageRow(), assetId: 902, title: "项目源图" };
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [imageRow()], nextOffset: null });
+    const getLibraryAsset = vi.spyOn(assetWorkspaceAdapter, "getLibraryAsset").mockResolvedValue(row);
+
+    render(<LibraryWorkshop view="image" token="token-image-focus" focusAssetId={902} />);
+
+    expect(await screen.findByRole("dialog", { name: "项目源图详情" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "品牌主视觉详情" })).not.toBeInTheDocument();
+    expect(getLibraryAsset).toHaveBeenCalledWith("token-image-focus", 902, expect.any(Object));
+    expect(screen.queryByText(/正在为项目.*添加素材/)).not.toBeInTheDocument();
+  });
+
+  it("shows a visible failure instead of opening an unrelated detail", async () => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [imageRow()], nextOffset: null });
+    vi.spyOn(assetWorkspaceAdapter, "getLibraryAsset").mockRejectedValue(new Error("素材不存在"));
+
+    render(<LibraryWorkshop view="image" token="token-image-focus-error" focusAssetId={902} />);
+
+    expect(await screen.findByText("无法打开项目资料：素材不存在")).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "品牌主视觉详情" })).not.toBeInTheDocument();
+  });
 });

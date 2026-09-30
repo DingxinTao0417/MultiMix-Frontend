@@ -759,7 +759,10 @@ export default function AssetsWorkspaceClient({
       if (confirmed) action(); else denied();
     }).finally(() => { navigationPendingRef.current = false; });
   };
-  const navigateView = (view: ActiveView) => navigateWorkspace(() => setActiveView(view));
+  const navigateView = (view: ActiveView) => navigateWorkspace(() => {
+    setLibraryFocusedAssetId(null);
+    setActiveView(view);
+  });
   const [selectedConversationId, setSelectedConversationId] = useState(() => initialConversationId ?? "new");
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
     const conversationId = initialConversationId ?? "new";
@@ -852,6 +855,8 @@ export default function AssetsWorkspaceClient({
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
   const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
   const [libraryTargetProjectId, setLibraryTargetProjectId] = useState<string | null>(null);
+  const [libraryFocusedAssetId, setLibraryFocusedAssetId] = useState<number | null>(null);
+  const closeLibraryFocusedAsset = useCallback(() => setLibraryFocusedAssetId(null), []);
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
   const longFormSourceControllersRef = useRef(new Map<string, AbortController>());
@@ -2975,20 +2980,21 @@ export default function AssetsWorkspaceClient({
     // Only one focus-isolating surface may be active during cross-drawer navigation.
     setProjectResourcesOpen(false);
     navigateWorkspace(() => {
-    if (item.kind === "source") {
-      setLibraryTargetProjectId(selectedConversation.id);
-      setActiveView(item.assetKind === "video" ? "video" : "image");
-    } else {
-      const product = (selectedConversation.products ?? []).find((candidate) => (
-        candidate.backendAssetId === item.id
-      ));
-      if (product) {
-        setSelectedProductIds((current) => ({
-          ...current,
-          [selectedConversation.id]: product.id,
-        }));
+      if (item.kind === "source") {
+        setLibraryTargetProjectId(null);
+        setLibraryFocusedAssetId(item.id);
+        setActiveView(item.assetKind === "video" ? "video" : item.assetKind === "image" ? "image" : "assets");
+      } else {
+        const product = (selectedConversation.products ?? []).find((candidate) => (
+          candidate.backendAssetId === item.id
+        ));
+        if (product) {
+          setSelectedProductIds((current) => ({
+            ...current,
+            [selectedConversation.id]: product.id,
+          }));
+        }
       }
-    }
     }, () => setProjectResourcesOpen(true));
   };
 
@@ -3636,12 +3642,14 @@ export default function AssetsWorkspaceClient({
                 onUploadClick={stableHandleUploadClick}
                 uploading={uploading}
                 onUseAsset={stableHandleUseLibraryAsset}
-                 onAddAssetToConversation={stableHandleAddAssetToConversation}
-                 targetProjectTitle={libraryTargetProjectTitle}
-                 onExitProjectTarget={() => {
-                   setLibraryTargetProjectId(null);
-                   setActiveView("conversation");
-                 }}
+                onAddAssetToConversation={stableHandleAddAssetToConversation}
+                targetProjectTitle={libraryTargetProjectTitle}
+                focusAssetId={libraryFocusedAssetId}
+                onFocusAssetClose={closeLibraryFocusedAsset}
+                onExitProjectTarget={() => {
+                  setLibraryTargetProjectId(null);
+                  setActiveView("conversation");
+                }}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onWriteAvailabilityChange={handleWriteAvailabilityChange}

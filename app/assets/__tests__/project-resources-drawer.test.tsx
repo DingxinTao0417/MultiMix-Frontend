@@ -84,12 +84,39 @@ describe("ProjectResourcesDrawer", () => {
     );
 
     expect(await screen.findByText("本项目资料")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "素材 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "素材 3" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "文案 0" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "封面 0" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "视频 0" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "可用于后续生成" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "已移出 2" })).toBeInTheDocument();
+  });
+
+  it("shows historical sources as the only category and allows rejoining", async () => {
+    const historicalPage = {
+      ...sourcePage,
+      items: sourcePage.items.map((item) => ({ ...item, membershipState: "removed" as const })),
+    };
+    const loadResources = vi.fn().mockResolvedValue(historicalPage);
+    const onReaddSource = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="历史素材项目"
+        summary={{ sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 }}
+        loadResources={loadResources}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={onReaddSource}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "素材 1" })).toBeInTheDocument();
+    expect(await screen.findByText("门店实拍")).toBeInTheDocument();
+    expect(loadResources).toHaveBeenCalledWith("source", "history", 0, 20);
+    fireEvent.click(screen.getByRole("button", { name: "重新加入项目" }));
+    await waitFor(() => expect(onReaddSource).toHaveBeenCalledWith(11));
   });
 
   it("explains future-only removal before changing project membership", async () => {

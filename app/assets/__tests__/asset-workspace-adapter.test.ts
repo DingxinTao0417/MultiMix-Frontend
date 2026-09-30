@@ -937,6 +937,28 @@ describe("runtime data boundary", () => {
     expect(page.nextOffset).toBe(48);
   });
 
+  it("loads a requested asset by ID instead of searching or relying on a library page", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      asset: asset({ id: 902, asset_kind: "asset", library_kind: "assets", title: "项目说明 PDF" }),
+      inbound_relations: [],
+      outbound_relations: [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const row = await assetWorkspaceAdapter.getLibraryAsset("token", 902);
+    expect(row).toMatchObject({ assetId: 902, title: "项目说明 PDF", kind: "file" });
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/detail/902");
+  });
+
+  it("rejects a detail response with a different asset ID", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      asset: asset({ id: 903, title: "另一项资料" }),
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(assetWorkspaceAdapter.getLibraryAsset("token", 902))
+      .rejects.toThrow("项目资料详情与所选素材不一致");
+  });
+
   it("renders legacy video-kind director scripts as copy rows", async () => {
     const legacyDirector = asset({
       id: 70,

@@ -126,6 +126,29 @@ describe("conversation project resources", () => {
     expect(screen.queryByText("资料")).not.toBeInTheDocument();
   });
 
+  it("keeps the resource entry when only removed historical sources remain", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "asset-conversation-historical-project",
+      title: "历史素材项目",
+      detailsLoaded: true,
+      projectResources: { sources: [], copies: [], covers: [], videos: [] },
+      projectResourceSummary: { sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 },
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onOpenProjectResources={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "项目资料，共 1 项" })).toHaveTextContent("资料1");
+  });
+
   it("keeps project resources in the chat title without adding a row above the message thread", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),

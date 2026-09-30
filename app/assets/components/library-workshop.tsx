@@ -359,6 +359,8 @@ function LibraryWorkshop({
   onAddAssetToConversation,
   targetProjectTitle,
   onExitProjectTarget,
+  focusAssetId = null,
+  onFocusAssetClose,
   refreshRevision = 0,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
@@ -372,6 +374,8 @@ function LibraryWorkshop({
   onAddAssetToConversation?: (row: LibraryRow) => void;
   targetProjectTitle?: string | null;
   onExitProjectTarget?: () => void;
+  focusAssetId?: number | null;
+  onFocusAssetClose?: () => void;
   refreshRevision?: number;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
@@ -387,6 +391,7 @@ function LibraryWorkshop({
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedRowIdentity, setSelectedRowIdentity] = useState<string | null>(null);
+  const [focusedRow, setFocusedRow] = useState<LibraryRow | null>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -496,6 +501,35 @@ function LibraryWorkshop({
     loadMoreAbortRef.current?.abort();
   }, []);
 
+  useEffect(() => {
+    if (focusAssetId === null) return;
+    setSelectedRowIdentity(null);
+    setFocusedRow(null);
+    setActionMessage(null);
+    if (!token) {
+      setActionMessage("无法打开项目资料：请先登录。");
+      onFocusAssetClose?.();
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    void assetWorkspaceAdapter.getLibraryAsset(token, focusAssetId, { signal: controller.signal })
+      .then((row) => {
+        if (cancelled) return;
+        setFocusedRow(row);
+        setSelectedRowIdentity(libraryRowIdentity(row));
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setActionMessage(`无法打开项目资料：${error instanceof Error ? error.message : "请重试。"}`);
+        onFocusAssetClose?.();
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [focusAssetId, token, onFocusAssetClose]);
+
   const handleLoadMore = async () => {
     if (!token || nextOffset === null || loadingMore) return;
     const controller = new AbortController();
@@ -559,7 +593,14 @@ function LibraryWorkshop({
   }, [activeFilter, statusFilter, view, rows, debouncedQuery]);
   const selectedRow = selectedRowIdentity === null
     ? null
-    : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
+    : focusedRow && libraryRowIdentity(focusedRow) === selectedRowIdentity
+      ? focusedRow
+      : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
+  const closeSelectedRow = () => {
+    setSelectedRowIdentity(null);
+    setFocusedRow(null);
+    onFocusAssetClose?.();
+  };
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedUploadedVideoId = view === "video" && selectedRow?.contentTypeCode === "uploaded_video"
@@ -768,7 +809,7 @@ function LibraryWorkshop({
     open: Boolean(selectedRow),
     dialogRef: detailDialogRef,
     initialFocusRef: detailCloseRef,
-    onEscape: () => setSelectedRowIdentity(null),
+    onEscape: closeSelectedRow,
   });
   useDialogFocusManagement({
     open: publicSearchOpen,
@@ -1242,7 +1283,7 @@ function LibraryWorkshop({
         )}
       </div>
       {selectedRow ? (
-        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
+        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={closeSelectedRow}>
           <aside
             ref={detailDialogRef}
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-library-detail-dialog"
@@ -1271,7 +1312,7 @@ function LibraryWorkshop({
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
-                <button ref={detailCloseRef} type="button" aria-label="关闭详情" onClick={() => setSelectedRowIdentity(null)}>
+                <button ref={detailCloseRef} type="button" aria-label="关闭详情" onClick={closeSelectedRow}>
                   <X size={16} aria-hidden="true" />
                 </button>
               </div>

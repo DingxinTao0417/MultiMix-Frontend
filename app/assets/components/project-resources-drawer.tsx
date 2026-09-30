@@ -85,7 +85,7 @@ export default function ProjectResourcesDrawer({
   const dialogRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const tabs: Array<{ kind: ProjectResourceKind; label: string; count: number }> = [
-    { kind: "source", label: "素材", count: summary.sources },
+    { kind: "source", label: "素材", count: summary.sources + summary.historicalSources },
     { kind: "copy", label: "文案", count: summary.copies },
     { kind: "cover", label: "封面", count: summary.covers },
     { kind: "video", label: "视频", count: summary.videos },
@@ -206,7 +206,11 @@ export default function ProjectResourcesDrawer({
         <header className="shadcn-prototype-project-resources-head">
           <div>
             <strong>本项目资料 <span>· {totalResources}</span></strong>
-            <p>会用于后续对话与生成</p>
+            <p>{summary.historicalSources === 0
+              ? "会用于后续对话与生成"
+              : summary.sources + summary.copies + summary.covers + summary.videos > 0
+                ? "包含可用于后续创作的资料与历史记录"
+                : "保留已移出资料的历史记录"}</p>
           </div>
           <button ref={closeButtonRef} type="button" aria-label="关闭项目资源" onClick={onClose}>
             <X size={16} aria-hidden="true" />

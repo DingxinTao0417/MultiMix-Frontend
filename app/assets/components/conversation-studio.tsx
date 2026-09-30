@@ -1184,7 +1184,8 @@ export default function ConversationStudio({
       .filter((id): id is string => typeof id === "string" && Boolean(id)),
   );
   const projectResourceCounts: Array<[string, number]> = [
-    ["素材", selectedConversation.projectResourceSummary?.sources ?? selectedConversation.projectResources?.sources.length ?? 0],
+    ["素材", (selectedConversation.projectResourceSummary?.sources ?? selectedConversation.projectResources?.sources.length ?? 0)
+      + (selectedConversation.projectResourceSummary?.historicalSources ?? 0)],
     ["文案", selectedConversation.projectResourceSummary?.copies ?? selectedConversation.projectResources?.copies.length ?? 0],
     ["封面", selectedConversation.projectResourceSummary?.covers ?? selectedConversation.projectResources?.covers.length ?? 0],
     ["视频", selectedConversation.projectResourceSummary?.videos ?? selectedConversation.projectResources?.videos.length ?? 0],
