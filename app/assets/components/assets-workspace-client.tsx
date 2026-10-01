@@ -2093,6 +2093,35 @@ export default function AssetsWorkspaceClient({
     )));
   };
 
+  const handleLibraryAssetArchived = async (assetId: number) => {
+    setConversationContextAssets((current) => {
+      const next = { ...current };
+      for (const conversation of conversationsRef.current) {
+        next[conversation.id] = (
+          current[conversation.id] ?? persistedConversationContextAssets(conversation.messages ?? [])
+        ).filter((asset) => asset.id !== assetId);
+      }
+      for (const [projectId, assets] of Object.entries(current)) {
+        next[projectId] = assets.filter((asset) => asset.id !== assetId);
+      }
+      return next;
+    });
+    const selectedProjectId = selectedConversationIdRef.current;
+    setConversations((current) => current.map((conversation) => (
+      conversation.id === selectedProjectId ? conversation : { ...conversation, detailsLoaded: false }
+    )));
+    setConversationLoadRevision((value) => value + 1);
+    if (selectedProjectId === "new") return;
+    try {
+      await refreshProjectConversation(selectedProjectId);
+    } catch (error) {
+      setConversations((current) => current.map((conversation) => (
+        conversation.id === selectedProjectId ? { ...conversation, detailsLoaded: false } : conversation
+      )));
+      throw error;
+    }
+  };
+
   const persistLibraryAssetToProject = async (row: LibraryRow, projectId: string) => {
     if (!token || !row.assetId) return;
     setSubmittingProjectId(projectId);
@@ -3669,6 +3698,7 @@ export default function AssetsWorkspaceClient({
                   ? conversations.find((item) => item.id === libraryTargetProjectId)?.title ?? null
                   : selectedConversation.id !== "new" ? selectedConversation.title : null}
                 onAddAssetToConversation={stableHandleAddAssetToConversation}
+                onAssetArchived={handleLibraryAssetArchived}
                 targetProjectTitle={libraryTargetProjectTitle}
                 focusAssetId={libraryFocusedAssetId}
                 onFocusAssetClose={closeLibraryFocusedAsset}

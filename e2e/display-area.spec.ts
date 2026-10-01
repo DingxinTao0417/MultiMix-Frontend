@@ -300,6 +300,77 @@ test("archived project source stays traceable and opens read-only history detail
   }
 });
 
+test("archiving the only project source in the library refreshes project history without a page reload", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialPage = await initialPagePromise;
+  const initialResources = await initialPage.json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  const sourceId = source.id;
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  let archived = false;
+  await page.route(`**/v1/assets/${sourceId}?mode=archive`, async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.route("**/v1/assets?**", async (route) => {
+    const response = await route.fetch();
+    const assets = await response.json() as Array<{ id: number }>;
+    await route.fulfill({ response, json: archived ? assets.filter((asset) => asset.id !== sourceId) : assets });
+  });
+  await page.route("**/v1/assets/conversations/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!archived || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (pathname === `/v1/assets/conversations/${conversationId}/resources`) {
+      await route.fulfill({ json: { items: [{ ...source, membership_state: "unavailable", readd_status: "archived", status: "archived" }], total: 1, offset: 0, limit: 20 } });
+      return;
+    }
+    if (pathname === `/v1/assets/conversations/${conversationId}`) {
+      const response = await route.fetch();
+      const payload = await response.json() as AssetConversationResponse;
+      payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+      await route.fulfill({ response, json: payload });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  const imageGrid = page.getByLabel("图片库列表");
+  await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "移出项目" })).toHaveCount(0);
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-archived-same-session-1280.png"), animations: "disabled" });
+  await page.reload();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+});
+
 async function chooseVideoExport(
   workspace: ReturnType<Page["locator"]>,
   variant: "原始成片" | "品牌展示版" = "原始成片",

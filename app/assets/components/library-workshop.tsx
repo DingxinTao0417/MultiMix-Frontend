@@ -359,6 +359,7 @@ function LibraryWorkshop({
   onImportDirectorDraft,
   importProjectTitle,
   onAddAssetToConversation,
+  onAssetArchived,
   targetProjectTitle,
   onExitProjectTarget,
   focusAssetId = null,
@@ -376,6 +377,7 @@ function LibraryWorkshop({
   onImportDirectorDraft?: (row: LibraryRow, referenceAssetIds: number[], legacyReferenceMappings: Record<string, number>) => Promise<void>;
   importProjectTitle?: string | null;
   onAddAssetToConversation?: (row: LibraryRow) => void;
+  onAssetArchived?: (assetId: number) => Promise<void>;
   targetProjectTitle?: string | null;
   onExitProjectTarget?: () => void;
   focusAssetId?: number | null;
@@ -982,6 +984,12 @@ function LibraryWorkshop({
     } catch (error) {
       reportRuntimeWriteFailure(error);
       setActionMessage(error instanceof Error ? error.message : "删除失败。");
+      return;
+    }
+    try {
+      await onAssetArchived?.(row.assetId);
+    } catch {
+      setActionMessage("已删除，但项目资料暂未同步；请重新加载项目。");
     }
   };
 
