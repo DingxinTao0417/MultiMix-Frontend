@@ -852,6 +852,8 @@ export default function AssetsWorkspaceClient({
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
   const [requirementRefreshErrorProjectId, setRequirementRefreshErrorProjectId] = useState<string | null>(null);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
+  const requirementReadGenerationRef = useRef(new Map<string, number>());
+  const skipAutomaticRequirementReadRef = useRef(new Map<string, string>());
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
   const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
@@ -953,11 +955,19 @@ export default function AssetsWorkspaceClient({
     setRequirementSnapshots((current) => ({ ...current, [conversationId]: snapshot }));
   }, []);
 
-  const reloadCurrentRequirements = useCallback(async (conversationId: string) => {
+  const reloadCurrentRequirements = useCallback(async (conversationId: string, shouldApply: () => boolean = () => true) => {
     if (!token || conversationId === "new") return null;
+    const readGeneration = requirementReadGenerationRef.current.get(conversationId) ?? 0;
     const snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
-    if (snapshot) {
-      storeRequirementSnapshot(conversationId, snapshot);
+    if (shouldApply() && readGeneration === (requirementReadGenerationRef.current.get(conversationId) ?? 0)) {
+      if (snapshot) storeRequirementSnapshot(conversationId, snapshot);
+      else setRequirementSnapshots((current) => {
+        if (!(conversationId in current)) return current;
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+      setRequirementRefreshErrorProjectId((current) => current === conversationId ? null : current);
     }
     return snapshot;
   }, [storeRequirementSnapshot, token]);
@@ -965,7 +975,6 @@ export default function AssetsWorkspaceClient({
   const retryProjectRequirements = async (projectId: string) => {
     try {
       const snapshot = await reloadCurrentRequirements(projectId);
-      setRequirementRefreshErrorProjectId((current) => current === projectId ? null : current);
       if (snapshot) toast.success("需求理解已同步。");
       else toast.info("当前项目没有可同步的需求理解。");
     } catch {
@@ -975,19 +984,20 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     if (!token || selectedConversation.id === "new" || selectedConversation.detailsLoaded === false) return;
+    const projectId = selectedConversation.id;
+    const skippedVersion = skipAutomaticRequirementReadRef.current.get(projectId);
+    if (skippedVersion !== undefined) {
+      skipAutomaticRequirementReadRef.current.delete(projectId);
+      if (skippedVersion === selectedConversation.updatedAt) return;
+    }
     let cancelled = false;
-    void assetWorkspaceAdapter.loadCurrentRequirements(token, selectedConversation.id)
-      .then((snapshot) => {
-        if (!cancelled && snapshot) {
-          storeRequirementSnapshot(selectedConversation.id, snapshot);
-        }
-      })
+    void reloadCurrentRequirements(projectId, () => !cancelled)
       .catch(() => {
         // A project may legitimately predate requirement snapshots. Keep the
         // conversation usable and let explicit refresh surface later errors.
       });
     return () => { cancelled = true; };
-  }, [selectedConversation.detailsLoaded, selectedConversation.id, selectedConversation.updatedAt, storeRequirementSnapshot, token]);
+  }, [reloadCurrentRequirements, selectedConversation.detailsLoaded, selectedConversation.id, selectedConversation.updatedAt, token]);
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
   const handleWriteAvailabilityChange = useStableCallback((state: RuntimeWriteConnectionState) => {
     setRuntimeWriteConnectionState(state);
@@ -2095,7 +2105,7 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const refreshProjectConversation = async (projectId: string) => {
+  const refreshProjectConversation = async (projectId: string, skipAutomaticRequirementRead = false) => {
     if (!token) return;
     if (selectedConversationIdRef.current === projectId) {
       // A detail request started before the source write must not restore its
@@ -2104,6 +2114,9 @@ export default function AssetsWorkspaceClient({
       conversationDetailRequestKeyRef.current = `${projectId}:${conversationDetailRetryRevision}`;
     }
     const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, projectId);
+    if (skipAutomaticRequirementRead) {
+      skipAutomaticRequirementReadRef.current.set(projectId, refreshed.updatedAt);
+    }
     setConversations((current) => current.map((conversation) => (
       conversation.id === projectId
         ? mergeProjectConversationDetail(conversation, refreshed)
@@ -2113,6 +2126,7 @@ export default function AssetsWorkspaceClient({
   };
 
   const invalidateProjectRequirements = (projectId: string) => {
+    requirementReadGenerationRef.current.set(projectId, (requirementReadGenerationRef.current.get(projectId) ?? 0) + 1);
     setRequirementSnapshots((current) => {
       if (!(projectId in current)) return current;
       const next = { ...current };
@@ -3090,9 +3104,10 @@ export default function AssetsWorkspaceClient({
         [projectId]: (current[projectId] ?? []).filter((asset) => asset.id !== assetId),
       }));
     }
+    requirementReadGenerationRef.current.set(projectId, (requirementReadGenerationRef.current.get(projectId) ?? 0) + 1);
     const completedAction = action === "add" ? "已重新加入项目并保存" : "已移出项目并保存";
     try {
-      await refreshProjectConversation(projectId);
+      await refreshProjectConversation(projectId, true);
     } catch {
       markProjectDetailRefreshFailed(projectId);
       toast.info(`${completedAction}，但资料暂未同步。请重试加载。`);
@@ -3100,7 +3115,6 @@ export default function AssetsWorkspaceClient({
     }
     try {
       await reloadCurrentRequirements(projectId);
-      setRequirementRefreshErrorProjectId((current) => current === projectId ? null : current);
     } catch {
       invalidateProjectRequirements(projectId);
       setRequirementRefreshErrorProjectId(projectId);

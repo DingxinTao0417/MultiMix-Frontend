@@ -260,6 +260,18 @@ test("saved source removal is not reported as failed when requirement refresh fa
   const sourceId = seed.asset_ids?.["case-02-saved-asset-match"];
   if (!projectId || !sourceId) throw new Error("Missing seeded CASE-02 project");
 
+  let sourceWriteStarted = false;
+  await page.route(`**/v1/assets/conversations/${projectId}*`, async (route) => {
+    const isProjectDetail = new URL(route.request().url()).pathname === `/v1/assets/conversations/${projectId}`;
+    if (route.request().method() !== "GET" || !isProjectDetail || sourceWriteStarted) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.updated_at = new Date(Date.now() - 120_000).toISOString();
+    await route.fulfill({ response, json: payload });
+  });
   await page.goto(`/app/assets?conversation=${projectId}`);
   const chat = page.getByRole("region", { name: "Content generation conversation" });
   await chat.getByRole("button", { name: /^项目资料/ }).click();
@@ -275,19 +287,25 @@ test("saved source removal is not reported as failed when requirement refresh fa
     await route.continue();
   });
   const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  let failRequirements = true;
   await page.route(requirementsUrl, async (route) => {
-    await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+    requirementReads += 1;
+    if (failRequirements) await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+    else await route.continue();
   });
 
   await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
   const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  sourceWriteStarted = true;
   await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
   await expect(page.getByText("已移出项目并保存，但需求理解暂未同步。", { exact: true })).toBeVisible();
   await expect(confirmation).toBeHidden();
   await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
   await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
   expect(membershipWrites).toBe(1);
-  await page.unroute(requirementsUrl);
+  expect(requirementReads).toBe(1);
+  failRequirements = false;
   const retryRead = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
     && response.request().method() === "GET");
   await drawer.getByRole("button", { name: "重新同步需求" }).click();
@@ -295,8 +313,86 @@ test("saved source removal is not reported as failed when requirement refresh fa
   await expect(page.getByText("当前项目没有可同步的需求理解。", { exact: true })).toBeVisible();
   await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
   expect(membershipWrites).toBe(1);
+  expect(requirementReads).toBe(2);
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
   await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
+test("a requirement read started before source removal cannot restore an obsolete snapshot", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const otherProjectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId || !otherProjectId) throw new Error("Missing seeded projects");
+
+  const initialRequirementRead = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+    && response.request().method() === "GET");
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  await initialRequirementRead;
+  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
+  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await otherProjectLink.click();
+  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
+
+  let releaseOldRead: (() => void) | undefined;
+  const oldReadGate = new Promise<void>((resolve) => { releaseOldRead = resolve; });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  await page.route(requirementsUrl, async (route) => {
+    requirementReads += 1;
+    if (requirementReads !== 1) {
+      await route.continue();
+      return;
+    }
+    await oldReadGate;
+    await route.fulfill({ status: 200, json: {
+      id: "obsolete-requirement-snapshot",
+      conversation_id: projectId,
+      version: 1,
+      parent_snapshot_id: null,
+      status: "ready",
+      trigger_kind: "source_added",
+      conversation_text: "过期需求不应重新出现",
+      conversation_media: [],
+      payload: {
+        schema_version: "project_requirement_snapshot_v1",
+        summary: "过期需求不应重新出现",
+        goal: "旧目标",
+        audience: "旧受众",
+        intent: { operation: "supplement", scope: "project_default", target_item_ids: [], replacement_source_asset_id: null },
+        deliverables: [], facts: [], requirements: [], asset_usages: [], conflicts: [], source_asset_ids: [],
+        diff: { added_item_ids: [], removed_item_ids: [], changed_item_ids: [], new_conflict_ids: [], resolved_conflict_ids: [], usage_changed_asset_ids: [] },
+      },
+      error_code: null,
+      error_message: null,
+      created_at: "2026-09-12T08:00:00Z",
+      completed_at: "2026-09-12T08:00:01Z",
+    } });
+  });
+
+  try {
+    const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+    if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+    await projectLink.click();
+    await expect(projectLink).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => requirementReads).toBe(1);
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await chat.getByRole("button", { name: /^项目资料/ }).click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+    if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+      await drawer.getByRole("button", { name: "重新加入项目" }).click();
+      await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+    }
+    await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+    await page.getByRole("dialog", { name: "将素材移出项目？" }).getByRole("button", { name: "移出项目", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+    const oldReadResponse = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+      && response.status() === 200);
+    releaseOldRead?.();
+    await oldReadResponse;
+    await expect(chat.getByText("过期需求不应重新出现", { exact: true })).toHaveCount(0);
+  } finally {
+    releaseOldRead?.();
+  }
 });
 
 test("library source addition remains acknowledged when target project detail refresh fails", async ({ page }) => {
