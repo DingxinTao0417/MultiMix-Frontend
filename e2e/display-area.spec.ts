@@ -371,6 +371,109 @@ test("archiving the only project source in the library refreshes project history
   await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
 });
 
+test("project detail can retry after the library archive refresh fails once", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  await expect(resourceEntry).toBeVisible();
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialResources = await (await initialPagePromise).json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  const sourceId = source.id;
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  let archived = false;
+  let failedAttempts = 0;
+  await page.route(`**/v1/assets/${sourceId}?mode=archive`, async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.route(`**/v1/assets/conversations/${conversationId}?*`, async (route) => {
+    if (!archived || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (failedAttempts < 2) {
+      failedAttempts += 1;
+      await route.fulfill({ status: 503, json: { detail: "temporary test failure" } });
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+    await route.fulfill({ response, json: payload });
+  });
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  const imageGrid = page.getByLabel("图片库列表");
+  await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect.poll(() => failedAttempts).toBe(2);
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await expect(chat.getByText("对话内容加载失败。")).toBeVisible();
+  await chat.getByRole("button", { name: "重试加载" }).click();
+  await expect(chat.getByText("对话内容加载失败。")).toHaveCount(0);
+  await expect(chat.getByRole("button", { name: "项目资料，共 1 项" })).toBeVisible();
+  expect(failedAttempts).toBe(2);
+});
+
+test("a pre-archive project detail response cannot replace the refreshed project", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  let archived = false;
+  let detailCalls = 0;
+  let oldDetailDelivered = false;
+  let freshDetailDelivered = false;
+  let releaseOldDetail: (() => void) | undefined;
+  const oldDetailGate = new Promise<void>((resolve) => { releaseOldDetail = resolve; });
+  await page.route(`**/v1/assets/conversations/${conversationId}?*`, async (route) => {
+    const callNumber = ++detailCalls;
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    if (callNumber === 1) {
+      payload.title = "归档前的旧详情";
+      await oldDetailGate;
+    } else if (archived) {
+      payload.title = "归档后的新详情";
+      payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+    }
+    await route.fulfill({ response, json: payload });
+    if (callNumber === 1) oldDetailDelivered = true;
+    else if (archived) freshDetailDelivered = true;
+  });
+  await page.route("**/v1/assets/*?mode=archive", async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  await expect.poll(() => detailCalls).toBeGreaterThanOrEqual(1);
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect.poll(() => freshDetailDelivered).toBe(true);
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await expect(chat.getByText("归档后的新详情")).toBeVisible();
+  releaseOldDetail?.();
+  await expect.poll(() => oldDetailDelivered).toBe(true);
+  await page.waitForTimeout(200);
+  await expect(chat.getByText("归档前的旧详情")).toHaveCount(0);
+});
+
 async function chooseVideoExport(
   workspace: ReturnType<Page["locator"]>,
   variant: "原始成片" | "品牌展示版" = "原始成片",
@@ -1629,4 +1732,43 @@ test("case-12-only-optional-compile-failed remains editable with a warning after
     await expect(workspace.getByText("部分可选图形动效未能完成", { exact: false })).toBeVisible();
   }
   await testInfo.attach("case-12-only-optional-compile-failed", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+});
+
+// Keep this destructive fixture check last: earlier CASE-02 checks need its live source.
+test("real archive API keeps the project source in read-only history", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialResources = await (await initialPagePromise).json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  const deleted = page.waitForResponse((response) => (
+    response.request().method() === "DELETE"
+    && new URL(response.url()).pathname === `/v1/assets/${source.id}`
+  ));
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  expect((await deleted).status()).toBe(204);
+  await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+  await page.reload();
+  await resourceEntry.click();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
 });

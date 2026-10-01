@@ -2107,17 +2107,30 @@ export default function AssetsWorkspaceClient({
       return next;
     });
     const selectedProjectId = selectedConversationIdRef.current;
-    setConversations((current) => current.map((conversation) => (
-      conversation.id === selectedProjectId ? conversation : { ...conversation, detailsLoaded: false }
-    )));
+    // An earlier project-detail response must not restore pre-archive resources.
+    const generation = conversationDetailGenerationRef.current + 1;
+    conversationDetailGenerationRef.current = generation;
+    conversationDetailRequestKeyRef.current = selectedProjectId === "new"
+      ? null
+      : `${selectedProjectId}:${conversationDetailRetryRevision}`;
+    setConversationDetailErrorId(null);
+    setConversations((current) => current.map((conversation) => ({
+      ...conversation,
+      detailsLoaded: false,
+    })));
     setConversationLoadRevision((value) => value + 1);
-    if (selectedProjectId === "new") return;
+    if (selectedProjectId === "new" || !token) return;
     try {
-      await refreshProjectConversation(selectedProjectId);
-    } catch (error) {
+      const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedProjectId);
+      if (conversationDetailGenerationRef.current !== generation) return;
       setConversations((current) => current.map((conversation) => (
-        conversation.id === selectedProjectId ? { ...conversation, detailsLoaded: false } : conversation
+        conversation.id === selectedProjectId
+          ? mergeProjectConversationDetail(conversation, refreshed)
+          : conversation
       )));
+    } catch (error) {
+      if (conversationDetailGenerationRef.current !== generation) return;
+      setConversationDetailErrorId(selectedProjectId);
       throw error;
     }
   };
