@@ -850,6 +850,7 @@ export default function AssetsWorkspaceClient({
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [showAllProjectRows, setShowAllProjectRows] = useState(false);
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
+  const [requirementRefreshErrorProjectId, setRequirementRefreshErrorProjectId] = useState<string | null>(null);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
@@ -960,6 +961,17 @@ export default function AssetsWorkspaceClient({
     }
     return snapshot;
   }, [storeRequirementSnapshot, token]);
+
+  const retryProjectRequirements = async (projectId: string) => {
+    try {
+      const snapshot = await reloadCurrentRequirements(projectId);
+      setRequirementRefreshErrorProjectId((current) => current === projectId ? null : current);
+      if (snapshot) toast.success("需求理解已同步。");
+      else toast.info("当前项目没有可同步的需求理解。");
+    } catch {
+      toast.error("需求理解仍未同步，请稍后重试。");
+    }
+  };
 
   useEffect(() => {
     if (!token || selectedConversation.id === "new" || selectedConversation.detailsLoaded === false) return;
@@ -3088,8 +3100,10 @@ export default function AssetsWorkspaceClient({
     }
     try {
       await reloadCurrentRequirements(projectId);
+      setRequirementRefreshErrorProjectId((current) => current === projectId ? null : current);
     } catch {
       invalidateProjectRequirements(projectId);
+      setRequirementRefreshErrorProjectId(projectId);
       toast.info(`${completedAction}，但需求理解暂未同步。`);
     }
   };
@@ -3781,11 +3795,13 @@ export default function AssetsWorkspaceClient({
           )}
         </div>
       </section>
-      {projectResourcesOpen && selectedConversation.id !== "new" ? <ProjectResourcesDrawer
+      {projectResourcesOpen && selectedConversation.id !== "new" && !isConversationSnapshot ? <ProjectResourcesDrawer
         key={selectedConversation.id}
         open
         projectTitle={selectedConversation.title}
         summary={projectResourceSummary}
+        requirementRefreshError={requirementRefreshErrorProjectId === selectedConversation.id}
+        onRetryRequirements={() => retryProjectRequirements(selectedConversation.id)}
         loadResources={loadSelectedProjectResources}
         onClose={() => setProjectResourcesOpen(false)}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}

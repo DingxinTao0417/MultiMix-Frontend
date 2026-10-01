@@ -243,10 +243,12 @@ test("saved source removal remains acknowledged when project detail refresh fail
   await expect(confirmation).toBeHidden();
   await expect(drawer).toBeHidden();
   await expect(chat.getByRole("button", { name: "重试加载" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeHidden();
   expect(failedDetailReads).toBe(2);
 
   await chat.getByRole("button", { name: "重试加载" }).click();
   await expect(chat.getByRole("button", { name: "重试加载" })).toBeHidden();
+  await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeVisible();
   await chat.getByRole("button", { name: /^项目资料/ }).click();
   await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
@@ -267,7 +269,13 @@ test("saved source removal is not reported as failed when requirement refresh fa
     await drawer.getByRole("button", { name: "重新加入项目" }).click();
     await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
   }
-  await page.route(`**/v1/assets/conversations/${projectId}/requirements/current`, async (route) => {
+  let membershipWrites = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}/sources/*`, async (route) => {
+    if (route.request().method() === "PUT" || route.request().method() === "DELETE") membershipWrites += 1;
+    await route.continue();
+  });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  await page.route(requirementsUrl, async (route) => {
     await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
   });
 
@@ -277,7 +285,16 @@ test("saved source removal is not reported as failed when requirement refresh fa
   await expect(page.getByText("已移出项目并保存，但需求理解暂未同步。", { exact: true })).toBeVisible();
   await expect(confirmation).toBeHidden();
   await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
-  await page.unroute(`**/v1/assets/conversations/${projectId}/requirements/current`);
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+  expect(membershipWrites).toBe(1);
+  await page.unroute(requirementsUrl);
+  const retryRead = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+    && response.request().method() === "GET");
+  await drawer.getByRole("button", { name: "重新同步需求" }).click();
+  expect((await retryRead).status()).toBe(404);
+  await expect(page.getByText("当前项目没有可同步的需求理解。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
+  expect(membershipWrites).toBe(1);
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
   await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
 });

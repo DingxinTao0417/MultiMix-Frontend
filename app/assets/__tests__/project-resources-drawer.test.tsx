@@ -119,6 +119,46 @@ describe("ProjectResourcesDrawer", () => {
     await waitFor(() => expect(onReaddSource).toHaveBeenCalledWith(11));
   });
 
+  it("waits for one membership change before allowing another historical source to rejoin", async () => {
+    let completeFirst!: () => void;
+    const firstRequest = new Promise<void>((resolve) => { completeFirst = resolve; });
+    const onReaddSource = vi.fn()
+      .mockImplementationOnce(() => firstRequest)
+      .mockResolvedValue(undefined);
+    const historicalPage: ProjectResourcePage = {
+      ...sourcePage,
+      total: 2,
+      items: [
+        { ...sourcePage.items[0], membershipState: "removed", readdStatus: "available" },
+        { ...sourcePage.items[0], id: 12, title: "门店室内", membershipState: "removed", readdStatus: "available" },
+      ],
+    };
+    render(
+      <ProjectResourcesDrawer
+        open
+        projectTitle="历史素材项目"
+        summary={{ sources: 0, historicalSources: 2, copies: 0, covers: 0, videos: 0 }}
+        loadResources={vi.fn().mockResolvedValue(historicalPage)}
+        onClose={vi.fn()}
+        onRemoveSource={vi.fn()}
+        onReaddSource={onReaddSource}
+        onOpenResource={vi.fn()}
+      />,
+    );
+
+    const readdButtons = await screen.findAllByRole("button", { name: "重新加入项目" });
+    fireEvent.click(readdButtons[0]);
+    await waitFor(() => expect(onReaddSource).toHaveBeenCalledExactlyOnceWith(11));
+    expect(readdButtons[1]).toBeDisabled();
+    fireEvent.click(readdButtons[1]);
+    expect(onReaddSource).toHaveBeenCalledTimes(1);
+
+    completeFirst();
+    await waitFor(() => expect(readdButtons[1]).toBeEnabled());
+    fireEvent.click(readdButtons[1]);
+    await waitFor(() => expect(onReaddSource).toHaveBeenLastCalledWith(12));
+  });
+
   it("keeps an archived historical source visible without offering a rejected rejoin", async () => {
     const onReaddSource = vi.fn().mockResolvedValue(undefined);
     render(

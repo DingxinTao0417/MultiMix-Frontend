@@ -58,6 +58,8 @@ type ProjectResourcesDrawerProps = {
   onReaddSource: (assetId: number) => Promise<void>;
   onOpenResource: (item: ProjectResourceItem) => void;
   onUseSourceForNextMessage?: (item: ProjectResourceItem) => void;
+  requirementRefreshError?: boolean;
+  onRetryRequirements?: () => Promise<void>;
 };
 
 export default function ProjectResourcesDrawer(props: ProjectResourcesDrawerProps) {
@@ -74,6 +76,8 @@ function ProjectResourcesDrawerContent({
   onReaddSource,
   onOpenResource,
   onUseSourceForNextMessage,
+  requirementRefreshError,
+  onRetryRequirements,
 }: ProjectResourcesDrawerProps) {
   const [kind, setKind] = useState<ProjectResourceKind>("source");
   const [sourceScope, setSourceScope] = useState<"active" | "history">("active");
@@ -82,6 +86,7 @@ function ProjectResourcesDrawerContent({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingAssetId, setPendingAssetId] = useState<number | null>(null);
+  const [retryingRequirements, setRetryingRequirements] = useState(false);
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     item: ProjectResourceItem;
   } | null>(null);
@@ -161,6 +166,7 @@ function ProjectResourcesDrawerContent({
   };
 
   const changeMembership = async (item: ProjectResourceItem) => {
+    if (pendingAssetId !== null) return;
     if (item.membershipState === "active") {
       setPendingConfirmation({ item });
       return;
@@ -179,7 +185,7 @@ function ProjectResourcesDrawerContent({
   };
 
   const confirmPendingAction = async () => {
-    if (!pendingConfirmation) return;
+    if (!pendingConfirmation || pendingAssetId !== null) return;
     const { item } = pendingConfirmation;
     setPendingAssetId(item.id);
     setError("");
@@ -263,6 +269,29 @@ function ProjectResourcesDrawerContent({
           <p className="shadcn-prototype-project-resources-scope-caption">已移出或从资源库归档的资料仍保留历史引用；仅可用的已移出资料可重新加入。</p>
         ) : null}
 
+        {requirementRefreshError && onRetryRequirements ? (
+          <div className="shadcn-prototype-project-resources-scope-caption" role="alert">
+            <span>需求理解暂未同步，不影响已保存的项目资料。</span>
+            <div className="shadcn-prototype-project-resources-scope">
+              <button
+                type="button"
+                disabled={retryingRequirements}
+                onClick={async () => {
+                  if (retryingRequirements) return;
+                  setRetryingRequirements(true);
+                  try {
+                    await onRetryRequirements();
+                  } finally {
+                    setRetryingRequirements(false);
+                  }
+                }}
+              >
+                {retryingRequirements ? "同步中…" : "重新同步需求"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {loading ? <p role="status">项目资源加载中…</p> : null}
         {error ? (
           <div role="alert">
@@ -315,7 +344,7 @@ function ProjectResourcesDrawerContent({
                     {item.membershipState === "active" || item.membershipState === "removed" && item.readdStatus === "available" ? (
                       <button
                         type="button"
-                        disabled={pendingAssetId === item.id}
+                        disabled={pendingAssetId !== null}
                         onClick={() => void changeMembership(item)}
                       >
                         {pendingAssetId === item.id

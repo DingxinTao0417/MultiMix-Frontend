@@ -1209,9 +1209,9 @@ export default function ConversationStudio({
         <header className="shadcn-prototype-chat-head">
           {navigationSlot}
           <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-          {projectResourceTotal > 0 || diagnosticsSlot ? (
+          {(projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false) || diagnosticsSlot ? (
             <div className="shadcn-prototype-chat-head-actions">
-              {projectResourceTotal > 0 ? (
+              {projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false ? (
                 <button
                   type="button"
                   className="shadcn-prototype-project-resources"
