@@ -216,6 +216,106 @@ test("project source opens exact detail and remains recoverable when it is the o
   expect(pageErrors).toEqual([]);
 });
 
+test("saved source removal remains acknowledged when project detail refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const sourceId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!projectId || !sourceId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  let failedDetailReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}?*`, async (route) => {
+    if (route.request().method() === "GET" && failedDetailReads < 2) {
+      failedDetailReads += 1;
+      await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(page.getByText("已移出项目并保存，但资料暂未同步。请重试加载。", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeHidden();
+  await expect(drawer).toBeHidden();
+  await expect(chat.getByRole("button", { name: "重试加载" })).toBeVisible();
+  expect(failedDetailReads).toBe(2);
+
+  await chat.getByRole("button", { name: "重试加载" }).click();
+  await expect(chat.getByRole("button", { name: "重试加载" })).toBeHidden();
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
+test("saved source removal is not reported as failed when requirement refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const sourceId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!projectId || !sourceId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  }
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/current`, async (route) => {
+    await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+  });
+
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(page.getByText("已移出项目并保存，但需求理解暂未同步。", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeHidden();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await page.unroute(`**/v1/assets/conversations/${projectId}/requirements/current`);
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
+test("library source addition remains acknowledged when target project detail refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId) throw new Error("Missing seeded CASE-01 project");
+
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.getByRole("button", { name: "加入项目…" }).click();
+  const picker = page.getByRole("dialog", { name: "选择目标项目" });
+  await expect(picker).toBeVisible();
+  let failedDetailReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}?*`, async (route) => {
+    if (route.request().method() === "GET" && failedDetailReads < 2) {
+      failedDetailReads += 1;
+      await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await picker.getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
+  await expect(page.getByText("已加入项目并保存，但资料暂未同步。进入该项目后可重试加载。", { exact: true })).toBeVisible();
+  await expect(picker).toBeHidden();
+  expect(failedDetailReads).toBe(2);
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
 test("archived project source stays traceable and opens read-only history detail", async ({ page }) => {
   const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
   const assetId = seed.asset_ids?.["case-02-saved-asset-match"];

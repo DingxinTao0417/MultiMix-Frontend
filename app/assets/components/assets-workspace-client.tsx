@@ -2085,12 +2085,46 @@ export default function AssetsWorkspaceClient({
 
   const refreshProjectConversation = async (projectId: string) => {
     if (!token) return;
+    if (selectedConversationIdRef.current === projectId) {
+      // A detail request started before the source write must not restore its
+      // old resource summary after this refresh completes.
+      conversationDetailGenerationRef.current += 1;
+      conversationDetailRequestKeyRef.current = `${projectId}:${conversationDetailRetryRevision}`;
+    }
     const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, projectId);
     setConversations((current) => current.map((conversation) => (
       conversation.id === projectId
         ? mergeProjectConversationDetail(conversation, refreshed)
         : conversation
     )));
+    if (selectedConversationIdRef.current === projectId) setConversationDetailErrorId(null);
+  };
+
+  const invalidateProjectRequirements = (projectId: string) => {
+    setRequirementSnapshots((current) => {
+      if (!(projectId in current)) return current;
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+  };
+
+  const markProjectDetailRefreshFailed = (projectId: string) => {
+    const isSelectedProject = selectedConversationIdRef.current === projectId;
+    if (isSelectedProject || conversationDetailRequestKeyRef.current?.startsWith(`${projectId}:`)) {
+      conversationDetailGenerationRef.current += 1;
+      conversationDetailRequestKeyRef.current = isSelectedProject
+        ? `${projectId}:${conversationDetailRetryRevision}`
+        : null;
+    }
+    setConversations((current) => current.map((conversation) => (
+      conversation.id === projectId ? { ...conversation, detailsLoaded: false } : conversation
+    )));
+    invalidateProjectRequirements(projectId);
+    if (isSelectedProject) {
+      setConversationDetailErrorId(projectId);
+      setProjectResourcesOpen(false);
+    }
   };
 
   const handleLibraryAssetArchived = async (assetId: number) => {
@@ -2140,21 +2174,28 @@ export default function AssetsWorkspaceClient({
     setSubmittingProjectId(projectId);
     try {
       await addProjectSource(token, projectId, row.assetId);
-      if (projectId === selectedConversation.id) {
-        setConversationContextAssets((current) => ({
-          ...current,
-          [projectId]: mergeConversationContextAssets(
-            current[projectId] ?? [],
-            [{ id: row.assetId!, title: row.title }],
-          ),
-        }));
-      }
-      await refreshProjectConversation(projectId);
-      setProjectTargetRow(null);
-      toast.success(`已加入项目，并立即保存。`);
     } catch (error) {
       reportRuntimeWriteFailure(error);
       toast.error(error instanceof Error ? error.message : "加入项目失败，请重试。");
+      setSubmittingProjectId(null);
+      return;
+    }
+    if (projectId === selectedConversation.id) {
+      setConversationContextAssets((current) => ({
+        ...current,
+        [projectId]: mergeConversationContextAssets(
+          current[projectId] ?? [],
+          [{ id: row.assetId!, title: row.title }],
+        ),
+      }));
+    }
+    setProjectTargetRow(null);
+    try {
+      await refreshProjectConversation(projectId);
+      toast.success("已加入项目，并立即保存。");
+    } catch {
+      markProjectDetailRefreshFailed(projectId);
+      toast.info("已加入项目并保存，但资料暂未同步。进入该项目后可重试加载。");
     } finally {
       setSubmittingProjectId(null);
     }
@@ -3027,17 +3068,30 @@ export default function AssetsWorkspaceClient({
 
   const changeSelectedProjectSource = async (assetId: number, action: "add" | "remove") => {
     if (!token || selectedConversation.id === "new") return;
+    const projectId = selectedConversation.id;
     if (action === "add") {
-      await addProjectSource(token, selectedConversation.id, assetId);
+      await addProjectSource(token, projectId, assetId);
     } else {
-      await removeProjectSource(token, selectedConversation.id, assetId);
+      await removeProjectSource(token, projectId, assetId);
       setConversationContextAssets((current) => ({
         ...current,
-        [selectedConversation.id]: (current[selectedConversation.id] ?? []).filter((asset) => asset.id !== assetId),
+        [projectId]: (current[projectId] ?? []).filter((asset) => asset.id !== assetId),
       }));
     }
-    await refreshProjectConversation(selectedConversation.id);
-    await reloadCurrentRequirements(selectedConversation.id);
+    const completedAction = action === "add" ? "已重新加入项目并保存" : "已移出项目并保存";
+    try {
+      await refreshProjectConversation(projectId);
+    } catch {
+      markProjectDetailRefreshFailed(projectId);
+      toast.info(`${completedAction}，但资料暂未同步。请重试加载。`);
+      return;
+    }
+    try {
+      await reloadCurrentRequirements(projectId);
+    } catch {
+      invalidateProjectRequirements(projectId);
+      toast.info(`${completedAction}，但需求理解暂未同步。`);
+    }
   };
 
   const handleOpenProjectResource = (item: ProjectResourceItem) => {
