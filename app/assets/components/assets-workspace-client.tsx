@@ -854,6 +854,9 @@ export default function AssetsWorkspaceClient({
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
   const requirementReadGenerationRef = useRef(new Map<string, number>());
   const skipAutomaticRequirementReadRef = useRef(new Map<string, string>());
+  const requirementEffectScopeRef = useRef<{ projectId: string; token: string | null; detailReady: boolean }>({
+    projectId: "", token: null, detailReady: false,
+  });
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
   const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
@@ -956,10 +959,19 @@ export default function AssetsWorkspaceClient({
   }, []);
 
   const reloadCurrentRequirements = useCallback(async (conversationId: string, shouldApply: () => boolean = () => true) => {
-    if (!token || conversationId === "new") return null;
+    if (!token || conversationId === "new") return { snapshot: null, applied: false };
     const readGeneration = requirementReadGenerationRef.current.get(conversationId) ?? 0;
-    const snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
-    if (shouldApply() && readGeneration === (requirementReadGenerationRef.current.get(conversationId) ?? 0)) {
+    const isCurrentRead = () => shouldApply()
+      && readGeneration === (requirementReadGenerationRef.current.get(conversationId) ?? 0);
+    let snapshot: ProjectRequirementSnapshot | null;
+    try {
+      snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
+    } catch (error) {
+      if (!isCurrentRead()) return { snapshot: null, applied: false };
+      throw error;
+    }
+    const applied = isCurrentRead();
+    if (applied) {
       if (snapshot) storeRequirementSnapshot(conversationId, snapshot);
       else setRequirementSnapshots((current) => {
         if (!(conversationId in current)) return current;
@@ -969,26 +981,33 @@ export default function AssetsWorkspaceClient({
       });
       setRequirementRefreshErrorProjectId((current) => current === conversationId ? null : current);
     }
-    return snapshot;
+    return { snapshot, applied };
   }, [storeRequirementSnapshot, token]);
 
   const retryProjectRequirements = async (projectId: string) => {
     try {
-      const snapshot = await reloadCurrentRequirements(projectId);
+      const { snapshot, applied } = await reloadCurrentRequirements(projectId, () => selectedConversationIdRef.current === projectId);
+      if (!applied) return;
       if (snapshot) toast.success("需求理解已同步。");
       else toast.info("当前项目没有可同步的需求理解。");
     } catch {
+      if (selectedConversationIdRef.current !== projectId) return;
       toast.error("需求理解仍未同步，请稍后重试。");
     }
   };
 
   useEffect(() => {
-    if (!token || selectedConversation.id === "new" || selectedConversation.detailsLoaded === false) return;
     const projectId = selectedConversation.id;
+    const previousScope = requirementEffectScopeRef.current;
+    const sameReadyScope = previousScope.projectId === projectId
+      && previousScope.token === token
+      && previousScope.detailReady;
+    requirementEffectScopeRef.current = { projectId, token, detailReady: selectedConversation.detailsLoaded !== false };
+    if (!token || projectId === "new" || selectedConversation.detailsLoaded === false) return;
     const skippedVersion = skipAutomaticRequirementReadRef.current.get(projectId);
     if (skippedVersion !== undefined) {
       skipAutomaticRequirementReadRef.current.delete(projectId);
-      if (skippedVersion === selectedConversation.updatedAt) return;
+      if (sameReadyScope && skippedVersion === selectedConversation.updatedAt) return;
     }
     let cancelled = false;
     void reloadCurrentRequirements(projectId, () => !cancelled)

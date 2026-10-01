@@ -316,6 +316,94 @@ test("saved source removal is not reported as failed when requirement refresh fa
   expect(requirementReads).toBe(2);
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
   await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  const readsAfterReadd = requirementReads;
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+  const otherProjectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!otherProjectId) throw new Error("Missing seeded CASE-01 project");
+  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
+  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await otherProjectLink.click();
+  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
+  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await projectLink.click();
+  await expect(projectLink).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => requirementReads).toBe(readsAfterReadd + 1);
+});
+
+test("an obsolete requirement retry cannot report success after another source change", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!projectId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  }
+
+  let releaseObsoleteRead: (() => void) | undefined;
+  const obsoleteReadGate = new Promise<void>((resolve) => { releaseObsoleteRead = resolve; });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  await page.route(requirementsUrl, async (route) => {
+    requirementReads += 1;
+    if (requirementReads === 2) {
+      await obsoleteReadGate;
+      await route.fulfill({ status: 200, json: {
+        id: "superseded-retry-snapshot",
+        conversation_id: projectId,
+        version: 1,
+        parent_snapshot_id: null,
+        status: "ready",
+        trigger_kind: "manual_refresh",
+        conversation_text: "过期重试结果",
+        conversation_media: [],
+        payload: null,
+        error_code: null,
+        error_message: null,
+        created_at: "2026-09-12T08:00:00Z",
+        completed_at: "2026-09-12T08:00:01Z",
+      } });
+      return;
+    }
+    await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+  });
+
+  try {
+    await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+    await page.getByRole("dialog", { name: "将素材移出项目？" }).getByRole("button", { name: "移出项目", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "重新同步需求" })).toBeVisible();
+    expect(requirementReads).toBe(1);
+
+    await drawer.getByRole("button", { name: "重新同步需求" }).click();
+    await expect.poll(() => requirementReads).toBe(2);
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+    expect(requirementReads).toBe(3);
+
+    const obsoleteResponse = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+      && response.status() === 200);
+    await page.evaluate(() => {
+      const observedWindow = window as Window & { __requirementSuccessNotices?: number };
+      observedWindow.__requirementSuccessNotices = 0;
+      const observer = new MutationObserver(() => {
+        if (document.body.textContent?.includes("需求理解已同步。")) observedWindow.__requirementSuccessNotices! += 1;
+      });
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    releaseObsoleteRead?.();
+    await obsoleteResponse;
+    await expect(drawer.getByRole("button", { name: "重新同步需求" })).toBeEnabled();
+    await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as Window & { __requirementSuccessNotices?: number }).__requirementSuccessNotices)).toBe(0);
+  } finally {
+    releaseObsoleteRead?.();
+  }
 });
 
 test("a requirement read started before source removal cannot restore an obsolete snapshot", async ({ page }) => {
@@ -390,6 +478,8 @@ test("a requirement read started before source removal cannot restore an obsolet
     releaseOldRead?.();
     await oldReadResponse;
     await expect(chat.getByText("过期需求不应重新出现", { exact: true })).toHaveCount(0);
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
   } finally {
     releaseOldRead?.();
   }
