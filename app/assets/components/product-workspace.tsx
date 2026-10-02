@@ -6,7 +6,7 @@ import { API_BASE, getContentAssetVersionPreview, type ContentAsset } from "../.
 import { getProductDisplayIdentity, getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
-import type { AssetConversationMessage, AssetCreativeDirectionSelection, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
+import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
 import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import {
   findLocalExportMarker,
@@ -15,7 +15,6 @@ import {
 import type { VideoJobLiveStatus } from "./assets-workspace-client";
 import type { LongFormSourceAction } from "../lib/long-form-client";
 import AssetPicker from "./asset-picker";
-import CreativeDirectionSelector from "./creative-direction-selector";
 import { CreativeProjectUsage } from "./creative-profile-panel";
 import CreativeMemoryPrompt from "./creative-memory-prompt";
 import ProductPreview, {
@@ -23,6 +22,7 @@ import ProductPreview, {
   persistedVideoExportMatchesCurrentProject,
   playableVideoUrl,
   type ProductPreviewHandle,
+  type SceneSourceAction,
 } from "./product-preview";
 import type {
   GeneratedImageGalleryApplication,
@@ -194,12 +194,14 @@ export default function ProductWorkspace({
   onRetryVideoJob,
   onOpenLongFormCandidates,
   onLongFormAction,
-  onApplyCreativeDirection,
   onApplyGeneratedImage,
   onApplyGeneratedImageSet,
   selectedImageFrameId,
   onSelectedImageFrameChange,
   onSelectSegment,
+  onSceneSourceAction,
+  onContinueDirectorProduction,
+  sceneSourceProgress,
   product,
   savedVersion,
   selectedConversation,
@@ -215,12 +217,14 @@ export default function ProductWorkspace({
   onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
   onLongFormAction?: (action: LongFormSourceAction) => void;
-  onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
   onApplyGeneratedImage?: (application: GeneratedImageGalleryApplication) => Promise<void>;
   onApplyGeneratedImageSet?: (application: GeneratedImageGallerySetApplication) => Promise<void>;
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
   onSelectSegment?: (segment: AssetProductSegment) => void;
+  onSceneSourceAction?: (action: SceneSourceAction) => Promise<void> | void;
+  onContinueDirectorProduction?: (product: ProductArtifact) => Promise<void> | void;
+  sceneSourceProgress?: { sceneId: string; stage: string; error?: string } | null;
   product: ProductArtifact;
   savedVersion?: string;
   selectedConversation: Conversation;
@@ -259,6 +263,10 @@ export default function ProductWorkspace({
   const [textEditSaving, setTextEditSaving] = useState(false);
   const [textEditError, setTextEditError] = useState("");
   const [textEditSaved, setTextEditSaved] = useState(false);
+  const [directorReviewBusy, setDirectorReviewBusy] = useState(false);
+  const [directorProductionBusy, setDirectorProductionBusy] = useState(false);
+  const [directorReviewError, setDirectorReviewError] = useState("");
+  const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
   const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
@@ -334,11 +342,7 @@ export default function ProductWorkspace({
     && !Array.isArray(productMetadata.video_plan)
     ? productMetadata.video_plan as Record<string, unknown>
     : null;
-  const isFiveLayerPlan = isFiveLayerVideoPlan(presenterVideoPlan);
   const isPresenterSourcePlan = isPresenterSourceVideoPlan(presenterVideoPlan);
-  const creativeDirection = isDirectorText && isFiveLayerPlan && !isPresenterSourcePlan
-    ? presenterVideoPlan?.creative_direction
-    : null;
   const hasSpeechTimeline = product.mode === "video"
     && isPresenterSourcePlan
     && product.timeline.some((item) => item.line);
@@ -554,6 +558,38 @@ export default function ProductWorkspace({
     setTextEditError("");
     setStructuralChange(null);
     setIsTextEditing(false);
+  };
+
+  const editDirectorReviewScene = (sceneId: string) => {
+    setTextEditBody(product.markdownBody ?? "");
+    setTextEditError("");
+    setStructuralChange(null);
+    setIsTextEditing(true);
+    const sceneIndex = (product.segments ?? []).findIndex((segment) => segment.id === sceneId);
+    window.requestAnimationFrame(() => {
+      const editor = textEditorRef.current;
+      if (!editor) return;
+      const heading = sceneIndex >= 0 ? `### ${sceneIndex + 1}.` : "### ";
+      const offset = editor.value.indexOf(heading);
+      editor.focus();
+      if (offset >= 0) editor.setSelectionRange(offset, offset + heading.length);
+    });
+  };
+
+  const runDirectorReviewAction = async (findingId?: string) => {
+    if (!token || directorReviewBusy) return;
+    setDirectorReviewBusy(true);
+    setDirectorReviewError("");
+    try {
+      const updated = findingId
+        ? await assetWorkspaceAdapter.ignoreDirectorReviewSuggestion(token, product, findingId)
+        : await assetWorkspaceAdapter.retryDirectorReview(token, product);
+      onProductUpdated?.(updated);
+    } catch (error) {
+      setDirectorReviewError(error instanceof Error ? error.message : "整稿建议暂时无法更新。");
+    } finally {
+      setDirectorReviewBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -1401,12 +1437,31 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
   const productClassName = [
     "shadcn-prototype-product",
+    product.contentType === "video_script"
+      && String(product.metadata?.director_draft_phase ?? "").startsWith("editable_")
+      ? "director-editable-mode" : "",
     hasVideoProject ? "video-project-mode" : "",
-    !isTextEditing && creativeDirection ? "has-creative-direction" : "",
   ].filter(Boolean).join(" ");
 
   const reviewPlan = product.metadata?.video_plan;
   const reviewPlanValue = recordValue(reviewPlan);
+  const editableDirectorReview = product.contentType === "video_script"
+    && String(product.metadata?.director_draft_phase ?? "").startsWith("editable_")
+    ? recordValue(product.metadata?.director_review)
+    : null;
+  const directorReviewFindings = Array.isArray(editableDirectorReview?.findings)
+    ? editableDirectorReview.findings.map(recordValue).filter((item): item is Record<string, unknown> => item !== null)
+    : [];
+  const directorProductionReady = editableDirectorReview?.status === "reviewed"
+    && !directorReviewFindings.some((item) => item.kind === "hard" && item.status === "open")
+    && (!Array.isArray(product.metadata?.unresolved_legacy_reference_ids)
+      || product.metadata.unresolved_legacy_reference_ids.length === 0);
+  const directorReferenceIds = Array.isArray(reviewPlanValue?.selected_reference_asset_ids)
+    ? reviewPlanValue.selected_reference_asset_ids.filter((item): item is number => typeof item === "number")
+    : [];
+  const unresolvedLegacyReferenceIds = Array.isArray(product.metadata?.unresolved_legacy_reference_ids)
+    ? product.metadata.unresolved_legacy_reference_ids.filter((item): item is number => typeof item === "number")
+    : [];
   const reviewableVideoPlan = isFiveLayerVideoPlan(reviewPlanValue)
     || String(reviewPlanValue?.video_type ?? "") === "source_excerpt";
   const filmReviewPanel = token && product.backendAssetId && !isTextEditing
@@ -1803,11 +1858,74 @@ export default function ProductWorkspace({
           <p className="mx-5 mb-3 text-sm text-[#a43b32]" role="alert">{sourceExcerptAuditError}</p>
         ) : null}
 
-        {!isTextEditing && creativeDirection ? (
-          <CreativeDirectionSelector
-            direction={creativeDirection}
-            onApply={onApplyCreativeDirection}
-          />
+        {editableDirectorReview ? (
+          <section className="mx-5 mb-4 rounded-xl border border-[#eae7e1] bg-white p-4 text-sm" aria-label="编导稿整稿审查">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <strong>整稿建议</strong>
+              <span className="text-[#736e67]">
+                {editableDirectorReview.status === "reviewed" ? "初稿已审查 · 制作前仍需检查素材和时长"
+                  : editableDirectorReview.status === "stale" ? "稿件已修改，建议待复核"
+                    : editableDirectorReview.status === "unavailable" ? "审查暂不可用，初稿仍可编辑" : "正在审查"}
+              </span>
+            </div>
+            {directorReferenceIds.length ? (
+              <p className="mt-2 text-[#736e67]">参考素材 {directorReferenceIds.map((id) => `#${id}`).join("、")} 仅作画面示意，不作为商家事实。</p>
+            ) : null}
+            {unresolvedLegacyReferenceIds.length ? (
+              <p className="mt-2 text-[#a43b32]" role="alert">原稿素材编号 {unresolvedLegacyReferenceIds.map((id) => `#${id}`).join("、")} 尚未映射到当前素材库。请编辑稿件并核实这些引用。</p>
+            ) : null}
+            {typeof editableDirectorReview.summary === "string" ? (
+              <p className="mt-2 text-[#4d4944]">{editableDirectorReview.summary}</p>
+            ) : null}
+            {directorReviewFindings.map((finding) => {
+              const findingId = String(finding.id ?? "");
+              const sceneId = String(finding.scene_id ?? "");
+              const isHard = finding.kind === "hard";
+              const ignored = finding.status === "ignored";
+              return (
+                <article key={findingId} className="mt-3 rounded-lg border border-[#eae7e1] bg-[#faf8f4] p-3">
+                  <strong>{sceneId} · {isHard ? "需处理的事实问题" : "可选建议"}{ignored ? " · 已忽略" : ""}</strong>
+                  <p className="mt-1">{String(finding.reason ?? "")}</p>
+                  <p className="mt-1 text-[#736e67]">影响：{String(finding.user_impact ?? "")}</p>
+                  <p className="mt-1 text-[#736e67]">依据：{String(finding.evidence ?? "")}</p>
+                  <p className="mt-1">建议：{String(finding.proposed_change ?? "")}</p>
+                  {!ignored ? <div className="mt-2 flex gap-2">
+                    {editableTextArtifact ? <button type="button" className="rounded-lg border px-3 py-1" onClick={() => editDirectorReviewScene(sceneId)}>编辑此镜</button> : null}
+                    {!isHard ? <button type="button" className="rounded-lg border px-3 py-1" disabled={!token || directorReviewBusy} onClick={() => void runDirectorReviewAction(findingId)}>忽略建议</button> : null}
+                  </div> : null}
+                </article>
+              );
+            })}
+            {editableDirectorReview.status === "reviewed" && !directorReviewFindings.length ? (
+              <p className="mt-2 text-[#736e67]">暂无具体建议。初稿可继续编辑。</p>
+            ) : null}
+            {directorProductionReady && onContinueDirectorProduction ? (
+              <div className="mt-3">
+                <button type="button" className="rounded-lg border px-3 py-1.5" disabled={directorProductionBusy} onClick={async () => {
+                  setDirectorProductionBusy(true);
+                  try {
+                    await onContinueDirectorProduction(product);
+                  } finally {
+                    setDirectorProductionBusy(false);
+                  }
+                }}>
+                  {directorProductionBusy ? "正在提交制作规划…" : "完善制作方案"}
+                </button>
+                <p className="mt-1 text-[#736e67]">保留当前编导稿，逐镜检查画面方式、素材和时长；完成后再确认生成视频工程。</p>
+              </div>
+            ) : null}
+            {["pending", "unavailable", "stale"].includes(String(editableDirectorReview.status ?? "")) ? (
+              <div className="mt-3">
+                <button type="button" className="rounded-lg border px-3 py-1" disabled={!token || directorReviewBusy} onClick={() => void runDirectorReviewAction()}>
+                  {directorReviewBusy ? "正在审查…" : "重新审查当前稿"}
+                </button>
+                {editableDirectorReview.status === "pending" ? (
+                  <p className="mt-1 text-[#736e67]">如果审查长时间没有进展，可以手动重新发起；这可能增加一次模型调用。</p>
+                ) : null}
+              </div>
+            ) : null}
+            {directorReviewError ? <p className="mt-2 text-[#a43b32]" role="alert">{directorReviewError}</p> : null}
+          </section>
         ) : null}
 
         {isTextEditing ? (
@@ -1817,6 +1935,7 @@ export default function ProductWorkspace({
               <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
             </div>
             <textarea
+              ref={textEditorRef}
               aria-label={isDirectorText ? "编辑编导脚本" : "编辑文案稿"}
               value={textEditBody}
               onChange={(event) => {
@@ -1941,6 +2060,7 @@ export default function ProductWorkspace({
             <ProductPreview
               ref={projectPreviewRef}
               product={product}
+              token={token ?? undefined}
               footer={videoBrowseFooter}
               onLongFormAction={onLongFormAction}
               onApplyGeneratedImage={onApplyGeneratedImage}
@@ -1950,6 +2070,8 @@ export default function ProductWorkspace({
               onRetryVideoJob={onRetryVideoJob}
               onReplaceMaterial={openBrowseMaterialPicker}
               onSelectSegment={onSelectSegment}
+              onSceneSourceAction={onSceneSourceAction}
+              sceneSourceProgress={sceneSourceProgress}
               onEditVoiceover={
                 token && product.backendAssetId
                   ? (segment) => setVoiceoverSegment(segment)
@@ -2094,10 +2216,13 @@ export default function ProductWorkspace({
             <div className={previewClassName}>
               <ProductPreview
                 product={product}
+                token={token ?? undefined}
                 onLongFormAction={onLongFormAction}
                 onApplyGeneratedImage={onApplyGeneratedImage}
                 onApplyGeneratedImageSet={onApplyGeneratedImageSet}
                 selectedImageFrameId={selectedImageFrameId}
+                onSceneSourceAction={onSceneSourceAction}
+                sceneSourceProgress={sceneSourceProgress}
                 onSelectedImageFrameChange={onSelectedImageFrameChange}
                 footer={filmReviewPanel}
               />

@@ -2,6 +2,8 @@ import { API_BASE } from "./api";
 
 
 const EVENT_NAMES = new Set([
+  "video_active_interval",
+  "director_active_interval",
   "workspace_opened",
   "recommendation_selected",
   "source_evidence_opened",
@@ -30,8 +32,10 @@ const PROPERTY_KEYS = new Set([
   "source_count",
   "duration_ms",
   "version_id",
+  "interval_start_ms",
+  "interval_end_ms",
 ]);
-const NUMBER_PROPERTY_KEYS = new Set(["snapshot_version", "source_count", "duration_ms", "version_id"]);
+const NUMBER_PROPERTY_KEYS = new Set(["snapshot_version", "source_count", "duration_ms", "version_id", "interval_start_ms", "interval_end_ms"]);
 const BOOLEAN_PROPERTY_KEYS = new Set(["question_required"]);
 const ENUM_PROPERTY_VALUES: Record<string, ReadonlySet<string>> = {
   requirement_status: new Set(["analyzing", "needs_confirmation", "ready", "failed"]),

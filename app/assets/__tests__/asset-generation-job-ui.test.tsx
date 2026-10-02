@@ -30,6 +30,83 @@ const job = (
 describe("AssetGenerationJobCard", () => {
   afterEach(cleanup);
 
+  it("shows known visual usage cost without claiming an actual bill", () => {
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "video_plan", status: "failed",
+      visual_cost_summary: {
+        known_standard_cost_cny: "0.001500", known_prompt_tokens: 5000,
+        known_completion_tokens: 500, priced_call_count: 1,
+        unpriced_call_count: 1, currency: "CNY",
+        scope: "visual_analysis_only", basis: "public_list_price_estimate",
+      },
+    })} />);
+    expect(screen.getByText("费用统计")).toBeTruthy();
+    expect(screen.getByText(/素材视觉分析标准价估算：¥0\.001500/)).toBeTruthy();
+    expect(screen.getByText(/1 次用量未知/)).toBeTruthy();
+    expect(screen.getByText(/不是实际账单/)).toBeTruthy();
+  });
+
+  it("shows FLUX reservation separately from executed estimate and allocated bill", () => {
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "general", status: "failed",
+      image_cost_summary: {
+        reserved_usd: "0.600000", executed_estimate_usd: "0.400000",
+        allocated_billed_usd: "0.130000", executed_call_count: 2,
+        allocated_call_count: 1, unpriced_call_count: 0,
+        currency: "USD", scope: "flux_reference_image_only",
+      },
+    })} />);
+    expect(screen.getByText(/预留上限：\$0\.600000/)).toBeTruthy();
+    expect(screen.getByText(/已执行估算：\$0\.400000/)).toBeTruthy();
+    expect(screen.getByText(/账单分摊：\$0\.130000/)).toBeTruthy();
+    expect(screen.getByText(/仅 1\/2 次有账单分摊/)).toBeTruthy();
+    expect(screen.queryByText(/暂无可核算记录/)).toBeNull();
+  });
+
+  it("does not present reservation-only FLUX jobs as already spent", () => {
+    render(<AssetGenerationJobCard job={job({
+      image_cost_summary: {
+        reserved_usd: "1.000000", executed_estimate_usd: "0.000000",
+        allocated_billed_usd: "0.000000", executed_call_count: 0,
+        allocated_call_count: 0, unpriced_call_count: 0,
+        currency: "USD", scope: "flux_reference_image_only",
+      },
+    })} />);
+    expect(screen.getByText(/预留上限：\$1\.000000/)).toBeTruthy();
+    expect(screen.getByText(/尚无已执行图片费用记录/)).toBeTruthy();
+    expect(screen.queryByText(/已执行估算/)).toBeNull();
+  });
+
+  it("marks executed FLUX cost as unknown until billing allocation exists", () => {
+    render(<AssetGenerationJobCard job={job({
+      image_cost_summary: {
+        reserved_usd: "0.200000", executed_estimate_usd: "0.200000",
+        allocated_billed_usd: "0.000000", executed_call_count: 1,
+        allocated_call_count: 0, unpriced_call_count: 0,
+        currency: "USD", scope: "flux_reference_image_only",
+      },
+    })} />);
+    expect(screen.getByText(/已执行估算：\$0\.200000/)).toBeTruthy();
+    expect(screen.getByText(/暂无账单分摊，实付未知/)).toBeTruthy();
+    expect(screen.queryByText(/账单分摊：\$0\.000000/)).toBeNull();
+  });
+
+  it("shows text-model list-price estimate separately from unknown calls", () => {
+    render(<AssetGenerationJobCard job={job({
+      progress_kind: "video_plan", status: "failed",
+      llm_cost_summary: {
+        known_standard_cost_cny: "0.002800", known_prompt_tokens: 1000,
+        known_completion_tokens: 100, priced_call_count: 1,
+        unpriced_call_count: 2, currency: "CNY",
+        scope: "text_model_calls_only", basis: "public_list_price_estimate",
+      },
+    })} />);
+    expect(screen.getByText(/编导\/文本模型标准价估算：¥0\.002800/)).toBeTruthy();
+    expect(screen.getByText(/2 次费用未知/)).toBeTruthy();
+    expect(screen.getByText(/不能据此计算任务总实付/)).toBeTruthy();
+    expect(screen.queryByText(/暂无可核算记录/)).toBeNull();
+  });
+
   it("uses video scope immediately while queued, before any director event", () => {
     render(
       <AssetGenerationJobCard job={job({ progress_kind: "video_plan" })} />,
@@ -43,12 +120,12 @@ describe("AssetGenerationJobCard", () => {
     const onRetry = vi.fn();
     render(
       <AssetGenerationJobCard
-        job={job({ progress_kind: "video_plan", status: "cancelled" })}
+        job={job({ progress_kind: "video_plan", status: "cancelled", regenerable: true })}
         onRetry={onRetry}
       />,
     );
     expect(screen.getByText("本次任务已停止")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续生成" }));
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
     expect(screen.queryByRole("list")).toBeNull();
   });
@@ -401,13 +478,13 @@ describe("AssetGenerationJobCard", () => {
     const onRetry = vi.fn();
     render(
       <AssetGenerationJobCard
-        job={job({ status: "cancelled" })}
+        job={job({ status: "cancelled", regenerable: true })}
         onRetry={onRetry}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /内容生成进度/ }));
-    fireEvent.click(screen.getByRole("button", { name: "重新生成" }));
+    fireEvent.click(screen.getByRole("button", { name: "继续生成" }));
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
   });
 

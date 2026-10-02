@@ -2673,6 +2673,16 @@ button:disabled {
   padding: 16px 24px;
 }
 
+/* Reviewed director drafts add a review panel before the document. Give the
+   document its own bounded row so it cannot cover the review actions. */
+.shadcn-prototype-artifact .shadcn-prototype-product.director-editable-mode {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.shadcn-prototype-artifact .shadcn-prototype-product.director-editable-mode .shadcn-prototype-product-main {
+  overflow: hidden;
+}
+
 .shadcn-prototype-artifact .shadcn-prototype-product-header {
   display: flex;
   min-height: 38px;
@@ -4339,10 +4349,6 @@ button:disabled {
   gap: 8px;
 }
 
-.shadcn-prototype-product.has-creative-direction {
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-}
-
 .shadcn-prototype-artifact .shadcn-prototype-product.video-project-mode .shadcn-prototype-product-header {
   min-height: 32px;
   padding-bottom: 7px;
@@ -4794,6 +4800,14 @@ button:disabled {
   background: #faf8f4;
   padding: 14px 16px;
   color: #2f2b27;
+}
+
+.shadcn-prototype-thread .shadcn-prototype-creative-direction {
+  place-self: start;
+  width: min(100%, 560px);
+  max-height: none;
+  overflow: visible;
+  margin-top: 8px;
 }
 
 .shadcn-prototype-creative-direction-header,

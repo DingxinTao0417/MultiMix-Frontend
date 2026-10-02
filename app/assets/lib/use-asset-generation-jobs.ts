@@ -54,7 +54,12 @@ export function useAssetGenerationJobs(
     conversationId: string,
     job: AssetGenerationJobResponse,
   ) => {
-    const live = { conversationId, job, run: 0 };
+    const previous = jobsByIdRef.current[job.id];
+    const live = {
+      conversationId,
+      job: retainVideoPurpose(job, previous?.job),
+      run: previous ? previous.run + 1 : 0,
+    };
     jobsByIdRef.current = {
       ...jobsByIdRef.current,
       [job.id]: live,

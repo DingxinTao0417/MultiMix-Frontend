@@ -308,6 +308,7 @@ export type ProjectResourceItemResponse = {
   asset_kind: string;
   content_type: string;
   source_type: string;
+  understanding_status?: string | null;
   content_role?:
     | "product_or_service"
     | "brand_identity"
@@ -480,6 +481,36 @@ export type AssetGenerationJobResponse = {
   created_at: string;
   updated_at: string;
   started_at?: string | null;
+  visual_cost_summary?: {
+    known_standard_cost_cny: string;
+    known_prompt_tokens: number;
+    known_completion_tokens: number;
+    priced_call_count: number;
+    unpriced_call_count: number;
+    currency: "CNY";
+    scope: "visual_analysis_only";
+    basis: "public_list_price_estimate";
+  } | null;
+  image_cost_summary?: {
+    reserved_usd: string | null;
+    executed_estimate_usd: string;
+    allocated_billed_usd: string;
+    executed_call_count: number;
+    allocated_call_count: number;
+    unpriced_call_count: number;
+    currency: "USD";
+    scope: "flux_reference_image_only";
+  } | null;
+  llm_cost_summary?: {
+    known_standard_cost_cny: string;
+    known_prompt_tokens: number;
+    known_completion_tokens: number;
+    priced_call_count: number;
+    unpriced_call_count: number;
+    currency: "CNY";
+    scope: "text_model_calls_only";
+    basis: "public_list_price_estimate";
+  } | null;
   provider_wait?: {
     stage: string;
     status: "requested" | "first_response_received" | "delayed";
@@ -492,12 +523,15 @@ export type AssetGenerationJobResponse = {
   };
   failure_context?: {
     stage?: string;
+    source_asset_id?: number;
     reusable_result?: { asset_id?: number };
     actions?: string[];
   };
   failure_diagnostic?: {
     error_code?: string;
     stage?: string;
+    scene_id?: string;
+    scene_ids?: string[];
     http_status?: number;
     provider_error_code?: string;
     request_fingerprint?: string;
@@ -609,6 +643,8 @@ export type AssetIngestJobRead = {
   id: string;
   asset_id: number;
   status: string;
+  understanding_status?: string | null;
+  understanding_failure_category?: "provider_billing" | "provider_timeout" | "provider_unavailable" | "analysis_failed" | null;
   error_message: string | null;
   queued_at: string | null;
   started_at: string | null;
@@ -711,6 +747,48 @@ export type AdminProductMetrics = {
     activated_users: number;
     editable_video_users: number;
   }>;
+  video_outcomes?: {
+    started_tasks: number;
+    first_playable_tasks: number;
+    first_playable_rate: number;
+    reviewed_playable_tasks: number;
+    unreviewed_playable_tasks: number;
+    accepted_tasks: number;
+    first_version_accepted_tasks: number;
+    first_version_acceptance_rate: number;
+    accepted_within_two_user_edits_tasks: number | null;
+    user_edit_covered_tasks?: number;
+    user_edit_unknown_tasks?: number;
+    user_reported_published_tasks: number;
+    first_render_wait_seconds_median: number | null;
+    user_active_seconds_median: number | null;
+    observed_video_interaction_seconds_median?: number | null;
+    observed_video_interaction_projects?: number;
+    observed_director_interaction_seconds_median?: number | null;
+    observed_director_interaction_scripts?: number;
+    observed_creation_interaction_seconds_median?: number | null;
+    observed_creation_interaction_tasks?: number;
+    accepted_cost_usd_median: number | null;
+    accepted_cost_covered_tasks: number;
+    cost_recorded_tasks?: number;
+    cost_unrecorded_tasks?: number;
+    cost_recorded_calls?: number;
+    cost_priced_calls?: number;
+    cost_unknown_price_calls?: number;
+    cost_unidentified_records?: number;
+    cost_ambiguous_calls?: number;
+    cost_unbound_generation_jobs?: number;
+    known_estimated_cost_cny_subtotal?: number | null;
+    known_estimated_cost_usd_subtotal?: number | null;
+    supplier_allocated_cost_usd_subtotal?: number | null;
+    cost_allocated_calls?: number;
+    cost_text_recorded_tasks?: number;
+    cost_visual_recorded_tasks?: number;
+    cost_image_recorded_tasks?: number;
+    cost_video_recorded_tasks?: number;
+    cost_voice_recorded_tasks?: number;
+    audience_unclassified_tasks: number;
+  };
   requirement_understanding?: {
     viewed_versions: number;
     confirmed_first_pass_versions: number;

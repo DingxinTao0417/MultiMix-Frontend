@@ -15,6 +15,7 @@ const PUBLIC_LABELS: Record<string, string> = {
   transcribing: "正在转写原片",
   visual_analysis: "正在分析人物与动态安全区",
   drafting: "正在生成内容",
+  source_fact_contract: "正在核对已确认事实",
   scene_direction: "正在生成分镜导演稿",
   grounding_review: "正在核对分镜事实依据",
   grounding_review_repair: "正在修补分镜事实依据",
@@ -45,9 +46,19 @@ describe("video progress scope", () => {
     expect(resolve({ steps: [{ ...step("drafting"), label: "正在制作视频" }] })).toBe("general");
     expect(resolve({ progressKind: "future_kind" })).toBe("general");
   });
+  it("recognizes the source fact stage as video planning when older jobs omit progressKind", () => {
+    expect(resolve({ steps: [step("source_fact_contract", "run")] })).toBe("video_plan");
+  });
 });
 
 describe("video progress presentation", () => {
+  it("shows source fact verification as the active stage", () => {
+    const result = present({ kind: "video_plan", steps: [step("source_fact_contract", "run")] });
+    expect(result.title).toBe("正在核对已确认事实");
+    expect(result.milestones.at(-1)).toMatchObject({
+      key: "source_fact_contract", label: "正在核对已确认事实", status: "run",
+    });
+  });
   it("does not promise background execution before persisted submission", () => {
     const result = present({ status: "submitting", submitted: false, steps: [step("create_job", "run")] });
     expect(result.title).toBe("正在提交任务");

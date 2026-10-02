@@ -36,6 +36,20 @@ describe("product analytics", () => {
     });
   });
 
+  it.each(["video_active_interval", "director_active_interval"])("transmits %s bounds without leaking text", async (eventName) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await trackProductEvent("token", { eventName, assetId: 42,
+      sessionId: "anonymous-tab", properties: {
+        interval_start_ms: 1790860000000, interval_end_ms: 1790860005000, prompt: "private",
+      } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      event_name: eventName, asset_id: 42, session_id: "anonymous-tab",
+      properties: { interval_start_ms: 1790860000000, interval_end_ms: 1790860005000 },
+    });
+  });
+
   it("does not send unknown events or requests without a token", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(null, { status: 201 }),

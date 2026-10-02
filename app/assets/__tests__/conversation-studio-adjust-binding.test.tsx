@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import ConversationStudio from "../components/conversation-studio";
@@ -52,6 +52,33 @@ const conversation: AssetConversation = {
 };
 
 describe("ConversationStudio storyboard adjustment binding", () => {
+  it("prepares a scene alternative for user review and opens image upload only when requested", async () => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={director}
+        onSelectProduct={vi.fn()}
+        onSendMessage={onSendMessage}
+        onUploadImages={vi.fn()}
+      />,
+    );
+    const imageInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const click = vi.spyOn(imageInput, "click").mockImplementation(() => undefined);
+    act(() => window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+      detail: { utterance: "请重新设计第 1 镜", openImageUpload: false },
+    })));
+    expect(screen.getByRole("textbox", { name: "输入对话内容" })).toHaveValue("请重新设计第 1 镜");
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(click).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+      detail: { utterance: "请核对上传图片用于第 1 镜", openImageUpload: true },
+    })));
+    await waitFor(() => expect(click).toHaveBeenCalledOnce());
+    expect(onSendMessage).not.toHaveBeenCalled();
+  });
+
   it("selects the suggestion card's director draft before prefilling the adjustment", () => {
     const onSelectProduct = vi.fn();
 

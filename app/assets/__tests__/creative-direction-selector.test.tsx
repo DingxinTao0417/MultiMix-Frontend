@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import CreativeDirectionSelector from "../components/creative-direction-selector";
+import ConversationStudio from "../components/conversation-studio";
 import ProductWorkspace from "../components/product-workspace";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
@@ -72,6 +73,44 @@ const creativeDirection = {
 };
 
 describe("creative direction candidate choice", () => {
+  it("keeps the current draft's direction choice in its conversation product turn", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+    const conversation = {
+      ...conversationForDisplayProduct(product),
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "编导稿已生成。", assetId: product.backendAssetId }],
+    };
+    const onApply = vi.fn(async () => undefined);
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={product}
+      onSelectProduct={vi.fn()}
+      onApplyCreativeDirection={onApply}
+    />);
+
+    const chat = screen.getByRole("region", { name: "Content generation conversation" });
+    expect(chat.querySelector('[aria-label="创意方向"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看其他方向" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用“问题推进”方向" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith({
+      candidateId: "direction-b",
+      creativeDirectionFingerprint: fingerprint,
+    }));
+  });
   it("keeps a single strong direction without a fake more-directions action", () => {
     render(<CreativeDirectionSelector direction={{
       ...creativeDirection,
@@ -144,7 +183,7 @@ describe("creative direction candidate choice", () => {
     expect(screen.queryByText("结果先行")).not.toBeInTheDocument();
   });
 
-  it("renders the selector above a general five-layer draft but not for a presenter-source draft", () => {
+  it("keeps the draft body in the product pane and excludes presenter-source drafts from direction choices", () => {
     const base = displayProducts["case-01-director-draft"];
     const genericProduct = {
       ...base,
@@ -165,16 +204,14 @@ describe("creative direction candidate choice", () => {
         copied={false}
         onCopyProduct={vi.fn(async () => undefined)}
         onSaveProduct={vi.fn(async () => undefined)}
-        onApplyCreativeDirection={vi.fn(async () => undefined)}
         product={genericProduct}
         selectedConversation={conversationForDisplayProduct(genericProduct)}
       />,
     );
 
-    const directionRegion = screen.getByRole("region", { name: "创意方向" });
     const directorBody = screen.getByText("连续正文");
-    expect(directionRegion).toBeInTheDocument();
-    expect(directionRegion.compareDocumentPosition(directorBody) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(directorBody).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
 
     const presenterProduct = {
       ...genericProduct,
@@ -191,7 +228,6 @@ describe("creative direction candidate choice", () => {
         copied={false}
         onCopyProduct={vi.fn(async () => undefined)}
         onSaveProduct={vi.fn(async () => undefined)}
-        onApplyCreativeDirection={vi.fn(async () => undefined)}
         product={presenterProduct}
         selectedConversation={conversationForDisplayProduct(presenterProduct)}
       />,
@@ -200,7 +236,7 @@ describe("creative direction candidate choice", () => {
     expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
   });
 
-  it("reserves a dedicated product row and owns semantic styles for the direction panel", () => {
+  it("styles the direction panel as conversation content without a product row", () => {
     const base = displayProducts["case-01-director-draft"];
     const genericProduct = {
       ...base,
@@ -217,25 +253,24 @@ describe("creative direction candidate choice", () => {
       },
     };
 
-    render(
-      <ProductWorkspace
-        copied={false}
-        onCopyProduct={vi.fn(async () => undefined)}
-        onSaveProduct={vi.fn(async () => undefined)}
-        onApplyCreativeDirection={vi.fn(async () => undefined)}
-        product={genericProduct}
-        selectedConversation={conversationForDisplayProduct(genericProduct)}
-      />,
-    );
+    const conversation = {
+      ...conversationForDisplayProduct(genericProduct),
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "编导稿已生成。", assetId: genericProduct.backendAssetId }],
+    };
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={genericProduct}
+      onSelectProduct={vi.fn()}
+    />);
 
     const directionRegion = screen.getByRole("region", { name: "创意方向" });
     expect(directionRegion).toHaveClass("shadcn-prototype-creative-direction");
-    expect(directionRegion.closest(".shadcn-prototype-product")).toHaveClass("has-creative-direction");
+    expect(directionRegion.closest(".shadcn-prototype-thread")).toBeInTheDocument();
     expect(globalsCss).toMatch(
-      /\.shadcn-prototype-product\.has-creative-direction\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\) auto;/s,
+      /\.shadcn-prototype-thread \.shadcn-prototype-creative-direction\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
     );
-    expect(globalsCss).toMatch(
-      /\.shadcn-prototype-creative-direction\s*\{[^}]*min-height:\s*0;[^}]*max-height:\s*min\(42vh,\s*360px\);[^}]*overflow-y:\s*auto;/s,
-    );
+    expect(globalsCss).not.toContain(".shadcn-prototype-product.has-creative-direction");
   });
 });

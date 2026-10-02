@@ -18,7 +18,8 @@ export function resolveProgressKind(input: {
   if (input.boundContentType === "video_project") {
     return input.operation === "revise" ? "video_update" : "video_create";
   }
-  if (input.steps?.some((step) => step.key === "structuring_director_script"
+  if (input.steps?.some((step) => step.key === "source_fact_contract"
+    || step.key === "structuring_director_script"
     || step.key === "scene_direction" || step.key === "global_choreography")) {
     return "video_plan";
   }
@@ -72,7 +73,7 @@ const PUBLIC_STAGE_EVENTS = new Set([
   "scene_direction", "scene_direction_repair", "grounding_review",
   "grounding_review_repair", "grounding_review_claim_completion",
   "scene_semantic_review", "scene_semantic_repair", "scene_semantic_final_review",
-  "creative_profile", "scene_structure", "topic_alignment", "creative_direction",
+  "source_fact_contract", "creative_profile", "scene_structure", "topic_alignment", "creative_direction",
   "art_direction", "asset_requirements", "primary_visual_strategy",
   "global_choreography", "saving", "prepare_scenes", "prepare_media",
   "build_project", "mg_overlay",

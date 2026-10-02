@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState, type ComponentProps } from "react";
 
 import ConversationStudio from "../components/conversation-studio";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
@@ -27,6 +28,43 @@ const queuedAction: AgentActionRunResponse = {
 };
 
 describe("Conversation Agent actions", () => {
+  it.each(["video_script", "short_video_narration"] as const)("does not announce a video after modifying %s", (contentType) => {
+    const product: ProductArtifact = { id: "asset-42", backendAssetId: 42, title: "一杯茶", status: "ready", version: "v2",
+      mode: "copy", contentType, summary: "三段文字稿", ratio: "16:9", duration: "15秒", phase: "编导稿", sections: [], timeline: [], actions: [] };
+    const conversation = { ...assetWorkspaceAdapter.getNewConversation(), id: "draft-change", detailsLoaded: true,
+      products: [product], messages: [{ role: "assistant" as const, text: "这一段已修改。", assetId: 42,
+        agentAction: { ...queuedAction, status: "succeeded" as const },
+        runSteps: [{ key: "scene_visual_change", label: "修改这一段画面", status: "done" as const }] }] };
+    render(<ConversationStudio basePath="/app/assets" selectedConversation={conversation} selectedProduct={product} onSelectProduct={vi.fn()} />);
+    expect(screen.getByText(/编导稿已更新/)).toBeInTheDocument();
+    expect(screen.queryByText(/视频已生成/)).toBeNull();
+    expect(screen.queryByText(/视频生成进度/)).toBeNull();
+  });
+  it("shows only draft preparation while parameter confirmation is awaiting a response", async () => {
+    const onSendMessage = vi.fn(() => new Promise<void>(() => {}));
+    const plan: AssetMessagePlan = {
+      kind: "video_parameter_confirmation", title: "确认视频参数", status: "pending",
+      fields: [{ key: "duration", label: "目标时长", value: "15 秒" }],
+      confirmLabel: "确认参数并生成编导稿", ratioOptions: [{value: "16:9", label: "横屏 16:9"}],
+      ratioDefault: "16:9", durationSeconds: 15, pendingIntentId: "draft-parameters", pendingIntentVersion: 1,
+    };
+    const conversation = {...assetWorkspaceAdapter.getNewConversation(), id: "draft-pending",
+      detailsLoaded: true, messages: [{role: "assistant" as const, text: "请确认。", plan}]};
+    function Harness() {
+      const [pending, setPending] = useState<ComponentProps<typeof ConversationStudio>["pendingExchange"]>(null);
+      return <ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+        selectedProduct={null} onSelectProduct={vi.fn()} onSendMessage={onSendMessage}
+        pendingExchange={pending} onPendingExchangeChange={(_id, exchange) => setPending(exchange)} />;
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", {name: "确认参数并生成编导稿"}));
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(screen.getByText("整理资料并准备编导稿")).toBeInTheDocument();
+    expect(screen.getByText("编导稿准备进度")).toBeInTheDocument();
+    expect(screen.queryByText("创建视频工程任务")).toBeNull();
+    expect(screen.queryByText("匹配分镜素材并准备配音、字幕")).toBeNull();
+  });
+
   it("submits a source choice with its stable resolution binding", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const conversation = {

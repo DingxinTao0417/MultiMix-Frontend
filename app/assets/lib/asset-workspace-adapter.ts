@@ -5,6 +5,10 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
   AssetImageGenerationSetApplication,
+  AssetSceneSourceDecision,
+  AssetSceneImageGenerationRequest,
+  AssetDirectorProductionPlan,
+  AssetScenePublicCandidate,
   AssetImageGenerationConfirmation,
   AssetImageGenerationRequest,
   AssetLongFormAction,
@@ -81,6 +85,9 @@ import {
 
 export type LibraryRow = {
   assetId?: number;
+  contentHash?: string;
+  sourceTypeCode?: string;
+  fullBody?: string;
   title: string;
   meta: string;
   note: string;
@@ -522,6 +529,9 @@ export function buildConversationMessagePayload({
   imageGenerationSetApplication,
   sourceSubtitleMode,
   sourceResolutionSelection,
+  sceneSourceDecision,
+  sceneImageGenerationRequest,
+  directorProductionPlan,
 }: {
   conversationId: string;
   instruction: string;
@@ -546,6 +556,9 @@ export function buildConversationMessagePayload({
   imageGenerationSetApplication?: AssetImageGenerationSetApplication;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
   sourceResolutionSelection?: AssetSourceResolutionSelection;
+  sceneSourceDecision?: AssetSceneSourceDecision;
+  sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
+  directorProductionPlan?: AssetDirectorProductionPlan;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -574,6 +587,28 @@ export function buildConversationMessagePayload({
       source_resolution_selection: {
         resolution_id: sourceResolutionSelection.resolutionId,
         asset_id: sourceResolutionSelection.assetId,
+      },
+    } : {}),
+    ...(sceneSourceDecision ? {
+      scene_source_decision: {
+        director_asset_id: sceneSourceDecision.directorAssetId,
+        director_version_id: sceneSourceDecision.directorVersionId,
+        scene_id: sceneSourceDecision.sceneId,
+        action: sceneSourceDecision.action,
+        ...(sceneSourceDecision.sourceAssetId ? { source_asset_id: sceneSourceDecision.sourceAssetId } : {}),
+      },
+    } : {}),
+    ...(sceneImageGenerationRequest ? {
+      scene_image_generation_request: {
+        director_asset_id: sceneImageGenerationRequest.directorAssetId,
+        director_version_id: sceneImageGenerationRequest.directorVersionId,
+        scene_id: sceneImageGenerationRequest.sceneId,
+      },
+    } : {}),
+    ...(directorProductionPlan ? {
+      director_production_plan: {
+        director_asset_id: directorProductionPlan.directorAssetId,
+        base_content_hash: directorProductionPlan.baseContentHash,
       },
     } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
@@ -808,6 +843,13 @@ export type AssetWorkspaceAdapter = {
   getNewConversation(): AssetConversation;
   getWorkshop(view: Exclude<AssetWorkspaceView, "conversation">): AssetWorkshop;
   getProductText(product: AssetProduct): string;
+  importDirectorDraft(args: {
+    token: string;
+    source: LibraryRow;
+    conversationId: string;
+    referenceAssetIds: number[];
+    legacyReferenceMappings: Record<string, number>;
+  }): Promise<ContentAsset>;
   saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
   saveTextEdit(args: {
     token: string;
@@ -818,6 +860,8 @@ export type AssetWorkspaceAdapter = {
     | { kind: "saved"; product: AssetProduct }
     | { kind: "structural_change"; message: string; changes: Record<string, unknown> }
   >;
+  retryDirectorReview(token: string, product: AssetProduct): Promise<AssetProduct>;
+  ignoreDirectorReviewSuggestion(token: string, product: AssetProduct, findingId: string): Promise<AssetProduct>;
   // Backend-backed operations. Without an API, callers render an explicit
   // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
@@ -877,6 +921,9 @@ export type AssetWorkspaceAdapter = {
     imageGenerationSetApplication?: AssetImageGenerationSetApplication;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
     sourceResolutionSelection?: AssetSourceResolutionSelection;
+    sceneSourceDecision?: AssetSceneSourceDecision;
+    sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
+    directorProductionPlan?: AssetDirectorProductionPlan;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -897,6 +944,11 @@ export type AssetWorkspaceAdapter = {
     agentAction: AgentActionRunResponse | null;
     requirementSnapshot?: ProjectRequirementSnapshot | null;
   } | null>;
+  searchScenePublicCandidate(token: string, decision: AssetSceneSourceDecision): Promise<{
+    directorVersionId: number;
+    candidate: AssetScenePublicCandidate;
+  }>;
+  selectScenePublicCandidate(token: string, decision: AssetSceneSourceDecision, candidateId: string): Promise<{ directorVersionId: number }>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   regenerateGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
@@ -978,6 +1030,10 @@ export type AssetWorkspaceAdapter = {
     onProgress?: (state: BatchUploadItemState) => void,
   ): Promise<ContentAsset[]>;
   getLatestAssetIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
+  reviewSceneImageFit(token: string, assetId: number, target: {
+    conversation_id: string; director_asset_id: number;
+    director_version_id: number; scene_id: string;
+  }): Promise<SceneImageFitAdvice>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
@@ -1032,6 +1088,19 @@ export async function retryConversationDetailLoad<T>(
     return load();
   }
 }
+
+export type SceneImageFitAdvice = {
+  status: "match" | "partial" | "mismatch" | "unavailable";
+  source_asset_id: number;
+  director_version_id: number;
+  scene_id: string;
+  evidence: string;
+  matched_required_elements: string[];
+  missing_required_elements: string[];
+  excluded_elements_present: string[];
+  technical_quality: { publishable?: boolean; reason?: string } | null;
+  error_code: string;
+};
 
 export type VideoJobStepResult = {
   key: string;
@@ -1348,6 +1417,9 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
+    contentHash: asset.content_hash ?? undefined,
+    sourceTypeCode: asset.source_type,
+    fullBody: asset.body,
     title: normalizeAssetTitle(asset.title),
     meta: asset.asset_kind === "asset" ? `${contentTypeLabel(asset)} · ${status}` : `${category} · ${status}`,
     note: understandingCaption || (asset.body ?? "").replace(/\s+/g, " ").trim().slice(0, 120) || "（无摘要）",
@@ -1473,6 +1545,20 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     getProductText(product) {
       return (product.body && product.body.length > 0 ? product.body : [product.summary]).join("\n\n");
     },
+    async importDirectorDraft({ token, source, conversationId, referenceAssetIds, legacyReferenceMappings }) {
+      if (!source.assetId || !source.contentHash) {
+        throw new Error("来源文案缺少可校验版本，请刷新后重试。");
+      }
+      return api<ContentAsset>(`/assets/${source.assetId}/director-draft-import`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          base_content_hash: source.contentHash,
+          reference_asset_ids: referenceAssetIds,
+          legacy_reference_mappings: legacyReferenceMappings,
+        }),
+      });
+    },
     async saveProduct(product, token) {
       if (isApiConfigured && token && product.backendAssetId) {
         await api<unknown>(`/assets/${product.backendAssetId}`, token, {
@@ -1519,6 +1605,22 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         );
       }
       return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
+    },
+    async retryDirectorReview(token, product) {
+      if (!product.backendAssetId || !product.contentHash) throw new Error("请刷新编导稿后重试审查。");
+      const updated = await api<ContentAsset>(
+        `/assets/${product.backendAssetId}/director-review/retry`, token,
+        { method: "POST", body: JSON.stringify({ base_content_hash: product.contentHash }) },
+      );
+      return contentAssetToProduct(updated);
+    },
+    async ignoreDirectorReviewSuggestion(token, product, findingId) {
+      if (!product.backendAssetId || !product.contentHash) throw new Error("请刷新编导稿后再操作。");
+      const updated = await api<ContentAsset>(
+        `/assets/${product.backendAssetId}/director-review/findings/${encodeURIComponent(findingId)}/ignore`, token,
+        { method: "POST", body: JSON.stringify({ base_content_hash: product.contentHash }) },
+      );
+      return contentAssetToProduct(updated);
     },
     isBackendEnabled() {
       return isApiConfigured;
@@ -1695,9 +1797,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       imageGenerationSetApplication,
       sourceSubtitleMode,
       sourceResolutionSelection,
+      sceneSourceDecision,
+      sceneImageGenerationRequest,
+      directorProductionPlan,
       signal,
     }) {
-      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse & {
@@ -1733,6 +1838,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           imageGenerationSetApplication,
           sourceSubtitleMode,
           sourceResolutionSelection,
+          sceneSourceDecision,
+          sceneImageGenerationRequest,
+          directorProductionPlan,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
@@ -1756,6 +1864,43 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           ? mapProjectRequirementSnapshot(response.requirement_snapshot)
           : null,
       };
+    },
+    async searchScenePublicCandidate(token, decision) {
+      const response = await api<{ director_version_id: number; candidate: {
+        candidate_id: string; preview_url: string; title: string; provider: string;
+        license: string; attribution_url: string;
+      } }>("/assets/director-scene-public-search", token, {
+        method: "POST",
+        body: JSON.stringify({
+          director_asset_id: decision.directorAssetId,
+          director_version_id: decision.directorVersionId,
+          scene_id: decision.sceneId,
+          action: "search_public",
+        }),
+      });
+      return {
+        directorVersionId: response.director_version_id,
+        candidate: {
+          candidateId: response.candidate.candidate_id,
+          previewUrl: response.candidate.preview_url,
+          title: response.candidate.title,
+          provider: response.candidate.provider,
+          license: response.candidate.license,
+          attributionUrl: response.candidate.attribution_url,
+        },
+      };
+    },
+    async selectScenePublicCandidate(token, decision, candidateId) {
+      const response = await api<{ director_version_id: number }>("/assets/director-scene-public-select", token, {
+        method: "POST",
+        body: JSON.stringify({
+          director_asset_id: decision.directorAssetId,
+          director_version_id: decision.directorVersionId,
+          scene_id: decision.sceneId,
+          candidate_id: candidateId,
+        }),
+      });
+      return { directorVersionId: response.director_version_id };
     },
     async reconcileMessage({ token, clientRequestId }) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
@@ -2011,6 +2156,11 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async getLatestAssetIngestJob(token, assetId) {
       return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
+    },
+    async reviewSceneImageFit(token, assetId, target) {
+      return api<SceneImageFitAdvice>(`/assets/${assetId}/scene-fit`, token, {
+        method: "POST", body: JSON.stringify(target),
+      });
     },
     async createWebCapture(token, payload) {
       return api<ContentAsset>("/assets/web-captures", token, {

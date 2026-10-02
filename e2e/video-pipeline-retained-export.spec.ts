@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type APIResponse, type Page, type Route } from "@playwright/test";
 
 import {
   bindVideoBenchmarkRun,
@@ -130,10 +130,15 @@ async function waitForCompletedProject(
   token: string,
 ): Promise<ProjectAsset> {
   await expect.poll(async () => {
-    const response = await page.request.get(
-      `${value.backendUrl}/v1/video/projects/${value.projectAssetId}`,
-      { headers: { authorization: `Bearer ${token}` } },
-    );
+    let response: APIResponse;
+    try {
+      response = await page.request.get(
+        `${value.backendUrl}/v1/video/projects/${value.projectAssetId}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+    } catch (error) {
+      return `transport-error:${error instanceof Error ? error.name : "unknown"}`;
+    }
     if (!response.ok()) return `http-${response.status()}`;
     const project = await response.json() as {
       product_status?: string;
@@ -589,10 +594,10 @@ test("opens and exports the completed retained video project", async ({ page }) 
       String((scene.primary_visual as { artifact_ref?: unknown } | undefined)?.artifact_ref ?? ""),
     ]),
   );
-  const sourceMix = (project.metadata?.asset_manifest?.scenes ?? []).reduce<Record<string, number>>(
+  const sourceMix = (project.metadata?.video_plan?.scenes ?? []).reduce<Record<string, number>>(
     (counts, scene) => {
       const sourceType = String(
-        (scene.selected_asset as { source_type?: unknown } | undefined)?.source_type ?? "unknown",
+        (scene.primary_visual as { source_type?: unknown } | undefined)?.source_type ?? "unknown",
       );
       counts[sourceType] = (counts[sourceType] ?? 0) + 1;
       return counts;

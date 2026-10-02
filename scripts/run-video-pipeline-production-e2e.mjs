@@ -37,6 +37,8 @@ if (process.argv.slice(2).some((argument) => argument === "--help" || argument =
 Optional arguments:
   --recompose                 Verify one scene recomposition after project readiness.
   --resume <run-id>           Resume an explicitly retained E2E run.
+  --resume-editable <run-id>  Resume a reviewed editable director draft to production planning.
+  --resume-produced <run-id>  Continue a reviewed director from its latest valid production job or restore its reviewed version, then proceed through project and export.
 
 Core environment variables:
   VIDEO_PIPELINE_VIDEO_TYPE   One production E2E profile: explainer, source_excerpt, or presenter. Recovered from a retained manifest on --resume.
@@ -158,6 +160,8 @@ const mgTestTarget = resolveMgTestTarget(process.env);
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
 const visionPort = Number(process.env.VIDEO_PIPELINE_VISION_PORT ?? 8428);
+const separateGenerationWorker = process.env.VIDEO_PIPELINE_SEPARATE_GENERATION_WORKER === "true";
+const redisPort = Number(process.env.VIDEO_PIPELINE_REDIS_PORT ?? 6398);
 const configuredVisionServiceUrl = (
   process.env.VIDEO_PIPELINE_VISION_SERVICE_URL
   ?? canonicalEnv.MULTIMIX_VISION_SERVICE_URL
@@ -218,10 +222,19 @@ if (
 }
 const visionServiceUrl = configuredVisionServiceUrl
   || `http://127.0.0.1:${visionPort}`;
-const resumeArgIndex = process.argv.indexOf("--resume");
+const editableResumeArgIndex = process.argv.indexOf("--resume-editable");
+const resumeEditable = editableResumeArgIndex >= 0;
+const producedResumeArgIndex = process.argv.indexOf("--resume-produced");
+const resumeProduced = producedResumeArgIndex >= 0;
+if ([resumeEditable, resumeProduced, process.argv.includes("--resume")].filter(Boolean).length > 1) {
+  throw new Error("Choose one retained resume mode.");
+}
+const resumeArgIndex = resumeEditable
+  ? editableResumeArgIndex : resumeProduced
+    ? producedResumeArgIndex : process.argv.indexOf("--resume");
 const resumeRunId = resumeArgIndex >= 0 ? process.argv[resumeArgIndex + 1] : "";
 if (resumeArgIndex >= 0 && (!resumeRunId || resumeRunId.startsWith("--"))) {
-  throw new Error("--resume requires a retained VIDEO_PIPELINE_RUN_ID");
+  throw new Error("Retained resume requires a VIDEO_PIPELINE_RUN_ID");
 }
 const isResume = resumeArgIndex >= 0;
 const retainedRunState = isResume
@@ -1191,7 +1204,31 @@ function startProcess(command, args, cwd, env, logName) {
     logPath: path.join(resultDir, logName),
   });
   children.push(started);
+  started.child.once("exit", (code, signal) => {
+    lifecycle.record(`process_${logName}`, "exited", {
+      processId: started.child.pid,
+      exitCode: code,
+      signal,
+    });
+  });
   return started.child;
+}
+
+async function waitForTcpListener(port, child, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode != null) {
+      throw new Error(`Test listener ${port} exited with ${child.exitCode}`);
+    }
+    const connected = await new Promise((resolve) => {
+      const socket = net.connect({ host: "127.0.0.1", port });
+      socket.once("connect", () => { socket.destroy(); resolve(true); });
+      socket.once("error", () => { socket.destroy(); resolve(false); });
+    });
+    if (connected) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for test listener ${port}`);
 }
 
 async function waitForVerifiedBackend(backend, databaseFingerprint) {
@@ -1550,6 +1587,141 @@ async function recoverRetainedDirectorJob(backendEnv) {
     `${JSON.stringify(result, null, 2)}\n`,
   );
   return result;
+}
+
+async function readRetainedEditableDirectorSeed(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetConversationMessage, AssetGenerationJob, ContentAsset, User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " assert jobs and jobs[0].status=='completed', 'editable resume requires a completed source director job'",
+    " job=jobs[0]",
+    " production_jobs=[item for item in jobs[1:] if (item.request_payload or {}).get('requested_capability')=='video_script' and int((item.request_payload or {}).get('selected_product_id') or 0)==job.result_asset_id]",
+    " assert all(item.status=='failed' and item.result_asset_id is None for item in production_jobs), 'editable resume history contains another live or completed production job'",
+    " source_choice_jobs=[item for item in production_jobs if item.error_code=='source_choice_required']",
+    " failed_production_job=(source_choice_jobs or production_jobs)[-1] if production_jobs else None",
+    " assert not db.query(VideoRenderJob).first(), 'editable resume has already started a video project'",
+    " director=db.get(ContentAsset, job.result_asset_id)",
+    " assert director is not None and director.content_type=='video_script' and director.status=='draft' and director.generation_state=='director_script_draft', 'editable director identity changed'",
+    " meta=dict(director.metadata_json or {})",
+    " review=dict(meta.get('director_review') or {})",
+    " plan=dict(meta.get('video_plan') or {})",
+    " scenes=[s for s in plan.get('scenes') or [] if isinstance(s, dict)]",
+    " assert (meta.get('director_draft_phase'),review.get('status')) in {('editable_reviewed','reviewed'),('editable_unreviewed','pending')}, 'editable draft is neither reviewed nor recoverable pending'",
+    " assert scenes and len(scenes)==len(plan.get('scenes') or []), 'editable scenes are incomplete'",
+    " assert not any(isinstance(f,dict) and f.get('kind')=='hard' and f.get('status')=='open' for f in review.get('findings') or []), 'editable draft has open hard findings'",
+    " conv=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conv is not None and user is not None and director.user_id==user.id and conv.user_id==user.id, 'editable ownership changed'",
+    " messages=db.query(AssetConversationMessage).filter(AssetConversationMessage.conversation_id==conv.id).order_by(AssetConversationMessage.id).all()",
+    " assert any(item.role=='assistant' and item.asset_id==director.id for item in messages), 'editable director has no conversation result'",
+    " print(json.dumps({'email':user.email,'conversationId':conv.public_id,'directorAssetId':director.id,'directorContentHash':director.content_hash,'generationJobId':job.public_id,'failedProductionJobId':failed_production_job.public_id if failed_production_job else None,'expectedSceneCount':len(scenes),'reviewStatus':review.get('status')},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot, env: backendEnv,
+  });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed,
+    backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026",
+    resultDir,
+    directorJobTimeoutMs,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-editable-director-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
+}
+
+async function readRetainedProducedDirectorSeed(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetGenerationJob, ContentAsset, ContentAssetVersion, User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " completed=[j for j in jobs if j.status=='completed' and (j.request_payload or {}).get('request_context',{}).get('promote_saved_director_draft') is True and j.result_asset_id]",
+    " assert completed, 'no completed reviewed-director production job'",
+    " job=completed[-1]",
+    " assert not db.query(VideoRenderJob).first(), 'video project has already started'",
+    " director=db.get(ContentAsset,job.result_asset_id)",
+    " assert director is not None and director.id==(job.request_payload or {}).get('selected_product_id') and director.content_type=='video_script' and director.generation_state=='director_script_draft', 'produced director identity changed'",
+    " versions=db.query(ContentAssetVersion).filter_by(asset_id=director.id).order_by(ContentAssetVersion.version).all()",
+    " assert versions and versions[-1].content_hash==director.content_hash, 'current director version drifted'",
+    " reviewed=[v for v in versions if (v.metadata_json or {}).get('director_draft_phase')=='editable_reviewed' and ((v.metadata_json or {}).get('director_review') or {}).get('status')=='reviewed']",
+    " assert reviewed, 'no reviewed source version remains'",
+    " source=reviewed[-1]",
+    " prior=completed[-2] if len(completed)>1 else None",
+    " current_metadata=director.metadata_json or {}",
+    " finished_current=prior is not None and source.id!=versions[-1].id and current_metadata.get('director_draft_phase')!='editable_reviewed' and (job.request_payload or {}).get('request_context',{}).get('expected_director_version_id')==source.id and job.result_asset_id==director.id",
+    " failed=[j for j in jobs if j.id>job.id and j.status=='failed' and j.result_asset_id is None and (j.request_payload or {}).get('request_context',{}).get('promote_saved_director_draft') is True and (j.request_payload or {}).get('selected_product_id')==director.id and (j.request_payload or {}).get('request_context',{}).get('expected_director_version_id')==source.id]",
+    " retry=failed[-1] if failed and source.id==versions[-1].id and not finished_current else None",
+    " assert retry is None or (retry.user_id==job.user_id and retry.conversation_id==job.conversation_id), 'failed production job ownership changed'",
+    " source_scenes=((source.metadata_json or {}).get('video_plan') or {}).get('scenes') or []",
+    " current_scenes=((director.metadata_json or {}).get('video_plan') or {}).get('scenes') or []",
+    " assert source_scenes and len(source_scenes)==len(current_scenes), 'director scene structure changed'",
+    " chosen={s.get('id'): (s.get('asset_reference') or {}).get('chosen_asset_id') for s in source_scenes if (s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image'}",
+    " assert all((s.get('asset_reference') or {}).get('chosen_asset_id')==chosen[s.get('id')] for s in current_scenes if s.get('id') in chosen), 'confirmed image identity changed'",
+    " assert not finished_current or all((s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image' for s in current_scenes if s.get('id') in chosen), 'completed production lost user source choice'",
+    " conversation=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conversation is not None and user is not None and director.user_id==user.id and conversation.user_id==user.id, 'produced director ownership changed'",
+    " print(json.dumps({'email':user.email,'conversationId':conversation.public_id,'directorAssetId':director.id,'directorContentHash':source.content_hash,'restoreReviewedVersionId':None if retry or finished_current else source.id,'failedProductionJobId':retry.public_id if retry else None,'completedProductionJobId':job.public_id if finished_current else None,'previousProductionJobId':prior.public_id if finished_current else job.public_id,'expectedSceneCount':len(source_scenes),'reviewStatus':'reviewed','expectedSelectedImageIds':chosen},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot, env: backendEnv,
+  });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed, backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026", resultDir, directorJobTimeoutMs,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-produced-director-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
+}
+
+async function readRetainedProducedConfirmationSeed(backendEnv, previousSeed) {
+  const script = [
+    "import json,sys",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetGenerationJob, ContentAsset, User, VideoRenderJob",
+    "expected=json.loads(sys.argv[1])",
+    "with SessionLocal() as db:",
+    " assert not db.query(VideoRenderJob).first(), 'video project already started'",
+    " old=db.query(AssetGenerationJob).filter_by(public_id=expected['previousProductionJobId']).one()",
+    " assert old.status=='completed' and old.result_asset_id==expected['directorAssetId'], 'previous production job changed'",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " job=jobs[-1]",
+    " assert job.id!=old.id and job.status=='completed' and job.result_asset_id==expected['directorAssetId'], 'new production job incomplete'",
+    " director=db.get(ContentAsset,job.result_asset_id)",
+    " metadata=dict(director.metadata_json or {})",
+    " plan=dict(metadata.get('video_plan') or {})",
+    " policy=dict(plan.get('video_parameters') or {})",
+    " profile=dict(plan.get('creative_profile') or {})",
+    " scenes=plan.get('scenes') or []",
+    " assert director.content_hash!=expected['directorContentHash'] and metadata.get('director_draft_phase') is None and len(scenes)==expected['expectedSceneCount'], 'produced director state invalid'",
+    " assert policy.get('schema_version')=='video_creation_policy:v1' and policy.get('confirmed') is True, 'delivery policy not frozen'",
+    " assert profile.get('schema_version')=='video_creative_profile:v1', 'creative profile missing'",
+    " chosen=expected.get('expectedSelectedImageIds') or {}",
+    " assert all((s.get('asset_reference') or {}).get('chosen_asset_id')==chosen[s.get('id')] and (s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image' for s in scenes if s.get('id') in chosen), 'confirmed image source was not preserved'",
+    " conv=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conv is not None and user is not None and conv.public_id==expected['conversationId'] and user.email==expected['email'], 'confirmation identity changed'",
+    " print(json.dumps({'email':user.email,'conversationId':conv.public_id,'directorAssetId':director.id,'directorContentHash':director.content_hash,'expectedSceneCount':len(scenes),'ratio':policy.get('ratio'),'targetSeconds':policy.get('target_seconds'),'aiVoiceEnabled':policy.get('ai_voice_enabled'),'voiceSource':policy.get('voice_source'),'preserveSourceAudioBefore':profile.get('preserve_source_audio'),'generationJobId':job.public_id,'generationAttempts':job.attempts},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand,
+    ["-c", script, JSON.stringify(previousSeed)], { cwd: backendRoot, env: backendEnv });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed, backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026", resultDir,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-produced-confirmation-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
 }
 
 async function readRetainedDirectorConfirmationSeed(
@@ -2050,12 +2222,12 @@ async function writeQaReport() {
   const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
     + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- ${qaSceneCount} 镜主轨：通过\n- 待补素材：未出现\n`
-    + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
+    + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 镜${requirePublicAsset ? "（本场景必需）" : ""}\n`
     + `- 交付边界：${singleImageCreativeDraft ? "创意草稿（非公开、非黄金基线）" : "按本次验收模式"}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 可行动 console error：${actionableErrors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
     + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
     + `- 分镜关键帧：keyframes/keyframe-*.png\n\n`
-    + `## 覆盖范围\n\n- 本测试证明真实上传、对话、确认、worker、${qaSceneCount} 镜落库和正式导出链路。\n`
+    + `## 覆盖范围\n\n- 本次覆盖 ${inputProfile} 输入路径、确认、worker、${qaSceneCount} 镜落库和正式导出；${resumeReuse ? "上游已完成阶段按有效断点复用。" : "上游生成按本次执行记录验收。"}\n`
     + (singleImageCreativeDraft
       ? "- 单图结果仅证明创意草稿与技术链路可用；不证明素材多样性、事实完整性、授权完整性或可公开发布。\n"
       : "");
@@ -2194,6 +2366,7 @@ try {
   await assertPortFree(backendPort);
   await assertPortFree(frontendPort);
   if (!usesExternalVisionService) await assertPortFree(visionPort);
+  if (separateGenerationWorker) await assertPortFree(redisPort);
 
   const providerProxyHosts = ["www.pexels.com", "videos.pexels.com", "images.pexels.com"];
   providerProxy = await startProviderEgressProxy(providerProxyHosts);
@@ -2317,7 +2490,7 @@ try {
     MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
     MULTIMIX_TEST_LLM_SNAPSHOT_DIR: path.join(artifactDir, "llm-requests"),
     MULTIMIX_ASSET_GENERATION_QUEUE_ENABLED: "true",
-    MULTIMIX_REDIS_URL: "redis://127.0.0.1:6398/15",
+    MULTIMIX_REDIS_URL: `redis://127.0.0.1:${redisPort}/15`,
     MULTIMIX_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
     MULTIMIX_LLM_API_KEY: effectiveLlmConfig.apiKey ?? "",
     MULTIMIX_LLM_MODEL: effectiveLlmConfig.model ?? "",
@@ -2366,6 +2539,22 @@ try {
   if (isResume) {
     await restoreCheckpointedRemoteArtifacts(backendEnv);
   }
+  let generationWorker;
+  if (separateGenerationWorker) {
+    await lifecycle.measure("generation_queue_startup", async () => {
+      const redis = startProcess(
+        "redis-server",
+        ["--bind", "127.0.0.1", "--port", String(redisPort),
+          "--save", "", "--appendonly", "no"],
+        backendRoot, process.env, "redis.log",
+      );
+      await waitForTcpListener(redisPort, redis);
+      generationWorker = startProcess(
+        pythonCommand, ["-m", "app.worker", "asset-generation-work", "--simple"],
+        backendRoot, backendEnv, "generation-worker.log",
+      );
+    });
+  }
   let vision;
   await lifecycle.measure("vision_service_startup", async () => {
     if (!usesExternalVisionService) {
@@ -2408,7 +2597,123 @@ try {
     );
     await waitForVerifiedBackend(backend, databaseFingerprint);
   });
-  if (isResume) {
+  if (resumeEditable) {
+    let seed;
+    for (let attempt = 0; attempt < (separateGenerationWorker ? 30 : 1); attempt += 1) {
+      try {
+        seed = await readRetainedEditableDirectorSeed(backendEnv);
+        break;
+      } catch (error) {
+        if (
+          !separateGenerationWorker
+          || !String(error).includes("editable resume history contains another live")
+          || generationWorker?.exitCode != null
+          || attempt === 29
+        ) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot,
+        frontendEnv,
+        "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    await lifecycle.measure("retained_editable_director", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-editable.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-editable"),
+          VIDEO_PIPELINE_RETAINED_EDITABLE_SEED: JSON.stringify(seed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    lifecycle.record("worker", "editable_director_promoted");
+  } else if (resumeProduced) {
+    const previousSeed = await readRetainedProducedDirectorSeed(backendEnv);
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot, frontendEnv, "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    if (!previousSeed.completedProductionJobId) await lifecycle.measure("retained_produced_director", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-editable.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-produced"),
+          VIDEO_PIPELINE_RETAINED_EDITABLE_SEED: JSON.stringify(previousSeed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    lifecycle.record("worker", previousSeed.completedProductionJobId
+      ? "produced_director_reused" : "produced_director_replanned");
+    const confirmationSeed = await readRetainedProducedConfirmationSeed(backendEnv, previousSeed);
+    const providerRequestEvidenceBefore = snapshotProviderRequestEvidence();
+    await lifecycle.measure("retained_director_confirmation", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-confirmation.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-confirmation"),
+          VIDEO_PIPELINE_RETAINED_CONFIRMATION_SEED: JSON.stringify(confirmationSeed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    await verifyResumedVideoJob(backendEnv);
+    assertProviderRequestEvidenceUnchanged(providerRequestEvidenceBefore);
+    lifecycle.record("worker", "director_confirmed_and_verified");
+    const retainedExportSeed = await readRetainedExportSeed(backendEnv);
+    qaSceneCount = retainedExportSeed.expectedSceneCount;
+    await lifecycle.measure("playwright", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-export.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-export"),
+          VIDEO_PIPELINE_RETAINED_EXPORT_SEED: JSON.stringify(retainedExportSeed),
+          VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
+          VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
+          VIDEO_PIPELINE_GENERATION_INSTRUCTION: generationInstructionOverride,
+          VIDEO_PIPELINE_BENCHMARK_CASE: benchmarkCase ? JSON.stringify(benchmarkCase) : "",
+          VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES: JSON.stringify(benchmarkSourceIdentities),
+          VIDEO_PIPELINE_REFERENCE_REVIEW: benchmarkReference
+            ? JSON.stringify(benchmarkReference) : "",
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    await lifecycle.measure("candidate_video_verification", () => verifyCandidateVideo());
+    await lifecycle.measure("qa_report", () => writeQaReport());
+    lifecycle.record("playwright", "passed");
+  } else if (isResume) {
     await recoverRetainedDirectorJob(backendEnv);
     const retainedDirectorRetrySeed = await readRetainedDirectorRetrySeed(backendEnv);
     const expectedRetainedDirectorAttempts = retainedDirectorRetrySeed

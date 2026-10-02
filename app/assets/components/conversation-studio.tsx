@@ -12,7 +12,7 @@ import {
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
-import { mergeVisibleConversationMessages, optimisticImageGenerationSteps, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
+import { mergeVisibleConversationMessages, optimisticDirectorDraftSteps, optimisticImageGenerationSteps, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import {
   formatComposerError,
@@ -55,6 +55,8 @@ import { confirmVideoStoryboard } from "../lib/video-storyboard-client";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
+import CreativeDirectionSelector from "./creative-direction-selector";
+import { isFiveLayerVideoPlan, isPresenterSourceVideoPlan } from "../lib/video-creative-profile";
 import { requirementConversationMediaFromValue, type ImageToVideoCostSummary, type NarrationUsageSummary } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
@@ -115,7 +117,7 @@ export type ChatImageAttachment = {
 const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
 const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
 const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。";
-const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后可直接发送，再选择是否先整理成片段。";
+const ATTACHMENT_HELP_TEXT = "图片和文档会先保存并理解；说出目标或用途后，我会建议作为画面、参考或需求证据，不会因上传就用于某个分镜。添加视频后可直接发送，再选择是否先整理成片段。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -379,6 +381,7 @@ export default function ConversationStudio({
   selectedConversation,
   selectedProduct,
   onSelectProduct,
+  onApplyCreativeDirection,
   selectedImageFrameIds = {},
   onSelectImageFrame,
   imageAttachments = [],
@@ -394,6 +397,7 @@ export default function ConversationStudio({
   generationJobConnectionLostById = {},
   onRetryGeneration,
   onCancelGeneration,
+  onOpenGenerationSourceScene,
   liveRunStateByAssetId,
   onRetryExecution,
   liveAgentActionsById,
@@ -416,6 +420,7 @@ export default function ConversationStudio({
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
+  onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
   selectedImageFrameIds?: Record<string, string>;
   onSelectImageFrame?: (productId: string, frameId: string) => void;
   imageAttachments?: ChatImageAttachment[];
@@ -454,6 +459,7 @@ export default function ConversationStudio({
   generationJobConnectionLostById?: Record<string, boolean>;
   onRetryGeneration?: (jobId: string) => void;
   onCancelGeneration?: (jobId: string) => void;
+  onOpenGenerationSourceScene?: (sourceAssetId: number, sceneId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
   // to the same card while exact failed main/MG child jobs are retried.
   liveRunStateByAssetId?: Record<number, {
@@ -567,6 +573,20 @@ export default function ConversationStudio({
     () => mapProductsToConversationMessages(visibleConversationMessages, products),
     [visibleConversationMessages, products]
   );
+  const selectedPlan = selectedProduct?.metadata?.video_plan;
+  const selectedCreativeDirection = selectedProduct
+    && ["video_script", "short_video_narration"].includes(selectedProduct.contentType ?? "")
+    && isFiveLayerVideoPlan(selectedPlan)
+    && !isPresenterSourceVideoPlan(selectedPlan)
+    && selectedPlan && typeof selectedPlan === "object" && !Array.isArray(selectedPlan)
+    ? (selectedPlan as Record<string, unknown>).creative_direction
+    : null;
+  const directionMessageIndex = selectedCreativeDirection
+    ? [...productCardsByMessageIndex.entries()]
+      .filter(([, linkedProducts]) => linkedProducts.some((product) => product.id === selectedProduct?.id))
+      .map(([index]) => index)
+      .at(-1)
+    : undefined;
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = `${COMPOSER_MIN_HEIGHT}px`;
@@ -896,7 +916,9 @@ export default function ConversationStudio({
                 }]
             : isImageGenerationConfirmation
               ? optimisticImageGenerationSteps()
-              : optimisticVideoProjectSteps(),
+              : isVideoParameterConfirmation
+                ? optimisticDirectorDraftSteps()
+                : optimisticVideoProjectSteps(),
           confirmationPlanKey: planKey,
         },
         clientRequestId: globalThis.crypto.randomUUID(),
@@ -977,6 +999,20 @@ export default function ConversationStudio({
     const onFocusComposer = () => {
       composerRef.current?.focus();
     };
+    const onPrepareComposer = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        utterance?: string;
+        openImageUpload?: boolean;
+      }>).detail;
+      if (readonly || !writeCapabilities.canGenerate || !detail?.utterance?.trim()) return;
+      setComposerValue(detail.utterance.trim());
+      setAdjustHint(false);
+      if (detail.openImageUpload && canUpload) imageInputRef.current?.click();
+      requestAnimationFrame(() => {
+        composerRef.current?.focus();
+        if (composerRef.current) resizeComposer(composerRef.current);
+      });
+    };
     const onComposerSend = (event: Event) => {
       const detail = (event as CustomEvent<{
         utterance?: string;
@@ -1000,13 +1036,15 @@ export default function ConversationStudio({
       }
     };
     window.addEventListener("multimix:composer-focus", onFocusComposer);
+    window.addEventListener("multimix:composer-prepare", onPrepareComposer);
     window.addEventListener("multimix:composer-send", onComposerSend);
     return () => {
       window.removeEventListener("multimix:composer-focus", onFocusComposer);
+      window.removeEventListener("multimix:composer-prepare", onPrepareComposer);
       window.removeEventListener("multimix:composer-send", onComposerSend);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversation.id, sending, readonly, writeCapabilities.canGenerate]);
+  }, [selectedConversation.id, sending, readonly, canUpload, writeCapabilities.canGenerate]);
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
     if (!canUpload) return;
@@ -1219,9 +1257,14 @@ export default function ConversationStudio({
           const isImageGenerationTimeline = timelineSteps.some(
             (step) => step.key === "submit_image_generation",
           );
+          const isDirectorDraftTimeline = timelineSteps.some(
+            (step) => step.key === "prepare_director_draft",
+          );
           const boundProduct = message.assetId
             ? products.find((product) => product.backendAssetId === message.assetId)
             : undefined;
+          const isDirectorProduct = boundProduct?.contentType === "video_script"
+            || boundProduct?.contentType === "short_video_narration";
           const isVideoAgentAction = Boolean(
             liveAgentAction
             && boundProduct?.contentType === "video_project"
@@ -1444,7 +1487,12 @@ export default function ConversationStudio({
                 ) : (
                   <AgentRunTimeline
                     steps={timelineSteps}
-                    title={isImageGenerationTimeline ? "图片生成进度" : undefined}
+                    title={isImageGenerationTimeline ? "图片生成进度"
+                      : isDirectorDraftTimeline ? "编导稿准备进度"
+                        : isDirectorProduct ? "编导稿修改进度" : "任务进度"}
+                    completionLabel={isImageGenerationTimeline ? "图片已生成"
+                      : isDirectorDraftTimeline ? "编导稿已准备好"
+                        : isDirectorProduct ? "编导稿已更新" : "本次操作已完成"}
                     errorMessage={agentActionFailed
                       ? liveAgentAction.message
                       : liveRunState?.errorMessage
@@ -1471,6 +1519,7 @@ export default function ConversationStudio({
                   job={renderedGenerationJob}
                   onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
+                  onOpenSourceScene={onOpenGenerationSourceScene}
                   boundContentType={boundProduct?.contentType}
                   connectionLost={generationJobConnectionLostById[renderedGenerationJob.id] === true}
                   completionLabel={directorScriptUsedForVideoProject
@@ -1479,6 +1528,14 @@ export default function ConversationStudio({
                 />
               ) : null}
               {renderProductCards(index)}
+              {directionMessageIndex === index && selectedCreativeDirection ? (
+                <CreativeDirectionSelector
+                  key={selectedProduct?.id}
+                  direction={selectedCreativeDirection}
+                  disabled={sending || readonly}
+                  onApply={onApplyCreativeDirection}
+                />
+              ) : null}
               {(() => {
                 const suggestions = (message.plan?.status === "confirmed" ? [] : visibleSuggestions(message))
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))
@@ -1567,6 +1624,7 @@ export default function ConversationStudio({
               job={job}
               onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
               onCancel={onCancelGeneration}
+              onOpenSourceScene={onOpenGenerationSourceScene}
               connectionLost={generationJobConnectionLostById[job.id] === true}
             />
           ))}

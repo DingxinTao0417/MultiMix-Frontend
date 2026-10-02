@@ -19,6 +19,68 @@ import type {
 } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
+it("sends a project-bound versioned director import with explicit image mapping", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ id: 88 }), {
+      status: 201, headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const result = await assetWorkspaceAdapter.importDirectorDraft({
+      token: "token", source: {
+        assetId: 44, contentHash: "source-hash", title: "早餐店稿件",
+        kind: "copy", meta: "已入库", note: "原稿",
+      }, conversationId: "project-1", referenceAssetIds: [201],
+      legacyReferenceMappings: { "23": 201 },
+    });
+    expect(result.id).toBe(88);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/44/director-draft-import");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      conversation_id: "project-1", base_content_hash: "source-hash",
+      reference_asset_ids: [201], legacy_reference_mappings: { "23": 201 },
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("searches and selects a public scene candidate through separate version-bound APIs", async () => {
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      director_version_id: 8,
+      candidate: {
+        candidate_id: "safe-candidate", preview_url: "https://example.com/preview.jpg",
+        title: "早餐街景", provider: "Pexels", license: "Pexels License",
+        attribution_url: "https://example.com/source",
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ director_version_id: 9 }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const decision = { directorAssetId: 5, directorVersionId: 7, sceneId: "scene-2", action: "search_public" as const };
+    const found = await assetWorkspaceAdapter.searchScenePublicCandidate("token", decision);
+    expect(found.candidate.candidateId).toBe("safe-candidate");
+    expect(found.directorVersionId).toBe(8);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/director-scene-public-search");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      director_asset_id: 5, director_version_id: 7, scene_id: "scene-2", action: "search_public",
+    });
+    const selected = await assetWorkspaceAdapter.selectScenePublicCandidate("token", {
+      ...decision, directorVersionId: found.directorVersionId,
+    }, found.candidate.candidateId);
+    expect(selected.directorVersionId).toBe(9);
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe("/v1/assets/director-scene-public-select");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      director_asset_id: 5, director_version_id: 8, scene_id: "scene-2", candidate_id: "safe-candidate",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("maps the public video job's recorded cost without treating it as a bill", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
     id: "job-1", asset_id: 42, status: "running", workflow_stage: "video",
@@ -1022,6 +1084,92 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("translated_zh");
   });
 
+  it("binds a scene source decision to the current director version", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "第 2 镜尝试公共素材",
+      selectedProductId: 1397,
+      sceneSourceDecision: {
+        directorAssetId: 1397,
+        directorVersionId: 42,
+        sceneId: "scene-2",
+        action: "search_public",
+      },
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      scene_source_decision: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+        action: "search_public",
+      },
+    });
+  });
+
+  it("binds an explicit scene image candidate request without choosing public material", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "为本镜生成创意图片候选",
+      selectedProductId: 1397,
+      sceneImageGenerationRequest: {
+        directorAssetId: 1397, directorVersionId: 42, sceneId: "scene-2",
+      },
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      scene_image_generation_request: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+      },
+    });
+    expect(payload).not.toHaveProperty("scene_source_decision");
+  });
+
+  it("binds a selected project image to one scene and director version", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "第 2 镜使用选中的图片",
+      selectedProductId: 1397,
+      sceneSourceDecision: {
+        directorAssetId: 1397,
+        directorVersionId: 42,
+        sceneId: "scene-2",
+        action: "use_saved_asset",
+        sourceAssetId: 91,
+      },
+    });
+    expect(payload).toMatchObject({
+      scene_source_decision: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+        action: "use_saved_asset",
+        source_asset_id: 91,
+      },
+    });
+  });
+
+  it("binds production planning to the exact reviewed director draft", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "完善制作方案",
+      selectedProductId: 1397,
+      directorProductionPlan: {
+        directorAssetId: 1397,
+        baseContentHash: "saved-draft-v2",
+      },
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      director_production_plan: {
+        director_asset_id: 1397,
+        base_content_hash: "saved-draft-v2",
+      },
+    });
+  });
+
   it("serializes a bound video confirmation without requiring a BGM choice", () => {
     expect(
       buildConversationMessagePayload({
@@ -1782,6 +1930,27 @@ describe("runtime data boundary", () => {
         }),
       }),
     );
+    vi.unstubAllGlobals();
+  });
+
+  it("uses the saved director version for review retry and suggestion ignore", async () => {
+    const updated = asset({ id: 88, content_type: "video_script", content_hash: "same-hash" });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(JSON.stringify(updated), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const draft = { backendAssetId: 88, contentHash: "same-hash" } as AssetProduct;
+
+    await assetWorkspaceAdapter.retryDirectorReview("token", draft);
+    await assetWorkspaceAdapter.ignoreDirectorReviewSuggestion("token", draft, "finding-1");
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/assets/88/director-review/retry");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/v1/assets/88/director-review/findings/finding-1/ignore");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init).toEqual(expect.objectContaining({ method: "POST", body: JSON.stringify({ base_content_hash: "same-hash" }) }));
+    }
     vi.unstubAllGlobals();
   });
 

@@ -303,6 +303,7 @@ type GenerationProgressEvent = {
 
 type GenerationJobTimingSource = {
   status?: string;
+  result_asset_id?: number | null;
   updated_at?: string;
   progress_events?: GenerationProgressEvent[];
   timing_events?: Array<{
@@ -1680,6 +1681,57 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
     .toBe("completed"));
   } finally {
     recordDirectorSubstageTimings(latestGenerationJob);
+  }
+  if (latestGenerationJob?.result_asset_id) {
+    const draftAssetId = latestGenerationJob.result_asset_id;
+    const draftResponse = await page.request.get(
+      `${apiBase}/v1/assets/detail/${draftAssetId}`, { headers },
+    );
+    expect(draftResponse.ok(), `director draft read failed: ${draftResponse.status()}`).toBe(true);
+    let draftAsset = (await draftResponse.json() as { asset?: {
+      content_hash?: string;
+      metadata?: { director_draft_phase?: string; director_review?: { status?: string } };
+    } }).asset;
+    if (draftAsset?.metadata?.director_draft_phase?.startsWith("editable_")) {
+      await expect.poll(async () => {
+        const reviewResponse = await page.request.get(
+          `${apiBase}/v1/assets/detail/${draftAssetId}`, { headers },
+        );
+        if (!reviewResponse.ok()) return `http-${reviewResponse.status()}`;
+        draftAsset = (await reviewResponse.json() as { asset?: typeof draftAsset }).asset;
+        const state = draftAsset?.metadata?.director_review?.status;
+        if (state === "unavailable") {
+          throw new Error("editable director review became unavailable; use the product recovery action");
+        }
+        return state;
+      }, { timeout: 600_000, intervals: [1000, 2500, 5000] }).toBe("reviewed");
+      const continueButton = page.getByRole("button", { name: "完善制作方案" }).last();
+      await expect(continueButton).toBeVisible({ timeout: 180_000 });
+      const submission = page.waitForResponse(
+        (response) => response.request().method() === "POST"
+          && response.url().includes("/v1/assets/conversations/messages"),
+        { timeout: 180_000 },
+      );
+      await continueButton.click();
+      const response = await submission;
+      const responseText = await response.text();
+      expect(response.ok(), `director production planning failed to queue: ${response.status()} ${responseText}`).toBe(true);
+      const request = response.request().postDataJSON() as {
+        director_production_plan?: { director_asset_id?: number; base_content_hash?: string };
+      };
+      expect(request.director_production_plan).toMatchObject({
+        director_asset_id: draftAssetId,
+        base_content_hash: draftAsset.content_hash,
+      });
+      const result = JSON.parse(responseText) as { generation_job?: { id?: string } };
+      expect(result.generation_job?.id).toBeTruthy();
+      latestGenerationJob = await measureE2EStage("director_production_planning", () =>
+        waitForGenerationJob(page, {
+          apiBase, headers, jobId: result.generation_job!.id!,
+          stageLabel: "director production planning",
+        }));
+      recordDirectorSubstageTimings(latestGenerationJob);
+    }
   }
   const presenterDirectorResult = await confirmPresenterCleanupIfRequired(page, {
     apiBase,

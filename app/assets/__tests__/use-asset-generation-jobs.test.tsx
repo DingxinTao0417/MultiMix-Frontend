@@ -49,6 +49,30 @@ function deferred<T>() {
 }
 
 describe("useAssetGenerationJobs", () => {
+  it("restarts polling when a failed job is submitted again with the same ID", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
+      .mockResolvedValueOnce(generationJob({ status: "failed", progress_kind: "video_plan" }))
+      .mockResolvedValueOnce(generationJob({ status: "running" }));
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1", conversations: [],
+      onConversationRefreshed: vi.fn(), onConversationRefreshError: vi.fn(),
+    }));
+    act(() => result.current.registerJob("conversation-1", generationJob({
+      status: "failed", progress_kind: "video_plan",
+    })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(getGenerationJob).toHaveBeenCalledTimes(1);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("failed");
+
+    act(() => result.current.registerJob("conversation-1", generationJob({ status: "queued" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(getGenerationJob).toHaveBeenCalledTimes(2);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("running");
+    expect(result.current.jobsByConversation["conversation-1"]?.job.progress_kind).toBe("video_plan");
+  });
+
   it.each(["retry", "cancel"] as const)("retains persisted video purpose when a legacy %s response omits it", async (action) => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const response = generationJob({ status: action === "retry" ? "queued" : "cancelled" });
