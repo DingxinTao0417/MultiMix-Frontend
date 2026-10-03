@@ -17,7 +17,7 @@ import {
 } from "@/editor-engine/vendor/ExportButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
-import type { BGMChoice, BGMUpdateResponse } from "@/editor-engine/vendor/api";
+import { updateProjectBGM, type BGMAction, type BGMChoice, type BGMUpdateResponse } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import type { VideoQualityReport } from "@/app/assets/lib/video-quality";
@@ -30,7 +30,9 @@ import { getExportMimeType } from "@editor/lib/export";
 import { videoCache } from "@editor/services/video-cache/service";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
+import { ProjectRevisionClient, ProjectWriteError, saveVersionedProject } from "./project-revision-client";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
+import { observeVideoActivity } from "@/lib/product-activity";
 import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
   clearLocalExportMarker,
@@ -84,6 +86,7 @@ function errorMessageFromPayload(payload: unknown, fallback: string): string {
 
 type LoadedProject = {
   project: BackendProject;
+  projectFingerprint: string | null;
 };
 
 type VerifiedExportHooks = {
@@ -132,6 +135,7 @@ async function fetchProject(endpoint: string, token: string | null): Promise<Loa
   rememberRawProject(raw);
   return {
     project: unwrapProject(raw),
+    projectFingerprint: typeof data.project_fingerprint === "string" ? data.project_fingerprint : null,
   };
 }
 
@@ -191,6 +195,7 @@ export default function EditorView({
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [exportOperationActive, setExportOperationActive] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState("");
   const [isBgmPanelOpen, setIsBgmPanelOpen] = useState(false);
   const [standaloneExportState, setStandaloneExportState] = useState<ExportProgressState>({
@@ -205,11 +210,16 @@ export default function EditorView({
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
+  const projectRevisionRef = useRef(new ProjectRevisionClient());
   const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
   const recoverableStandaloneExportsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const activeExportAbortRef = useRef<AbortController | null>(null);
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const previewOnly = mode === "preview";
+  const observeInteractions = state === "ready" && saveState !== "saving"
+    && !exportOperationActive && ["idle", "completed", "error"].includes(standaloneExportState.phase);
+  useEffect(() => observeVideoActivity(token, assetId ? Number(assetId) : null, observeInteractions),
+    [token, assetId, observeInteractions]);
 
   useEffect(() => {
     tokenRef.current = token;
@@ -274,27 +284,29 @@ export default function EditorView({
     return () => window.clearInterval(timer);
   }, [embed, postToParent, state]);
 
-  const persistCurrentProject = useCallback(async (project?: BackendProject) => {
+  const persistCurrentProject = useCallback(async (project?: BackendProject): Promise<string> => {
     if (!assetId) throw new ProjectSaveError("缺少项目 ID");
-    const currentToken = getExportToken();
-    const body = project ?? serializeBackendProject(EditorCore.getInstance());
-    const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
-      },
-      body: JSON.stringify(body),
+    return projectRevisionRef.current.run(async (revision) => {
+      const body = project ?? serializeBackendProject(EditorCore.getInstance());
+      let nextRevision: string;
+      try {
+        nextRevision = await saveVersionedProject({
+          apiBase: API_BASE,
+          assetId,
+          token: getExportToken(),
+          revision,
+          project: body,
+        });
+      } catch (cause) {
+        if (cause instanceof ProjectWriteError) {
+          throw new ProjectSaveError(cause.message, qualityReportFromPayload(cause.payload));
+        }
+        throw cause;
+      }
+      rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
+      loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
+      return { result: nextRevision, revision: nextRevision };
     });
-    const payload = await res.json().catch(() => null) as unknown;
-    if (!res.ok) {
-      throw new ProjectSaveError(
-        errorMessageFromPayload(payload, `工程保存检查失败（HTTP ${res.status}）`),
-        qualityReportFromPayload(payload),
-      );
-    }
-    rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
-    loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
   }, [assetId, getExportToken]);
 
   const performVerifiedExport = useCallback(async (
@@ -307,6 +319,10 @@ export default function EditorView({
     const brandSpecVersion = exportVariant === "brand_showcase"
       ? BRAND_SHOWCASE_SPEC_VERSION
       : null;
+    if (!previewOnly && timelineFlushRef.current) {
+      const flushed = await timelineFlushRef.current();
+      if (flushed.status !== "saved") throw new Error(flushed.message);
+    }
     const serialized = serializeBackendProject(EditorCore.getInstance());
     const projectFingerprint = JSON.stringify(serialized);
     const currentProject = (
@@ -325,7 +341,9 @@ export default function EditorView({
     const currentToken = getExportToken();
     if (!assetId || !currentToken) throw new Error("缺少成片验证所需的项目身份信息");
 
-    await persistCurrentProject(currentProject);
+    const savedRevision = previewOnly
+      ? projectRevisionRef.current.current()
+      : await persistCurrentProject(currentProject);
     const preflightResponse = await fetch(
       `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/quality?stage=export_preflight`,
       { headers: { Authorization: `Bearer ${currentToken}` } },
@@ -433,6 +451,7 @@ export default function EditorView({
         apiBase: API_BASE,
         assetId,
         token: currentToken,
+        projectRevision: savedRevision,
         getToken: getExportToken,
         refreshToken: refreshExportToken,
         blob: candidate.blob,
@@ -485,6 +504,7 @@ export default function EditorView({
         confirmedToken,
       );
       loadedProjectRef.current = confirmedProject.project;
+      projectRevisionRef.current.load(confirmedProject.projectFingerprint);
       candidateBlobRef.current = null;
       return { blob: candidate.blob, report: verifiedReport, job: terminalJob };
     } finally {
@@ -492,11 +512,12 @@ export default function EditorView({
         activeExportAbortRef.current = null;
       }
     }
-  }, [assetId, getExportToken, persistCurrentProject, refreshExportToken]);
+  }, [assetId, getExportToken, persistCurrentProject, previewOnly, refreshExportToken]);
 
   const handleEmbeddedExport = useCallback(async (exportVariant: ExportVariant) => {
     if (exportBusyRef.current) return;
     exportBusyRef.current = true;
+    setExportOperationActive(true);
     const brandSpecVersion = exportVariant === "brand_showcase"
       ? BRAND_SHOWCASE_SPEC_VERSION
       : null;
@@ -550,6 +571,7 @@ export default function EditorView({
       });
     } finally {
       exportBusyRef.current = false;
+      setExportOperationActive(false);
     }
   }, [performVerifiedExport, postToParent]);
 
@@ -703,6 +725,26 @@ export default function EditorView({
     postToParent({ type: "multimix-editor-project-updated", reason: "bgm" });
   }, [postToParent]);
 
+  const prepareBgmChange = useCallback(async (): Promise<void> => {
+    if (timelineFlushRef.current) {
+      const flushed = await timelineFlushRef.current();
+      if (flushed.status !== "saved") throw new Error(flushed.message);
+    }
+    await persistCurrentProject();
+  }, [persistCurrentProject]);
+
+  const mutateBgm = useCallback(async (body: {
+    action: BGMAction;
+    catalog_id?: string;
+    catalog_version: string;
+  }): Promise<BGMUpdateResponse> => {
+    if (!assetId) throw new Error("缺少视频工程 ID");
+    return projectRevisionRef.current.run(async () => {
+      const result = await updateProjectBGM(assetId, getExportToken(), body);
+      return { result, revision: result.project_fingerprint ?? "" };
+    });
+  }, [assetId, getExportToken]);
+
   const handleSave = async () => {
     if (!assetId || saveState === "saving") return;
     setSaveState("saving");
@@ -742,6 +784,7 @@ export default function EditorView({
         recoverableStandaloneExportsRef.current.clear();
         setStandaloneExportBlobs({});
         loadedProjectRef.current = loadedProject.project;
+        projectRevisionRef.current.load(loadedProject.projectFingerprint);
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
         });
@@ -756,7 +799,7 @@ export default function EditorView({
         });
       }
     })();
-  }, [jobId, assetId, getExportToken, postToParent, token]);
+  }, [jobId, assetId, getExportToken, postToParent, previewOnly, token]);
 
   useEffect(() => {
     const currentToken = getExportToken();
@@ -985,7 +1028,8 @@ export default function EditorView({
                   initialChoice={projectBgmChoice(loadedProjectRef.current)}
                   open={isBgmPanelOpen}
                   onOpenChange={setIsBgmPanelOpen}
-                  onPrepareChange={persistCurrentProject}
+                  onPrepareChange={prepareBgmChange}
+                  onMutate={mutateBgm}
                   onProjectChanged={handleBgmProjectChanged}
                 />
               ) : null}
@@ -1000,6 +1044,7 @@ export default function EditorView({
                   initialSegmentId={initialSegmentId}
                   openMaterialPicker={openMaterialPicker}
                   onFlushReady={registerTimelineFlush}
+                  onPersistTimeline={() => persistCurrentProject().then(() => undefined)}
                 />
               ) : (
                 <Timeline />

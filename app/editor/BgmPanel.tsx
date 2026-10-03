@@ -31,6 +31,7 @@ export default function BgmPanel({
   open = true,
   onOpenChange,
   onPrepareChange,
+  onMutate,
   onProjectChanged,
 }: {
   assetId: string;
@@ -39,6 +40,7 @@ export default function BgmPanel({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onPrepareChange: () => Promise<void>;
+  onMutate?: (body: { action: BGMAction; catalog_id?: string; catalog_version: string }) => Promise<BGMUpdateResponse>;
   onProjectChanged: (result: BGMUpdateResponse) => Promise<void>;
 }) {
   const [catalog, setCatalog] = useState<BGMCatalogResponse | null>(null);
@@ -123,11 +125,14 @@ export default function BgmPanel({
     setMessage("");
     try {
       await onPrepareChange();
-      const result = await updateProjectBGM(assetId, token, {
+      const body = {
         action,
         ...(catalogId ? { catalog_id: catalogId } : {}),
         catalog_version: loadedCatalog.catalog_version,
-      });
+      };
+      const result = onMutate
+        ? await onMutate(body)
+        : await updateProjectBGM(assetId, token, body);
       await onProjectChanged(result);
       setChoice(result.choice);
       setCatalog((current) => current ? { ...current, current_choice: result.choice } : current);
