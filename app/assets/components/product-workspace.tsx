@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Pencil } from "lucide-react";
 import { API_BASE, getContentAssetVersionPreview, type ContentAsset } from "../../../lib/api";
+import { contentAssetToProduct } from "../../../lib/asset-mappers";
 import { getProductDisplayIdentity, getProductModeLabel, getProductRatioClass, stringValue, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import { assetWorkspaceAdapter, type SourceExcerptAudit } from "../lib/asset-workspace-adapter";
 import { useSegmentMaterialCandidates } from "../lib/use-segment-material-candidates";
 import type { AssetConversationMessage, AssetProductSegment, SegmentMaterialOption } from "../lib/asset-workspace-types";
-import { type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
+import { videoExportFailureMessage, type VideoQualityIssue, type VideoQualityReport } from "../lib/video-quality";
 import {
   findLocalExportMarker,
   type ExportFinalizeJob,
@@ -65,6 +66,9 @@ type EditorBridgeMessage = {
 type ExportState = "idle" | "checking" | "preparing" | "exporting" | "hashing" | "uploading" | "registering" | "verifying" | "publishing"
   | "downloading" | "blocked" | "done" | "error";
 type EditorExitState = "idle" | "flushing" | "error";
+type ProductViewScope = { identity: string; productId: string; conversationId: string };
+type ProductAuthScope = { token?: string | null };
+type TextEditRequest = { view: ProductViewScope; auth: ProductAuthScope };
 
 function serverExportState(job: ExportFinalizeJob): Extract<ExportState, "verifying" | "publishing"> {
   return job.stage === "publishing" ? "publishing" : "verifying";
@@ -162,34 +166,12 @@ export function findLongFormCandidateProduct(
   return candidates.at(-1) ?? uniqueMessageReferencedCandidate;
 }
 
-export function EmptyProductWorkspace() {
-  return (
-    <section className="shadcn-prototype-card shadcn-prototype-artifact" aria-label="Empty product workspace">
-      <div className="shadcn-prototype-product">
-        <header className="shadcn-prototype-product-header">
-          <div>
-            <h3>创作结果</h3>
-            <p>还没有生成产物</p>
-          </div>
-        </header>
-        <div className="shadcn-prototype-product-main">
-          <div className="shadcn-prototype-product-preview">
-            <div>
-              <strong>继续左侧对话</strong>
-              <span>产物生成后会自动显示在这里，你可以继续编辑、保存或导出。</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export default function ProductWorkspace({
   copied,
   onCopyProduct,
   onSaveProduct,
   onProductUpdated,
+  onRegisterBeforeLeave,
   onRestoreVersion,
   onRetryVideoJob,
   onOpenLongFormCandidates,
@@ -204,6 +186,11 @@ export default function ProductWorkspace({
   sceneSourceProgress,
   product,
   savedVersion,
+  savingProduct = false,
+  restoringProduct = false,
+  refreshingProduct = false,
+  productSaveConflict,
+  onReloadProduct,
   selectedConversation,
   token,
   creativeProfileVisible = false,
@@ -212,7 +199,8 @@ export default function ProductWorkspace({
   copied: boolean;
   onCopyProduct: (product: ProductArtifact) => Promise<void>;
   onSaveProduct: (product: ProductArtifact) => Promise<void>;
-  onProductUpdated?: (product: ProductArtifact) => void;
+  onProductUpdated?: (product: ProductArtifact, baseProduct?: ProductArtifact) => void;
+  onRegisterBeforeLeave?: (guard: () => boolean | Promise<boolean>, canLeaveSilently: () => boolean) => () => void;
   onRestoreVersion?: (product: ProductArtifact, versionId: string) => Promise<void>;
   onRetryVideoJob?: (product: ProductArtifact, retryJobId?: string) => Promise<void>;
   onOpenLongFormCandidates?: (product: ProductArtifact) => void;
@@ -227,27 +215,55 @@ export default function ProductWorkspace({
   sceneSourceProgress?: { sceneId: string; stage: string; error?: string } | null;
   product: ProductArtifact;
   savedVersion?: string;
+  savingProduct?: boolean;
+  restoringProduct?: boolean;
+  refreshingProduct?: boolean;
+  productSaveConflict?: string;
+  onReloadProduct?: (product: ProductArtifact) => Promise<void>;
   selectedConversation: Conversation;
   token?: string | null;
   creativeProfileVisible?: boolean;
   videoJobLive?: VideoJobLiveStatus | null;
 }) {
-  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
+  const viewIdentity = JSON.stringify([selectedConversation.id, product.id, product.backendAssetId,
+    product.contentHash, product.markdownBody, product.backendUpdatedAt, product.version, token]);
+  const productViewScopeRef = useRef<ProductViewScope>({ identity: viewIdentity, productId: product.id, conversationId: selectedConversation.id });
+  if (productViewScopeRef.current.identity !== viewIdentity) {
+    productViewScopeRef.current = { identity: viewIdentity, productId: product.id, conversationId: selectedConversation.id };
+  }
+  const productAuthScopeRef = useRef<ProductAuthScope>({ token });
+  if (productAuthScopeRef.current.token !== token) productAuthScopeRef.current = { token };
+  const productMountedRef = useRef(true);
+  useEffect(() => {
+    productMountedRef.current = true;
+    return () => { productMountedRef.current = false; };
+  }, []);
+  const [restoringVersion, setRestoringVersion] = useState<{ productId: string; versionId: string; token?: string | null } | null>(null);
+  const restoringVersionId = restoringVersion?.productId === product.id && restoringVersion.token === token
+    ? restoringVersion.versionId : null;
+  const productMutationPending = savingProduct || restoringProduct || refreshingProduct || restoringVersionId !== null;
   const [previewingVersionId, setPreviewingVersionId] = useState<string | null>(null);
-  const [historicalPreview, setHistoricalPreview] = useState<ContentAsset | null>(null);
+  const [historicalPreview, setHistoricalPreview] = useState<{ asset: ContentAsset; label: string } | null>(null);
+  const historicalPreviewRequestRef = useRef(0);
   const [historicalPreviewError, setHistoricalPreviewError] = useState("");
+  const [videoComparisonProduct, setVideoComparisonProduct] = useState<ProductArtifact | null>(null);
+  const [videoComparisonLoading, setVideoComparisonLoading] = useState(false);
+  const [videoComparisonError, setVideoComparisonError] = useState("");
+  const [videoComparisonOpen, setVideoComparisonOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [editorRequested, setEditorRequested] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
   const [editorExitState, setEditorExitState] = useState<EditorExitState>("idle");
   const [editorExitError, setEditorExitError] = useState("");
   const [editorSaveState, setEditorSaveState] = useState<EditorBridgeMessage["status"]>("saved");
+  const editorSaveStateRef = useRef<EditorBridgeMessage["status"]>("saved");
   const [exportState, setExportState] = useState<ExportState>("idle");
   const [exportProgress, setExportProgress] = useState<number | null>(null);
-  const [qualityReport, setQualityReport] = useState<VideoQualityReport | null>(null);
+  const [qualityReports, setQualityReports] = useState<Partial<Record<ExportVariant, VideoQualityReport | null>>>({});
   const [exportError, setExportError] = useState("");
   const [projectSyncError, setProjectSyncError] = useState("");
   const [activeExportVariant, setActiveExportVariant] = useState<ExportVariant>("original");
+  const qualityReport = qualityReports[activeExportVariant] ?? null;
   const [imageExportError, setImageExportError] = useState("");
   const [projectEditedSinceExport, setProjectEditedSinceExport] = useState(false);
   const [videoFeedback, setVideoFeedback] = useState<VideoFeedback | null>(null);
@@ -260,13 +276,24 @@ export default function ProductWorkspace({
   const [voiceoverSegment, setVoiceoverSegment] = useState<AssetProductSegment | null>(null);
   const [isTextEditing, setIsTextEditing] = useState(false);
   const [textEditBody, setTextEditBody] = useState(product.markdownBody ?? "");
-  const [textEditSaving, setTextEditSaving] = useState(false);
+  const [textEditRequests, setTextEditRequests] = useState<Record<string, TextEditRequest | undefined>>({});
+  const textEditRequestsRef = useRef(new Map<string, TextEditRequest>());
+  const textEditSaving = textEditRequests[product.id]?.auth === productAuthScopeRef.current;
   const [textEditError, setTextEditError] = useState("");
   const [textEditSaved, setTextEditSaved] = useState(false);
   const [directorReviewBusy, setDirectorReviewBusy] = useState(false);
   const [directorProductionBusy, setDirectorProductionBusy] = useState(false);
   const [directorReviewError, setDirectorReviewError] = useState("");
-  const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const textEditorElementRef = useRef<HTMLTextAreaElement | null>(null);
+  const [textEditBase, setTextEditBase] = useState<ProductArtifact | null>(null);
+  const [textEditConflict, setTextEditConflict] = useState(false);
+  const [textEditLatest, setTextEditLatest] = useState<ProductArtifact | null>(null);
+  const [textEditReading, setTextEditReading] = useState(false);
+  const textEditorRef = useRef({ editing: isTextEditing, body: textEditBody, product });
+  textEditorRef.current = { editing: isTextEditing, body: textEditBody, product };
+  const textEditEchoRef = useRef<{ product: ProductArtifact; conversationId: string; auth: ProductAuthScope } | null>(null);
+  const textEditReadRef = useRef<object | null>(null);
+  const textEditContextRef = useRef({ product, conversationId: selectedConversation.id, token });
   const [structuralChange, setStructuralChange] = useState<{ message: string; changes: Record<string, unknown> } | null>(null);
   const [subtitleVersionMenuOpen, setSubtitleVersionMenuOpen] = useState(false);
   const [sourceExcerptAudit, setSourceExcerptAudit] = useState<SourceExcerptAudit | null>(null);
@@ -280,24 +307,50 @@ export default function ProductWorkspace({
     enabled: Boolean(materialPickerSegment && token && product.backendAssetId),
   });
   const editorFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const productDetailRef = useRef<HTMLDetailsElement | null>(null);
+  const editorActiveRef = useRef(false);
   const editorFlushRequestRef = useRef<string | null>(null);
+  const editorExitRefreshRef = useRef<string | null>(null);
+  const editorChangeEpochRef = useRef(0);
   const editorFlushSequenceRef = useRef(0);
   const projectPreviewRef = useRef<ProductPreviewHandle | null>(null);
   const pendingExportRef = useRef<ExportVariant | null>(null);
   const activeExportVariantRef = useRef<ExportVariant>("original");
+  const exportRequestEpochRef = useRef(0);
+  const editorExportRequestRef = useRef<{ id: string; identity: string } | null>(null);
+  const setQualityReport = useCallback((report: VideoQualityReport | null, variant = activeExportVariantRef.current) => {
+    setQualityReports((previous) => ({ ...previous, [variant]: report }));
+  }, []);
   const verifiedExportBlobsRef = useRef(new Map<ExportVariant, Blob>());
   const recoverableExportJobsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const imageSourceBlobRef = useRef<{ url: string; promise: Promise<Blob> } | null>(null);
+  const lastCompletedVideoVersionRef = useRef<string | null>(null);
+  const videoComparisonRequestRef = useRef(0);
+  const videoComparisonIdentityRef = useRef<string | null>(null);
   const onProductUpdatedRef = useRef(onProductUpdated);
   onProductUpdatedRef.current = onProductUpdated;
 
   useEffect(() => {
+    historicalPreviewRequestRef.current += 1;
     setHistoricalPreview(null);
     setHistoricalPreviewError("");
     setPreviewingVersionId(null);
-  }, [product.backendAssetId]);
+  }, [viewIdentity]);
+
+  useEffect(() => {
+    videoComparisonRequestRef.current += 1;
+    videoComparisonIdentityRef.current = null;
+    setVideoComparisonProduct(null);
+    setVideoComparisonLoading(false);
+    setVideoComparisonError("");
+    setVideoComparisonOpen(false);
+  }, [product.backendAssetId, product.version]);
 
   const previewHistoricalVersion = useCallback(async (versionId: string) => {
+    const requestId = ++historicalPreviewRequestRef.current;
+    const requestView = productViewScopeRef.current;
+    const isCurrentRequest = () => productMountedRef.current
+      && productViewScopeRef.current === requestView && historicalPreviewRequestRef.current === requestId;
     const assetId = product.backendAssetId;
     const parsedVersionId = Number(versionId);
     if (!token || !assetId || !Number.isInteger(parsedVersionId) || parsedVersionId < 1) {
@@ -305,15 +358,25 @@ export default function ProductWorkspace({
       return;
     }
     setPreviewingVersionId(versionId);
+    setHistoricalPreview(null);
     setHistoricalPreviewError("");
     try {
-      setHistoricalPreview(await getContentAssetVersionPreview(token, assetId, parsedVersionId));
+      const asset = await getContentAssetVersionPreview(token, assetId, parsedVersionId);
+      if (!isCurrentRequest()) return;
+      if (asset.id !== assetId) throw new Error("历史版本与当前产物不匹配，请重新读取。");
+      setHistoricalPreview({ asset, label: product.versions?.find(version => version.id === versionId)?.label ?? `版本 ${versionId}` });
     } catch (error) {
-      setHistoricalPreviewError(error instanceof Error ? error.message : "历史版本读取失败，请重试。");
+      if (isCurrentRequest()) setHistoricalPreviewError(error instanceof Error ? error.message : "历史版本读取失败，请重试。");
     } finally {
-      setPreviewingVersionId(null);
+      if (isCurrentRequest()) setPreviewingVersionId(null);
     }
-  }, [product.backendAssetId, token]);
+  }, [product.backendAssetId, product.versions, token]);
+  const exitHistoricalPreview = useCallback(() => {
+    historicalPreviewRequestRef.current += 1;
+    setHistoricalPreview(null);
+    setHistoricalPreviewError("");
+    setPreviewingVersionId(null);
+  }, []);
   const handleSourceEvidenceClickCapture = useCallback((event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null;
     const summary = target?.closest("summary");
@@ -333,7 +396,7 @@ export default function ProductWorkspace({
     && ["social_post", "content_plan", "manual_text", "copy_draft", "video_script", "short_video_narration"].includes(product.contentType ?? ""),
   );
   const isDirectorText = ["video_script", "short_video_narration"].includes(product.contentType ?? "");
-  const textEditDirty = textEditBody !== (product.markdownBody ?? "");
+  const textEditDirty = textEditBody !== ((textEditBase ?? product).markdownBody ?? "");
   const productMetadata = (product.metadata && typeof product.metadata === "object"
     ? product.metadata
     : {}) as Record<string, unknown>;
@@ -432,6 +495,12 @@ export default function ProductWorkspace({
   const canReplaceFailedScene = Boolean(product.backendAssetId && replacementSceneId);
   const retrySceneNumber = /^(?:seg|scene)-(\d+)$/.exec(replacementSceneId || "")?.[1];
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
+  const projectApproval = productMetadata.video_project_quality_approval as { fingerprint?: unknown } | undefined;
+  const exportProjectIdentity = JSON.stringify([
+    currentAssetId, product.contentHash ?? "", product.version ?? "", stringValue(projectApproval?.fingerprint),
+  ]);
+  const exportProjectIdentityRef = useRef(exportProjectIdentity);
+  exportProjectIdentityRef.current = exportProjectIdentity;
   // Demo-final video surfaces (workspace-video.html): "browse" (player when an
   // MP4 exists, otherwise segment cards from video_project) is the default;
   // "edit" (embedded editor) is opt-in. The editor is never auto-shown just
@@ -465,6 +534,7 @@ export default function ProductWorkspace({
   const videoBgmSummary = canBrowseVideo ? browseBgmSummary(product) : "";
   const [videoSurface, setVideoSurface] = useState<"browse" | "edit">("browse");
   const showEditorEmbed = canBrowseVideo && editorRequested && videoSurface === "edit";
+  editorActiveRef.current = showEditorEmbed;
   // ProductPreview renders its own browse state (poster/player + segment cards)
   // for any generated project — with or without an exported MP4, and even
   // without a backendAssetId (mock / externally-hosted). Mirror that here so the
@@ -483,6 +553,89 @@ export default function ProductWorkspace({
     && !isFailedStatus
     && presenterVideoPlan?.video_type === "source_excerpt"
     && Boolean(token && product.backendAssetId);
+  const comparisonPreviousVersion = product.versions && product.versions.length > 1
+    ? product.versions[product.versions.length - 2]
+    : null;
+  const comparisonPreviousVersionId = Number(comparisonPreviousVersion?.id);
+  const videoComparisonIdentity = `${product.backendAssetId ?? ""}:${product.version ?? ""}:${comparisonPreviousVersionId}`;
+  const videoComparisonAvailable = canBrowseVideo
+    && Boolean(
+      token
+      && product.backendAssetId
+      && hasCurrentPersistedExport
+      && Number.isInteger(comparisonPreviousVersionId)
+      && comparisonPreviousVersionId > 0,
+    );
+  const loadVideoComparison = useCallback(async () => {
+    if (
+      !videoComparisonAvailable
+      || !token
+      || !product.backendAssetId
+      || !comparisonPreviousVersion
+    ) return;
+    if (videoComparisonProduct && videoComparisonIdentityRef.current === videoComparisonIdentity) {
+      setVideoComparisonOpen(true);
+      return;
+    }
+
+    const requestId = ++videoComparisonRequestRef.current;
+    setVideoComparisonLoading(true);
+    setVideoComparisonError("");
+    try {
+      const snapshot = await getContentAssetVersionPreview(
+        token,
+        product.backendAssetId,
+        comparisonPreviousVersionId,
+      );
+      const previousProduct = {
+        ...contentAssetToProduct(snapshot),
+        version: comparisonPreviousVersion.label,
+      };
+      if (!previousProduct.videoProjectReady || !playableVideoUrl(previousProduct)) {
+        throw new Error("上一版本没有可播放的完整视频，暂时无法进行双视频对比。");
+      }
+      if (requestId !== videoComparisonRequestRef.current) return;
+      videoComparisonIdentityRef.current = videoComparisonIdentity;
+      setVideoComparisonProduct(previousProduct);
+      setVideoComparisonOpen(true);
+    } catch (error) {
+      if (requestId !== videoComparisonRequestRef.current) return;
+      setVideoComparisonOpen(false);
+      setVideoComparisonError(
+        error instanceof Error
+          ? error.message
+          : "上一版本读取失败，请稍后重试。",
+      );
+    } finally {
+      if (requestId === videoComparisonRequestRef.current) setVideoComparisonLoading(false);
+    }
+  }, [
+    comparisonPreviousVersion,
+    comparisonPreviousVersionId,
+    product.backendAssetId,
+    token,
+    videoComparisonAvailable,
+    videoComparisonIdentity,
+    videoComparisonProduct,
+  ]);
+  const completedVideoVersionIdentity = canBrowseVideo && product.backendAssetId
+    ? `${product.backendAssetId}:${product.version ?? ""}`
+    : null;
+
+  useEffect(() => {
+    const previousIdentity = lastCompletedVideoVersionRef.current;
+    if (!completedVideoVersionIdentity) return;
+    if (!previousIdentity) {
+      lastCompletedVideoVersionRef.current = completedVideoVersionIdentity;
+      return;
+    }
+    if (previousIdentity === completedVideoVersionIdentity) return;
+    const sameAsset = previousIdentity.split(":", 1)[0] === completedVideoVersionIdentity.split(":", 1)[0];
+    if (!sameAsset || videoComparisonAvailable) {
+      lastCompletedVideoVersionRef.current = completedVideoVersionIdentity;
+      if (sameAsset) void loadVideoComparison();
+    }
+  }, [completedVideoVersionIdentity, loadVideoComparison, videoComparisonAvailable]);
   const longFormCandidateProduct = findLongFormCandidateProduct(
     product,
     selectedConversation.products,
@@ -498,13 +651,69 @@ export default function ProductWorkspace({
   ].filter(Boolean).join(" ");
 
   useEffect(() => {
+    const previous = textEditContextRef.current;
+    textEditContextRef.current = { product, conversationId: selectedConversation.id, token };
+    const echo = textEditEchoRef.current;
+    if (echo && echo.auth === productAuthScopeRef.current && echo.conversationId === selectedConversation.id
+      && echo.product.id === product.id && echo.product.backendAssetId === product.backendAssetId
+      && echo.product.contentHash === product.contentHash && echo.product.markdownBody === product.markdownBody
+      && echo.product.backendUpdatedAt === product.backendUpdatedAt) {
+      textEditEchoRef.current = null;
+      return;
+    }
+    textEditEchoRef.current = null;
+    if (previous.token === token && previous.conversationId === selectedConversation.id
+      && previous.product.id === product.id && previous.product.backendAssetId === product.backendAssetId
+      && textEditorRef.current.editing
+      && textEditorRef.current.body !== ((textEditBase ?? previous.product).markdownBody ?? "")) {
+      setTextEditBase(textEditBase ?? previous.product);
+      textEditReadRef.current = null;
+      setTextEditReading(false);
+      setTextEditConflict(true);
+      setTextEditLatest(product.contentHash ? product : null);
+      setTextEditError("产物已有外部更新。草稿已保留，请对照最新正文后继续。");
+      setTextEditSaved(false);
+      setStructuralChange(null);
+      return;
+    }
+    textEditReadRef.current = null;
+    setTextEditReading(false);
+    setTextEditBase(null);
+    setTextEditConflict(false);
+    setTextEditLatest(null);
     setIsTextEditing(false);
     setTextEditBody(product.markdownBody ?? "");
     setTextEditError("");
     setTextEditSaved(false);
     setStructuralChange(null);
     setSubtitleVersionMenuOpen(false);
-  }, [product.id, product.contentHash, product.markdownBody]);
+    // Only authoritative product/context changes trigger reconciliation, not typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product.id, product.backendAssetId, product.contentHash, product.markdownBody, product.backendUpdatedAt, selectedConversation.id, token]);
+
+  const beforeLeaveRef = useRef<() => boolean | Promise<boolean>>(() => true);
+  beforeLeaveRef.current = () => {
+    if (!isTextEditing) return true;
+    if (textEditSaving || textEditReading) {
+      setTextEditError("正在保存或读取正文，请等待完成后再切换。");
+      return false;
+    }
+    if (!textEditDirty) return true;
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
+    return confirm({
+      title: "放弃未保存的修改并离开？",
+      description: "当前草稿尚未保存。取消可继续编辑，离开将放弃这些修改。",
+      confirmLabel: "放弃修改并离开",
+      tone: "danger",
+    }).then((confirmed) => confirmed && productMountedRef.current
+      && productViewScopeRef.current === view && textEditorRef.current.body === body);
+  };
+  const canLeaveSilentlyRef = useRef<() => boolean>(() => true);
+  canLeaveSilentlyRef.current = () => !isTextEditing || (!textEditDirty && !textEditSaving && !textEditReading);
+  useEffect(() => onRegisterBeforeLeave?.(
+    () => beforeLeaveRef.current(), () => canLeaveSilentlyRef.current(),
+  ), [onRegisterBeforeLeave, isTextEditing, textEditDirty]);
 
   useEffect(() => {
     if (!isTextEditing || !textEditDirty) return;
@@ -517,34 +726,133 @@ export default function ProductWorkspace({
   }, [isTextEditing, textEditDirty]);
 
   const saveTextEdit = async (acceptStructuralChange: boolean) => {
-    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty) return;
-    setTextEditSaving(true);
+    if (!token || !editableTextArtifact || textEditSaving || !textEditDirty || textEditConflict || textEditReading) return;
+    const base = textEditBase ?? product;
+    const submittedBody = textEditBody;
+    const request: TextEditRequest = { view: productViewScopeRef.current, auth: productAuthScopeRef.current };
+    if (textEditRequestsRef.current.get(product.id)?.auth === request.auth) return;
+    textEditRequestsRef.current.set(product.id, request);
+    setTextEditRequests((current) => ({ ...current, [product.id]: request }));
+    const isCurrentAuth = () => productMountedRef.current && productAuthScopeRef.current === request.auth;
+    const isCurrentView = () => isCurrentAuth() && productViewScopeRef.current === request.view;
+    const isCurrentProduct = () => productViewScopeRef.current.productId === product.id
+      && productViewScopeRef.current.conversationId === request.view.conversationId;
     setTextEditError("");
     setTextEditSaved(false);
     try {
       const result = await assetWorkspaceAdapter.saveTextEdit({
         token,
-        product,
-        body: textEditBody,
+        product: base,
+        body: submittedBody,
         acceptStructuralChange,
       });
+      if (!isCurrentAuth()) return;
       if (result.kind === "structural_change") {
-        setStructuralChange({ message: result.message, changes: result.changes });
+        if (isCurrentView() && textEditorRef.current.body === submittedBody) setStructuralChange({ message: result.message, changes: result.changes });
         return;
       }
-      setStructuralChange(null);
-      setTextEditBody(result.product.markdownBody ?? textEditBody);
-      setTextEditSaved(true);
-      setIsTextEditing(false);
-      onProductUpdated?.(result.product);
+      if (result.product.id !== product.id || result.product.backendAssetId !== product.backendAssetId) {
+        throw new Error("无法核验保存的产物，请核对当前内容后重试。");
+      }
+      if (isCurrentView()) {
+        setStructuralChange(null);
+        setTextEditBase(result.product);
+        setTextEditSaved(true);
+        if (textEditorRef.current.body === submittedBody) {
+          setTextEditBody(result.product.markdownBody ?? submittedBody);
+          setIsTextEditing(false);
+        }
+      } else if (isCurrentProduct()) {
+        // A newer parent update wins over an older request, including browse mode.
+        const visible = textEditorRef.current.product;
+        if (visible.contentHash !== base.contentHash || visible.backendUpdatedAt !== base.backendUpdatedAt) return;
+        if (textEditorRef.current.editing) {
+          setTextEditConflict(true);
+          setTextEditLatest(result.product);
+          setTextEditError("此前提交已保存。当前草稿已保留，请比较最新正文后继续。");
+          return;
+        }
+        setTextEditBase(result.product);
+        setTextEditBody(result.product.markdownBody ?? submittedBody);
+      }
+      if (isCurrentProduct()) {
+        textEditEchoRef.current = { product: result.product, conversationId: selectedConversation.id, auth: request.auth };
+      }
+      onProductUpdated?.(result.product, base);
     } catch (error) {
-      setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+      if (isCurrentView()) {
+        if (error instanceof Error && "code" in error && error.code === "edit_version_conflict") {
+          setTextEditConflict(true);
+          setTextEditError("版本冲突：产物已在其他位置更新。草稿已保留，请读取最新版本后对照。");
+        } else setTextEditError(error instanceof Error ? error.message : "保存失败，请返回编辑后重试。");
+      }
     } finally {
-      setTextEditSaving(false);
+      if (textEditRequestsRef.current.get(product.id) === request) textEditRequestsRef.current.delete(product.id);
+      if (productMountedRef.current) setTextEditRequests((current) => current[product.id] === request
+        ? { ...current, [product.id]: undefined } : current);
     }
   };
 
+  const readLatestText = async () => {
+    if (!token || textEditReadRef.current || textEditSaving) return;
+    const view = productViewScopeRef.current;
+    const auth = productAuthScopeRef.current;
+    const request = {};
+    textEditReadRef.current = request;
+    setTextEditReading(true);
+    setTextEditLatest(null);
+    setTextEditError("");
+    const isCurrent = () => productMountedRef.current && productViewScopeRef.current === view
+      && productAuthScopeRef.current === auth && textEditReadRef.current === request;
+    try {
+      const detail = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+      if (!isCurrent()) return;
+      const latest = (detail.products ?? [detail.product]).find((item) => item.id === product.id && item.backendAssetId === product.backendAssetId);
+      if (!latest?.contentHash || typeof latest.markdownBody !== "string") throw new Error("无法核验最新正文，请重试读取。草稿未改变。");
+      setTextEditLatest(latest);
+    } catch (error) {
+      if (isCurrent()) setTextEditError(error instanceof Error ? error.message : "读取失败，草稿已保留，请重试。");
+    } finally {
+      if (isCurrent()) { textEditReadRef.current = null; setTextEditReading(false); }
+    }
+  };
+
+  const resolveTextConflict = async (keepDraft: boolean) => {
+    if (!textEditLatest || textEditSaving || textEditReading) return;
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
+    const latest = textEditLatest;
+    const confirmed = await confirm({
+      title: keepDraft ? "保留草稿并继续编辑？" : "采用最新已保存正文？",
+      description: keepDraft ? "当前草稿不会丢失。下次手动保存将用草稿替换最新正文，请先完成对照。" : "当前未保存的草稿将被最新正文替换，此操作不会再次保存。",
+      confirmLabel: keepDraft ? "确认保留草稿" : "确认采用最新正文",
+      tone: keepDraft ? "default" : "danger",
+    });
+    if (!confirmed || !productMountedRef.current || productViewScopeRef.current !== view
+      || textEditorRef.current.body !== body || !textEditorRef.current.editing) return;
+    textEditEchoRef.current = { product: latest, conversationId: selectedConversation.id, auth: productAuthScopeRef.current };
+    setTextEditBase(latest);
+    if (!keepDraft) setTextEditBody(latest.markdownBody ?? "");
+    setTextEditConflict(false);
+    setTextEditLatest(null);
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+    onProductUpdated?.(latest, product);
+  };
+
+  const startTextEditing = () => {
+    setTextEditBase(textEditBase ?? product);
+    setTextEditBody((textEditBase ?? product).markdownBody ?? "");
+    setTextEditError("");
+    setTextEditSaved(false);
+    setStructuralChange(null);
+    setIsTextEditing(true);
+  };
+
   const cancelTextEdit = async () => {
+    const view = productViewScopeRef.current;
+    const body = textEditorRef.current.body;
     if (textEditDirty) {
       const confirmed = await confirm({
         title: "放弃未保存的修改？",
@@ -552,12 +860,22 @@ export default function ProductWorkspace({
         confirmLabel: "放弃修改",
         tone: "danger",
       });
-      if (!confirmed) return;
+      if (!confirmed || productViewScopeRef.current !== view || textEditorRef.current.body !== body
+        || !textEditorRef.current.editing || !productMountedRef.current) return;
     }
-    setTextEditBody(product.markdownBody ?? "");
+    const latest = textEditLatest ?? product;
+    textEditReadRef.current = null;
+    textEditEchoRef.current = null;
+    setTextEditReading(false);
+    setTextEditBase(latest === product ? null : latest);
+    setTextEditBody(latest.markdownBody ?? "");
+    setTextEditConflict(false);
+    setTextEditLatest(null);
+    setTextEditSaved(false);
     setTextEditError("");
     setStructuralChange(null);
     setIsTextEditing(false);
+    if (latest !== product) onProductUpdated?.(latest, product);
   };
 
   const editDirectorReviewScene = (sceneId: string) => {
@@ -567,7 +885,7 @@ export default function ProductWorkspace({
     setIsTextEditing(true);
     const sceneIndex = (product.segments ?? []).findIndex((segment) => segment.id === sceneId);
     window.requestAnimationFrame(() => {
-      const editor = textEditorRef.current;
+      const editor = textEditorElementRef.current;
       if (!editor) return;
       const heading = sceneIndex >= 0 ? `### ${sceneIndex + 1}.` : "### ";
       const offset = editor.value.indexOf(heading);
@@ -591,17 +909,39 @@ export default function ProductWorkspace({
       setDirectorReviewBusy(false);
     }
   };
+  const invalidateEditorExports = useCallback(() => {
+    editorChangeEpochRef.current += 1;
+    if (editorExitRefreshRef.current) {
+      editorExitRefreshRef.current = null;
+      editorFlushRequestRef.current = null;
+      setEditorExitState((previous) => previous === "flushing" ? "idle" : previous);
+    }
+    editorExportRequestRef.current = null;
+    exportRequestEpochRef.current += 1;
+    pendingExportRef.current = null;
+    verifiedExportBlobsRef.current.clear();
+    recoverableExportJobsRef.current.clear();
+    setProjectEditedSinceExport(true);
+    setQualityReports({});
+    setExportState("idle");
+    setExportProgress(null);
+    setExportError("");
+  }, []);
 
   useEffect(() => {
+    exportRequestEpochRef.current += 1;
+    editorExportRequestRef.current = null;
     setEditorRequested(false);
     setEditorReady(false);
     setEditorExitState("idle");
     setEditorExitError("");
     setEditorSaveState("saved");
+    editorSaveStateRef.current = "saved";
     editorFlushRequestRef.current = null;
+    editorExitRefreshRef.current = null;
     setExportState("idle");
     setExportProgress(null);
-    setQualityReport(null);
+    setQualityReports({});
     setExportError("");
     setActiveExportVariant("original");
     activeExportVariantRef.current = "original";
@@ -611,7 +951,7 @@ export default function ProductWorkspace({
     verifiedExportBlobsRef.current.clear();
     recoverableExportJobsRef.current.clear();
     imageSourceBlobRef.current = null;
-  }, [currentAssetId, hasVideoProject]);
+  }, [exportProjectIdentity, hasVideoProject]);
 
   useEffect(() => {
     if (activeExportVariant === "original") {
@@ -634,12 +974,19 @@ export default function ProductWorkspace({
     setMaterialError("");
   }, [currentAssetId]);
 
-  const refreshPersistedVideoProject = useCallback(async (): Promise<boolean> => {
+  const refreshPersistedVideoProject = useCallback(async (requestIsCurrent?: () => boolean): Promise<boolean> => {
+    // Routine save/BGM notifications must not change the host version and
+    // unmount an active editor. Explicit flush/export flows supply a guard.
+    if (editorActiveRef.current && !requestIsCurrent) return false;
     const updateProduct = onProductUpdatedRef.current;
     if (!token || !updateProduct || selectedConversation.id === "new" || !product.backendAssetId) return false;
+    const refreshIsCurrent = () => exportProjectIdentityRef.current === exportProjectIdentity
+      && (requestIsCurrent?.() ?? true);
+    if (!refreshIsCurrent()) return false;
     setProjectSyncError("");
     try {
       const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedConversation.id);
+      if (!refreshIsCurrent()) return false;
       const updated = (refreshed.products ?? [refreshed.product]).find(
         (item) => item.backendAssetId === product.backendAssetId,
       );
@@ -647,14 +994,18 @@ export default function ProductWorkspace({
       updateProduct(updated);
       return true;
     } catch {
+      if (!refreshIsCurrent()) return false;
       setProjectSyncError("已保存编辑，但浏览态刷新失败。");
       return false;
     }
-  }, [product.backendAssetId, selectedConversation.id, token]);
+  }, [exportProjectIdentity, product.backendAssetId, selectedConversation.id, token]);
 
   const startEditorExport = useCallback((exportVariant: ExportVariant): boolean => {
+    if (["dirty", "saving", "error"].includes(editorSaveStateRef.current ?? "saved")) return false;
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow) return false;
+    const requestId = crypto.randomUUID();
+    editorExportRequestRef.current = { id: requestId, identity: exportProjectIdentityRef.current };
     pendingExportRef.current = null;
     activeExportVariantRef.current = exportVariant;
     setActiveExportVariant(exportVariant);
@@ -665,6 +1016,7 @@ export default function ProductWorkspace({
       {
         source: "multimix-workspace",
         type: "multimix-editor-export",
+        requestId,
         exportVariant,
         brandSpecVersion: exportVariant === "brand_showcase" ? BRAND_SHOWCASE_SPEC_VERSION : null,
       },
@@ -685,6 +1037,7 @@ export default function ProductWorkspace({
   const requestBgmPanelOpen = useCallback(() => {
     const frameWindow = editorFrameRef.current?.contentWindow;
     if (!frameWindow || typeof window === "undefined") return;
+    if (productDetailRef.current) productDetailRef.current.open = false;
     frameWindow.postMessage(
       { source: "multimix-workspace", type: "multimix-editor-bgm-open" },
       window.location.origin,
@@ -734,11 +1087,17 @@ export default function ProductWorkspace({
     if (!hasVideoProject || typeof window === "undefined" || !currentAssetId) return;
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
+      if (!editorFrameRef.current?.contentWindow || event.source !== editorFrameRef.current.contentWindow) return;
       const data = event.data as EditorBridgeMessage;
       if (!data || typeof data !== "object" || data.source !== "multimix-editor") return;
       if (String(data.assetId ?? "") !== currentAssetId) return;
       if (data.previewChannel) return;
+      const exportRequest = editorExportRequestRef.current;
+      const exportMessageIsCurrent = () => exportRequest !== null
+        && editorExportRequestRef.current === exportRequest
+        && exportRequest.identity === exportProjectIdentityRef.current;
       if (data.type?.startsWith("multimix-editor-export")) {
+        if (!exportMessageIsCurrent() || data.requestId !== exportRequest?.id) return;
         const messageVariant = data.exportVariant === "brand_showcase" ? "brand_showcase" : "original";
         if (messageVariant !== activeExportVariantRef.current) return;
       }
@@ -813,17 +1172,18 @@ export default function ProductWorkspace({
           break;
         case "multimix-editor-export-success":
           pendingExportRef.current = null;
-          if (data.report) setQualityReport(data.report);
+          setQualityReport(data.report ?? null);
           if (data.blob instanceof Blob) {
             verifiedExportBlobsRef.current.set(activeExportVariantRef.current, data.blob);
             setProjectEditedSinceExport(false);
             setExportState("done");
             setExportProgress(100);
             setExportError("");
-            void refreshPersistedVideoProject();
+            void refreshPersistedVideoProject(exportMessageIsCurrent);
           } else {
             setExportState("verifying");
-            void refreshPersistedVideoProject().then((refreshed) => {
+            void refreshPersistedVideoProject(exportMessageIsCurrent).then((refreshed) => {
+              if (!exportMessageIsCurrent()) return;
               if (refreshed) {
                 setProjectEditedSinceExport(false);
                 setExportState("done");
@@ -844,6 +1204,8 @@ export default function ProductWorkspace({
           setExportError(data.message || "成片合成失败，请重试。");
           break;
         case "multimix-editor-recompose-started":
+          editorExportRequestRef.current = null;
+          exportRequestEpochRef.current += 1;
           // The film strip kicked off a segment recompose: the embed reloads
           // itself when the rebuilt project lands, so just gate export until
           // the fresh editor says ready again.
@@ -854,29 +1216,51 @@ export default function ProductWorkspace({
           pendingExportRef.current = null;
           verifiedExportBlobsRef.current.clear();
           recoverableExportJobsRef.current.clear();
+          setQualityReports({});
+          break;
+        case "multimix-editor-content-changed":
+          invalidateEditorExports();
           break;
         case "multimix-editor-project-updated":
-          setProjectEditedSinceExport(true);
-          verifiedExportBlobsRef.current.clear();
-          recoverableExportJobsRef.current.clear();
-          setExportState("idle");
-          setExportProgress(null);
-          setExportError("");
+          invalidateEditorExports();
           void refreshPersistedVideoProject();
           break;
+        case "multimix-editor-bgm-closed":
+          productDetailRef.current?.querySelector("summary")?.focus();
+          break;
         case "multimix-editor-save-state":
+          if (!data.status) break;
+          editorSaveStateRef.current = data.status;
           setEditorSaveState(data.status);
+          if (["dirty", "saving", "error"].includes(data.status)) invalidateEditorExports();
+          if (data.status === "error") {
+            setEditorExitState("error");
+            setEditorExitError(data.message || "保存失败，请检查网络后重试。");
+          } else if (data.status === "saved") {
+            setEditorExitState((previous) => previous === "error" ? "idle" : previous);
+            setEditorExitError("");
+          }
           break;
         case "multimix-editor-flush-result":
           if (!data.requestId || data.requestId !== editorFlushRequestRef.current) break;
           if (data.status === "saved") {
+            const epoch = editorChangeEpochRef.current;
+            editorExitRefreshRef.current = data.requestId;
+            editorSaveStateRef.current = "saved";
+            setEditorSaveState("saved");
+            const exitIsCurrent = () => editorFlushRequestRef.current === data.requestId
+              && editorChangeEpochRef.current === epoch
+              && editorSaveStateRef.current === "saved";
             void (async () => {
-              await refreshPersistedVideoProject();
-              if (editorFlushRequestRef.current !== data.requestId) return;
+              const refreshed = await refreshPersistedVideoProject(exitIsCurrent);
+              if (!exitIsCurrent()) return;
               editorFlushRequestRef.current = null;
+              editorExitRefreshRef.current = null;
               setEditorExitState("idle");
               setEditorExitError("");
               setEditorSaveState("saved");
+              editorSaveStateRef.current = "saved";
+              if (!refreshed) return;
               setEditorRequested(false);
               setVideoSurface("browse");
             })();
@@ -885,6 +1269,7 @@ export default function ProductWorkspace({
             setEditorExitState("error");
             setEditorExitError(data.message || "保存失败，请检查网络后重试。");
             setEditorSaveState("error");
+            editorSaveStateRef.current = "error";
           }
           break;
         default:
@@ -896,7 +1281,9 @@ export default function ProductWorkspace({
   }, [
     currentAssetId,
     hasVideoProject,
+    invalidateEditorExports,
     refreshPersistedVideoProject,
+    setQualityReport,
     showEditorEmbed,
     startEditorExport,
   ]);
@@ -913,6 +1300,10 @@ export default function ProductWorkspace({
     ) return;
 
     const controller = new AbortController();
+    const epoch = exportRequestEpochRef.current;
+    const recoveryIsCurrent = () => !controller.signal.aborted
+      && epoch === exportRequestEpochRef.current
+      && exportProjectIdentityRef.current === exportProjectIdentity;
     let foundExport = false;
     void (async () => {
       try {
@@ -922,6 +1313,7 @@ export default function ProductWorkspace({
           "original",
           controller.signal,
         );
+        if (!recoveryIsCurrent()) return;
         if (!current) {
           const localExport = findLocalExportMarker(product.backendAssetId!);
           if (localExport) {
@@ -949,26 +1341,28 @@ export default function ProductWorkspace({
             current,
             controller.signal,
             (job) => {
+              if (!recoveryIsCurrent()) return;
               if (job.status !== "queued" && job.status !== "running") return;
               setExportState(serverExportState(job));
               setExportProgress(null);
             },
           );
         }
+        if (!recoveryIsCurrent()) return;
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableExportJobsRef.current.set("original", terminal);
           else recoverableExportJobsRef.current.delete("original");
+          const failedReport = terminal.qualityReport as VideoQualityReport | null;
+          setQualityReport(failedReport, "original");
           setExportState("error");
           setExportProgress(null);
-          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
           return;
         }
-        if (terminal.qualityReport) {
-          setQualityReport(terminal.qualityReport as VideoQualityReport);
-        }
+        setQualityReport(terminal.qualityReport as VideoQualityReport | null, "original");
         recoverableExportJobsRef.current.delete("original");
-        const refreshed = await refreshPersistedVideoProject();
-        if (controller.signal.aborted) return;
+        const refreshed = await refreshPersistedVideoProject(recoveryIsCurrent);
+        if (!recoveryIsCurrent()) return;
         if (!refreshed) {
           setExportState("error");
           setExportProgress(null);
@@ -980,7 +1374,7 @@ export default function ProductWorkspace({
         setExportProgress(100);
         setExportError("");
       } catch (error) {
-        if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
+        if (!recoveryIsCurrent() || (error instanceof DOMException && error.name === "AbortError")) return;
         if (!foundExport) return;
         setExportState("error");
         setExportProgress(null);
@@ -990,6 +1384,7 @@ export default function ProductWorkspace({
     return () => controller.abort();
   }, [
     currentAssetId,
+    exportProjectIdentity,
     hasCurrentPersistedExport,
     hasVideoProject,
     hasProductUpdateHandler,
@@ -997,6 +1392,7 @@ export default function ProductWorkspace({
     projectEditedSinceExport,
     refreshPersistedVideoProject,
     selectedConversation.id,
+    setQualityReport,
     token,
   ]);
 
@@ -1064,7 +1460,7 @@ export default function ProductWorkspace({
   }, [beginPreviewExport]);
 
   const handlePreviewExportSuccess = useCallback((report: VideoQualityReport | undefined, blob: Blob | undefined) => {
-    if (report) setQualityReport(report);
+    setQualityReport(report ?? null);
     if (blob instanceof Blob) {
       verifiedExportBlobsRef.current.set(activeExportVariantRef.current, blob);
       setExportState("done");
@@ -1075,29 +1471,40 @@ export default function ProductWorkspace({
     setExportState("error");
     setExportProgress(null);
     setExportError("成片已通过检查，但下载文件未送达，请重新导出。");
-  }, []);
+  }, [setQualityReport]);
 
-  const downloadPublishedExportJob = async (job: ExportFinalizeJob, exportVariant: ExportVariant) => {
+  const downloadPublishedExportJob = async (job: ExportFinalizeJob, exportVariant: ExportVariant, isCurrent: () => boolean) => {
     if (!job.mp4Ref) throw new Error("已完成的成片任务缺少下载文件");
     const response = await fetch(`${API_BASE}/v1/video/media?ref=${encodeURIComponent(job.mp4Ref)}`);
+    if (!isCurrent()) return;
     if (!response.ok) throw new Error(`media download failed with ${response.status}`);
     const blob = await response.blob();
+    if (!isCurrent()) return;
     if (blob.size <= 0) throw new Error("media download returned an empty body");
+    setQualityReport(job.qualityReport as VideoQualityReport | null, exportVariant);
     verifiedExportBlobsRef.current.set(exportVariant, blob);
     downloadExportBlob(blob, exportVariant);
   };
 
   const handleExportVideo = async (exportVariant: ExportVariant) => {
+    if (productMutationPending) return;
+    if (["dirty", "saving", "error"].includes(editorSaveStateRef.current ?? "saved")) return;
     if (!currentAssetId || ["exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading"].includes(exportState)) return;
+    const epoch = ++exportRequestEpochRef.current;
+    const isCurrent = () => epoch === exportRequestEpochRef.current
+      && exportProjectIdentityRef.current === exportProjectIdentity;
     activeExportVariantRef.current = exportVariant;
     setActiveExportVariant(exportVariant);
     const cachedBlob = verifiedExportBlobsRef.current.get(exportVariant);
     if (cachedBlob) {
       downloadExportBlob(cachedBlob, exportVariant);
+      setExportState("done");
+      setExportProgress(100);
+      setExportError("");
       return;
     }
     let recoverableJob = recoverableExportJobsRef.current.get(exportVariant);
-    if (!recoverableJob && exportVariant === "brand_showcase" && token && product.backendAssetId) {
+    if (!recoverableJob && !projectEditedSinceExport && exportVariant === "brand_showcase" && token && product.backendAssetId) {
       setExportState("checking");
       setExportProgress(null);
       setExportError("");
@@ -1107,6 +1514,7 @@ export default function ProductWorkspace({
           product.backendAssetId,
           exportVariant,
         );
+        if (!isCurrent()) return;
         if (current?.status === "queued" || current?.status === "running") {
           setExportState(serverExportState(current));
           setExportProgress(null);
@@ -1116,29 +1524,43 @@ export default function ProductWorkspace({
             current,
             undefined,
             (job) => {
+              if (!isCurrent()) return;
               if (job.status !== "queued" && job.status !== "running") return;
               setExportState(serverExportState(job));
               setExportProgress(null);
             },
           );
+          if (!isCurrent()) return;
           if (terminal.status === "completed") {
-            await downloadPublishedExportJob(terminal, exportVariant);
+            await downloadPublishedExportJob(terminal, exportVariant, isCurrent);
+            if (!isCurrent()) return;
             setExportState("done");
             setExportProgress(100);
-            void refreshPersistedVideoProject();
+            void refreshPersistedVideoProject(isCurrent);
             return;
           }
-          recoverableJob = terminal.retryable ? terminal : undefined;
+          if (terminal.status === "failed") {
+            if (terminal.retryable) recoverableExportJobsRef.current.set(exportVariant, terminal);
+            else recoverableExportJobsRef.current.delete(exportVariant);
+            const failedReport = terminal.qualityReport as VideoQualityReport | null;
+            setQualityReport(failedReport);
+            setExportState("error");
+            setExportProgress(null);
+            setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
+            return;
+          }
         } else if (current?.status === "completed") {
-          await downloadPublishedExportJob(current, exportVariant);
+          await downloadPublishedExportJob(current, exportVariant, isCurrent);
+          if (!isCurrent()) return;
           setExportState("done");
           setExportProgress(100);
-          void refreshPersistedVideoProject();
+          void refreshPersistedVideoProject(isCurrent);
           return;
         } else if (current?.retryable) {
           recoverableJob = current;
         }
       } catch (error) {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportError(error instanceof Error ? error.message : "品牌展示版恢复失败，请重试。");
         return;
@@ -1154,35 +1576,39 @@ export default function ProductWorkspace({
           product.backendAssetId,
           recoverableJob,
         );
+        if (!isCurrent()) return;
         const terminal = await assetWorkspaceAdapter.waitForVideoExport(
           token,
           product.backendAssetId,
           retried,
           undefined,
           (job) => {
+            if (!isCurrent()) return;
             if (job.status !== "queued" && job.status !== "running") return;
             setExportState(serverExportState(job));
             setExportProgress(null);
           },
         );
+        if (!isCurrent()) return;
         if (terminal.status === "failed") {
           if (terminal.retryable) recoverableExportJobsRef.current.set(exportVariant, terminal);
           else recoverableExportJobsRef.current.delete(exportVariant);
+          const failedReport = terminal.qualityReport as VideoQualityReport | null;
+          setQualityReport(failedReport);
           setExportState("error");
           setExportProgress(null);
-          setExportError(terminal.errorMessage || "成片检查失败，请重试导出。");
+          setExportError(videoExportFailureMessage(failedReport, terminal.errorMessage));
           return;
         }
-        if (terminal.qualityReport) {
-          setQualityReport(terminal.qualityReport as VideoQualityReport);
-        }
         recoverableExportJobsRef.current.delete(exportVariant);
-        await downloadPublishedExportJob(terminal, exportVariant);
-        void refreshPersistedVideoProject();
+        await downloadPublishedExportJob(terminal, exportVariant, isCurrent);
+        if (!isCurrent()) return;
+        void refreshPersistedVideoProject(isCurrent);
         setProjectEditedSinceExport(false);
         setExportState("done");
         setExportProgress(100);
       } catch (error) {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportProgress(null);
         setExportError(error instanceof Error ? error.message : "成片任务重试失败，请稍后再试。");
@@ -1202,13 +1628,17 @@ export default function ProductWorkspace({
       setExportError("");
       try {
         const response = await fetch(persistedExportUrl);
+        if (!isCurrent()) return;
         if (!response.ok) throw new Error(`media download failed with ${response.status}`);
         const blob = await response.blob();
+        if (!isCurrent()) return;
         if (blob.size <= 0) throw new Error("media download returned an empty body");
+        setQualityReport(null, exportVariant);
         verifiedExportBlobsRef.current.set(exportVariant, blob);
         downloadExportBlob(blob, exportVariant);
         setExportState("done");
       } catch {
+        if (!isCurrent()) return;
         setExportState("error");
         setExportError("成片已生成，但下载文件暂时不可用，请重试。");
       }
@@ -1238,7 +1668,10 @@ export default function ProductWorkspace({
   };
 
   const activeExportVariantLabel = activeExportVariant === "brand_showcase" ? "品牌展示版" : "原始成片";
-  const exportButtonLabel = exportState === "checking"
+  const editorSaveBlocksExport = ["dirty", "saving", "error"].includes(editorSaveState ?? "saved");
+  const exportButtonLabel = editorSaveBlocksExport
+    ? editorSaveState === "error" ? "保存失败，先重试" : "正在保存修改…"
+    : exportState === "checking"
     ? `${activeExportVariantLabel} · 正在查找…`
     : exportState === "preparing"
       ? `${activeExportVariantLabel} · 正在准备…`
@@ -1265,6 +1698,7 @@ export default function ProductWorkspace({
           : "导出视频";
 
   const openBrowseMaterialPicker = useCallback((segment: AssetProductSegment) => {
+    if (productMutationPending) return;
     setMaterialError("");
     setMaterialPickerState("idle");
     if (!token || !product.backendAssetId) {
@@ -1274,10 +1708,10 @@ export default function ProductWorkspace({
     // The shared candidate hook loads local first, then public, keyed off the
     // selected segment; opening the picker is enough to trigger it.
     setMaterialPickerSegment(segment);
-  }, [product.backendAssetId, token]);
+  }, [product.backendAssetId, productMutationPending, token]);
 
   const canRepairQualityIssue = (issue: VideoQualityIssue): boolean => (
-    Boolean(issue.segment_id)
+    !productMutationPending && Boolean(issue.segment_id)
     && ["main_track_gap", "naked_black_interval"].includes(issue.code)
     && Boolean(product.segments?.some((segment) => segment.id === issue.segment_id))
   );
@@ -1402,7 +1836,7 @@ export default function ProductWorkspace({
   };
 
   const handleDownloadImage = async (exportVariant: ExportVariant) => {
-    if (!imageDownloadUrl) return;
+    if (productMutationPending || !imageDownloadUrl) return;
     setImageExportError("");
     try {
       const sourceBlob = await getImageSourceBlob();
@@ -1471,20 +1905,16 @@ export default function ProductWorkspace({
             token={token}
             assetId={product.backendAssetId}
             revisionKey={`${product.contentHash ?? product.version ?? ""}:${String(videoProjectMetadata?.mp4_ref ?? "")}:${projectEditedSinceExport}:${materialJobId}`}
-            disabled={hasVideoProject && (projectEditedSinceExport || editorSaveState !== "saved")}
+            disabled={productMutationPending || hasVideoProject && (projectEditedSinceExport || editorSaveState !== "saved")}
             onLocate={(issue) => locateQualityIssue(issue.scene_id, "main_track")}
             onRevise={(issue, action) => {
+              if (productMutationPending) return;
               const segment = product.segments?.find((item) => item.id === issue.scene_id);
               if (action === "material" && segment) openBrowseMaterialPicker(segment);
               else if (action === "voice" && segment) setVoiceoverSegment(segment);
               else locateQualityIssue(issue.scene_id, "main_track");
             }}
-            onEditScript={editableTextArtifact ? () => {
-              setTextEditBody(product.markdownBody ?? "");
-              setTextEditError("");
-              setStructuralChange(null);
-              setIsTextEditing(true);
-            } : undefined}
+            onEditScript={editableTextArtifact && !productMutationPending ? startTextEditing : undefined}
           />
         ) : null;
   const creativeMemoryPrompt = creativeProfileVisible && token && product.backendAssetId
@@ -1526,6 +1956,7 @@ export default function ProductWorkspace({
       onClickCapture={handleSourceEvidenceClickCapture}
     >
       <div className={productClassName}>
+        <div>
         <header className="shadcn-prototype-product-header">
           <div>
             <h3 title={displayIdentity.title}>
@@ -1553,7 +1984,7 @@ export default function ProductWorkspace({
             </p>
           </div>
           <div className="shadcn-prototype-product-actions">
-            <details className="shadcn-prototype-product-detail-popover">
+            <details ref={productDetailRef} className="shadcn-prototype-product-detail-popover">
               <summary className="shadcn-prototype-product-detail-trigger">详情</summary>
               <aside className="shadcn-prototype-product-detail-drawer" aria-label="生成详情">
                 <header>
@@ -1621,15 +2052,16 @@ export default function ProductWorkspace({
                     {historicalPreview ? (
                       <div className="rounded-xl border border-[#e5e0d8] bg-[#faf8f4] p-3" aria-label="历史版本预览">
                         <div className="flex items-center justify-between gap-3">
-                          <strong className="text-sm">历史版本预览</strong>
-                          <button type="button" onClick={() => setHistoricalPreview(null)}>退出预览</button>
+                          <strong className="text-sm">历史版本预览 · {historicalPreview.label}</strong>
+                          <button type="button" onClick={exitHistoricalPreview}>退出预览</button>
                         </div>
-                        <p className="mt-2 text-sm font-medium">{historicalPreview.title}</p>
+                        <p className="mt-2 text-sm font-medium">{historicalPreview.asset.title}</p>
                         <p className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-xs text-[#736e67]">
-                          {historicalPreview.body || "此版本没有可显示的正文。"}
+                          {historicalPreview.asset.body || "此版本没有可显示的正文。"}
                         </p>
                       </div>
                     ) : null}
+                    {previewingVersionId ? <button type="button" onClick={exitHistoricalPreview}>取消预览</button> : null}
                     {historicalPreviewError ? <p role="alert">{historicalPreviewError}</p> : null}
                     <div className="shadcn-prototype-version-list">
                       {product.versions.map((version) => {
@@ -1650,14 +2082,16 @@ export default function ProductWorkspace({
                             </button>
                             <button
                               type="button"
-                              disabled={isCurrent || !onRestoreVersion || restoringVersionId === version.id}
+                              disabled={productMutationPending || isTextEditing || showEditorEmbed || Boolean(materialPickerSegment || voiceoverSegment)
+                                || isCurrent || !onRestoreVersion}
                               onClick={async () => {
                                 if (!onRestoreVersion) return;
-                                setRestoringVersionId(version.id);
+                                const request = { productId: product.id, versionId: version.id, token };
+                                setRestoringVersion(request);
                                 try {
                                   await onRestoreVersion(product, version.id);
                                 } finally {
-                                  setRestoringVersionId(null);
+                                  setRestoringVersion((current) => current === request ? null : current);
                                 }
                               }}
                             >
@@ -1733,13 +2167,8 @@ export default function ProductWorkspace({
               <button
                 type="button"
                 className="primary"
-                onClick={() => {
-                  setTextEditBody(product.markdownBody ?? "");
-                  setTextEditError("");
-                  setTextEditSaved(false);
-                  setStructuralChange(null);
-                  setIsTextEditing(true);
-                }}
+                disabled={productMutationPending}
+                onClick={startTextEditing}
               >
                 <Pencil size={12} aria-hidden="true" />
                 编辑
@@ -1747,11 +2176,11 @@ export default function ProductWorkspace({
             ) : null}
             {isTextEditing ? (
               <>
-                <button type="button" onClick={() => void cancelTextEdit()} disabled={textEditSaving}>取消</button>
+                <button type="button" onClick={() => void cancelTextEdit()} disabled={textEditSaving || textEditReading}>取消</button>
                 <button
                   type="button"
                   className="primary"
-                  disabled={!textEditDirty || textEditSaving}
+                  disabled={!textEditDirty || textEditSaving || textEditConflict || textEditReading}
                   onClick={() => void saveTextEdit(false)}
                 >
                   {textEditSaving ? "校验并保存中…" : "保存修改"}
@@ -1768,6 +2197,7 @@ export default function ProductWorkspace({
                 triggerLabel="下载"
                 triggerClassName="primary"
                 menuAriaLabel="选择图片下载版本"
+                disabled={productMutationPending}
                 options={[
                   { variant: "original", label: "下载原图" },
                   { variant: "brand_showcase", label: "下载品牌展示版" },
@@ -1778,6 +2208,7 @@ export default function ProductWorkspace({
             {canBrowseVideo && !isFailedStatus && videoSurface === "browse" ? (
               <button
                 type="button"
+                disabled={productMutationPending}
                 className="primary"
                 onClick={() => {
                   setEditorRequested(true);
@@ -1787,6 +2218,7 @@ export default function ProductWorkspace({
                   setExportError("");
                   verifiedExportBlobsRef.current.clear();
                   recoverableExportJobsRef.current.clear();
+                  setQualityReports({});
                 }}
               >
                 <Pencil size={12} aria-hidden="true" />
@@ -1808,7 +2240,7 @@ export default function ProductWorkspace({
                 triggerLabel={exportButtonLabel}
                 triggerClassName="shadcn-prototype-open-editor"
                 menuAriaLabel="选择视频导出版本"
-                disabled={[
+                disabled={productMutationPending || editorSaveBlocksExport || [
                   "exporting", "hashing", "uploading", "registering", "checking", "preparing", "verifying", "publishing", "downloading",
                 ].includes(exportState)}
                 options={[
@@ -1818,15 +2250,28 @@ export default function ProductWorkspace({
                 onSelect={handleExportVideo}
               />
             ) : null}
-            {stableHeaderActionsAvailable && !editableTextArtifact ? (
-              <button type="button" onClick={() => void onSaveProduct(product)}>
-                {savedVersion ? `已保存 ${savedVersion}` : "保存"}
+            {stableHeaderActionsAvailable && !editableTextArtifact && !showEditorEmbed ? (
+              <button type="button" disabled={productMutationPending} aria-busy={productMutationPending}
+                onClick={() => void onSaveProduct(product)}>
+                {savingProduct ? "保存中…" : savedVersion ? `已保存 ${savedVersion}` : "保存"}
               </button>
-            ) : textEditSaved ? (
+            ) : textEditSaved && !isTextEditing ? (
               <span className="shadcn-prototype-text-edit-saved" role="status">已保存</span>
             ) : null}
           </div>
         </header>
+
+        {productSaveConflict ? (
+          <div className="shadcn-prototype-product-conflict" role="alert">
+            <span>{productSaveConflict}</span>
+            <button type="button" disabled={productMutationPending || isTextEditing || showEditorEmbed || !onReloadProduct}
+              className="shadcn-prototype-product-conflict-action"
+              aria-busy={refreshingProduct} onClick={() => void onReloadProduct?.(product)}>
+              {refreshingProduct ? "正在读取…" : "读取最新版本"}
+            </button>
+          </div>
+        ) : null}
+        </div>
 
         {creativeProfileVisible && token && selectedConversation.id !== "new" && product.mode === "video" ? (
           <CreativeProjectUsage token={token} conversationId={selectedConversation.id} product={product} />
@@ -1927,25 +2372,40 @@ export default function ProductWorkspace({
             {directorReviewError ? <p className="mt-2 text-[#a43b32]" role="alert">{directorReviewError}</p> : null}
           </section>
         ) : null}
-
         {isTextEditing ? (
           <div className="shadcn-prototype-text-editor-shell">
             <div className="shadcn-prototype-text-editor-status">
               <span>{isDirectorText ? "整篇 Markdown 编导脚本" : "整篇 Markdown 文案"}</span>
               <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
             </div>
+            {textEditSaved && textEditDirty ? <p role="status">本次已保存，新增文字仍未保存</p> : null}
             <textarea
-              ref={textEditorRef}
+              ref={textEditorElementRef}
               aria-label={isDirectorText ? "编辑编导脚本" : "编辑文案稿"}
               value={textEditBody}
               onChange={(event) => {
                 setTextEditBody(event.target.value);
-                setTextEditError("");
+                if (!textEditConflict) setTextEditError("");
+                setTextEditSaved(false);
                 setStructuralChange(null);
               }}
               spellCheck={false}
             />
             {textEditError ? <p className="shadcn-prototype-text-edit-error" role="alert">{textEditError}</p> : null}
+            {textEditConflict ? (
+              <div className="shadcn-prototype-text-structure-review">
+                <strong>最新正文需要对照</strong>
+                <p>草稿已保留，不会自动覆盖或重新提交。请先查看最新已保存正文，再选择如何继续。</p>
+                {textEditLatest ? <details><summary>查看最新已保存正文</summary><pre className="shadcn-prototype-text-latest-body">{textEditLatest.markdownBody}</pre></details> : null}
+                <div>
+                  <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void readLatestText()}>{textEditReading ? "读取中…" : "读取最新版本"}</button>
+                  {textEditLatest ? <>
+                    <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void resolveTextConflict(false)}>采用最新正文</button>
+                    <button type="button" className="shadcn-prototype-product-conflict-action" disabled={textEditReading || textEditSaving} onClick={() => void resolveTextConflict(true)}>保留草稿，继续编辑</button>
+                  </> : null}
+                </div>
+              </div>
+            ) : null}
             {structuralChange ? (
               <div className="shadcn-prototype-text-structure-review" role="alert">
                 <strong>检测到关键结构变化</strong>
@@ -1955,7 +2415,7 @@ export default function ProductWorkspace({
                   <button
                     type="button"
                     className="primary"
-                    disabled={textEditSaving}
+                    disabled={textEditSaving || textEditConflict || textEditReading}
                     onClick={() => void saveTextEdit(true)}
                   >
                     {textEditSaving ? "校验并保存中…" : "按新结构保存"}
@@ -1972,7 +2432,9 @@ export default function ProductWorkspace({
             onLocate={locateQualityIssue}
             onRepair={repairQualityIssue}
             canRepair={canRepairQualityIssue}
-            onRecheck={() => void requestExportQuality()}
+            onRecheck={qualityReport.stage === "export_preflight"
+              ? () => void requestExportQuality()
+              : undefined}
           />
         ) : null}
 
@@ -1993,7 +2455,7 @@ export default function ProductWorkspace({
         {projectSyncError ? (
           <div className="shadcn-prototype-video-preview-fallback" role="alert">
             <span>{projectSyncError}</span>
-            <button type="button" onClick={() => void refreshPersistedVideoProject()}>重试刷新</button>
+            <button type="button" onClick={() => showEditorEmbed ? requestEditorFlushBeforeExit() : void refreshPersistedVideoProject()}>重试刷新</button>
           </div>
         ) : null}
 
@@ -2063,17 +2525,24 @@ export default function ProductWorkspace({
               token={token ?? undefined}
               footer={videoBrowseFooter}
               onLongFormAction={onLongFormAction}
-              onApplyGeneratedImage={onApplyGeneratedImage}
-              onApplyGeneratedImageSet={onApplyGeneratedImageSet}
+              onApplyGeneratedImage={productMutationPending ? undefined : onApplyGeneratedImage}
+              onApplyGeneratedImageSet={productMutationPending ? undefined : onApplyGeneratedImageSet}
               selectedImageFrameId={selectedImageFrameId}
               onSelectedImageFrameChange={onSelectedImageFrameChange}
               onRetryVideoJob={onRetryVideoJob}
-              onReplaceMaterial={openBrowseMaterialPicker}
+              comparisonAvailable={videoComparisonAvailable}
+              comparisonProduct={videoComparisonProduct}
+              comparisonLoading={videoComparisonLoading}
+              comparisonError={videoComparisonError}
+              comparisonOpen={videoComparisonOpen}
+              onOpenComparison={() => void loadVideoComparison()}
+              onCloseComparison={() => setVideoComparisonOpen(false)}
+              onReplaceMaterial={productMutationPending ? undefined : openBrowseMaterialPicker}
               onSelectSegment={onSelectSegment}
               onSceneSourceAction={onSceneSourceAction}
               sceneSourceProgress={sceneSourceProgress}
               onEditVoiceover={
-                token && product.backendAssetId
+                !productMutationPending && token && product.backendAssetId
                   ? (segment) => setVoiceoverSegment(segment)
                   : undefined
               }
@@ -2277,7 +2746,7 @@ export default function ProductWorkspace({
           />
         ) : null}
 
-        {!orchestrationPending && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
+        {!orchestrationPending && !isFailedStatus && !hasVideoProject && !previewShowsBrowse && product.timeline.length > 0 ? (
           <section
             className={hasSpeechTimeline ? "shadcn-prototype-product-timeline-strip speech" : "shadcn-prototype-product-timeline-strip"}
             aria-label={hasSpeechTimeline ? "音轨和字幕时间轴" : "时间轴预览"}

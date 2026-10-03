@@ -42,6 +42,16 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function optionalTextValue(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.trim() || "";
+}
+
+function firstOptionalTextValue(...values: unknown[]): string | undefined {
+  const knownTexts = values.filter((value): value is string => typeof value === "string");
+  return knownTexts.map((value) => value.trim()).find(Boolean) ?? (knownTexts.length ? "" : undefined);
+}
+
 function positiveIntegerValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
@@ -916,7 +926,9 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     const sceneId = stringValue(segment.id);
     const planScene = planScenesById.get(sceneId);
     const imageGenerationRecommendation = imageGenerationRecommendationsByScene.get(sceneId);
-    const reference = isRecord(segment.asset_reference) ? segment.asset_reference : null;
+    const reference = isRecord(segment.asset_reference)
+      ? segment.asset_reference
+      : isRecord(planScene?.asset_reference) ? planScene.asset_reference : null;
     const snapshot = reference && isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
     const decision = isRecord(segment.mg_decision) ? segment.mg_decision : null;
     const visible = decision && isRecord(decision.visible_summary) ? decision.visible_summary : null;
@@ -977,18 +989,23 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
     return {
       id: stringValue(segment.id) || `segment-${index + 1}`,
       index: index + 1,
-      title: stringValue(segment.title) || undefined,
+      title: optionalTextValue(segment.title),
       startSeconds: start,
       endSeconds: end,
-      line: stringValue(segment.narration) || stringValue(segment.line) || undefined,
-      voiceName: stringValue(voice?.name) || undefined,
+      line: firstOptionalTextValue(segment.narration, segment.line),
+      voiceName: optionalTextValue(voice?.name),
       subLine: decision?.needed === true && stringValue(decision.status) === "failed"
         ? [
             stringValue(segment.subtitle_focus) || stringValue(segment.subtitle),
             "MG 渲染失败，原分镜仍保留",
           ].filter(Boolean).join(" · ")
-        : stringValue(segment.subtitle_focus) || stringValue(segment.subtitle) || undefined,
-      assetTitle: stringValue(snapshot?.title) || undefined,
+        : firstOptionalTextValue(segment.subtitle_focus, segment.subtitle),
+      assetTitle: optionalTextValue(snapshot?.title),
+      assetReferenceId: primaryPersisted && primarySourceType === "saved_asset"
+        && stringValue(reference?.status) === "matched"
+        && typeof reference?.chosen_asset_id === "number" && reference.chosen_asset_id > 0
+        && primaryVisual?.asset_id === reference.chosen_asset_id
+        ? reference.chosen_asset_id : undefined,
       assetThumbnailUrl: primaryThumbnailUrl || (primaryMediaType === "video" ? undefined : imageThumbnailUrlFromRef(
         stringValue(snapshot?.preview_url) || stringValue(snapshot?.thumbnail_url) || stringValue(snapshot?.original_ref)
       )),
@@ -996,6 +1013,11 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
         || fillStatus === "public_candidate",
       materialFillStatus: fillStatus,
       primaryVisualSourceType: primarySourceType,
+      primaryVisualIdentity: primaryPersisted && primarySourceType
+        ? typeof primaryVisual?.asset_id === "number" && primaryVisual.asset_id > 0
+          ? `${primarySourceType}:asset:${primaryVisual.asset_id}`
+          : primaryArtifactRef ? `${primarySourceType}:ref:${primaryArtifactRef}` : undefined
+        : undefined,
       primaryVisualPersisted: primaryPersisted || undefined,
       primaryVisualMediaType: primaryPersisted
         ? primaryMediaType
@@ -1509,6 +1531,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,
+    backendUpdatedAt: asset.updated_at,
     contentType: asset.content_type,
     contentHash: asset.content_hash,
     videoProjectReady: Boolean(videoProject),
@@ -1529,7 +1552,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     ratio,
     duration,
     phase: capabilityLabel,
-    version: asset.versions?.length ? `v${asset.versions.length}` : "v1",
+    version: asset.versions?.length ? `v${Math.max(...asset.versions.map((item) => item.version))}` : "v1",
     body,
     markdownBody: asset.body,
     sections,

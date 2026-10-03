@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-23
+> Last verified: 2026-10-03
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -123,9 +123,11 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 - 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。旧缓存缺少 `project_state` 时直接失效，不在浏览器猜测状态。
 - `GET /v1/assets/conversations/{conversation_id}` 在用户选中项目后加载消息、产物和 `project_resource_summary`。新客户端传 `include_project_resource_items=false`，不再把完整项目资源塞进详情首屏。
 - `GET /v1/assets/conversations/{conversation_id}/resources?kind=&scope=&offset=&limit=` 按需分页读取项目资源；`source` 支持 `active / history / all`，文案、封面和视频使用 `all`。默认 20 条，最多 50 条。
+- 项目资源项的 `readd_status` 用于已移出或当前不可用的源素材：`available` 表示已移出且可重新加入，`archived` 表示源文件已从资源库归档，`not_ready` 表示尚不可用；其他资源项为 `null`。服务端依据成员状态、归档标记和就绪状态判定，不可仅用 `status=ready` 推断可重新加入。
 - `PUT /v1/assets/conversations/{conversation_id}/sources/{asset_id}` 与同路径 `DELETE` 立即持久化加入/移出。重复操作幂等；项目和素材都必须属于当前用户。
 - “移出项目”只改变今后生成使用的素材集合，不回写历史消息、历史产物、`video_plan`、分镜 `asset_reference` 或视频工程。已被旧版本使用的素材进入“历史使用”；从未被使用的素材移出后不伪造历史记录。
 - `GET /v1/assets/{asset_id}/versions/{version_id}/preview` 只读预览历史版本；`POST .../restore` 在 UI 中表达为“基于此版本继续”，继续追加新版本，不覆盖历史版本。
+- 工作台普通保存、历史恢复及冲突读取共享同一产物的同步互斥。恢复期间禁用全部历史恢复、保存与进入编辑；进入文本或视频编辑后不允许历史恢复。回包仅在账号作用域、项目、资产身份与请求基准仍匹配时回填，不覆盖晚到期间产生的新产物。
 - 过渡期 `project_resources` 保留为服务端兼容投影；前端不得用当前产物自行猜测或补造项目资源。
 - `loadConversations` 保留给任务完成刷新与幂等 reconciliation，不再作为首屏列表请求。
 
@@ -141,8 +143,19 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 #### `getProductText(product): string`
 把产物转为可复制 / 可保存的纯文本。**规则**：`body` 非空则用 `body`，否则用 `[summary]`，再 `join("\n\n")`。供「复制」按钮使用。
 
-#### `saveProduct(product, token?): Promise<{ version: string; savedAt: string }>`
+#### `saveProduct(product, token?): Promise<{ version: string; savedAt: string; product: AssetProduct }>`
 保存产物（异步）。只有真实 token、API 和后端资产 ID 齐全时才请求后端；否则抛出“未连接后端”，不伪造成功。
+浏览态使用 `POST /v1/assets/{id}/save`，只发送 `base_updated_at=product.backendUpdatedAt`，不回传缓存标题、正文或 metadata。后端按用户归属及服务端时间原子校验，在同一事务中为服务器当前内容创建去重版本快照；过期返回 409，缺失/非法基准或额外字段返回 422。客户端缺少基准直接要求刷新，不回退旧 PATCH。
+返回版本取自完整资产响应中 `versions[].version` 的最大合法正整数，保存时间取自 `updated_at`，同时返回映射产物；重复保存可能返回同一版本，禁止按客户端版本加一。响应身份、版本或保存时间无法核验时不能显示伪成功。
+成功时同步产物、标题和版本历史，回填需仍匹配请求的会话、资产、基准时间和认证范围；晚到结果不能覆盖新产物。已保存提示绑定返回的服务端时间和版本，下一次产物更新后自动失效。请求期间显示“保存中…”、同步阻止重复请求，暂停进入编辑和版本恢复；失败释放。
+409 显示绑定当前基准的持久提示和“读取最新版本”。读取仅调用当前项目 GET 并更新目标产物，不整页刷新、不清空未发送输入、不自动 POST 保存；读取失败保留原画面和输入并允许重试。读取期间暂停相关写入口；产物更新后旧冲突提示自动失效。
+文稿编辑保存按产物与编辑会话隔离：晚到成功/失败/结构确认/finally 不退出另一产物编辑，不清除其草稿或忙碌状态。响应须匹配原资产及认证范围；不同产物当前可见时按原基准回填原产物，返回同一产物的新会话则不覆盖新草稿。历史版本预览只接受最后一次选择，版本标签与快照一起保存；取消预览、产物/认证变化或卸载使旧请求失效，不触发写入。
+文稿保存捕获提交时正文，等待期间继续输入不会被返回结果覆盖：已提交内容保存成功后，新增文字仍留在编辑器、显示未保存提示，下次手动保存采用成功响应的新哈希。自身响应的父级回显不得重置该草稿。A→B→A 返回浏览态应接收已成功保存的正文与版本；返回后已开启新编辑时必须保留草稿，先对照再继续。
+未保存文稿的内部导航（产物、项目、新建、资料打开、库、首页、退出及 URL 参数切换）须先确认放弃；取消保留草稿，保存/读取中暂停切换，确认期间发生新输入或作用域变化则旧确认失效。删除其他项目不触发当前草稿放弃确认。后台生成结果可更新项目内容，但不得抢占正在编辑的产物焦点。同一产物的外部更新保留旧编辑基准和草稿，展示最新正文对照，不直接重置编辑器。
+资源库上传完成只刷新库内容，不自动切换当前页面；上传期间回到项目或其他库后，回包不得关闭编辑器或改变当前工作对象。文本编辑的“取消”经确认放弃后结束旧会话，清除旧冲突与反馈，以当前已知最新已保存正文作为再次编辑的基准；冲突只读已取得的最新快照可回填浏览态，但不自动 POST 保存。拒绝放弃或确认期间发生新输入/上下文变化仍保留草稿。
+文本编辑的最终写入以初读 hash 与 updated_at 原子核验占用，校验后发生另一写入仍返回 409，正文和版本快照不被旧请求覆盖；成功响应在提交前固定，避免提交后误报另一请求的正文。
+`saveTextEdit` 的版本冲突错误保留 `status=409` 与 `code=edit_version_conflict`，不依赖错误文案判断。冲突时暂停再次保存，提供“读取最新版本”：只读当前对话详情并校验目标资产，失败允许重试，不刷新页面、不丢草稿、不自动 POST。展示最新正文后，用户明确确认“采用最新正文”（替换草稿）或“保留草稿，继续编辑”（下次保存会以草稿替换最新正文），才更新基准；不做自动合并。读取与确认均隔离晚到响应、身份变化及新输入。
+视频内嵌编辑态不显示通用产物保存按钮；时间线手动保存与退出统一由“完成编辑 / 重试保存”执行 flush，失败保留编辑现场。浏览态普通保存不承担时间线保存职责。
 
 ### 2.3 真实后端边界
 
@@ -712,7 +725,10 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - `stage=project` 只在主工程发布或用户保存了变化后的工程时运行；通过后后端保存
   `video_project_quality_approval` 指纹。相同工程重复保存复用批准，不重新执行内容审查。
-- 用户从导出菜单选择“原始成片”或“品牌展示版”后，编辑器先保存当前序列，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
+- 工程/任务读取返回 `project_fingerprint`；时间线 `PUT /v1/video/projects/{asset_id}` 必须用 `If-Match: "<project_fingerprint>"` 提交编辑基础版本，成功响应返回新指纹。合法写入缺少版本返回 `428 project_revision_required`，版本过期或校验后并发更新返回 `412 project_version_conflict`，不覆盖新工程。旧页面需刷新；前后端须配套发布。
+- 自动保存、手动保存、配乐 mutation 和独立编辑器导出共用单一写入队列；普通保存在实际执行时读取最新快照，显式导出快照过期时不再写入。内嵌编辑导出及配乐准备 flush 同一协调器；完成编辑与导出还须等待已发出的配乐写入及其本地应用。只读浏览预览导出不执行时间线 PUT。版本冲突保留本地编辑现场，禁止自动读取新版本后盲目重试覆盖。
+- `PUT /v1/video/projects/{asset_id}/bgm` 返回实际已保存稳定工程的必需 `project_fingerprint`，前端应用前校验。回包仅更新 BGM 轨、媒体、`bgm_choice`/`audio_mix`，不得重建场景或覆盖请求/下载期间的其他编辑。工作台编辑态中的常规 `project-updated` 不刷新产物；只有显式完成编辑保存及受代次保护的刷新成功后退出。刷新失败保留编辑器，重试刷新仍先 flush。
+- 用户从导出菜单选择“原始成片”或“品牌展示版”后，可编辑剪辑器先确认当前序列已保存，再请求 `GET /v1/video/projects/{asset_id}/quality?stage=export_preflight`。
   该阶段只核对批准指纹和 MG 等异步状态，不重新审查主画面、证据、字幕或时间线内容。
 - `stage=project` 时，`mg_failed`、`mg_not_ready`、`mg_stale` 只记录内部 warning，允许主工程先持久化以供恢复。
 - `stage=export_preflight` 时，上述 overlay 状态均为 blocker；用户可见视频在未完成时为“生成中”、失败时为“失败”，不能编辑或导出。
@@ -721,7 +737,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
 - 导出版本枚举固定为 `original | brand_showcase`。缺少 `export_variant` 时按 `original` 处理；
   `brand_showcase` 必须携带 `brand_spec_version: "multimix-brand-showcase:v1"`，原始版将版本归一为 `null`。
-- 浏览器完成编码后，先调用 `POST /v1/video/projects/{asset_id}/exports/uploads` 申请上传会话。请求示例：
+- 浏览器完成编码后，先调用 `POST /v1/video/projects/{asset_id}/exports/uploads` 申请上传会话，`If-Match` 绑定开始导出时已确认的工程指纹；协商返回指纹必须相同，不得把旧视频绑定成新工程。请求体示例：
 
 ```json
 {
@@ -735,7 +751,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 
 - 直传模式完成后调用 `POST /v1/video/projects/{asset_id}/exports/register`，并在上述字段之外携带
   `project_fingerprint` 和可选 `client_timing_events`；本地兼容模式使用上传会话返回的带版本查询参数的
-  `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址。两条路径都只做工程与上传边界检查、
+  `POST /v1/video/projects/{asset_id}/exports?...` multipart 地址，并携带同一 `If-Match`。两条路径在登记前锁定并重查当前工程指纹，只做工程与上传边界检查、
   持久化候选并创建或复用异步任务，成功返回 `202`；耗时的完整解码、黑场检测和最终发布由现有
   视频 worker 继续执行。multipart 的 `client_timing_events` 是 JSON 字符串字段。
 - `client_timing_events` 只接受浏览器已经完成的 `preparing | composing | hashing | uploading`；
@@ -782,6 +798,26 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   重新导出，不伪造续跑。上传失败时页面会话内复用同一 Blob，只重传，不重新合成；若 worker
   返回可重试失败，前端调用现有 `POST /v1/video/jobs/{job_public_id}/retry` 复用服务端候选文件，刷新
   页面后也不重新合成。
+- `failed` 任务携带 `quality_report` 时，刷新恢复和重试失败都必须同时展示本次任务的具体 blocker、
+  说明与建议；本次失败没有报告时清除上一任务的报告，不能只留下笼统任务错误或误用旧问题。
+- “重新检查”只用于 `export_preflight`，不能用工程预检结果覆盖 `export_file` 文件失败报告。
+  文件级报告引导用户通过导出菜单重新导出，并由新导出任务结果更新；带质量 blocker 的失败摘要
+  使用中文说明，原报告保留具体原因。
+- 等待已有品牌展示版导出任务时，任务失败须展示本次报告并停止当前流程，不自动重试或重新合成。
+  可重试任务保留身份供用户下一次明确操作；首次导出、刷新恢复和服务端重试共用质量失败中文摘要。
+- 独立剪辑器的导出菜单统一进入 EditorView 校验实时编辑内容身份；缓存只有在 tracks/media/settings/metadata
+  与本次编辑内容一致时才可下载。未保存内容不能复用旧服务端 current 任务，必须走保存、预检和正常导出。
+  保存、配乐变更和真实内容修改使旧恢复/下载请求失效；合成中内容变化时旧结果不得继续上传。
+- 工作台编辑 bridge 只接受当前 iframe 的 `MessageEvent.source`；导出命令携带唯一 `requestId`，编辑器
+  在所有导出进度、报告、成功及失败消息中回显。工作台匹配请求 ID 与启动工程内容身份，旧窗口、旧请求、
+  换版后的回复及其详情刷新均不得写回。独立 `previewChannel` 与时间线 flush 的请求合同保持不变。
+- 工作台收到 `dirty/saving/error` 保存状态或 `multimix-editor-content-changed` 时，立即使两种导出
+  版本的缓存、旧恢复任务、请求身份与迟到报告失效，不等待成功 PUT。保存中导出入口显示“正在保存修改…”，
+  保存失败显示“保存失败，先重试”，通过既有“重试保存”入口恢复；未保存的修改不得查询旧品牌任务替代新导出。
+- 内嵌导出绑定点击时的实时 tracks/media/settings/metadata 与本地请求 epoch，先 flush 时间线保存协调器再预检/合成；
+  渲染、上传、验证及回填共用同一 `isCurrent`。内容变化后不继续上传旧候选，旧进度/失败/成功不覆盖新状态。
+  播放或选中等未改变序列化内容的通知不清除有效缓存；上次合成仍在结束时，新请求明确提示稍后重试，不静默丢弃。
+- “完成编辑”先 flush，再刷新浏览态；刷新回调与最终退出同时绑定本次请求、内容变化代次和 saved 状态。等待期间再次修改或保存失败时取消本次退出，保留剪辑器；旧刷新不得更新产物并卸载未保存的时间线。后续 saved 通知不能复活已取消的退出。
 - 任务只有在质量检查通过且发布时工程指纹仍一致后才发布。`original` 原子写入现有 `mp4_ref`、
   `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
   `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖

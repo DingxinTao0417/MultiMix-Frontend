@@ -85,6 +85,7 @@ import {
 
 export type LibraryRow = {
   assetId?: number;
+  archived?: boolean;
   contentHash?: string;
   sourceTypeCode?: string;
   fullBody?: string;
@@ -850,7 +851,7 @@ export type AssetWorkspaceAdapter = {
     referenceAssetIds: number[];
     legacyReferenceMappings: Record<string, number>;
   }): Promise<ContentAsset>;
-  saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string }>;
+  saveProduct(product: AssetProduct, token?: string | null): Promise<{ version: string; savedAt: string; product: AssetProduct }>;
   saveTextEdit(args: {
     token: string;
     product: AssetProduct;
@@ -1016,6 +1017,7 @@ export type AssetWorkspaceAdapter = {
     query?: string,
     options?: LibraryListOptions,
   ): Promise<LibraryPage>;
+  getLibraryAsset(token: string, assetId: number, options?: { signal?: AbortSignal }): Promise<LibraryRow>;
   uploadAsset(
     token: string,
     file: File,
@@ -1404,7 +1406,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : {};
   const noAssetHit = Boolean(metadata.no_asset_hit);
   const mediaUnavailable = metadata.media_availability === "missing";
-  const status = category === "编导稿"
+  const status = asset.archived ? "已归档" : category === "编导稿"
     ? (videoProjectStatusLabel(asset) ?? (noAssetHit ? "未命中素材" : "有来源"))
     : (videoProjectStatusLabel(asset)
       ?? (mediaUnavailable
@@ -1417,6 +1419,7 @@ function contentAssetToLibraryRow(asset: ContentAsset, searchReasons: string[] =
   const licenseLabel = typeof asset.metadata?.license_label === "string" ? asset.metadata.license_label : undefined;
   return {
     assetId: asset.id,
+    archived: asset.archived,
     contentHash: asset.content_hash ?? undefined,
     sourceTypeCode: asset.source_type,
     fullBody: asset.body,
@@ -1561,15 +1564,21 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async saveProduct(product, token) {
       if (isApiConfigured && token && product.backendAssetId) {
-        await api<unknown>(`/assets/${product.backendAssetId}`, token, {
-          method: "PATCH",
-          body: JSON.stringify({
-            title: product.title,
-            body: product.body?.join("\n\n") ?? product.summary,
-          })
+        if (!product.backendUpdatedAt || !Number.isFinite(Date.parse(product.backendUpdatedAt))) {
+          throw new Error("当前产物缺少可校验的保存版本，请刷新后重试。");
+        }
+        const saved = await api<ContentAsset>(`/assets/${product.backendAssetId}/save`, token, {
+          method: "POST",
+          body: JSON.stringify({ base_updated_at: product.backendUpdatedAt })
         });
-        const nextVersion = product.version ? `v${parseInt(product.version.replace("v", "")) + 1}` : "v2";
-        return { version: nextVersion, savedAt: new Date().toISOString() };
+        const versions = saved?.versions;
+        if (saved?.id !== product.backendAssetId || !Array.isArray(versions) || versions.length === 0 || versions.some((item) =>
+          !Number.isSafeInteger(item?.version) || item.version < 1,
+        ) || typeof saved.updated_at !== "string" || !Number.isFinite(Date.parse(saved.updated_at))) {
+          throw new Error("无法核验保存版本，请刷新后核对当前产物。");
+        }
+        return { version: `v${Math.max(...versions.map((item) => item.version))}`, savedAt: saved.updated_at,
+          product: contentAssetToProduct(saved) };
       }
       throw new Error("未连接后端，无法保存产物。");
     },
@@ -1599,10 +1608,10 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         };
       }
       if (!response.ok) {
-        throw new Error(
+        throw Object.assign(new Error(
           stringValue(detail.message)
           || (stringValue(detail.code) === "edit_version_conflict" ? "产物已更新，请刷新后再编辑。" : "保存失败，请返回编辑后重试。"),
-        );
+        ), { status: response.status, code: stringValue(detail.code) });
       }
       return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
     },
@@ -2109,6 +2118,15 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         rows,
         nextOffset: hasMore ? offset + limit : null,
       };
+    },
+    async getLibraryAsset(token, assetId, options = {}) {
+      const detail = await api<{ asset: ContentAsset }>(`/assets/detail/${assetId}`, token, {
+        signal: options.signal,
+      });
+      if (detail.asset?.id !== assetId) {
+        throw new Error("项目资料详情与所选素材不一致，请重试。");
+      }
+      return contentAssetToLibraryRow(detail.asset);
     },
     async uploadAsset(token, file, view, onProgress, idempotencyKey) {
       const formData = new FormData();

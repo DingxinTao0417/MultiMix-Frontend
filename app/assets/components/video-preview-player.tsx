@@ -16,6 +16,7 @@ export type VideoPreviewPlayerProps = {
   posterSrc?: string;
   label: string;
   ratioClassName: string;
+  muted?: boolean;
   initialTime?: number;
   onTimeUpdate?: (time: number) => void;
   onError?: () => void;
@@ -34,15 +35,19 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     posterSrc,
     label,
     ratioClassName,
+    muted = false,
     initialTime = 0,
     onTimeUpdate,
     onError,
   }, forwardedRef) {
     const localRef = useRef<HTMLVideoElement | null>(null);
+    const playbackRequestRef = useRef(0);
     const [duration, setDuration] = useState(0);
     const [currentTime, setCurrentTime] = useState(0);
     const [playing, setPlaying] = useState(false);
     const [failed, setFailed] = useState(false);
+    const [failureLabel, setFailureLabel] = useState("视频暂时无法加载");
+    const [playbackNotice, setPlaybackNotice] = useState("");
     const [ready, setReady] = useState(false);
     const [bufferedPercent, setBufferedPercent] = useState<number | null>(null);
     const [reloadRevision, setReloadRevision] = useState(0);
@@ -60,10 +65,13 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     }, [forwardedRef]);
 
     useEffect(() => {
+      playbackRequestRef.current += 1;
       setDuration(0);
       setCurrentTime(0);
       setPlaying(false);
       setFailed(false);
+      setFailureLabel("视频暂时无法加载");
+      setPlaybackNotice("");
       setReady(false);
       setBufferedPercent(null);
     }, [src, reloadRevision]);
@@ -71,8 +79,29 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     const togglePlayback = () => {
       const video = localRef.current;
       if (!video || !ready) return;
-      if (playing) video.pause();
-      else void video.play().catch(() => setFailed(true));
+      if (playing) {
+        playbackRequestRef.current += 1;
+        video.pause();
+      }
+      else {
+        const requestId = ++playbackRequestRef.current;
+        setPlaybackNotice("");
+        void video.play().catch((error: unknown) => {
+          if (localRef.current !== video || playbackRequestRef.current !== requestId) return;
+          const name = error && typeof error === "object" && "name" in error ? error.name : null;
+          if (name === "AbortError") return;
+          if (name === "NotSupportedError") {
+            setFailureLabel("当前视频无法解码");
+            setFailed(true);
+            setReady(false);
+            onError?.();
+            return;
+          }
+          setPlaybackNotice(name === "NotAllowedError"
+            ? "浏览器阻止了播放，请检查播放设置后重试。"
+            : "视频暂时无法播放，请重试。");
+        });
+      }
     };
 
     const handleSeek = (event: ChangeEvent<HTMLInputElement>) => {
@@ -86,10 +115,10 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
 
     if (failed) {
       return (
-        <div className={`shadcn-prototype-preview-player ${ratioClassName}`} aria-label={label}>
+        <div className={`shadcn-prototype-preview-player ${ratioClassName}`} role="group" aria-label={label}>
           <div className="shadcn-prototype-preview-player-error" role="alert">
-            <strong>视频暂时无法加载</strong>
-            <button type="button" onClick={() => {
+            <strong>{failureLabel}</strong>
+            <button type="button" aria-label={`${label}：重新加载视频`} onClick={() => {
               setFailed(false);
               setReloadRevision((value) => value + 1);
             }}>
@@ -101,11 +130,11 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
     }
 
     return (
-      <div className={`shadcn-prototype-preview-player ${ratioClassName}`} aria-label={label}>
+      <div className={`shadcn-prototype-preview-player ${ratioClassName}`} role="group" aria-label={label}>
         <button
           type="button"
           className="shadcn-prototype-preview-player-screen"
-          aria-label={playing ? "点击画面暂停视频" : "点击画面播放视频"}
+          aria-label={`${label}：${playing ? "暂停视频" : "播放视频"}`}
           disabled={!ready}
           onClick={togglePlayback}
         >
@@ -116,6 +145,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
             poster={posterSrc || undefined}
             preload="auto"
             playsInline
+            muted={muted}
             onLoadedMetadata={(event) => {
               const video = event.currentTarget;
               setDuration(Number.isFinite(video.duration) ? video.duration : 0);
@@ -136,16 +166,32 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
               setCurrentTime(time);
               onTimeUpdate?.(time);
             }}
-            onPlay={() => setPlaying(true)}
-            onPause={() => setPlaying(false)}
-            onEnded={() => setPlaying(false)}
+            onPlay={() => {
+              playbackRequestRef.current += 1;
+              setPlaying(true);
+              setPlaybackNotice("");
+            }}
+            onPause={() => {
+              playbackRequestRef.current += 1;
+              setPlaying(false);
+            }}
+            onEnded={() => {
+              playbackRequestRef.current += 1;
+              setPlaying(false);
+            }}
             onError={() => {
+              playbackRequestRef.current += 1;
+              setFailureLabel("视频暂时无法加载");
               setFailed(true);
               setReady(false);
               setPlaying(false);
+              setPlaybackNotice("");
               onError?.();
             }}
           />
+          {playbackNotice ? <span className="shadcn-prototype-preview-player-playback-notice" role="status">
+            {playbackNotice}
+          </span> : null}
           {!ready ? (
             <span className="shadcn-prototype-preview-player-loading" role="status">
               <strong>{loadingLabel}</strong>
@@ -159,7 +205,7 @@ const VideoPreviewPlayer = forwardRef<HTMLVideoElement, VideoPreviewPlayerProps>
           <span>{formatPreviewTime(currentTime)}</span>
           <input
             type="range"
-            aria-label="播放进度"
+            aria-label={`${label}：播放进度`}
             min="0"
             max={duration || 0}
             step="0.01"

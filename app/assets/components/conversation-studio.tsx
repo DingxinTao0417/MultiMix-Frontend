@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
-import { ArrowUp, ChevronRight, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
@@ -54,14 +54,18 @@ import ExternalVideoStoryboardProgress from "./external-video-storyboard-progres
 import { confirmVideoStoryboard } from "../lib/video-storyboard-client";
 import { VideoProgressCard } from "./video-progress-card";
 import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
-import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
 import CreativeDirectionSelector from "./creative-direction-selector";
-import { isFiveLayerVideoPlan, isPresenterSourceVideoPlan } from "../lib/video-creative-profile";
+import { finishedVideoPosterUrl } from "./product-preview";
+import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
 import { requirementConversationMediaFromValue, type ImageToVideoCostSummary, type NarrationUsageSummary } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
 } from "../lib/runtime-write-capabilities";
+import {
+  isFiveLayerVideoPlan,
+  isPresenterSourceVideoPlan,
+} from "../lib/video-creative-profile";
 
 type VisibleConversationMessage = AssetConversationMessage & { pending?: boolean };
 
@@ -329,6 +333,59 @@ function hasReadyVideoProjectForDirectorScript(
   ));
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function browserImageUrl(value: unknown): string {
+  const url = typeof value === "string" ? value.trim() : "";
+  return /^(?:https?:\/\/|data:|blob:)/i.test(url) ? url : "";
+}
+
+function creativeDirectionForProduct(product: ProductArtifact): unknown | null {
+  if (!['video_script', 'short_video_narration'].includes(product.contentType ?? "")) return null;
+  const videoPlan = recordValue(product.metadata?.video_plan);
+  if (!videoPlan || !isFiveLayerVideoPlan(videoPlan) || isPresenterSourceVideoPlan(videoPlan)) return null;
+  return videoPlan.creative_direction ?? null;
+}
+
+function ProductCardVisual({ product }: { product: ProductArtifact }) {
+  const [failed, setFailed] = useState(false);
+  const metadata = recordValue(product.metadata);
+  const thumbnailUrl = product.mode === "video"
+    ? finishedVideoPosterUrl(product)
+      || browserImageUrl(metadata?.thumbnail_url)
+      || browserImageUrl(metadata?.poster_url)
+    : product.mode === "image"
+      ? browserImageUrl(metadata?.preview_url) || browserImageUrl(metadata?.thumbnail_url)
+      : "";
+
+  if (thumbnailUrl && !failed) {
+    return (
+      <span className="shadcn-prototype-product-card-thumbnail">
+        {/* eslint-disable-next-line @next/next/no-img-element -- API and artifact-store preview URLs are runtime values. */}
+        <img src={thumbnailUrl} alt="" loading="lazy" onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+
+  return (
+    <span className="shadcn-prototype-context-icon" aria-hidden="true">
+      {product.mode === "image" ? (
+        <ImageIcon size={15} />
+      ) : product.mode === "audio" ? (
+        <Play size={14} />
+      ) : product.mode === "video" || product.mode === "mg-overlay" ? (
+        <Video size={15} />
+      ) : (
+        <FileText size={15} />
+      )}
+    </span>
+  );
+}
+
 export function resolveExecutionTimelineSteps(
   liveRunState: {
     jobId: string;
@@ -376,6 +433,7 @@ export function resolveAgentActionTimelineSteps(
 }
 
 export default function ConversationStudio({
+  navigationSlot,
   basePath,
   contextAssets = [],
   selectedConversation,
@@ -415,12 +473,13 @@ export default function ConversationStudio({
   inheritedRequirementNotice = false,
   requirementAnalyticsToken,
 }: {
+  navigationSlot?: ReactNode;
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
   selectedConversation: Conversation;
   selectedProduct: ProductArtifact | null;
   onSelectProduct: (conversationId: string, productId: string) => void;
-  onApplyCreativeDirection?: (selection: AssetCreativeDirectionSelection) => Promise<void>;
+  onApplyCreativeDirection?: (product: ProductArtifact, selection: AssetCreativeDirectionSelection) => Promise<void>;
   selectedImageFrameIds?: Record<string, string>;
   onSelectImageFrame?: (productId: string, frameId: string) => void;
   imageAttachments?: ChatImageAttachment[];
@@ -573,20 +632,6 @@ export default function ConversationStudio({
     () => mapProductsToConversationMessages(visibleConversationMessages, products),
     [visibleConversationMessages, products]
   );
-  const selectedPlan = selectedProduct?.metadata?.video_plan;
-  const selectedCreativeDirection = selectedProduct
-    && ["video_script", "short_video_narration"].includes(selectedProduct.contentType ?? "")
-    && isFiveLayerVideoPlan(selectedPlan)
-    && !isPresenterSourceVideoPlan(selectedPlan)
-    && selectedPlan && typeof selectedPlan === "object" && !Array.isArray(selectedPlan)
-    ? (selectedPlan as Record<string, unknown>).creative_direction
-    : null;
-  const directionMessageIndex = selectedCreativeDirection
-    ? [...productCardsByMessageIndex.entries()]
-      .filter(([, linkedProducts]) => linkedProducts.some((product) => product.id === selectedProduct?.id))
-      .map(([index]) => index)
-      .at(-1)
-    : undefined;
 
   const resizeComposer = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = `${COMPOSER_MIN_HEIGHT}px`;
@@ -1117,35 +1162,36 @@ export default function ConversationStudio({
               }}
             />;
           }
-          return <Link
-            className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
-            href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
-            key={product.id}
-            onClick={(event) => {
-              event.preventDefault();
-              onSelectProduct(selectedConversation.id, product.id);
-            }}
-          >
-            <span className="shadcn-prototype-context-icon">
-              {product.mode === "image" ? (
-                <ImageIcon size={15} aria-hidden="true" />
-              ) : product.mode === "audio" ? (
-                <Play size={14} aria-hidden="true" />
-              ) : product.mode === "video" || product.mode === "mg-overlay" ? (
-                <Video size={15} aria-hidden="true" />
-              ) : (
-                <FileText size={15} aria-hidden="true" />
-              )}
-            </span>
-            <span>
-              <strong>{product.title}</strong>
-              <em>{product.phase} · {product.status}</em>
-            </span>
-            {product.version ? <small>{product.version}</small> : null}
-            <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            </span>
-          </Link>;
+          const displayIdentity = getProductDisplayIdentity(product);
+          const creativeDirection = creativeDirectionForProduct(product);
+          return <Fragment key={product.id}>
+            <Link
+              className={product.id === selectedProduct?.id ? "shadcn-prototype-product-card active" : "shadcn-prototype-product-card"}
+              href={`${basePath}?conversation=${encodeURIComponent(selectedConversation.id)}&product=${encodeURIComponent(product.id)}`}
+              onClick={(event) => {
+                event.preventDefault();
+                onSelectProduct(selectedConversation.id, product.id);
+              }}
+            >
+              <ProductCardVisual product={product} />
+              <span>
+                <strong>{displayIdentity.title}</strong>
+                <em>{product.status}</em>
+              </span>
+              <span className="shadcn-prototype-product-card-arrow" aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              </span>
+            </Link>
+            {creativeDirection ? (
+              <CreativeDirectionSelector
+                direction={creativeDirection}
+                disabled={!writeCapabilities.canGenerate || readonly}
+                onApply={onApplyCreativeDirection
+                  ? (selection) => onApplyCreativeDirection(product, selection)
+                  : undefined}
+              />
+            ) : null}
+          </Fragment>;
         })}
       </div>
     );
@@ -1172,12 +1218,12 @@ export default function ConversationStudio({
       .filter((id): id is string => typeof id === "string" && Boolean(id)),
   );
   const projectResourceCounts: Array<[string, number]> = [
-    ["素材", selectedConversation.projectResourceSummary?.sources ?? selectedConversation.projectResources?.sources.length ?? 0],
+    ["素材", (selectedConversation.projectResourceSummary?.sources ?? selectedConversation.projectResources?.sources.length ?? 0)
+      + (selectedConversation.projectResourceSummary?.historicalSources ?? 0)],
     ["文案", selectedConversation.projectResourceSummary?.copies ?? selectedConversation.projectResources?.copies.length ?? 0],
     ["封面", selectedConversation.projectResourceSummary?.covers ?? selectedConversation.projectResources?.covers.length ?? 0],
     ["视频", selectedConversation.projectResourceSummary?.videos ?? selectedConversation.projectResources?.videos.length ?? 0],
   ];
-  const visibleProjectResourceCounts = projectResourceCounts.filter(([, count]) => count > 0);
   const projectResourceTotal = projectResourceCounts.reduce((total, [, count]) => total + count, 0);
 
   return (
@@ -1195,25 +1241,26 @@ export default function ConversationStudio({
     >
       <div className="shadcn-prototype-chat-context">
         <header className="shadcn-prototype-chat-head">
+          {navigationSlot}
           <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-          {diagnosticsSlot ? <div className="shadcn-prototype-chat-head-actions">{diagnosticsSlot}</div> : null}
+          {(projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false) || diagnosticsSlot ? (
+            <div className="shadcn-prototype-chat-head-actions">
+              {projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false ? (
+                <button
+                  type="button"
+                  className="shadcn-prototype-project-resources"
+                  aria-label={`项目资料，共 ${projectResourceTotal} 项`}
+                  onClick={onOpenProjectResources}
+                >
+                  <FolderOpen size={15} aria-hidden="true" />
+                  <span>资料</span>
+                  <strong>{projectResourceTotal}</strong>
+                </button>
+              ) : null}
+              {diagnosticsSlot}
+            </div>
+          ) : null}
         </header>
-        {visibleProjectResourceCounts.length || onOpenProjectResources ? (
-          <button
-            type="button"
-            className="shadcn-prototype-project-resources"
-            aria-label="项目资源"
-            onClick={onOpenProjectResources}
-          >
-            <FolderOpen size={15} aria-hidden="true" />
-            <span>项目资源</span>
-            <strong>{projectResourceTotal}</strong>
-            {visibleProjectResourceCounts.map(([label, count]) => (
-              <em key={label}>{label} {count}</em>
-            ))}
-            <ChevronRight size={14} aria-hidden="true" />
-          </button>
-        ) : null}
         {inheritedRequirementNotice ? (
           <p className="shadcn-prototype-requirement-inherited" role="status">
             已继承上一项目的需求；这是一个独立项目，对话和产物从空白开始。
@@ -1362,6 +1409,12 @@ export default function ConversationStudio({
                 message.pending ? "pending" : "",
                 message.localState ? `local-${message.localState}` : ""
               ].filter(Boolean).join(" ")}>
+              {message.role === "assistant" && shouldRenderMessageBody(message) && message.text.trim() ? (
+                <div className="shadcn-prototype-assistant-message-meta" aria-label="AI 编导回复">
+                  <span aria-hidden="true">M</span>
+                  <strong>AI 编导</strong>
+                </div>
+              ) : null}
               {showsAssistantWaiting ? (
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
@@ -1528,14 +1581,6 @@ export default function ConversationStudio({
                 />
               ) : null}
               {renderProductCards(index)}
-              {directionMessageIndex === index && selectedCreativeDirection ? (
-                <CreativeDirectionSelector
-                  key={selectedProduct?.id}
-                  direction={selectedCreativeDirection}
-                  disabled={sending || readonly}
-                  onApply={onApplyCreativeDirection}
-                />
-              ) : null}
               {(() => {
                 const suggestions = (message.plan?.status === "confirmed" ? [] : visibleSuggestions(message))
                   .map((suggestion) => ({ suggestion, intent: resolveSuggestionClickIntent(suggestion) }))

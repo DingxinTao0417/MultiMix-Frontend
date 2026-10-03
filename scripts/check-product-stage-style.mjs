@@ -26,4 +26,8 @@ assert.match(css, /\.shadcn-prototype-preview-player\.ratio-landscape\s+\.shadcn
 assert.match(css, /\.shadcn-prototype-preview-player\.ratio-portrait\s+\.shadcn-prototype-preview-player-screen\s*\{[^}]*aspect-ratio:\s*9\s*\/\s*16;/s, "portrait ratio must apply to the media screen, not the shell plus controls");
 assert.doesNotMatch(preview, /VideoPreviewResizer|previewHeight/, "browse preview must not reserve detached resizer space below the player");
 
+assert.ok(workspace.includes('className="shadcn-prototype-product-conflict"'), "conflict alerts must use native workspace CSS");
+assert.match(css, /\.shadcn-prototype-product-conflict\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*padding:\s*12px 20px;/s, "conflict alerts must have layout and readable padding");
+assert.match(css, /\.shadcn-prototype-product-conflict-action\s*\{[^}]*min-height:\s*40px;[^}]*border-radius:\s*999px;/s, "conflict read buttons must remain rounded and at least 40px tall");
+assert.match(css, /\.shadcn-prototype-product-conflict-action:focus-visible\s*\{[^}]*outline:/s, "conflict read buttons must have a keyboard focus indicator");
 console.log("Product stage style contract passed.");

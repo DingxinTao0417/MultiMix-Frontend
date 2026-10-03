@@ -30,18 +30,14 @@ export default function BgmPanel({
   initialChoice = null,
   open = true,
   onOpenChange,
-  onPrepareChange,
-  onMutate,
-  onProjectChanged,
+  onChange,
 }: {
   assetId: string;
   token: string | null;
   initialChoice?: BGMChoice | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  onPrepareChange: () => Promise<void>;
-  onMutate?: (body: { action: BGMAction; catalog_id?: string; catalog_version: string }) => Promise<BGMUpdateResponse>;
-  onProjectChanged: (result: BGMUpdateResponse) => Promise<void>;
+  onChange: (mutation: () => Promise<BGMUpdateResponse>) => Promise<BGMUpdateResponse>;
 }) {
   const [catalog, setCatalog] = useState<BGMCatalogResponse | null>(null);
   const [available, setAvailable] = useState(true);
@@ -124,16 +120,11 @@ export default function BgmPanel({
     setUpdating(true);
     setMessage("");
     try {
-      await onPrepareChange();
-      const body = {
+      const result = await onChange(() => updateProjectBGM(assetId, token, {
         action,
         ...(catalogId ? { catalog_id: catalogId } : {}),
         catalog_version: loadedCatalog.catalog_version,
-      };
-      const result = onMutate
-        ? await onMutate(body)
-        : await updateProjectBGM(assetId, token, body);
-      await onProjectChanged(result);
+      }));
       setChoice(result.choice);
       setCatalog((current) => current ? { ...current, current_choice: result.choice } : current);
       setMessage(action === "disable" ? "已关闭背景音乐。" : "背景音乐已更新。");

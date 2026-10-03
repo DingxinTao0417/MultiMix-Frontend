@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -18,6 +18,114 @@ import type {
   ContentAsset,
 } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
+import { displayProducts } from "./fixtures/display-products";
+import { contentAssetToProduct } from "../../../lib/asset-mappers";
+
+const saveApiState = vi.hoisted(() => ({ configured: undefined as boolean | undefined }));
+vi.mock("../../../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/api")>();
+  return { ...actual, get isApiConfigured() { return saveApiState.configured ?? actual.isApiConfigured; } };
+});
+
+it("sends a project-bound versioned director import with explicit image mapping", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ id: 88 }), {
+      status: 201, headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  saveApiState.configured = true;
+  try {
+    const result = await assetWorkspaceAdapter.importDirectorDraft({
+      token: "token", source: {
+        assetId: 44, contentHash: "source-hash", title: "早餐店稿件",
+        kind: "copy", meta: "已入库", note: "原稿",
+      }, conversationId: "project-1", referenceAssetIds: [201],
+      legacyReferenceMappings: { "23": 201 },
+    });
+    expect(result.id).toBe(88);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/44/director-draft-import");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      conversation_id: "project-1", base_content_hash: "source-hash",
+      reference_asset_ids: [201], legacy_reference_mappings: { "23": 201 },
+    });
+  } finally {
+    saveApiState.configured = undefined;
+    vi.unstubAllGlobals();
+  }
+});
+
+describe("confirmed product save feedback", () => {
+  const saveProduct = { ...displayProducts["case-07-project-ready-mp4"], backendAssetId: 1,
+    backendUpdatedAt: "2026-09-28T11:00:00Z" };
+  beforeEach(() => { saveApiState.configured = true; });
+  afterEach(() => { saveApiState.configured = undefined; vi.unstubAllGlobals(); });
+
+  it.each([{ numbers: [1] }, { numbers: [5, 1, 3] }])("uses returned version numbers $numbers instead of guessing from the client", async ({ numbers }) => {
+    const savedAt = "2026-09-28T12:00:00Z";
+    const response = asset({ updated_at: savedAt, versions: numbers.map((version) => ({
+      id: version, asset_id: 1, version, title: "已保存", body: "正文", created_at: savedAt,
+    })) });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify(response)));
+    vi.stubGlobal("fetch", fetchMock);
+    const product = { ...saveProduct, version: "v40" };
+    for (let i = 0; i < 2; i++) {
+      await expect(assetWorkspaceAdapter.saveProduct(product, "token")).resolves.toEqual({
+        version: `v${Math.max(...numbers)}`, savedAt,
+        product: contentAssetToProduct(response),
+      });
+    }
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/assets/1/save");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({ base_updated_at: product.backendUpdatedAt });
+  });
+
+  it.each([undefined, [], [{ version: 0 }], [{ version: 1.5 }], [{ version: "2" }]].map((versions) => ({ versions })))(
+    "does not fabricate success when the response has invalid versions $versions", async ({ versions }) => {
+      vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ versions }))));
+      await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
+        .rejects.toThrow("无法核验保存版本");
+    },
+  );
+
+  it("keeps a failed checkpoint as a failure", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify({ detail: "fixture: save unavailable" }), { status: 503 },
+    )));
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
+      .rejects.toThrow("fixture: save unavailable");
+  });
+
+  it.each([undefined, "not-a-timestamp"])("does not claim a confirmed save with invalid savedAt %s", async (updated_at) => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      versions: [{ version: 1 }], updated_at,
+    }))));
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
+      .rejects.toThrow("无法核验保存版本");
+  });
+  it("refuses a missing server basis without sending a request", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(assetWorkspaceAdapter.saveProduct({ ...saveProduct, backendUpdatedAt: undefined }, "token"))
+      .rejects.toThrow("缺少可校验的保存版本");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it("preserves conflicts without retrying with a newer basis", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ detail: {
+      code: "asset_save_version_conflict", message: "请刷新后核对最新版本。",
+    } }), { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token"))
+      .rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+  it("rejects a response belonging to a different asset", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(asset({
+      id: 2, versions: [{ id: 1, asset_id: 2, version: 1, title: "标题", body: "正文", created_at: "2026-09-29T00:00:00Z" }],
+    })))));
+    await expect(assetWorkspaceAdapter.saveProduct(saveProduct, "token")).rejects.toThrow("无法核验保存版本");
+  });
+});
 
 it("sends a project-bound versioned director import with explicit image mapping", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
@@ -141,6 +249,20 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
     ...overrides,
   };
 }
+
+it("preserves the archived state when opening an exact project-source detail", async () => {
+  saveApiState.configured = true;
+  const archived = asset({ id: 903, asset_kind: "image", content_type: "uploaded_image", archived: true, status: "archived" });
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ asset: archived }))));
+  try {
+    const row = await assetWorkspaceAdapter.getLibraryAsset("token", 903);
+    expect(row.archived).toBe(true);
+    expect(row.statusLabel).toBe("已归档");
+  } finally {
+    saveApiState.configured = undefined;
+    vi.unstubAllGlobals();
+  }
+});
 
 describe("asset workspace category inference", () => {
   it("keeps uploaded PPT assets in 上传资料 even when the body mentions 对话", () => {
@@ -1269,6 +1391,28 @@ describe("runtime data boundary", () => {
     expect(page.nextOffset).toBe(48);
   });
 
+  it("loads a requested asset by ID instead of searching or relying on a library page", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      asset: asset({ id: 902, asset_kind: "asset", library_kind: "assets", title: "项目说明 PDF" }),
+      inbound_relations: [],
+      outbound_relations: [],
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const row = await assetWorkspaceAdapter.getLibraryAsset("token", 902);
+    expect(row).toMatchObject({ assetId: 902, title: "项目说明 PDF", kind: "file" });
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/detail/902");
+  });
+
+  it("rejects a detail response with a different asset ID", async () => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      asset: asset({ id: 903, title: "另一项资料" }),
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(assetWorkspaceAdapter.getLibraryAsset("token", 902))
+      .rejects.toThrow("项目资料详情与所选素材不一致");
+  });
+
   it("renders legacy video-kind director scripts as copy rows", async () => {
     const legacyDirector = asset({
       id: 70,
@@ -1933,25 +2077,16 @@ describe("runtime data boundary", () => {
     vi.unstubAllGlobals();
   });
 
-  it("uses the saved director version for review retry and suggestion ignore", async () => {
-    const updated = asset({ id: 88, content_type: "video_script", content_hash: "same-hash" });
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
-      new Response(JSON.stringify(updated), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      }),
-    );
+  it("preserves structured text version conflict without relying on translated messages", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ detail: {
+      code: "edit_version_conflict", message: "changed elsewhere",
+    } }), { status: 409, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    const draft = { backendAssetId: 88, contentHash: "same-hash" } as AssetProduct;
-
-    await assetWorkspaceAdapter.retryDirectorReview("token", draft);
-    await assetWorkspaceAdapter.ignoreDirectorReviewSuggestion("token", draft, "finding-1");
-
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/assets/88/director-review/retry");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/v1/assets/88/director-review/findings/finding-1/ignore");
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(init).toEqual(expect.objectContaining({ method: "POST", body: JSON.stringify({ base_content_hash: "same-hash" }) }));
-    }
-    vi.unstubAllGlobals();
+    try {
+      await expect(assetWorkspaceAdapter.saveTextEdit({ token: "token", product: { backendAssetId: 88, contentHash: "old" } as AssetProduct,
+        body: "草稿", acceptStructuralChange: false })).rejects.toMatchObject({ status: 409, code: "edit_version_conflict" });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("maps unified local candidates into current/recommended/library groups", async () => {
@@ -2343,5 +2478,27 @@ describe("runtime data boundary", () => {
   it("keeps the new conversation free from legacy type suggestions", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
     expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([]);
+  });
+
+
+  it("uses the saved director version for review retry and suggestion ignore", async () => {
+    const updated = asset({ id: 88, content_type: "video_script", content_hash: "same-hash" });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(JSON.stringify(updated), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const draft = { backendAssetId: 88, contentHash: "same-hash" } as AssetProduct;
+
+    await assetWorkspaceAdapter.retryDirectorReview("token", draft);
+    await assetWorkspaceAdapter.ignoreDirectorReviewSuggestion("token", draft, "finding-1");
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/assets/88/director-review/retry");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/v1/assets/88/director-review/findings/finding-1/ignore");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init).toEqual(expect.objectContaining({ method: "POST", body: JSON.stringify({ base_content_hash: "same-hash" }) }));
+    }
+    vi.unstubAllGlobals();
   });
 });

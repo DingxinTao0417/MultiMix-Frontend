@@ -130,7 +130,8 @@ describe("conversation generation card order", () => {
       />,
     );
 
-    const productCard = screen.getByRole("link", { name: /daniel-vertical-english.*编导脚本.*完成.*v1/ });
+    const productCard = screen.getByRole("link", { name: /文案.*v1.*完成/ });
+    expect(productCard).toHaveAttribute("href", "/app/assets?conversation=conversation-generation-result&product=product-42");
     const suggestion = screen.getByRole("button", { name: "确认默认清理" });
     expect(productCard.compareDocumentPosition(suggestion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });

@@ -556,7 +556,8 @@ async function createUploadSession(
       payload,
     );
   }
-  return parseUploadSession(payload, args);
+  const session = parseUploadSession(payload, args);
+  return session;
 }
 
 export async function uploadExportCandidate(

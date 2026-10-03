@@ -125,7 +125,8 @@ describe("video progress integration", () => {
 
     expect(screen.getByText("本次修改未完成")).toBeInTheDocument();
     expect(screen.getByText(action.message)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /上一稳定版本.*已完成.*v1/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /视频工程.*v1.*已完成/ }))
+      .toHaveAttribute("href", "/app/assets?conversation=video-progress-conversation&product=video-product-42");
     expect(screen.queryByText("内部版本处理")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
   });

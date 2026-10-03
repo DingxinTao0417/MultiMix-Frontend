@@ -173,8 +173,8 @@ describe("display-area eight-case matrix", () => {
   it("uses the shared player for a playable finished video", () => {
     render(<ProductPreview product={displayProducts["case-07-project-ready-mp4"]} />);
     expect(screen.getByLabelText("成片预览")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "点击画面播放视频" })).toBeInTheDocument();
-    expect(screen.getByRole("slider", { name: "播放进度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeDisabled();
+    expect(screen.getByRole("slider", { name: "成片播放器：播放进度" })).toBeDisabled();
     expect(screen.queryByRole("separator", { name: "调整视频预览高度" })).not.toBeInTheDocument();
   });
 
@@ -432,6 +432,7 @@ describe("display-area eight-case matrix", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("素材合成步骤失败，请重试");
     expect(screen.getByRole("button", { name: /重试生成/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("时间轴预览")).not.toBeInTheDocument();
   });
 
   it("makes the paid scene-only H3 retry explicit before dispatch", async () => {

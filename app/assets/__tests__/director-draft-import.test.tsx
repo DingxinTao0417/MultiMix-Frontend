@@ -38,6 +38,8 @@ describe("director draft import", () => {
     fireEvent.click(within(grid).getByRole("button", { name: /早餐店编导稿/ }));
     const dialog = await screen.findByRole("dialog", { name: /早餐店编导稿详情/ });
     fireEvent.click(within(dialog).getByRole("button", { name: "导入为可编辑编导稿" }));
+    expect(dialog.querySelector(".shadcn-prototype-library-detail-body"))
+      .toContainElement(within(dialog).getByRole("region", { name: "导入编导稿" }));
     await waitFor(() => expect(within(dialog).getByRole("option", { name: /reference-image-23/ })).toBeInTheDocument());
     fireEvent.change(within(dialog).getByRole("combobox", { name: "生产参考图" }), { target: { value: "201" } });
     fireEvent.change(within(dialog).getByRole("combobox", { name: "旧素材编号映射" }), { target: { value: "23" } });
@@ -54,5 +56,51 @@ describe("director draft import", () => {
     const grid = await screen.findByLabelText("文案库列表");
     fireEvent.click(within(grid).getByRole("button", { name: /早餐店编导稿/ }));
     expect(screen.queryByRole("button", { name: "导入为可编辑编导稿" })).not.toBeInTheDocument();
+  });
+
+  it("shows image loading errors in the dialog and retries with a normal library page", async () => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const listLibrary = vi.spyOn(assetWorkspaceAdapter, "listLibrary")
+      .mockImplementation(async (_token, view, _query, options) => {
+        if (view === "copy") return { rows: [source], nextOffset: null };
+        if (listLibrary.mock.calls.filter((call) => call[1] === "image").length === 1) {
+          throw new Error("连接暂时中断");
+        }
+        expect(options?.limit).toBe(48);
+        return { rows: [{ assetId: 201, title: "reference-image-23", kind: "image", meta: "已理解", note: "参考图", understandingStatus: "ready" }], nextOffset: null };
+      });
+    render(<LibraryWorkshop view="copy" token="token" writeCapabilities={writes}
+      onImportDirectorDraft={vi.fn()} importProjectTitle="早餐店项目" />);
+    const grid = await screen.findByLabelText("文案库列表");
+    fireEvent.click(within(grid).getByRole("button", { name: /早餐店编导稿/ }));
+    const dialog = await screen.findByRole("dialog", { name: /早餐店编导稿详情/ });
+    fireEvent.click(within(dialog).getByRole("button", { name: "导入为可编辑编导稿" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("连接暂时中断");
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试加载参考图" }));
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: /reference-image-23/ })).toBeInTheDocument());
+  });
+
+  it("can find a ready reference beyond the first image page", async () => {
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const listLibrary = vi.spyOn(assetWorkspaceAdapter, "listLibrary")
+      .mockImplementation(async (_token, view, query) => {
+        if (view === "copy") return { rows: [source], nextOffset: null };
+        if (query === "reference") return { rows: [{
+          assetId: 202, title: "reference-image-23", kind: "image", meta: "已理解", note: "参考图",
+          understandingStatus: "ready",
+        }], nextOffset: null };
+        return { rows: [], nextOffset: 48 };
+      });
+    render(<LibraryWorkshop view="copy" token="token" writeCapabilities={writes}
+      onImportDirectorDraft={vi.fn()} importProjectTitle="早餐店项目" />);
+    const grid = await screen.findByLabelText("文案库列表");
+    fireEvent.click(within(grid).getByRole("button", { name: /早餐店编导稿/ }));
+    const dialog = await screen.findByRole("dialog", { name: /早餐店编导稿详情/ });
+    fireEvent.click(within(dialog).getByRole("button", { name: "导入为可编辑编导稿" }));
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "加载更多参考图" })).toBeInTheDocument());
+    fireEvent.change(within(dialog).getByRole("textbox", { name: "搜索参考图" }), { target: { value: "reference" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "搜索参考图" }));
+    await waitFor(() => expect(within(dialog).getByRole("option", { name: /reference-image-23/ })).toBeInTheDocument());
+    expect(listLibrary).toHaveBeenCalledWith("token", "image", "reference", { limit: 48, offset: 0 });
   });
 });

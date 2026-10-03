@@ -106,7 +106,7 @@ describe("creative direction candidate choice", () => {
     expect(chat.querySelector('[aria-label="创意方向"]')).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看其他方向" }));
     fireEvent.click(screen.getByRole("button", { name: "应用“问题推进”方向" }));
-    await waitFor(() => expect(onApply).toHaveBeenCalledWith({
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith(product, {
       candidateId: "direction-b",
       creativeDirectionFingerprint: fingerprint,
     }));
@@ -183,6 +183,148 @@ describe("creative direction candidate choice", () => {
     expect(screen.queryByText("结果先行")).not.toBeInTheDocument();
   });
 
+  it("renders the selector with the assistant message that produced a general five-layer draft", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const genericProduct = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      markdownBody: "# 编导稿\n\n连续正文",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+    const conversation = {
+      ...conversationForDisplayProduct(genericProduct),
+      messages: [
+        { role: "user" as const, text: "做一个短视频" },
+        { role: "assistant" as const, text: "编导稿已生成。", assetId: genericProduct.backendAssetId },
+      ],
+    };
+    const onApplyCreativeDirection = vi.fn(async () => undefined);
+    const { rerender } = render(
+      <ConversationStudio
+        basePath="/assets"
+        selectedConversation={conversation}
+        selectedProduct={genericProduct}
+        onSelectProduct={vi.fn()}
+        onApplyCreativeDirection={onApplyCreativeDirection}
+      />,
+    );
+
+    const directionRegion = screen.getByRole("region", { name: "创意方向" });
+    expect(directionRegion).toBeInTheDocument();
+    expect(directionRegion.closest(".shadcn-prototype-product-card-list")).toBeInTheDocument();
+    expect(directionRegion.closest(".shadcn-prototype-product")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看其他方向" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用“问题推进”方向" }));
+    await waitFor(() => expect(onApplyCreativeDirection).toHaveBeenCalledWith(genericProduct, {
+      candidateId: "direction-b",
+      creativeDirectionFingerprint: fingerprint,
+    }));
+
+    const presenterProduct = {
+      ...genericProduct,
+      metadata: {
+        ...genericProduct.metadata,
+        video_plan: {
+          ...((genericProduct.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: presenterCreativeProfile,
+        },
+      },
+    };
+    rerender(
+      <ConversationStudio
+        basePath="/assets"
+        selectedConversation={{
+          ...conversationForDisplayProduct(presenterProduct),
+          messages: [
+            { role: "assistant" as const, text: "编导稿已生成。", assetId: presenterProduct.backendAssetId },
+          ],
+        }}
+        selectedProduct={presenterProduct}
+        onSelectProduct={vi.fn()}
+        onApplyCreativeDirection={onApplyCreativeDirection}
+      />,
+    );
+
+    expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the display stage free of direction selection and protects product-card layout", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const genericProduct = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      markdownBody: "# 编导稿\n\n连续正文",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={genericProduct}
+        selectedConversation={conversationForDisplayProduct(genericProduct)}
+      />,
+    );
+
+    expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
+    expect(globalsCss).not.toContain(".shadcn-prototype-product.has-creative-direction");
+    expect(globalsCss).not.toContain(".shadcn-prototype-thread .assistant span");
+    expect(globalsCss).toMatch(
+      /\.shadcn-prototype-creative-direction\s*\{[^}]*width:\s*min\(100%,\s*560px\);[^}]*border:\s*1px solid #e5e0d8;/s,
+    );
+    expect(globalsCss).toMatch(
+      /\.shadcn-prototype-product-card-thumbnail\s*\{[^}]*width:\s*44px;[^}]*height:\s*34px;/s,
+    );
+    expect(globalsCss).not.toContain(".shadcn-prototype-product.has-creative-direction");
+  });
+
+  it("uses an existing image preview in the conversation card and falls back to its type icon on load failure", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const imageProduct = {
+      ...base,
+      id: "real-preview-image",
+      backendAssetId: 9911,
+      mode: "image" as const,
+      contentType: "image_asset",
+      metadata: { preview_url: "https://example.test/generated-cover.png" },
+    };
+    const { container } = render(
+      <ConversationStudio
+        basePath="/assets"
+        selectedConversation={{
+          ...conversationForDisplayProduct(imageProduct),
+          messages: [{ role: "assistant" as const, text: "封面图已生成。", assetId: imageProduct.backendAssetId }],
+        }}
+        selectedProduct={imageProduct}
+        onSelectProduct={vi.fn()}
+      />,
+    );
+
+    const preview = container.querySelector(".shadcn-prototype-product-card-thumbnail img");
+    expect(preview).toHaveAttribute("src", "https://example.test/generated-cover.png");
+    fireEvent.error(preview!);
+    expect(container.querySelector(".shadcn-prototype-product-card-thumbnail")).toBeNull();
+    expect(container.querySelector(".shadcn-prototype-product-card .shadcn-prototype-context-icon")).toBeInTheDocument();
+  });
+
+
   it("keeps the draft body in the product pane and excludes presenter-source drafts from direction choices", () => {
     const base = displayProducts["case-01-director-draft"];
     const genericProduct = {
@@ -235,6 +377,7 @@ describe("creative direction candidate choice", () => {
 
     expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
   });
+
 
   it("styles the direction panel as conversation content without a product row", () => {
     const base = displayProducts["case-01-director-draft"];

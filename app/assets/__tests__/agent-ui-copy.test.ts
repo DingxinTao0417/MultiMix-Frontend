@@ -1379,7 +1379,9 @@ describe("agent conversation UI copy", () => {
     const productWorkspace = readAssetFile("app/assets/components/product-workspace.tsx");
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
-    expect(productWorkspace).toContain("继续左侧对话");
+    expect(productWorkspace).not.toContain("先在左侧说说想做什么，或加入资料。");
+    expect(workspaceClient).toContain('const hasProductStage = activeView === "conversation" && selectedProduct !== null;');
+    expect(workspaceClient).toContain("{selectedProduct ? (");
     expect(productWorkspace).not.toContain("明确要文案、图片或视频后");
     expect(workspaceClient).not.toContain("短视频脚本");
     expect(workspaceClient).not.toContain("图片提示词");
@@ -1483,7 +1485,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain('placeholder="搜索项目"');
     expect(workspaceClient).toContain("没有找到匹配项目");
     expect(conversationStudio).toContain("FolderOpen");
-    expect(conversationStudio).toContain("ChevronRight");
+    expect(conversationStudio).toContain("项目资料，共");
   });
 
   it("keeps the conversation list as the flexible sidebar row so the account stays at the bottom", () => {

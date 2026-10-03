@@ -59,4 +59,38 @@ describe("VideoQualityPanel", () => {
 
     expect(screen.getByText(label)).toBeVisible();
   });
+
+  it("shows export timing failure title and advice without inventing a repair button", () => {
+    render(
+      <VideoQualityPanel
+        report={{
+          stage: "export_file",
+          status: "blocked",
+          blockers: [{
+            code: "video_duration_unavailable",
+            segment_id: null,
+            object_type: "export_file",
+            message: "无法从主视频流核对导出画面的结束时间。",
+            suggested_actions: ["检查视频轨后重新导出"],
+          }],
+          warnings: [],
+        }}
+        onLocate={vi.fn()}
+        onRecheck={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("当前工程画面时长无法验证")).toBeVisible();
+    expect(screen.getByText("建议：检查视频轨后重新导出")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "检查视频轨后重新导出" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新检查" })).not.toBeInTheDocument();
+    expect(screen.getByText("这是导出文件的检查结果，请通过导出菜单重新导出验证。", { exact: true })).toBeVisible();
+  });
+
+  it("keeps rechecking available for export preflight findings", () => {
+    const onRecheck = vi.fn();
+    render(<VideoQualityPanel report={blockedReport} onLocate={vi.fn()} onRecheck={onRecheck} />);
+    fireEvent.click(screen.getByRole("button", { name: "重新检查" }));
+    expect(onRecheck).toHaveBeenCalledOnce();
+  });
 });

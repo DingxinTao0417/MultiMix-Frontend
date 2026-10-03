@@ -359,8 +359,11 @@ function LibraryWorkshop({
   onImportDirectorDraft,
   importProjectTitle,
   onAddAssetToConversation,
+  onAssetArchived,
   targetProjectTitle,
   onExitProjectTarget,
+  focusAssetId = null,
+  onFocusAssetClose,
   refreshRevision = 0,
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
@@ -374,8 +377,11 @@ function LibraryWorkshop({
   onImportDirectorDraft?: (row: LibraryRow, referenceAssetIds: number[], legacyReferenceMappings: Record<string, number>) => Promise<void>;
   importProjectTitle?: string | null;
   onAddAssetToConversation?: (row: LibraryRow) => void;
+  onAssetArchived?: (assetId: number) => Promise<void>;
   targetProjectTitle?: string | null;
   onExitProjectTarget?: () => void;
+  focusAssetId?: number | null;
+  onFocusAssetClose?: () => void;
   refreshRevision?: number;
   writeCapabilities?: RuntimeWriteCapabilities;
   onRetryWriteAvailability?: () => void;
@@ -391,6 +397,7 @@ function LibraryWorkshop({
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedRowIdentity, setSelectedRowIdentity] = useState<string | null>(null);
+  const [focusedRow, setFocusedRow] = useState<LibraryRow | null>(null);
   const [localRefreshKey, setLocalRefreshKey] = useState(0);
   const [loadingRows, setLoadingRows] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -402,12 +409,36 @@ function LibraryWorkshop({
   const [directorImportImageId, setDirectorImportImageId] = useState<number | null>(null);
   const [directorImportLegacyId, setDirectorImportLegacyId] = useState("");
   const [directorImportBusy, setDirectorImportBusy] = useState(false);
+  const [directorImportError, setDirectorImportError] = useState<string | null>(null);
+  const [directorImportQuery, setDirectorImportQuery] = useState("");
+  const [directorImportNextOffset, setDirectorImportNextOffset] = useState<number | null>(null);
   useEffect(() => {
     setDirectorImportOpen(false);
     setDirectorImportImages([]);
     setDirectorImportImageId(null);
     setDirectorImportLegacyId("");
+    setDirectorImportError(null);
+    setDirectorImportQuery("");
+    setDirectorImportNextOffset(null);
   }, [selectedRowIdentity]);
+  const loadDirectorImportImages = async (query: string, offset = 0) => {
+    if (!token) return;
+    setDirectorImportBusy(true);
+    setDirectorImportError(null);
+    try {
+      const page = await assetWorkspaceAdapter.listLibrary(token, "image", query, {
+        limit: LIBRARY_PAGE_SIZE, offset,
+      });
+      const readyRows = page.rows.filter(understandingReady);
+      setDirectorImportImages((current) => offset ? mergeLibraryRows(current, readyRows) : readyRows);
+      setDirectorImportNextOffset(page.nextOffset);
+    } catch (error) {
+      setDirectorImportError(error instanceof Error && !isRuntimeConnectionError(error)
+        ? error.message : "参考图加载失败，请重新连接后重试。");
+    } finally {
+      setDirectorImportBusy(false);
+    }
+  };
   const { confirm, confirmationDialog } = useConfirmationDialog();
   const [sourceOpen, setSourceOpen] = useState(false);
   const [assetModal, setAssetModal] = useState<"web" | null>(null);
@@ -511,6 +542,35 @@ function LibraryWorkshop({
     loadMoreAbortRef.current?.abort();
   }, []);
 
+  useEffect(() => {
+    if (focusAssetId === null) return;
+    setSelectedRowIdentity(null);
+    setFocusedRow(null);
+    setActionMessage(null);
+    if (!token) {
+      setActionMessage("无法打开项目资料：请先登录。");
+      onFocusAssetClose?.();
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    void assetWorkspaceAdapter.getLibraryAsset(token, focusAssetId, { signal: controller.signal })
+      .then((row) => {
+        if (cancelled) return;
+        setFocusedRow(row);
+        setSelectedRowIdentity(libraryRowIdentity(row));
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setActionMessage(`无法打开项目资料：${error instanceof Error ? error.message : "请重试。"}`);
+        onFocusAssetClose?.();
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [focusAssetId, token, onFocusAssetClose]);
+
   const handleLoadMore = async () => {
     if (!token || nextOffset === null || loadingMore) return;
     const controller = new AbortController();
@@ -574,18 +634,26 @@ function LibraryWorkshop({
   }, [activeFilter, statusFilter, view, rows, debouncedQuery]);
   const selectedRow = selectedRowIdentity === null
     ? null
-    : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
+    : focusedRow && libraryRowIdentity(focusedRow) === selectedRowIdentity
+      ? focusedRow
+      : filteredRows.find((row) => libraryRowIdentity(row) === selectedRowIdentity) ?? null;
+  const closeSelectedRow = () => {
+    setSelectedRowIdentity(null);
+    setFocusedRow(null);
+    onFocusAssetClose?.();
+  };
   const legacyReferenceIds = selectedRow?.fullBody
     ? [...new Set([...selectedRow.fullBody.matchAll(/素材#(\d+)(?!\d)/g)].map((match) => match[1]))]
     : [];
   const canImportDirector = view === "copy"
+    && !selectedRow?.archived
     && Boolean(selectedRow?.assetId && selectedRow?.contentHash && selectedRow?.fullBody?.includes("### "))
     && selectedRow?.contentTypeCode !== "video_script"
     && ["upload", "manual_text"].includes(selectedRow?.sourceTypeCode ?? "")
     && Boolean(onImportDirectorDraft && importProjectTitle && writeCapabilities.canPersist);
   const selectedBody = useMemo(() => selectedRow ? bodyForRow(selectedRow, view) : [], [selectedRow, view]);
   const selectedKeywords = useMemo(() => selectedRow ? keywordsForRow(selectedRow, view) : [], [selectedRow, view]);
-  const selectedUploadedVideoId = view === "video" && selectedRow?.contentTypeCode === "uploaded_video"
+  const selectedUploadedVideoId = view === "video" && !selectedRow?.archived && selectedRow?.contentTypeCode === "uploaded_video"
     ? selectedRow.assetId ?? null
     : null;
   const [videoStoryboard, setVideoStoryboard] = useState<VideoStoryboard | null>(null);
@@ -791,7 +859,7 @@ function LibraryWorkshop({
     open: Boolean(selectedRow),
     dialogRef: detailDialogRef,
     initialFocusRef: detailCloseRef,
-    onEscape: () => setSelectedRowIdentity(null),
+    onEscape: closeSelectedRow,
   });
   useDialogFocusManagement({
     open: publicSearchOpen,
@@ -916,6 +984,12 @@ function LibraryWorkshop({
     } catch (error) {
       reportRuntimeWriteFailure(error);
       setActionMessage(error instanceof Error ? error.message : "删除失败。");
+      return;
+    }
+    try {
+      await onAssetArchived?.(row.assetId);
+    } catch {
+      setActionMessage("已删除，但项目资料暂未同步；请重新加载项目。");
     }
   };
 
@@ -1265,7 +1339,7 @@ function LibraryWorkshop({
         )}
       </div>
       {selectedRow ? (
-        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={() => setSelectedRowIdentity(null)}>
+        <div className="shadcn-prototype-library-modal-backdrop" role="presentation" onMouseDown={closeSelectedRow}>
           <aside
             ref={detailDialogRef}
             className="shadcn-prototype-library-detail shadcn-prototype-library-modal shadcn-prototype-library-detail-dialog"
@@ -1294,7 +1368,7 @@ function LibraryWorkshop({
               </div>
               <div className="shadcn-prototype-library-modal-title-actions">
                 {isDigitalHuman(selectedRow) ? <em>数字人视频</em> : null}
-                <button ref={detailCloseRef} type="button" aria-label="关闭详情" onClick={() => setSelectedRowIdentity(null)}>
+                <button ref={detailCloseRef} type="button" aria-label="关闭详情" onClick={closeSelectedRow}>
                   <X size={16} aria-hidden="true" />
                 </button>
               </div>
@@ -1361,6 +1435,8 @@ function LibraryWorkshop({
                   </h3>
                   {understandingReady(selectedRow) ? (
                     <div className="shadcn-prototype-library-understand">{selectedRow.understandingCaption || selectedRow.note || "暂无描述"}</div>
+                  ) : selectedRow.archived ? (
+                    <div className="shadcn-prototype-library-understand">归档前未完成素材理解；此处只保留历史资料，不会继续解析。</div>
                   ) : selectedRow.understandingStatus === "failed" ? (
                     <div className="shadcn-prototype-library-understand">
                       素材理解失败，请重新解析后再用于检索和分镜匹配。
@@ -1512,7 +1588,9 @@ function LibraryWorkshop({
                       <span className="shadcn-prototype-library-live-badge"><i className="shadcn-prototype-library-gdot" aria-hidden="true" />已解析</span>
                     ) : null}
                   </h3>
-                  {selectedRow.statusLabel === "解析失败" ? (
+                  {selectedRow.archived && !understandingReady(selectedRow) ? (
+                    <div className="shadcn-prototype-library-understand">归档前未完成资料解析；此处只保留历史内容，不会继续处理。</div>
+                  ) : selectedRow.statusLabel === "解析失败" ? (
                     <div className="shadcn-prototype-library-understand">这份资料解析失败，可重试处理后再查看摘要。</div>
                   ) : understandingReady(selectedRow) ? (
                     <div className="shadcn-prototype-library-understand">{selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`} style={index > 0 ? { marginTop: 8 } : undefined}>{paragraph}</p>)}</div>
@@ -1535,7 +1613,7 @@ function LibraryWorkshop({
                   <div><dt>内容类型</dt><dd>{selectedRow.contentType ?? "资料"}</dd></div>
                   <div><dt>处理状态</dt><dd>{selectedRow.statusLabel ?? "待解析"}</dd></div>
                   <div><dt>来源</dt><dd>{selectedRow.sourceLabel ?? selectedRow.meta}</dd></div>
-                  <div><dt>索引状态</dt><dd>{selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
+                  <div><dt>索引状态</dt><dd>{selectedRow.archived ? "已从检索中移除" : selectedRow.statusLabel === "解析失败" ? "未入库" : "可检索"}</dd></div>
                 </dl>
                 {sourceOpen ? (
                   <section className="shadcn-prototype-library-content">
@@ -1560,30 +1638,33 @@ function LibraryWorkshop({
                 </div>
               </section>
             ) : null}
-            </div>
-
-            {/* Actions at the bottom (demo md-acts) */}
             {canImportDirector && selectedRow ? (
-              <section aria-label="导入编导稿" style={{ padding: "8px 0" }}>
+              <section className="shadcn-prototype-library-content" aria-label="导入编导稿">
                 <button type="button" disabled={directorImportBusy} onClick={() => {
                   if (!directorImportOpen && token) {
-                    setDirectorImportBusy(true);
-                    void assetWorkspaceAdapter.listLibrary(token, "image", "", { limit: 100 })
-                      .then((page) => setDirectorImportImages(page.rows.filter((row) => row.understandingStatus === "ready")))
-                      .catch((error) => setActionMessage(error instanceof Error ? error.message : "参考图加载失败。"))
-                      .finally(() => setDirectorImportBusy(false));
+                    void loadDirectorImportImages("");
                   }
                   setDirectorImportOpen((open) => !open);
                 }}>导入为可编辑编导稿</button>
                 {directorImportOpen ? (
                   <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                     <p>导入到「{importProjectTitle}」。原文档保留；导入稿须重新审查，当前不能生成视频工程。</p>
+                    <label>搜索参考图
+                      <input aria-label="搜索参考图" value={directorImportQuery} onChange={(event) => setDirectorImportQuery(event.target.value)} />
+                    </label>
+                    <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>搜索参考图</button>
+                    {directorImportError ? (
+                      <p role="alert">{directorImportError} <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim())}>重试加载参考图</button></p>
+                    ) : null}
                     <label>生产参考图
                       <select aria-label="生产参考图" value={directorImportImageId ?? ""} onChange={(event) => setDirectorImportImageId(event.target.value ? Number(event.target.value) : null)}>
                         <option value="">暂不选择</option>
                         {directorImportImages.map((image) => <option key={image.assetId} value={image.assetId}>{image.title}（#{image.assetId}）</option>)}
                       </select>
                     </label>
+                    {directorImportNextOffset !== null ? (
+                      <button type="button" disabled={directorImportBusy} onClick={() => void loadDirectorImportImages(directorImportQuery.trim(), directorImportNextOffset)}>加载更多参考图</button>
+                    ) : null}
                     {legacyReferenceIds.length > 0 ? (
                       <label>将参考图替换原稿中的编号
                         <select aria-label="旧素材编号映射" value={directorImportLegacyId} onChange={(event) => setDirectorImportLegacyId(event.target.value)} disabled={!directorImportImageId}>
@@ -1598,15 +1679,23 @@ function LibraryWorkshop({
                       const mapping = imageId && directorImportLegacyId ? { [directorImportLegacyId]: imageId } : {};
                       setDirectorImportBusy(true);
                       void onImportDirectorDraft?.(selectedRow, imageId ? [imageId] : [], mapping)
-                        .catch((error) => setActionMessage(error instanceof Error ? error.message : "导入失败，请重试。"))
+                        .catch((error) => setDirectorImportError(error instanceof Error ? error.message : "导入失败，请重试。"))
                         .finally(() => setDirectorImportBusy(false));
                     }}>确认导入</button>
                   </div>
                 ) : null}
               </section>
             ) : null}
+            </div>
+
+            {/* Actions at the bottom (demo md-acts) */}
             <div className="shadcn-prototype-library-actions">
-              {view === "copy" ? (
+              {selectedRow.archived ? (
+                <>
+                  <span role="status">已从资源库归档，仅可查看历史内容，不可用于新创作。</span>
+                  {view === "assets" ? <button type="button" onClick={() => setSourceOpen((value) => !value)}><FileText size={14} aria-hidden="true" />查看来源</button> : null}
+                </>
+              ) : view === "copy" ? (
                 <>
                   <button type="button" onClick={() => { if (selectedRow) void handleCopyRow(selectedRow); }}><Copy size={14} aria-hidden="true" />复制</button>
                   <button className="shadcn-prototype-library-detail-primary" type="button" disabled={!selectedRow.assetId || !onUseAsset || !writeCapabilities.canGenerate} onClick={() => { if (selectedRow && writeCapabilities.canGenerate) void onUseAsset?.(selectedRow, "create"); }}><Sparkles size={14} aria-hidden="true" />用于创作</button>

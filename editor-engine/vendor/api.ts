@@ -134,7 +134,7 @@ export interface BGMUpdateResponse {
   catalog_version: string;
   choice: BGMChoice;
   project: Record<string, unknown>;
-  project_fingerprint?: string;
+  project_fingerprint: string;
 }
 
 async function bgmJson<T>(url: string, token: string | null, init?: RequestInit): Promise<T> {
@@ -179,11 +179,15 @@ export async function updateProjectBGM(
   token: string | null,
   body: { action: BGMAction; catalog_id?: string; catalog_version: string },
 ): Promise<BGMUpdateResponse> {
-  return bgmJson<BGMUpdateResponse>(
+  const result = await bgmJson<BGMUpdateResponse>(
     `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/bgm`,
     token,
     { method: "PUT", body: JSON.stringify(body) },
   );
+  if (typeof result.project_fingerprint !== "string" || !result.project_fingerprint.trim()) {
+    throw new Error("配乐响应缺少工程版本，当前编辑已保留，请重新打开剪辑器后重试。");
+  }
+  return result;
 }
 
 // Fetch the only supported candidate contract for a segment.

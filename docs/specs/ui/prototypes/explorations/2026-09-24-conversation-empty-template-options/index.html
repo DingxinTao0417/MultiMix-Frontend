@@ -1,0 +1,762 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MultiMix · 对话初期空展示区三案</title>
+  <style>
+    :root {
+      --bg: #faf9f7;
+      --surface: #ffffff;
+      --surface-2: #f5f3ef;
+      --ink: #201f1e;
+      --ink-2: #6e6a64;
+      --ink-3: #9b968e;
+      --line: #eae7e1;
+      --line-2: #ddd9d1;
+      --purple: #7c5cff;
+      --green: #00a88e;
+      --accent: #5b45e0;
+      --gradient: linear-gradient(120deg, #7c5cff, #00a88e);
+      --shadow: 0 2px 6px rgba(32, 31, 30, .05), 0 16px 40px rgba(32, 31, 30, .07);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; color: inherit; }
+
+    .compare-bar {
+      position: relative;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      height: 54px;
+      padding: 0 18px;
+      border-bottom: 1px solid #dedbd4;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: 0 4px 18px rgba(32, 31, 30, .05);
+      backdrop-filter: blur(16px);
+    }
+    .compare-title { display: grid; line-height: 1.15; }
+    .compare-title strong { font-size: 12.5px; }
+    .compare-title span { margin-top: 3px; color: var(--ink-3); font-size: 10.5px; }
+    .compare-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 13px; background: #f0eeea; }
+    .compare-tabs button {
+      height: 34px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--ink-2);
+      cursor: pointer;
+      font-size: 12.5px;
+      font-weight: 650;
+    }
+    .compare-tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 2px 8px rgba(32, 31, 30, .09); }
+    .compare-note { justify-self: end; color: var(--ink-3); font-size: 11px; }
+    .coach-stage-tabs { display: none; justify-self: end; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+    .coach-stage-tabs button { height: 28px; padding: 0 11px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-3); cursor: pointer; font-size: 11px; font-weight: 650; }
+    .coach-stage-tabs button.active { background: var(--ink); color: #fff; }
+    body[data-variant="E"] .coach-stage-tabs { display: flex; }
+    body[data-variant="E"] .compare-note { display: none; }
+
+    .workspace { display: grid; grid-template-rows: 44px minmax(0, 1fr); height: calc(100% - 54px); }
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--ink-3);
+      font-size: 12px;
+    }
+    .topbar b { color: var(--ink); font-size: 12.5px; font-weight: 650; }
+    .topbar .status { margin-left: auto; }
+    .app { display: grid; grid-template-columns: 236px minmax(420px, 510px) minmax(480px, 1fr); min-height: 0; }
+
+    .sidebar {
+      display: grid;
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+      gap: 14px;
+      min-height: 0;
+      padding: 16px 12px 14px;
+      border-right: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 9px; padding: 0 6px; font-size: 14px; font-weight: 700; }
+    .brand-mark, .ai-dot {
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--gradient);
+      color: #fff;
+    }
+    .brand-mark { width: 26px; height: 26px; font-size: 11px; }
+    .new-btn { height: 38px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 650; }
+    .search { height: 34px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink-3); font-size: 12px; }
+    .project-list { display: grid; align-content: start; gap: 3px; min-height: 0; }
+    .list-title { padding: 0 9px 5px; color: var(--ink-3); font-size: 10.5px; font-weight: 650; letter-spacing: .07em; }
+    .project { display: flex; align-items: center; height: 35px; padding: 0 10px; border-radius: 10px; color: var(--ink-2); font-size: 12.5px; }
+    .project.active { background: #eeece8; color: var(--ink); font-weight: 650; }
+    .project span { margin-left: auto; color: var(--ink-3); font-size: 10.5px; }
+    .profile { display: flex; align-items: center; gap: 9px; padding: 10px 6px 0; border-top: 1px solid var(--line); }
+    .avatar { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--line-2); border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-size: 11px; }
+    .profile div { display: grid; line-height: 1.35; }
+    .profile strong { font-size: 12px; }
+    .profile small { color: var(--ink-3); font-size: 10.5px; }
+
+    .chat {
+      display: grid;
+      grid-template-rows: 56px minmax(0, 1fr) auto;
+      min-height: 0;
+      border-right: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .chat-head { display: flex; align-items: center; gap: 10px; padding: 0 24px; border-bottom: 1px solid var(--line); }
+    .chat-head strong { font-size: 14.5px; }
+    .resource { margin-left: auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); font-size: 11.5px; }
+    .messages { min-height: 0; overflow: auto; padding: 26px 28px 20px; }
+    .chat-stage { display: none; align-content: start; gap: 18px; }
+    body:not([data-variant="E"]) .chat-stage-start,
+    body[data-variant="E"][data-coach-stage="start"] .chat-stage-start,
+    body[data-variant="E"][data-coach-stage="making"] .chat-stage-making { display: grid; }
+    .user-message { justify-self: end; max-width: 84%; padding: 11px 16px; border-radius: 18px 18px 6px 18px; background: var(--surface-2); font-size: 13.5px; line-height: 1.65; }
+    .assistant { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 11px; }
+    .ai-dot { width: 26px; height: 26px; font-size: 10px; font-weight: 800; }
+    .assistant-copy { display: grid; gap: 5px; padding-top: 1px; }
+    .assistant-copy small { color: var(--ink-2); font-size: 11px; font-weight: 700; }
+    .assistant-copy p { margin: 0; font-size: 13.5px; line-height: 1.68; }
+    .assistant-copy .question { margin-top: 4px; color: var(--ink); font-weight: 600; }
+    .quick-replies { display: flex; flex-wrap: wrap; gap: 7px; margin: -6px 0 0 37px; }
+    .quick-replies span { padding: 6px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-2); background: #fff; font-size: 11.5px; }
+    .artifact-message { display: grid; gap: 7px; margin-left: 37px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(32, 31, 30, .05); }
+    .artifact-message span { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 680; }
+    .artifact-message span::before { width: 7px; height: 7px; border-radius: 50%; background: var(--gradient); content: ""; }
+    .artifact-message small { color: var(--ink-3); font-size: 10.5px; }
+    .dock { padding: 13px 28px 21px; }
+    .composer { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 58px; padding: 10px 10px 10px 14px; border: 1px solid var(--line-2); border-radius: 16px; background: #fff; box-shadow: var(--shadow); }
+    .attach { color: var(--ink-3); font-size: 21px; line-height: 1; }
+    .composer-input { min-width: 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+    .composer-input.empty { color: var(--ink-3); }
+    .composer.pulse { border-color: rgba(124, 92, 255, .48); box-shadow: 0 0 0 4px rgba(124, 92, 255, .08), var(--shadow); }
+    .send { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%; background: var(--ink); color: #fff; font-size: 17px; }
+
+    .display {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 94% 4%, rgba(0, 168, 142, .055), transparent 34%),
+        radial-gradient(circle at 4% 96%, rgba(124, 92, 255, .06), transparent 39%),
+        #fffdfb;
+    }
+    .variant { display: none; height: 100%; overflow: auto; }
+    body[data-variant="A"] .variant-a,
+    body[data-variant="B"] .variant-b,
+    body[data-variant="D"] .variant-d,
+    body[data-variant="E"] .variant-e { display: grid; }
+    .display-kicker { color: var(--ink-3); font-size: 10.5px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    .display h1 { margin: 0; max-width: 620px; font-size: clamp(27px, 2.65vw, 42px); letter-spacing: -.055em; line-height: 1.13; }
+    .display-intro { max-width: 550px; margin: 12px 0 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; }
+
+    /* A · task recipes */
+    .variant-a { grid-template-rows: auto minmax(0, 1fr) auto; padding: clamp(32px, 5.5vh, 58px) clamp(32px, 4.5vw, 62px) 28px; }
+    .recipe-list { display: grid; align-content: center; margin-top: 18px; }
+    .recipe {
+      display: grid;
+      grid-template-columns: 42px minmax(150px, .92fr) minmax(180px, 1.08fr) auto;
+      align-items: center;
+      gap: clamp(15px, 2vw, 28px);
+      min-height: 118px;
+      border-top: 1px solid var(--line-2);
+      cursor: default;
+      transition: background .2s ease, padding .2s ease;
+    }
+    .recipe:last-child { border-bottom: 1px solid var(--line-2); }
+    .recipe:hover { padding: 0 12px; background: rgba(255, 255, 255, .72); }
+    .recipe-no { color: var(--ink-3); font-size: 11px; font-weight: 750; }
+    .recipe-copy { display: grid; gap: 5px; }
+    .recipe-copy strong { font-size: 16px; }
+    .recipe-copy small { color: var(--ink-2); font-size: 11.5px; line-height: 1.5; }
+    .recipe-visual { display: grid; grid-template-columns: repeat(3, minmax(38px, 1fr)); gap: 6px; }
+    .mini-frame { position: relative; height: 48px; overflow: hidden; border-radius: 8px; background: #e9e5df; }
+    .mini-frame::before, .mini-frame::after { position: absolute; content: ""; }
+    .promo .mini-frame:nth-child(1) { background: linear-gradient(145deg, #d9c7ae, #8c6745); }
+    .promo .mini-frame:nth-child(2) { background: radial-gradient(circle at 50% 42%, #f7ede0 0 18%, transparent 19%), linear-gradient(145deg, #3e342d, #bea789); }
+    .promo .mini-frame:nth-child(3) { background: linear-gradient(145deg, #6f56e8, #24a895); }
+    .explain .mini-frame:nth-child(1) { background: linear-gradient(160deg, #e8edf5, #9eb7dc); }
+    .explain .mini-frame:nth-child(2) { background: linear-gradient(90deg, #f4f1ea 0 45%, #4d65a3 46% 53%, #d4dfed 54%); }
+    .explain .mini-frame:nth-child(3) { background: linear-gradient(145deg, #f7f4ed, #c4d5c8); }
+    .remix .mini-frame:nth-child(1) { background: linear-gradient(150deg, #cab69f, #4e5d67); }
+    .remix .mini-frame:nth-child(2) { background: linear-gradient(155deg, #d9713c, #2f4654); }
+    .remix .mini-frame:nth-child(3) { background: linear-gradient(155deg, #415370, #a1c9c2); }
+    .mini-frame::before { inset: auto 8px 8px; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, .72); }
+    .mini-frame::after { top: 8px; left: 8px; width: 19px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .7); }
+    .recipe-result { display: grid; justify-items: end; gap: 3px; min-width: 116px; }
+    .recipe-result small { color: var(--ink-3); font-size: 10px; }
+    .recipe-result strong { color: #276e61; font-size: 12px; white-space: nowrap; }
+    .recipe-foot { display: flex; align-items: center; gap: 12px; padding-top: 22px; color: var(--ink-3); font-size: 11px; }
+    .recipe-foot i { width: 26px; height: 1px; background: var(--gradient); }
+
+    /* B · source map */
+    .variant-b { grid-template-rows: auto minmax(0, 1fr) auto; padding: clamp(32px, 5.5vh, 58px) clamp(32px, 4.5vw, 62px) 28px; }
+    .source-map { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(90px, .36fr) minmax(210px, .84fr); align-items: center; gap: 6px; min-height: 0; padding: 24px 0 14px; }
+    .source-list { display: grid; gap: 0; }
+    .source-item { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 78px; border-bottom: 1px solid var(--line); }
+    .source-item:first-child { border-top: 1px solid var(--line); }
+    .source-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; font-size: 16px; font-weight: 650; }
+    .source-item:nth-child(1) .source-icon { color: #765bd8; background: #f0ebff; }
+    .source-item:nth-child(2) .source-icon { color: #2a806e; background: #e7f5f1; }
+    .source-item:nth-child(3) .source-icon { color: #a2612f; background: #faeee2; }
+    .source-item:nth-child(4) .source-icon { color: #456ba6; background: #eaf0f9; }
+    .source-item div:last-child { display: grid; gap: 2px; }
+    .source-item strong { font-size: 13.5px; }
+    .source-item small { color: var(--ink-3); font-size: 10.5px; }
+    .flow-lines { display: grid; grid-template-rows: repeat(4, 1fr); height: 312px; padding: 38px 0; }
+    .flow-line { position: relative; align-self: center; height: 1px; background: linear-gradient(90deg, rgba(124, 92, 255, .22), rgba(0, 168, 142, .48)); }
+    .flow-line::after { position: absolute; top: 50%; right: 0; width: 6px; height: 6px; border-top: 1px solid #4fa896; border-right: 1px solid #4fa896; content: ""; transform: translateY(-50%) rotate(45deg); }
+    .output-board { position: relative; display: grid; gap: 10px; align-content: center; min-height: 350px; padding: 26px; border: 1px solid var(--line); border-radius: 22px; background: rgba(255, 255, 255, .78); box-shadow: var(--shadow); }
+    .output-board::before { position: absolute; inset: 7px; border: 1px solid rgba(234, 231, 225, .78); border-radius: 16px; content: ""; pointer-events: none; }
+    .output-label { position: relative; display: flex; align-items: center; gap: 7px; color: var(--ink-3); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+    .output-label::before { width: 7px; height: 7px; border-radius: 50%; background: var(--gradient); content: ""; }
+    .output-board h2 { position: relative; margin: 2px 0 8px; font-size: 21px; letter-spacing: -.035em; }
+    .output-scenes { position: relative; display: grid; gap: 7px; }
+    .output-scene { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 52px; padding: 7px; border-radius: 11px; background: var(--surface-2); }
+    .scene-thumb { height: 38px; border-radius: 8px; background: linear-gradient(145deg, #aebfd5, #61728d); }
+    .output-scene:nth-child(2) .scene-thumb { background: linear-gradient(145deg, #d6b38e, #6f4d35); }
+    .output-scene:nth-child(3) .scene-thumb { background: linear-gradient(145deg, #836ee7, #35aa98); }
+    .scene-copy { display: grid; gap: 2px; }
+    .scene-copy strong { font-size: 11.5px; }
+    .scene-copy small { color: var(--ink-3); font-size: 9.5px; }
+    .duration { color: var(--ink-3); font-size: 9.5px; }
+    .source-foot { display: flex; gap: 18px; padding-top: 20px; border-top: 1px solid var(--line-2); color: var(--ink-2); font-size: 11px; }
+    .source-foot strong { color: var(--ink); }
+
+    /* D · style cinema */
+    .variant-d { grid-template-rows: auto minmax(0, 1fr) auto; padding: clamp(30px, 5vh, 52px) clamp(28px, 4vw, 54px) 24px; background: #f4f2ee; }
+    .style-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 20px; }
+    .style-note { max-width: 160px; color: var(--ink-3); font-size: 10.5px; line-height: 1.55; text-align: right; }
+    .style-gallery { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); align-items: center; gap: clamp(12px, 2vw, 22px); min-height: 0; padding: 22px 0 16px; }
+    .style-film { position: relative; min-height: min(50vh, 440px); overflow: hidden; border-radius: 18px; box-shadow: 0 16px 36px rgba(32, 31, 30, .13); }
+    .style-film::after { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 38%, rgba(19, 18, 17, .79)); content: ""; }
+    .style-film.documentary { background: linear-gradient(165deg, #b7cfda 0 38%, #73828c 39% 55%, #4a382d 56%); }
+    .style-film.explainer { background: linear-gradient(150deg, #f6f1e8 0 52%, #8c77e8 53% 70%, #31a996 71%); }
+    .style-film.remix-film { background: linear-gradient(145deg, #242336, #7b3d60 48%, #e68245); }
+    .film-art { position: absolute; inset: 0; z-index: 1; overflow: hidden; }
+    .documentary .film-art::before { position: absolute; right: 14%; bottom: 23%; width: 34%; height: 44%; border-radius: 48% 48% 18% 18%; background: linear-gradient(#2e3338 0 29%, #d7a77c 30% 50%, #425267 51%); content: ""; box-shadow: 0 0 0 10px rgba(255, 255, 255, .08); }
+    .documentary .film-art::after { position: absolute; left: -10%; right: -10%; bottom: 0; height: 34%; background: repeating-linear-gradient(103deg, rgba(255,255,255,.09) 0 2px, transparent 2px 18px), #5f4f3f; content: ""; }
+    .explainer .film-art::before { position: absolute; top: 18%; left: 17%; width: 66%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff 0 22%, transparent 23%), conic-gradient(from 30deg, #7c5cff, #7c5cff 24%, #00a88e 25% 51%, #e8b65f 52% 72%, #e5e1da 73%); content: ""; box-shadow: 0 18px 42px rgba(91, 69, 224, .2); }
+    .explainer .film-art::after { position: absolute; top: 13%; left: 12%; width: 22%; height: 7px; border-radius: 6px; background: #201f1e; content: ""; box-shadow: 0 15px 0 rgba(32,31,30,.25); }
+    .remix-film .film-art::before { position: absolute; inset: 10% 12% 42%; border-radius: 12px; background: linear-gradient(135deg, rgba(255,255,255,.72), rgba(255,255,255,.05)), linear-gradient(145deg, #4d68a2, #d16253); content: ""; transform: rotate(-5deg); box-shadow: 12px 18px 0 rgba(0, 168, 142, .54), -10px 30px 0 rgba(255, 205, 105, .45); }
+    .remix-film .film-art::after { position: absolute; right: 12%; bottom: 37%; width: 42%; height: 5px; border-radius: 5px; background: #fff; content: ""; box-shadow: 0 11px 0 rgba(255,255,255,.55), 0 22px 0 rgba(255,255,255,.28); }
+    .film-top { position: absolute; z-index: 3; top: 15px; left: 15px; padding: 4px 8px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px; color: #fff; background: rgba(20,20,20,.16); backdrop-filter: blur(8px); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+    .film-caption { position: absolute; z-index: 3; right: 16px; bottom: 18px; left: 16px; color: #fff; }
+    .film-caption span { font-size: 9.5px; opacity: .72; }
+    .film-caption h2 { margin: 3px 0 7px; font-size: clamp(17px, 1.65vw, 23px); letter-spacing: -.035em; }
+    .film-caption p { margin: 0; font-size: 10.5px; line-height: 1.55; opacity: .76; }
+    .rhythm { display: flex; gap: 4px; margin-top: 12px; }
+    .rhythm i { display: block; width: 18%; height: 2px; border-radius: 2px; background: rgba(255,255,255,.28); }
+    .rhythm i.on { width: 32%; background: rgba(255,255,255,.92); }
+    .style-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 18px; border-top: 1px solid var(--line-2); color: var(--ink-3); font-size: 10.5px; }
+    .style-foot strong { color: var(--ink-2); }
+
+    /* E · conversational creative coach */
+    .variant-e { min-height: 0; background: #fffdfb; }
+    .coach-view { display: none; min-height: 0; }
+    body[data-variant="E"][data-coach-stage="start"] .coach-start,
+    body[data-variant="E"][data-coach-stage="making"] .coach-making { display: grid; }
+
+    .coach-start { grid-template-rows: auto auto minmax(0, 1fr) auto; padding: clamp(30px, 5.4vh, 56px) clamp(32px, 4.5vw, 62px) 26px; }
+    .coach-start-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; }
+    .coach-start-head aside { max-width: 178px; color: var(--ink-3); font-size: 10.5px; line-height: 1.55; text-align: right; }
+    .guidance-library { display: flex; align-items: center; gap: 15px; margin-top: 27px; padding-bottom: 12px; border-bottom: 1px solid var(--line-2); }
+    .guidance-library strong { font-size: 11.5px; }
+    .guidance-count { color: var(--ink-3); font-size: 10px; }
+    .guidance-categories { display: flex; gap: 4px; margin-left: auto; }
+    .guidance-categories span { padding: 4px 8px; border-radius: 999px; color: var(--ink-3); font-size: 9.5px; }
+    .guidance-categories span.active { background: #eee9ff; color: #674fca; font-weight: 700; }
+    .coach-recipes { display: grid; align-content: center; }
+    .coach-recipe { display: grid; grid-template-columns: minmax(210px, 1.1fr) minmax(190px, .9fr) auto; align-items: center; gap: clamp(20px, 2.4vw, 34px); min-height: 132px; border-bottom: 1px solid var(--line); }
+    .coach-recipe-main { display: grid; gap: 8px; }
+    .coach-recipe-label { color: var(--ink-3); font-size: 9.5px; font-weight: 750; letter-spacing: .09em; }
+    .coach-utterance { margin: 0; font-size: 14.5px; font-weight: 650; letter-spacing: -.012em; line-height: 1.58; }
+    .effect-preview { display: grid; gap: 8px; }
+    .effect-title { color: #276e61; font-size: 10.5px; font-weight: 700; }
+    .effect-frames { display: grid; grid-template-columns: repeat(4, minmax(30px, 1fr)); gap: 5px; }
+    .effect-frame { position: relative; height: 40px; overflow: hidden; border-radius: 7px; background: #ebe8e2; }
+    .effect-frame::after { position: absolute; right: 6px; bottom: 6px; left: 6px; height: 2px; border-radius: 2px; background: rgba(255, 255, 255, .78); content: ""; }
+    .effect-frames.product .effect-frame:nth-child(1) { background: linear-gradient(145deg, #5a4a3f, #c8a27f); }
+    .effect-frames.product .effect-frame:nth-child(2) { background: linear-gradient(145deg, #d8e2ec, #6d84a6); }
+    .effect-frames.product .effect-frame:nth-child(3) { background: linear-gradient(145deg, #e8d7bd, #8b6c4a); }
+    .effect-frames.product .effect-frame:nth-child(4) { background: linear-gradient(145deg, #735ce2, #2eaa92); }
+    .effect-frames.material .effect-frame:nth-child(1) { background: linear-gradient(145deg, #c9d6e2, #657789); }
+    .effect-frames.material .effect-frame:nth-child(2) { background: linear-gradient(145deg, #d99a63, #754d31); }
+    .effect-frames.material .effect-frame:nth-child(3) { background: linear-gradient(145deg, #9fb7ab, #4b615d); }
+    .effect-frames.material .effect-frame:nth-child(4) { background: linear-gradient(145deg, #3f4860, #8c6fd9); }
+    .effect-frames.guide .effect-frame:nth-child(1) { background: linear-gradient(160deg, #efece6 0 49%, #7c5cff 50% 57%, #ded8f4 58%); }
+    .effect-frames.guide .effect-frame:nth-child(2) { background: linear-gradient(160deg, #efece6 0 46%, #00a88e 47% 54%, #d5ede8 55%); }
+    .effect-frames.guide .effect-frame:nth-child(3) { background: linear-gradient(160deg, #efece6 0 43%, #d5a34e 44% 51%, #f0e3c7 52%); }
+    .effect-frames.guide .effect-frame:nth-child(4) { background: var(--gradient); }
+    .effect-scope { display: flex; gap: 7px; color: var(--ink-3); font-size: 9.5px; }
+    .effect-scope b { color: var(--ink-2); font-weight: 650; }
+    .use-phrase { height: 32px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 999px; background: #fff; color: var(--ink-2); cursor: pointer; font-size: 10.5px; font-weight: 650; white-space: nowrap; transition: .18s ease; }
+    .use-phrase:hover { border-color: rgba(124, 92, 255, .42); color: var(--accent); transform: translateY(-1px); }
+    .use-phrase.used { border-color: transparent; background: #eee9ff; color: #6049c5; }
+    .coach-start-foot { display: flex; align-items: center; gap: 10px; padding-top: 18px; color: var(--ink-3); font-size: 10px; }
+    .coach-start-foot::before { width: 22px; height: 1px; background: var(--gradient); content: ""; }
+
+    .coach-making { grid-template-rows: auto minmax(0, 1fr) auto; min-height: 0; }
+    .coach-artifact-head { display: flex; align-items: center; gap: 9px; min-height: 62px; padding: 0 26px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .7); }
+    .coach-artifact-head strong { font-size: 14px; }
+    .coach-artifact-head span { color: #27836f; font-size: 10.5px; }
+    .coach-artifact-head button { margin-left: auto; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink-2); font-size: 10.5px; }
+    .making-preview { display: grid; grid-template-columns: minmax(190px, .76fr) minmax(235px, 1.24fr); align-items: center; gap: clamp(20px, 3vw, 40px); min-height: 0; overflow: auto; padding: 20px clamp(28px, 4vw, 48px); }
+    .coach-player-wrap { display: grid; justify-items: center; }
+    .coach-player { width: min(100%, 190px); padding: 7px; border: 1px solid var(--line); border-radius: 20px; background: #fff; box-shadow: var(--shadow); }
+    .coach-screen { position: relative; overflow: hidden; aspect-ratio: 9 / 16; border-radius: 14px; background: linear-gradient(165deg, #d7e1e9 0 38%, #83919c 39% 55%, #5b4435 56%); }
+    .coach-screen::before { position: absolute; right: 16%; bottom: 25%; width: 36%; height: 43%; border-radius: 48% 48% 16% 16%; background: linear-gradient(#2e3338 0 28%, #d7a77c 29% 50%, #425267 51%); content: ""; }
+    .coach-screen::after { position: absolute; right: 12px; bottom: 25px; left: 12px; height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .92); content: ""; box-shadow: 0 9px 0 rgba(255, 255, 255, .64); }
+    .screen-caption { position: absolute; z-index: 2; top: 14px; left: 12px; padding: 3px 7px; border-radius: 999px; background: rgba(24, 26, 28, .48); color: #fff; font-size: 8.5px; font-weight: 700; }
+    .player-bar { display: flex; align-items: center; gap: 7px; padding: 8px 5px 3px; color: var(--ink-3); font-size: 9px; }
+    .player-bar i { flex: 1; height: 3px; overflow: hidden; border-radius: 3px; background: var(--surface-2); }
+    .player-bar i::before { display: block; width: 36%; height: 100%; border-radius: inherit; background: var(--gradient); content: ""; }
+    .storyboard-summary { display: grid; gap: 0; }
+    .storyboard-title { display: flex; align-items: center; padding-bottom: 9px; border-bottom: 1px solid var(--line-2); color: var(--ink-3); font-size: 10px; font-weight: 700; letter-spacing: .07em; }
+    .storyboard-title span { margin-left: auto; font-weight: 500; letter-spacing: 0; }
+    .story-scene { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 64px; border-bottom: 1px solid var(--line); }
+    .story-thumb { height: 32px; border-radius: 7px; background: linear-gradient(145deg, #9cb1c9, #57677b); }
+    .story-scene:nth-child(3) .story-thumb { background: linear-gradient(145deg, #d7ad82, #6c4932); }
+    .story-scene:nth-child(4) .story-thumb { background: var(--gradient); }
+    .story-copy { display: grid; gap: 2px; }
+    .story-copy strong { font-size: 11.5px; }
+    .story-copy small, .story-time { color: var(--ink-3); font-size: 9.5px; }
+    .coach-shelf { padding: 15px 26px 18px; border-top: 1px solid var(--line-2); background: rgba(245, 243, 239, .7); }
+    .coach-shelf-head { display: flex; align-items: baseline; gap: 9px; padding-bottom: 8px; }
+    .coach-shelf-head strong { font-size: 12.5px; }
+    .coach-shelf-head span { color: var(--ink-3); font-size: 9.5px; }
+    .coach-shelf-head button { margin-left: auto; border: 0; background: transparent; color: var(--ink-3); font-size: 10px; }
+    .making-suggestion { display: grid; grid-template-columns: minmax(190px, 1fr) minmax(138px, .7fr) auto; align-items: center; gap: 18px; min-height: 55px; border-top: 1px solid rgba(221, 217, 209, .82); }
+    .making-suggestion blockquote { margin: 0; font-size: 11.5px; font-weight: 650; line-height: 1.45; }
+    .scope-pair { display: grid; gap: 2px; color: var(--ink-3); font-size: 9px; }
+    .scope-pair b { color: #276e61; font-weight: 650; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+
+    @media (max-width: 1120px) {
+      .app { grid-template-columns: 210px minmax(380px, 46%) minmax(360px, 1fr); }
+      .recipe { grid-template-columns: 30px minmax(130px, 1fr) minmax(130px, .9fr); }
+      .recipe-result { display: none; }
+      .source-map { grid-template-columns: minmax(160px, .9fr) 60px minmax(180px, 1fr); }
+      .coach-recipe { grid-template-columns: minmax(190px, 1fr) minmax(150px, .75fr) auto; gap: 18px; }
+      .making-preview { grid-template-columns: 170px minmax(220px, 1fr); }
+    }
+    @media (max-width: 920px) {
+      .compare-bar { grid-template-columns: auto 1fr auto; }
+      .compare-tabs { justify-self: end; }
+      .compare-note { display: none; }
+      .coach-stage-tabs { justify-self: end; }
+      .app { grid-template-columns: minmax(350px, 44%) minmax(420px, 56%); }
+      .sidebar { display: none; }
+      .display h1 { font-size: 30px; }
+      .variant-a, .variant-b { padding-right: 32px; padding-left: 32px; }
+      .style-gallery { gap: 10px; }
+      .style-film { border-radius: 14px; }
+      .coach-start { padding-right: 30px; padding-left: 30px; }
+      .coach-start-head aside { display: none; }
+      .guidance-categories span:not(.active) { display: none; }
+      .coach-recipe { grid-template-columns: minmax(170px, 1fr) minmax(130px, .75fr); }
+      .coach-recipe .use-phrase { grid-column: 1 / -1; justify-self: start; margin-top: -10px; }
+      .making-preview { grid-template-columns: 150px minmax(190px, 1fr); padding-right: 28px; padding-left: 28px; }
+      .making-suggestion { grid-template-columns: minmax(170px, 1fr) minmax(110px, .7fr) auto; gap: 12px; }
+    }
+    @media (max-width: 720px) {
+      body { overflow: auto; }
+      .compare-bar { position: sticky; top: 0; grid-template-columns: 1fr; height: auto; padding: 10px 12px; }
+      .compare-title { display: none; }
+      .compare-tabs { width: 100%; justify-self: stretch; }
+      .compare-tabs button { flex: 1; padding: 0 5px; font-size: 10.5px; }
+      .coach-stage-tabs { width: 100%; justify-content: center; margin-top: 7px; }
+      .coach-stage-tabs button { flex: 1; }
+      .workspace { height: auto; min-height: calc(100vh - 54px); }
+      .topbar { display: none; }
+      .app { display: block; }
+      .chat { min-height: 390px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .messages { max-height: 230px; }
+      .display { min-height: 690px; }
+      .variant-a, .variant-b, .variant-d { min-height: 690px; padding: 34px 24px 24px; }
+      .variant-e { min-height: 760px; }
+      .coach-start { min-height: 760px; padding: 34px 24px 24px; }
+      .coach-recipe { grid-template-columns: minmax(170px, 1fr) minmax(130px, .85fr); min-height: 148px; }
+      .coach-making { min-height: 860px; }
+      .making-preview { grid-template-columns: 160px minmax(190px, 1fr); }
+      .coach-shelf { padding-right: 20px; padding-left: 20px; }
+      .recipe { grid-template-columns: 26px minmax(125px, .8fr) minmax(120px, 1fr); gap: 12px; }
+      .source-map { grid-template-columns: minmax(150px, .92fr) 42px minmax(170px, 1.08fr); }
+      .output-board { padding: 18px; }
+      .style-head { grid-template-columns: 1fr; }
+      .style-note { display: none; }
+      .style-gallery { overflow-x: auto; grid-template-columns: repeat(3, 210px); align-items: stretch; padding-bottom: 24px; scroll-snap-type: x mandatory; }
+      .style-film { min-height: 390px; scroll-snap-align: center; }
+    }
+    @media (max-width: 520px) {
+      .display { min-height: 820px; }
+      .variant-a, .variant-b, .variant-d { min-height: 820px; padding-right: 18px; padding-left: 18px; }
+      .compare-tabs { overflow-x: auto; justify-content: flex-start; }
+      .compare-tabs button { min-width: 94px; }
+      .coach-start { min-height: 990px; padding-right: 18px; padding-left: 18px; }
+      .guidance-library { align-items: flex-start; }
+      .guidance-categories { display: none; }
+      .coach-recipe { grid-template-columns: 1fr; gap: 12px; min-height: 255px; padding: 22px 0; }
+      .coach-recipe .use-phrase { grid-column: auto; margin-top: 0; }
+      .effect-preview { order: 2; }
+      .coach-making { min-height: 1090px; }
+      .making-preview { grid-template-columns: 1fr; gap: 24px; padding-right: 20px; padding-left: 20px; }
+      .coach-player { width: 166px; }
+      .making-suggestion { grid-template-columns: 1fr auto; gap: 7px 12px; padding: 10px 0; }
+      .scope-pair { grid-column: 1; }
+      .making-suggestion .use-phrase { grid-column: 2; grid-row: 1 / 3; }
+      .recipe { grid-template-columns: 24px minmax(0, 1fr); padding: 18px 0; }
+      .recipe-visual { grid-column: 2; }
+      .source-map { grid-template-columns: 1fr; padding-top: 18px; }
+      .flow-lines { display: none; }
+      .output-board { min-height: 320px; }
+      .source-foot { flex-wrap: wrap; gap: 8px 16px; }
+    }
+  </style>
+</head>
+<body data-variant="E" data-coach-stage="start">
+  <header class="compare-bar" aria-label="原型方案切换">
+    <div class="compare-title">
+      <strong>对话创作教练</strong>
+      <span>视觉原型，仅用于产品选型</span>
+    </div>
+    <nav class="compare-tabs" aria-label="选择视觉方案">
+      <button type="button" data-target="A">A · 任务模板架</button>
+      <button type="button" data-target="B">B · 从素材开始</button>
+      <button type="button" data-target="D">D · 风格样片</button>
+      <button type="button" data-target="E">E · 创作教练</button>
+    </nav>
+    <span class="compare-note">当前没有产物，但对话已经开始</span>
+    <nav class="coach-stage-tabs" aria-label="选择创作教练状态">
+      <button type="button" data-coach-target="start">创作开始</button>
+      <button type="button" data-coach-target="making">制作过程中</button>
+    </nav>
+  </header>
+
+  <main class="workspace">
+    <div class="topbar"><span>项目</span><span>/</span><b>秋季新品推广</b><span class="status">对话工作台</span></div>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">M</span>MultiMix</div>
+        <button class="new-btn" type="button">＋ 新建创作</button>
+        <div class="search">⌕&nbsp;&nbsp;搜索项目</div>
+        <div class="project-list">
+          <div class="list-title">最近项目</div>
+          <div class="project active">秋季新品推广<span>刚刚</span></div>
+          <div class="project">门店开业预热视频<span>昨天</span></div>
+          <div class="project">品牌故事短片<span>周一</span></div>
+          <div class="project">产品使用教程<span>8 月 28 日</span></div>
+        </div>
+        <div class="profile"><span class="avatar">月</span><div><strong>月文</strong><small>个人工作区</small></div></div>
+      </aside>
+
+      <section class="chat" aria-label="项目对话">
+        <header class="chat-head"><strong>秋季新品推广</strong><span class="resource">资料</span></header>
+        <div class="messages">
+          <div class="chat-stage chat-stage-start">
+            <div class="user-message">我想做一条秋季新品发布短视频，但现在只有一个大概想法。</div>
+            <div class="assistant">
+              <span class="ai-dot">M</span>
+              <div class="assistant-copy">
+                <small>MultiMix</small>
+                <p>可以，我会先把目标、素材和表达方向理清，再形成编导方案。</p>
+                <p class="question">你更希望这条视频先解决什么？</p>
+              </div>
+            </div>
+            <div class="quick-replies"><span>让更多人认识新品</span><span>讲清核心卖点</span><span>我还没想好</span></div>
+          </div>
+          <div class="chat-stage chat-stage-making">
+            <div class="user-message">确认，按这版方案生成。</div>
+            <div class="assistant">
+              <span class="ai-dot">M</span>
+              <div class="assistant-copy">
+                <small>MultiMix</small>
+                <p>视频工程已经生成，可以继续通过对话调整镜头、节奏、字幕或声音。</p>
+              </div>
+            </div>
+            <div class="artifact-message"><span>视频工程 · v1</span><small>25 秒 · 3 个分镜 · 可继续编辑</small></div>
+          </div>
+        </div>
+        <footer class="dock">
+          <div class="composer" id="composer"><span class="attach">＋</span><span class="composer-input empty" id="composer-input">继续描述想法，或加入图片、视频、文档…</span><span class="send">↑</span></div>
+        </footer>
+      </section>
+
+      <section class="display" aria-live="polite">
+        <article class="variant variant-a" aria-label="方案 A 任务模板架">
+          <header>
+            <span class="display-kicker">Start with a task</span>
+            <h1>选一个任务，马上进入正确的问题</h1>
+            <p class="display-intro">模板不是固定成片，而是一条更短的对话路径。先选任务，后面仍然可以随时改方向。</p>
+          </header>
+          <div class="recipe-list">
+            <div class="recipe promo">
+              <span class="recipe-no">01</span>
+              <span class="recipe-copy"><strong>推广一个产品</strong><small>从卖点和产品画面开始</small></span>
+              <span class="recipe-visual"><i class="mini-frame"></i><i class="mini-frame"></i><i class="mini-frame"></i></span>
+              <span class="recipe-result"><small>得到</small><strong>15–30 秒推广视频&nbsp;→</strong></span>
+            </div>
+            <div class="recipe explain">
+              <span class="recipe-no">02</span>
+              <span class="recipe-copy"><strong>讲清一个主题</strong><small>从主题、文档或知识点开始</small></span>
+              <span class="recipe-visual"><i class="mini-frame"></i><i class="mini-frame"></i><i class="mini-frame"></i></span>
+              <span class="recipe-result"><small>得到</small><strong>结构清晰的讲解视频&nbsp;→</strong></span>
+            </div>
+            <div class="recipe remix">
+              <span class="recipe-no">03</span>
+              <span class="recipe-copy"><strong>重组已有素材</strong><small>从零散图片或视频开始</small></span>
+              <span class="recipe-visual"><i class="mini-frame"></i><i class="mini-frame"></i><i class="mini-frame"></i></span>
+              <span class="recipe-result"><small>得到</small><strong>有节奏的完整成片&nbsp;→</strong></span>
+            </div>
+          </div>
+          <footer class="recipe-foot"><i></i><span>不必选择模板，也可以继续在左侧说你的想法</span></footer>
+        </article>
+
+        <article class="variant variant-b" aria-label="方案 B 从现有素材开始">
+          <header>
+            <span class="display-kicker">Start with what you have</span>
+            <h1>你手上的任何东西，都能成为创作起点</h1>
+            <p class="display-intro">不用先整理。说出想法，或带入现有资料，MultiMix 会把它们转成内容依据和画面线索。</p>
+          </header>
+          <div class="source-map">
+            <div class="source-list">
+              <div class="source-item"><span class="source-icon">“</span><div><strong>只有一个想法</strong><small>帮你补齐对象、重点和目标</small></div></div>
+              <div class="source-item"><span class="source-icon">▧</span><div><strong>几张图片</strong><small>识别产品、场景和可用画面</small></div></div>
+              <div class="source-item"><span class="source-icon">▶</span><div><strong>一段原视频</strong><small>提炼内容并重新安排节奏</small></div></div>
+              <div class="source-item"><span class="source-icon">≡</span><div><strong>文档或链接</strong><small>提取事实、观点和表达结构</small></div></div>
+            </div>
+            <div class="flow-lines" aria-hidden="true"><i class="flow-line"></i><i class="flow-line"></i><i class="flow-line"></i><i class="flow-line"></i></div>
+            <div class="output-board">
+              <span class="output-label">可编辑视频工程</span>
+              <h2>从资料到一条完整叙事</h2>
+              <div class="output-scenes">
+                <div class="output-scene"><span class="scene-thumb"></span><span class="scene-copy"><strong>吸引注意</strong><small>开场问题或核心变化</small></span><span class="duration">0–3s</span></div>
+                <div class="output-scene"><span class="scene-thumb"></span><span class="scene-copy"><strong>讲清重点</strong><small>事实、画面与卖点匹配</small></span><span class="duration">3–18s</span></div>
+                <div class="output-scene"><span class="scene-thumb"></span><span class="scene-copy"><strong>留下行动</strong><small>结论、品牌或下一步</small></span><span class="duration">18–25s</span></div>
+              </div>
+            </div>
+          </div>
+          <footer class="source-foot"><span><strong>先说</strong>你现在有什么</span><span><strong>再聊</strong>你想得到什么</span></footer>
+        </article>
+
+        <article class="variant variant-d" aria-label="方案 D 风格样片橱窗">
+          <header class="style-head">
+            <div>
+              <span class="display-kicker">Ways to tell the story</span>
+              <h1>同一个想法，可以有完全不同的表达</h1>
+            </div>
+            <p class="style-note">先看感觉，不必现在决定。风格会在形成编导方案时继续调整。</p>
+          </header>
+          <div class="style-gallery">
+            <div class="style-film documentary">
+              <div class="film-art"></div><span class="film-top">REAL / HUMAN</span>
+              <div class="film-caption"><span>真实素材优先</span><h2>真实纪实</h2><p>自然镜头、人物和过程，保留现场感。</p><div class="rhythm"><i class="on"></i><i></i><i></i></div></div>
+            </div>
+            <div class="style-film explainer">
+              <div class="film-art"></div><span class="film-top">CLEAR / CALM</span>
+              <div class="film-caption"><span>信息表达优先</span><h2>极简讲解</h2><p>用清楚的结构、图形和重点字幕解释复杂内容。</p><div class="rhythm"><i></i><i class="on"></i><i></i></div></div>
+            </div>
+            <div class="style-film remix-film">
+              <div class="film-art"></div><span class="film-top">FAST / SOCIAL</span>
+              <div class="film-caption"><span>传播节奏优先</span><h2>节奏混剪</h2><p>更快的切换、更强的开场和社交媒体节奏。</p><div class="rhythm"><i></i><i></i><i class="on"></i></div></div>
+            </div>
+          </div>
+          <footer class="style-foot"><span>样片只帮助理解表达方式，不会直接锁定成片。</span><strong>继续在左侧描述你喜欢的感觉</strong></footer>
+        </article>
+
+        <article class="variant variant-e" aria-label="方案 E 对话创作教练">
+          <section class="coach-view coach-start" aria-label="创作开始时的表达指导">
+            <header class="coach-start-head">
+              <div>
+                <span class="display-kicker">Create by conversation</span>
+                <h1>不知道怎么说，也能把想法做出来</h1>
+                <p class="display-intro">不用学习提示词。参考一句自然表达，看看它会怎样推进作品，再带入左侧继续聊。</p>
+              </div>
+              <aside>示例只帮助表达，不会直接生成或锁定结果。</aside>
+            </header>
+
+            <div class="guidance-library">
+              <strong>你可以这样说</strong>
+              <span class="guidance-count">精选表达 · 32</span>
+              <div class="guidance-categories" aria-label="表达分类">
+                <span class="active">开始创作</span><span>优化内容</span><span>调整画面</span><span>调整成片</span>
+              </div>
+            </div>
+
+            <div class="coach-recipes">
+              <div class="coach-recipe">
+                <div class="coach-recipe-main">
+                  <span class="coach-recipe-label">把目标说清楚</span>
+                  <blockquote class="coach-utterance">“帮我做一条 20 秒新品视频，重点讲轻便和续航，给第一次了解产品的人看。”</blockquote>
+                </div>
+                <div class="effect-preview">
+                  <span class="effect-title">示例效果 · 更快形成内容结构</span>
+                  <div class="effect-frames product" aria-hidden="true"><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i></div>
+                  <span class="effect-scope"><b>3 秒开场</b><span>→</span><span>两个卖点</span><span>→</span><span>行动引导</span></span>
+                </div>
+                <button class="use-phrase" type="button" data-prompt="帮我做一条 20 秒新品视频，重点讲轻便和续航，给第一次了解产品的人看。">带入对话</button>
+              </div>
+
+              <div class="coach-recipe">
+                <div class="coach-recipe-main">
+                  <span class="coach-recipe-label">手里只有素材</span>
+                  <blockquote class="coach-utterance">“我只有这些产品图片，先帮我判断能做成什么，还缺哪些画面。”</blockquote>
+                </div>
+                <div class="effect-preview">
+                  <span class="effect-title">示例效果 · 先理解素材再规划</span>
+                  <div class="effect-frames material" aria-hidden="true"><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i></div>
+                  <span class="effect-scope"><b>识别可用画面</b><span>→</span><span>说明缺口</span><span>→</span><span>形成方案</span></span>
+                </div>
+                <button class="use-phrase" type="button" data-prompt="我只有这些产品图片，先帮我判断能做成什么，还缺哪些画面。">带入对话</button>
+              </div>
+
+              <div class="coach-recipe">
+                <div class="coach-recipe-main">
+                  <span class="coach-recipe-label">让 Agent 带着你想</span>
+                  <blockquote class="coach-utterance">“先别生成，你通过提问帮我把受众、重点和表达方向理清楚。”</blockquote>
+                </div>
+                <div class="effect-preview">
+                  <span class="effect-title">示例效果 · 把模糊想法逐步补完整</span>
+                  <div class="effect-frames guide" aria-hidden="true"><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i><i class="effect-frame"></i></div>
+                  <span class="effect-scope"><b>确认受众</b><span>→</span><span>明确重点</span><span>→</span><span>确定表达</span></span>
+                </div>
+                <button class="use-phrase" type="button" data-prompt="先别生成，你通过提问帮我把受众、重点和表达方向理清楚。">带入对话</button>
+              </div>
+            </div>
+            <footer class="coach-start-foot">这里只展示当前阶段真正有用的表达，后续会随着作品变化。</footer>
+          </section>
+
+          <section class="coach-view coach-making" aria-label="制作过程中的表达指导">
+            <header class="coach-artifact-head">
+              <strong>视频工程 · v1</strong><span>已完成</span><button type="button">详情</button>
+            </header>
+            <div class="making-preview">
+              <div class="coach-player-wrap">
+                <div class="coach-player">
+                  <div class="coach-screen"><span class="screen-caption">秋季新品 · 轻装出发</span></div>
+                  <div class="player-bar"><span>0:09</span><i></i><span>0:25</span></div>
+                </div>
+              </div>
+              <div class="storyboard-summary">
+                <div class="storyboard-title">当前分镜 <span>3 个 · 25 秒</span></div>
+                <div class="story-scene"><span class="story-thumb"></span><span class="story-copy"><strong>结果先出现</strong><small>轻便使用场景</small></span><span class="story-time">0–4s</span></div>
+                <div class="story-scene"><span class="story-thumb"></span><span class="story-copy"><strong>讲清两个卖点</strong><small>轻量设计 · 长续航</small></span><span class="story-time">4–19s</span></div>
+                <div class="story-scene"><span class="story-thumb"></span><span class="story-copy"><strong>品牌与行动</strong><small>新品信息 · 了解更多</small></span><span class="story-time">19–25s</span></div>
+              </div>
+            </div>
+            <aside class="coach-shelf" aria-label="接下来可以这样改">
+              <div class="coach-shelf-head"><strong>接下来可以这样改</strong><span>根据当前视频推荐</span><button type="button">收起</button></div>
+              <div class="making-suggestion">
+                <blockquote>“开头直接展示使用结果，不要先介绍背景。”</blockquote>
+                <span class="scope-pair"><b>预计影响：开头 4 秒</b><span>其他分镜保持不变</span></span>
+                <button class="use-phrase" type="button" data-prompt="开头直接展示使用结果，不要先介绍背景。">带入对话</button>
+              </div>
+              <div class="making-suggestion">
+                <blockquote>“字幕再大一点，重点数字使用品牌紫。”</blockquote>
+                <span class="scope-pair"><b>预计影响：全片字幕</b><span>画面和声音保持不变</span></span>
+                <button class="use-phrase" type="button" data-prompt="字幕再大一点，重点数字使用品牌紫。">带入对话</button>
+              </div>
+            </aside>
+          </section>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const allowed = new Set(["A", "B", "D", "E"]);
+    const allowedCoachStages = new Set(["start", "making"]);
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("variant");
+    const requestedCoachStage = params.get("stage");
+    const initial = allowed.has(requested) ? requested : "E";
+    const initialCoachStage = allowedCoachStages.has(requestedCoachStage) ? requestedCoachStage : "start";
+    const composer = document.getElementById("composer");
+    const composerInput = document.getElementById("composer-input");
+
+    function resetComposer() {
+      const placeholder = document.body.dataset.coachStage === "making"
+        ? "告诉我想怎么改，或从右侧带入一句表达…"
+        : "继续描述想法，或加入图片、视频、文档…";
+      composerInput.textContent = placeholder;
+      composerInput.classList.add("empty");
+      document.querySelectorAll(".use-phrase").forEach((button) => {
+        button.classList.remove("used");
+        button.textContent = "带入对话";
+      });
+    }
+
+    function showVariant(variant) {
+      document.body.dataset.variant = variant;
+      document.querySelectorAll("[data-target]").forEach((button) => {
+        const active = button.dataset.target === variant;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-current", active ? "true" : "false");
+      });
+      const url = new URL(window.location.href);
+      url.searchParams.set("variant", variant);
+      window.history.replaceState({}, "", url);
+      resetComposer();
+    }
+
+    function showCoachStage(stage) {
+      document.body.dataset.coachStage = stage;
+      document.querySelectorAll("[data-coach-target]").forEach((button) => {
+        const active = button.dataset.coachTarget === stage;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-current", active ? "true" : "false");
+      });
+      const url = new URL(window.location.href);
+      url.searchParams.set("stage", stage);
+      window.history.replaceState({}, "", url);
+      resetComposer();
+    }
+
+    document.querySelectorAll("[data-target]").forEach((button) => {
+      button.addEventListener("click", () => showVariant(button.dataset.target));
+    });
+    document.querySelectorAll("[data-coach-target]").forEach((button) => {
+      button.addEventListener("click", () => showCoachStage(button.dataset.coachTarget));
+    });
+    document.querySelectorAll(".use-phrase").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".use-phrase").forEach((item) => {
+          item.classList.remove("used");
+          item.textContent = "带入对话";
+        });
+        composerInput.textContent = button.dataset.prompt;
+        composerInput.classList.remove("empty");
+        button.classList.add("used");
+        button.textContent = "已带入";
+        composer.classList.remove("pulse");
+        window.requestAnimationFrame(() => composer.classList.add("pulse"));
+        window.setTimeout(() => composer.classList.remove("pulse"), 900);
+      });
+    });
+    showVariant(initial);
+    showCoachStage(initialCoachStage);
+  </script>
+</body>
+</html>

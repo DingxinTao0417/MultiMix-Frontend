@@ -27,6 +27,17 @@ const queuedJob: ExportFinalizeJob = {
   timingEvents: [],
 };
 
+it("rejects a negotiated project fingerprint different from the rendered preview", async () => {
+  const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({
+    mode: "multipart", upload_url: "/v1/video/projects/1121/exports", upload_method: "POST",
+    project_fingerprint: "b".repeat(64), export_variant: "original", brand_spec_version: null,
+  }, 201));
+  await expect(uploadExportCandidate({ apiBase: "https://api.example.test", assetId: "1121", token: "token",
+    projectRevision: "a".repeat(64), blob: new Blob(["candidate"]), fetchImpl,
+  })).rejects.toThrow("工程版本已变化");
+  expect(fetchImpl).toHaveBeenCalledOnce();
+});
+
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,

@@ -1782,7 +1782,7 @@ function buildTracks(bp: BackendProject): TimelineTrack[] {
   return tracks;
 }
 
-export function buildProject(bp: BackendProject): { project: TProject; assets: MediaAsset[] } {
+export function buildProject(bp: BackendProject, options: { preserveMappings?: boolean } = {}): { project: TProject; assets: MediaAsset[] } {
   assertSupportedEditAtoms(bp);
   for (const map of [
     filePathByMediaId,
@@ -1801,7 +1801,7 @@ export function buildProject(bp: BackendProject): { project: TProject; assets: M
     derivedPresenterReframeByElementId,
     logicalLayerByTrackId,
   ]) {
-    for (const key of Object.keys(map)) delete map[key];
+    if (!options.preserveMappings) for (const key of Object.keys(map)) delete map[key];
   }
   const now = new Date();
   const tracks = buildTracks(bp);

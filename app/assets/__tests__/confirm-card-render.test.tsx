@@ -65,6 +65,30 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("命中 1 个已保存素材")).toBeTruthy();
   });
 
+  it("keeps the user-facing content direction primary and the structured approach progressive", () => {
+    render(
+      <ConfirmCard
+        plan={{
+          kind: "video_project_confirmation",
+          title: "视频方案",
+          status: "pending",
+          fields: [
+            { key: "creative_profile", label: "内容方向", value: "先展示真实变化，再给出行动理由。" },
+            { key: "production_mix", label: "计划构成", value: "1 段生成镜头 · 配音与音乐" },
+            { key: "creative_approach", label: "制作偏好", value: "从头创作 · 推广 · 品牌精致 · 混合制作" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("先展示真实变化，再给出行动理由。")).toBeTruthy();
+    expect(screen.getByText("1 段生成镜头 · 配音与音乐")).toBeTruthy();
+    const details = screen.getByText("查看制作细节与预览").closest("details");
+    expect((details as HTMLDetailsElement | null)?.open).toBe(false);
+    fireEvent.click(screen.getByText("查看制作细节与预览"));
+    expect(screen.getByText("从头创作 · 推广 · 品牌精致 · 混合制作")).toBeTruthy();
+  });
+
   it("shows the image preservation contract before the user confirms", () => {
     render(
       <ConfirmCard
@@ -158,6 +182,10 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard plan={plan as never} />);
 
+    const productionDetails = screen.getByText("查看制作细节与预览").closest("details");
+    expect((productionDetails as HTMLDetailsElement | null)?.open).toBe(false);
+    fireEvent.click(screen.getByText("查看制作细节与预览"));
+    expect((productionDetails as HTMLDetailsElement | null)?.open).toBe(true);
     expect(screen.getByRole("region", { name: "关键帧预览" })).toBeTruthy();
     expect(screen.getByAltText("产品开场 · 起始画面").getAttribute("src")).toBe(
       "https://preview.test/product.jpg",
@@ -200,11 +228,17 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard {...props} />);
 
+    expect(loadBgmCatalog).toHaveBeenCalledWith(17);
+    expect(screen.getByText("已选：Clean Motion")).toBeTruthy();
+    const productionDetails = screen.getByText("查看制作细节与预览").closest("details");
+    expect((productionDetails as HTMLDetailsElement | null)?.open).toBe(false);
+    fireEvent.click(screen.getByText("查看制作细节与预览"));
+    expect((productionDetails as HTMLDetailsElement | null)?.open).toBe(true);
     expect(screen.getByRole("radiogroup", { name: "背景音乐" })).toBeTruthy();
     expect(screen.getByText("智能推荐 · 可试听")).toBeTruthy();
-    expect(loadBgmCatalog).toHaveBeenCalledWith(17);
     const second = screen.getByRole("radio", { name: "Warm Steps" });
     fireEvent.click(second);
+    expect(screen.getByText("已选：Warm Steps")).toBeTruthy();
     expect((await screen.findByLabelText("试听 Warm Steps")).getAttribute("src")).toBe(
       "https://preview.test/b.m4a",
     );
@@ -236,6 +270,7 @@ describe("ConfirmCard pending state", () => {
 
     render(<ConfirmCard {...props} />);
 
+    fireEvent.click(screen.getByText("查看制作细节与预览"));
     fireEvent.click(screen.getByRole("radio", { name: "无配乐" }));
     fireEvent.click(screen.getByRole("button", { name: "确认并生成视频" }));
     expect(onConfirm).toHaveBeenCalledWith(plan, {

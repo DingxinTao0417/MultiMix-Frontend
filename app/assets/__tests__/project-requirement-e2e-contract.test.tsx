@@ -117,9 +117,8 @@ describe("project requirement cross-stack contract", () => {
     expect(snapshot?.conversationText).not.toContain("客户聊天截图.png");
   });
 
-  it("keeps requirement understanding conversational while project removal and deletion stay distinct", async () => {
+  it("keeps requirement understanding conversational and does not offer protected source deletion", async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
-    const permanentDelete = vi.fn().mockResolvedValue(undefined);
     render(
       <ProjectResourcesDrawer
         open
@@ -134,11 +133,9 @@ describe("project requirement cross-stack contract", () => {
           }], total: 1, offset: 0, limit: 20,
         })}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={remove}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
-        onPermanentDeleteSource={permanentDelete}
       />,
     );
 
@@ -151,9 +148,6 @@ describe("project requirement cross-stack contract", () => {
     fireEvent.click(screen.getByRole("button", { name: "移出项目" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "将素材移出项目？" })).getByRole("button", { name: "移出项目" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith(31));
-    await waitFor(() => expect(screen.getByRole("button", { name: "永久删除源文件" })).not.toBeDisabled());
-    fireEvent.click(screen.getByRole("button", { name: "永久删除源文件" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "永久删除源文件？" })).getByRole("button", { name: "永久删除" }));
-    await waitFor(() => expect(permanentDelete).toHaveBeenCalledWith(31));
+    expect(screen.queryByRole("button", { name: "永久删除源文件" })).not.toBeInTheDocument();
   });
 });

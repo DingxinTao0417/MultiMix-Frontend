@@ -16,6 +16,15 @@ export type VideoQualityReport = {
 export const hasBlockingVideoIssues = (report: VideoQualityReport | null): boolean =>
   Boolean(report?.blockers.length);
 
+export function videoExportFailureMessage(
+  report: VideoQualityReport | null | undefined,
+  errorMessage: string | null | undefined,
+): string {
+  return report?.blockers.length
+    ? "成片未通过质量检查，请查看具体问题后重新导出。"
+    : errorMessage || "成片检查失败，请重试导出。";
+}
+
 export function qualitySegmentNumber(segmentId: string | null): number | null {
   if (!segmentId) return null;
   const match = segmentId.match(/(\d+)(?!.*\d)/);
@@ -33,6 +42,10 @@ export function videoQualityIssueTitle(issue: VideoQualityIssue): string {
     mg_not_ready: " MG 尚未完成",
     mg_primary_blank: " MG 主画面已保留空白",
     duration_out_of_range: "时长超出允许范围",
+    video_duration_unavailable: "画面时长无法验证",
+    audio_duration_unavailable: "音频时长无法验证",
+    audio_tail_exceeds_video: "音频明显长于画面",
+    export_duration_mismatch: "成片与工程时长不一致",
     naked_black_interval: "成片存在裸黑场",
     invalid_dimensions: "成片尺寸不正确",
     invalid_video_codec: "视频编码不正确",

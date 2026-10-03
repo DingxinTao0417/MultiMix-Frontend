@@ -19,6 +19,16 @@ const newConversationProduct = {
 } as AssetProduct;
 
 describe("project conversation mapping", () => {
+  it("preserves the server save basis and real version numbers", () => {
+    const updatedAt = "2026-09-29T00:00:00Z";
+    const result = contentAssetToProduct(asset({ updated_at: updatedAt, versions: [1, 5, 3].map((version) => ({
+      id: version, asset_id: 1, version, title: "标题", body: "正文", created_at: updatedAt,
+    })) }));
+    expect(result.backendUpdatedAt).toBe(updatedAt);
+    expect(result.version).toBe("v5");
+    expect(result.versions?.map((item) => item.label)).toEqual(["v1", "v5", "v3"]);
+  });
+
   it("maps bounded source-resolution actions without dropping stable ids", () => {
     const conversation = conversationFromPersisted({
       id: "asset-conversation-source-choice", title: "门窗视频", status: "active", metadata: {},
@@ -1457,6 +1467,51 @@ describe("asset product mapper", () => {
       "/v1/video/media?ref=local%3A%2F%2Fvideo-orchestration%2F1%2Fmaterials%2Fshowroom.poster.jpg",
     );
     expect(product.segments?.[0]?.assetThumbnailUrl).not.toContain("content-assets");
+  });
+
+  it("only exposes a saved reference as the used asset when it matches the persisted primary visual", () => {
+    const mapped = (primaryAssetId: number) => contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      metadata: {
+        capability: "video_project",
+        video_project: {
+          segments: [{
+            id: "scene-saved-reference",
+            asset_reference: { status: "matched", chosen_asset_id: 12, source_snapshot: { title: "已选素材" } },
+            primary_visual: {
+              status: "persisted", source_type: "saved_asset", asset_id: primaryAssetId,
+              artifact_ref: `local://video-orchestration/1/materials/${primaryAssetId}.mp4`,
+            },
+          }],
+        },
+      },
+    }));
+
+    expect(mapped(13).segments?.[0]?.assetReferenceId).toBeUndefined();
+    expect(mapped(12).segments?.[0]?.assetReferenceId).toBe(12);
+  });
+
+  it("preserves explicitly cleared copy separately from fields absent in the historical snapshot", () => {
+    const product = contentAssetToProduct(asset({
+      asset_kind: "video",
+      content_type: "video_project",
+      status: "ready",
+      metadata: {
+        capability: "video_project",
+        video_project: {
+          segments: [
+            { id: "scene-cleared", title: "", narration: "", subtitle_focus: "", voice: { name: "" } },
+            { id: "scene-unknown" },
+          ],
+        },
+      },
+    }));
+
+    expect(product.segments?.[0]).toMatchObject({ title: "", line: "", subLine: "", voiceName: "" });
+    expect(product.segments?.[1]?.title).toBeUndefined();
+    expect(product.segments?.[1]?.line).toBeUndefined();
   });
 
   it("does not request private saved refs before manifest materialization", () => {

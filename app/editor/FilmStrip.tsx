@@ -200,6 +200,7 @@ export default function FilmStrip({
     saveCoordinatorRef.current = new TimelineSaveCoordinator({
       save: () => persistTimelineRef.current(),
       onStateChange: (status, message) => timelineSaveNoteRef.current(status, message),
+      formatError: (error) => error instanceof Error && error.name === "ProjectSaveError" ? error.message : null,
     });
   }
 

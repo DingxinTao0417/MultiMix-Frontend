@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AssetConversationResponse } from "../../../lib/api";
@@ -75,7 +75,7 @@ describe("conversation project resources", () => {
     });
   });
 
-  it("shows a compact project resource summary only when the project has resources", () => {
+  it("shows a compact project resource entry in the chat title only when the project has resources", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
       id: "asset-conversation-project",
@@ -98,14 +98,58 @@ describe("conversation project resources", () => {
       />,
     );
 
-    expect(screen.getByText("项目资源")).toBeInTheDocument();
-    expect(screen.getByText("素材 1")).toBeInTheDocument();
-    expect(screen.getByText("文案 1")).toBeInTheDocument();
-    expect(screen.getByText("封面 1")).toBeInTheDocument();
-    expect(screen.getByText("视频 1")).toBeInTheDocument();
+    const resourceEntry = screen.getByRole("button", { name: "项目资料，共 4 项" });
+    expect(resourceEntry).toHaveTextContent("资料4");
+    expect(screen.queryByText("素材 1")).not.toBeInTheDocument();
   });
 
-  it("keeps optional project context in one natural-height row above the message thread", () => {
+  it("hides project resource management until the project has resources", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "asset-conversation-empty-project",
+      title: "空白项目",
+      detailsLoaded: true,
+      projectResources: { sources: [], copies: [], covers: [], videos: [] },
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onOpenProjectResources={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /项目资料/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("资料")).not.toBeInTheDocument();
+  });
+
+  it("keeps the resource entry when only removed historical sources remain", () => {
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "asset-conversation-historical-project",
+      title: "历史素材项目",
+      detailsLoaded: true,
+      projectResources: { sources: [], copies: [], covers: [], videos: [] },
+      projectResourceSummary: { sources: 0, historicalSources: 1, copies: 0, covers: 0, videos: 0 },
+    };
+
+    render(
+      <ConversationStudio
+        basePath="/app/assets"
+        selectedConversation={conversation}
+        selectedProduct={null}
+        onSelectProduct={vi.fn()}
+        onOpenProjectResources={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "项目资料，共 1 项" })).toHaveTextContent("资料1");
+  });
+
+  it("keeps project resources in the chat title without adding a row above the message thread", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
       id: "asset-conversation-project",
@@ -135,7 +179,9 @@ describe("conversation project resources", () => {
     const studio = screen.getByLabelText("Content generation conversation");
     expect(studio.children).toHaveLength(3);
     expect(studio.children[0]).toHaveClass("shadcn-prototype-chat-context");
-    expect(within(studio.children[0] as HTMLElement).getByRole("button", { name: "项目资源" })).toBeInTheDocument();
+    const header = within(studio.children[0] as HTMLElement).getByRole("button", { name: "项目资料，共 1 项" }).closest("header");
+    expect(header).toHaveClass("shadcn-prototype-chat-head");
+    expect(within(header as HTMLElement).getByRole("button", { name: "项目资料，共 1 项" })).toHaveTextContent("资料1");
     expect(within(studio.children[0] as HTMLElement).getByRole("complementary", { name: "Agent 任务状态" })).toBeInTheDocument();
     expect(studio.children[1]).toHaveClass("shadcn-prototype-thread");
     expect(studio.children[2]).toHaveClass("shadcn-prototype-composer");
@@ -154,7 +200,6 @@ describe("conversation project resources", () => {
   });
 
   it("keeps Agent understanding out of the resource drawer while management actions remain", async () => {
-    const onPermanentDeleteSource = vi.fn().mockResolvedValue(undefined);
     render(
       <ProjectResourcesDrawer
         open
@@ -180,11 +225,9 @@ describe("conversation project resources", () => {
           limit: 20,
         })}
         onClose={vi.fn()}
-        onAddSource={vi.fn()}
         onRemoveSource={vi.fn()}
         onReaddSource={vi.fn()}
         onOpenResource={vi.fn()}
-        onPermanentDeleteSource={onPermanentDeleteSource}
       />,
     );
 
@@ -195,10 +238,6 @@ describe("conversation project resources", () => {
     expect(screen.queryByText("不可用于成片")).not.toBeInTheDocument();
     expect(screen.queryByText("需要调整时，直接在项目对话里告诉 Agent。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "移出项目" })).toBeVisible();
-    const permanentDelete = screen.getByRole("button", { name: "永久删除源文件" });
-    await waitFor(() => expect(permanentDelete).not.toBeDisabled());
-    fireEvent.click(permanentDelete);
-    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
-    await waitFor(() => expect(onPermanentDeleteSource).toHaveBeenCalledWith(31));
+    expect(screen.queryByRole("button", { name: "永久删除源文件" })).not.toBeInTheDocument();
   });
 });

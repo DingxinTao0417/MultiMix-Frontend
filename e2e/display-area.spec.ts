@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
+import type { AssetConversationResponse, ContentAsset, ContentAssetVersion } from "../lib/api";
+
+const execFileAsync = promisify(execFile);
 
 type SeedResult = {
   conversation_ids: Record<string, string>;
@@ -8,7 +14,9 @@ type SeedResult = {
 };
 
 const seed = JSON.parse(process.env.DISPLAY_COVERAGE_SEED_JSON ?? "{}") as Partial<SeedResult>;
-const desktopEvidenceDirectory = resolve(process.cwd(), "artifacts/qa/desktop-ui-ux-remediation-20260917");
+const desktopEvidenceDirectory = resolve(
+  process.env.MULTIMIX_VISUAL_EVIDENCE_DIR ?? resolve(process.cwd(), "test-results/display-coverage/evidence"),
+);
 
 async function captureDesktopEvidence(page: Page, slug: string) {
   await mkdir(desktopEvidenceDirectory, { recursive: true });
@@ -41,6 +49,733 @@ async function openCase(page: Page, caseId: string) {
   await expect(workspace).toBeVisible();
   return workspace;
 }
+
+test("narrow existing-project chat keeps header actions and send control inside the viewport", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-01-director-draft"];
+  const assetId = seed.asset_ids?.["case-01-director-draft"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-01 project");
+  const pageErrors: string[] = [];
+  const consoleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    const expectedMissingRequirements = message.location().url.endsWith(`/v1/assets/conversations/${conversationId}/requirements/current`)
+      && message.text().includes("404");
+    if (!expectedMissingRequirements) consoleErrors.push(message.text());
+  });
+
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET"
+      || (pathname !== "/v1/assets/conversations" && pathname !== `/v1/assets/conversations/${conversationId}`)) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse | AssetConversationResponse[];
+    for (const row of Array.isArray(payload) ? payload : [payload]) {
+      if (row.id !== conversationId) continue;
+      row.project_resource_summary = { sources: 1, historical_sources: 0, copies: 0, covers: 0, videos: 0 };
+    }
+    await route.fulfill({ response, json: payload });
+  });
+
+  for (const width of [320, 375, 390, 430, 520, 521, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    await expect(page).toHaveTitle("MultiMix");
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await expect(chat).toBeVisible();
+    await expect(chat.getByText("确认视频方案")).toBeVisible();
+    await expect(page.locator("[data-nextjs-dialog-overlay], .nextjs-dialog-overlay")).toHaveCount(0);
+    const composer = chat.getByRole("textbox", { name: "输入对话内容" });
+    await composer.fill("窄屏草稿，不发送");
+    await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeVisible();
+
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `narrow-existing-project-${width}x844.png`),
+      animations: "disabled",
+    });
+
+    const controls = [
+      ...(width <= 1180 ? [chat.getByRole("button", { name: "展开侧边栏" })] : []),
+      chat.getByRole("button", { name: /^项目资料/ }),
+      chat.getByRole("button", { name: "诊断", exact: true }),
+      composer,
+      chat.getByRole("button", { name: "发送", exact: true }),
+    ];
+    for (const control of controls) {
+      await expect(control).toBeVisible();
+      const box = await control.boundingBox();
+      expect(box, `Missing control box at ${width}px`).not.toBeNull();
+      if (box) {
+        expect(box.x, `Control starts outside the ${width}px viewport`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `Control ends outside the ${width}px viewport`).toBeLessThanOrEqual(width);
+      }
+    }
+    const titleBox = await chat.locator(".shadcn-prototype-chat-head > strong").boundingBox();
+    expect(titleBox?.width, `Project title has too little readable space at ${width}px`).toBeGreaterThanOrEqual(120);
+    if (width <= 520) {
+      const actionsBox = await chat.locator(".shadcn-prototype-chat-head-actions").boundingBox();
+      expect(actionsBox?.y, `Header actions should be below the title at ${width}px`).toBeGreaterThanOrEqual(
+        (titleBox?.y ?? 0) + (titleBox?.height ?? 0),
+      );
+    }
+    await expect(composer).toHaveValue("窄屏草稿，不发送");
+  }
+  expect(pageErrors).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+});
+
+test("narrow project resources keep real saved-asset names readable", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+
+  for (const width of [320, 375, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    const resourcesButton = page.getByRole("region", { name: "Content generation conversation" })
+      .getByRole("button", { name: /^项目资料/ });
+    await expect(resourcesButton).toBeVisible();
+    await resourcesButton.click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer).toBeVisible();
+    const resourceName = drawer.getByRole("button", { name: "测试门店素材", exact: true });
+    await expect(resourceName).toBeVisible();
+    if (width <= 380) {
+      const isNameUnclipped = await resourceName.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
+      expect(isNameUnclipped, `Saved-asset name is visually clipped at ${width}px`).toBe(true);
+      const nameBox = await resourceName.boundingBox();
+      const actionsBox = await drawer.locator(".shadcn-prototype-project-resource-actions").first().boundingBox();
+      expect(actionsBox?.y, `Resource actions should follow the name at ${width}px`).toBeGreaterThanOrEqual(
+        (nameBox?.y ?? 0) + (nameBox?.height ?? 0),
+      );
+    }
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-resources-${width}x844.png`),
+      animations: "disabled",
+    });
+    await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+    await expect(drawer).toBeHidden();
+  }
+});
+
+test("project source opens exact detail and remains recoverable when it is the only historical source", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+  await expect(page).toHaveTitle("MultiMix");
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "测试门店素材", exact: true }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await expect(detail).toBeVisible();
+  await expect(page.getByText(/正在为项目.*添加素材/)).toHaveCount(0);
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-exact-detail-390.png"), animations: "disabled" });
+
+  await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+  await page.reload();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("已移出或从资源库归档的资料仍保留历史引用；仅可用的已移出资料可重新加入。")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-historical-only-390.png"), animations: "disabled" });
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.reload();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-restored-1280.png"), animations: "disabled" });
+  expect(pageErrors).toEqual([]);
+});
+
+test("saved source removal remains acknowledged when project detail refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const sourceId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!projectId || !sourceId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  let failedDetailReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}?*`, async (route) => {
+    if (route.request().method() === "GET" && failedDetailReads < 2) {
+      failedDetailReads += 1;
+      await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(page.getByText("已移出项目并保存，但资料暂未同步。请重试加载。", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeHidden();
+  await expect(drawer).toBeHidden();
+  await expect(chat.getByRole("button", { name: "重试加载" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeHidden();
+  expect(failedDetailReads).toBe(2);
+
+  await chat.getByRole("button", { name: "重试加载" }).click();
+  await expect(chat.getByRole("button", { name: "重试加载" })).toBeHidden();
+  await expect(chat.getByRole("button", { name: /^项目资料/ })).toBeVisible();
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
+test("saved source removal is not reported as failed when requirement refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const sourceId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!projectId || !sourceId) throw new Error("Missing seeded CASE-02 project");
+
+  let sourceWriteStarted = false;
+  await page.route(`**/v1/assets/conversations/${projectId}*`, async (route) => {
+    const isProjectDetail = new URL(route.request().url()).pathname === `/v1/assets/conversations/${projectId}`;
+    if (route.request().method() !== "GET" || !isProjectDetail || sourceWriteStarted) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.updated_at = new Date(Date.now() - 120_000).toISOString();
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  }
+  let membershipWrites = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}/sources/*`, async (route) => {
+    if (route.request().method() === "PUT" || route.request().method() === "DELETE") membershipWrites += 1;
+    await route.continue();
+  });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  let failRequirements = true;
+  await page.route(requirementsUrl, async (route) => {
+    requirementReads += 1;
+    if (failRequirements) await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+    else await route.continue();
+  });
+
+  await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+  const confirmation = page.getByRole("dialog", { name: "将素材移出项目？" });
+  sourceWriteStarted = true;
+  await confirmation.getByRole("button", { name: "移出项目", exact: true }).click();
+  await expect(page.getByText("已移出项目并保存，但需求理解暂未同步。", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeHidden();
+  await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+  expect(membershipWrites).toBe(1);
+  expect(requirementReads).toBe(1);
+  failRequirements = false;
+  const retryRead = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+    && response.request().method() === "GET");
+  await drawer.getByRole("button", { name: "重新同步需求" }).click();
+  expect((await retryRead).status()).toBe(404);
+  await expect(page.getByText("当前项目没有可同步的需求理解。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
+  expect(membershipWrites).toBe(1);
+  expect(requirementReads).toBe(2);
+  await drawer.getByRole("button", { name: "重新加入项目" }).click();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  const readsAfterReadd = requirementReads;
+  await drawer.getByRole("button", { name: "关闭项目资源" }).click();
+  const otherProjectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!otherProjectId) throw new Error("Missing seeded CASE-01 project");
+  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
+  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await otherProjectLink.click();
+  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
+  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await projectLink.click();
+  await expect(projectLink).toHaveAttribute("aria-current", "page");
+  await expect.poll(() => requirementReads).toBe(readsAfterReadd + 1);
+});
+
+test("an obsolete requirement retry cannot report success after another source change", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!projectId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  }
+
+  let releaseObsoleteRead: (() => void) | undefined;
+  const obsoleteReadGate = new Promise<void>((resolve) => { releaseObsoleteRead = resolve; });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  await page.route(requirementsUrl, async (route) => {
+    requirementReads += 1;
+    if (requirementReads === 2) {
+      await obsoleteReadGate;
+      await route.fulfill({ status: 200, json: {
+        id: "superseded-retry-snapshot",
+        conversation_id: projectId,
+        version: 1,
+        parent_snapshot_id: null,
+        status: "ready",
+        trigger_kind: "manual_refresh",
+        conversation_text: "过期重试结果",
+        conversation_media: [],
+        payload: null,
+        error_code: null,
+        error_message: null,
+        created_at: "2026-09-12T08:00:00Z",
+        completed_at: "2026-09-12T08:00:01Z",
+      } });
+      return;
+    }
+    await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+  });
+
+  try {
+    await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+    await page.getByRole("dialog", { name: "将素材移出项目？" }).getByRole("button", { name: "移出项目", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "重新同步需求" })).toBeVisible();
+    expect(requirementReads).toBe(1);
+
+    await drawer.getByRole("button", { name: "重新同步需求" }).click();
+    await expect.poll(() => requirementReads).toBe(2);
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+    expect(requirementReads).toBe(3);
+
+    const obsoleteResponse = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+      && response.status() === 200);
+    await page.evaluate(() => {
+      const observedWindow = window as Window & { __requirementSuccessNotices?: number };
+      observedWindow.__requirementSuccessNotices = 0;
+      const observer = new MutationObserver(() => {
+        if (document.body.textContent?.includes("需求理解已同步。")) observedWindow.__requirementSuccessNotices! += 1;
+      });
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    releaseObsoleteRead?.();
+    await obsoleteResponse;
+    await expect(drawer.getByRole("button", { name: "重新同步需求" })).toBeEnabled();
+    await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => (window as Window & { __requirementSuccessNotices?: number }).__requirementSuccessNotices)).toBe(0);
+  } finally {
+    releaseObsoleteRead?.();
+  }
+});
+
+test("a requirement read started before source removal cannot restore an obsolete snapshot", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const otherProjectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId || !otherProjectId) throw new Error("Missing seeded projects");
+
+  const initialRequirementRead = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+    && response.request().method() === "GET");
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  await initialRequirementRead;
+  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
+  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await otherProjectLink.click();
+  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
+
+  let releaseOldRead: (() => void) | undefined;
+  const oldReadGate = new Promise<void>((resolve) => { releaseOldRead = resolve; });
+  const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
+  let requirementReads = 0;
+  await page.route(requirementsUrl, async (route) => {
+    requirementReads += 1;
+    if (requirementReads !== 1) {
+      await route.continue();
+      return;
+    }
+    await oldReadGate;
+    await route.fulfill({ status: 200, json: {
+      id: "obsolete-requirement-snapshot",
+      conversation_id: projectId,
+      version: 1,
+      parent_snapshot_id: null,
+      status: "ready",
+      trigger_kind: "source_added",
+      conversation_text: "过期需求不应重新出现",
+      conversation_media: [],
+      payload: {
+        schema_version: "project_requirement_snapshot_v1",
+        summary: "过期需求不应重新出现",
+        goal: "旧目标",
+        audience: "旧受众",
+        intent: { operation: "supplement", scope: "project_default", target_item_ids: [], replacement_source_asset_id: null },
+        deliverables: [], facts: [], requirements: [], asset_usages: [], conflicts: [], source_asset_ids: [],
+        diff: { added_item_ids: [], removed_item_ids: [], changed_item_ids: [], new_conflict_ids: [], resolved_conflict_ids: [], usage_changed_asset_ids: [] },
+      },
+      error_code: null,
+      error_message: null,
+      created_at: "2026-09-12T08:00:00Z",
+      completed_at: "2026-09-12T08:00:01Z",
+    } });
+  });
+
+  try {
+    const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+    if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+    await projectLink.click();
+    await expect(projectLink).toHaveAttribute("aria-current", "page");
+    await expect.poll(() => requirementReads).toBe(1);
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await chat.getByRole("button", { name: /^项目资料/ }).click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+    if (await drawer.getByRole("button", { name: "重新加入项目" }).count()) {
+      await drawer.getByRole("button", { name: "重新加入项目" }).click();
+      await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+    }
+    await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
+    await page.getByRole("dialog", { name: "将素材移出项目？" }).getByRole("button", { name: "移出项目", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toBeVisible();
+    const oldReadResponse = page.waitForResponse((response) => response.url().endsWith(`/v1/assets/conversations/${projectId}/requirements/current`)
+      && response.status() === 200);
+    releaseOldRead?.();
+    await oldReadResponse;
+    await expect(chat.getByText("过期需求不应重新出现", { exact: true })).toHaveCount(0);
+    await drawer.getByRole("button", { name: "重新加入项目" }).click();
+    await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+  } finally {
+    releaseOldRead?.();
+  }
+});
+
+test("library source addition remains acknowledged when target project detail refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId) throw new Error("Missing seeded CASE-01 project");
+
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.getByRole("button", { name: "加入项目…" }).click();
+  const picker = page.getByRole("dialog", { name: "选择目标项目" });
+  await expect(picker).toBeVisible();
+  let failedDetailReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}?*`, async (route) => {
+    if (route.request().method() === "GET" && failedDetailReads < 2) {
+      failedDetailReads += 1;
+      await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
+      return;
+    }
+    await route.continue();
+  });
+
+  await picker.getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
+  await expect(page.getByText("已加入项目并保存，但资料暂未同步。进入该项目后可重试加载。", { exact: true })).toBeVisible();
+  await expect(picker).toBeHidden();
+  expect(failedDetailReads).toBe(2);
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
+});
+
+test("archived project source stays traceable and opens read-only history detail", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-02 project");
+
+  await page.route(`**/v1/assets/detail/${assetId}`, async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as { asset: ContentAsset };
+    payload.asset.title = "测试门店素材";
+    payload.asset.asset_kind = "image";
+    payload.asset.content_type = "uploaded_image";
+    payload.asset.archived = true;
+    payload.asset.status = "archived";
+    await route.fulfill({ response, json: payload });
+  });
+
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (requestUrl.pathname === `/v1/assets/conversations/${conversationId}/resources`) {
+      await route.fulfill({ json: {
+        items: [{
+          id: assetId,
+          title: "测试门店素材",
+          kind: "source",
+          membership_state: "unavailable",
+          historical_reference_count: 1,
+          status: "archived",
+          readd_status: "archived",
+          asset_kind: "image",
+          content_type: "uploaded_image",
+          source_type: "upload",
+          updated_at: "2026-09-30T00:00:00Z",
+        }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      } });
+      return;
+    }
+    if (requestUrl.pathname !== `/v1/assets/conversations/${conversationId}`) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.project_resource_summary = { sources: 0, historical_sources: 1, copies: 0, covers: 0, videos: 0 };
+    await route.fulfill({ response, json: payload });
+  });
+
+  for (const width of [390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`/app/assets?conversation=${conversationId}&product=asset-${assetId}`);
+    const chat = page.getByRole("region", { name: "Content generation conversation" });
+    await chat.getByRole("button", { name: /^项目资料/ }).click();
+    const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+    await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+    await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+    await expect(drawer.getByRole("button", { name: "重新加入项目" })).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "移出项目" })).toHaveCount(0);
+    await expect(drawer.getByRole("button", { name: "永久删除源文件" })).toHaveCount(0);
+    await mkdir(desktopEvidenceDirectory, { recursive: true });
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-source-archived-history-${width}.png`),
+      animations: "disabled",
+    });
+    await drawer.getByRole("button", { name: "测试门店素材", exact: true }).click();
+    const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+    await expect(detail.getByText(/仅可查看历史内容/)).toBeVisible();
+    await expect(detail.getByText(/归档前未完成素材理解/)).toBeVisible();
+    await expect(detail.getByText(/等待开始素材理解/)).toHaveCount(0);
+    for (const action of ["用于创作", "加入项目…", "重新解析素材", "下载", "删除"]) {
+      await expect(detail.getByRole("button", { name: action })).toHaveCount(0);
+    }
+    await page.screenshot({
+      path: resolve(desktopEvidenceDirectory, `project-source-archived-detail-${width}.png`),
+      animations: "disabled",
+    });
+  }
+});
+
+test("archiving the only project source in the library refreshes project history without a page reload", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialPage = await initialPagePromise;
+  const initialResources = await initialPage.json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  const sourceId = source.id;
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  let archived = false;
+  await page.route(`**/v1/assets/${sourceId}?mode=archive`, async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.route("**/v1/assets?**", async (route) => {
+    const response = await route.fetch();
+    const assets = await response.json() as Array<{ id: number }>;
+    await route.fulfill({ response, json: archived ? assets.filter((asset) => asset.id !== sourceId) : assets });
+  });
+  await page.route("**/v1/assets/conversations/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (!archived || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (pathname === `/v1/assets/conversations/${conversationId}/resources`) {
+      await route.fulfill({ json: { items: [{ ...source, membership_state: "unavailable", readd_status: "archived", status: "archived" }], total: 1, offset: 0, limit: 20 } });
+      return;
+    }
+    if (pathname === `/v1/assets/conversations/${conversationId}`) {
+      const response = await route.fetch();
+      const payload = await response.json() as AssetConversationResponse;
+      payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+      await route.fulfill({ response, json: payload });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  const imageGrid = page.getByLabel("图片库列表");
+  await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await expect(resourceEntry).toBeVisible();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "移出项目" })).toHaveCount(0);
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "project-source-archived-same-session-1280.png"), animations: "disabled" });
+  await page.reload();
+  await resourceEntry.click();
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+});
+
+test("project detail can retry after the library archive refresh fails once", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  await expect(resourceEntry).toBeVisible();
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialResources = await (await initialPagePromise).json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  const sourceId = source.id;
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  let archived = false;
+  let failedAttempts = 0;
+  await page.route(`**/v1/assets/${sourceId}?mode=archive`, async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.route(`**/v1/assets/conversations/${conversationId}?*`, async (route) => {
+    if (!archived || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    if (failedAttempts < 2) {
+      failedAttempts += 1;
+      await route.fulfill({ status: 503, json: { detail: "temporary test failure" } });
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+    await route.fulfill({ response, json: payload });
+  });
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  const imageGrid = page.getByLabel("图片库列表");
+  await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect.poll(() => failedAttempts).toBe(2);
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await expect(chat.getByText("对话内容加载失败。")).toBeVisible();
+  await chat.getByRole("button", { name: "重试加载" }).click();
+  await expect(chat.getByText("对话内容加载失败。")).toHaveCount(0);
+  await expect(chat.getByRole("button", { name: "项目资料，共 1 项" })).toBeVisible();
+  expect(failedAttempts).toBe(2);
+});
+
+test("a pre-archive project detail response cannot replace the refreshed project", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  let archived = false;
+  let detailCalls = 0;
+  let oldDetailDelivered = false;
+  let freshDetailDelivered = false;
+  let releaseOldDetail: (() => void) | undefined;
+  const oldDetailGate = new Promise<void>((resolve) => { releaseOldDetail = resolve; });
+  await page.route(`**/v1/assets/conversations/${conversationId}?*`, async (route) => {
+    const callNumber = ++detailCalls;
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse;
+    if (callNumber === 1) {
+      payload.title = "归档前的旧详情";
+      await oldDetailGate;
+    } else if (archived) {
+      payload.title = "归档后的新详情";
+      payload.project_resource_summary = { ...payload.project_resource_summary!, sources: 0, historical_sources: 1 };
+    }
+    await route.fulfill({ response, json: payload });
+    if (callNumber === 1) oldDetailDelivered = true;
+    else if (archived) freshDetailDelivered = true;
+  });
+  await page.route("**/v1/assets/*?mode=archive", async (route) => {
+    archived = true;
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  await expect.poll(() => detailCalls).toBeGreaterThanOrEqual(1);
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  await expect.poll(() => freshDetailDelivered).toBe(true);
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await expect(chat.getByText("归档后的新详情")).toBeVisible();
+  releaseOldDetail?.();
+  await expect.poll(() => oldDetailDelivered).toBe(true);
+  await page.waitForTimeout(200);
+  await expect(chat.getByText("归档前的旧详情")).toHaveCount(0);
+});
 
 async function chooseVideoExport(
   workspace: ReturnType<Page["locator"]>,
@@ -137,9 +872,21 @@ async function expectApprovedVideoPreviewShell(
   await resizeProductPaneAndExpectRatio(page, screen, expectedRatio);
 }
 
-test("CASE-01 shows a director draft without project controls", async ({ page }) => {
+test("new conversation keeps the workspace single-column until an artifact exists", async ({ page }) => {
+  await page.goto("/app/assets?conversation=new");
+
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(page.getByRole("region", { name: "创作起点" })).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
+  await captureDesktopEvidence(page, "new-conversation-single-column");
+});
+
+test("CASE-01 shows a director draft with its bound video-plan confirmation", async ({ page }) => {
   const workspace = await openCase(page, "case-01-director-draft");
   await expect(workspace.locator("article.shadcn-prototype-copy-document")).toBeVisible();
+  await expect(page.getByText("确认视频方案", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "确认生成视频工程" })).toBeVisible();
   await expect(workspace.getByLabel("视频预览")).toHaveCount(0);
   await expect(workspace.getByLabel("分镜摘要")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
@@ -474,7 +1221,8 @@ test("video library renders one bounded page without eager video elements", asyn
 
   await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "加载更多内容" }).click();
-  await expect(cards).toHaveCount(65);
+  await expect.poll(() => cards.count()).toBeGreaterThan(48);
+  await expect(page.getByRole("button", { name: "加载更多内容" })).toHaveCount(0);
   await expect(grid.locator("video")).toHaveCount(0);
   expect(mediaRequests).toHaveLength(0);
   expect(listRequests).toHaveLength(2);
@@ -647,6 +1395,192 @@ test("library cross-type details and interaction states stay consistent", async 
   await captureDesktopEvidence(page, "asset-detail");
 });
 
+test("CASE-07 version comparison keeps unmatched scenes honest across viewports", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-07-project-ready-mp4"];
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!conversationId || !assetId) throw new Error("Missing seeded CASE-07 identity");
+  const evidenceDir = process.env.MULTIMIX_VISUAL_EVIDENCE_DIR;
+  const runId = process.env.DISPLAY_COVERAGE_RUN_ID;
+  let previousMp4Ref = "local://video-orchestration/display-sample.mp4";
+  let currentMp4Ref = previousMp4Ref;
+  if (evidenceDir && runId) {
+    const mediaDir = resolve(homedir(), "Desktop", "multimix-test-results", "e2e-runtime", "display-coverage", runId, "artifacts", "video-orchestration");
+    const source = resolve(mediaDir, "display-sample.mp4");
+    const makeVisualVersion = async (name: string, filter: string) => {
+      await execFileAsync("ffmpeg", [
+        "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-i", source,
+        "-vf", filter, "-an", "-c:v", "libx264", "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart", resolve(mediaDir, name),
+      ]);
+      return `local://video-orchestration/${name}`;
+    };
+    [previousMp4Ref, currentMp4Ref] = await Promise.all([
+      makeVisualVersion("display-comparison-before.mp4", "transpose=1,hue=s=0"),
+      makeVisualVersion("display-comparison-after.mp4", "transpose=1"),
+    ]);
+  }
+
+  const versionRows: ContentAssetVersion[] = [1, 2].map((version) => ({
+    id: 41000 + version,
+    asset_id: assetId,
+    version,
+    title: "CASE-07 视频工程",
+    body: "",
+    instruction: version === 2 ? "调整开场和收束" : null,
+    created_at: "2026-09-27T00:00:00Z",
+  }));
+  const comparisonAsset = (original: ContentAsset, side: "previous" | "current"): ContentAsset => {
+    const asset = structuredClone(original);
+    const metadata = asset.metadata;
+    const project = metadata.video_project as Record<string, unknown>;
+    const scenes = project.segments as Array<Record<string, unknown>>;
+    const endScene = scenes[2];
+    endScene.id = side === "previous" ? "scene-removed" : "scene-added";
+    endScene.title = side === "previous" ? "旧版收束" : "新版收束";
+    endScene.narration = side === "previous" ? "旧版结束" : "新版结束";
+    scenes[0].narration = side === "previous" ? "旧版开场" : "新版开场";
+    const mainTrack = (project.tracks as Array<Record<string, unknown>>)[0];
+    const elements = mainTrack.elements as Array<Record<string, unknown>>;
+    elements[2].id = `element-${endScene.id}`;
+    elements[2].segmentId = endScene.id;
+    elements[2].name = endScene.title;
+    project.ratio = "9:16";
+    project.mp4_ref = side === "previous" ? previousMp4Ref : currentMp4Ref;
+    (project.settings as Record<string, unknown>).width = 1080;
+    (project.settings as Record<string, unknown>).height = 1920;
+    metadata.video_segments = scenes;
+    (metadata.video_plan as Record<string, unknown>).scenes = scenes;
+    asset.versions = side === "previous" ? versionRows.slice(0, 1) : versionRows;
+    return asset;
+  };
+
+  let historicalAsset: ContentAsset | null = null;
+  const targetConversationPath = `/v1/assets/conversations/${conversationId}`;
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET"
+      || (pathname !== "/v1/assets/conversations" && pathname !== targetConversationPath)) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse | AssetConversationResponse[];
+    const rows = Array.isArray(payload) ? payload : [payload];
+    for (const row of rows) {
+      if (row.id !== conversationId) continue;
+      row.products = row.products.map((asset) => {
+        if (asset.id !== assetId) return asset;
+        historicalAsset = comparisonAsset(asset, "previous");
+        return comparisonAsset(asset, "current");
+      });
+    }
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route(`**/v1/assets/${assetId}/versions/${versionRows[0].id}/preview`, async (route) => {
+    if (!historicalAsset) throw new Error("Historical comparison asset was not prepared");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(historicalAsset) });
+  });
+  // The comparison versions exist only in this UI fixture, so their neutral
+  // feedback must use the same identity rather than querying unrelated seed data.
+  await page.route(`**/v1/video-feedback/${assetId}`, async (route) => {
+    if (route.request().method() !== "GET") { await route.continue(); return; }
+    await route.fulfill({ status: 200, json: {
+      asset_id: assetId, version_id: versionRows[1].id, decision: null, published: false,
+    } });
+  });
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() !== "error") return;
+    // This seeded conversation has no optional requirements snapshot; the
+    // adapter deliberately handles that endpoint's 404 as an empty snapshot.
+    const expectedMissingRequirements = message.location().url.endsWith(`${targetConversationPath}/requirements/current`)
+      && message.text().includes("404");
+    if (!expectedMissingRequirements) browserErrors.push(message.text());
+  });
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  expect(await page.title()).toContain("MultiMix");
+  await workspace.getByRole("button", { name: "版本对比" }).click();
+  const comparison = workspace.getByRole("region", { name: "版本对比" });
+  await expect(comparison).toBeVisible();
+  await expect(comparison.getByText("修改后已保存", { exact: false })).toBeVisible();
+  const players = comparison.locator(".shadcn-prototype-preview-player");
+  await expect(players).toHaveCount(2);
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-sync")).toHaveCount(0);
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-player-media[inert]")).toHaveCount(0);
+  await expect(comparison.getByRole("button", { name: /查看 \d+ 处受影响分镜/ })).toHaveCSS("font-size", "12px");
+  await expect(comparison.getByRole("button", { name: "修改前 · v1：播放视频" })).toBeVisible();
+  await expect(comparison.getByRole("slider", { name: "修改前 · v1：播放进度" })).toBeVisible();
+  await expect(comparison.getByRole("button", { name: "修改后 · v2：播放视频" })).toBeVisible();
+  await expect(comparison.getByRole("slider", { name: "修改后 · v2：播放进度" })).toBeVisible();
+  if (evidenceDir && runId) {
+    const refs = await comparison.locator("video").evaluateAll((nodes) => nodes.map((node) => (node as HTMLVideoElement).currentSrc));
+    expect(refs[0]).not.toBe(refs[1]);
+  }
+  for (const video of await comparison.locator("video").all()) {
+    await expect.poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState)).toBeGreaterThanOrEqual(1);
+  }
+  const sceneJump = comparison.getByRole("button", { name: /查看 3 处受影响分镜/ });
+  const jumpBox = await sceneJump.boundingBox();
+  expect(jumpBox).not.toBeNull();
+  if (jumpBox) expect(jumpBox.y + jumpBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) {
+    await mkdir(evidenceDir, { recursive: true });
+    await page.screenshot({ path: resolve(evidenceDir, "comparison-1280x720.png"), animations: "disabled" });
+  }
+
+  await comparison.getByRole("button", { name: "试听修改前" }).click();
+  await sceneJump.focus();
+  await page.keyboard.press("Enter");
+  const changesRegion = comparison.getByRole("region", { name: "受影响的分镜" });
+  await expect(changesRegion).toBeFocused();
+  const firstChange = comparison.locator(".shadcn-prototype-video-comparison-changes ol li button").first();
+  const firstBox = await firstChange.boundingBox();
+  expect(firstBox).not.toBeNull();
+  if (firstBox) expect(firstBox.y + firstBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-scenes-1280x720.png"), animations: "disabled" });
+  await comparison.getByRole("button", { name: /新版收束/ }).click();
+  const previousAbsent = comparison.getByText("修改前无对应分镜", { exact: true });
+  await expect(previousAbsent).toBeVisible();
+  await expect(previousAbsent).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(comparison.getByText("仅定位有此分镜的一侧", { exact: false })).toBeVisible();
+  await expect(comparison.getByRole("button", { name: "试听修改前" })).toHaveCount(0);
+  await expect(comparison.locator("#comparison-active-details")).toContainText("修改前没有对应分镜");
+  const comparisonPlayers = comparison.getByRole("group", { name: "对比分镜播放器" });
+  await expect(comparisonPlayers).toBeFocused();
+  await comparison.getByRole("button", { name: /新版收束/ }).focus();
+  await page.keyboard.press("Enter");
+  await expect(comparisonPlayers).toBeFocused();
+  await expect(comparison.getByRole("button", { name: /新版收束/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(comparison.locator("#comparison-active-details")).toBeVisible();
+  const beforeVideo = comparison.locator("video").nth(0);
+  const afterVideo = comparison.locator("video").nth(1);
+  await expect.poll(() => beforeVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.currentTime)).toBeGreaterThanOrEqual(5);
+  const playersBox = await players.first().boundingBox();
+  expect(playersBox).not.toBeNull();
+  if (playersBox) expect(playersBox.y + playersBox.height).toBeLessThanOrEqual(720);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-added-1280x720.png"), animations: "disabled" });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await comparison.getByRole("button", { name: /旧版收束/ }).click();
+  await expect(comparison.getByText("修改后无对应分镜", { exact: true })).toBeVisible();
+  await expect.poll(() => beforeVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(false);
+  await expect.poll(() => afterVideo.evaluate((node: HTMLVideoElement) => node.muted)).toBe(true);
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-removed-1440x900.png"), animations: "disabled" });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await comparison.getByRole("button", { name: /新版收束/ }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  await expect(comparison.getByText("修改前无对应分镜", { exact: true })).toBeVisible();
+  await expect(comparison.locator(".shadcn-prototype-video-comparison-changes > header")).toHaveCSS("flex-direction", "column");
+  if (evidenceDir) await page.screenshot({ path: resolve(evidenceDir, "comparison-added-390x844.png"), animations: "disabled" });
+  expect(browserErrors).toEqual([]);
+});
+
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   test.setTimeout(240_000);
   const workspace = await openCase(page, "case-07-project-ready-mp4");
@@ -777,10 +1711,208 @@ test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   expect(currentBrand.mp4_ref).toBeTruthy();
   expect(currentBrand.mp4_ref).not.toBe(currentOriginal.mp4_ref);
 
-  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(2);
+  expect(exportRequests.filter((item) => item.method === "PUT" && item.pathname === `/v1/video/projects/${assetId}`)).toHaveLength(0);
   expect(exportRequests.filter((item) => item.method === "GET" && item.pathname.endsWith("/quality") && item.search.includes("stage=export_preflight"))).toHaveLength(2);
   expect(exportRequests.filter((item) => item.method === "POST" && item.pathname.endsWith("/exports"))).toHaveLength(2);
   expect(exportRequests.filter((item) => item.pathname.endsWith("/exports/finalize"))).toHaveLength(0);
+});
+
+test("CASE-07 embedded exports reject edits during preflight and recover failed saves", async ({ page }) => {
+  test.setTimeout(300_000);
+  const errors: string[] = [];
+  const consoleMessages: Array<{ level: string; text: string }> = [];
+  page.on("console", (message) => {
+    if (["error", "warning"].includes(message.type())) consoleMessages.push({ level: message.type(), text: message.text() });
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded asset id for CASE-07");
+  await expect(page).toHaveURL(/app\/assets/);
+  expect(await page.title()).not.toBe("");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  await clips.first().click();
+
+  let finishPreflight!: () => void;
+  const heldPreflight = new Promise<void>((resolve) => { finishPreflight = resolve; });
+  let preflightStarted = false;
+  let exportRequests = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === `/v1/video/projects/${assetId}/exports`) exportRequests += 1;
+  });
+  await page.route(`**/v1/video/projects/${assetId}/quality?stage=export_preflight`, async (route) => {
+    preflightStarted = true;
+    await heldPreflight;
+    await route.continue();
+  });
+  await chooseVideoExport(workspace);
+  await expect.poll(() => preflightStarted).toBe(true);
+
+  let finishSave!: () => void;
+  const heldSave = new Promise<void>((resolve) => { finishSave = resolve; });
+  let saveStarted = false;
+  await page.route(`**/v1/video/projects/${assetId}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    saveStarted = true;
+    await heldSave;
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Test save failure" }) });
+  });
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect(workspace.getByRole("button", { name: "正在保存修改…", exact: true })).toBeDisabled();
+  await expect.poll(() => saveStarted).toBe(true);
+  await captureDesktopEvidence(page, "embedded-export-saving");
+  finishPreflight();
+  // This response belongs to the pre-edit export and must never register a candidate.
+  await page.waitForResponse((response) => response.url().includes("stage=export_preflight"));
+  expect(exportRequests).toBe(0);
+  finishSave();
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await expect(workspace.getByRole("button", { name: "重试保存", exact: true })).toBeVisible();
+  await captureDesktopEvidence(page, "embedded-export-save-failure");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "embedded-export-save-failure-390x844.png"), animations: "disabled" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.unroute(`**/v1/video/projects/${assetId}`);
+  await page.unroute(`**/v1/video/projects/${assetId}/quality?stage=export_preflight`);
+  await workspace.getByRole("button", { name: "重试保存", exact: true }).dispatchEvent("click");
+  const exportButton = workspace.getByRole("button", { name: "导出视频", exact: true });
+  await expect(exportButton).toBeEnabled({ timeout: 60_000 });
+  await chooseVideoExport(workspace);
+  await expect.poll(() => exportRequests, { timeout: 180_000 }).toBe(1);
+  await expect(exportButton).toBeEnabled({ timeout: 180_000 });
+  const downloadPromise = page.waitForEvent("download");
+  await chooseVideoExport(workspace);
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.mp4$/i);
+  const downloadPath = await download.path();
+  expect(downloadPath).not.toBeNull();
+  if (downloadPath) expect((await stat(downloadPath)).size).toBeGreaterThan(0);
+  expect(exportRequests).toBe(1);
+  await captureDesktopEvidence(page, "embedded-export-recovered");
+  // The devtools portal exists on healthy Next.js pages too.
+  await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await writeFile(resolve(desktopEvidenceDirectory, "embedded-export-console.json"), JSON.stringify(consoleMessages, null, 2));
+});
+
+test("CASE-07 serializes slow saves and preserves edits during exit refresh", async ({ page }) => {
+  test.setTimeout(240_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  const conversationId = seed.conversation_ids?.["case-07-project-ready-mp4"];
+  if (!assetId || !conversationId) throw new Error("Missing seeded CASE-07 identity");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  const initialCount = await clips.count();
+  const revisions: string[] = [];
+  const acknowledgements: string[] = [];
+  let releaseSave!: () => void;
+  const heldSave = new Promise<void>((resolve) => { releaseSave = resolve; });
+  page.on("response", async (response) => {
+    if (response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}` && response.ok()) {
+      const body = await response.json() as { project_fingerprint: string };
+      acknowledgements.push(body.project_fingerprint);
+    }
+  });
+  await page.route(`**/v1/video/projects/${assetId}`, async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    revisions.push(route.request().headers()["if-match"]);
+    if (revisions.length === 1) await heldSave;
+    await route.continue();
+  });
+  await clips.first().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect.poll(() => revisions.length).toBe(1);
+  await clips.last().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  await expect(clips).toHaveCount(initialCount + 2);
+  await captureDesktopEvidence(page, "save-queue-latest-edit");
+  expect(revisions).toHaveLength(1);
+  releaseSave();
+  await expect.poll(() => acknowledgements.length, { timeout: 60_000 }).toBe(2);
+  expect(revisions[1]).toBe(`"${acknowledgements[0]}"`);
+  await expect(workspace.getByRole("button", { name: "导出视频", exact: true })).toBeEnabled();
+
+  let releaseRefresh!: () => void;
+  const heldRefresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  let refreshStarted = false;
+  await page.route(`**/v1/assets/conversations/${conversationId}?**`, async (route) => {
+    if (route.request().method() !== "GET" || refreshStarted) return route.continue();
+    const response = await route.fetch();
+    refreshStarted = true;
+    await heldRefresh;
+    await route.fulfill({ response });
+  });
+  await workspace.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect.poll(() => refreshStarted).toBe(true);
+  await clips.last().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  releaseRefresh();
+  await expect(clips).toHaveCount(initialCount + 3);
+  await expect.poll(() => acknowledgements.length, { timeout: 60_000 }).toBe(3);
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toBeVisible();
+  await captureDesktopEvidence(page, "exit-refresh-new-edit-preserved");
+  await page.unroute(`**/v1/assets/conversations/${conversationId}?**`);
+  await workspace.getByRole("button", { name: "完成编辑", exact: true }).dispatchEvent("click");
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toHaveCount(0);
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  await expect(clips).toHaveCount(initialCount + 3, { timeout: 90_000 });
+  const storedUser = await page.evaluate(() => JSON.parse(window.localStorage.getItem("multimix_local_user") ?? "{}") as { token: string });
+  const response = await page.request.get(`http://127.0.0.1:${process.env.DISPLAY_COVERAGE_BACKEND_PORT}/v1/video/projects/${assetId}`, {
+    headers: { Authorization: `Bearer ${storedUser.token}` },
+  });
+  expect(response.ok()).toBe(true);
+  expect((await response.json()).project_fingerprint).toBe(acknowledgements[2]);
+  await captureDesktopEvidence(page, "saved-edit-reopened");
+  await expect(page.locator("[data-nextjs-dialog-overlay]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("CASE-07 rejects an obsolete editor without overwriting a newer project", async ({ page }) => {
+  test.setTimeout(180_000);
+  const workspace = await openCase(page, "case-07-project-ready-mp4");
+  const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
+  if (!assetId) throw new Error("Missing seeded CASE-07 identity");
+  await workspace.getByRole("button", { name: "编辑", exact: true }).click();
+  const editor = page.frameLocator('iframe[title="视频剪辑器"]');
+  const clips = editor.locator('[data-testid="filmstrip"] .shadcn-prototype-filmstrip-clip');
+  await expect(clips.first()).toBeVisible({ timeout: 90_000 });
+  const initialCount = await clips.count();
+  const storedUser = await page.evaluate(() => JSON.parse(window.localStorage.getItem("multimix_local_user") ?? "{}") as { token: string });
+  const url = `http://127.0.0.1:${process.env.DISPLAY_COVERAGE_BACKEND_PORT}/v1/video/projects/${assetId}`;
+  const headers = { Authorization: `Bearer ${storedUser.token}` };
+  const current = await (await page.request.get(url, { headers })).json();
+  const project = { ...current.project, metadata: { ...current.project.metadata, title: "另一编辑窗口保存的新版本" } };
+  const updated = await page.request.put(url, { headers: { ...headers, "If-Match": `"${current.project_fingerprint}"` }, data: project });
+  expect(updated.status()).toBe(200);
+  const updatedBody = await updated.json();
+  expect(updatedBody.project_fingerprint).not.toBe(current.project_fingerprint);
+  const rejectedSave = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}`);
+  await clips.first().click();
+  await editor.getByRole("button", { name: "✂ 分割", exact: true }).click();
+  expect((await rejectedSave).status()).toBe(412);
+  await expect(workspace.getByRole("button", { name: "保存失败，先重试", exact: true })).toBeDisabled();
+  await expect(workspace.getByText(/工程已有新的修改/).first()).toBeVisible();
+  await expect(clips).toHaveCount(initialCount + 1);
+  const rejectedRetry = page.waitForResponse((response) => response.request().method() === "PUT" && new URL(response.url()).pathname === `/v1/video/projects/${assetId}`);
+  await workspace.getByRole("button", { name: "重试保存", exact: true }).dispatchEvent("click");
+  expect((await rejectedRetry).status()).toBe(412);
+  await expect(page.locator('iframe[title="视频剪辑器"]')).toBeVisible();
+  const persisted = await (await page.request.get(url, { headers })).json();
+  expect(persisted.project.metadata.title).toBe(project.metadata.title);
+  expect(persisted.project_fingerprint).toBe(updatedBody.project_fingerprint);
+  await captureDesktopEvidence(page, "version-conflict-edit-preserved");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "version-conflict-edit-preserved-390x844.png"), animations: "disabled" });
 });
 
 test("desktop start and image library keep the approved hierarchy", async ({ page }) => {
@@ -911,4 +2043,43 @@ test("case-12-only-optional-compile-failed remains editable with a warning after
     await expect(workspace.getByText("部分可选图形动效未能完成", { exact: false })).toBeVisible();
   }
   await testInfo.attach("case-12-only-optional-compile-failed", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
+});
+
+// Keep this destructive fixture check last: earlier CASE-02 checks need its live source.
+test("real archive API keeps the project source in read-only history", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
+  if (!conversationId) throw new Error("Missing seeded CASE-02 project");
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  const resourceEntry = chat.getByRole("button", { name: /^项目资料/ });
+  const initialPagePromise = page.waitForResponse((response) => (
+    new URL(response.url()).pathname === `/v1/assets/conversations/${conversationId}/resources`
+  ));
+  await resourceEntry.click();
+  const initialResources = await (await initialPagePromise).json() as { items: Array<Record<string, unknown>> };
+  const source = initialResources.items.find((item) => item.kind === "source");
+  if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
+  await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
+
+  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.locator('summary[aria-label="更多操作"]').click();
+  await detail.getByRole("button", { name: "删除", exact: true }).click();
+  const deleted = page.waitForResponse((response) => (
+    response.request().method() === "DELETE"
+    && new URL(response.url()).pathname === `/v1/assets/${source.id}`
+  ));
+  await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
+  expect((await deleted).status()).toBe(204);
+  await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
+  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await resourceEntry.click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
+  await page.reload();
+  await resourceEntry.click();
+  await expect(drawer.getByText("源文件已从资源库归档，暂不能用于后续创作")).toBeVisible();
 });

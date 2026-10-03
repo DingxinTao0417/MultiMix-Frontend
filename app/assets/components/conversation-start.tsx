@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, Image as ImageIcon, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, shouldSubmitComposerOnEnter, type Conversation } from "../lib/asset-workspace-shared";
 import {
@@ -33,9 +33,8 @@ const START_CAPABILITIES = [
   "我的素材",
   "AI 生成镜头",
   "公开素材",
-  "图形动画",
-  "口播优化",
-  "配音与音乐",
+  "字幕、图文与图形动画",
+  "原片优化、配音与音乐",
 ] as const;
 
 const START_PATHS = [
@@ -72,6 +71,7 @@ function greetingLabel(): string {
 }
 
 export default function ConversationStart({
+  navigationSlot,
   onSend,
   conversation,
   accountName,
@@ -87,6 +87,7 @@ export default function ConversationStart({
   writeCapabilities = DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   onRetryWriteAvailability,
 }: {
+  navigationSlot?: ReactNode;
   suggestions: string[];
   onSend?: (conversation: Conversation, instruction: string, signal?: AbortSignal) => Promise<void>;
   conversation: Conversation;
@@ -260,6 +261,7 @@ export default function ConversationStart({
       onDragLeave={() => setIsDraggingUpload(false)}
       onDrop={handleDrop}
     >
+      {navigationSlot ? <div className="shadcn-prototype-start-navigation">{navigationSlot}</div> : null}
       <div className="shadcn-prototype-start-inner">
         <p className="shadcn-prototype-start-greet">{greetingLabel()}{accountName ? `，${accountName}` : ""}</p>
         <h1>新建视频项目</h1>

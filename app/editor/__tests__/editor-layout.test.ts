@@ -9,6 +9,11 @@ function readProjectFile(path: string) {
 }
 
 describe("editor layout constraints", () => {
+	it("uses the shared failure summary before the editor bridge reports a failed export", () => {
+		const view = readProjectFile("app/editor/EditorView.tsx");
+		expect(view).toContain("videoExportFailureMessage(verifiedReport, terminalJob.errorMessage)");
+		expect(view.match(/videoExportFailureMessage\(qualityReportFromPayload\(terminal\.qualityReport\), terminal\.errorMessage\)/g)).toHaveLength(3);
+	});
 	it("uses a fixed timeline height and no draggable preview/timeline resizer", () => {
 		const view = readProjectFile("app/editor/EditorView.tsx");
 		const css = readProjectFile("app/editor/editor.css");
@@ -129,7 +134,10 @@ describe("editor layout constraints", () => {
 	it("keeps browse preview export read-only while binding it to the loaded server revision", () => {
 		const view = readProjectFile("app/editor/EditorView.tsx");
 		expect(view).toContain("projectRevisionRef.current.load(loadedProject.projectFingerprint)");
-		expect(view).toMatch(/const savedRevision = previewOnly\s*\? projectRevisionRef\.current\.current\(\)\s*: await persistCurrentProject\(currentProject\)/);
+		expect(view).toContain("if (!embed && !previewOnly) await persistCurrentProject(currentProject)");
+		expect(view).toContain("const savedRevision = projectRevisionRef.current.current()");
+		expect(view).toContain("await projectRevisionRef.current.idle()");
+		expect(view).not.toContain("projectSaveQueueRef");
 		expect(view).toContain("projectRevision: savedRevision");
 	});
 

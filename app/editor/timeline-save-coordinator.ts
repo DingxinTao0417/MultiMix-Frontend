@@ -9,6 +9,7 @@ type TimelineSaveCoordinatorOptions = {
   onStateChange: (status: TimelineSaveStatus, message?: string) => void;
   debounceMs?: number;
   errorMessage?: string;
+  formatError?: (error: unknown) => string | null;
 };
 
 // Keeps the debounce as a throughput optimization while making the dirty
@@ -55,9 +56,11 @@ export class TimelineSaveCoordinator {
         try {
           await this.options.save();
           this.savedVersion = version;
-        } catch {
-          this.options.onStateChange("error", this.errorMessage);
-          return { status: "error", message: this.errorMessage };
+        } catch (error) {
+          if (error instanceof Error && error.name === "AbortError" && this.dirtyVersion > version) continue;
+          const message = this.options.formatError?.(error) || this.errorMessage;
+          this.options.onStateChange("error", message);
+          return { status: "error", message };
         }
       }
       this.options.onStateChange("saved");

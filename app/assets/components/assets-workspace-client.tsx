@@ -36,6 +36,7 @@ import {
   type AssetLlmDiagnosticsRead,
 } from "../../../lib/api";
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
+import { reconcileProductMutation, runExclusiveProductMutation, savedVersionForProduct, type ProductSaveFeedback } from "../lib/product-save-state";
 import { trackProductEvent } from "../../../lib/product-analytics";
 import { observeDirectorActivity, observeVideoActivity } from "../../../lib/product-activity";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
@@ -85,6 +86,7 @@ import {
 } from "../lib/asset-workspace-shared";
 import dynamic from "next/dynamic";
 import ConversationStart from "./conversation-start";
+import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 import ConversationStudio, { type ChatImageAttachment } from "./conversation-studio";
 import type {
   GeneratedImageGalleryApplication,
@@ -146,10 +148,6 @@ import {
 // initial bundle; only the active view's chunk is fetched. Auth gating already
 // makes this subtree client-only, so ssr: false loses nothing.
 const ProductWorkspace = dynamic(() => import("./product-workspace"), { ssr: false, loading: () => null });
-const EmptyProductWorkspace = dynamic(
-  () => import("./product-workspace").then((mod) => ({ default: mod.EmptyProductWorkspace })),
-  { ssr: false, loading: () => null }
-);
 
 const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="素材库" /> });
 
@@ -793,6 +791,47 @@ export default function AssetsWorkspaceClient({
   const [conversationDetailErrorId, setConversationDetailErrorId] = useState<string | null>(null);
   const [conversationDetailRetryRevision, setConversationDetailRetryRevision] = useState(0);
   const [activeView, setActiveView] = useState<ActiveView>(() => resolveInitialView(initialView));
+  const productBeforeLeaveRef = useRef<(() => boolean | Promise<boolean>) | null>(null);
+  const productCanLeaveSilentlyRef = useRef<(() => boolean) | null>(null);
+  const selectedProductIdRef = useRef<string | null>(null);
+  const navigationPendingRef = useRef(false);
+  const registerProductBeforeLeave = useCallback((guard: () => boolean | Promise<boolean>, canLeaveSilently: () => boolean) => {
+    productBeforeLeaveRef.current = guard;
+    productCanLeaveSilentlyRef.current = canLeaveSilently;
+    const editingProductId = !canLeaveSilently() ? selectedProductIdRef.current : null;
+    if (editingProductId) {
+      const conversationId = selectedConversationIdRef.current;
+      setSelectedProductIds((current) => current[conversationId] === editingProductId
+        ? current : { ...current, [conversationId]: editingProductId });
+    }
+    return () => {
+      if (productBeforeLeaveRef.current === guard) {
+        productBeforeLeaveRef.current = null;
+        productCanLeaveSilentlyRef.current = null;
+      }
+    };
+  }, []);
+  const navigateWorkspace = (action: () => void, onDenied?: () => void) => {
+    if (navigationPendingRef.current) { onDenied?.(); return; }
+    const reopenNavigation = isNarrowViewport && narrowNavigationOpen;
+    if (reopenNavigation) setNarrowNavigationOpen(false);
+    const denied = () => {
+      if (reopenNavigation) setNarrowNavigationOpen(true);
+      onDenied?.();
+    };
+    const guard = productBeforeLeaveRef.current;
+    const allowed = guard?.() ?? true;
+    if (typeof allowed === "boolean") { if (allowed) action(); else denied(); return; }
+    navigationPendingRef.current = true;
+    void allowed.then((confirmed) => {
+      if (!workspaceMountedRef.current || productBeforeLeaveRef.current !== guard) return;
+      if (confirmed) action(); else denied();
+    }).finally(() => { navigationPendingRef.current = false; });
+  };
+  const navigateView = (view: ActiveView) => navigateWorkspace(() => {
+    setLibraryFocusedAssetId(null);
+    setActiveView(view);
+  });
   const [selectedConversationId, setSelectedConversationId] = useState(() => initialConversationId ?? "new");
   const [selectedProductIds, setSelectedProductIds] = useState<Record<string, string>>(() => {
     const conversationId = initialConversationId ?? "new";
@@ -833,6 +872,20 @@ export default function AssetsWorkspaceClient({
   const isDividerDraggingRef = useRef(false);
   const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
+  const [narrowNavigationOpen, setNarrowNavigationOpen] = useState(false);
+  const navigationDialogRef = useRef<HTMLDivElement | null>(null);
+  const navigationCloseRef = useRef<HTMLButtonElement | null>(null);
+  const navigationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeNarrowNavigation = () => {
+    setNarrowNavigationOpen(false);
+    window.requestAnimationFrame(() => navigationTriggerRef.current?.focus({ preventScroll: true }));
+  };
+  useDialogFocusManagement({
+    open: isNarrowViewport && narrowNavigationOpen,
+    dialogRef: navigationDialogRef,
+    initialFocusRef: navigationCloseRef,
+    onEscape: closeNarrowNavigation,
+  });
   const [chatPanelWidth, setChatPanelWidth] = useState(640);
   // Desktop starts from the approved 52/48 balance and then respects the
   // shared chat/result bounds. Dragging continues to override this default.
@@ -875,17 +928,35 @@ export default function AssetsWorkspaceClient({
   const inFlightAgentActionsRef = useRef(new Set<string>());
   const refreshedAgentActionsRef = useRef(new Set<string>());
   const [copiedProductId, setCopiedProductId] = useState<string | null>(null);
-  const [savedProductIds, setSavedProductIds] = useState<Record<string, string>>({});
+  const [savedProductIds, setSavedProductIds] = useState<Record<string, ProductSaveFeedback>>({});
+  const [productMutationStates, setProductMutationStates] = useState<Record<string, "saving" | "restoring" | "refreshing" | undefined>>({});
+  const [productSaveConflicts, setProductSaveConflicts] = useState<Record<string, { baseUpdatedAt?: string; message: string } | undefined>>({});
+  const inFlightProductMutationsRef = useRef(new Set<string>());
+  const productMutationScopeRef = useRef({ token, accountEmail });
+  useEffect(() => {
+    productMutationScopeRef.current = { token, accountEmail };
+    setProductMutationStates({});
+    setProductSaveConflicts({});
+    setSavedProductIds({});
+  }, [token, accountEmail]);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
   const [conversationContextAssets, setConversationContextAssets] = useState<Record<string, ConversationContextAsset[]>>({});
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [showAllProjectRows, setShowAllProjectRows] = useState(false);
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
+  const [requirementRefreshErrorProjectId, setRequirementRefreshErrorProjectId] = useState<string | null>(null);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
+  const requirementReadGenerationRef = useRef(new Map<string, number>());
+  const skipAutomaticRequirementReadRef = useRef(new Map<string, string>());
+  const requirementEffectScopeRef = useRef<{ projectId: string; token: string | null; detailReady: boolean }>({
+    projectId: "", token: null, detailReady: false,
+  });
   const [inheritedRequirementNotices, setInheritedRequirementNotices] = useState<Record<string, boolean>>({});
   const [projectTargetRow, setProjectTargetRow] = useState<LibraryRow | null>(null);
   const [submittingProjectId, setSubmittingProjectId] = useState<string | null>(null);
   const [libraryTargetProjectId, setLibraryTargetProjectId] = useState<string | null>(null);
+  const [libraryFocusedAssetId, setLibraryFocusedAssetId] = useState<number | null>(null);
+  const closeLibraryFocusedAsset = useCallback(() => setLibraryFocusedAssetId(null), []);
   const [chatImageUploads, setChatImageUploads] = useState<Record<string, ChatImageUpload[]>>({});
   const chatImageUploadsRef = useRef<Record<string, ChatImageUpload[]>>({});
   const longFormSourceControllersRef = useRef(new Map<string, AbortController>());
@@ -965,6 +1036,7 @@ export default function AssetsWorkspaceClient({
     && !selectedConversation.readonly && !isConversationSnapshot;
   useEffect(() => observeDirectorActivity(token, observedDirectorId, observeDirectorInteractions),
     [token, observedDirectorId, observeDirectorInteractions]);
+  selectedProductIdRef.current = selectedProduct?.id ?? null;
   const selectedAssetGenerationJobLives = assetGenerationJobsForConversation(selectedConversation.id);
   const selectedAssetGenerationJobs = selectedAssetGenerationJobLives.map((live) => live.job);
   const selectedAssetGenerationJobConnectionLostById = Object.fromEntries(
@@ -994,36 +1066,72 @@ export default function AssetsWorkspaceClient({
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
+  const hasProductStage = activeView === "conversation" && selectedProduct !== null;
   const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
     setRequirementSnapshots((current) => ({ ...current, [conversationId]: snapshot }));
   }, []);
 
-  const reloadCurrentRequirements = useCallback(async (conversationId: string) => {
-    if (!token || conversationId === "new") return null;
-    const snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
-    if (snapshot) {
-      storeRequirementSnapshot(conversationId, snapshot);
+  const reloadCurrentRequirements = useCallback(async (conversationId: string, shouldApply: () => boolean = () => true) => {
+    if (!token || conversationId === "new") return { snapshot: null, applied: false };
+    const readGeneration = requirementReadGenerationRef.current.get(conversationId) ?? 0;
+    const isCurrentRead = () => shouldApply()
+      && readGeneration === (requirementReadGenerationRef.current.get(conversationId) ?? 0);
+    let snapshot: ProjectRequirementSnapshot | null;
+    try {
+      snapshot = await assetWorkspaceAdapter.loadCurrentRequirements(token, conversationId);
+    } catch (error) {
+      if (!isCurrentRead()) return { snapshot: null, applied: false };
+      throw error;
     }
-    return snapshot;
+    const applied = isCurrentRead();
+    if (applied) {
+      if (snapshot) storeRequirementSnapshot(conversationId, snapshot);
+      else setRequirementSnapshots((current) => {
+        if (!(conversationId in current)) return current;
+        const next = { ...current };
+        delete next[conversationId];
+        return next;
+      });
+      setRequirementRefreshErrorProjectId((current) => current === conversationId ? null : current);
+    }
+    return { snapshot, applied };
   }, [storeRequirementSnapshot, token]);
 
+  const retryProjectRequirements = async (projectId: string) => {
+    try {
+      const { snapshot, applied } = await reloadCurrentRequirements(projectId, () => selectedConversationIdRef.current === projectId);
+      if (!applied) return;
+      if (snapshot) toast.success("需求理解已同步。");
+      else toast.info("当前项目没有可同步的需求理解。");
+    } catch {
+      if (selectedConversationIdRef.current !== projectId) return;
+      toast.error("需求理解仍未同步，请稍后重试。");
+    }
+  };
+
   useEffect(() => {
-    if (!token || selectedConversation.id === "new" || selectedConversation.detailsLoaded === false) return;
+    const projectId = selectedConversation.id;
+    const previousScope = requirementEffectScopeRef.current;
+    const sameReadyScope = previousScope.projectId === projectId
+      && previousScope.token === token
+      && previousScope.detailReady;
+    requirementEffectScopeRef.current = { projectId, token, detailReady: selectedConversation.detailsLoaded !== false };
+    if (!token || projectId === "new" || selectedConversation.detailsLoaded === false) return;
+    const skippedVersion = skipAutomaticRequirementReadRef.current.get(projectId);
+    if (skippedVersion !== undefined) {
+      skipAutomaticRequirementReadRef.current.delete(projectId);
+      if (sameReadyScope && skippedVersion === selectedConversation.updatedAt) return;
+    }
     let cancelled = false;
-    void assetWorkspaceAdapter.loadCurrentRequirements(token, selectedConversation.id)
-      .then((snapshot) => {
-        if (!cancelled && snapshot) {
-          storeRequirementSnapshot(selectedConversation.id, snapshot);
-        }
-      })
+    void reloadCurrentRequirements(projectId, () => !cancelled)
       .catch(() => {
         // A project may legitimately predate requirement snapshots. Keep the
         // conversation usable and let explicit refresh surface later errors.
       });
     return () => { cancelled = true; };
-  }, [selectedConversation.detailsLoaded, selectedConversation.id, selectedConversation.updatedAt, storeRequirementSnapshot, token]);
+  }, [reloadCurrentRequirements, selectedConversation.detailsLoaded, selectedConversation.id, selectedConversation.updatedAt, token]);
   const accountName = accountEmail.includes("@") ? accountEmail.slice(0, accountEmail.indexOf("@")) : accountEmail;
   const handleWriteAvailabilityChange = useStableCallback((state: RuntimeWriteConnectionState) => {
     setRuntimeWriteConnectionState(state);
@@ -1138,7 +1246,10 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1180px)");
-    const syncViewport = () => setIsNarrowViewport(mediaQuery.matches);
+    const syncViewport = () => {
+      setIsNarrowViewport(mediaQuery.matches);
+      if (!mediaQuery.matches) setNarrowNavigationOpen(false);
+    };
 
     syncViewport();
     mediaQuery.addEventListener("change", syncViewport);
@@ -1156,9 +1267,20 @@ export default function AssetsWorkspaceClient({
 
   useEffect(() => {
     const nextView = resolveInitialView(initialView);
+    const restoreCurrentRoute = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", activeView);
+      url.searchParams.set("conversation", selectedConversationIdRef.current);
+      if (selectedProduct?.id) url.searchParams.set("product", selectedProduct.id);
+      else url.searchParams.delete("product");
+      router.replace(`${url.pathname}${url.search}${url.hash}`);
+    };
     if (nextView !== "conversation") {
-      setActiveView(nextView);
-      setConversationMenuId(null);
+      if (nextView === activeView) return;
+      navigateWorkspace(() => {
+        setActiveView(nextView);
+        setConversationMenuId(null);
+      }, restoreCurrentRoute);
       return;
     }
     const routeConversationId = new URL(window.location.href).searchParams.get("conversation");
@@ -1174,6 +1296,9 @@ export default function AssetsWorkspaceClient({
     const conversationId = initialConversationId && initialConversationId !== "new"
       ? initialConversationId
       : resolveInitialConversationId(initialConversationId, conversations);
+    if (activeView === "conversation" && selectedConversationIdRef.current === conversationId
+      && (!initialProductId || selectedProduct?.id === initialProductId)) return;
+    navigateWorkspace(() => {
     selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
     if (initialProductId) {
@@ -1184,6 +1309,7 @@ export default function AssetsWorkspaceClient({
     }
     setActiveView("conversation");
     setConversationMenuId(null);
+    }, restoreCurrentRoute);
     // conversations intentionally omitted: only re-run when the URL params change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConversationId, initialProductId, initialView]);
@@ -1225,8 +1351,12 @@ export default function AssetsWorkspaceClient({
         });
         setRuntimeWriteConnectionState("available");
         setConversationLoadState("ready");
-        const currentRouteConversationId = new URL(window.location.href).searchParams.get("conversation");
-        if (initialConversationId && shouldRestoreInitialConversationFocus({
+        const currentRoute = new URL(window.location.href);
+        const currentRouteConversationId = currentRoute.searchParams.get("conversation");
+        if (initialConversationId && !navigationPendingRef.current
+          && productCanLeaveSilentlyRef.current?.() !== false
+          && currentRoute.searchParams.get("product") === (initialProductId ?? null)
+          && shouldRestoreInitialConversationFocus({
           pendingConversationId: pendingConversationNavigationRef.current,
           routeConversationId: currentRouteConversationId,
           initialConversationId,
@@ -1382,12 +1512,15 @@ export default function AssetsWorkspaceClient({
               live.conversationId,
             );
             if (cancelled) return;
+            const editingProductId = selectedConversationIdRef.current === live.conversationId
+              && productCanLeaveSilentlyRef.current?.() === false ? selectedProductIdRef.current : null;
             setConversations((items) => items.map((item) => (
               item.id === detail.id
                 ? mergeProjectConversationDetail(item, detail)
                 : item
             )));
             setSelectedProductIds((currentIds) => {
+              if (editingProductId) return { ...currentIds, [live.conversationId]: editingProductId };
               if (
                 currentIds[live.conversationId]
                 || !outcome.assetId
@@ -1929,14 +2062,26 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleCollapseSidebar = () => {
-    setSidebarState("collapsed");
+    if (isNarrowViewport) closeNarrowNavigation();
+    else setSidebarState("collapsed");
   };
 
   const handleExpandSidebar = () => {
-    setSidebarState("expanded");
+    if (isNarrowViewport) setNarrowNavigationOpen(true);
+    else setSidebarState("expanded");
+  };
+
+  const handleOpenCreativeProfile = () => {
+    setNarrowNavigationOpen(false);
+    setCreativeProfileOpen(true);
   };
 
   const handleSelectConversation = (conversationId: string) => {
+    if (conversationId === selectedConversation.id && activeView === "conversation") {
+      setNarrowNavigationOpen(false);
+      return;
+    }
+    navigateWorkspace(() => {
     pendingConversationNavigationRef.current = conversationId;
     selectedConversationIdRef.current = conversationId;
     setSelectedConversationId(conversationId);
@@ -1946,13 +2091,17 @@ export default function AssetsWorkspaceClient({
     url.searchParams.set("conversation", conversationId);
     url.searchParams.delete("product");
     router.replace(`${url.pathname}${url.search}${url.hash}`);
+    });
   };
 
   const handleSelectProduct = (conversationId: string, productId: string) => {
+    if (conversationId === selectedConversation.id && productId === selectedProduct?.id) return;
+    navigateWorkspace(() => {
     setSelectedProductIds((current) => ({
       ...current,
       [conversationId]: productId
     }));
+    });
   };
 
   const handleCopyProduct = async (product: ProductArtifact) => {
@@ -1976,63 +2125,84 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleSaveProduct = async (product: ProductArtifact) => {
-    if (!runtimeWriteCapabilities.canPersist) {
+  const runProductMutation = async (
+    product: ProductArtifact,
+    kind: "saving" | "restoring" | "refreshing",
+    operation: (requestToken: string, conversationId: string) => Promise<{ product: ProductArtifact; message: string }>,
+  ) => {
+    if (!token || !assetWorkspaceAdapter.isBackendEnabled()) {
+      toast.error("请先登录并连接后端。");
+      return;
+    }
+    if (kind !== "refreshing" && !runtimeWriteCapabilities.canPersist) {
       toast.error(runtimeWriteCapabilities.reason ?? "当前暂不能保存。");
       return;
     }
-    try {
-      const result = await assetWorkspaceAdapter.saveProduct(product, token);
-      setSavedProductIds((current) => ({
-        ...current,
-        [product.id]: result.version
-      }));
-      toast.success("已保存");
-    } catch (error) {
-      reportRuntimeWriteFailure(error);
-      toast.error("保存失败，请稍后重试。");
-    }
+    const conversationId = selectedConversation.id;
+    const requestToken = token;
+    const requestScope = productMutationScopeRef.current;
+    const isCurrentScope = () => workspaceMountedRef.current && productMutationScopeRef.current === requestScope;
+    const mutationKey = `${accountEmail}:${product.id}`;
+    await runExclusiveProductMutation(inFlightProductMutationsRef.current, mutationKey, async () => {
+      setProductMutationStates((current) => ({ ...current, [product.id]: kind }));
+      try {
+        const result = await operation(requestToken, conversationId);
+        if (!isCurrentScope()) return;
+        const current = conversationsRef.current;
+        if (reconcileProductMutation(current, conversationId, product, result.product) === current) {
+          toast.info("产物已更新，已忽略过期响应，请核对当前版本。");
+          return;
+        }
+        setConversations((items) => isCurrentScope()
+          ? reconcileProductMutation(items, conversationId, product, result.product) : items);
+        if (kind !== "refreshing") {
+          setSavedProductIds((items) => ({ ...items,
+            [product.id]: { version: result.product.version ?? "", updatedAt: result.product.backendUpdatedAt },
+          }));
+        }
+        setProductSaveConflicts((items) => ({ ...items, [product.id]: undefined }));
+        toast.success(result.message);
+      } catch (error) {
+        if (!isCurrentScope()) return;
+        reportRuntimeWriteFailure(error);
+        const message = kind === "refreshing"
+          ? "读取最新版本失败，原产物与输入已保留，请重试。"
+          : apiErrorStatus(error) === 409
+            ? "产物已有新的修改，本次操作未覆盖它。请读取最新版本后核对。"
+            : error instanceof Error ? error.message : "操作失败，请稍后重试。";
+        if (kind === "refreshing" || apiErrorStatus(error) === 409) {
+          setProductSaveConflicts((items) => ({ ...items,
+            [product.id]: { baseUpdatedAt: product.backendUpdatedAt, message },
+          }));
+        }
+        toast.error(message);
+      } finally {
+        if (isCurrentScope()) setProductMutationStates((items) => ({ ...items, [product.id]: undefined }));
+      }
+    });
   };
 
-  const updateConversationProduct = (conversationId: string, updatedProduct: ProductArtifact) => {
-    setConversations((current) => current.map((conversation) => {
-      if (conversation.id !== conversationId) return conversation;
-      const products = conversation.products ?? [conversation.product];
-      const nextProducts = products.some((item) => item.id === updatedProduct.id)
-        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
-        : [...products, updatedProduct];
-      return {
-        ...conversation,
-        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
-        products: nextProducts,
-        canvasTitle: updatedProduct.title,
-        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
-        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
-        updatedAt: "刚刚"
-      };
-    }));
-  };
+  const handleSaveProduct = (product: ProductArtifact) => runProductMutation(product, "saving", async (requestToken) => {
+    const result = await assetWorkspaceAdapter.saveProduct(product, requestToken);
+    return { product: result.product, message: "已保存" };
+  });
 
-  const handleRestoreProductVersion = async (product: ProductArtifact, versionId: string) => {
-    if (!runtimeWriteCapabilities.canPersist || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
-      toast.error("请先登录并配置后端后再基于历史版本继续。");
-      return;
-    }
-    try {
-      const result = await assetWorkspaceAdapter.restoreProductVersion({ token, product, versionId });
-      updateConversationProduct(selectedConversation.id, result.product);
-      setSavedProductIds((current) => ({
-        ...current,
-        [result.product.id]: result.product.version ?? result.diffSummary
-      }));
-      toast.success(result.assistantMessage || "已基于历史版本生成新版本");
-    } catch (error) {
-      reportRuntimeWriteFailure(error);
-      toast.error("基于历史版本继续失败，请稍后重试。");
-    }
-  };
+  const handleReloadProduct = (product: ProductArtifact) => runProductMutation(product, "refreshing", async (requestToken, conversationId) => {
+    const refreshed = await assetWorkspaceAdapter.loadConversationDetail(requestToken, conversationId);
+    const latest = (refreshed.products ?? [refreshed.product]).find((item) =>
+      item.id === product.id && item.backendAssetId === product.backendAssetId);
+    if (!latest) throw new Error("当前项目中未找到该产物。");
+    return { product: latest, message: "已读取最新版本，请核对后再决定是否修改。" };
+  });
+
+  const handleRestoreProductVersion = (product: ProductArtifact, versionId: string) =>
+    runProductMutation(product, "restoring", async (requestToken) => {
+      const result = await assetWorkspaceAdapter.restoreProductVersion({ token: requestToken, product, versionId });
+      return { product: result.product, message: result.assistantMessage || "已基于历史版本生成新版本" };
+    });
 
   const handleStartConversation = () => {
+    navigateWorkspace(() => {
     setNewConversationIgnoreProfile(false);
     pendingConversationNavigationRef.current = "new";
     selectedConversationIdRef.current = "new";
@@ -2041,6 +2211,7 @@ export default function AssetsWorkspaceClient({
     setSelectedConversationId("new");
     const url = newConversationUrl(new URL(window.location.href));
     router.replace(`${url.pathname}${url.search}${url.hash}`);
+    });
   };
 
   const handleCloneProjectFromRequirements = async (conversation: Conversation) => {
@@ -2079,14 +2250,94 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const refreshProjectConversation = async (projectId: string) => {
+  const refreshProjectConversation = async (projectId: string, skipAutomaticRequirementRead = false) => {
     if (!token) return;
+    if (selectedConversationIdRef.current === projectId) {
+      // A detail request started before the source write must not restore its
+      // old resource summary after this refresh completes.
+      conversationDetailGenerationRef.current += 1;
+      conversationDetailRequestKeyRef.current = `${projectId}:${conversationDetailRetryRevision}`;
+    }
     const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, projectId);
+    if (skipAutomaticRequirementRead) {
+      skipAutomaticRequirementReadRef.current.set(projectId, refreshed.updatedAt);
+    }
     setConversations((current) => current.map((conversation) => (
       conversation.id === projectId
         ? mergeProjectConversationDetail(conversation, refreshed)
         : conversation
     )));
+    if (selectedConversationIdRef.current === projectId) setConversationDetailErrorId(null);
+  };
+
+  const invalidateProjectRequirements = (projectId: string) => {
+    requirementReadGenerationRef.current.set(projectId, (requirementReadGenerationRef.current.get(projectId) ?? 0) + 1);
+    setRequirementSnapshots((current) => {
+      if (!(projectId in current)) return current;
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+  };
+
+  const markProjectDetailRefreshFailed = (projectId: string) => {
+    const isSelectedProject = selectedConversationIdRef.current === projectId;
+    if (isSelectedProject || conversationDetailRequestKeyRef.current?.startsWith(`${projectId}:`)) {
+      conversationDetailGenerationRef.current += 1;
+      conversationDetailRequestKeyRef.current = isSelectedProject
+        ? `${projectId}:${conversationDetailRetryRevision}`
+        : null;
+    }
+    setConversations((current) => current.map((conversation) => (
+      conversation.id === projectId ? { ...conversation, detailsLoaded: false } : conversation
+    )));
+    invalidateProjectRequirements(projectId);
+    if (isSelectedProject) {
+      setConversationDetailErrorId(projectId);
+      setProjectResourcesOpen(false);
+    }
+  };
+
+  const handleLibraryAssetArchived = async (assetId: number) => {
+    setConversationContextAssets((current) => {
+      const next = { ...current };
+      for (const conversation of conversationsRef.current) {
+        next[conversation.id] = (
+          current[conversation.id] ?? persistedConversationContextAssets(conversation.messages ?? [])
+        ).filter((asset) => asset.id !== assetId);
+      }
+      for (const [projectId, assets] of Object.entries(current)) {
+        next[projectId] = assets.filter((asset) => asset.id !== assetId);
+      }
+      return next;
+    });
+    const selectedProjectId = selectedConversationIdRef.current;
+    // An earlier project-detail response must not restore pre-archive resources.
+    const generation = conversationDetailGenerationRef.current + 1;
+    conversationDetailGenerationRef.current = generation;
+    conversationDetailRequestKeyRef.current = selectedProjectId === "new"
+      ? null
+      : `${selectedProjectId}:${conversationDetailRetryRevision}`;
+    setConversationDetailErrorId(null);
+    setConversations((current) => current.map((conversation) => ({
+      ...conversation,
+      detailsLoaded: false,
+    })));
+    setConversationLoadRevision((value) => value + 1);
+    if (selectedProjectId === "new" || !token) return;
+    try {
+      const refreshed = await assetWorkspaceAdapter.loadConversationDetail(token, selectedProjectId);
+      if (conversationDetailGenerationRef.current !== generation) return;
+      setConversations((current) => current.map((conversation) => (
+        conversation.id === selectedProjectId
+          ? mergeProjectConversationDetail(conversation, refreshed)
+          : conversation
+      )));
+    } catch (error) {
+      if (conversationDetailGenerationRef.current !== generation) return;
+      setConversationDetailErrorId(selectedProjectId);
+      throw error;
+    }
   };
 
   const persistLibraryAssetToProject = async (row: LibraryRow, projectId: string) => {
@@ -2094,21 +2345,28 @@ export default function AssetsWorkspaceClient({
     setSubmittingProjectId(projectId);
     try {
       await addProjectSource(token, projectId, row.assetId);
-      if (projectId === selectedConversation.id) {
-        setConversationContextAssets((current) => ({
-          ...current,
-          [projectId]: mergeConversationContextAssets(
-            current[projectId] ?? [],
-            [{ id: row.assetId!, title: row.title }],
-          ),
-        }));
-      }
-      await refreshProjectConversation(projectId);
-      setProjectTargetRow(null);
-      toast.success(`已加入项目，并立即保存。`);
     } catch (error) {
       reportRuntimeWriteFailure(error);
       toast.error(error instanceof Error ? error.message : "加入项目失败，请重试。");
+      setSubmittingProjectId(null);
+      return;
+    }
+    if (projectId === selectedConversation.id) {
+      setConversationContextAssets((current) => ({
+        ...current,
+        [projectId]: mergeConversationContextAssets(
+          current[projectId] ?? [],
+          [{ id: row.assetId!, title: row.title }],
+        ),
+      }));
+    }
+    setProjectTargetRow(null);
+    try {
+      await refreshProjectConversation(projectId);
+      toast.success("已加入项目，并立即保存。");
+    } catch {
+      markProjectDetailRefreshFailed(projectId);
+      toast.info("已加入项目并保存，但资料暂未同步。进入该项目后可重试加载。");
     } finally {
       setSubmittingProjectId(null);
     }
@@ -2923,7 +3181,10 @@ export default function AssetsWorkspaceClient({
         return next;
       });
     }
+    const preserveEditingFocus = shouldKeepFocusOnResult && productCanLeaveSilentlyRef.current?.() === false;
+    const editingProductId = preserveEditingFocus ? selectedProductIdRef.current : null;
     setSelectedProductIds((current) => {
+      if (editingProductId) return { ...current, [targetConversationId]: editingProductId };
       if (product) {
         return {
           ...current,
@@ -3324,7 +3585,6 @@ export default function AssetsWorkspaceClient({
     try {
       await assetWorkspaceAdapter.uploadAsset(token, file, activeView);
       setLibraryRefreshKey((value) => value + 1);
-      setActiveView(activeView);
     } catch (error) {
       reportRuntimeWriteFailure(error);
       const msg = error instanceof Error ? error.message : "上传失败，请稍后重试。";
@@ -3384,6 +3644,7 @@ export default function AssetsWorkspaceClient({
         membershipState: item.membership_state,
         historicalReferenceCount: item.historical_reference_count,
         status: item.status,
+        readdStatus: item.readd_status ?? null,
         assetKind: item.asset_kind,
         contentType: item.content_type,
         sourceType: item.source_type,
@@ -3396,43 +3657,81 @@ export default function AssetsWorkspaceClient({
 
   const changeSelectedProjectSource = async (assetId: number, action: "add" | "remove") => {
     if (!token || selectedConversation.id === "new") return;
+    const projectId = selectedConversation.id;
     if (action === "add") {
-      await addProjectSource(token, selectedConversation.id, assetId);
+      await addProjectSource(token, projectId, assetId);
     } else {
-      await removeProjectSource(token, selectedConversation.id, assetId);
+      await removeProjectSource(token, projectId, assetId);
       setConversationContextAssets((current) => ({
         ...current,
-        [selectedConversation.id]: (current[selectedConversation.id] ?? []).filter((asset) => asset.id !== assetId),
+        [projectId]: (current[projectId] ?? []).filter((asset) => asset.id !== assetId),
       }));
     }
-    await refreshProjectConversation(selectedConversation.id);
-    await reloadCurrentRequirements(selectedConversation.id);
+    requirementReadGenerationRef.current.set(projectId, (requirementReadGenerationRef.current.get(projectId) ?? 0) + 1);
+    const completedAction = action === "add" ? "已重新加入项目并保存" : "已移出项目并保存";
+    try {
+      await refreshProjectConversation(projectId, true);
+    } catch {
+      markProjectDetailRefreshFailed(projectId);
+      toast.info(`${completedAction}，但资料暂未同步。请重试加载。`);
+      return;
+    }
+    try {
+      await reloadCurrentRequirements(projectId);
+    } catch {
+      invalidateProjectRequirements(projectId);
+      setRequirementRefreshErrorProjectId(projectId);
+      toast.info(`${completedAction}，但需求理解暂未同步。`);
+    }
   };
 
   const handleOpenProjectResource = (item: ProjectResourceItem) => {
-    if (item.kind === "source") {
-      setLibraryTargetProjectId(selectedConversation.id);
-      setActiveView(item.assetKind === "video" ? "video" : "image");
-    } else {
-      const product = (selectedConversation.products ?? []).find((candidate) => (
-        candidate.backendAssetId === item.id
-      ));
-      if (product) {
-        setSelectedProductIds((current) => ({
-          ...current,
-          [selectedConversation.id]: product.id,
-        }));
-      }
-    }
+    // Only one focus-isolating surface may be active during cross-drawer navigation.
     setProjectResourcesOpen(false);
+    navigateWorkspace(() => {
+      if (item.kind === "source") {
+        setLibraryTargetProjectId(null);
+        setLibraryFocusedAssetId(item.id);
+        setActiveView(item.assetKind === "video" ? "video" : item.assetKind === "image" ? "image" : "assets");
+      } else {
+        const product = (selectedConversation.products ?? []).find((candidate) => (
+          candidate.backendAssetId === item.id
+        ));
+        if (product) {
+          setSelectedProductIds((current) => ({
+            ...current,
+            [selectedConversation.id]: product.id,
+          }));
+        }
+      }
+    }, () => setProjectResourcesOpen(true));
   };
 
-  const isSidebarVisuallyCollapsed = sidebarState === "auto" && isNarrowViewport;
+  const effectiveSidebarState = isNarrowViewport ? narrowNavigationOpen ? "expanded" : "auto" : sidebarState;
+  const isSidebarVisuallyCollapsed = effectiveSidebarState === "auto" && isNarrowViewport;
+  const navigationSlot = isNarrowViewport ? (
+    <button
+      className="shadcn-prototype-topbar-sidebar-toggle"
+      type="button"
+      aria-label="展开侧边栏"
+      aria-haspopup="dialog"
+      aria-expanded={narrowNavigationOpen}
+      aria-controls="workspace-navigation"
+      title="展开侧边栏"
+      onClick={(event) => {
+        navigationTriggerRef.current = event.currentTarget;
+        handleExpandSidebar();
+      }}
+    >
+      <PanelLeftOpen size={16} aria-hidden="true" />
+    </button>
+  ) : null;
 
   const shellClassName = [
     "shadcn-prototype-shell",
-    sidebarState === "collapsed" ? "sidebar-collapsed" : "",
-    sidebarState === "expanded" ? "sidebar-expanded" : "",
+    "agent-visual-refresh",
+    effectiveSidebarState === "collapsed" ? "sidebar-collapsed" : "",
+    effectiveSidebarState === "expanded" ? "sidebar-expanded" : "",
     isSidebarVisuallyCollapsed ? "sidebar-visual-collapsed" : ""
   ].filter(Boolean).join(" ");
   const insetClassName = activeView === "conversation" ? "shadcn-prototype-inset conversation-inset" : "shadcn-prototype-inset";
@@ -3492,6 +3791,20 @@ export default function AssetsWorkspaceClient({
 
   return (
     <main className={shellClassName}>
+      <div
+        ref={navigationDialogRef}
+        id="workspace-navigation"
+        className="shadcn-prototype-navigation-surface"
+        role={isNarrowViewport && narrowNavigationOpen ? "dialog" : undefined}
+        aria-modal={isNarrowViewport && narrowNavigationOpen ? true : undefined}
+        aria-label={isNarrowViewport && narrowNavigationOpen ? "工作台导航" : undefined}
+        hidden={isNarrowViewport && !narrowNavigationOpen}
+        tabIndex={-1}
+      >
+      {isNarrowViewport && narrowNavigationOpen ? (
+        <button type="button" className="shadcn-prototype-navigation-backdrop" aria-label="关闭导航遮罩"
+          tabIndex={-1} onClick={handleCollapseSidebar} />
+      ) : null}
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
           <span className="shadcn-prototype-brand-mark" aria-hidden="true">
@@ -3502,10 +3815,12 @@ export default function AssetsWorkspaceClient({
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
           </div>
-          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页">
+          <Link className="shadcn-prototype-home" href="/" aria-label="返回主页" title="返回主页"
+            onClick={(event) => { event.preventDefault(); navigateWorkspace(() => router.push("/")); }}>
             <House size={15} aria-hidden="true" />
           </Link>
           <button
+            ref={navigationCloseRef}
             className="shadcn-prototype-sidebar-toggle"
             type="button"
             aria-label="隐藏侧边栏"
@@ -3527,7 +3842,8 @@ export default function AssetsWorkspaceClient({
             >
               <PanelLeftOpen size={17} aria-hidden="true" />
             </button>
-            <Link className="shadcn-prototype-collapsed-rail-button" href="/" aria-label="返回主页" title="返回主页">
+            <Link className="shadcn-prototype-collapsed-rail-button" href="/" aria-label="返回主页" title="返回主页"
+              onClick={(event) => { event.preventDefault(); navigateWorkspace(() => router.push("/")); }}>
               <House size={17} aria-hidden="true" />
             </Link>
           </div>
@@ -3552,7 +3868,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="资产库"
               title="资产库"
-              onClick={() => setActiveView("assets")}
+              onClick={() => navigateView("assets")}
             >
               <Package size={17} aria-hidden="true" />
             </button>
@@ -3561,7 +3877,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="文案库"
               title="文案库"
-              onClick={() => setActiveView("copy")}
+              onClick={() => navigateView("copy")}
             >
               <FileText size={17} aria-hidden="true" />
             </button>
@@ -3570,7 +3886,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="图片库"
               title="图片库"
-              onClick={() => setActiveView("image")}
+              onClick={() => navigateView("image")}
             >
               <ImageIcon size={17} aria-hidden="true" />
             </button>
@@ -3579,7 +3895,7 @@ export default function AssetsWorkspaceClient({
               type="button"
               aria-label="视频库"
               title="视频库"
-              onClick={() => setActiveView("video")}
+              onClick={() => navigateView("video")}
             >
               <Video size={17} aria-hidden="true" />
             </button>
@@ -3587,7 +3903,7 @@ export default function AssetsWorkspaceClient({
 
           <div className="shadcn-prototype-collapsed-rail-user" aria-label="账户">
             {creativeProfileVisible ? (
-              <button type="button" title="创作档案" aria-label="创作档案" onClick={() => setCreativeProfileOpen(true)}>
+              <button type="button" title="创作档案" aria-label="创作档案" onClick={handleOpenCreativeProfile}>
                 <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
               </button>
             ) : <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>}
@@ -3724,7 +4040,10 @@ export default function AssetsWorkspaceClient({
                       <Pencil size={13} aria-hidden="true" />
                       重命名
                     </button>
-                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => handleDeleteConversation(conversation.id)}>
+                    <button type="button" disabled={!runtimeWriteCapabilities.canPersist} onClick={() => {
+                      if (conversation.id === selectedConversation.id) navigateWorkspace(() => handleDeleteConversation(conversation.id));
+                      else handleDeleteConversation(conversation.id);
+                    }}>
                       <Trash2 size={13} aria-hidden="true" />
                       删除项目
                     </button>
@@ -3753,7 +4072,7 @@ export default function AssetsWorkspaceClient({
             aria-label="资产库"
             aria-current={activeView === "assets" ? "page" : undefined}
             title="资产库"
-            onClick={() => setActiveView("assets")}
+            onClick={() => navigateView("assets")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Package size={16} /></span>
             资产
@@ -3764,7 +4083,7 @@ export default function AssetsWorkspaceClient({
             aria-label="文案库"
             aria-current={activeView === "copy" ? "page" : undefined}
             title="文案库"
-            onClick={() => setActiveView("copy")}
+            onClick={() => navigateView("copy")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><FileText size={16} /></span>
             文案
@@ -3775,7 +4094,7 @@ export default function AssetsWorkspaceClient({
             aria-label="图片库"
             aria-current={activeView === "image" ? "page" : undefined}
             title="图片库"
-            onClick={() => setActiveView("image")}
+            onClick={() => navigateView("image")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><ImageIcon size={16} /></span>
             图片
@@ -3786,7 +4105,7 @@ export default function AssetsWorkspaceClient({
             aria-label="视频库"
             aria-current={activeView === "video" ? "page" : undefined}
             title="视频库"
-            onClick={() => setActiveView("video")}
+            onClick={() => navigateView("video")}
           >
             <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Video size={16} /></span>
             视频
@@ -3800,30 +4119,21 @@ export default function AssetsWorkspaceClient({
           <div>
             <strong>{accountName}</strong>
             <em title={accountEmail}>{accountEmail}</em>
-            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={() => setCreativeProfileOpen(true)}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
+            {token && creativeProfileVisible ? <button type="button" className="shadcn-prototype-profile-entry" onClick={handleOpenCreativeProfile}><BookOpen size={12} aria-hidden="true" />创作档案</button> : null}
           </div>
           {onLogout ? (
-            <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={onLogout}>
+            <button type="button" className="shadcn-prototype-logout" aria-label="退出登录" title="退出登录" onClick={() => navigateWorkspace(onLogout)}>
               <LogOut size={14} aria-hidden="true" />
             </button>
           ) : null}
         </div>
       </aside>
+      </div>
 
       <section className={insetClassName}>
         {activeView !== "conversation" ? (
           <header className="shadcn-prototype-topbar">
-            {sidebarState === "auto" && isNarrowViewport ? (
-              <button
-                className="shadcn-prototype-topbar-sidebar-toggle"
-                type="button"
-                aria-label="展开侧边栏"
-                title="展开侧边栏"
-                onClick={handleExpandSidebar}
-              >
-                <PanelLeftOpen size={16} aria-hidden="true" />
-              </button>
-            ) : null}
+            {navigationSlot}
             <div className="shadcn-prototype-breadcrumb">
               <span>资源库</span>
               <span className="shadcn-prototype-library-breadcrumb-separator" aria-hidden="true">/</span>
@@ -3849,18 +4159,19 @@ export default function AssetsWorkspaceClient({
         <div
           ref={workspaceRef}
           className={
-            isNewConversation
-              ? "shadcn-prototype-workspace empty-mode"
-              : activeView === "conversation"
+            activeView === "conversation"
+              ? hasProductStage
                 ? "shadcn-prototype-workspace conversation-mode"
+                : "shadcn-prototype-workspace conversation-only-mode"
                 : "shadcn-prototype-workspace workshop-mode"
           }
-          style={!isNewConversation && activeView === "conversation"
+          style={hasProductStage
             ? { "--chat-panel-width": `${chatPanelWidth}px` } as CSSProperties
             : undefined}
         >
           {isNewConversation ? (
             <ConversationStart
+              navigationSlot={navigationSlot}
               suggestions={selectedConversation.suggestions ?? []}
               conversation={selectedConversation}
               accountName={accountName}
@@ -3880,15 +4191,16 @@ export default function AssetsWorkspaceClient({
           ) : activeView === "conversation" ? (
             <>
               <ConversationStudio
+                navigationSlot={navigationSlot}
                 basePath={basePath}
                 contextAssets={currentContextAssets}
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
                 onSelectProduct={handleSelectProduct}
                 onApplyCreativeDirection={
-                  !runtimeWriteCapabilities.canGenerate || isConversationSnapshot || !selectedProduct
+                  !runtimeWriteCapabilities.canGenerate || isConversationSnapshot
                     ? undefined
-                    : (selection) => handleApplyCreativeDirection(selectedProduct, selection)
+                    : handleApplyCreativeDirection
                 }
                 selectedImageFrameIds={selectedImageFrameIds}
                 onSelectImageFrame={(productId, frameId) => {
@@ -3943,33 +4255,35 @@ export default function AssetsWorkspaceClient({
                 }
                 requirementAnalyticsToken={token}
               />
-              <div
-                className="shadcn-prototype-resize-handle"
-                role="separator"
-                aria-orientation="vertical"
-                aria-valuemin={isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN}
-                aria-valuemax={isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX}
-                aria-valuenow={chatPanelWidth}
-                aria-label="调整对话和展示区宽度"
-                tabIndex={0}
-                title="拖动调整宽度"
-                onPointerDown={handleDividerPointerDown}
-                onMouseDown={handleDividerMouseDown}
-                onKeyDown={handleDividerKeyDown}
-              >
-                <GripVertical size={14} aria-hidden="true" />
-              </div>
               {selectedProduct ? (
-                <ProductWorkspace
-                  copied={copiedProductId === selectedProduct.id}
-                  onCopyProduct={handleCopyProduct}
-                  onSaveProduct={isConversationSnapshot
-                    ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
-                    : handleSaveProduct}
-                  onRestoreVersion={isConversationSnapshot
-                    ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
-                    : handleRestoreProductVersion}
-                  onProductUpdated={(updatedProduct) => {
+                <>
+                  <div
+                    className="shadcn-prototype-resize-handle"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-valuemin={isNarrowViewport ? NARROW_CHAT_PANEL_MIN : DESKTOP_CHAT_PANEL_MIN}
+                    aria-valuemax={isNarrowViewport ? 640 : DESKTOP_CHAT_PANEL_MAX}
+                    aria-valuenow={chatPanelWidth}
+                    aria-label="调整对话和展示区宽度"
+                    tabIndex={0}
+                    title="拖动调整宽度"
+                    onPointerDown={handleDividerPointerDown}
+                    onMouseDown={handleDividerMouseDown}
+                    onKeyDown={handleDividerKeyDown}
+                  >
+                    <GripVertical size={14} aria-hidden="true" />
+                  </div>
+                  <ProductWorkspace
+                    onRegisterBeforeLeave={registerProductBeforeLeave}
+                    copied={copiedProductId === selectedProduct.id}
+                    onCopyProduct={handleCopyProduct}
+                    onSaveProduct={isConversationSnapshot
+                      ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
+                      : handleSaveProduct}
+                    onRestoreVersion={isConversationSnapshot
+                      ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
+                      : handleRestoreProductVersion}
+                    onProductUpdated={(updatedProduct, baseProduct) => {
                     if (updatedProduct.backendAssetId) {
                       setClickedSceneFocus((current) => {
                         const next = { ...current };
@@ -3977,49 +4291,50 @@ export default function AssetsWorkspaceClient({
                         return next;
                       });
                     }
-                    setConversations((current) => current.map((conversation) => {
-                      if (conversation.id !== selectedConversation.id) return conversation;
-                      const products = conversation.products ?? [conversation.product];
-                      const nextProducts = products.some((item) => item.id === updatedProduct.id)
-                        ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
-                        : [...products, updatedProduct];
-                      return {
-                        ...conversation,
-                        product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
-                        products: nextProducts,
-                        canvasTitle: updatedProduct.title,
-                        canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
-                        raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
-                        updatedAt: "刚刚"
-                      };
-                    }));
-                  }}
-                  onRetryVideoJob={!runtimeWriteCapabilities.canGenerate
-                    ? undefined
-                    : isConversationSnapshot
-                      ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
-                      : handleRetryVideoJob}
-                  onOpenLongFormCandidates={(candidateProduct) => {
-                    setSelectedProductIds((current) => ({
-                      ...current,
-                      [selectedConversation.id]: candidateProduct.id,
-                    }));
-                  }}
-                  onLongFormAction={(action) => void handleLongFormSelect(action)}
-                  onApplyGeneratedImage={
-                    !canApplyExistingGeneratedImage
+                      if (baseProduct) {
+                        setConversations((current) => reconcileProductMutation(current, selectedConversation.id, baseProduct, updatedProduct));
+                        return;
+                      }
+                      setConversations((current) => current.map((conversation) => {
+                        if (conversation.id !== selectedConversation.id) return conversation;
+                        const products = conversation.products ?? [conversation.product];
+                        const nextProducts = products.some((item) => item.id === updatedProduct.id)
+                          ? products.map((item) => item.id === updatedProduct.id ? updatedProduct : item)
+                          : [...products, updatedProduct];
+                        return {
+                          ...conversation,
+                          product: conversation.product.id === updatedProduct.id ? updatedProduct : conversation.product,
+                          products: nextProducts,
+                          canvasTitle: updatedProduct.title,
+                          canvasMeta: `${updatedProduct.status} · ${updatedProduct.ratio}`,
+                          raw: updatedProduct.body?.join("\n\n") ?? updatedProduct.summary,
+                          updatedAt: "刚刚"
+                        };
+                      }));
+                    }}
+                    onRetryVideoJob={!runtimeWriteCapabilities.canGenerate
                       ? undefined
-                      : handleApplyGeneratedImage
-                  }
-                  onApplyGeneratedImageSet={
-                    !canApplyExistingGeneratedImage
-                      ? undefined
-                      : handleApplyGeneratedImageSet
-                  }
-                  selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
-                  onSelectedImageFrameChange={(frameId) => {
-                    setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
-                  }}
+                      : isConversationSnapshot
+                        ? async () => { toast.info("完整对话仍在加载，请稍后再重试任务。"); }
+                        : handleRetryVideoJob}
+                    onOpenLongFormCandidates={(candidateProduct) => {
+                      handleSelectProduct(selectedConversation.id, candidateProduct.id);
+                    }}
+                    onLongFormAction={(action) => void handleLongFormSelect(action)}
+                    onApplyGeneratedImage={
+                      !canApplyExistingGeneratedImage
+                        ? undefined
+                        : handleApplyGeneratedImage
+                    }
+                    onApplyGeneratedImageSet={
+                      !canApplyExistingGeneratedImage
+                        ? undefined
+                        : handleApplyGeneratedImageSet
+                    }
+                    selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
+                    onSelectedImageFrameChange={(frameId) => {
+                      setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
+                    }}
                   onSelectSegment={(segment: AssetProductSegment) => {
                     if (!selectedProduct.backendAssetId) return;
                     setClickedSceneFocus((current) => ({
@@ -4041,16 +4356,21 @@ export default function AssetsWorkspaceClient({
                     }
                     : undefined}
                   sceneSourceProgress={sceneSourceProgress}
-                  product={selectedProduct}
-                  savedVersion={savedProductIds[selectedProduct.id]}
-                  selectedConversation={selectedConversation}
-                  token={token}
-                  creativeProfileVisible={creativeProfileVisible}
-                  videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
-                />
-              ) : (
-                <EmptyProductWorkspace />
-              )}
+                    product={selectedProduct}
+                    savedVersion={savedVersionForProduct(selectedProduct, savedProductIds[selectedProduct.id])}
+                    savingProduct={productMutationStates[selectedProduct.id] === "saving"}
+                    restoringProduct={productMutationStates[selectedProduct.id] === "restoring"}
+                    refreshingProduct={productMutationStates[selectedProduct.id] === "refreshing"}
+                    productSaveConflict={productSaveConflicts[selectedProduct.id]?.baseUpdatedAt === selectedProduct.backendUpdatedAt
+                      ? productSaveConflicts[selectedProduct.id]?.message : undefined}
+                    onReloadProduct={handleReloadProduct}
+                    selectedConversation={selectedConversation}
+                    token={token}
+                    creativeProfileVisible={creativeProfileVisible}
+                    videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
+                  />
+                </>
+              ) : null}
             </>
           ) : (
             <LibraryWorkspaceErrorBoundary key={activeView}>
@@ -4062,15 +4382,18 @@ export default function AssetsWorkspaceClient({
                 uploading={uploading}
                 onUseAsset={stableHandleUseLibraryAsset}
                 onImportDirectorDraft={stableHandleImportDirectorDraft}
-                importProjectTitle={(libraryTargetProjectId ?? selectedConversation.id) !== "new"
-                  ? (conversations.find((item) => item.id === (libraryTargetProjectId ?? selectedConversation.id))?.title ?? selectedConversation.title)
-                  : null}
-                 onAddAssetToConversation={stableHandleAddAssetToConversation}
-                 targetProjectTitle={libraryTargetProjectTitle}
-                 onExitProjectTarget={() => {
-                   setLibraryTargetProjectId(null);
-                   setActiveView("conversation");
-                 }}
+                importProjectTitle={libraryTargetProjectId
+                  ? conversations.find((item) => item.id === libraryTargetProjectId)?.title ?? null
+                  : selectedConversation.id !== "new" ? selectedConversation.title : null}
+                onAddAssetToConversation={stableHandleAddAssetToConversation}
+                onAssetArchived={handleLibraryAssetArchived}
+                targetProjectTitle={libraryTargetProjectTitle}
+                focusAssetId={libraryFocusedAssetId}
+                onFocusAssetClose={closeLibraryFocusedAsset}
+                onExitProjectTarget={() => {
+                  setLibraryTargetProjectId(null);
+                  setActiveView("conversation");
+                }}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
                 onWriteAvailabilityChange={handleWriteAvailabilityChange}
@@ -4200,26 +4523,17 @@ export default function AssetsWorkspaceClient({
           </section>
         </div>
       ) : null}
-      <ProjectResourcesDrawer
-        open={projectResourcesOpen && selectedConversation.id !== "new"}
+      {projectResourcesOpen && selectedConversation.id !== "new" && !isConversationSnapshot ? <ProjectResourcesDrawer
+        key={selectedConversation.id}
+        open
         projectTitle={selectedConversation.title}
         summary={projectResourceSummary}
+        requirementRefreshError={requirementRefreshErrorProjectId === selectedConversation.id}
+        onRetryRequirements={() => retryProjectRequirements(selectedConversation.id)}
         loadResources={loadSelectedProjectResources}
         onClose={() => setProjectResourcesOpen(false)}
-        onAddSource={() => {
-          setLibraryTargetProjectId(selectedConversation.id);
-          setProjectResourcesOpen(false);
-          setActiveView("assets");
-          toast.info(`正在为项目「${selectedConversation.title}」添加素材。`);
-        }}
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
-        onPermanentDeleteSource={async (assetId) => {
-          if (!token) throw new Error("请先登录后再删除源文件。");
-          await assetWorkspaceAdapter.deleteAsset(token, assetId, "permanent");
-          await reloadCurrentRequirements(selectedConversation.id).catch(() => null);
-          toast.success("源文件已永久删除。");
-        }}
         onOpenResource={handleOpenProjectResource}
         onUseSourceForNextMessage={(item) => {
           if (item.kind !== "source" || item.membershipState !== "active") return;
@@ -4230,7 +4544,7 @@ export default function AssetsWorkspaceClient({
           setProjectResourcesOpen(false);
           toast.info(`已将「${item.title}」用于本轮。`);
         }}
-      />
+      /> : null}
       <ProjectTargetPicker
         open={Boolean(projectTargetRow)}
         projects={projectTargetOptions}

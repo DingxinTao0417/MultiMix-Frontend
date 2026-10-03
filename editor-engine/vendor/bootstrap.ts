@@ -4,6 +4,7 @@ import type { BackendProject } from "./buildProject";
 import { buildProject } from "./buildProject";
 import { API_BASE, mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
+import { isBgmMedia, isBgmTrack } from "@/app/editor/bgm-project-patch";
 
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
@@ -289,8 +290,9 @@ export async function hydrateAssetFiles(
   assets: MediaAsset[],
   bp: BackendProject,
   onProgress?: HydrateProgress,
+  options: { preservePlaybackUrls?: boolean } = {},
 ): Promise<MediaAsset[]> {
-  clearAuthorizedPlaybackUrls();
+  if (!options.preservePlaybackUrls) clearAuthorizedPlaybackUrls();
   const playbackUrlById: Record<string, string> = {};
   for (const m of bp.media) {
     const authorizedPlaybackUrl = m.playback_url
@@ -425,6 +427,25 @@ export async function updateEditorProject(bp: BackendProject): Promise<EditorCor
   editor.media.clearAllAssets();
   await applyProject(editor, bp);
   return editor;
+}
+
+// Hydrate only music, then read the live tracks after the await. Scene resets
+// would discard edits made while either the API or audio download was pending.
+export async function updateEditorBgm(bp: BackendProject, isCurrent: () => boolean): Promise<void> {
+  if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+  const editor = EditorCore.getInstance();
+  const patch = { ...bp, tracks: bp.tracks.filter(isBgmTrack), media: bp.media.filter(isBgmMedia) };
+  const { project, assets } = buildProject(patch, { preserveMappings: true });
+  const hydratedAssets = await hydrateAssetFiles(assets, patch, undefined, { preservePlaybackUrls: true });
+  if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+  editor.media.setAssets({ assets: [
+    ...editor.media.getAssets().filter((asset) => !isBgmMedia({ id: asset.id, file_path: "" })),
+    ...hydratedAssets,
+  ] });
+  editor.timeline.updateTracks([
+    ...editor.timeline.getTracks().filter((track) => !isBgmTrack(track)),
+    ...project.scenes[0].tracks,
+  ]);
 }
 
 async function applyProject(editor: EditorCore, bp: BackendProject, onProgress?: HydrateProgress): Promise<void> {
