@@ -18,6 +18,85 @@ const newConversationProduct = {
   actions: []
 } as AssetProduct;
 
+describe("scene visual change report projection", () => {
+  const report = {
+    contract_version: "scene_visual_change:v1",
+    goal: { kind: "content_action", start_state: "杯子空着", end_state: "杯中有水", actions: ["往杯里倒水"] },
+    implementation: "source_image", available_change: "camera_motion", temporal_capability: "single_state",
+    artifact_status: "planned", semantic_verification: "not_verified",
+    soft_issue: "required_change_not_implemented", user_message: "目前只有图片缩放，尚未实现倒水动作。",
+  };
+  function mapped(metadata: ContentAsset["metadata"]) {
+    return contentAssetToProduct(asset({ asset_kind: "video", content_type: "video_project", metadata }));
+  }
+  it("keeps the goal, actual camera-only method and soft notice on its own scene", () => {
+    const product = mapped({ video_plan: { scenes: [
+      { id: "scene-1", visual_change_report: report }, { id: "scene-2", title: "保持原样" },
+    ] } });
+    expect(product.segments?.[0]).toHaveProperty("visualChange", {
+      goalLabel: "内容动作", startState: "杯子空着", endState: "杯中有水", actions: ["往杯里倒水"],
+      methodLabel: "图片（仅镜头运动）", statusLabel: "尚未准备完成",
+      notice: "目前只有图片缩放，尚未实现倒水动作。",
+    });
+    expect(product.segments?.[1]).not.toHaveProperty("visualChange", expect.anything());
+  });
+  it.each(["planned", "available"])("never certifies the action of an %s generated video", (status) => {
+    const product = mapped({ video_plan: { scenes: [{ id: "scene-1", visual_change_report: {
+      ...report, implementation: "image_to_video", available_change: "generated_motion",
+      artifact_status: status, soft_issue: null, user_message: null,
+    } }] } });
+    expect(product.segments?.[0]).toHaveProperty("visualChange.methodLabel", "图片生成视频");
+    expect(product.segments?.[0]).toHaveProperty("visualChange.statusLabel",
+      status === "planned" ? "尚未准备完成" : "画面已准备，动作效果待确认");
+  });
+  it("does not borrow an old report when the project supplies a changed strategy", () => {
+    const product = mapped({
+      video_project: { segments: [{ id: "scene-1", primary_visual_strategy: { mode: "mg_scene" } }] },
+      video_plan: { scenes: [{ id: "scene-1", visual_change_report: report }] },
+    });
+    expect(product.segments?.[0]).not.toHaveProperty("visualChange", expect.anything());
+  });
+  it("uses a matching plan report for a project segment containing timing only", () => {
+    const product = mapped({
+      video_project: { segments: [{ id: "scene-1", duration: 5 }] },
+      video_plan: { scenes: [{ id: "scene-1", visual_change_report: report }] },
+    });
+    expect(product.segments?.[0]).toHaveProperty("visualChange.notice", report.user_message);
+  });
+  it.each([
+    { contract_version: "unknown" }, { semantic_verification: "passed" },
+    { goal: null }, { artifact_status: "complete" }, { implementation: "magic_video" },
+    { goal: { ...report.goal, actions: "not-a-list" } },
+  ])("ignores invalid reports without inventing quality success: %j", (override) => {
+    const product = mapped({ video_plan: { scenes: [{ id: "scene-1", visual_change_report: { ...report, ...override } }] } });
+    expect(product.segments?.[0]).not.toHaveProperty("visualChange", expect.anything());
+  });
+  it("keeps legitimate static presentation without a motion warning", () => {
+    const product = mapped({ video_plan: { scenes: [{ id: "scene-1", visual_change_report: {
+      ...report, goal: { kind: "static_display", start_state: "标志完整可见", end_state: "标志完整可见", actions: [] },
+      available_change: "static_display", artifact_status: "available", soft_issue: null, user_message: null,
+    } }] } });
+    expect(product.segments?.[0]).toHaveProperty("visualChange.goalLabel", "静态展示");
+    expect(product.segments?.[0]).toHaveProperty("visualChange.statusLabel", "画面已准备");
+    expect(product.segments?.[0]).not.toHaveProperty("visualChange.notice", expect.anything());
+  });
+});
+
+describe("persisted standalone video originals", () => {
+  it("exposes a ready video original without inventing a video project", () => {
+    const product = contentAssetToProduct(asset({ asset_kind: "video", content_type: "generated_image_to_video_scene",
+      status: "ready", source_content_type: "video/mp4", original_ref: "local://scene-motion.mp4", metadata: {} }));
+    expect(product.metadata?.source_video_artifact).toEqual({ ref: "local://scene-motion.mp4" });
+    expect(product.status).toBe("视频片段 · 可播放");
+    expect(product.videoProjectReady).toBe(false);
+  });
+  it.each(["draft", "processing", "failed"])("does not expose %s media as a finished clip", (status) => {
+    const product = contentAssetToProduct(asset({ asset_kind: "video", content_type: "generated_image_to_video_scene",
+      status, source_content_type: "video/mp4", original_ref: "local://scene-motion.mp4", metadata: {} }));
+    expect(product.metadata?.source_video_artifact).toBeUndefined();
+  });
+});
+
 describe("project conversation mapping", () => {
   it("preserves the server save basis and real version numbers", () => {
     const updatedAt = "2026-09-29T00:00:00Z";
@@ -2089,7 +2168,7 @@ describe("message plan mapping", () => {
         },
       ],
     });
-    expect(product.actions).toEqual(["调整口播包装", "修正字幕", "补充事件素材", "取消包装"]);
+    expect(product.actions).toEqual(["调整视频包装", "修正字幕", "补充事件素材", "取消包装"]);
   });
 
   it("maps presenter cleanup review outcomes and secondary recognition evidence", () => {

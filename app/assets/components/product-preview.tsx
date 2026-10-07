@@ -47,6 +47,9 @@ export function playableVideoUrl(product: ProductArtifact): string {
   const mp4Artifact = isRecord(metadata.mp4_artifact) ? metadata.mp4_artifact : null;
   const artifactRef = stringValue(mp4Artifact?.mp4_ref) || stringValue(mp4Artifact?.ref);
   if (artifactRef) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(artifactRef)}`;
+  const sourceVideo = isRecord(metadata.source_video_artifact) ? metadata.source_video_artifact : null;
+  const sourceRef = stringValue(sourceVideo?.ref);
+  if (sourceRef) return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(sourceRef)}`;
   const direct = stringValue(metadata.video_url) || stringValue(metadata.preview_url);
   if (/^https?:\/\//i.test(direct)) return direct;
   return "";
@@ -606,7 +609,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
         <div>
           <span>{product.duration}</span>
           <strong>{product.preview?.title ?? displayIdentity.label}</strong>
-          <em>{product.preview?.subtitle ?? "口播 / 字幕 / 时间轴已匹配"}</em>
+          <em>{product.preview?.subtitle ?? "声音 / 字幕 / 时间轴已匹配"}</em>
         </div>
         <div className="shadcn-prototype-waveform" aria-hidden="true">
           {Array.from({ length: 34 }).map((_, index) => (
@@ -1013,14 +1016,14 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   return (
     <>
       {exportedVideoUrl ? (
-        <div className="shadcn-prototype-product-video" aria-label="成片播放">
-          <video
-            className="shadcn-prototype-product-video-player"
-            src={exportedVideoUrl}
-            controls
-            preload="metadata"
-            playsInline
-          />
+        <div className="shadcn-prototype-video-browse" aria-label="视频片段预览">
+          <div className="shadcn-prototype-product-video">
+          <VideoPreviewPlayer src={exportedVideoUrl} label="视频片段播放器"
+            ratioClassName={getProductRatioClass(product.ratio)} />
+          </div>
+          {isRecord(product.metadata?.scene_motion_preview) ? (
+            <p>独立动作预览，请检查主体动作；尚未替换原稿或整片。</p>
+          ) : null}
         </div>
       ) : null}
       {!exportedVideoUrl ? (

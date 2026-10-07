@@ -167,7 +167,7 @@ export function videoSegmentChangeDetails(change: VideoVersionSegmentChange): Vi
     details.push({ label: "起点", before: secondsLabel(change.previousStartSeconds), after: secondsLabel(change.currentStartSeconds) });
   }
   const textFields: Array<[keyof AssetProductSegment, string]> = [
-    ["title", "标题"], ["line", "口播"], ["subLine", "字幕"], ["voiceName", "声音"],
+    ["title", "标题"], ["line", "旁白"], ["subLine", "字幕"], ["voiceName", "声音"],
     ["assetTitle", "素材名称"], ["visualTreatmentLabel", "画面处理"],
     ["backgroundTreatmentLabel", "背景"], ["mgLabel", "图形动效"],
     ["graphicComponentLabel", "图形组件"],
@@ -198,7 +198,7 @@ export function videoSegmentChangeSummary(change: VideoVersionSegmentChange): st
   if (change.changeKinds.includes("copy")) summary.push(change.previousSegment.line != null
     && change.currentSegment.line != null
     && change.previousSegment.line !== change.currentSegment.line
-    ? "口播已调整" : "文案已调整");
+    ? "旁白已调整" : "文案已调整");
   if (change.changeKinds.includes("visual")) {
     const previousAssetId = change.previousSegment.assetReferenceId;
     const currentAssetId = change.currentSegment.assetReferenceId;

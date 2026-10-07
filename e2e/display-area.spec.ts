@@ -875,10 +875,17 @@ async function expectApprovedVideoPreviewShell(
 test("new conversation keeps the workspace single-column until an artifact exists", async ({ page }) => {
   await page.goto("/app/assets?conversation=new");
 
-  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
-  await expect(page.getByRole("region", { name: "创作起点" })).toHaveCount(0);
-  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
+  for (let pass = 0; pass < 2; pass++) {
+    await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+    await expect(page.getByRole("region", { name: "创作起点" })).toHaveCount(0);
+    await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "新建视频项目" })).toBeVisible();
+    for (const name of ["从想法开始", "用素材创作", "修改现有视频"]) {
+      await expect(page.getByRole("button", { name: new RegExp(name) })).toBeVisible();
+    }
+    await expect(page.getByText(/口播型|真人口播|口播清理|Presenter/)).toHaveCount(0);
+    if (pass === 0) await page.reload();
+  }
   await captureDesktopEvidence(page, "new-conversation-single-column");
 });
 

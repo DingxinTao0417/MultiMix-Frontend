@@ -887,7 +887,7 @@ export default function ConversationStudio({
         audioStreamIndex: values.audioStreamIndex,
       } : undefined;
     if (isPresenterCleanupConfirmation && !presenterCleanupConfirmation) {
-      setSendError("口播清理确认信息不完整，请刷新后重试。");
+      setSendError("原视频精简确认信息不完整，请刷新后重试。");
       return;
     }
     const selectedAudioOption = plan.audioTrackOptions?.find(
@@ -942,7 +942,7 @@ export default function ConversationStudio({
                 ? `正在更新${generatedImageVideoTarget}，其他分镜和上一稳定版本保持可用。`
                 : "已确认，正在执行视频修改。"
               : isPresenterAudioSelectionConfirmation
-                ? "原声已确认，正在生成对应口播清理方案。"
+                ? "原声已确认，正在生成对应原视频精简方案。"
               : "已确认，正在创建视频工程任务。",
           presentation: "execution_anchor",
           runSteps: isAgentActionConfirmation
@@ -956,7 +956,7 @@ export default function ConversationStudio({
             : isPresenterAudioSelectionConfirmation
               ? [{
                   key: plan.confirmationId ?? "presenter-audio-selection",
-                  label: "生成口播清理方案",
+                  label: "生成原视频精简方案",
                   status: "run",
                 }]
             : isImageGenerationConfirmation

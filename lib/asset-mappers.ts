@@ -885,6 +885,38 @@ function imageGenerationRecommendationValue(
   };
 }
 
+function visualChangeReportValue(value: unknown): AssetProductSegment["visualChange"] {
+  if (!isRecord(value) || value.contract_version !== "scene_visual_change:v1"
+    || value.semantic_verification !== "not_verified" || !isRecord(value.goal)
+    || !["planned", "available"].includes(stringValue(value.artifact_status))) return undefined;
+  const goal = value.goal;
+  const labels: Record<string, string> = {
+    static_display: "静态展示", camera_motion: "镜头运动",
+    content_action: "内容动作", information_state_change: "信息变化",
+  };
+  const methods: Record<string, string> = {
+    source_image: value.available_change === "camera_motion" ? "图片（仅镜头运动）" : "静态图片",
+    image_to_video: "图片生成视频", semantic_animation: "内容动画",
+    graphic_renderer: "图形画面", source_video: "现有视频", source_media: "素材画面",
+    unresolved: "尚未确定",
+  };
+  const goalLabel = labels[stringValue(goal.kind)];
+  const methodLabel = methods[stringValue(value.implementation)];
+  const startState = stringValue(goal.start_state);
+  const endState = stringValue(goal.end_state);
+  if (!goalLabel || !methodLabel || !startState || !endState || !Array.isArray(goal.actions)
+    || goal.actions.some((action) => typeof action !== "string" || !action.trim())
+    || (goal.kind !== "static_display" && !goal.actions.length)) return undefined;
+  const movingContent = goal.kind === "content_action" || goal.kind === "information_state_change";
+  return {
+    goalLabel, startState, endState, actions: [...goal.actions] as string[], methodLabel,
+    statusLabel: value.artifact_status === "planned" ? "尚未准备完成"
+      : movingContent ? "画面已准备，动作效果待确认" : "画面已准备",
+    notice: ["required_change_not_implemented", "execution_capability_unverified"].includes(stringValue(value.soft_issue))
+      ? stringValue(value.user_message) || undefined : undefined,
+  };
+}
+
 function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProductSegment[] | undefined {
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const projectTimings = segmentTimingsFromProject(videoProject);
@@ -925,6 +957,12 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
   return records.map((segment, index) => {
     const sceneId = stringValue(segment.id);
     const planScene = planScenesById.get(sceneId);
+    // Do not attach an older planning report to a changed project's visual.
+    // Timing-only project segments can still read their matching plan scene.
+    const changeReport = Object.hasOwn(segment, "visual_change_report")
+      ? segment.visual_change_report
+      : !Object.hasOwn(segment, "primary_visual_strategy") && !Object.hasOwn(segment, "primary_visual")
+        ? planScene?.visual_change_report : undefined;
     const imageGenerationRecommendation = imageGenerationRecommendationsByScene.get(sceneId);
     const reference = isRecord(segment.asset_reference)
       ? segment.asset_reference
@@ -1044,6 +1082,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
       publicReplacementNote: stringValue(replacement?.reason_code) === "remote_file_missing"
         ? "原公开素材已失效，已透明替换为可用素材"
         : undefined,
+      visualChange: visualChangeReportValue(changeReport),
       isPresenter: isPresenter || undefined,
       presenterEvents: isPresenter
         ? presenterEventsFromScene(presenterScene, presenterWords, presenterWordPositions)
@@ -1300,12 +1339,12 @@ export function agentTimelineStepsFromBackend(steps: VideoJobBackendStep[] | und
 
 
 function suggestionsForCapability(capability: string, videoPlan: unknown): string[] {
-  if (isPresenterSourceVideoPlan(videoPlan)) return ["调整口播包装", "修正字幕", "补充事件素材", "取消包装"];
+  if (isPresenterSourceVideoPlan(videoPlan)) return ["调整视频包装", "修正字幕", "补充事件素材", "取消包装"];
   if (capability === "long_form_candidate_set") return ["再给我更多候选", "只看指定主题", "调整时长或比例"];
   if (capability === "video_script") return ["确认，生成视频工程", "语气更口语", "缩短到30秒", "调整分镜", "补充产品素材"];
   if (capability.includes("video")) return ["调整分镜", "补充产品素材", "缩短到30秒", "换成9:16"];
   if (capability.includes("image") || capability === "cover_image" || capability === "storyboard_image") return ["换成9:16", "标题更醒目", "减少画面元素"];
-  if (capability === "social_post") return ["改得更专业", "缩短到120字", "拆成60秒口播"];
+  if (capability === "social_post") return ["改得更专业", "缩短到120字", "改成60秒视频编导稿"];
   return ["生成LinkedIn文案", "拆成短视频方案", "改得更具体"];
 }
 
@@ -1407,9 +1446,15 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const renderedImagePreviewUrl = asset.asset_kind === "image"
     ? imageThumbnailUrlFromRef(stringValue(asset.original_ref))
     : undefined;
-  const productMetadata = renderedImagePreviewUrl
-    ? { ...metadata, preview_url: renderedImagePreviewUrl }
-    : metadata;
+  const readyVideoOriginal = asset.asset_kind === "video" && asset.status === "ready"
+    && asset.content_type !== "video_project" && lifecycle?.status !== "failed" && lifecycle?.status !== "generating"
+    && metadata.media_availability !== "missing" && asset.source_content_type?.startsWith("video/")
+    ? stringValue(asset.original_ref) : "";
+  const productMetadata = {
+    ...metadata,
+    ...(renderedImagePreviewUrl ? { preview_url: renderedImagePreviewUrl } : {}),
+    source_video_artifact: readyVideoOriginal ? { ref: readyVideoOriginal } : undefined,
+  };
   const videoSegments = Array.isArray(videoProject?.segments) ? videoProject.segments.filter(isRecord) : [];
   const unsupported = asset.generation_state === "preparation_only" && !videoProject;
   const mode = productModeFromAsset(asset, unsupported);
@@ -1434,7 +1479,10 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     && !orchestrationPending
     && !orchestrationFailed
   );
-  const status = asset.content_type === "video_project"
+  const status = readyVideoOriginal
+    ? isRecord(metadata.scene_motion_preview) && metadata.scene_motion_preview.candidate_only === true
+      ? "动作预览 · 待确认" : "视频片段 · 可播放"
+    : asset.content_type === "video_project"
     ? productStatusLabel(lifecycle?.status) ?? "生成中"
     : (productStatusLabel(lifecycle?.status) ?? (orchestrationFailed
       ? "生成失败 · 可重试"
@@ -1465,7 +1513,9 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
   const currentProjectDurationSeconds = numberOrUndefined(videoProject?.duration_seconds)
     ?? timelineDurationSeconds
     ?? numberOrUndefined(videoProjectMetadata?.duration)
-    ?? numberOrUndefined(rawVideoPlan?.duration_seconds);
+    ?? numberOrUndefined(rawVideoPlan?.duration_seconds)
+    ?? (readyVideoOriginal && isRecord(metadata.image_to_video)
+      ? numberOrUndefined(metadata.image_to_video.duration_seconds) : undefined);
   const duration = mode === "image" && Array.isArray(metadata.generated_images) && metadata.generated_images.length
     ? `${metadata.generated_images.length} 张`
     : currentProjectDurationSeconds
@@ -1479,7 +1529,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含口播、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
+      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含旁白、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
       status: productStatusLabel(lifecycle?.status) ?? (mp4Artifact ? "完成" : videoProject ? "完成" : unsupported ? "生成中" : directorDraft ? "完成" : "完成")
     },
     {

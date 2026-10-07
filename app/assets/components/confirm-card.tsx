@@ -518,7 +518,7 @@ export default function ConfirmCard({
         </details>
       ) : null}
       {cleanupItems.length ? (
-        <div className="shadcn-prototype-confirm-cleanup" aria-label="口播清理项目">
+        <div className="shadcn-prototype-confirm-cleanup" aria-label="原视频精简项目">
           <button
             type="button"
             className="shadcn-prototype-confirm-cleanup-toggle"
@@ -581,7 +581,7 @@ export default function ConfirmCard({
       {directionOptions.length ? (
         <div
           className="shadcn-prototype-confirm-directions"
-          {...(!isSingleWinnerRecommendation ? { role: "radiogroup", "aria-label": "口播导演方向" } : {})}
+          {...(!isSingleWinnerRecommendation ? { role: "radiogroup", "aria-label": "视频制作方向" } : {})}
         >
           <span className="shadcn-prototype-confirm-ratio-label">导演方向与动态样片</span>
           <div className="shadcn-prototype-confirm-direction-options">

@@ -418,7 +418,7 @@ describe("ConfirmCard pending state", () => {
     expect(screen.getByText("人物建立信任，证据短时接管")).toBeTruthy();
     expect(screen.getByText("视觉语言：证据说明 · 动感动效")).toBeTruthy();
     expect(screen.getAllByLabelText("方向动态样片")).toHaveLength(1);
-    expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "视频制作方向" })).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "横屏 16:9" }));
     fireEvent.click(screen.getByRole("radio", { name: "中英双语" }));
     fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "43" } });
