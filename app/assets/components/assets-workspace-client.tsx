@@ -1404,6 +1404,7 @@ export default function AssetsWorkspaceClient({
           && productCanLeaveSilentlyRef.current?.() !== false
           && currentRoute.searchParams.get("product") === (initialProductId ?? null)
           && shouldRestoreInitialConversationFocus({
+          activeView,
           pendingConversationId: pendingConversationNavigationRef.current,
           routeConversationId: currentRouteConversationId,
           initialConversationId,
@@ -1435,7 +1436,7 @@ export default function AssetsWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [accountEmail, backendConfigured, initialConversationId, initialProductId, token, conversationLoadRevision]);
+  }, [accountEmail, activeView, backendConfigured, initialConversationId, initialProductId, token, conversationLoadRevision]);
 
   useEffect(() => {
     const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;

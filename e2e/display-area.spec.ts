@@ -2323,6 +2323,8 @@ test("real archive API keeps the project source in read-only history", async ({ 
   ));
   await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
   expect((await deleted).status()).toBe(204);
+  await expect(page.getByLabel("图片库列表")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Content generation conversation" })).toBeHidden();
   await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
   await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
   await resourceEntry.click();

@@ -29,6 +29,7 @@ describe("new conversation routing", () => {
 
   it("does not let a delayed summaries refresh replace an intentional new conversation", () => {
     expect(shouldRestoreInitialConversationFocus({
+      activeView: "conversation",
       pendingConversationId: null,
       routeConversationId: "historical-1",
       initialConversationId: "historical-1",
@@ -36,12 +37,21 @@ describe("new conversation routing", () => {
       summaryIds: ["historical-1"],
     })).toBe(false);
     expect(shouldRestoreInitialConversationFocus({
+      activeView: "conversation",
       pendingConversationId: null,
       routeConversationId: "historical-1",
       initialConversationId: "historical-1",
       selectedConversationId: "historical-1",
       summaryIds: ["historical-1"],
     })).toBe(true);
+    expect(shouldRestoreInitialConversationFocus({
+      activeView: "image",
+      pendingConversationId: null,
+      routeConversationId: "historical-1",
+      initialConversationId: "historical-1",
+      selectedConversationId: "historical-1",
+      summaryIds: ["historical-1"],
+    })).toBe(false);
   });
 
   it("reloads legacy conversation rows unless their detail flag is explicitly true", () => {
