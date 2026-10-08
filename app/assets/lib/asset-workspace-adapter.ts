@@ -338,6 +338,8 @@ type RawProjectRequirementSnapshot = {
   version: number;
   parent_snapshot_id: string | null;
   status: ProjectRequirementSnapshot["status"];
+  latest_analysis_version?: number | null;
+  latest_analysis_status?: ProjectRequirementSnapshot["status"] | null;
   trigger_kind: string;
   conversation_text: string;
   conversation_media?: RequirementConversationMediaResponse[];
@@ -446,6 +448,8 @@ function mapProjectRequirementSnapshot(raw: RawProjectRequirementSnapshot): Proj
     version: raw.version,
     parentSnapshotId: raw.parent_snapshot_id,
     status: raw.status,
+    latestAnalysisVersion: raw.latest_analysis_version ?? null,
+    latestAnalysisStatus: raw.latest_analysis_status ?? null,
     triggerKind: raw.trigger_kind,
     conversationText: raw.conversation_text,
     conversationMedia: requirementConversationMediaFromValue(raw.conversation_media),
@@ -499,6 +503,14 @@ function mapProjectRequirementSnapshot(raw: RawProjectRequirementSnapshot): Proj
     createdAt: raw.created_at,
     completedAt: raw.completed_at,
   };
+}
+
+export function isCurrentRequirementAnalysis(
+  snapshot: Pick<ProjectRequirementSnapshot, "version" | "status" | "latestAnalysisVersion" | "latestAnalysisStatus">,
+): boolean {
+  return snapshot.latestAnalysisVersion === snapshot.version
+    && snapshot.latestAnalysisStatus === snapshot.status
+    && (snapshot.status === "ready" || snapshot.status === "needs_confirmation");
 }
 
 export function buildConversationMessagePayload({
@@ -832,6 +844,8 @@ export type AssetWorkspaceAdapter = {
   loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   loadCurrentRequirements(token: string, conversationId: string): Promise<ProjectRequirementSnapshot | null>;
+  loadLatestRequirementVersion(token: string, conversationId: string): Promise<ProjectRequirementSnapshot | null>;
+  retryRequirements(token: string, conversationId: string, failedSnapshotId: string): Promise<ProjectRequirementSnapshot>;
   analyzeRequirements(
     token: string,
     conversationId: string,
@@ -1560,6 +1574,25 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         if (apiErrorStatus(error) === 404) return null;
         throw error;
       }
+    },
+    async loadLatestRequirementVersion(token, conversationId) {
+      const snapshots = await api<RawProjectRequirementSnapshot[]>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/requirements/versions`,
+        token,
+      );
+      return snapshots.length > 0 ? mapProjectRequirementSnapshot(snapshots[0]) : null;
+    },
+    async retryRequirements(token, conversationId, failedSnapshotId) {
+      const snapshot = await api<RawProjectRequirementSnapshot>(
+        `/assets/conversations/${encodeURIComponent(conversationId)}/requirements/analyze`,
+        token,
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": `requirement-retry-${failedSnapshotId}` },
+          body: JSON.stringify({ trigger_kind: "manual_refresh", retry_failed_snapshot_id: failedSnapshotId }),
+        },
+      );
+      return mapProjectRequirementSnapshot(snapshot);
     },
     async analyzeRequirements(token, conversationId, triggerKind, idempotencyKey) {
       const snapshot = await api<RawProjectRequirementSnapshot>(
