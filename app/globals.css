@@ -9701,6 +9701,11 @@ label {
   white-space: nowrap;
 }
 
+.shadcn-prototype-segment-visual-change {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* AssetPicker: material selector modal (spec §5.5 / demo final/workspace-video.html).
    AI-recommended section hidden when no suggestions are available (§12 降级). */
 .shadcn-prototype-picker-mask {

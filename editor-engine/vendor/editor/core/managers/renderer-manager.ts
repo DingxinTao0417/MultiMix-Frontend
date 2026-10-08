@@ -4,7 +4,7 @@ import type { ExportOptions, ExportResult } from "@editor/lib/export";
 import { CanvasRenderer } from "@editor/services/renderer/canvas-renderer";
 import { SceneExporter } from "@editor/services/renderer/scene-exporter";
 import { buildScene } from "@editor/services/renderer/scene-builder";
-import { createTimelineAudioBuffer } from "@editor/lib/media/audio";
+import { createSilentTimelineAudioBuffer, createTimelineAudioBuffer, hasAudibleTimelineElements } from "@editor/lib/media/audio";
 import { formatTimeCode } from "@editor/lib/time";
 import { downloadBlob } from "@editor/utils/browser";
 
@@ -194,14 +194,11 @@ export class RendererManager {
 
 			const exportFps = fps || activeProject.settings.fps;
 			const canvasSize = activeProject.settings.canvasSize;
-
 			let audioBuffer: AudioBuffer | null = null;
 			if (includeAudio) {
-				audioBuffer = await createTimelineAudioBuffer({
-					tracks,
-					mediaAssets,
-					duration,
-				});
+				audioBuffer = hasAudibleTimelineElements(tracks)
+					? await createTimelineAudioBuffer({ tracks, mediaAssets, duration })
+					: createSilentTimelineAudioBuffer({ duration });
 			}
 
 			const scene = buildScene({

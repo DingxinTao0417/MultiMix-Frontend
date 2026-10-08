@@ -23,6 +23,29 @@ const MAX_AUDIO_CHANNELS = 2;
 const EXPORT_SAMPLE_RATE = 44100;
 const COARSE_SAMPLE_COUNT = 2048;
 
+export function hasAudibleTimelineElements(tracks: TimelineTrack[]): boolean {
+	return tracks.some((track) =>
+		canTracktHaveAudio(track) &&
+		!track.muted &&
+		track.elements.some((element) =>
+			canElementHaveAudio(element) && element.duration > 0 && element.muted !== true,
+		),
+	);
+}
+
+export function createSilentTimelineAudioBuffer({
+	duration,
+	sampleRate = EXPORT_SAMPLE_RATE,
+	audioContext,
+}: {
+	duration: number;
+	sampleRate?: number;
+	audioContext?: AudioContext;
+}): AudioBuffer {
+	const context = audioContext ?? createAudioContext({ sampleRate });
+	return context.createBuffer(2, Math.ceil(duration * sampleRate), sampleRate);
+}
+
 export interface CollectedAudioElement {
 	timelineElement: AudioCapableElement;
 	buffer: AudioBuffer;

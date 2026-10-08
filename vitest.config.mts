@@ -24,6 +24,7 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/.worktrees/**',
+      '**/.tmp/**',
       '**/test-results/**',
       '**/scripts/__tests__/**',
       '**/e2e/**',

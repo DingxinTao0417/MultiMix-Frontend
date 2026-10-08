@@ -1102,7 +1102,6 @@ function layoutPresenterEventText(
   const measure = options.measureText
     ?? browserTextWidth(options.fontFamily ?? "sans-serif");
   const lineHeight = options.lineHeight ?? 1.3;
-  let fallback: SupportCardLayout | null = null;
   for (let fontPx = Math.floor(preferred); fontPx >= Math.ceil(minimum); fontPx -= 1) {
     const visualLines = sourceLines.flatMap((line) =>
       wrapPresenterEventLine(line, fontPx, options.availableWidth, measure)
@@ -1112,12 +1111,11 @@ function layoutPresenterEventText(
       lines: visualLines.length,
       fontPx,
     };
-    fallback = candidate;
     if (visualLines.length * fontPx * lineHeight <= options.availableHeight) {
       return candidate;
     }
   }
-  return fallback ?? { text: sourceLines.join("\n"), lines: sourceLines.length, fontPx: minimum };
+  throw new Error("Presenter text does not fit its safe region at a readable font size.");
 }
 
 function presenterEventTextElement(
@@ -1155,7 +1153,7 @@ function presenterEventTextElement(
     startTime: element.startTime,
     trimStart: element.trimStart ?? 0,
     trimEnd: element.trimEnd ?? 0,
-    fontSize: Math.max(2, (layout.fontPx * 90) / settings.height),
+    fontSize: (layout.fontPx * 90) / settings.height,
     fontFamily: subtitleStyle.fontFamily,
     color: nativeRender?.foreground_color ?? "#ffffff",
     background: {
@@ -1176,7 +1174,7 @@ function presenterEventTextElement(
       paddingX,
       paddingY,
     },
-    textAlign: "left",
+    textAlign: "center",
     fontWeight: "bold",
     fontStyle: "normal",
     textDecoration: "none",

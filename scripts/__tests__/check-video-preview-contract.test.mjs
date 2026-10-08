@@ -50,6 +50,18 @@ test("accepts the approved video preview shell contract", () => {
   assert.doesNotThrow(() => assertVideoPreviewContract(approved));
 });
 
+for (const override of ['font-family: Aptos;', 'line-height: normal;']) {
+  test(`rejects control typography that diverges from the prototype: ${override}`, () => {
+    assert.throws(
+      () => assertVideoPreviewContract({
+        ...approved,
+        css: `${approved.css}\n.shadcn-prototype-project-preview-controls { ${override} }`,
+      }),
+      /inherit the prototype typography/,
+    );
+  });
+}
+
 test("rejects a frameless black player even when other contract files exist", () => {
   assert.throws(
     () => assertVideoPreviewContract({

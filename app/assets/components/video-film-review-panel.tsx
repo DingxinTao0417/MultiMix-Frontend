@@ -100,7 +100,7 @@ export default function VideoFilmReviewPanel({ token, assetId, revisionKey, disa
       {job && repairChoice === issue.id ? <div className="mt-2">
         <p>选择修改方式，在编辑界面确认应用；之后重新导出并审阅。</p>
         <div className="flex flex-wrap gap-2 mt-2">
-          {([['material', '更换画面'], ['voice', '修改口播'], ['timeline', '打开剪辑']] as const).map(([action, label]) =>
+          {([['material', '更换画面'], ['voice', '修改旁白'], ['timeline', '打开剪辑']] as const).map(([action, label]) =>
             <button key={action} type="button" disabled={busy || !current}
               onClick={() => void revise(job, issue, action)}>{label}</button>)}
         </div>

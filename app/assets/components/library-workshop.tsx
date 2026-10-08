@@ -1554,7 +1554,7 @@ function LibraryWorkshop({
                   </section>
                 ) : null}
                 <section className="shadcn-prototype-library-content">
-                  <h3>{isDigitalHuman(selectedRow) ? "口播文稿" : selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
+                  <h3>{isDigitalHuman(selectedRow) ? "编导稿" : selectedRow.detailLabel ?? DETAIL_TITLES[selectedRow.kind]}</h3>
                   {isDigitalHuman(selectedRow) ? (
                     <div className="shadcn-prototype-library-prose">
                       {selectedBody.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}
@@ -1747,7 +1747,7 @@ function LibraryWorkshop({
                         <button type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleReparse(selectedRow); }}><FileText size={14} aria-hidden="true" />重新解析素材</button>
                       ) : null}
                       <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleDownload(selectedRow, "video"); }}><Download size={14} aria-hidden="true" />下载</button>
-                      {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出口播稿</button> : null}
+                      {isDigitalHuman(selectedRow) ? <button type="button" disabled={!selectedRow.assetId} onClick={() => { if (selectedRow) void handleExport(selectedRow, "script"); }}><FileText size={14} aria-hidden="true" />导出编导稿</button> : null}
                       <button className="danger" type="button" disabled={!selectedRow.assetId || !writeCapabilities.canPersist} onClick={() => { if (selectedRow) void handleDelete(selectedRow); }}><Trash2 size={14} aria-hidden="true" />删除</button>
                     </div>
                   </details>

@@ -83,6 +83,60 @@ describe("video preview player", () => {
     expect(play).toHaveBeenCalledOnce();
   });
 
+  it("recovers already loaded media without waiting for another browser load event", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(4);
+    vi.spyOn(HTMLMediaElement.prototype, "duration", "get").mockReturnValue(30);
+    vi.spyOn(HTMLVideoElement.prototype, "videoWidth", "get").mockReturnValue(1920);
+    vi.spyOn(HTMLVideoElement.prototype, "videoHeight", "get").mockReturnValue(1080);
+    const { container } = render(<VideoPreviewPlayer src="/cached.mp4" label="成片播放器"
+      ratioClassName="" initialTime={12} />);
+
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled();
+    expect(screen.getByRole("slider")).toBeEnabled();
+    expect(screen.getByRole("slider")).toHaveAttribute("max", "30");
+    expect(screen.getByText("00:30")).toBeInTheDocument();
+    expect(screen.getByText("00:12")).toBeInTheDocument();
+    expect(container.querySelector("video")!.currentTime).toBe(12);
+    expect(screen.getByRole("group")).toHaveClass("ratio-landscape");
+  });
+
+  it("reads cached metadata and buffering without prematurely enabling playback", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockReturnValue(1);
+    vi.spyOn(HTMLMediaElement.prototype, "duration", "get").mockReturnValue(30);
+    vi.spyOn(HTMLMediaElement.prototype, "buffered", "get")
+      .mockReturnValue({ length: 1, start: () => 0, end: () => 12 });
+    render(<VideoPreviewPlayer src="/metadata.mp4" label="成片播放器" ratioClassName="ratio-landscape" />);
+
+    expect(screen.getByText("00:30")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("已缓冲 40%");
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeDisabled();
+  });
+
+  it("does not carry cached readiness or duration into a different source", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "readyState", "get").mockImplementation(function (this: HTMLMediaElement) {
+      return this.getAttribute("src") === "/cached.mp4" ? 4 : 0;
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "duration", "get").mockImplementation(function (this: HTMLMediaElement) {
+      return this.getAttribute("src") === "/cached.mp4" ? 30 : NaN;
+    });
+    const { rerender } = render(<VideoPreviewPlayer src="/cached.mp4" label="成片播放器" ratioClassName="ratio-landscape" />);
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeEnabled();
+
+    rerender(<VideoPreviewPlayer src="/new.mp4" label="成片播放器" ratioClassName="ratio-landscape" />);
+    expect(screen.getByRole("button", { name: "成片播放器：播放视频" })).toBeDisabled();
+    expect(screen.getByRole("slider")).toHaveAttribute("max", "0");
+    expect(screen.queryByText("00:30")).toBeNull();
+  });
+
+  it("shows an existing media error even if its browser event preceded hydration", () => {
+    render(<VideoPreviewPlayer src="/broken.mp4" label="成片播放器" ratioClassName="ratio-landscape"
+      ref={(node) => { if (node) Object.defineProperty(node, "error", { value: { code: 4 } }); }} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("视频暂时无法加载");
+    expect(screen.getByRole("button", { name: "成片播放器：重新加载视频" })).toBeInTheDocument();
+  });
+
   it("preloads the first playable buffer and keeps controls usable through later buffering", () => {
     const { container } = render(
       <VideoPreviewPlayer src="/demo.mp4" label="成片播放器" ratioClassName="ratio-landscape" />,
@@ -206,5 +260,30 @@ describe("video preview player", () => {
 
     expect(screen.getByRole("button", { name: "成片播放器：暂停视频" })).toBeInTheDocument();
     expect(screen.queryByText("浏览器阻止了播放", { exact: false })).not.toBeInTheDocument();
+  });
+});
+
+
+describe("unknown video geometry", () => {
+  it.each([[1280, 720, "ratio-landscape"], [720, 1280, "ratio-portrait"], [720, 720, "ratio-landscape"]])(
+    "uses actual %s x %s pixels when no ratio was supplied", (width, height, ratioClass) => {
+      const { container } = render(<VideoPreviewPlayer src="/clip.mp4" label="片段" ratioClassName="" />);
+      const video = container.querySelector("video")!;
+      Object.defineProperties(video, { videoWidth: { value: width }, videoHeight: { value: height }, duration: { value: 5 } });
+      fireEvent.loadedMetadata(video);
+      expect(screen.getByRole("group", { name: "片段" })).toHaveClass(ratioClass);
+      expect(screen.getByRole("button", { name: "片段：播放视频" })).toHaveStyle({ aspectRatio: `${width} / ${height}` });
+    });
+  it("keeps a supplied ratio and resets unknown geometry on source change", () => {
+    const { container, rerender } = render(<VideoPreviewPlayer src="/clip.mp4" label="片段" ratioClassName="" />);
+    const video = container.querySelector("video")!;
+    Object.defineProperties(video, { videoWidth: { value: 1280 }, videoHeight: { value: 720 }, duration: { value: 5 } });
+    fireEvent.loadedMetadata(video);
+    expect(screen.getByRole("group", { name: "片段" })).toHaveClass("ratio-landscape");
+    rerender(<VideoPreviewPlayer src="/portrait.mp4" label="片段" ratioClassName="ratio-portrait" />);
+    expect(screen.getByRole("group", { name: "片段" })).toHaveClass("ratio-portrait");
+    expect(screen.getByRole("button", { name: "片段：播放视频" }).style.aspectRatio).toBe("");
+    rerender(<VideoPreviewPlayer src="/new.mp4" label="片段" ratioClassName="" />);
+    expect(screen.getByRole("group", { name: "片段" })).not.toHaveClass("ratio-landscape");
   });
 });

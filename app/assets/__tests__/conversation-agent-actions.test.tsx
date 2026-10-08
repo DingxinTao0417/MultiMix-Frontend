@@ -898,7 +898,7 @@ describe("Conversation Agent actions", () => {
       />,
     );
 
-    expect(screen.queryByRole("radiogroup", { name: "口播导演方向" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "视频制作方向" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "换个方向" }));
 
     await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());

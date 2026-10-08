@@ -2,10 +2,25 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import ProductPreview from "../components/product-preview";
+import ProductPreview, { playableVideoUrl } from "../components/product-preview";
 import { displayProducts } from "./fixtures/display-products";
 
 afterEach(cleanup);
+
+it("plays a persisted single-scene candidate using the shared player instead of a director placeholder", () => {
+  const product = { ...displayProducts["case-01-director-draft"], mode: "video" as const,
+    contentType: "generated_image_to_video_scene", videoProjectReady: false,
+    productStatus: "completed" as const, ratio: "16:9", metadata: {
+      source_video_artifact: { ref: "local://scene-motion.mp4" },
+      scene_motion_preview: { candidate_only: true },
+    } };
+  expect(playableVideoUrl(product)).toContain("scene-motion.mp4");
+  render(<ProductPreview product={product} />);
+  expect(screen.getByRole("group", { name: "视频片段播放器" })).toBeInTheDocument();
+  expect(screen.getByLabelText("视频片段预览")).toHaveClass("shadcn-prototype-video-browse");
+  expect(screen.queryByRole("region", { name: "编导脚本预览" })).not.toBeInTheDocument();
+  expect(screen.getByText(/独立动作预览/)).toBeInTheDocument();
+});
 
 function draft(status?: string, candidate?: Record<string, unknown>) {
   const base = displayProducts["case-01-director-draft"];

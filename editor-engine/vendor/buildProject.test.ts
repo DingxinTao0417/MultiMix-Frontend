@@ -5,6 +5,10 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@editor/lib/project/types', () => ({}));
 vi.mock('@editor/lib/timeline/types', () => ({}));
 vi.mock('@editor/lib/media/types', () => ({}));
+vi.mock('@editor/lib/animation', async () => {
+  const { resolveNumberAtTime } = await import('./editor/lib/animation/resolve');
+  return { resolveNumberAtTime };
+});
 
 // Mock ./api — mediaUrl is a value import used at runtime.
 vi.mock('./api', () => ({
@@ -27,6 +31,8 @@ import {
   supportCardPanelGeometry,
 } from './buildProject';
 import type { BackendProject } from './buildProject';
+import { measureTextElement } from './editor/lib/text/measure-element';
+import type { TextElement } from './editor/lib/timeline/types';
 
 // ---------------------------------------------------------------------------
 // Test data helpers
@@ -1547,6 +1553,91 @@ describe('buildProject - overlay/hasAlpha logic', () => {
 });
 
 describe('buildProject - presenter visual events', () => {
+  const layoutCases = [
+    { name: 'portrait', width: 1080, height: 1920 },
+    { name: 'landscape', width: 1920, height: 1080 },
+    { name: 'square', width: 1080, height: 1080 },
+  ].flatMap((canvas) => ['left', 'right'].flatMap((side) =>
+    ['presenter_emphasis', 'presenter_graphic'].flatMap((textRole) => [
+      'my name is Daniel. I AM explaining an example of face swap using AI.',
+      '介绍人物与真实内容动作，文字需要完整保留并且正确换行。',
+    ].map((content) => ({ ...canvas, side, textRole, content }))),
+  ));
+
+  function textMeasurementContext() {
+    return {
+      font: '',
+      textBaseline: 'middle',
+      save() {},
+      restore() {},
+      measureText(text: string) {
+        const fontPx = Number(this.font.match(/([\d.]+)px/u)?.[1] ?? 0);
+        return {
+          width: Array.from(text).reduce((sum, character) =>
+            sum + fontPx * (/[^\u0000-\u00ff]/u.test(character) ? 1 : 0.62), 0),
+          actualBoundingBoxAscent: fontPx * 0.8,
+          actualBoundingBoxDescent: fontPx * 0.2,
+        } as TextMetrics;
+      },
+    } as unknown as CanvasRenderingContext2D;
+  }
+
+  it.each(layoutCases)('keeps rendered $name $side $textRole text and background inside its safe region: $content', (scenario) => {
+    const context = textMeasurementContext();
+    vi.stubGlobal('OffscreenCanvas', class {
+      getContext() { return context; }
+    });
+    try {
+      const region = {
+        x: scenario.side === 'left' ? 0.02 : 0.75,
+        y: 0.22, width: 0.23, height: 0.35,
+      };
+      const backend = makeProject({
+        settings: { fps: 30, width: scenario.width, height: scenario.height },
+        tracks: [{ id: 'text', name: '重点', type: 'text', elements: [{
+          id: 'emphasis', type: 'text', startTime: 3.44, duration: 4.55,
+          content: scenario.content,
+          textRole: scenario.textRole as 'presenter_emphasis' | 'presenter_graphic',
+          safeRegion: region, enter: 'fade_up', exit: 'fade_out',
+        }] }],
+      });
+      const element = buildProject(backend).project.scenes[0].tracks[0].elements[0] as TextElement;
+      const measured = measureTextElement({ element, canvasHeight: scenario.height, localTime: 1, ctx: context });
+      const left = scenario.width / 2 + element.transform.position.x + measured.visualRect.left;
+      const top = scenario.height / 2 + element.transform.position.y + measured.visualRect.top;
+      expect(left).toBeGreaterThanOrEqual(scenario.width * region.x - 1);
+      expect(left + measured.visualRect.width).toBeLessThanOrEqual(scenario.width * (region.x + region.width) + 1);
+      expect(top).toBeGreaterThanOrEqual(scenario.height * region.y - 1);
+      expect(top + measured.visualRect.height).toBeLessThanOrEqual(scenario.height * (region.y + region.height) + 1);
+      expect(measured.scaledFontSize).toBeLessThanOrEqual(scenario.textRole === 'presenter_graphic' ? 30 : 32);
+      expect(element.content.replaceAll('\n', '').replaceAll(' ', ''))
+        .toBe(scenario.content.replaceAll(' ', ''));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('reports an impossible readable text layout without truncating content or moving the safe region', () => {
+    const context = textMeasurementContext();
+    vi.stubGlobal('OffscreenCanvas', class {
+      getContext() { return context; }
+    });
+    try {
+      const backend = makeProject({
+        settings: { fps: 30, width: 1080, height: 1920 },
+        tracks: [{ id: 'text', name: '重点', type: 'text', elements: [{
+          id: 'too-long', type: 'text', startTime: 0, duration: 4,
+          content: 'This complete statement must not be truncated. '.repeat(20),
+          textRole: 'presenter_emphasis',
+          safeRegion: { x: 0.75, y: 0.22, width: 0.23, height: 0.04 },
+        }] }],
+      });
+      expect(() => buildProject(backend)).toThrow(/text.*safe region/i);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('places presenter text and graphic cards inside their authored safe regions with subtle entrance and exit motion', () => {
     const backend = makeProject({
       settings: { fps: 30, width: 960, height: 540 },

@@ -29,7 +29,7 @@ describe("library detail visual hierarchy", () => {
   });
 
   it("preserves every existing detail capability", () => {
-    for (const action of ["用于创作", "加入项目…", "重新解析素材", "下载", "查看来源", "删除", "打开剪辑器", "导出口播稿"]) {
+    for (const action of ["用于创作", "加入项目…", "重新解析素材", "下载", "查看来源", "删除", "打开剪辑器", "导出编导稿"]) {
       expect(source).toContain(action);
     }
   });

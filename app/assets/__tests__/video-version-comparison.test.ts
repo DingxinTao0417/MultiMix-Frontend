@@ -105,10 +105,10 @@ describe("video version segment comparison", () => {
     );
 
     expect(videoSegmentChangeSummary(change)).toContain("5→3 秒");
-    expect(videoSegmentChangeSummary(change)).toContain("口播已调整");
+    expect(videoSegmentChangeSummary(change)).toContain("旁白已调整");
     expect(videoSegmentChangeDetails(change)).toEqual(expect.arrayContaining([
       { label: "时长", before: "5 秒", after: "3 秒" },
-      { label: "口播", before: "原口播", after: "新口播" },
+      { label: "旁白", before: "原口播", after: "新口播" },
       { label: "素材名称", before: "客厅近景", after: "完工全景" },
     ]));
   });
@@ -119,7 +119,7 @@ describe("video version segment comparison", () => {
       [segment({ line: "" })],
     );
     expect(videoSegmentChangeDetails(clearedLine)).toContainEqual({
-      label: "口播", before: "原口播", after: "已清除",
+      label: "旁白", before: "原口播", after: "已清除",
     });
 
     const unknownLine = compareVideoVersionSegments(

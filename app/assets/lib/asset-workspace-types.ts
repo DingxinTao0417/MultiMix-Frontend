@@ -94,6 +94,17 @@ export type AssetProductSegment = {
   graphicComponentLabel?: string;
   backgroundTreatmentLabel?: "已验证素材虚化背景";
   publicReplacementNote?: string;
+  // Display projection of the server's scene_visual_change:v1 report.
+  // A prepared video is not proof that the requested action was performed.
+  visualChange?: {
+    goalLabel: string;
+    startState: string;
+    endState: string;
+    actions: string[];
+    methodLabel: string;
+    statusLabel: string;
+    notice?: string;
+  };
   isPresenter?: boolean;
   presenterEvents?: AssetPresenterVisualEvent[];
   presenterMaterialGap?: string;

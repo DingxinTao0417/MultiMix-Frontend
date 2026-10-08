@@ -124,6 +124,21 @@ export default function SegmentCards({
                     选择理由：{segment.selectionReason}
                   </span>
                 ) : null}
+                {segment.visualChange ? (
+                  <>
+                    <span className="shadcn-prototype-segment-line2 shadcn-prototype-segment-visual-change">
+                      希望看到：{segment.visualChange.goalLabel} · {segment.visualChange.actions.length
+                        ? segment.visualChange.actions.join("；")
+                        : segment.visualChange.endState}
+                    </span>
+                    <span className="shadcn-prototype-segment-line2 shadcn-prototype-segment-visual-change">
+                      当前方式：{segment.visualChange.methodLabel} · {segment.visualChange.statusLabel}
+                    </span>
+                    {segment.visualChange.notice ? (
+                      <span className="shadcn-prototype-segment-line2 shadcn-prototype-segment-visual-change">{segment.visualChange.notice}</span>
+                    ) : null}
+                  </>
+                ) : null}
                 {segment.backgroundTreatmentLabel ? (
                   <span className="shadcn-prototype-segment-line2">
                     背景：{segment.backgroundTreatmentLabel}

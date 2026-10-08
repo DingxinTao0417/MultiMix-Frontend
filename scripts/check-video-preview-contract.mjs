@@ -58,6 +58,11 @@ export function assertVideoPreviewContract({
     design.includes("video-preview-shell-contract:v1"),
     "the frontend design must carry video-preview-shell-contract:v1",
   );
+  const controlRules = [...css.matchAll(/[^{}]*\.shadcn-prototype-project-preview-controls\s*\{([^}]*)\}/g)];
+  requireContract(
+    controlRules.every(([, body]) => !/(?:^|;)\s*(?:font(?:-family)?|line-height)\s*:/.test(body)),
+    "the player controls must inherit the prototype typography",
+  );
   requireContract(
     /用户在当次任务中明确批准/.test(design),
     "the design must require explicit user approval for contract changes",
