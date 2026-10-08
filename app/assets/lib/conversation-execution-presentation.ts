@@ -28,6 +28,10 @@ export function optimisticImageGenerationSteps(): AgentRunStep[] {
   ];
 }
 
+export function optimisticDirectorDraftSteps(): AgentRunStep[] {
+  return [{ key: "prepare_director_draft", label: "整理资料并准备编导稿", status: "run" }];
+}
+
 export function confirmationMessagePresentation(
   role: "user" | "assistant",
   metadata: Record<string, unknown> | undefined,

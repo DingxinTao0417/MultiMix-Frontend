@@ -42,7 +42,7 @@ vi.mock("../BgmPanel", () => ({ default: ({ onChange }: {
 }) => {
   mocks.bgmChange = onChange;
   return <button onClick={() => void onChange(async () => ({
-    project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: "revision-bgm",
+    project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: testRevision("bgm"),
   }))}>测试更新配乐</button>;
 } }));
 vi.mock("@/editor-engine/vendor/api", () => ({ API_BASE: "http://test.invalid" }));
@@ -62,6 +62,10 @@ vi.mock("../video-export-client", () => ({
   clearLocalExportMarker: vi.fn(), findLocalExportMarker: vi.fn(() => null),
   writeLocalExportMarker: vi.fn(),
 }));
+
+function testRevision(index: number | "bgm") {
+  return index === "bgm" ? "b".repeat(64) : index.toString(16).padStart(64, "0");
+}
 
 const running: ExportFinalizeJob = {
   id: "brand-job", assetId: 42, status: "running", stage: "verifying",
@@ -85,7 +89,7 @@ beforeEach(() => {
     blockers: [{ code: "test-blocker", message: "当前编辑内容需要检查" }] });
   vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:verified"), revokeObjectURL: vi.fn() });
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({ status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockImplementation(async () => new Response(JSON.stringify({ status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), {
     headers: { "Content-Type": "application/json" },
   })));
 });
@@ -97,6 +101,24 @@ function chooseExport(label: "原始成片" | "品牌展示版") {
 }
 
 describe("embedded export live content guard", () => {
+  it("announces readiness after the current message bridge and save coordinator are installed", async () => {
+    const parent = { postMessage: vi.fn((payload: { type?: string }) => {
+      if (payload.type === "multimix-editor-ready") {
+        expect(mocks.persist).toBeDefined();
+        window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+          data: { source: "multimix-workspace", type: "multimix-editor-export", requestId: "first-ready" } }));
+      }
+    }) };
+    vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    mocks.flush.mockResolvedValue({ status: "error", message: "保存失败，请先重试" });
+    render(<EditorView assetId="42" jobId={null} token="token" embed />);
+    await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: "multimix-editor-export-error", requestId: "first-ready", message: "保存失败，请先重试",
+    }), window.location.origin));
+    expect(mocks.render).not.toHaveBeenCalled();
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
   it("waits for pending music before acknowledging an otherwise clean finish", async () => {
     const parent = { postMessage: vi.fn() };
     vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
@@ -111,7 +133,7 @@ describe("embedded export live content guard", () => {
     await act(async () => { await Promise.resolve(); });
     expect(parent.postMessage.mock.calls.some(([payload]) => payload.type === "multimix-editor-flush-result")).toBe(false);
     await act(async () => {
-      finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: "revision-bgm" });
+      finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: testRevision("bgm") });
       await bgm;
     });
     await waitFor(() => expect(parent.postMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -129,7 +151,7 @@ describe("embedded export live content guard", () => {
     const queuedSave = mocks.persist!();
     if (exit === "unmount") unmount();
     else act(() => window.dispatchEvent(new Event("pagehide")));
-    finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: "revision-bgm" });
+    finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: testRevision("bgm") });
     await expect(bgm).rejects.toMatchObject({ name: "AbortError" });
     await expect(queuedSave).rejects.toMatchObject({ name: "AbortError" });
     expect(mocks.patchBgm).not.toHaveBeenCalled();
@@ -142,7 +164,7 @@ describe("embedded export live content guard", () => {
     expect(mocks.patchBgm).not.toHaveBeenCalled();
     await mocks.persist!();
     const put = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT").at(-1)![1]!;
-    expect(new Headers(put.headers).get("If-Match")).toBe('"revision-0"');
+    expect(new Headers(put.headers).get("If-Match")).toBe(JSON.stringify(testRevision(0)));
   });
   it("queues a save behind BGM and preserves the edit made while its response is pending", async () => {
     render(<EditorView assetId="42" jobId={null} token="token" embed />);
@@ -160,13 +182,13 @@ describe("embedded export live content guard", () => {
     await act(async () => { await Promise.resolve(); });
     expect(vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT")).toHaveLength(prepares);
     await act(async () => {
-      finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: "revision-bgm" });
+      finish({ project: { tracks: [], media: [], metadata: { bgm_choice: { enabled: false } } }, project_fingerprint: testRevision("bgm") });
       await bgm;
     });
     await save;
     expect(mocks.serialize().tracks).toEqual(edited.tracks);
     const put = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === "PUT").at(-1)![1]!;
-    expect(new Headers(put.headers).get("If-Match")).toBe('"revision-bgm"');
+    expect(new Headers(put.headers).get("If-Match")).toBe(JSON.stringify(testRevision("bgm")));
     expect(JSON.parse(String(put.body)).tracks).toEqual(edited.tracks);
   });
   it("serializes export preparation and a newer timeline save with acknowledged revisions", async () => {
@@ -186,9 +208,9 @@ describe("embedded export live content guard", () => {
         const index = saves.length;
         if (index === 1) await first;
         serverProject = JSON.parse(String(init.body));
-        return new Response(JSON.stringify({ status: "saved", project_fingerprint: `revision-${index}` }));
+        return new Response(JSON.stringify({ status: "saved", project_fingerprint: testRevision(index) }));
       }
-      return new Response(JSON.stringify({ status: "completed", project_fingerprint: "revision-0", project: before }));
+      return new Response(JSON.stringify({ status: "completed", project_fingerprint: testRevision(0), project: before }));
     });
     mocks.flush.mockImplementation(async () => { await mocks.persist!(); return { status: "saved" }; });
     render(<EditorView assetId="42" jobId={null} token="token" embed />);
@@ -203,8 +225,8 @@ describe("embedded export live content guard", () => {
     expect(saves).toHaveLength(1);
     await act(async () => { finish(); await first; await nextSave; });
     expect(saves).toHaveLength(2);
-    expect(new Headers(saves[0].headers).get("If-Match")).toBe('"revision-0"');
-    expect(new Headers(saves[1].headers).get("If-Match")).toBe('"revision-1"');
+    expect(new Headers(saves[0].headers).get("If-Match")).toBe(JSON.stringify(testRevision(0)));
+    expect(new Headers(saves[1].headers).get("If-Match")).toBe(JSON.stringify(testRevision(1)));
     expect(serverProject).toEqual(after);
     expect(mocks.render).not.toHaveBeenCalled();
     expect(mocks.upload).not.toHaveBeenCalled();
@@ -220,7 +242,7 @@ describe("embedded export live content guard", () => {
     } }), { status: 412 }));
     await expect(mocks.persist!()).rejects.toThrow("工程已有新的修改");
     await expect(mocks.persist!()).rejects.toThrow("工程已有新的修改");
-    expect(vi.mocked(fetch).mock.calls.slice(-2).every(([, init]) => new Headers(init?.headers).get("If-Match") === '"revision-0"')).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.slice(-2).every(([, init]) => new Headers(init?.headers).get("If-Match") === JSON.stringify(testRevision(0)))).toBe(true);
   });
 
   it("exports from the read-only preview without a filmstrip save coordinator", async () => {
@@ -230,7 +252,7 @@ describe("embedded export live content guard", () => {
     mocks.inspect.mockReturnValue({ ...report, stage: "export_preflight" });
     vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
       ? { ...report, stage: "export_preflight" }
-      : { status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+      : { status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
     mocks.render.mockImplementation(async ({ onProgress }) => {
       onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
       return { success: true, buffer: new ArrayBuffer(3), format: "mp4" };
@@ -267,7 +289,7 @@ describe("embedded export live content guard", () => {
     mocks.inspect.mockReturnValue({ ...report, stage: "export_preflight" });
     vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
       ? { ...report, stage: "export_preflight" }
-      : { status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+      : { status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
     mocks.render.mockImplementation(async ({ onProgress }) => {
       onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
       return { success: true, buffer: new ArrayBuffer(3), format: "mp4" };
@@ -300,7 +322,7 @@ describe("embedded export live content guard", () => {
     mocks.inspect.mockReturnValue({ stage: "export_preflight", status: "pass", blockers: [], warnings: [] });
     vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
       ? { stage: "export_preflight", status: "pass", blockers: [], warnings: [] }
-      : { status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+      : { status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
     let finish!: (result: { success: boolean; buffer: ArrayBuffer }) => void;
     const pending = new Promise<{ success: boolean; buffer: ArrayBuffer }>((resolve) => { finish = resolve; });
     mocks.render.mockImplementation(({ onProgress }) => {
@@ -421,7 +443,7 @@ describe("standalone branded export recovery", () => {
     let finish!: (response: Response) => void;
     const pending = new Promise<Response>((resolve) => { finish = resolve; });
     vi.mocked(fetch).mockImplementation(async (input) => String(input).includes("ref=old.mp4") ? pending
-      : new Response(JSON.stringify({ status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+      : new Response(JSON.stringify({ status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
     render(<EditorView assetId="42" jobId={null} token="token" />);
     await screen.findByRole("button", { name: "导出视频" });
     if (label === "品牌展示版") chooseExport(label);
@@ -470,7 +492,7 @@ describe("standalone branded export recovery", () => {
     mocks.inspect.mockReturnValue({ stage: "export_preflight", status: "pass", blockers: [], warnings: [] });
     vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
       ? { stage: "export_preflight", status: "pass", blockers: [], warnings: [] }
-      : { status: "completed", project_fingerprint: "revision-0", project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
+      : { status: "completed", project_fingerprint: testRevision(0), project: { tracks: [] } }), { headers: { "Content-Type": "application/json" } }));
     let finish!: (result: {success: boolean; buffer: ArrayBuffer}) => void;
     const pending = new Promise<{success: boolean; buffer: ArrayBuffer}>((resolve) => { finish = resolve; });
     mocks.render.mockReturnValue(pending);
@@ -496,7 +518,7 @@ describe("standalone branded export recovery", () => {
     const report = { stage: "export_file", status: "pass", blockers: [], warnings: [] };
     mocks.inspect.mockReturnValue({ ...report, stage: "export_preflight" });
     vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).includes("/quality?")
-      ? { ...report, stage: "export_preflight" } : { status: "completed", project_fingerprint: "revision-0", project: edited }), { headers: { "Content-Type": "application/json" } }));
+      ? { ...report, stage: "export_preflight" } : { status: "completed", project_fingerprint: testRevision(0), project: edited }), { headers: { "Content-Type": "application/json" } }));
     mocks.render.mockImplementation(async ({ onProgress }) => {
       onProgress({ progress: 1, completedFrames: 1, totalFrames: 1 });
       return { success: true, buffer: new ArrayBuffer(3), format: "mp4" };

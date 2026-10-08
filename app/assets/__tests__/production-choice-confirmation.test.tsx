@@ -29,6 +29,24 @@ describe("production method in the existing video confirmation", () => {
     expect(onConfirm).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ productionChoiceId: "graphics" }));
   });
 
+  it("shows unknown wait and cost while preventing selection of AI without a reference image", () => {
+    const onConfirm = vi.fn();
+    render(<ConfirmCard plan={{ ...plan(), productionOptions: [
+      ...plan().productionOptions!,
+      { id: "ai_visual", label: "AI 生成画面", effect: "定制镜头", requiredInputs: "参考图",
+        costNote: "预计费用暂无法估计", waitNote: "预计等待暂无法估计",
+        available: false, unavailableReason: "请先补充已授权参考图" },
+    ] }} onConfirm={onConfirm} />);
+
+    expect(screen.getByRole("radio", { name: "AI 生成画面" })).toBeDisabled();
+    expect(screen.getByText("请先补充已授权参考图")).toBeVisible();
+    expect(screen.getAllByText("预计等待暂无法估计")).toHaveLength(3);
+    expect(screen.getByText("预计费用暂无法估计")).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: "AI 生成画面" }));
+    expect(screen.getByRole("button", { name: "确认参数并生成编导稿" })).toBeDisabled();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it("restores a saved explicit choice and its strict restriction", () => {
     render(<ConfirmCard plan={{ ...plan(), productionChoiceId: "graphics", productionSelectionRequired: false,
       productionRestriction: "only" }} onConfirm={vi.fn()} />);

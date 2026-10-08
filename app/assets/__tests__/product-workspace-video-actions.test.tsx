@@ -666,7 +666,8 @@ describe("video browse actions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "版本对比" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("上一版本没有可播放的完整视频");
+    expect(await screen.findByText("上一版本没有可播放的完整视频，暂时无法进行双视频对比。"))
+      .toHaveAttribute("role", "alert");
     expect(screen.getByLabelText("分镜摘要")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "版本对比" })).not.toBeInTheDocument();
   });
@@ -2413,5 +2414,117 @@ describe("video browse actions", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("已保存编辑，但浏览态刷新失败");
     expect(screen.getByTitle("视频剪辑器")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重试刷新" })).toBeEnabled();
+  });
+
+
+  it("shows confirmed scene images together even when each scene uses a different asset ID", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      contentType: "video_script",
+      metadata: {
+        ...base.metadata,
+        video_plan: { scenes: [
+          { id: "scene-2", title: "早餐制作", visual_brief: "蒸笼", asset_reference: {
+            status: "matched", chosen_asset_id: 71, selection_mode: "user_selected_generated_image",
+          } },
+          { id: "scene-3", title: "早餐交付", visual_brief: "装袋", asset_reference: {
+            status: "matched", chosen_asset_id: 72, selection_mode: "user_selected_generated_image",
+          } },
+          { id: "scene-4", title: "未选候选", visual_brief: "候选", asset_reference: {
+            status: "no_asset_hit", candidate_asset_ids: [73],
+          } },
+        ] },
+      },
+    };
+    const download = vi.spyOn(assetWorkspaceAdapter, "downloadAsset").mockResolvedValue(
+      new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+    );
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:scene-${Math.random()}`);
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const { container, unmount } = render(<ProductWorkspace
+      copied={false}
+      onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)}
+      product={product}
+      selectedConversation={conversationForDisplayProduct(product)}
+      token="token"
+    />);
+    await waitFor(() => expect(container.querySelectorAll("[data-confirmed-scene-image]")).toHaveLength(2));
+    expect(download.mock.calls).toEqual([["token", 71], ["token", 72]]);
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    unmount();
+    expect(revokeObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+
+  it("offers reviewed editable drafts a production-planning step without exposing video confirmation", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      contentType: "video_script",
+      contentHash: "saved-v1",
+      metadata: {
+        ...base.metadata,
+        director_draft_phase: "editable_reviewed",
+        director_review: { status: "reviewed", findings: [] },
+      },
+    };
+    const onContinueDirectorProduction = vi.fn();
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        onContinueDirectorProduction={onContinueDirectorProduction}
+        product={product}
+        selectedConversation={conversationForDisplayProduct(product)}
+        token="token"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "完善制作方案" }));
+    expect(onContinueDirectorProduction).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "确认生成视频工程" })).not.toBeInTheDocument();
+  });
+
+
+  it("offers a pending editable review a user-triggered recovery action", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      contentType: "video_script",
+      contentHash: "saved-v1",
+      metadata: {
+        ...base.metadata,
+        director_draft_phase: "editable_unreviewed",
+        director_review: { status: "pending", findings: [] },
+      },
+    };
+    render(<ProductWorkspace
+      copied={false}
+      onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)}
+      product={product}
+      selectedConversation={conversationForDisplayProduct(product)}
+      token="token"
+    />);
+    expect(screen.getByRole("button", { name: "重新审查当前稿" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "完善制作方案" })).not.toBeInTheDocument();
+  });
+
+
+  it("ignores unsolicited editor updates without refreshing or replacing the current product", async () => {
+    const product = displayProducts["case-06-project-ready-no-mp4"];
+    const refresh = vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail");
+    const onProductUpdated = vi.fn();
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onProductUpdated={onProductUpdated}
+      product={product} selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    window.dispatchEvent(new MessageEvent("message", { origin: window.location.origin,
+      data: { source: "multimix-editor", assetId: product.backendAssetId, type: "multimix-editor-project-updated" } }));
+    await act(async () => { await Promise.resolve(); });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(onProductUpdated).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("分镜预览")).toBeInTheDocument();
   });
 });

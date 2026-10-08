@@ -49,6 +49,30 @@ function deferred<T>() {
 }
 
 describe("useAssetGenerationJobs", () => {
+  it("restarts polling when a failed job is submitted again with the same ID", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
+      .mockResolvedValueOnce(generationJob({ status: "failed", progress_kind: "video_plan" }))
+      .mockResolvedValueOnce(generationJob({ status: "running" }));
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1", conversations: [],
+      onConversationRefreshed: vi.fn(), onConversationRefreshError: vi.fn(),
+    }));
+    act(() => result.current.registerJob("conversation-1", generationJob({
+      status: "failed", progress_kind: "video_plan",
+    })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(getGenerationJob).toHaveBeenCalledTimes(1);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("failed");
+
+    act(() => result.current.registerJob("conversation-1", generationJob({ status: "queued" })));
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+    expect(getGenerationJob).toHaveBeenCalledTimes(2);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.status).toBe("running");
+    expect(result.current.jobsByConversation["conversation-1"]?.job.progress_kind).toBe("video_plan");
+  });
+
   it.each(["retry", "cancel"] as const)("retains persisted video purpose when a legacy %s response omits it", async (action) => {
     vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(false);
     const response = generationJob({ status: action === "retry" ? "queued" : "cancelled" });
@@ -113,6 +137,41 @@ describe("useAssetGenerationJobs", () => {
     expect(refreshed).toHaveBeenCalledOnce();
     expect(result.current.jobsForConversation("conversation-1")).toEqual([]);
   });
+  it("hydrates retryability for a persisted failed job from the public job endpoint once", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    const getGenerationJob = vi.spyOn(assetWorkspaceAdapter, "getGenerationJob")
+      .mockResolvedValue(generationJob({
+        status: "failed",
+        error_message: "创意审核输出被截断，可以直接重试。",
+        retryable: true,
+      }));
+    const persistedFailed = conversation({
+      messages: [{
+        role: "assistant",
+        text: "创意审核输出被截断，可以直接重试。",
+        metadata: {
+          asset_generation_job_id: "asset-generation-job-1",
+          asset_generation_status: "failed",
+        },
+      }],
+    });
+    const { result } = renderHook(() => useAssetGenerationJobs({
+      token: "token-1",
+      conversations: [persistedFailed],
+      onConversationRefreshed: vi.fn(),
+      onConversationRefreshError: vi.fn(),
+    }));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+
+    expect(getGenerationJob).toHaveBeenCalledTimes(1);
+    expect(result.current.jobsByConversation["conversation-1"]?.job.retryable).toBe(true);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getGenerationJob).toHaveBeenCalledTimes(1);
+  });
+
   it("registers a generation job for its conversation", () => {
     const { result } = renderHook(() => useAssetGenerationJobs({
       token: "token-1",

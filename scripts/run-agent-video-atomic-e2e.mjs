@@ -267,6 +267,15 @@ function fakeInterpretation(requestBody) {
     .filter((message) => message?.role === "system")
     .map((message) => String(message?.content ?? ""))
     .join("\n");
+  if (systemPrompt.includes("MultiMix's read-only video director adviser")) {
+    return {
+      answer_kind: "question",
+      summary: "当前测试视频共有两个分镜。",
+      short_reply: "当前测试视频共有两个分镜。",
+      observations: [],
+      suggestions: [],
+    };
+  }
   if (
     systemPrompt.includes("apply_frozen_target")
     && systemPrompt.includes("server_verified_frozen_target")

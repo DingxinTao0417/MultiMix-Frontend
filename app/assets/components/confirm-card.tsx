@@ -208,7 +208,9 @@ export default function ConfirmCard({
   const productionBlocked = isVideoParameterConfirmation && (
     (Boolean(plan.productionBlockedReason) && (!selectedProductionId || selectedProductionId === plan.productionChoiceId))
     || (plan.productionSelectionRequired === true && !selectedProductionId)
-    || (selectedProductionId !== undefined && !productionOptions.some((option) => option.id === selectedProductionId))
+    || (selectedProductionId !== undefined && !productionOptions.some(
+      (option) => option.id === selectedProductionId && option.available !== false,
+    ))
   );
   const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
   const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
@@ -637,14 +639,17 @@ export default function ConfirmCard({
                 aria-checked={selectedProductionId === option.id}
                 aria-label={`${option.label}${plan.productionRecommendedId === option.id ? "（推荐）" : ""}`}
                 className={selectedProductionId === option.id ? "active" : undefined}
-                disabled={disabled} onClick={() => setSelectedProductionId(option.id)}>
+                disabled={disabled || option.available === false} onClick={() => setSelectedProductionId(option.id)}>
                 {option.label}{plan.productionRecommendedId === option.id ? "（推荐）" : ""}
               </button>
             ))}
           </div>
           {productionOptions.map((option) => (
             <p key={option.id}><strong>{option.label}</strong>：{option.effect}<br />
-              需要：{option.requiredInputs}<br /><span>{option.costNote}</span></p>
+              需要：{option.requiredInputs}<br />
+              <span>{option.waitNote || "预计等待暂无法估计"}</span><br />
+              <span>{option.costNote}</span>
+              {option.available === false && option.unavailableReason ? <><br /><span>{option.unavailableReason}</span></> : null}</p>
           ))}
           <p>{plan.productionRestriction === "only" ? "只使用所选制作方式" : "优先使用所选方式，允许按镜头混合制作"}</p>
         </div>

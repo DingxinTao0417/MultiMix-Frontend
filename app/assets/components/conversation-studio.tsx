@@ -12,7 +12,7 @@ import {
   partitionChatAttachmentFiles,
 } from "../lib/chat-attachment-policy";
 import { supportedLongFormUrlFromText } from "../lib/long-form-composer-source";
-import { mergeVisibleConversationMessages, optimisticImageGenerationSteps, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
+import { mergeVisibleConversationMessages, optimisticDirectorDraftSteps, optimisticImageGenerationSteps, optimisticVideoProjectSteps, shouldRenderMessageBody } from "../lib/conversation-execution-presentation";
 import { resolveSuggestionClickIntent } from "../lib/suggestion-actions";
 import {
   formatComposerError,
@@ -57,7 +57,7 @@ import { GeneratedImageKeyframeGroup } from "./generated-image-gallery";
 import CreativeDirectionSelector from "./creative-direction-selector";
 import { finishedVideoPosterUrl } from "./product-preview";
 import RequirementUnderstandingTurn, { RequirementEvidenceMedia } from "./requirement-understanding-turn";
-import { requirementConversationMediaFromValue } from "../lib/asset-workspace-adapter";
+import { requirementConversationMediaFromValue, type ImageToVideoCostSummary, type NarrationUsageSummary } from "../lib/asset-workspace-adapter";
 import {
   DEFAULT_RUNTIME_WRITE_CAPABILITIES,
   type RuntimeWriteCapabilities,
@@ -121,7 +121,7 @@ export type ChatImageAttachment = {
 const IMAGE_ONLY_INSTRUCTION = "请先理解并概括这些图片，等待我说明创作目标；本次仅上传素材，不开始制作。";
 const DOC_ONLY_INSTRUCTION = "请先阅读并概括这些资料，等待我说明创作目标；本次仅上传资料，不开始制作。";
 const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否识别并拆分分镜，暂不开始处理。";
-const ATTACHMENT_HELP_TEXT = "图片会作为素材，PDF/文档会作为来源资产；添加视频后可直接发送，再选择是否先整理成片段。";
+const ATTACHMENT_HELP_TEXT = "图片和文档会先保存并理解；说出目标或用途后，我会建议作为画面、参考或需求证据，不会因上传就用于某个分镜。添加视频后可直接发送，再选择是否先整理成片段。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
@@ -137,16 +137,28 @@ function generationJobFromMessage(message: AssetConversationMessage): AssetGener
   const progressKind = ["video_plan", "video_create", "video_update", "general"].includes(
     String(metadata.asset_generation_progress_kind),
   ) ? metadata.asset_generation_progress_kind as AssetGenerationJobResponse["progress_kind"] : undefined;
+  const sceneProgress = Array.isArray(metadata.asset_generation_scene_progress)
+    ? metadata.asset_generation_scene_progress.filter((scene) => (
+      Boolean(scene) && typeof scene === "object"
+      && typeof (scene as Record<string, unknown>).scene_id === "string"
+      && typeof (scene as Record<string, unknown>).scene_number === "number"
+      && typeof (scene as Record<string, unknown>).title === "string"
+      && ["processing", "completed", "failed"].includes(
+        String((scene as Record<string, unknown>).status),
+      )
+    )) as AssetGenerationJobResponse["scene_progress"] : [];
   return {
     id,
     status: status as AssetGenerationJobResponse["status"],
     progress_kind: progressKind,
     result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
     error_message: status === "failed" || status === "cancelled" ? message.text : null,
+    retryable: metadata.asset_generation_retryable === true,
     created_at: "",
     updated_at: "",
     started_at: typeof metadata.asset_generation_started_at === "string" ? metadata.asset_generation_started_at : null,
     progress_events: progress,
+    scene_progress: sceneProgress,
   };
 }
 
@@ -443,6 +455,7 @@ export default function ConversationStudio({
   generationJobConnectionLostById = {},
   onRetryGeneration,
   onCancelGeneration,
+  onOpenGenerationSourceScene,
   liveRunStateByAssetId,
   onRetryExecution,
   liveAgentActionsById,
@@ -505,6 +518,7 @@ export default function ConversationStudio({
   generationJobConnectionLostById?: Record<string, boolean>;
   onRetryGeneration?: (jobId: string) => void;
   onCancelGeneration?: (jobId: string) => void;
+  onOpenGenerationSourceScene?: (sourceAssetId: number, sceneId: string) => void;
   // Main execution aggregates keyed by backend asset id. The job id stays bound
   // to the same card while exact failed main/MG child jobs are retried.
   liveRunStateByAssetId?: Record<number, {
@@ -512,6 +526,8 @@ export default function ConversationStudio({
     status: string;
     steps: AgentRunStep[];
     errorMessage: string | null;
+    imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+    narrationUsageSummary?: NarrationUsageSummary | null;
     completionConfirmed: boolean;
     progressKind?: "video_create" | "video_update";
     connectionLost?: boolean;
@@ -945,7 +961,9 @@ export default function ConversationStudio({
                 }]
             : isImageGenerationConfirmation
               ? optimisticImageGenerationSteps()
-              : optimisticVideoProjectSteps(),
+              : isVideoParameterConfirmation
+                ? optimisticDirectorDraftSteps()
+                : optimisticVideoProjectSteps(),
           confirmationPlanKey: planKey,
         },
         clientRequestId: globalThis.crypto.randomUUID(),
@@ -1026,6 +1044,20 @@ export default function ConversationStudio({
     const onFocusComposer = () => {
       composerRef.current?.focus();
     };
+    const onPrepareComposer = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        utterance?: string;
+        openImageUpload?: boolean;
+      }>).detail;
+      if (readonly || !writeCapabilities.canGenerate || !detail?.utterance?.trim()) return;
+      setComposerValue(detail.utterance.trim());
+      setAdjustHint(false);
+      if (detail.openImageUpload && canUpload) imageInputRef.current?.click();
+      requestAnimationFrame(() => {
+        composerRef.current?.focus();
+        if (composerRef.current) resizeComposer(composerRef.current);
+      });
+    };
     const onComposerSend = (event: Event) => {
       const detail = (event as CustomEvent<{
         utterance?: string;
@@ -1049,13 +1081,15 @@ export default function ConversationStudio({
       }
     };
     window.addEventListener("multimix:composer-focus", onFocusComposer);
+    window.addEventListener("multimix:composer-prepare", onPrepareComposer);
     window.addEventListener("multimix:composer-send", onComposerSend);
     return () => {
       window.removeEventListener("multimix:composer-focus", onFocusComposer);
+      window.removeEventListener("multimix:composer-prepare", onPrepareComposer);
       window.removeEventListener("multimix:composer-send", onComposerSend);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversation.id, sending, readonly, writeCapabilities.canGenerate]);
+  }, [selectedConversation.id, sending, readonly, canUpload, writeCapabilities.canGenerate]);
 
   const handleAttachmentFiles = (files: FileList | File[]) => {
     if (!canUpload) return;
@@ -1119,7 +1153,7 @@ export default function ConversationStudio({
           if (generatedImages?.length) {
             return <GeneratedImageKeyframeGroup
               key={product.id}
-              title={getProductDisplayIdentity(product).title}
+              title={product.title}
               images={generatedImages}
               selectedFrameId={selectedImageFrameIds[product.id]}
               onSelectedFrameChange={(frameId) => {
@@ -1270,9 +1304,14 @@ export default function ConversationStudio({
           const isImageGenerationTimeline = timelineSteps.some(
             (step) => step.key === "submit_image_generation",
           );
+          const isDirectorDraftTimeline = timelineSteps.some(
+            (step) => step.key === "prepare_director_draft",
+          );
           const boundProduct = message.assetId
             ? products.find((product) => product.backendAssetId === message.assetId)
             : undefined;
+          const isDirectorProduct = boundProduct?.contentType === "video_script"
+            || boundProduct?.contentType === "short_video_narration";
           const isVideoAgentAction = Boolean(
             liveAgentAction
             && boundProduct?.contentType === "video_project"
@@ -1379,7 +1418,7 @@ export default function ConversationStudio({
               {showsAssistantWaiting ? (
                 <AssistantReplyPending />
               ) : shouldRenderMessageBody(message) && (!renderedGenerationJob || renderedGenerationJob.status === "completed") ? (
-                <p>{conversationDisplayText(message)}</p>
+                 <p>{conversationDisplayText(message)}</p>
               ) : null}
               {message.role === "assistant" ? (
                 <RequirementEvidenceMedia
@@ -1494,12 +1533,19 @@ export default function ConversationStudio({
                       ? liveAgentAction.message
                       : liveRunState?.errorMessage
                         ?? (message.localState === "failed" ? message.text : undefined)}
+                    imageToVideoCostSummary={liveRunState?.imageToVideoCostSummary}
+                    narrationUsageSummary={liveRunState?.narrationUsageSummary}
                     actions={writeCapabilities.canGenerate ? videoProgressActions : undefined}
                   />
                 ) : (
                   <AgentRunTimeline
                     steps={timelineSteps}
-                    title={isImageGenerationTimeline ? "图片生成进度" : undefined}
+                    title={isImageGenerationTimeline ? "图片生成进度"
+                      : isDirectorDraftTimeline ? "编导稿准备进度"
+                        : isDirectorProduct ? "编导稿修改进度" : "任务进度"}
+                    completionLabel={isImageGenerationTimeline ? "图片已生成"
+                      : isDirectorDraftTimeline ? "编导稿已准备好"
+                        : isDirectorProduct ? "编导稿已更新" : "本次操作已完成"}
                     errorMessage={agentActionFailed
                       ? liveAgentAction.message
                       : liveRunState?.errorMessage
@@ -1526,6 +1572,7 @@ export default function ConversationStudio({
                   job={renderedGenerationJob}
                   onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
                   onCancel={onCancelGeneration}
+                  onOpenSourceScene={onOpenGenerationSourceScene}
                   boundContentType={boundProduct?.contentType}
                   connectionLost={generationJobConnectionLostById[renderedGenerationJob.id] === true}
                   completionLabel={directorScriptUsedForVideoProject
@@ -1622,6 +1669,7 @@ export default function ConversationStudio({
               job={job}
               onRetry={writeCapabilities.canGenerate ? onRetryGeneration : undefined}
               onCancel={onCancelGeneration}
+              onOpenSourceScene={onOpenGenerationSourceScene}
               connectionLost={generationJobConnectionLostById[job.id] === true}
             />
           ))}

@@ -2,10 +2,10 @@
 
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { trackProductEvent } from "@/lib/product-analytics";
+import { loadVideoFeedback, submitVideoFeedback, trackProductEvent } from "@/lib/product-analytics";
 import ConversationStart from "../components/conversation-start";
 import ProductWorkspace from "../components/product-workspace";
 import RequirementUnderstandingTurn from "../components/requirement-understanding-turn";
@@ -16,12 +16,20 @@ import { conversationForDisplayProduct, displayProducts } from "./fixtures/displ
 vi.mock("@/lib/product-analytics", () => ({
   getProductAnalyticsSessionId: () => "test-session",
   trackProductEvent: vi.fn(async () => undefined),
+  loadVideoFeedback: vi.fn(async () => ({ decision: null, published: false, versionId: 7 })),
+  submitVideoFeedback: vi.fn(async (_token, _assetId, versionId, decision) => ({
+    decision: decision === "published" ? "accepted" : decision,
+    published: decision === "published",
+    versionId,
+  })),
 }));
 
 
 afterEach(() => {
   cleanup();
   vi.mocked(trackProductEvent).mockClear();
+  vi.mocked(submitVideoFeedback).mockClear();
+  vi.mocked(loadVideoFeedback).mockClear();
 });
 
 
@@ -41,14 +49,14 @@ describe("product analytics event points", () => {
       sessionId: "test-session",
       properties: { entry_surface: "new_conversation" },
     }));
-    fireEvent.click(screen.getByRole("button", { name: /讲清楚/ }));
+    fireEvent.click(within(screen.getByRole("region", { name: "你想怎么开始？" })).getByRole("button", { name: /从想法开始/ }));
 
     expect(trackProductEvent).toHaveBeenCalledWith("token", {
       eventName: "recommendation_selected",
-      properties: { recommendation_key: "goal-explain" },
+      properties: { recommendation_key: "start-idea" },
     });
     expect(JSON.stringify(vi.mocked(trackProductEvent).mock.calls)).not.toContain(
-      "把一个概念、过程或结果讲清楚。请先结合我的素材，给出合适的时长、结构和画面方案。",
+      "我想做一条新视频，先从想法开始。请先帮我明确目标，再和我讨论内容、画面，以及需要哪些素材。",
     );
   });
 
@@ -80,6 +88,35 @@ describe("product analytics event points", () => {
       eventName: "source_evidence_opened",
       assetId: 402,
     });
+  });
+
+  it("records explicit video acceptance and publication only after the user clicks", async () => {
+    const base = displayProducts["case-07-project-ready-mp4"];
+    const product = { ...base, backendAssetId: 402,
+      versions: [{ id: "7", label: "v1", savedAt: "现在", status: "初始版本" }] };
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+
+    expect(submitVideoFeedback).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "这版可以发布" }));
+    await waitFor(() => expect(submitVideoFeedback).toHaveBeenCalledWith(
+      "token", 402, 7, "accepted",
+    ));
+    fireEvent.click(screen.getByRole("button", { name: "我已发布" }));
+    await waitFor(() => expect(submitVideoFeedback).toHaveBeenCalledWith(
+      "token", 402, 7, "published",
+    ));
+  });
+
+  it("does not ask for publishability before a current MP4 exists", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    const product = { ...base, backendAssetId: 402,
+      versions: [{ id: "7", label: "v1", savedAt: "现在", status: "初始版本" }] };
+    render(<ProductWorkspace copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} product={product}
+      selectedConversation={conversationForDisplayProduct(product)} token="token" />);
+    expect(screen.queryByRole("button", { name: "这版可以发布" })).not.toBeInTheDocument();
   });
 
   it("tracks requirement quality events without source text, filenames or choices", async () => {

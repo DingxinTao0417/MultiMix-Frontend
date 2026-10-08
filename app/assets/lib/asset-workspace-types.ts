@@ -301,6 +301,34 @@ export type AssetImageGenerationSetApplication = {
   assignments: Array<{ candidateAssetId: number; sceneId: string }>;
 };
 
+export type AssetSceneSourceDecision = {
+  directorAssetId: number;
+  directorVersionId: number;
+  sceneId: string;
+  action: "search_public" | "keep_current" | "use_saved_asset";
+  sourceAssetId?: number;
+};
+
+export type AssetSceneImageGenerationRequest = {
+  directorAssetId: number;
+  directorVersionId: number;
+  sceneId: string;
+};
+
+export type AssetDirectorProductionPlan = {
+  directorAssetId: number;
+  baseContentHash: string;
+};
+
+export type AssetScenePublicCandidate = {
+  candidateId: string;
+  previewUrl: string;
+  title: string;
+  provider: string;
+  license: string;
+  attributionUrl: string;
+};
+
 export type AssetLongFormAction =
   | { kind: "analyze"; sourceAssetId: number }
   | { kind: "revise"; analysisAssetId: number }
@@ -415,7 +443,8 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
-  productionOptions?: { id: string; label: string; effect: string; requiredInputs: string; costNote: string }[];
+  productionOptions?: { id: string; label: string; effect: string; requiredInputs: string;
+    waitNote?: string; costNote: string; available?: boolean; unavailableReason?: string }[];
   productionChoiceId?: string;
   productionRecommendedId?: string;
   productionSelectionRequired?: boolean;

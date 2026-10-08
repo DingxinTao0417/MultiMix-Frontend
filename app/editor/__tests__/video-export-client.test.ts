@@ -33,7 +33,7 @@ it("rejects a negotiated project fingerprint different from the rendered preview
     project_fingerprint: "b".repeat(64), export_variant: "original", brand_spec_version: null,
   }, 201));
   await expect(uploadExportCandidate({ apiBase: "https://api.example.test", assetId: "1121", token: "token",
-    expectedProjectFingerprint: "a".repeat(64), blob: new Blob(["candidate"]), fetchImpl,
+    projectRevision: "a".repeat(64), blob: new Blob(["candidate"]), fetchImpl,
   })).rejects.toThrow("工程版本已变化");
   expect(fetchImpl).toHaveBeenCalledOnce();
 });
@@ -128,6 +128,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob,
       fetchImpl,
     });
@@ -136,16 +137,34 @@ describe("video export finalization client", () => {
     expect(fetchImpl).toHaveBeenNthCalledWith(
       1,
       "https://api.example.test/v1/video/projects/1121/exports/uploads",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "If-Match": `"${"a".repeat(64)}"` }) }),
     );
     expect(fetchImpl).toHaveBeenNthCalledWith(
       2,
       "https://api.example.test/v1/video/projects/1121/exports",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "If-Match": `"${"a".repeat(64)}"` }) }),
     );
     const uploaded = (fetchImpl.mock.calls[1]?.[1]?.body as FormData).get("file") as File;
     expect(uploaded.size).toBe(blob.size);
     expect(uploaded.type).toBe("video/mp4");
+  });
+
+  it("rejects a session bound to a different project version before uploading bytes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response({
+      mode: "multipart",
+      upload_url: "/v1/video/projects/1121/exports",
+      upload_method: "POST",
+      project_fingerprint: "b".repeat(64),
+    }, 201));
+    await expect(uploadExportCandidate({
+      apiBase: "https://api.example.test",
+      assetId: "1121",
+      token: "token",
+      projectRevision: "a".repeat(64),
+      blob: new Blob(["mp4"], { type: "video/mp4" }),
+      fetchImpl,
+    })).rejects.toThrow(/工程版本/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("uses signed resumable upload for a direct storage session", async () => {
@@ -165,6 +184,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob,
       fetchImpl,
       resumableUploadFactory,
@@ -246,6 +266,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4!"], { type: "video/mp4" }),
       fetchImpl,
       resumableUploadFactory: factory,
@@ -306,6 +327,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
       clientTimingEvents: [preparing],
@@ -350,6 +372,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["brand-mp4"], { type: "video/mp4" }),
       exportVariant: "brand_showcase",
       brandSpecVersion: BRAND_SHOWCASE_SPEC_VERSION,
@@ -396,6 +419,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
       resumableUploadFactory: factory,
@@ -421,6 +445,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
       resumableUploadFactory: factory,
@@ -451,6 +476,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
       signal: controller.signal,
@@ -472,6 +498,7 @@ describe("video export finalization client", () => {
       apiBase: "https://api.example.test",
       assetId: "1121",
       token: "token",
+      projectRevision: "a".repeat(64),
       blob: new Blob(["mp4"], { type: "video/mp4" }),
       fetchImpl,
     })).rejects.toThrow("成片上传会话未返回有效的大文件上传地址");

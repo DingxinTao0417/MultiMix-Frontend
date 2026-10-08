@@ -14,7 +14,10 @@ import {
   isCurrentRequirementAnalysis,
   retryConversationDetailLoad,
 } from "../lib/asset-workspace-adapter";
-import type { AssetConversationSummaryResponse, ContentAsset } from "../../../lib/api";
+import type {
+  AssetConversationSummaryResponse,
+  ContentAsset,
+} from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import { displayProducts } from "./fixtures/display-products";
 import { contentAssetToProduct } from "../../../lib/asset-mappers";
@@ -137,6 +140,97 @@ describe("confirmed product save feedback", () => {
   });
 });
 
+it("sends a project-bound versioned director import with explicit image mapping", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+    new Response(JSON.stringify({ id: 88 }), {
+      status: 201, headers: { "Content-Type": "application/json" },
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const result = await assetWorkspaceAdapter.importDirectorDraft({
+      token: "token", source: {
+        assetId: 44, contentHash: "source-hash", title: "早餐店稿件",
+        kind: "copy", meta: "已入库", note: "原稿",
+      }, conversationId: "project-1", referenceAssetIds: [201],
+      legacyReferenceMappings: { "23": 201 },
+    });
+    expect(result.id).toBe(88);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/44/director-draft-import");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      conversation_id: "project-1", base_content_hash: "source-hash",
+      reference_asset_ids: [201], legacy_reference_mappings: { "23": 201 },
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("searches and selects a public scene candidate through separate version-bound APIs", async () => {
+  const fetchMock = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(JSON.stringify({
+      director_version_id: 8,
+      candidate: {
+        candidate_id: "safe-candidate", preview_url: "https://example.com/preview.jpg",
+        title: "早餐街景", provider: "Pexels", license: "Pexels License",
+        attribution_url: "https://example.com/source",
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }))
+    .mockResolvedValueOnce(new Response(JSON.stringify({ director_version_id: 9 }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const decision = { directorAssetId: 5, directorVersionId: 7, sceneId: "scene-2", action: "search_public" as const };
+    const found = await assetWorkspaceAdapter.searchScenePublicCandidate("token", decision);
+    expect(found.candidate.candidateId).toBe("safe-candidate");
+    expect(found.directorVersionId).toBe(8);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/director-scene-public-search");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      director_asset_id: 5, director_version_id: 7, scene_id: "scene-2", action: "search_public",
+    });
+    const selected = await assetWorkspaceAdapter.selectScenePublicCandidate("token", {
+      ...decision, directorVersionId: found.directorVersionId,
+    }, found.candidate.candidateId);
+    expect(selected.directorVersionId).toBe(9);
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe("/v1/assets/director-scene-public-select");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      director_asset_id: 5, director_version_id: 8, scene_id: "scene-2", candidate_id: "safe-candidate",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("maps the public video job's recorded cost without treating it as a bill", async () => {
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+    id: "job-1", asset_id: 42, status: "running", workflow_stage: "video",
+    steps: [], error_message: null, project: null,
+    image_to_video_cost_summary: {
+      recorded_call_count: 2, priced_call_count: 1, unknown_cost_call_count: 1,
+      standard_price_cost_cny: 0.75, historical_coverage: "since_ledger_enabled",
+    },
+    narration_usage_summary: {
+      recorded_call_count: 1, known_usage_call_count: 1,
+      unknown_usage_call_count: 0, billed_text_words: 12,
+      historical_coverage: "since_ledger_enabled", scope: "main_project_narration",
+    },
+  }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const job = await assetWorkspaceAdapter.getVideoJob("token", "job-1");
+    expect(job.imageToVideoCostSummary).toMatchObject({
+      recordedCallCount: 2, pricedCallCount: 1, unknownCostCallCount: 1,
+      standardPriceCostCny: 0.75,
+    });
+    expect(job.narrationUsageSummary).toMatchObject({
+      recordedCallCount: 1, billedTextWords: 12,
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 function asset(overrides: Partial<ContentAsset>): ContentAsset {
   return {
     id: 1,
@@ -150,7 +244,8 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
     source_type: "upload",
     generation_state: "source_ready",
     source_filename: "内容生成执行层商业计划书.multiMix定位版.pptx",
-    source_content_type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    source_content_type:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     original_ref: null,
     markdown_ref: null,
     content_hash: null,
@@ -164,7 +259,7 @@ function asset(overrides: Partial<ContentAsset>): ContentAsset {
     created_at: "2026-07-07T00:00:00Z",
     updated_at: "2026-07-07T00:00:00Z",
     versions: [],
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -188,85 +283,127 @@ describe("asset workspace category inference", () => {
   });
 
   it("treats chat uploads as 对话沉淀", () => {
-    expect(libraryCategoryForAsset(asset({
-      source_type: "chat_upload"
-    }))).toBe("对话沉淀");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          source_type: "chat_upload",
+        }),
+      ),
+    ).toBe("对话沉淀");
   });
 
   it("treats web captures as 采集资料", () => {
-    expect(libraryCategoryForAsset(asset({
-      source_type: "web_capture"
-    }))).toBe("采集资料");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          source_type: "web_capture",
+        }),
+      ),
+    ).toBe("采集资料");
   });
 
   it("does not infer a source category from title or body when source_type is missing", () => {
-    expect(libraryCategoryForAsset(asset({
-      source_type: undefined,
-      title: "对话沉淀的品牌画像",
-      body: "来自网页采集和公众号链接",
-    }))).toBe("未分类");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          source_type: undefined,
+          title: "对话沉淀的品牌画像",
+          body: "来自网页采集和公众号链接",
+        }),
+      ),
+    ).toBe("未分类");
   });
 
   it("does not infer an artifact category from copy text", () => {
-    expect(libraryCategoryForAsset(asset({
-      asset_kind: "copy",
-      content_type: "custom_copy",
-      title: "品牌编导脚本与分镜方案",
-      body: "包含镜头和导演说明",
-      source_type: "conversation",
-    }))).toBe("未分类");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          asset_kind: "copy",
+          content_type: "custom_copy",
+          title: "品牌编导脚本与分镜方案",
+          body: "包含镜头和导演说明",
+          source_type: "conversation",
+        }),
+      ),
+    ).toBe("未分类");
   });
 
   it("maps only explicit artifact fields and deterministic content types", () => {
-    expect(libraryCategoryForAsset(asset({
-      asset_kind: "copy",
-      content_type: "video_script",
-    }))).toBe("编导稿");
-    expect(libraryCategoryForAsset(asset({
-      asset_kind: "image",
-      content_type: "storyboard_image",
-    }))).toBe("分镜图");
-    expect(libraryCategoryForAsset(asset({
-      asset_kind: "video",
-      content_type: "video_project",
-    }))).toBe("视频工程");
-    expect(libraryCategoryForAsset(asset({
-      asset_kind: "image",
-      content_type: "custom_image",
-      metadata: { artifact_category: "封面图" },
-    }))).toBe("封面图");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          asset_kind: "copy",
+          content_type: "video_script",
+        }),
+      ),
+    ).toBe("编导稿");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          asset_kind: "image",
+          content_type: "storyboard_image",
+        }),
+      ),
+    ).toBe("分镜图");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          asset_kind: "video",
+          content_type: "video_project",
+        }),
+      ),
+    ).toBe("视频工程");
+    expect(
+      libraryCategoryForAsset(
+        asset({
+          asset_kind: "image",
+          content_type: "custom_image",
+          metadata: { artifact_category: "封面图" },
+        }),
+      ),
+    ).toBe("封面图");
   });
 
   it("uses only backend understanding tags instead of title seeds or generic defaults", () => {
-    const keywords = libraryKeywordsForAsset(asset({
-      asset_kind: "video",
-      content_type: "uploaded_video",
-      title: "小红书数字人口播视频",
-      metadata: {
-        understanding: {
-          status: "ready",
-          tags: ["工作台", "素材整理"],
-          storyboard_roles: [{ code: "process", label: "过程", score: 0.9 }],
-          scene_types: [{ code: "workspace", label: "工作场景", score: 0.8 }],
+    const keywords = libraryKeywordsForAsset(
+      asset({
+        asset_kind: "video",
+        content_type: "uploaded_video",
+        title: "小红书数字人口播视频",
+        metadata: {
+          understanding: {
+            status: "ready",
+            tags: ["工作台", "素材整理"],
+            storyboard_roles: [{ code: "process", label: "过程", score: 0.9 }],
+            scene_types: [{ code: "workspace", label: "工作场景", score: 0.8 }],
+          },
         },
-      },
-    }));
+      }),
+    );
 
     expect(keywords).toEqual(["工作台", "素材整理"]);
   });
 
   it("uses only the explicit backend video mode for the digital-human marker", () => {
-    expect(libraryVariantForAsset(asset({
-      asset_kind: "video",
-      title: "数字人口播视频",
-      body: "talking head avatar",
-      metadata: {},
-    }))).toBe("standard");
-    expect(libraryVariantForAsset(asset({
-      asset_kind: "video",
-      title: "品牌介绍",
-      metadata: { video_mode: "digital_human" },
-    }))).toBe("digital-human");
+    expect(
+      libraryVariantForAsset(
+        asset({
+          asset_kind: "video",
+          title: "数字人口播视频",
+          body: "talking head avatar",
+          metadata: {},
+        }),
+      ),
+    ).toBe("standard");
+    expect(
+      libraryVariantForAsset(
+        asset({
+          asset_kind: "video",
+          title: "品牌介绍",
+          metadata: { video_mode: "digital_human" },
+        }),
+      ),
+    ).toBe("digital-human");
   });
 });
 
@@ -294,34 +431,40 @@ describe("runtime data boundary", () => {
         deliverables: [],
         facts: [],
         requirements: [],
-        asset_usages: [{
-          source_asset_id: 31,
-          content_role: "fact_evidence",
-          use_policy: "reference_only",
-          confidence: 0.98,
-          confirmed_by_user: false,
-          basis: "explicit",
-          evidence: [{
-            id: "price-new",
+        asset_usages: [
+          {
             source_asset_id: 31,
-            anchor: "第 2 页",
-            quote: "价格为 299 元",
+            content_role: "fact_evidence",
+            use_policy: "reference_only",
             confidence: 0.98,
-            ocr_confidence: null,
-          }],
-        }],
-        conflicts: [{
-          id: "price",
-          conflict_type: "direct_conflict",
-          severity: "blocking",
-          status: "unresolved",
-          summary: "价格口径不一致",
-          item_ids: [],
-          choices: [{ id: "price-new", label: "299 元" }],
-          resolution: null,
-          basis: "explicit",
-          evidence: [],
-        }],
+            confirmed_by_user: false,
+            basis: "explicit",
+            evidence: [
+              {
+                id: "price-new",
+                source_asset_id: 31,
+                anchor: "第 2 页",
+                quote: "价格为 299 元",
+                confidence: 0.98,
+                ocr_confidence: null,
+              },
+            ],
+          },
+        ],
+        conflicts: [
+          {
+            id: "price",
+            conflict_type: "direct_conflict",
+            severity: "blocking",
+            status: "unresolved",
+            summary: "价格口径不一致",
+            item_ids: [],
+            choices: [{ id: "price-new", label: "299 元" }],
+            resolution: null,
+            basis: "explicit",
+            evidence: [],
+          },
+        ],
         source_asset_ids: [31],
         diff: {
           added_item_ids: [],
@@ -337,27 +480,59 @@ describe("runtime data boundary", () => {
       created_at: "2026-09-12T08:00:00Z",
       completed_at: "2026-09-12T08:00:01Z",
     };
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify(snapshot), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 8 }), { status: 201 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 9 }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ ...snapshot, version: 10 }), { status: 200 }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(snapshot), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...snapshot, version: 8 }), {
+          status: 201,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...snapshot, version: 9 }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ...snapshot, version: 10 }), {
+          status: 200,
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const current = await assetWorkspaceAdapter.loadCurrentRequirements("token", "project-1");
-    await assetWorkspaceAdapter.analyzeRequirements("token", "project-1", "manual_refresh", "analysis-1");
-    await assetWorkspaceAdapter.resolveRequirementConflict("token", "project-1", {
-      snapshotId: "snapshot-7",
-      snapshotVersion: 7,
-      conflictId: "price",
-      resolutionKind: "choose_evidence",
-      evidenceId: "price-new",
-    });
-    await assetWorkspaceAdapter.updateProjectSourceUsage("token", "project-1", 31, {
-      contentRole: "fact_evidence",
-      usePolicy: "reference_only",
-      expectedSnapshotVersion: 9,
-    });
+    const current = await assetWorkspaceAdapter.loadCurrentRequirements(
+      "token",
+      "project-1",
+    );
+    await assetWorkspaceAdapter.analyzeRequirements(
+      "token",
+      "project-1",
+      "manual_refresh",
+      "analysis-1",
+    );
+    await assetWorkspaceAdapter.resolveRequirementConflict(
+      "token",
+      "project-1",
+      {
+        snapshotId: "snapshot-7",
+        snapshotVersion: 7,
+        conflictId: "price",
+        resolutionKind: "choose_evidence",
+        evidenceId: "price-new",
+      },
+    );
+    await assetWorkspaceAdapter.updateProjectSourceUsage(
+      "token",
+      "project-1",
+      31,
+      {
+        contentRole: "fact_evidence",
+        usePolicy: "reference_only",
+        expectedSnapshotVersion: 9,
+      },
+    );
     vi.unstubAllGlobals();
 
     expect(current).toMatchObject({
@@ -367,8 +542,16 @@ describe("runtime data boundary", () => {
       status: "needs_confirmation",
       conversationText: "我理解的是：需要一支品牌短片。请直接回复采用哪一项。",
       payload: {
-        assetUsages: [{ sourceAssetId: 31, contentRole: "fact_evidence", usePolicy: "reference_only" }],
-        conflicts: [{ id: "price", severity: "blocking", status: "unresolved" }],
+        assetUsages: [
+          {
+            sourceAssetId: 31,
+            contentRole: "fact_evidence",
+            usePolicy: "reference_only",
+          },
+        ],
+        conflicts: [
+          { id: "price", severity: "blocking", status: "unresolved" },
+        ],
       },
     });
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
@@ -376,18 +559,22 @@ describe("runtime data boundary", () => {
       headers: expect.objectContaining({ "Idempotency-Key": "analysis-1" }),
       body: JSON.stringify({ trigger_kind: "manual_refresh" }),
     });
-    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({
-      snapshot_id: "snapshot-7",
-      snapshot_version: 7,
-      conflict_id: "price",
-      resolution_kind: "choose_evidence",
-      evidence_id: "price-new",
-    }));
-    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(JSON.stringify({
-      content_role: "fact_evidence",
-      use_policy: "reference_only",
-      expected_snapshot_version: 9,
-    }));
+    expect(fetchMock.mock.calls[2]?.[1]?.body).toBe(
+      JSON.stringify({
+        snapshot_id: "snapshot-7",
+        snapshot_version: 7,
+        conflict_id: "price",
+        resolution_kind: "choose_evidence",
+        evidence_id: "price-new",
+      }),
+    );
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(
+      JSON.stringify({
+        content_role: "fact_evidence",
+        use_policy: "reference_only",
+        expected_snapshot_version: 9,
+      }),
+    );
   });
 
   it("loads the latest failed version and posts an explicit retry reference", async () => {
@@ -428,7 +615,9 @@ describe("runtime data boundary", () => {
   it("uploads every selected file with an independent idempotency key", async () => {
     class FakeUploadRequest {
       static instances: FakeUploadRequest[] = [];
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -449,13 +638,22 @@ describe("runtime data boundary", () => {
       }
     }
     vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
-    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("upload-a").mockReturnValueOnce("upload-b") });
+    vi.stubGlobal("crypto", {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce("upload-a")
+        .mockReturnValueOnce("upload-b"),
+    });
 
     const uploaded = await assetWorkspaceAdapter.uploadAssets(
       "token",
       [
-        new File(["one"], "one.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-        new File(["two"], "two.pptx", { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }),
+        new File(["one"], "one.docx", {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }),
+        new File(["two"], "two.pptx", {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        }),
       ],
       "assets",
     );
@@ -463,14 +661,20 @@ describe("runtime data boundary", () => {
 
     expect(uploaded.map((item) => item.id)).toEqual([101, 102]);
     expect(FakeUploadRequest.instances).toHaveLength(2);
-    expect(FakeUploadRequest.instances[0]?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-a");
-    expect(FakeUploadRequest.instances[1]?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-b");
+    expect(
+      FakeUploadRequest.instances[0]?.setRequestHeader,
+    ).toHaveBeenCalledWith("Idempotency-Key", "upload-a");
+    expect(
+      FakeUploadRequest.instances[1]?.setRequestHeader,
+    ).toHaveBeenCalledWith("Idempotency-Key", "upload-b");
   });
 
   it("reports per-file states and never marks a partially failed batch ready", async () => {
     class FakeUploadRequest {
       static instances: FakeUploadRequest[] = [];
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -507,12 +711,19 @@ describe("runtime data boundary", () => {
     );
     await expect(upload).rejects.toBeInstanceOf(BatchUploadError);
     await upload.catch((error: BatchUploadError) => {
-      expect(error.items.map((item) => item.status)).toEqual(["ready", "failed"]);
+      expect(error.items.map((item) => item.status)).toEqual([
+        "ready",
+        "failed",
+      ]);
     });
     vi.unstubAllGlobals();
 
-    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ index: 0, status: "ready", percent: 100 }));
-    expect(progress).toHaveBeenCalledWith(expect.objectContaining({ index: 1, status: "failed" }));
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ index: 0, status: "ready", percent: 100 }),
+    );
+    expect(progress).toHaveBeenCalledWith(
+      expect.objectContaining({ index: 1, status: "failed" }),
+    );
   });
 
   it("clones only the explicitly bound requirement snapshot version", async () => {
@@ -532,9 +743,26 @@ describe("runtime data boundary", () => {
           summary: "继承的项目需求",
           goal: null,
           audience: null,
-          intent: { operation: "clone_project", scope: "project_default", target_item_ids: [], replacement_source_asset_id: null },
-          deliverables: [], facts: [], requirements: [], asset_usages: [], conflicts: [], source_asset_ids: [],
-          diff: { added_item_ids: [], removed_item_ids: [], changed_item_ids: [], new_conflict_ids: [], resolved_conflict_ids: [], usage_changed_asset_ids: [] },
+          intent: {
+            operation: "clone_project",
+            scope: "project_default",
+            target_item_ids: [],
+            replacement_source_asset_id: null,
+          },
+          deliverables: [],
+          facts: [],
+          requirements: [],
+          asset_usages: [],
+          conflicts: [],
+          source_asset_ids: [],
+          diff: {
+            added_item_ids: [],
+            removed_item_ids: [],
+            changed_item_ids: [],
+            new_conflict_ids: [],
+            resolved_conflict_ids: [],
+            usage_changed_asset_ids: [],
+          },
         },
         error_code: null,
         error_message: null,
@@ -552,28 +780,45 @@ describe("runtime data boundary", () => {
       created_at: now,
       updated_at: now,
     };
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify(cloneResponse), { status: 201 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(conversationResponse), { status: 200 }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(cloneResponse), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(conversationResponse), { status: 200 }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const clone = await assetWorkspaceAdapter.cloneProjectFromRequirements("token", "project-1", 7);
+    const clone = await assetWorkspaceAdapter.cloneProjectFromRequirements(
+      "token",
+      "project-1",
+      7,
+    );
     vi.unstubAllGlobals();
 
-    expect(clone).toMatchObject({ id: "project-clone", title: "项目副本", detailsLoaded: true });
-    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ expected_snapshot_version: 7 }));
+    expect(clone).toMatchObject({
+      id: "project-clone",
+      title: "项目副本",
+      detailsLoaded: true,
+    });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(
+      JSON.stringify({ expected_snapshot_version: 7 }),
+    );
   });
 
   it("serializes a source choice as a structured conversation field", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-source-choice",
-      instruction: "使用「施工花絮 B」继续",
-      clientRequestId: "5d634f6d-1842-4894-9ee2-99228b760717",
-      sourceResolutionSelection: {
-        resolutionId: "source-resolution-abc",
-        assetId: 202,
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-source-choice",
+        instruction: "使用「施工花絮 B」继续",
+        clientRequestId: "5d634f6d-1842-4894-9ee2-99228b760717",
+        sourceResolutionSelection: {
+          resolutionId: "source-resolution-abc",
+          assetId: 202,
+        },
+      }),
+    ).toMatchObject({
       conversation_id: "asset-conversation-source-choice",
       client_request_id: "5d634f6d-1842-4894-9ee2-99228b760717",
       source_resolution_selection: {
@@ -591,48 +836,62 @@ describe("runtime data boundary", () => {
 
     expect(draft.id).toBe("draft-library-selected-video");
     expect(draft).not.toBe(assetWorkspaceAdapter.getNewConversation());
-    expect(buildConversationMessagePayload({
-      conversationId: draft.id,
-      instruction: "基于《真人口播原片》做成视频。",
-      linkedAssetIds: [91],
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: draft.id,
+        instruction: "基于《真人口播原片》做成视频。",
+        linkedAssetIds: [91],
+      }),
+    ).toMatchObject({
       conversation_id: undefined,
       linked_asset_ids: [91],
     });
   });
 
   it("blocks structured video writes during maintenance without blocking reads", () => {
-    expect(() => assertVideoWritesAvailable(true)).toThrow("视频生成与修改暂时维护中");
+    expect(() => assertVideoWritesAvailable(true)).toThrow(
+      "视频生成与修改暂时维护中",
+    );
     expect(() => assertVideoWritesAvailable(false)).not.toThrow();
   });
 
   it("reads the source excerpt audit with the caller token and maps only its summary", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      asset_id: 1276,
-      project_ready: true,
-      product_completed: true,
-      audit: {
-        source_asset_count: 1,
-        source_window_duration_seconds: 27,
-        retained_range_count: 2,
-        retained_duration_seconds: 17,
-        removed_range_count: 1,
-        removed_duration_seconds: 10,
-        has_safe_removal: true,
-        source_fingerprint_consistent: true,
-        source_audio_visual_subtitle_timeline_consistent: true,
-        failure_codes: [],
-      },
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          asset_id: 1276,
+          project_ready: true,
+          product_completed: true,
+          audit: {
+            source_asset_count: 1,
+            source_window_duration_seconds: 27,
+            retained_range_count: 2,
+            retained_duration_seconds: 17,
+            removed_range_count: 1,
+            removed_duration_seconds: 10,
+            has_safe_removal: true,
+            source_fingerprint_consistent: true,
+            source_audio_visual_subtitle_timeline_consistent: true,
+            failure_codes: [],
+          },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
-    const audit = await assetWorkspaceAdapter.getSourceExcerptAudit("token", 1276);
+    const audit = await assetWorkspaceAdapter.getSourceExcerptAudit(
+      "token",
+      1276,
+    );
     vi.unstubAllGlobals();
 
     expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe(
       "/v1/video/projects/1276/source-excerpt-audit",
     );
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer token" });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Authorization: "Bearer token",
+    });
     expect(audit).toMatchObject({
       assetId: 1276,
       audit: { sourceWindowDurationSeconds: 27, removedRangeCount: 1 },
@@ -655,16 +914,21 @@ describe("runtime data boundary", () => {
         video_project: { timeline: { tracks: [], media: [] } },
       },
     });
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
-      id: "asset-conversation-snapshot",
-      title: "厨房动线与收纳规划",
-      status: "active",
-      metadata: { video_workflow_stage: "video_project_ready" },
-      messages: [],
-      products: [project],
-      created_at: "2026-08-02T00:00:00Z",
-      updated_at: "2026-08-02T00:01:00Z",
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "asset-conversation-snapshot",
+          title: "厨房动线与收纳规划",
+          status: "active",
+          metadata: { video_workflow_stage: "video_project_ready" },
+          messages: [],
+          products: [project],
+          created_at: "2026-08-02T00:00:00Z",
+          updated_at: "2026-08-02T00:01:00Z",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const snapshot = await assetWorkspaceAdapter.loadConversationSnapshot(
@@ -683,32 +947,38 @@ describe("runtime data boundary", () => {
   });
 
   it("serializes the exact Agent confirmation binding only when provided", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "确认修改",
-      agentConfirmationId: "agent-confirm-exact",
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "确认修改",
+        agentConfirmationId: "agent-confirm-exact",
+      }),
+    ).toMatchObject({
       conversation_id: "asset-conversation-1",
       agent_confirmation_id: "agent-confirm-exact",
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "这个音色偏温暖吗？",
-    })).not.toHaveProperty("agent_confirmation_id");
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "这个音色偏温暖吗？",
+      }),
+    ).not.toHaveProperty("agent_confirmation_id");
   });
 
   it("serializes the bound FLUX image request and confirmation separately", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "为这件商品生成带货视频关键画面",
-      imageGenerationRequest: {
-        capability: "image_asset",
-        target: { kind: "project" },
-        referenceAssetIds: [73],
-        userInstruction: "为这件商品生成带货视频关键画面",
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "为这件商品生成带货视频关键画面",
+        imageGenerationRequest: {
+          capability: "image_asset",
+          target: { kind: "project" },
+          referenceAssetIds: [73],
+          userInstruction: "为这件商品生成带货视频关键画面",
+        },
+      }),
+    ).toMatchObject({
       image_generation_request: {
         capability: "image_asset",
         target: { kind: "project" },
@@ -717,16 +987,18 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "确认生成图片",
-      imageGenerationConfirmation: {
-        proposalId: "image-proposal-1",
-        planHash: "a".repeat(64),
-        proposalVersion: 1,
-        clientRequestId: "5f33871f-6dc4-4248-9d2b-bc6e15a1d0cd",
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "确认生成图片",
+        imageGenerationConfirmation: {
+          proposalId: "image-proposal-1",
+          planHash: "a".repeat(64),
+          proposalVersion: 1,
+          clientRequestId: "5f33871f-6dc4-4248-9d2b-bc6e15a1d0cd",
+        },
+      }),
+    ).toMatchObject({
       image_generation_confirmation: {
         proposal_id: "image-proposal-1",
         plan_hash: "a".repeat(64),
@@ -735,21 +1007,23 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "应用这张图片",
-      imageGenerationApplication: {
-        candidateAssetId: 201,
-        expectedCandidateSetHash: "b".repeat(64),
-        clientRequestId: "601a967a-c058-449f-8ba9-bf714c5015db",
-        target: {
-          kind: "director_scene",
-          assetId: 91,
-          versionId: 22,
-          sceneIds: ["scene-2"],
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "应用这张图片",
+        imageGenerationApplication: {
+          candidateAssetId: 201,
+          expectedCandidateSetHash: "b".repeat(64),
+          clientRequestId: "601a967a-c058-449f-8ba9-bf714c5015db",
+          target: {
+            kind: "director_scene",
+            assetId: 91,
+            versionId: 22,
+            sceneIds: ["scene-2"],
+          },
         },
-      },
-    })).toMatchObject({
+      }),
+    ).toMatchObject({
       image_generation_application: {
         candidate_asset_id: 201,
         expected_candidate_set_hash: "b".repeat(64),
@@ -763,23 +1037,35 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "将两张图分别用于两个分镜",
-      imageGenerationSetApplication: {
-        expectedCandidateSetHash: "d".repeat(64),
-        clientRequestId: "512c8c43-2a79-491d-b5d0-f2b5f2cc7f39",
-        target: { kind: "director_scene", assetId: 91, versionId: 22, sceneIds: ["scene-1", "scene-2"] },
-        assignments: [
-          { candidateAssetId: 201, sceneId: "scene-1" },
-          { candidateAssetId: 202, sceneId: "scene-2" },
-        ],
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "将两张图分别用于两个分镜",
+        imageGenerationSetApplication: {
+          expectedCandidateSetHash: "d".repeat(64),
+          clientRequestId: "512c8c43-2a79-491d-b5d0-f2b5f2cc7f39",
+          target: {
+            kind: "director_scene",
+            assetId: 91,
+            versionId: 22,
+            sceneIds: ["scene-1", "scene-2"],
+          },
+          assignments: [
+            { candidateAssetId: 201, sceneId: "scene-1" },
+            { candidateAssetId: 202, sceneId: "scene-2" },
+          ],
+        },
+      }),
+    ).toMatchObject({
       image_generation_set_application: {
         expected_candidate_set_hash: "d".repeat(64),
         client_request_id: "512c8c43-2a79-491d-b5d0-f2b5f2cc7f39",
-        target: { kind: "director_scene", asset_id: 91, version_id: 22, scene_ids: ["scene-1", "scene-2"] },
+        target: {
+          kind: "director_scene",
+          asset_id: 91,
+          version_id: 22,
+          scene_ids: ["scene-1", "scene-2"],
+        },
         assignments: [
           { candidate_asset_id: 201, scene_id: "scene-1" },
           { candidate_asset_id: 202, scene_id: "scene-2" },
@@ -787,11 +1073,13 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "采纳第 2 镜的关键帧建议。",
-      selectedProductId: 91,
-    })).toEqual({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "采纳第 2 镜的关键帧建议。",
+        selectedProductId: 91,
+      }),
+    ).toEqual({
       conversation_id: "asset-conversation-1",
       instruction: "采纳第 2 镜的关键帧建议。",
       selected_product_id: 91,
@@ -799,16 +1087,34 @@ describe("runtime data boundary", () => {
     });
   });
 
+  it("sends a clicked scene only with its selected video and version", () => {
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "改这里的画面",
+        selectedProductId: 91,
+        selectedSceneId: "scene-2",
+        selectedSceneVersionId: 3,
+      }),
+    ).toMatchObject({
+      selected_product_id: 91,
+      selected_scene_id: "scene-2",
+      selected_scene_version_id: 3,
+    });
+  });
+
   it("serializes the reviewed BGM choice as structured video project confirmation", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "确认，生成视频工程",
-      videoProjectConfirmation: {
-        catalogVersion: "v1",
-        enabled: true,
-        catalogId: "track-b",
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "确认，生成视频工程",
+        videoProjectConfirmation: {
+          catalogVersion: "v1",
+          enabled: true,
+          catalogId: "track-b",
+        },
+      }),
+    ).toMatchObject({
       video_project_confirmation: {
         catalog_version: "v1",
         enabled: true,
@@ -816,14 +1122,16 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "确认，生成视频工程",
-      videoProjectConfirmation: {
-        catalogVersion: "v1",
-        enabled: false,
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "确认，生成视频工程",
+        videoProjectConfirmation: {
+          catalogVersion: "v1",
+          enabled: false,
+        },
+      }),
+    ).toMatchObject({
       video_project_confirmation: {
         catalog_version: "v1",
         enabled: false,
@@ -914,14 +1222,16 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "完整保留原意",
-      longFormAction: {
-        kind: "preserve",
-        analysisAssetId: 92,
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "完整保留原意",
+        longFormAction: {
+          kind: "preserve",
+          analysisAssetId: 92,
+        },
+      }),
+    ).toMatchObject({
       conversation_id: "asset-conversation-1",
       long_form_action: {
         kind: "preserve",
@@ -944,46 +1254,143 @@ describe("runtime data boundary", () => {
     expect(payload.instruction).not.toContain("translated_zh");
   });
 
-  it("serializes a bound video confirmation without requiring a BGM choice", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1", instruction: "确认，生成视频工程",
+  it("binds a scene source decision to the current director version", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "第 2 镜尝试公共素材",
       selectedProductId: 1397,
-      videoProjectConfirmation: {
-        directorAssetId: 1397, directorContentHash: "director-v11", ratio: "9:16",
+      sceneSourceDecision: {
+        directorAssetId: 1397,
+        directorVersionId: 42,
+        sceneId: "scene-2",
+        action: "search_public",
       },
-    })).toMatchObject({
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      scene_source_decision: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+        action: "search_public",
+      },
+    });
+  });
+
+  it("binds an explicit scene image candidate request without choosing public material", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "为本镜生成创意图片候选",
+      selectedProductId: 1397,
+      sceneImageGenerationRequest: {
+        directorAssetId: 1397, directorVersionId: 42, sceneId: "scene-2",
+      },
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      scene_image_generation_request: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+      },
+    });
+    expect(payload).not.toHaveProperty("scene_source_decision");
+  });
+
+  it("binds a selected project image to one scene and director version", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "第 2 镜使用选中的图片",
+      selectedProductId: 1397,
+      sceneSourceDecision: {
+        directorAssetId: 1397,
+        directorVersionId: 42,
+        sceneId: "scene-2",
+        action: "use_saved_asset",
+        sourceAssetId: 91,
+      },
+    });
+    expect(payload).toMatchObject({
+      scene_source_decision: {
+        director_asset_id: 1397,
+        director_version_id: 42,
+        scene_id: "scene-2",
+        action: "use_saved_asset",
+        source_asset_id: 91,
+      },
+    });
+  });
+
+  it("binds production planning to the exact reviewed director draft", () => {
+    const payload = buildConversationMessagePayload({
+      conversationId: "asset-conversation-1",
+      instruction: "完善制作方案",
+      selectedProductId: 1397,
+      directorProductionPlan: {
+        directorAssetId: 1397,
+        baseContentHash: "saved-draft-v2",
+      },
+    });
+    expect(payload).toMatchObject({
+      selected_product_id: 1397,
+      director_production_plan: {
+        director_asset_id: 1397,
+        base_content_hash: "saved-draft-v2",
+      },
+    });
+  });
+
+  it("serializes a bound video confirmation without requiring a BGM choice", () => {
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "确认，生成视频工程",
+        selectedProductId: 1397,
+        videoProjectConfirmation: {
+          directorAssetId: 1397,
+          directorContentHash: "director-v11",
+          ratio: "9:16",
+        },
+      }),
+    ).toMatchObject({
       selected_product_id: 1397,
       video_project_confirmation: {
-        director_asset_id: 1397, director_content_hash: "director-v11", ratio: "9:16",
+        director_asset_id: 1397,
+        director_content_hash: "director-v11",
+        ratio: "9:16",
       },
     });
   });
 
   it("serializes long-form actions as structured data", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "new",
-      instruction: "分析原片",
-      longFormAction: {
-        kind: "analyze",
-        sourceAssetId: 91,
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "new",
+        instruction: "分析原片",
+        longFormAction: {
+          kind: "analyze",
+          sourceAssetId: 91,
+        },
+      }),
+    ).toMatchObject({
       long_form_action: {
         kind: "analyze",
         source_asset_id: 91,
       },
     });
 
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "做成短视频",
-      longFormAction: {
-        kind: "select",
-        analysisAssetId: 92,
-        candidateId: "cand_02",
-        cleanupMode: "preserve_all",
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "做成短视频",
+        longFormAction: {
+          kind: "select",
+          analysisAssetId: 92,
+          candidateId: "cand_02",
+          cleanupMode: "preserve_all",
+        },
+      }),
+    ).toMatchObject({
       conversation_id: "asset-conversation-1",
       long_form_action: {
         kind: "select",
@@ -995,25 +1402,30 @@ describe("runtime data boundary", () => {
   });
 
   it("loads one bounded library page by library kind", async () => {
-    const backendRows = Array.from({ length: 49 }, (_, index) => asset({
-      id: index + 1,
-      library_kind: "video",
-      asset_kind: index % 2 === 0 ? "video" : "video",
-      content_type: index % 2 === 0 ? "uploaded_video" : "video_project",
-      title: `视频条目 ${index + 1}`,
-      updated_at: new Date(Date.UTC(2026, 6, 24, 2, 0, 49 - index)).toISOString(),
-    }));
+    const backendRows = Array.from({ length: 49 }, (_, index) =>
+      asset({
+        id: index + 1,
+        library_kind: "video",
+        asset_kind: index % 2 === 0 ? "video" : "video",
+        content_type: index % 2 === 0 ? "uploaded_video" : "video_project",
+        title: `视频条目 ${index + 1}`,
+        updated_at: new Date(
+          Date.UTC(2026, 6, 24, 2, 0, 49 - index),
+        ).toISOString(),
+      }),
+    );
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify(backendRows), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify(backendRows), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const page = await assetWorkspaceAdapter.listLibrary(
-      "token",
-      "video",
-      "",
-      { offset: 0, limit: 48 },
-    );
+    const page = await assetWorkspaceAdapter.listLibrary("token", "video", "", {
+      offset: 0,
+      limit: 48,
+    });
     vi.unstubAllGlobals();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -1074,19 +1486,32 @@ describe("runtime data boundary", () => {
 
   it("keeps exact search results when semantic search returns no matches", async () => {
     const exact = asset({ id: 81, title: "精确命中的素材" });
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const pathname = new URL(String(input)).pathname;
-      const payload = pathname.endsWith("/semantic-search")
-        ? []
-        : [{ asset: exact, snippet: exact.title, score: 1, matched_fields: ["title"] }];
-      return new Response(JSON.stringify(payload), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) => {
+        const pathname = new URL(String(input)).pathname;
+        const payload = pathname.endsWith("/semantic-search")
+          ? []
+          : [
+              {
+                asset: exact,
+                snippet: exact.title,
+                score: 1,
+                matched_fields: ["title"],
+              },
+            ];
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       });
-    });
     vi.stubGlobal("fetch", fetchMock);
 
-    const page = await assetWorkspaceAdapter.listLibrary("token", "assets", "精确命中");
+    const page = await assetWorkspaceAdapter.listLibrary(
+      "token",
+      "assets",
+      "精确命中",
+    );
     vi.unstubAllGlobals();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -1095,24 +1520,38 @@ describe("runtime data boundary", () => {
 
   it("keeps exact search results when semantic search is unavailable", async () => {
     const exact = asset({ id: 82, title: "Provider 降级素材" });
-    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const pathname = new URL(String(input)).pathname;
-      if (pathname.endsWith("/semantic-search")) {
-        return new Response(JSON.stringify({ detail: "unavailable" }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      return new Response(JSON.stringify([
-        { asset: exact, snippet: exact.title, score: 1, matched_fields: ["title"] },
-      ]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(async (input) => {
+        const pathname = new URL(String(input)).pathname;
+        if (pathname.endsWith("/semantic-search")) {
+          return new Response(JSON.stringify({ detail: "unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(
+          JSON.stringify([
+            {
+              asset: exact,
+              snippet: exact.title,
+              score: 1,
+              matched_fields: ["title"],
+            },
+          ]),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       });
-    });
     vi.stubGlobal("fetch", fetchMock);
 
-    const page = await assetWorkspaceAdapter.listLibrary("token", "assets", "Provider 降级");
+    const page = await assetWorkspaceAdapter.listLibrary(
+      "token",
+      "assets",
+      "Provider 降级",
+    );
     vi.unstubAllGlobals();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -1131,7 +1570,10 @@ describe("runtime data boundary", () => {
       },
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([video]), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify([video]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1154,11 +1596,17 @@ describe("runtime data boundary", () => {
       failure_reason: "第 1 镜素材不可用，请调整素材后再继续。",
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([video]), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify([video]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const page = await assetWorkspaceAdapter.listLibrary("token-failed-video", "video");
+    const page = await assetWorkspaceAdapter.listLibrary(
+      "token-failed-video",
+      "video",
+    );
     vi.unstubAllGlobals();
 
     expect(page.rows[0]).toMatchObject({
@@ -1168,15 +1616,17 @@ describe("runtime data boundary", () => {
   });
 
   it("serializes failed-scene material replacement as a bound action", () => {
-    expect(buildConversationMessagePayload({
-      conversationId: "asset-conversation-1",
-      instruction: "重新寻找第 4 镜素材",
-      selectedProductId: 440,
-      videoSceneReplacement: {
-        failedProjectAssetId: 440,
-        sceneId: "seg-4",
-      },
-    })).toMatchObject({
+    expect(
+      buildConversationMessagePayload({
+        conversationId: "asset-conversation-1",
+        instruction: "重新寻找第 4 镜素材",
+        selectedProductId: 440,
+        videoSceneReplacement: {
+          failedProjectAssetId: 440,
+          sceneId: "seg-4",
+        },
+      }),
+    ).toMatchObject({
       selected_product_id: 440,
       video_scene_replacement: {
         failed_project_asset_id: 440,
@@ -1194,14 +1644,19 @@ describe("runtime data boundary", () => {
       original_ref: "supabase://assets/user-73/scene.png",
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify([image]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const page = await assetWorkspaceAdapter.listLibrary("token", "image");
     vi.unstubAllGlobals();
 
-    expect(page.rows[0]?.previewUrl).toContain("/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png");
+    expect(page.rows[0]?.previewUrl).toContain(
+      "/v1/video/media?ref=supabase%3A%2F%2Fassets%2Fuser-73%2Fscene.png",
+    );
   });
 
   it("uses the shared completed delivery state for a generated image in the library", async () => {
@@ -1216,7 +1671,10 @@ describe("runtime data boundary", () => {
       original_ref: `supabase://assets/content-assets/1/generation-jobs/77/images/${"b".repeat(64)}.png`,
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([image]), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify([image]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1237,7 +1695,10 @@ describe("runtime data boundary", () => {
       source_content_type: "video/mp4",
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([source]), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify([source]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1254,7 +1715,9 @@ describe("runtime data boundary", () => {
   it("reports actual multipart upload progress and returns the uploaded asset", async () => {
     class FakeUploadRequest {
       static instance: FakeUploadRequest | null = null;
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       status = 201;
@@ -1263,7 +1726,11 @@ describe("runtime data boundary", () => {
       open = vi.fn();
       setRequestHeader = vi.fn();
       send = vi.fn(() => {
-        this.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 } as ProgressEvent<EventTarget>);
+        this.upload.onprogress?.({
+          lengthComputable: true,
+          loaded: 25,
+          total: 100,
+        } as ProgressEvent<EventTarget>);
         this.onload?.();
       });
 
@@ -1275,19 +1742,36 @@ describe("runtime data boundary", () => {
     const progress = vi.fn();
 
     await expect(
-      assetWorkspaceAdapter.uploadAsset("token", new File(["image"], "cover.png", { type: "image/png" }), "image", progress, "upload-key-42"),
+      assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["image"], "cover.png", { type: "image/png" }),
+        "image",
+        progress,
+        "upload-key-42",
+      ),
     ).resolves.toMatchObject({ id: 42 });
 
     expect(progress).toHaveBeenCalledWith(25);
-    expect(FakeUploadRequest.instance?.open).toHaveBeenCalledWith("POST", expect.stringContaining("/v1/assets/upload"));
-    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith("Authorization", "Bearer token");
-    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "upload-key-42");
+    expect(FakeUploadRequest.instance?.open).toHaveBeenCalledWith(
+      "POST",
+      expect.stringContaining("/v1/assets/upload"),
+    );
+    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith(
+      "Authorization",
+      "Bearer token",
+    );
+    expect(FakeUploadRequest.instance?.setRequestHeader).toHaveBeenCalledWith(
+      "Idempotency-Key",
+      "upload-key-42",
+    );
     vi.unstubAllGlobals();
   });
 
   it("reports an indeterminate progress state when the browser cannot compute total bytes", async () => {
     class FakeUploadRequest {
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       status = 201;
       statusText = "Created";
@@ -1295,14 +1779,23 @@ describe("runtime data boundary", () => {
       open = vi.fn();
       setRequestHeader = vi.fn();
       send = vi.fn(() => {
-        this.upload.onprogress?.({ lengthComputable: false, loaded: 25, total: 0 } as ProgressEvent<EventTarget>);
+        this.upload.onprogress?.({
+          lengthComputable: false,
+          loaded: 25,
+          total: 0,
+        } as ProgressEvent<EventTarget>);
         this.onload?.();
       });
     }
     vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
     const progress = vi.fn();
 
-    await assetWorkspaceAdapter.uploadAsset("token", new File(["document"], "brief.pdf", { type: "application/pdf" }), "assets", progress);
+    await assetWorkspaceAdapter.uploadAsset(
+      "token",
+      new File(["document"], "brief.pdf", { type: "application/pdf" }),
+      "assets",
+      progress,
+    );
 
     expect(progress).toHaveBeenCalledWith(null);
     vi.unstubAllGlobals();
@@ -1312,7 +1805,9 @@ describe("runtime data boundary", () => {
     vi.useFakeTimers();
     class FakeUploadRequest {
       static instances: FakeUploadRequest[] = [];
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -1323,10 +1818,16 @@ describe("runtime data boundary", () => {
       setRequestHeader = vi.fn();
       send = vi.fn((formData: FormData) => {
         if (FakeUploadRequest.instances.length === 1) {
-          this.upload.onprogress?.({ lengthComputable: true, loaded: 99, total: 100 } as ProgressEvent<EventTarget>);
+          this.upload.onprogress?.({
+            lengthComputable: true,
+            loaded: 99,
+            total: 100,
+          } as ProgressEvent<EventTarget>);
           return;
         }
-        expect(formData).toBe(FakeUploadRequest.instances[0]?.send.mock.calls[0]?.[0]);
+        expect(formData).toBe(
+          FakeUploadRequest.instances[0]?.send.mock.calls[0]?.[0],
+        );
         this.onload?.();
       });
       abort = vi.fn(() => this.onabort?.());
@@ -1351,7 +1852,10 @@ describe("runtime data boundary", () => {
       expect(FakeUploadRequest.instances).toHaveLength(2);
       expect(FakeUploadRequest.instances[0]?.abort).toHaveBeenCalledTimes(1);
       for (const request of FakeUploadRequest.instances) {
-        expect(request.setRequestHeader).toHaveBeenCalledWith("Idempotency-Key", "stable-upload-key");
+        expect(request.setRequestHeader).toHaveBeenCalledWith(
+          "Idempotency-Key",
+          "stable-upload-key",
+        );
       }
       await expect(upload).resolves.toMatchObject({ id: 44 });
     } finally {
@@ -1364,7 +1868,9 @@ describe("runtime data boundary", () => {
     vi.useFakeTimers();
     class FakeUploadRequest {
       static instances: FakeUploadRequest[] = [];
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -1374,7 +1880,11 @@ describe("runtime data boundary", () => {
       open = vi.fn();
       setRequestHeader = vi.fn();
       send = vi.fn(() => {
-        this.upload.onprogress?.({ lengthComputable: false, loaded: 1, total: 0 } as ProgressEvent<EventTarget>);
+        this.upload.onprogress?.({
+          lengthComputable: false,
+          loaded: 1,
+          total: 0,
+        } as ProgressEvent<EventTarget>);
       });
       abort = vi.fn(() => this.onabort?.());
 
@@ -1408,7 +1918,9 @@ describe("runtime data boundary", () => {
     vi.useFakeTimers();
     class FakeUploadRequest {
       static instance: FakeUploadRequest | null = null;
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -1456,7 +1968,9 @@ describe("runtime data boundary", () => {
     vi.useFakeTimers();
     class FakeUploadRequest {
       static instances: FakeUploadRequest[] = [];
-      upload: { onprogress: ((event: ProgressEvent<EventTarget>) => void) | null } = { onprogress: null };
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+      } = { onprogress: null };
       onload: (() => void) | null = null;
       onerror: (() => void) | null = null;
       onabort: (() => void) | null = null;
@@ -1501,32 +2015,52 @@ describe("runtime data boundary", () => {
   it("keeps a queued generation job in the send result", async () => {
     const now = "2026-07-17T06:00:00Z";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({
-        conversation_id: "asset-conversation-queued",
-        conversation: {
-          id: "asset-conversation-queued",
-          title: "产品介绍",
-          status: "active",
-          metadata: {},
-          messages: [],
-          products: [],
-          created_at: now,
-          updated_at: now,
-        },
-        user_message: "生成产品介绍",
-        assistant_message: "内容生成任务已进入队列，完成后会自动更新当前对话。",
-        intent: { operation: "create" },
-        suggestions: [],
-        product: null,
-        generation_job: {
-          id: "asset-generation-job-1",
-          status: "queued",
-          result_asset_id: null,
-          error_message: null,
-          created_at: now,
-          updated_at: now,
-        },
-      }), { status: 202, headers: { "Content-Type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          conversation_id: "asset-conversation-queued",
+          conversation: {
+            id: "asset-conversation-queued",
+            title: "产品介绍",
+            status: "active",
+            metadata: {},
+            messages: [],
+            products: [],
+            created_at: now,
+            updated_at: now,
+          },
+          user_message: "生成产品介绍",
+          assistant_message:
+            "内容生成任务已进入队列，完成后会自动更新当前对话。",
+          intent: { operation: "create" },
+          suggestions: [],
+          product: null,
+          generation_job: {
+            id: "asset-generation-job-1",
+            status: "queued",
+            result_asset_id: null,
+            error_message: null,
+            intermediate_results: [
+              {
+                stage: "creative_direction",
+                state: "completed",
+                public_projection: {
+                  selected_id: "direction-a",
+                  selected_candidate: { angle: "结果先行" },
+                },
+              },
+            ],
+            checkpoint_resume: {
+              version: "video-generation-checkpoint-resume:v1",
+              reused_stages: ["creative_direction"],
+              invalidation_boundary: "scene_structure",
+              rerun_scene_ids: [],
+            },
+            created_at: now,
+            updated_at: now,
+          },
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1540,6 +2074,12 @@ describe("runtime data boundary", () => {
     expect(result.product).toBeNull();
     expect(result.generationJob?.id).toBe("asset-generation-job-1");
     expect(result.generationJob?.status).toBe("queued");
+    expect(
+      result.generationJob?.intermediate_results?.[0]?.public_projection,
+    ).toMatchObject({ selected_candidate: { angle: "结果先行" } });
+    expect(result.generationJob?.checkpoint_resume?.invalidation_boundary).toBe(
+      "scene_structure",
+    );
     expect(result.conversation.detailsLoaded).toBe(true);
     vi.unstubAllGlobals();
   });
@@ -1553,7 +2093,10 @@ describe("runtime data boundary", () => {
       body: "# 新文案\n\n已修改正文",
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify(updated), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(JSON.stringify(updated), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1619,37 +2162,74 @@ describe("runtime data boundary", () => {
       ...overrides,
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({
-        scope: "local",
-        segment_id: "segment-1",
-        groups: {
-          current: [candidate({ candidate_id: "cur-1", relevance_status: "current", selectable: false })],
-          recommended: [candidate({})],
-          library: [candidate({ candidate_id: "cand-2", source_asset_id: 13, relevance_status: "related" })],
-          public: [],
-        },
-        provider_statuses: [],
-        next_cursor: null,
-      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          scope: "local",
+          segment_id: "segment-1",
+          groups: {
+            current: [
+              candidate({
+                candidate_id: "cur-1",
+                relevance_status: "current",
+                selectable: false,
+              }),
+            ],
+            recommended: [candidate({})],
+            library: [
+              candidate({
+                candidate_id: "cand-2",
+                source_asset_id: 13,
+                relevance_status: "related",
+              }),
+            ],
+            public: [],
+          },
+          provider_statuses: [],
+          next_cursor: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "local");
+    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates(
+      "token",
+      9100,
+      "segment-1",
+      "local",
+    );
 
-    expect(result.current?.[0]).toMatchObject({ candidateId: "cur-1", selectable: false });
-    expect(result.recommended[0]).toMatchObject({ candidateId: "cand-1", assetId: 12, reason: "匹配施工过程" });
+    expect(result.current?.[0]).toMatchObject({
+      candidateId: "cur-1",
+      selectable: false,
+    });
+    expect(result.recommended[0]).toMatchObject({
+      candidateId: "cand-1",
+      assetId: 12,
+      reason: "匹配施工过程",
+    });
     expect(result.library[0]).toMatchObject({ candidateId: "cand-2" });
     vi.unstubAllGlobals();
   });
 
   it("surfaces a candidate endpoint 404 instead of falling back to deleted routes", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ detail: "Segment material candidates v2 is disabled." }), { status: 404, headers: { "Content-Type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          detail: "Segment material candidates v2 is disabled.",
+        }),
+        { status: 404, headers: { "Content-Type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "local"),
+      assetWorkspaceAdapter.loadSegmentMaterialCandidates(
+        "token",
+        9100,
+        "segment-1",
+        "local",
+      ),
     ).rejects.toThrow("Segment material candidates v2 is disabled.");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
@@ -1657,75 +2237,140 @@ describe("runtime data boundary", () => {
 
   it("returns public candidates with provider statuses and next cursor", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({
-        scope: "public",
-        segment_id: "segment-1",
-        groups: {
-          current: [],
-          recommended: [],
-          library: [],
-          public: [{
-            candidate_id: "pub-1",
-            source_type: "public_asset",
-            source_asset_id: null,
-            provider: "pexels",
-            provider_item_id: "9988",
-            media_type: "video",
-            title: "门店安装",
-            preview_url: "https://cdn/pub.jpg",
-            width: 1080,
-            height: 1920,
-            duration: 8,
-            license: "Pexels License",
-            author: "Jane",
-            attribution_url: "https://pexels/9988",
-            verification_status: "unverified",
-            relevance_status: "unverified",
-            relevance_reason: "由结构化搜索召回",
-            requires_trim: true,
-            already_persisted: false,
-            selectable: true,
-          }],
-        },
-        provider_statuses: [{ provider: "pexels", status: "ok", error: "" }],
-        next_cursor: "cursor-2",
-      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          scope: "public",
+          segment_id: "segment-1",
+          groups: {
+            current: [],
+            recommended: [],
+            library: [],
+            public: [
+              {
+                candidate_id: "pub-1",
+                source_type: "public_asset",
+                source_asset_id: null,
+                provider: "pexels",
+                provider_item_id: "9988",
+                media_type: "video",
+                title: "门店安装",
+                preview_url: "https://cdn/pub.jpg",
+                width: 1080,
+                height: 1920,
+                duration: 8,
+                license: "Pexels License",
+                author: "Jane",
+                attribution_url: "https://pexels/9988",
+                verification_status: "unverified",
+                relevance_status: "unverified",
+                relevance_reason: "由结构化搜索召回",
+                requires_trim: true,
+                already_persisted: false,
+                selectable: true,
+              },
+            ],
+          },
+          provider_statuses: [{ provider: "pexels", status: "ok", error: "" }],
+          next_cursor: "cursor-2",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1", "public");
+    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates(
+      "token",
+      9100,
+      "segment-1",
+      "public",
+    );
 
-    expect(result.public?.[0]).toMatchObject({ candidateId: "pub-1", provider: "pexels", requiresTrim: true, mediaType: "video" });
-    expect(result.providerStatuses).toEqual([{ provider: "pexels", status: "ok", error: undefined }]);
+    expect(result.public?.[0]).toMatchObject({
+      candidateId: "pub-1",
+      provider: "pexels",
+      requiresTrim: true,
+      mediaType: "video",
+    });
+    expect(result.providerStatuses).toEqual([
+      { provider: "pexels", status: "ok", error: undefined },
+    ]);
     expect(result.publicNextCursor).toBe("cursor-2");
     vi.unstubAllGlobals();
   });
 
   it("submits candidate_id when replacing with a unified candidate", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ id: "job-1", asset_id: 9100, status: "queued", workflow_stage: "video_project_queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }),
+      new Response(
+        JSON.stringify({
+          id: "job-1",
+          asset_id: 9100,
+          status: "queued",
+          workflow_stage: "video_project_queued",
+          error_message: null,
+          project: null,
+        }),
+        { status: 202, headers: { "Content-Type": "application/json" } },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-9" })).resolves.toMatchObject({
+    await expect(
+      assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", {
+        candidateId: "cand-9",
+      }),
+    ).resolves.toMatchObject({
       kind: "started",
       job: { id: "job-1" },
     });
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ operation: "replace_material", candidate_id: "cand-9" });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({ operation: "replace_material", candidate_id: "cand-9" });
     vi.unstubAllGlobals();
   });
 
   it("preserves the timeline dirty confirmation contract for browse replacement", async () => {
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: { code: "timeline_dirty", message: "会覆盖手工剪辑" } }), { status: 409, headers: { "Content-Type": "application/json" } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "job-recompose", asset_id: 9100, status: "queued", workflow_stage: "video_project_queued", error_message: null, project: null }), { status: 202, headers: { "Content-Type": "application/json" } }));
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            detail: { code: "timeline_dirty", message: "会覆盖手工剪辑" },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "job-recompose",
+            asset_id: 9100,
+            status: "queued",
+            workflow_stage: "video_project_queued",
+            error_message: null,
+            project: null,
+          }),
+          { status: 202, headers: { "Content-Type": "application/json" } },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-12" })).resolves.toEqual({
+    await expect(
+      assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", {
+        candidateId: "cand-12",
+      }),
+    ).resolves.toEqual({
       kind: "confirm_overwrite",
       message: "会覆盖手工剪辑",
     });
-    await expect(assetWorkspaceAdapter.replaceSegmentMaterial("token", 9100, "segment-1", { candidateId: "cand-12" }, true)).resolves.toMatchObject({
+    await expect(
+      assetWorkspaceAdapter.replaceSegmentMaterial(
+        "token",
+        9100,
+        "segment-1",
+        { candidateId: "cand-12" },
+        true,
+      ),
+    ).resolves.toMatchObject({
       kind: "started",
       job: { id: "job-recompose" },
     });
@@ -1740,23 +2385,28 @@ describe("runtime data boundary", () => {
   it("correlates a confirmation request with the client request id header", async () => {
     const clientRequestId = "13c3b93f-d5fa-4a9c-8f9d-38e62829498d";
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({
-        detail: "数据库暂时不可用，请稍后重试。",
-        code: "database_temporarily_unavailable",
-      }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      })
+      new Response(
+        JSON.stringify({
+          detail: "数据库暂时不可用，请稍后重试。",
+          code: "database_temporarily_unavailable",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(assetWorkspaceAdapter.sendMessage({
-      token: "token",
-      conversationId: "asset-conversation-450",
-      instruction: "确认，生成视频工程（横屏 16:9）",
-      selectedProductId: 450,
-      clientRequestId,
-    })).rejects.toThrow("MULTIMIX_API_CONNECTION_ERROR");
+    await expect(
+      assetWorkspaceAdapter.sendMessage({
+        token: "token",
+        conversationId: "asset-conversation-450",
+        instruction: "确认，生成视频工程（横屏 16:9）",
+        selectedProductId: 450,
+        clientRequestId,
+      }),
+    ).rejects.toThrow("MULTIMIX_API_CONNECTION_ERROR");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
@@ -1767,11 +2417,15 @@ describe("runtime data boundary", () => {
 
   it("retries one transient conversation detail failure", async () => {
     let attempts = 0;
-    const result = await retryConversationDetailLoad(async () => {
-      attempts += 1;
-      if (attempts === 1) throw new Error("temporary database connection failure");
-      return "loaded";
-    }, async () => undefined);
+    const result = await retryConversationDetailLoad(
+      async () => {
+        attempts += 1;
+        if (attempts === 1)
+          throw new Error("temporary database connection failure");
+        return "loaded";
+      },
+      async () => undefined,
+    );
 
     expect(result).toBe("loaded");
     expect(attempts).toBe(2);
@@ -1788,7 +2442,10 @@ describe("runtime data boundary", () => {
       updated_at: "2026-07-12T09:00:00Z",
     };
 
-    const conversation = conversationFromSummary(summary, assetWorkspaceAdapter.getNewConversation().product);
+    const conversation = conversationFromSummary(
+      summary,
+      assetWorkspaceAdapter.getNewConversation().product,
+    );
 
     expect(conversation.id).toBe(summary.id);
     expect(conversation.title).toBe(summary.title);
@@ -1824,7 +2481,10 @@ describe("runtime data boundary", () => {
   });
 
   it("keeps bundled demo data out of the production adapter", () => {
-    const source = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
+    const source = readFileSync(
+      resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"),
+      "utf8",
+    );
 
     expect(source).not.toContain("asset-workspace-mock-data");
     expect(source).not.toContain("mockAssetWorkspaceData");
@@ -1845,9 +2505,18 @@ describe("runtime data boundary", () => {
   });
 
   it("shares asset title normalization instead of maintaining two copies", () => {
-    const shared = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-shared.ts"), "utf8");
-    const adapter = readFileSync(resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"), "utf8");
-    const mappers = readFileSync(resolve(process.cwd(), "lib/asset-mappers.ts"), "utf8");
+    const shared = readFileSync(
+      resolve(process.cwd(), "app/assets/lib/asset-workspace-shared.ts"),
+      "utf8",
+    );
+    const adapter = readFileSync(
+      resolve(process.cwd(), "app/assets/lib/asset-workspace-adapter.ts"),
+      "utf8",
+    );
+    const mappers = readFileSync(
+      resolve(process.cwd(), "lib/asset-mappers.ts"),
+      "utf8",
+    );
 
     expect(shared).toContain("export function normalizeAssetTitle");
     expect(adapter).not.toContain("function normalizeAssetTitle");
@@ -1857,5 +2526,27 @@ describe("runtime data boundary", () => {
   it("keeps the new conversation free from legacy type suggestions", () => {
     expect(assetWorkspaceAdapter.listConversations()).toEqual([]);
     expect(assetWorkspaceAdapter.getNewConversation().suggestions).toEqual([]);
+  });
+
+
+  it("uses the saved director version for review retry and suggestion ignore", async () => {
+    const updated = asset({ id: 88, content_type: "video_script", content_hash: "same-hash" });
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () =>
+      new Response(JSON.stringify(updated), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const draft = { backendAssetId: 88, contentHash: "same-hash" } as AssetProduct;
+
+    await assetWorkspaceAdapter.retryDirectorReview("token", draft);
+    await assetWorkspaceAdapter.ignoreDirectorReviewSuggestion("token", draft, "finding-1");
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/assets/88/director-review/retry");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/v1/assets/88/director-review/findings/finding-1/ignore");
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init).toEqual(expect.objectContaining({ method: "POST", body: JSON.stringify({ base_content_hash: "same-hash" }) }));
+    }
+    vi.unstubAllGlobals();
   });
 });

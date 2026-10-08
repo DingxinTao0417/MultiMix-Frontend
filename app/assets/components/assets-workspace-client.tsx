@@ -24,6 +24,7 @@ import {
   X
 } from "lucide-react";
 import {
+  API_BASE,
   API_CONNECTION_ERROR,
   addProjectSource,
   apiErrorStatus,
@@ -37,12 +38,16 @@ import {
 import { agentTimelineStepsFromBackend } from "../../../lib/asset-mappers";
 import { reconcileProductMutation, runExclusiveProductMutation, savedVersionForProduct, type ProductSaveFeedback } from "../lib/product-save-state";
 import { trackProductEvent } from "../../../lib/product-analytics";
+import { observeDirectorActivity, observeVideoActivity } from "../../../lib/product-activity";
 import { getProjectBGMCatalog } from "../../../editor-engine/vendor/api";
 import {
   assetWorkspaceAdapter,
   createLibraryCreationDraftConversation,
   isCurrentRequirementAnalysis,
   type LibraryRow,
+  type ImageToVideoCostSummary,
+  type NarrationUsageSummary,
+  type SceneImageFitAdvice,
   type VideoJobResult,
   type VideoJobStepResult,
 } from "../lib/asset-workspace-adapter";
@@ -52,6 +57,7 @@ import type {
   AgentActionRunResponse,
   AgentRunStep,
   AssetCreativeDirectionSelection,
+  AssetDirectorProductionPlan,
   AssetImageGenerationApplication,
   AssetImageGenerationSetApplication,
   AssetImageGenerationConfirmation,
@@ -62,6 +68,7 @@ import type {
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetPresenterAudioSelectionConfirmation,
+  AssetProductSegment,
   AssetSourceResolutionSelection,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
@@ -88,6 +95,8 @@ import type {
 } from "./generated-image-gallery";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
 import type { LibraryActionIntent } from "./library-workshop";
+import type { SceneSourceAction } from "./product-preview";
+import { sceneImageGenerationUtterance } from "../lib/scene-source-utterance";
 import ProjectResourcesDrawer, {
   type ProjectResourceItem,
   type ProjectResourceKind,
@@ -209,7 +218,25 @@ type ChatImageUpload = ChatImageAttachment & {
   sourceUrl?: string;
   idempotencyKey: string;
   videoPurpose?: ChatVideoAttachmentPurpose;
+  sceneUploadTarget?: SceneUploadTarget;
 };
+
+type SceneUploadTarget = {
+  conversationId: string;
+  directorAssetId: number;
+  directorVersionId: number;
+  sceneId: string;
+};
+
+function sceneUploadUnderstandingFailure(category?: string | null): string {
+  if (category === "provider_billing") {
+    return "图片已保存，但视觉服务账户或计费不可用；恢复供应商服务后，在附件上点击“重试”重新解析。原分镜保持不变。";
+  }
+  if (category === "provider_timeout") {
+    return "图片已保存，但视觉服务响应超时；可在附件上点击“重试”重新解析。原分镜保持不变。";
+  }
+  return "图片已保存，但视觉理解未完成；请在附件上点击“重试”重新解析，原分镜保持不变。";
+}
 
 const CHAT_UPLOAD_BATCH_CONCURRENCY = 3;
 const DESKTOP_CHAT_PANEL_MIN = 480;
@@ -249,6 +276,8 @@ export type VideoJobLiveStatus = {
   workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
+  imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+  narrationUsageSummary?: NarrationUsageSummary | null;
   completionConfirmed: boolean;
   progressKind?: "video_create" | "video_update";
   connectionLost?: boolean;
@@ -270,6 +299,8 @@ export function videoJobLiveStatusFromResult(job: VideoJobResult): VideoJobLiveS
     workflowStage: job.workflowStage,
     steps: job.steps,
     errorMessage: job.errorMessage,
+    imageToVideoCostSummary: job.imageToVideoCostSummary,
+    narrationUsageSummary: job.narrationUsageSummary,
     completionConfirmed: false,
     progressKind: job.operationStatus == null ? "video_create" : "video_update",
     connectionLost: false,
@@ -351,6 +382,13 @@ export function executionVideoJobIds(
   return [...ids];
 }
 
+function latestProductVersionId(product: ProductArtifact): number | null {
+  const ids = (product.versions ?? [])
+    .map((version) => Number(version.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  return ids.length ? Math.max(...ids) : null;
+}
+
 export function isExecutionTerminal(job: VideoJobResult): boolean {
   if (job.productStatus === "generating") return false;
   if (job.productStatus === "failed" || job.productStatus === "completed") return true;
@@ -359,6 +397,37 @@ export function isExecutionTerminal(job: VideoJobResult): boolean {
   return !job.steps.some(
     (step) => step.status === "run" || step.status === "wait",
   );
+}
+
+export function resolveSelectedSceneFocus(
+  product: ProductArtifact | null | undefined,
+  selectedBackendAssetId: number | null | undefined,
+  focus: { sceneId: string; versionId: number | null } | undefined,
+): { sceneId: string; versionId: number } | undefined {
+  if (!product || !focus || product.backendAssetId !== selectedBackendAssetId
+    || !["video_project", "video_script"].includes(product.contentType ?? "")) return undefined;
+  const plan = product.metadata?.video_plan;
+  const planScenes = plan && typeof plan === "object" && !Array.isArray(plan)
+    ? (plan as Record<string, unknown>).scenes : undefined;
+  const hasScene = product.contentType === "video_script"
+    ? Array.isArray(planScenes) && planScenes.some((scene) =>
+      scene && typeof scene === "object" && (scene as Record<string, unknown>).id === focus.sceneId)
+    : product.segments?.some((segment) => segment.id === focus.sceneId);
+  if (focus.versionId === null || latestProductVersionId(product) !== focus.versionId || !hasScene) {
+    throw new Error("分镜已更新或版本尚未就绪，请重新选择分镜后再修改。");
+  }
+  return { sceneId: focus.sceneId, versionId: focus.versionId };
+}
+
+export function shouldNotifyExecutionFailure(
+  job: VideoJobResult,
+  activeInThisPage: Set<string>,
+): boolean {
+  if (!isExecutionTerminal(job)) {
+    activeInThisPage.add(job.id);
+    return false;
+  }
+  return job.status === "failed" && activeInThisPage.has(job.id);
 }
 
 export function resolveExecutionTerminalObservation(
@@ -770,6 +839,31 @@ export default function AssetsWorkspaceClient({
     return initialProductId ? { [conversationId]: initialProductId } : {};
   });
   const [selectedImageFrameIds, setSelectedImageFrameIds] = useState<Record<string, string>>({});
+  const [clickedSceneFocus, setClickedSceneFocus] = useState<Record<number, {
+    sceneId: string;
+    versionId: number | null;
+  }>>({});
+  const [sceneSourceProgress, setSceneSourceProgress] = useState<{
+    sceneId: string; stage: string; error?: string;
+  } | null>(null);
+  const [sceneImagePicker, setSceneImagePicker] = useState<{
+    conversationId: string;
+    sceneId: string;
+    directorAssetId: number;
+    directorVersionId: number;
+    options: Array<{ id: number; title: string; previewUrl?: string; origin: "上传" | "生成" }>;
+    loading: boolean;
+    error?: string;
+    selectedOptionId?: number;
+    fitLoading?: boolean;
+    fit?: SceneImageFitAdvice;
+    fitError?: string;
+    fitBlocked?: boolean;
+  } | null>(null);
+  useEffect(() => setSceneImagePicker(null), [selectedConversationId]);
+  const sceneSourceBusyRef = useRef(false);
+  const sceneUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const sceneUploadTargetRef = useRef<SceneUploadTarget | null>(null);
   const selectedConversationIdRef = useRef(selectedConversationId);
   const pendingConversationNavigationRef = useRef<string | null>(null);
   const conversationsRef = useRef(conversations);
@@ -879,6 +973,7 @@ export default function AssetsWorkspaceClient({
   const executionRunGenerationRef = useRef(new Map<string, number>());
   const terminalObservationVideoJobIdsRef = useRef(new Set<string>());
   const activeExecutionVideoJobIdsRef = useRef(new Set<string>());
+  const failureNotifiableVideoJobIdsRef = useRef(new Set<string>());
   const workspaceMountedRef = useRef(true);
   const [videoJobPollRevision, setVideoJobPollRevision] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -922,6 +1017,26 @@ export default function AssetsWorkspaceClient({
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
     : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  const selectedProductRef = useRef(selectedProduct);
+  selectedProductRef.current = selectedProduct;
+  const observedVideoId = selectedProduct?.contentType === "video_project"
+    ? selectedProduct.backendAssetId ?? null : null;
+  const observeVideoInteractions = activeView === "conversation"
+    && selectedProduct?.videoProjectReady === true
+    && selectedProduct.operationStatus !== "generating"
+    && !pendingConversationExchanges[selectedConversation.id]
+    && !selectedConversation.readonly && !isConversationSnapshot;
+  useEffect(() => observeVideoActivity(token, observedVideoId, observeVideoInteractions),
+    [token, observedVideoId, observeVideoInteractions]);
+  const observedDirectorId = selectedProduct?.contentType === "video_script"
+    ? selectedProduct.backendAssetId ?? null : null;
+  const observeDirectorInteractions = activeView === "conversation"
+    && selectedConversationHasDetail && observedDirectorId !== null
+    && selectedProduct?.operationStatus !== "generating"
+    && !pendingConversationExchanges[selectedConversation.id]
+    && !selectedConversation.readonly && !isConversationSnapshot;
+  useEffect(() => observeDirectorActivity(token, observedDirectorId, observeDirectorInteractions),
+    [token, observedDirectorId, observeDirectorInteractions]);
   selectedProductIdRef.current = selectedProduct?.id ?? null;
   const selectedAssetGenerationJobLives = assetGenerationJobsForConversation(selectedConversation.id);
   const selectedAssetGenerationJobs = selectedAssetGenerationJobLives.map((live) => live.job);
@@ -1570,6 +1685,10 @@ export default function AssetsWorkspaceClient({
 
     const finalizeJob = (job: VideoJobResult) => {
       if (cancelled) return;
+      const notifyFailure = shouldNotifyExecutionFailure(
+        job,
+        failureNotifiableVideoJobIdsRef.current,
+      );
       setVideoJobLive((current) => {
         const live = current[job.assetId];
         if (!live || live.jobId !== job.id || live.completionConfirmed) return current;
@@ -1584,9 +1703,10 @@ export default function AssetsWorkspaceClient({
       terminalObservationVideoJobIdsRef.current.delete(job.id);
       terminalVideoJobIdsRef.current.add(job.id);
       activeExecutionVideoJobIdsRef.current.delete(job.id);
+      failureNotifiableVideoJobIdsRef.current.delete(job.id);
       activeJobIds.delete(job.id);
       if (cancelled) return;
-      if (job.status === "failed") {
+      if (notifyFailure) {
         const detail = job.errorMessage ? "：" + job.errorMessage : "，请重试或调整指令。";
         toast.error("视频生成失败" + detail);
       }
@@ -1594,6 +1714,7 @@ export default function AssetsWorkspaceClient({
     };
 
     const processJob = (job: VideoJobResult) => {
+      shouldNotifyExecutionFailure(job, failureNotifiableVideoJobIdsRef.current);
       applyExecutionJobResult({
         job,
         isCancelled: () => cancelled,
@@ -1655,6 +1776,8 @@ export default function AssetsWorkspaceClient({
       status: string;
       steps: AgentRunStep[];
       errorMessage: string | null;
+      imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+      narrationUsageSummary?: NarrationUsageSummary | null;
       completionConfirmed: boolean;
       progressKind: "video_create" | "video_update";
       connectionLost: boolean;
@@ -1671,6 +1794,8 @@ export default function AssetsWorkspaceClient({
         errorMessage: (live.progressKind === "video_update" || live.operationStatus != null)
           ? live.operationFailureReason ?? live.failureReason ?? null
           : live.failureReason ?? live.operationFailureReason ?? null,
+        imageToVideoCostSummary: live.imageToVideoCostSummary,
+        narrationUsageSummary: live.narrationUsageSummary,
         completionConfirmed: live.completionConfirmed,
         progressKind: live.progressKind ?? (live.operationStatus == null ? "video_create" : "video_update"),
         connectionLost: live.connectionLost === true,
@@ -1785,6 +1910,7 @@ export default function AssetsWorkspaceClient({
         terminalVideoJobIdsRef.current.delete(jobId);
         terminalObservationVideoJobIdsRef.current.delete(jobId);
         activeExecutionVideoJobIdsRef.current.add(jobId);
+        failureNotifiableVideoJobIdsRef.current.add(jobId);
       },
       storeExecution: (refreshed) => {
         setVideoJobLive((current) => ({
@@ -2360,26 +2486,6 @@ export default function AssetsWorkspaceClient({
     }
   };
 
-  const handleImportDirectorDraft = async (
-    row: LibraryRow,
-    referenceAssetIds: number[],
-    legacyReferenceMappings: Record<string, number>,
-  ) => {
-    const projectId = libraryTargetProjectId ?? selectedConversation.id;
-    if (!token || projectId === "new" || !runtimeWriteCapabilities.canPersist) {
-      throw new Error("请先打开已保存的项目，再导入编导稿。");
-    }
-    const draft = await assetWorkspaceAdapter.importDirectorDraft({
-      token, source: row, conversationId: projectId,
-      referenceAssetIds, legacyReferenceMappings,
-    });
-    await refreshProjectConversation(projectId);
-    setSelectedProductIds((current) => ({ ...current, [projectId]: `asset-${draft.id}` }));
-    setLibraryTargetProjectId(null);
-    handleSelectConversation(projectId);
-    toast.success("已导入可编辑编导稿；请核对旧素材编号并重新审查。");
-  };
-
   const hydrateConversationForImageApplication = async (): Promise<Conversation> => {
     const current = conversationsRef.current.find(
       (conversation) => conversation.id === selectedConversation.id,
@@ -2466,7 +2572,7 @@ export default function AssetsWorkspaceClient({
     );
   };
 
-  const handleChatImageUpload = (files: File[]) => {
+  const handleChatImageUpload = (files: File[], sceneUploadTarget?: SceneUploadTarget) => {
     if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) {
       toast.error("请先登录并配置后端后再上传资料。");
       return;
@@ -2475,6 +2581,13 @@ export default function AssetsWorkspaceClient({
       ? assetWorkspaceAdapter.getNewConversation()
       : selectedConversation;
     const targetConversationId = targetConversation.id;
+    if (sceneUploadTarget && (
+      sceneUploadTarget.conversationId !== targetConversationId
+      || files.length !== 1 || chatAttachmentFileKind(files[0]) !== "image"
+    )) {
+      toast.error("分镜上传目标已变化，请重新选择这一镜和图片。");
+      return;
+    }
     const videoPurpose = resolveChatVideoAttachmentPurpose(targetConversation);
     const currentUploads = chatImageUploads[targetConversationId] ?? [];
     const imageCount = files.filter((file) => chatAttachmentFileKind(file) === "image").length;
@@ -2502,6 +2615,7 @@ export default function AssetsWorkspaceClient({
       fileName: file.name,
       fileKind: chatAttachmentFileKind(file),
       videoPurpose: chatAttachmentFileKind(file) === "video" ? videoPurpose : undefined,
+      sceneUploadTarget,
       title: file.name,
       status: "uploading",
       uploadProgress: 0,
@@ -2547,13 +2661,40 @@ export default function AssetsWorkspaceClient({
         ? mergeProjectConversationDetail(conversation, refreshed)
         : conversation
     )));
+    return refreshed;
   }, [token]);
+
+  const offerReadySceneUpload = useCallback((
+    upload: ChatImageUpload, assetId: number, refreshed: Conversation | undefined,
+  ) => {
+    const target = upload.sceneUploadTarget;
+    if (!target || selectedConversationIdRef.current !== target.conversationId) return;
+    const current = selectedProductRef.current;
+    const authoritativeDirector = refreshed?.products?.find(
+      (product) => product.backendAssetId === target.directorAssetId,
+    );
+    if (current?.backendAssetId !== target.directorAssetId
+      || latestProductVersionId(current) !== target.directorVersionId
+      || !authoritativeDirector
+      || latestProductVersionId(authoritativeDirector) !== target.directorVersionId) {
+      setSceneSourceProgress({ sceneId: target.sceneId, stage: "分镜已更新",
+        error: "图片已保存到项目，但编导稿版本已变化；请在最新分镜中重新选择。" });
+      return;
+    }
+    setSceneImagePicker({
+      ...target, loading: false, error: undefined,
+      options: [{ id: assetId, title: upload.title || upload.fileName, origin: "上传",
+        previewUrl: upload.previewUrl }],
+    });
+    setSceneSourceProgress({ sceneId: target.sceneId, stage: "图片已就绪，请确认是否用于这一镜" });
+  }, []);
 
   const waitForUploadedSourceReady = useCallback(async (
     conversationId: string,
     uploadId: string,
     assetId: number,
     allowInitialUntracked = false,
+    acceptedUpload?: ChatImageUpload,
   ) => {
     if (!token) return;
     let firstPoll = true;
@@ -2567,14 +2708,32 @@ export default function AssetsWorkspaceClient({
         if (job.status === "completed") {
           const trackedUpload = (
             chatImageUploadsRef.current[conversationId] ?? []
-          ).find((item) => item.id === uploadId && item.assetId === assetId);
-          if (trackedUpload?.videoPurpose === "visual_material") {
-            await persistReadyVisualMaterial(
+          ).find((item) => item.id === uploadId && item.assetId === assetId)
+            ?? (allowInitialUntracked && firstPoll ? acceptedUpload : undefined);
+          if (trackedUpload?.fileKind === "image" && job.understanding_status !== "ready") {
+            const error = sceneUploadUnderstandingFailure(job.understanding_failure_category);
+            if (trackedUpload.sceneUploadTarget) {
+              setSceneSourceProgress({ sceneId: trackedUpload.sceneUploadTarget.sceneId,
+                stage: "素材理解失败", error });
+            }
+            setChatImageUploads((current) => ({ ...current,
+              [conversationId]: (current[conversationId] ?? []).map((item) =>
+                item.id === uploadId ? { ...item, status: "failed", error } : item),
+            }));
+            return;
+          }
+          let refreshed: Conversation | undefined;
+          if (conversationId !== "new" && trackedUpload && (
+            trackedUpload.fileKind === "image" || trackedUpload.fileKind === "source"
+            || trackedUpload.videoPurpose === "visual_material" || trackedUpload.sceneUploadTarget
+          )) {
+            refreshed = await persistReadyVisualMaterial(
               conversationId,
               assetId,
               trackedUpload.title || trackedUpload.fileName,
             );
           }
+          if (trackedUpload?.sceneUploadTarget) offerReadySceneUpload(trackedUpload, assetId, refreshed);
           setChatImageUploads((current) => ({
             ...current,
             [conversationId]: (current[conversationId] ?? []).map((item) =>
@@ -2598,7 +2757,7 @@ export default function AssetsWorkspaceClient({
       firstPoll = false;
       await new Promise((resolve) => window.setTimeout(resolve, 1200));
     }
-  }, [persistReadyVisualMaterial, token]);
+  }, [offerReadySceneUpload, persistReadyVisualMaterial, token]);
 
   const uploadChatImage = async (conversationId: string, upload: ChatImageUpload) => {
     if (!runtimeWriteCapabilities.canUpload || !token || !assetWorkspaceAdapter.isBackendEnabled()) return;
@@ -2662,12 +2821,37 @@ export default function AssetsWorkspaceClient({
           || asset.status === "ready"
         ) ? "ready" : "processing",
       };
-      if (isVisualMaterialVideo && acceptedUpload.status === "ready") {
-        await persistReadyVisualMaterial(
+      if (upload.fileKind === "image" && acceptedUpload.status === "ready") {
+        const metadata = "metadata" in asset && asset.metadata
+          && typeof asset.metadata === "object" ? asset.metadata as Record<string, unknown> : null;
+        const understanding = metadata && typeof metadata.understanding === "object"
+          ? metadata.understanding as Record<string, unknown> : null;
+        if (understanding?.status !== "ready") {
+          const ingest = await assetWorkspaceAdapter.getLatestAssetIngestJob(token, asset.id)
+            .catch(() => null);
+          const error = sceneUploadUnderstandingFailure(ingest?.understanding_failure_category);
+          if (upload.sceneUploadTarget) {
+            setSceneSourceProgress({ sceneId: upload.sceneUploadTarget.sceneId,
+              stage: "素材理解失败", error });
+          }
+          setChatImageUploads((current) => ({ ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) =>
+              item.id === upload.id ? { ...item, assetId: asset.id, title: asset.title || item.fileName,
+                status: "failed", uploadProgress: 100, error } : item),
+          }));
+          return;
+        }
+      }
+      if (conversationId !== "new" && (
+        isVisualMaterialVideo || upload.sceneUploadTarget
+        || upload.fileKind === "image" || upload.fileKind === "source"
+      ) && acceptedUpload.status === "ready") {
+        const refreshed = await persistReadyVisualMaterial(
           conversationId,
           asset.id,
           asset.title || upload.fileName,
         );
+        if (upload.sceneUploadTarget) offerReadySceneUpload({ ...upload, title: asset.title || upload.fileName }, asset.id, refreshed);
       }
       setChatImageUploads((current) => ({
         ...current,
@@ -2685,7 +2869,11 @@ export default function AssetsWorkspaceClient({
         )
       }));
       if (shouldImmediatelyReconcileAcceptedUpload(acceptedUpload)) {
-        void waitForUploadedSourceReady(conversationId, upload.id, asset.id, true);
+        const reconciliationKey = `${conversationId}:${upload.id}:${asset.id}`;
+        inFlightSourceAttachmentReconciliationsRef.current.add(reconciliationKey);
+        void waitForUploadedSourceReady(conversationId, upload.id, asset.id, true,
+          { ...upload, assetId: asset.id, title: asset.title || upload.fileName })
+          .finally(() => inFlightSourceAttachmentReconciliationsRef.current.delete(reconciliationKey));
       }
       setLibraryRefreshKey((value) => value + 1);
     } catch (error) {
@@ -2727,13 +2915,46 @@ export default function AssetsWorkspaceClient({
   const handleRetryChatImage = (attachmentId: string) => {
     const upload = (chatImageUploads[selectedConversation.id] ?? []).find((item) => item.id === attachmentId);
     if (!upload) return;
+    const conversationId = selectedConversation.id;
     setChatImageUploads((current) => ({
       ...current,
       [selectedConversation.id]: (current[selectedConversation.id] ?? []).map((item) =>
-        item.id === attachmentId ? { ...item, status: "uploading", uploadProgress: 0, error: undefined } : item
+        item.id === attachmentId ? { ...item,
+          status: upload.sceneUploadTarget && upload.assetId ? "processing" : "uploading",
+          uploadProgress: upload.sceneUploadTarget && upload.assetId ? 100 : 0,
+          error: undefined } : item
       )
     }));
-    void uploadChatImage(selectedConversation.id, upload);
+    if (upload.sceneUploadTarget && upload.assetId && token) {
+      void (async () => {
+        try {
+          const reparsed = await assetWorkspaceAdapter.reparseAsset(token, upload.assetId!);
+          const understanding = reparsed.metadata?.understanding;
+          if (!understanding || typeof understanding !== "object"
+            || (understanding as Record<string, unknown>).status !== "ready") {
+            throw new Error("视觉理解仍未完成，请稍后重试。图片原件已保留。");
+          }
+          const refreshed = await persistReadyVisualMaterial(
+            conversationId, upload.assetId!, upload.title || upload.fileName,
+          );
+          offerReadySceneUpload(upload, upload.assetId!, refreshed);
+          setChatImageUploads((current) => ({ ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) =>
+              item.id === attachmentId ? { ...item, status: "ready", error: undefined } : item),
+          }));
+        } catch (error) {
+          const message = `图片已保存，但重新解析失败：${formatComposerError(error)}。原分镜保持不变。`;
+          setSceneSourceProgress({ sceneId: upload.sceneUploadTarget!.sceneId,
+            stage: "素材理解失败", error: message });
+          setChatImageUploads((current) => ({ ...current,
+            [conversationId]: (current[conversationId] ?? []).map((item) =>
+              item.id === attachmentId ? { ...item, status: "failed", error: message } : item),
+          }));
+        }
+      })();
+      return;
+    }
+    void uploadChatImage(conversationId, upload);
   };
 
   const handleImportVideoUrl = useStableCallback((sourceUrl: string) => {
@@ -2819,6 +3040,21 @@ export default function AssetsWorkspaceClient({
     const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
       ? undefined
       : confirmationProductId ?? selectedProduct?.backendAssetId;
+    const directorProductionPlan: AssetDirectorProductionPlan | undefined =
+      instruction.trim() === "完善制作方案"
+      && selectedProduct?.contentType === "video_script"
+      && selectedBackendAssetId != null
+      && selectedProduct.backendAssetId === selectedBackendAssetId
+      && typeof selectedProduct.contentHash === "string"
+      && selectedProduct.contentHash.length > 0
+      && selectedProduct.metadata?.director_draft_phase === "editable_reviewed"
+        ? { directorAssetId: selectedBackendAssetId, baseContentHash: selectedProduct.contentHash }
+        : undefined;
+    const focusedScene = !agentConfirmationId && !directorProductionPlan && selectedBackendAssetId != null
+      ? resolveSelectedSceneFocus(
+        selectedProduct, selectedBackendAssetId, clickedSceneFocus[selectedBackendAssetId],
+      )
+      : undefined;
     let assetsForSend = linkedAssets;
     if (assetsForSend.length === 0) {
       const sourceAssets = sourceAttachmentAssets(conversation.id);
@@ -2877,6 +3113,8 @@ export default function AssetsWorkspaceClient({
         conversationId: createdProjectId ?? optimisticConversationId ?? conversation.id,
         instruction,
         selectedProductId: selectedBackendAssetId,
+        selectedSceneId: focusedScene?.sceneId,
+        selectedSceneVersionId: focusedScene?.versionId ?? undefined,
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
@@ -2895,6 +3133,7 @@ export default function AssetsWorkspaceClient({
         presenterAudioSelectionConfirmation,
         sourceSubtitleMode,
         sourceResolutionSelection,
+        directorProductionPlan,
         signal
       });
     } catch (error) {
@@ -3023,6 +3262,311 @@ export default function AssetsWorkspaceClient({
       setActiveView("conversation");
     }
     setConversationLoadRevision((value) => value + 1);
+  };
+
+  const handleImportDirectorDraft = async (
+    row: LibraryRow,
+    referenceAssetIds: number[],
+    legacyReferenceMappings: Record<string, number>,
+  ) => {
+    const projectId = libraryTargetProjectId ?? selectedConversation.id;
+    if (!token || projectId === "new" || !runtimeWriteCapabilities.canPersist) {
+      throw new Error("请先打开已保存的项目，再导入编导稿。");
+    }
+    const draft = await assetWorkspaceAdapter.importDirectorDraft({
+      token, source: row, conversationId: projectId,
+      referenceAssetIds, legacyReferenceMappings,
+    });
+    await refreshProjectConversation(projectId);
+    setSelectedProductIds((current) => ({ ...current, [projectId]: `asset-${draft.id}` }));
+    setLibraryTargetProjectId(null);
+    handleSelectConversation(projectId);
+    toast.success("已导入可编辑编导稿；请核对旧素材编号并重新审查。");
+  };
+
+  const handleOpenGenerationSourceScene = (sourceAssetId: number, sceneId: string) => {
+    const conversation = selectedConversation;
+    const source = (conversation.products ?? [conversation.product]).find(
+      (product) => product.backendAssetId === sourceAssetId,
+    );
+    const plan = source?.metadata?.video_plan;
+    const scenes = plan && typeof plan === "object" && !Array.isArray(plan)
+      ? (plan as Record<string, unknown>).scenes : undefined;
+    if (!source || !Array.isArray(scenes) || !scenes.some(
+      (scene) => scene && typeof scene === "object" && (scene as Record<string, unknown>).id === sceneId,
+    )) {
+      toast.error("原编导稿或分镜已变化，请刷新项目后重新选择。");
+      return;
+    }
+    const versionId = latestProductVersionId(source);
+    if (!versionId) {
+      toast.error("原编导稿最新版本尚未就绪，请刷新后重试。");
+      return;
+    }
+    setSelectedProductIds((current) => ({ ...current, [conversation.id]: source.id }));
+    setClickedSceneFocus((current) => ({
+      ...current,
+      [sourceAssetId]: { sceneId, versionId },
+    }));
+    window.requestAnimationFrame(() => {
+      const scene = document.querySelector(`[data-scene-source-id="${sceneId}"]`);
+      const sceneList = scene?.closest("details[data-scene-source-list]");
+      if (sceneList instanceof HTMLDetailsElement) sceneList.open = true;
+      if (scene && "scrollIntoView" in scene) scene.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  };
+
+  const handleSceneSourceAction = async (action: SceneSourceAction) => {
+    if (sceneSourceBusyRef.current) return;
+    const director = selectedProduct;
+    const conversation = selectedConversation;
+    const directorAssetId = director?.backendAssetId;
+    const directorVersionId = director ? latestProductVersionId(director) : null;
+    if (!token || !directorAssetId || !directorVersionId || conversation.readonly || isConversationSnapshot) {
+      setSceneSourceProgress({ sceneId: action.sceneId, stage: "无法操作", error: "当前编导稿或版本尚未就绪，请刷新后重试。" });
+      return;
+    }
+    if (action.kind === "use_asset" && sceneImagePicker && (
+      sceneImagePicker.conversationId !== conversation.id
+      || sceneImagePicker.sceneId !== action.sceneId
+      || sceneImagePicker.directorAssetId !== directorAssetId
+      || sceneImagePicker.directorVersionId !== directorVersionId
+    )) {
+      setSceneSourceProgress({ sceneId: action.sceneId, stage: "分镜已更新",
+        error: "编导稿版本已变化，请在最新分镜中重新选择图片。" });
+      setSceneImagePicker(null);
+      return;
+    }
+    if (action.kind === "choose_asset") {
+      setSceneImagePicker({ conversationId: conversation.id, sceneId: action.sceneId,
+        directorAssetId, directorVersionId, options: [], loading: true });
+      try {
+        const resources = [];
+        for (const [kind, scope] of [["source", "active"], ["cover", "all"]] as const) {
+          let offset = 0;
+          while (true) {
+            const page = await getProjectResources(token, conversation.id, kind, scope, offset, 50);
+            resources.push(...page.items);
+            offset += page.items.length;
+            if (!page.items.length || offset >= page.total) break;
+          }
+        }
+        const options = new Map<number, { id: number; title: string; previewUrl?: string; origin: "上传" | "生成" }>();
+        for (const item of resources) {
+          if (item.asset_kind !== "image" || item.status !== "ready"
+            || !["upload", "generated"].includes(item.source_type)
+            || (item.source_type === "upload" && item.understanding_status !== "ready")
+            || ["do_not_use", "rights_unclear", "reference_only"].includes(item.use_policy ?? "")) continue;
+          options.set(item.id, {
+            id: item.id, title: item.title,
+            origin: item.source_type === "generated" ? "生成" : "上传",
+          });
+        }
+        for (const product of conversation.products ?? []) {
+          if (product.mode !== "image" || !Array.isArray(product.metadata?.generated_images)) continue;
+          for (const frame of product.metadata.generated_images) {
+            if (!frame || typeof frame !== "object" || Array.isArray(frame)) continue;
+            const image = frame as Record<string, unknown>;
+            const id = image.asset_id;
+            if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) continue;
+            const storageRef = typeof image.storage_ref === "string" ? image.storage_ref : "";
+            const previewUrl = /^(?:local|supabase|s3):\/\/(?:[^/]+\/)?content-assets\/\d+\/generation-jobs\/\d+\/images\/[a-f0-9]{64}\.png$/.test(storageRef)
+              ? `${API_BASE}/v1/video/media?ref=${encodeURIComponent(storageRef)}` : undefined;
+            options.set(id, {
+              id, title: typeof image.intent === "string" && image.intent.trim() ? image.intent : product.title,
+              origin: "生成", previewUrl,
+            });
+          }
+        }
+        try {
+          const library = await assetWorkspaceAdapter.listLibrary(token, "image", "", { limit: 100 });
+          for (const row of library.rows) {
+            if (!row.assetId || !options.has(row.assetId)) continue;
+            const existing = options.get(row.assetId)!;
+            options.set(row.assetId, {
+              ...existing,
+              previewUrl: existing.previewUrl ?? row.previewUrl ?? row.thumbnailUrl,
+            });
+          }
+        } catch {
+          // The scoped project list remains usable if the library preview is unavailable.
+        }
+        setSceneImagePicker((current) => current?.sceneId === action.sceneId && current.conversationId === conversation.id
+          ? { conversationId: conversation.id, sceneId: action.sceneId,
+            directorAssetId, directorVersionId, options: [...options.values()], loading: false }
+          : current);
+      } catch (error) {
+        setSceneImagePicker((current) => current?.sceneId === action.sceneId && current.conversationId === conversation.id
+          ? { ...current, loading: false, error: formatComposerError(error) }
+          : current);
+      }
+      return;
+    }
+    const plan = director.metadata?.video_plan;
+    const decisions = plan && typeof plan === "object" && !Array.isArray(plan)
+      ? (plan as Record<string, unknown>).scene_source_decisions : undefined;
+    const existing = Array.isArray(decisions)
+      ? decisions.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).scene_id === action.sceneId)
+      : undefined;
+    const currentStatus = existing && typeof existing === "object"
+      ? (existing as Record<string, unknown>).status : undefined;
+    if (action.kind === "generate_image" || action.kind === "upload_asset" || action.kind === "revise_scene") {
+      const scenes = plan && typeof plan === "object" && !Array.isArray(plan)
+        ? (plan as Record<string, unknown>).scenes : undefined;
+      const sceneIndex = Array.isArray(scenes)
+        ? scenes.findIndex((item) => item && typeof item === "object" && (item as Record<string, unknown>).id === action.sceneId)
+        : -1;
+      if (sceneIndex < 0) {
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "无法操作", error: "当前分镜已变化，请刷新后再选择。" });
+        return;
+      }
+      setClickedSceneFocus((current) => ({
+        ...current,
+        [directorAssetId]: { sceneId: action.sceneId, versionId: directorVersionId },
+      }));
+      const number = sceneIndex + 1;
+      const scene = Array.isArray(scenes) && scenes[sceneIndex] && typeof scenes[sceneIndex] === "object"
+        ? scenes[sceneIndex] as Record<string, unknown> : {};
+      if (action.kind === "generate_image") {
+        sceneSourceBusyRef.current = true;
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在为本镜提交图片候选生成" });
+        try {
+          const result = await assetWorkspaceAdapter.sendMessage({
+            token, conversationId: conversation.id,
+            instruction: sceneImageGenerationUtterance(scene, number),
+            selectedProductId: directorAssetId,
+            clientRequestId: globalThis.crypto.randomUUID(),
+            sceneImageGenerationRequest: {
+              directorAssetId, directorVersionId, sceneId: action.sceneId,
+            },
+          });
+          setConversations((current) => current.map((item) => item.id === conversation.id ? result.conversation : item));
+          if (result.generationJob) registerAssetGenerationJob(conversation.id, result.generationJob);
+          setSceneSourceProgress({ sceneId: action.sceneId, stage: "图片候选生成中；完成后请自行选择是否应用" });
+        } catch (error) {
+          reportRuntimeWriteFailure(error);
+          setSceneSourceProgress({ sceneId: action.sceneId, stage: "图片候选未启动", error: formatComposerError(error) });
+        } finally {
+          sceneSourceBusyRef.current = false;
+        }
+        return;
+      }
+      if (action.kind === "upload_asset") {
+        sceneUploadTargetRef.current = { conversationId: conversation.id,
+          directorAssetId, directorVersionId, sceneId: action.sceneId };
+        sceneUploadInputRef.current?.click();
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "请选择图片；上传完成后再确认是否用于本镜" });
+        return;
+      }
+      const utterance = `请重新设计第 ${number} 镜的画面创意，保持本镜和整片时长、旁白及其他镜头不变，并先让我确认新方案。`;
+      window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+        detail: { utterance },
+      }));
+      setSceneSourceProgress(null);
+      return;
+    }
+    sceneSourceBusyRef.current = true;
+    setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对当前编导稿版本" });
+    let waitingTimer: ReturnType<typeof setInterval> | undefined;
+    try {
+      const refresh = async () => {
+        const loaded = await assetWorkspaceAdapter.loadConversationDetail(token, conversation.id);
+        setConversations((current) => current.map((item) => item.id === conversation.id ? loaded : item));
+        setConversationLoadRevision((value) => value + 1);
+        const versions = loaded.products?.length ? loaded.products : [loaded.product];
+        const current = versions.find((item) => item.backendAssetId === directorAssetId);
+        const nextVersionId = current ? latestProductVersionId(current) : null;
+        if (!nextVersionId) throw new Error("编导稿最新版本尚未就绪，请刷新后重试。");
+        return nextVersionId;
+      };
+      let boundVersion = directorVersionId;
+      if (action.kind === "search" && currentStatus !== "search_requested" || action.kind === "keep") {
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在记录逐镜来源决定" });
+        const decision = {
+          directorAssetId, directorVersionId: boundVersion,
+          sceneId: action.sceneId,
+          action: action.kind === "keep" ? "keep_current" as const : "search_public" as const,
+        };
+        const response = await assetWorkspaceAdapter.sendMessage({
+          token, conversationId: conversation.id,
+          instruction: action.kind === "keep" ? `第 ${action.sceneId} 镜保留当前方案` : `第 ${action.sceneId} 镜尝试搜索公共素材`,
+          selectedProductId: directorAssetId,
+          sceneSourceDecision: decision,
+        });
+        setConversations((current) => current.map((item) => item.id === conversation.id ? response.conversation : item));
+        boundVersion = await refresh();
+      }
+      if (action.kind === "search") {
+        const startedAt = Date.now();
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在规划搜索词并核验素材候选" });
+        waitingTimer = setInterval(() => {
+          const seconds = Math.floor((Date.now() - startedAt) / 1000);
+          if (seconds >= 15) setSceneSourceProgress({
+            sceneId: action.sceneId,
+            stage: `正在规划搜索词并核验素材候选，已等待 ${seconds} 秒；响应较慢，可稍后刷新查看结果`,
+          });
+        }, 5000);
+        await assetWorkspaceAdapter.searchScenePublicCandidate(token, {
+          directorAssetId, directorVersionId: boundVersion,
+          sceneId: action.sceneId, action: "search_public",
+        });
+        await refresh();
+      } else if (action.kind === "select") {
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对原片并应用到这一镜" });
+        await assetWorkspaceAdapter.selectScenePublicCandidate(token, {
+          directorAssetId, directorVersionId: boundVersion,
+          sceneId: action.sceneId, action: "search_public",
+        }, action.candidateId);
+        await refresh();
+      } else if (action.kind === "use_asset") {
+        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对图片并应用到这一镜" });
+        await assetWorkspaceAdapter.sendMessage({
+          token, conversationId: conversation.id,
+          instruction: `第 ${action.sceneId} 镜使用我选择的项目图片`,
+          selectedProductId: directorAssetId,
+          sceneSourceDecision: {
+            directorAssetId, directorVersionId: boundVersion,
+            sceneId: action.sceneId, action: "use_saved_asset",
+            sourceAssetId: action.assetId,
+          },
+        });
+        await refresh();
+        setSceneImagePicker(null);
+      }
+      setSceneSourceProgress(null);
+    } catch (error) {
+      reportRuntimeWriteFailure(error);
+      setConversationLoadRevision((value) => value + 1);
+      if (action.kind === "search") {
+        try {
+          const loaded = await assetWorkspaceAdapter.loadConversationDetail(token, conversation.id);
+          setConversations((current) => current.map((item) => item.id === conversation.id ? loaded : item));
+          const versions = loaded.products?.length ? loaded.products : [loaded.product];
+          const current = versions.find((item) => item.backendAssetId === directorAssetId);
+          const currentPlan = current?.metadata?.video_plan;
+          const decisions = currentPlan && typeof currentPlan === "object" && !Array.isArray(currentPlan)
+            ? (currentPlan as Record<string, unknown>).scene_source_decisions : undefined;
+          if (Array.isArray(decisions) && decisions.some((item) =>
+            item && typeof item === "object"
+            && (item as Record<string, unknown>).scene_id === action.sceneId
+            && (item as Record<string, unknown>).status === "no_candidate"
+          )) {
+            setSceneSourceProgress(null);
+            return;
+          }
+        } catch {
+          // The original search error remains visible if readback is unavailable.
+        }
+      }
+      setSceneSourceProgress({
+        sceneId: action.sceneId,
+        stage: "逐镜操作未完成",
+        error: `${formatComposerError(error)} 原方案仍可查看，请刷新后核对状态。`,
+      });
+    } finally {
+      if (waitingTimer) clearInterval(waitingTimer);
+      sceneSourceBusyRef.current = false;
+    }
   };
 
   const handleApplyCreativeDirection = useStableCallback(async (
@@ -3750,6 +4294,8 @@ export default function AssetsWorkspaceClient({
                 generationJobConnectionLostById={selectedAssetGenerationJobConnectionLostById}
                 onRetryGeneration={handleRetryGeneration}
                 onCancelGeneration={handleCancelGeneration}
+                onOpenGenerationSourceScene={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot
+                  ? handleOpenGenerationSourceScene : undefined}
                 liveRunStateByAssetId={liveRunStateByAssetId}
                 onRetryExecution={handleRetryExecution}
                 liveAgentActionsById={liveAgentActionsById}
@@ -3804,6 +4350,13 @@ export default function AssetsWorkspaceClient({
                       ? async () => { toast.info("完整项目仍在加载，请稍后再基于历史版本继续。"); }
                       : handleRestoreProductVersion}
                     onProductUpdated={(updatedProduct, baseProduct) => {
+                    if (updatedProduct.backendAssetId) {
+                      setClickedSceneFocus((current) => {
+                        const next = { ...current };
+                        delete next[updatedProduct.backendAssetId!];
+                        return next;
+                      });
+                    }
                       if (baseProduct) {
                         setConversations((current) => reconcileProductMutation(current, selectedConversation.id, baseProduct, updatedProduct));
                         return;
@@ -3848,6 +4401,27 @@ export default function AssetsWorkspaceClient({
                     onSelectedImageFrameChange={(frameId) => {
                       setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
                     }}
+                  onSelectSegment={(segment: AssetProductSegment) => {
+                    if (!selectedProduct.backendAssetId) return;
+                    setClickedSceneFocus((current) => ({
+                      ...current,
+                      [selectedProduct.backendAssetId!]: {
+                        sceneId: segment.id,
+                        versionId: latestProductVersionId(selectedProduct),
+                      },
+                    }));
+                  }}
+                  onSceneSourceAction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot ? handleSceneSourceAction : undefined}
+                  onContinueDirectorProduction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot
+                    ? async () => {
+                      try {
+                        await handleSendConversationMessage(selectedConversation, "完善制作方案");
+                      } catch (error) {
+                        toast.error(formatComposerError(error));
+                      }
+                    }
+                    : undefined}
+                  sceneSourceProgress={sceneSourceProgress}
                     product={selectedProduct}
                     savedVersion={savedVersionForProduct(selectedProduct, savedProductIds[selectedProduct.id])}
                     savingProduct={productMutationStates[selectedProduct.id] === "saving"}
@@ -3894,6 +4468,127 @@ export default function AssetsWorkspaceClient({
           )}
         </div>
       </section>
+      <input
+        ref={sceneUploadInputRef}
+        type="file"
+        accept="image/*"
+        aria-label="上传图片用于指定分镜"
+        style={{ display: "none" }}
+        disabled={!runtimeWriteCapabilities.canUpload}
+        onChange={(event) => {
+          const target = sceneUploadTargetRef.current;
+          sceneUploadTargetRef.current = null;
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (target && file) handleChatImageUpload([file], target);
+        }}
+      />
+      {sceneImagePicker && sceneImagePicker.conversationId === selectedConversation.id ? (
+        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(15, 23, 42, .45)", display: "grid", placeItems: "center" }}>
+          <section role="dialog" aria-modal="true" aria-label="为分镜选择项目图片" style={{ background: "white", borderRadius: 16, padding: 20, width: "min(680px, 92vw)", maxHeight: "80vh", overflow: "auto" }}>
+            <header style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+              <h2>为这一镜选择图片</h2>
+              <button type="button" onClick={() => setSceneImagePicker(null)} aria-label="关闭选图">关闭</button>
+            </header>
+            <p>图片已保留在项目。先选一张查看它与本镜目标的适配建议，确认后才会修改分镜；也可以暂不采用，或先修改本镜画面。</p>
+            {sceneImagePicker.loading ? <p role="status">正在读取项目图片</p> : null}
+            {sceneImagePicker.error ? <p role="alert">{sceneImagePicker.error}</p> : null}
+            {!sceneImagePicker.loading && !sceneImagePicker.error && !sceneImagePicker.options.length ? <p>项目里暂无可选择的图片。可上传图片或先生成图片候选。</p> : null}
+            <ul style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, listStyle: "none", padding: 0 }}>
+              {sceneImagePicker.options.map((option) => (
+                <li key={option.id}>
+                  <button type="button" disabled={sceneSourceBusyRef.current} onClick={() => {
+                    const target = sceneImagePicker;
+                    if (!token) {
+                      setSceneImagePicker((current) => current === target
+                        ? { ...current, selectedOptionId: option.id, fitBlocked: true,
+                          fitError: "登录状态已失效，请重新登录后选择图片。" }
+                        : current);
+                      return;
+                    }
+                    setSceneImagePicker((current) => current === target
+                      ? { ...current, selectedOptionId: option.id, fitLoading: true,
+                        fit: undefined, fitError: undefined, fitBlocked: false }
+                      : current);
+                    void assetWorkspaceAdapter.reviewSceneImageFit(token, option.id, {
+                      conversation_id: target.conversationId,
+                      director_asset_id: target.directorAssetId,
+                      director_version_id: target.directorVersionId,
+                      scene_id: target.sceneId,
+                    }).then((fit) => {
+                      setSceneImagePicker((current) => current?.sceneId === target.sceneId
+                        && current.directorVersionId === target.directorVersionId
+                        && current.selectedOptionId === option.id
+                        ? { ...current, fitLoading: false,
+                          fit: fit.source_asset_id === option.id
+                            && fit.director_version_id === target.directorVersionId
+                            && fit.scene_id === target.sceneId ? fit : undefined,
+                          fitError: fit.source_asset_id === option.id
+                            && fit.director_version_id === target.directorVersionId
+                            && fit.scene_id === target.sceneId ? undefined : "适配结果已过期，请重新选择图片。",
+                          fitBlocked: fit.source_asset_id !== option.id
+                            || fit.director_version_id !== target.directorVersionId
+                            || fit.scene_id !== target.sceneId }
+                        : current);
+                    }).catch((error) => {
+                      setSceneImagePicker((current) => current?.sceneId === target.sceneId
+                        && current.directorVersionId === target.directorVersionId
+                        && current.selectedOptionId === option.id
+                        ? { ...current, fitLoading: false, fitBlocked: true,
+                          fitError: `适配请求未完成：${formatComposerError(error)}。请重选图片后再试，当前分镜未改变。` }
+                        : current);
+                    });
+                  }} aria-pressed={sceneImagePicker.selectedOptionId === option.id} style={{ width: "100%", textAlign: "left" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- authenticated project media */}
+                    {option.previewUrl ? <img src={option.previewUrl} alt={option.title} style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }} /> : <span aria-hidden="true"><ImageIcon size={32} /></span>}
+                    <strong>{option.title}</strong><br /><small>{option.origin}图片 #{option.id}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {sceneImagePicker.selectedOptionId ? (
+              <div aria-label="本镜图片适配建议">
+                {sceneImagePicker.fitLoading ? <p role="status">正在判断图片与本镜画面目标是否匹配…</p> : null}
+                {sceneImagePicker.fitError ? <p role="alert">{sceneImagePicker.fitError}</p> : null}
+                {sceneImagePicker.fit ? (
+                  <div>
+                    <p>{sceneImagePicker.fit.status === "match" ? "建议：适合本镜"
+                      : sceneImagePicker.fit.status === "partial" ? "建议：部分符合本镜目标"
+                        : sceneImagePicker.fit.status === "mismatch" ? "建议：与本镜目标不符"
+                          : "视觉服务暂无法判断，本镜是否采用由你决定。"}</p>
+                    {sceneImagePicker.fit.evidence ? <p>{sceneImagePicker.fit.evidence}</p> : null}
+                    {sceneImagePicker.fit.missing_required_elements.length ? <p>还缺少：{sceneImagePicker.fit.missing_required_elements.join("、")}</p> : null}
+                    {sceneImagePicker.fit.excluded_elements_present.length ? <p>出现不应有的元素：{sceneImagePicker.fit.excluded_elements_present.join("、")}</p> : null}
+                    {sceneImagePicker.fit.technical_quality?.publishable === false ? <p>画质风险：{sceneImagePicker.fit.technical_quality.reason || "当前图片不适合直接发布"}</p> : null}
+                  </div>
+                ) : null}
+                {sceneImagePicker.fit && (sceneImagePicker.fit.excluded_elements_present.length > 0
+                  || sceneImagePicker.fit.technical_quality?.publishable === false)
+                  ? <p role="alert">这张图有禁用元素或画质不合格，请换图或修改本镜画面。</p> : null}
+                {!sceneImagePicker.fitLoading && !sceneImagePicker.fitBlocked
+                  && !sceneImagePicker.fit?.excluded_elements_present.length
+                  && sceneImagePicker.fit?.technical_quality?.publishable !== false
+                  ? <button type="button" onClick={() => void handleSceneSourceAction({ kind: "use_asset", sceneId: sceneImagePicker.sceneId, assetId: sceneImagePicker.selectedOptionId! })}>{sceneImagePicker.fit?.status === "mismatch" ? "仍用于本镜（画面目标可能不符）" : "确认用于本镜"}</button> : null}
+              </div>
+            ) : null}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+              <button type="button" onClick={() => {
+                setSceneSourceProgress({ sceneId: sceneImagePicker.sceneId,
+                  stage: "图片留在项目，当前分镜没有改变" });
+                setSceneImagePicker(null);
+              }}>暂不用于本镜，留在项目</button>
+              <button type="button" onClick={() => {
+                const sceneId = sceneImagePicker.sceneId;
+                setSceneImagePicker(null);
+                void handleSceneSourceAction({ kind: "revise_scene", sceneId });
+              }}>先修改本镜画面</button>
+            </div>
+            {sceneSourceProgress?.sceneId === sceneImagePicker.sceneId ? (
+              <p role={sceneSourceProgress.error ? "alert" : "status"}>{sceneSourceProgress.error ?? sceneSourceProgress.stage}</p>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
       {projectResourcesOpen && selectedConversation.id !== "new" && !isConversationSnapshot ? <ProjectResourcesDrawer
         key={selectedConversation.id}
         open

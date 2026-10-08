@@ -1730,6 +1730,14 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
     if (!historicalAsset) throw new Error("Historical comparison asset was not prepared");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(historicalAsset) });
   });
+  // The comparison versions exist only in this UI fixture, so their neutral
+  // feedback must use the same identity rather than querying unrelated seed data.
+  await page.route(`**/v1/video-feedback/${assetId}`, async (route) => {
+    if (route.request().method() !== "GET") { await route.continue(); return; }
+    await route.fulfill({ status: 200, json: {
+      asset_id: assetId, version_id: versionRows[1].id, decision: null, published: false,
+    } });
+  });
 
   await page.setViewportSize({ width: 1280, height: 720 });
   const browserErrors: string[] = [];

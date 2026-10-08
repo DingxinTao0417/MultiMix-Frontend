@@ -54,7 +54,12 @@ export function useAssetGenerationJobs(
     conversationId: string,
     job: AssetGenerationJobResponse,
   ) => {
-    const live = { conversationId, job, run: 0 };
+    const previous = jobsByIdRef.current[job.id];
+    const live = {
+      conversationId,
+      job: retainVideoPurpose(job, previous?.job),
+      run: previous ? previous.run + 1 : 0,
+    };
     jobsByIdRef.current = {
       ...jobsByIdRef.current,
       [job.id]: live,
@@ -77,7 +82,9 @@ export function useAssetGenerationJobs(
       throw new Error("未找到可重试的内容生成任务，请刷新对话后重试。");
     }
     const remote = retainVideoPurpose(
-      await assetWorkspaceAdapter.retryGenerationJob(token, jobId),
+      (liveEntry?.job ?? persistedEntry?.job)?.regenerable
+        ? await assetWorkspaceAdapter.regenerateGenerationJob(token, jobId)
+        : await assetWorkspaceAdapter.retryGenerationJob(token, jobId),
       liveEntry?.job ?? persistedEntry?.job,
     );
     const nextEntry = {
@@ -223,14 +230,22 @@ export function useAssetGenerationJobs(
           schedule({ ...live, job: remote }, 2500);
         }
       } catch {
-        if (markConnectionLost(live)) schedule(live, 4000);
+        if (
+          (live.job.status === "queued" || live.job.status === "running")
+          && markConnectionLost(live)
+        ) schedule(live, 4000);
       } finally {
         inFlightRunsRef.current.delete(identity);
       }
     }
 
     for (const live of Object.values(jobsByIdRef.current)) {
-      if (live.job.status === "queued" || live.job.status === "running") {
+      if (
+        live.job.status === "queued"
+        || live.job.status === "running"
+        || live.job.status === "failed"
+        || live.job.status === "cancelled"
+      ) {
         schedule(live, 200);
       }
     }

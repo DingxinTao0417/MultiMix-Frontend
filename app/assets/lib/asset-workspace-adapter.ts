@@ -5,6 +5,10 @@ import type {
   AssetCreativeDirectionSelection,
   AssetImageGenerationApplication,
   AssetImageGenerationSetApplication,
+  AssetSceneSourceDecision,
+  AssetSceneImageGenerationRequest,
+  AssetDirectorProductionPlan,
+  AssetScenePublicCandidate,
   AssetImageGenerationConfirmation,
   AssetImageGenerationRequest,
   AssetLongFormAction,
@@ -43,6 +47,7 @@ import {
   getConversationAgentAction,
   isApiConfigured,
   retryConversationAgentAction,
+  regenerateAssetGenerationJob,
   retryAssetGenerationJob,
   type AgentActionRunResponse as ApiAgentActionRunResponse,
   type AssetIngestJobActionRead,
@@ -517,6 +522,8 @@ export function buildConversationMessagePayload({
   conversationId,
   instruction,
   selectedProductId,
+  selectedSceneId,
+  selectedSceneVersionId,
   linkedAssetIds,
   clientRequestId,
   videoParameterConfirmation,
@@ -535,10 +542,15 @@ export function buildConversationMessagePayload({
   imageGenerationSetApplication,
   sourceSubtitleMode,
   sourceResolutionSelection,
+  sceneSourceDecision,
+  sceneImageGenerationRequest,
+  directorProductionPlan,
 }: {
   conversationId: string;
   instruction: string;
   selectedProductId?: number;
+  selectedSceneId?: string;
+  selectedSceneVersionId?: number;
   linkedAssetIds?: number[];
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
@@ -557,6 +569,9 @@ export function buildConversationMessagePayload({
   imageGenerationSetApplication?: AssetImageGenerationSetApplication;
   sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
   sourceResolutionSelection?: AssetSourceResolutionSelection;
+  sceneSourceDecision?: AssetSceneSourceDecision;
+  sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
+  directorProductionPlan?: AssetDirectorProductionPlan;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -576,6 +591,7 @@ export function buildConversationMessagePayload({
     instruction,
     conversation_id: conversationId === "new" || conversationId.startsWith("draft-") ? undefined : conversationId,
     selected_product_id: selectedProductId,
+    ...(selectedSceneId ? { selected_scene_id: selectedSceneId, selected_scene_version_id: selectedSceneVersionId } : {}),
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
@@ -584,6 +600,28 @@ export function buildConversationMessagePayload({
       source_resolution_selection: {
         resolution_id: sourceResolutionSelection.resolutionId,
         asset_id: sourceResolutionSelection.assetId,
+      },
+    } : {}),
+    ...(sceneSourceDecision ? {
+      scene_source_decision: {
+        director_asset_id: sceneSourceDecision.directorAssetId,
+        director_version_id: sceneSourceDecision.directorVersionId,
+        scene_id: sceneSourceDecision.sceneId,
+        action: sceneSourceDecision.action,
+        ...(sceneSourceDecision.sourceAssetId ? { source_asset_id: sceneSourceDecision.sourceAssetId } : {}),
+      },
+    } : {}),
+    ...(sceneImageGenerationRequest ? {
+      scene_image_generation_request: {
+        director_asset_id: sceneImageGenerationRequest.directorAssetId,
+        director_version_id: sceneImageGenerationRequest.directorVersionId,
+        scene_id: sceneImageGenerationRequest.sceneId,
+      },
+    } : {}),
+    ...(directorProductionPlan ? {
+      director_production_plan: {
+        director_asset_id: directorProductionPlan.directorAssetId,
+        base_content_hash: directorProductionPlan.baseContentHash,
       },
     } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
@@ -835,6 +873,8 @@ export type AssetWorkspaceAdapter = {
     | { kind: "saved"; product: AssetProduct }
     | { kind: "structural_change"; message: string; changes: Record<string, unknown> }
   >;
+  retryDirectorReview(token: string, product: AssetProduct): Promise<AssetProduct>;
+  ignoreDirectorReviewSuggestion(token: string, product: AssetProduct, findingId: string): Promise<AssetProduct>;
   // Backend-backed operations. Without an API, callers render an explicit
   // unconfigured state; writes must not pretend to succeed locally.
   isBackendEnabled(): boolean;
@@ -876,6 +916,8 @@ export type AssetWorkspaceAdapter = {
     conversationId: string;
     instruction: string;
     selectedProductId?: number;
+    selectedSceneId?: string;
+    selectedSceneVersionId?: number;
     linkedAssetIds?: number[];
     clientRequestId?: string;
     videoParameterConfirmation?: AssetVideoParameterConfirmation;
@@ -894,6 +936,9 @@ export type AssetWorkspaceAdapter = {
     imageGenerationSetApplication?: AssetImageGenerationSetApplication;
     sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
     sourceResolutionSelection?: AssetSourceResolutionSelection;
+    sceneSourceDecision?: AssetSceneSourceDecision;
+    sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
+    directorProductionPlan?: AssetDirectorProductionPlan;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -914,8 +959,14 @@ export type AssetWorkspaceAdapter = {
     agentAction: AgentActionRunResponse | null;
     requirementSnapshot?: ProjectRequirementSnapshot | null;
   } | null>;
+  searchScenePublicCandidate(token: string, decision: AssetSceneSourceDecision): Promise<{
+    directorVersionId: number;
+    candidate: AssetScenePublicCandidate;
+  }>;
+  selectScenePublicCandidate(token: string, decision: AssetSceneSourceDecision, candidateId: string): Promise<{ directorVersionId: number }>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
+  regenerateGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   cancelGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   getAgentAction(
     token: string,
@@ -995,6 +1046,10 @@ export type AssetWorkspaceAdapter = {
     onProgress?: (state: BatchUploadItemState) => void,
   ): Promise<ContentAsset[]>;
   getLatestAssetIngestJob(token: string, assetId: number): Promise<AssetIngestJobRead>;
+  reviewSceneImageFit(token: string, assetId: number, target: {
+    conversation_id: string; director_asset_id: number;
+    director_version_id: number; scene_id: string;
+  }): Promise<SceneImageFitAdvice>;
   createWebCapture(token: string, payload: { url: string; title?: string; body: string; contentType?: string }): Promise<ContentAsset>;
   retryAssetIngest(token: string, assetId: number): Promise<AssetIngestJobActionRead>;
   exportAssetMarkdown(token: string, assetId: number): Promise<Blob>;
@@ -1050,11 +1105,41 @@ export async function retryConversationDetailLoad<T>(
   }
 }
 
+export type SceneImageFitAdvice = {
+  status: "match" | "partial" | "mismatch" | "unavailable";
+  source_asset_id: number;
+  director_version_id: number;
+  scene_id: string;
+  evidence: string;
+  matched_required_elements: string[];
+  missing_required_elements: string[];
+  excluded_elements_present: string[];
+  technical_quality: { publishable?: boolean; reason?: string } | null;
+  error_code: string;
+};
+
 export type VideoJobStepResult = {
   key: string;
   label: string;
   status: string;
   retryJobId: string | null;
+};
+
+export type ImageToVideoCostSummary = {
+  recordedCallCount: number;
+  pricedCallCount: number;
+  unknownCostCallCount: number;
+  standardPriceCostCny: number;
+  historicalCoverage: "since_ledger_enabled";
+};
+
+export type NarrationUsageSummary = {
+  recordedCallCount: number;
+  knownUsageCallCount: number;
+  unknownUsageCallCount: number;
+  billedTextWords: number;
+  historicalCoverage: "since_ledger_enabled";
+  scope: "main_project_narration";
 };
 
 export type VideoJobResult = {
@@ -1064,6 +1149,8 @@ export type VideoJobResult = {
   workflowStage: string;
   steps: VideoJobStepResult[];
   errorMessage: string | null;
+  imageToVideoCostSummary?: ImageToVideoCostSummary | null;
+  narrationUsageSummary?: NarrationUsageSummary | null;
   project: Record<string, unknown> | null;
   productStatus?: "generating" | "completed" | "failed";
   productCompleted: boolean;
@@ -1088,6 +1175,21 @@ type RawVideoJob = {
     retry_job_id?: string | null;
   }> | null;
   error_message: string | null;
+  image_to_video_cost_summary?: {
+    recorded_call_count: number;
+    priced_call_count: number;
+    unknown_cost_call_count: number;
+    standard_price_cost_cny: number;
+    historical_coverage: "since_ledger_enabled";
+  } | null;
+  narration_usage_summary?: {
+    recorded_call_count: number;
+    known_usage_call_count: number;
+    unknown_usage_call_count: number;
+    billed_text_words: number;
+    historical_coverage: "since_ledger_enabled";
+    scope: "main_project_narration";
+  } | null;
   project: Record<string, unknown> | null;
   product_status?: "generating" | "completed" | "failed";
   product_completed?: boolean;
@@ -1123,6 +1225,21 @@ function mapVideoJob(raw: RawVideoJob): VideoJobResult {
     workflowStage: raw.workflow_stage || raw.status,
     steps,
     errorMessage: raw.error_message,
+    imageToVideoCostSummary: raw.image_to_video_cost_summary ? {
+      recordedCallCount: raw.image_to_video_cost_summary.recorded_call_count,
+      pricedCallCount: raw.image_to_video_cost_summary.priced_call_count,
+      unknownCostCallCount: raw.image_to_video_cost_summary.unknown_cost_call_count,
+      standardPriceCostCny: raw.image_to_video_cost_summary.standard_price_cost_cny,
+      historicalCoverage: raw.image_to_video_cost_summary.historical_coverage,
+    } : null,
+    narrationUsageSummary: raw.narration_usage_summary ? {
+      recordedCallCount: raw.narration_usage_summary.recorded_call_count,
+      knownUsageCallCount: raw.narration_usage_summary.known_usage_call_count,
+      unknownUsageCallCount: raw.narration_usage_summary.unknown_usage_call_count,
+      billedTextWords: raw.narration_usage_summary.billed_text_words,
+      historicalCoverage: raw.narration_usage_summary.historical_coverage,
+      scope: raw.narration_usage_summary.scope,
+    } : null,
     project: raw.project,
     productStatus: raw.product_status,
     productCompleted: raw.product_completed === true,
@@ -1512,6 +1629,22 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       }
       return { kind: "saved", product: contentAssetToProduct(payload as unknown as ContentAsset) };
     },
+    async retryDirectorReview(token, product) {
+      if (!product.backendAssetId || !product.contentHash) throw new Error("请刷新编导稿后重试审查。");
+      const updated = await api<ContentAsset>(
+        `/assets/${product.backendAssetId}/director-review/retry`, token,
+        { method: "POST", body: JSON.stringify({ base_content_hash: product.contentHash }) },
+      );
+      return contentAssetToProduct(updated);
+    },
+    async ignoreDirectorReviewSuggestion(token, product, findingId) {
+      if (!product.backendAssetId || !product.contentHash) throw new Error("请刷新编导稿后再操作。");
+      const updated = await api<ContentAsset>(
+        `/assets/${product.backendAssetId}/director-review/findings/${encodeURIComponent(findingId)}/ignore`, token,
+        { method: "POST", body: JSON.stringify({ base_content_hash: product.contentHash }) },
+      );
+      return contentAssetToProduct(updated);
+    },
     isBackendEnabled() {
       return isApiConfigured;
     },
@@ -1686,6 +1819,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       conversationId,
       instruction,
       selectedProductId,
+      selectedSceneId,
+      selectedSceneVersionId,
       linkedAssetIds,
       clientRequestId,
       videoParameterConfirmation,
@@ -1704,9 +1839,12 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       imageGenerationSetApplication,
       sourceSubtitleMode,
       sourceResolutionSelection,
+      sceneSourceDecision,
+      sceneImageGenerationRequest,
+      directorProductionPlan,
       signal,
     }) {
-      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse & {
@@ -1722,6 +1860,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           conversationId,
           instruction,
           selectedProductId,
+          selectedSceneId,
+          selectedSceneVersionId,
           linkedAssetIds,
           clientRequestId,
           videoParameterConfirmation,
@@ -1740,6 +1880,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           imageGenerationSetApplication,
           sourceSubtitleMode,
           sourceResolutionSelection,
+          sceneSourceDecision,
+          sceneImageGenerationRequest,
+          directorProductionPlan,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;
@@ -1763,6 +1906,43 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           ? mapProjectRequirementSnapshot(response.requirement_snapshot)
           : null,
       };
+    },
+    async searchScenePublicCandidate(token, decision) {
+      const response = await api<{ director_version_id: number; candidate: {
+        candidate_id: string; preview_url: string; title: string; provider: string;
+        license: string; attribution_url: string;
+      } }>("/assets/director-scene-public-search", token, {
+        method: "POST",
+        body: JSON.stringify({
+          director_asset_id: decision.directorAssetId,
+          director_version_id: decision.directorVersionId,
+          scene_id: decision.sceneId,
+          action: "search_public",
+        }),
+      });
+      return {
+        directorVersionId: response.director_version_id,
+        candidate: {
+          candidateId: response.candidate.candidate_id,
+          previewUrl: response.candidate.preview_url,
+          title: response.candidate.title,
+          provider: response.candidate.provider,
+          license: response.candidate.license,
+          attributionUrl: response.candidate.attribution_url,
+        },
+      };
+    },
+    async selectScenePublicCandidate(token, decision, candidateId) {
+      const response = await api<{ director_version_id: number }>("/assets/director-scene-public-select", token, {
+        method: "POST",
+        body: JSON.stringify({
+          director_asset_id: decision.directorAssetId,
+          director_version_id: decision.directorVersionId,
+          scene_id: decision.sceneId,
+          candidate_id: candidateId,
+        }),
+      });
+      return { directorVersionId: response.director_version_id };
     },
     async reconcileMessage({ token, clientRequestId }) {
       const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
@@ -1816,6 +1996,9 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     retryGenerationJob(token, jobId) {
       return retryAssetGenerationJob(token, jobId);
+    },
+    regenerateGenerationJob(token, jobId) {
+      return regenerateAssetGenerationJob(token, jobId);
     },
     cancelGenerationJob(token, jobId) {
       return cancelAssetGenerationJob(token, jobId);
@@ -2024,6 +2207,11 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async getLatestAssetIngestJob(token, assetId) {
       return api<AssetIngestJobRead>(`/assets/${assetId}/ingest-jobs/latest`, token);
+    },
+    async reviewSceneImageFit(token, assetId, target) {
+      return api<SceneImageFitAdvice>(`/assets/${assetId}/scene-fit`, token, {
+        method: "POST", body: JSON.stringify(target),
+      });
     },
     async createWebCapture(token, payload) {
       return api<ContentAsset>("/assets/web-captures", token, {

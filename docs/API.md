@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-29
+> Last verified: 2026-10-03
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -732,9 +732,8 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   该阶段只核对批准指纹和 MG 等异步状态，不重新审查主画面、证据、字幕或时间线内容。
 - `stage=project` 时，`mg_failed`、`mg_not_ready`、`mg_stale` 只记录内部 warning，允许主工程先持久化以供恢复。
 - `stage=export_preflight` 时，上述 overlay 状态均为 blocker；用户可见视频在未完成时为“生成中”、失败时为“失败”，不能编辑或导出。
-- `mg_primary_blank`：full-frame `mg_scene` 失败，后端已用持久化、无文字的空白主画面保留该镜时长。
-- `mg_primary_blank` 不取消内部 `ready`，前端显示可见 warning；只要占位画面有效并连续覆盖主轨，它本身不阻断导出。
-- 空白占位未持久化、归属不正确或主轨不连续时，后端返回 blocker，前端按主工程失败处理。
+- `mg_primary_blank`：历史 full-frame `mg_scene` 失败占位标记，只用于识别已经退役的旧内容。
+- `mg_primary_blank` 在项目质量门和 `export_preflight` 中均为 blocker；前端按主工程失败处理，不能显示为可继续导出的 warning，也不能复用旧批准。
 - 前端收到任何 `export_preflight` blocker 后必须停止导出并显示“修复后重新检查”；warning-only 报告可以继续导出。
 - 导出版本枚举固定为 `original | brand_showcase`。缺少 `export_variant` 时按 `original` 处理；
   `brand_showcase` 必须携带 `brand_spec_version: "multimix-brand-showcase:v1"`，原始版将版本归一为 `null`。
@@ -823,9 +822,9 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   `mp4_state`、`mp4_quality_report` 与 `mp4_verified_project_fingerprint`；`brand_showcase` 写入
   `video_project.export_variants.brand_showcase`，不覆盖原始成片字段。质量失败或工程已变化均不覆盖
   当前工程，也不把视频工程主状态改为失败。
-- `POST /v1/video/projects/{asset_id}/exports/finalize` 现返回 `410 Gone`；
-  `POST /v1/video/projects/{asset_id}/mp4` 和 `POST /v1/video/projects/{asset_id}/exports/verify`
-  同样是已退役路径，不能用于正常导出或绕过验证。
+- `POST /v1/video/projects/{asset_id}/exports/finalize`、`POST /v1/video/projects/{asset_id}/mp4`
+  和 `POST /v1/video/projects/{asset_id}/exports/verify` 均不再注册。当前 Web 只使用上传会话、
+  `POST /exports/register` 和异步导出任务协议；客户端不得依赖旧路由的兼容响应。
 
 ### 12.2 结构化确认卡 `metadata.plan`
 
@@ -1268,6 +1267,19 @@ mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认�
 
 客户端连接状态是本地展示字段，不回写任务，也不创建替代任务。轮询或完成后的会话刷新失败时，卡片保留
 最后一次服务端进展并显示重新连接；下一次成功读取清除此状态。视频修改失败继续展示上一稳定工程。
+
+视频工作在产品层只区分“视频制作”和“已有视频优化”。人声检测及相关处理属于已有视频优化内部能力，
+不形成第三条任务分类；已有视频未检测到人声并复用编导能力时，客户端仍沿用原 generation job。
+
+`AssetGenerationJobResponse` 还可返回以下安全断点投影：
+
+- `intermediate_results[]`：包含 `stage`、可选 `scene_id`、`state=completed` 和服务端裁剪后的
+  `public_projection`。客户端只将其标记为“生成中结果”，不得显示为正式编导稿或视频工程。
+- `checkpoint_resume`：包含 `reused_stages`、`invalidation_boundary`、`invalidation_reason` 和
+  `rerun_scene_ids`。客户端把阶段 ID 映射为普通用户可读名称，只说明已复用数量、继续位置和需重跑分镜数，
+  不展示内部原因代码。
+- 服务端不会返回 artifact 引用、执行 ID、提示词/Schema 指纹、模型响应或内部内容哈希；客户端也不得根据
+  投影自行判断 checkpoint 是否有效、改变重试边界或绕过确认与质量门。
 
 ## 15. 项目需求理解与项目级素材用途
 

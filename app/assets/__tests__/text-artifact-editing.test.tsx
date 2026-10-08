@@ -316,7 +316,7 @@ describe("text artifact editing", () => {
       acceptStructuralChange: false,
     }));
     expect(onProductUpdated).toHaveBeenCalledWith(updated, product);
-    expect(screen.queryByRole("textbox", { name: "编辑文案稿" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "编辑文案稿" })).not.toBeInTheDocument());
   });
 
   it("keeps editing when structural validation requires an explicit new-structure save", async () => {
@@ -428,5 +428,61 @@ describe("text artifact editing", () => {
     if (change === "unmount") unmount();
     await act(async () => { pending.resolve({ kind: "saved", product: { ...product, ...(change === "identity" ? { backendAssetId: 999 } : {}) } }); });
     expect(publish).not.toHaveBeenCalled();
+  });
+
+
+  it("shows unmapped legacy image references on an imported director draft", () => {
+    render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={{ ...product, contentType: "video_script", phase: "编导稿", metadata: {
+          director_draft_phase: "editable_review_unavailable",
+          director_review: { status: "unavailable", summary: "待审查" },
+          unresolved_legacy_reference_ids: [13],
+          video_plan: { selected_reference_asset_ids: [201], scenes: [] },
+        } }}
+        selectedConversation={conversation}
+        token="token"
+      />,
+    );
+    expect(screen.getByText(/原稿素材编号 #13 尚未映射到当前素材库/)).toBeVisible();
+  });
+
+
+  it("shows scene review and lets the user ignore an optional suggestion", async () => {
+    const director = {
+      ...product,
+      contentType: "video_script",
+      phase: "编导稿",
+      markdownBody: "# 编导稿\n\n### 1. 开场\n- 口播：早上好。",
+      segments: [{ id: "scene-1", index: 0, title: "开场", isFallback: false }],
+      metadata: {
+        director_draft_phase: "editable_reviewed",
+        director_review: { status: "reviewed", summary: "有一条可选建议。", findings: [
+          { id: "suggestion-1", scene_id: "scene-1", kind: "suggestion", status: "open",
+            reason: "开场略慢", user_impact: "观众较晚知道主题", evidence: "第一镜口播",
+            proposed_change: "缩短开场" },
+        ] },
+        video_plan: { selected_reference_asset_ids: [23] },
+      },
+    } as AssetProduct;
+    const updated = { ...director, metadata: {
+      ...director.metadata,
+      director_review: { status: "reviewed", findings: [{ id: "suggestion-1", status: "ignored" }] },
+    } };
+    const ignore = vi.spyOn(assetWorkspaceAdapter, "ignoreDirectorReviewSuggestion").mockResolvedValue(updated);
+    const onProductUpdated = vi.fn();
+    render(<ProductWorkspace
+      copied={false} onCopyProduct={vi.fn(async () => undefined)}
+      onSaveProduct={vi.fn(async () => undefined)} onProductUpdated={onProductUpdated}
+      product={director} selectedConversation={conversation} token="token"
+    />);
+    expect(screen.getByRole("region", { name: "编导稿整稿审查" })).toHaveTextContent("参考素材 #23 仅作画面示意");
+    expect(screen.getByText("影响：观众较晚知道主题")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "忽略建议" }));
+    await waitFor(() => expect(ignore).toHaveBeenCalledWith("token", director, "suggestion-1"));
+    expect(onProductUpdated).toHaveBeenCalledWith(updated);
   });
 });

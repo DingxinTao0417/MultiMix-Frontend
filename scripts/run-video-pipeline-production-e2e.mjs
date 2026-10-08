@@ -6,14 +6,17 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 import {
+  assertPortOwnedByChild,
   assertPortFree,
   startLogged,
   stopChild,
+  waitForPortFree,
   waitFor,
 } from "./demo-e2e/environment-manager.mjs";
 import {
   assertSqliteDatabaseUsable,
   createE2ERunLifecycle,
+  readRetainedE2ERunState,
   resumeRetainedE2ERunLifecycle,
 } from "./e2e-run-lifecycle.mjs";
 import { repairNextGeneratedTypeReferences } from "./next-generated-types.mjs";
@@ -34,9 +37,11 @@ if (process.argv.slice(2).some((argument) => argument === "--help" || argument =
 Optional arguments:
   --recompose                 Verify one scene recomposition after project readiness.
   --resume <run-id>           Resume an explicitly retained E2E run.
+  --resume-editable <run-id>  Resume a reviewed editable director draft to production planning.
+  --resume-produced <run-id>  Continue a reviewed director from its latest valid production job or restore its reviewed version, then proceed through project and export.
 
 Core environment variables:
-  VIDEO_PIPELINE_VIDEO_TYPE   One production E2E profile: explainer, source_excerpt, or presenter.
+  VIDEO_PIPELINE_VIDEO_TYPE   One production E2E profile: explainer, source_excerpt, or presenter. Recovered from a retained manifest on --resume.
   VIDEO_PIPELINE_QUALITY_BASELINE=true
                               Require approved product inputs for a single explainer or presenter quality run.
   VIDEO_PIPELINE_BENCHMARK_CASE
@@ -59,6 +64,8 @@ Core environment variables:
                               Optional fixed plain-language instruction for explainer_saved_library_simple QA.
   VIDEO_PIPELINE_VISION_TIMEOUT_SECONDS
                               Optional positive integer applied only to the isolated backend.
+  VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS
+                              Optional positive integer for director generation completion.
   VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS
                               Optional positive integer for each candidate MP4 range request.
 
@@ -153,6 +160,8 @@ const mgTestTarget = resolveMgTestTarget(process.env);
 const backendPort = Number(process.env.VIDEO_PIPELINE_BACKEND_PORT ?? 8427);
 const frontendPort = Number(process.env.VIDEO_PIPELINE_FRONTEND_PORT ?? 3427);
 const visionPort = Number(process.env.VIDEO_PIPELINE_VISION_PORT ?? 8428);
+const separateGenerationWorker = process.env.VIDEO_PIPELINE_SEPARATE_GENERATION_WORKER === "true";
+const redisPort = Number(process.env.VIDEO_PIPELINE_REDIS_PORT ?? 6398);
 const configuredVisionServiceUrl = (
   process.env.VIDEO_PIPELINE_VISION_SERVICE_URL
   ?? canonicalEnv.MULTIMIX_VISION_SERVICE_URL
@@ -213,28 +222,67 @@ if (
 }
 const visionServiceUrl = configuredVisionServiceUrl
   || `http://127.0.0.1:${visionPort}`;
-const resumeArgIndex = process.argv.indexOf("--resume");
+const editableResumeArgIndex = process.argv.indexOf("--resume-editable");
+const resumeEditable = editableResumeArgIndex >= 0;
+const producedResumeArgIndex = process.argv.indexOf("--resume-produced");
+const resumeProduced = producedResumeArgIndex >= 0;
+if ([resumeEditable, resumeProduced, process.argv.includes("--resume")].filter(Boolean).length > 1) {
+  throw new Error("Choose one retained resume mode.");
+}
+const resumeArgIndex = resumeEditable
+  ? editableResumeArgIndex : resumeProduced
+    ? producedResumeArgIndex : process.argv.indexOf("--resume");
 const resumeRunId = resumeArgIndex >= 0 ? process.argv[resumeArgIndex + 1] : "";
 if (resumeArgIndex >= 0 && (!resumeRunId || resumeRunId.startsWith("--"))) {
-  throw new Error("--resume requires a retained VIDEO_PIPELINE_RUN_ID");
+  throw new Error("Retained resume requires a VIDEO_PIPELINE_RUN_ID");
 }
+const isResume = resumeArgIndex >= 0;
+const retainedRunState = isResume
+  ? readRetainedE2ERunState({ suite: "video-pipeline-production", runId: resumeRunId })
+  : null;
+function readRetainedRunManifest(state) {
+  if (!state || typeof state.resultDir !== "string" || !state.resultDir.trim()) {
+    throw new Error("Cannot resume: retained run state has no result directory.");
+  }
+  const manifestPath = path.join(state.resultDir, "run-manifest.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error("Cannot resume: run-manifest.json is missing.");
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  if (
+    !manifest
+    || typeof manifest.videoType !== "string"
+    || !manifest.videoType.trim()
+    || typeof manifest.inputProfile !== "string"
+    || !manifest.inputProfile.trim()
+  ) {
+    throw new Error("Cannot resume: retained run manifest has no valid input identity.");
+  }
+  return manifest;
+}
+const retainedRunManifest = isResume ? readRetainedRunManifest(retainedRunState) : null;
 const productionE2EProfiles = [
   "explainer",
   "source_excerpt",
   "presenter",
 ];
-if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE && resumeArgIndex >= 0) {
-  throw new Error("Resuming a retained run requires VIDEO_PIPELINE_VIDEO_TYPE");
+const suppliedVideoType = (process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? "").trim();
+if (
+  isResume
+  && suppliedVideoType
+  && suppliedVideoType !== retainedRunManifest?.videoType
+) {
+  throw new Error("Cannot resume: retained run manifest conflicts with VIDEO_PIPELINE_VIDEO_TYPE.");
 }
 const qualityBaselineRun = process.env.VIDEO_PIPELINE_QUALITY_BASELINE === "true";
-if (qualityBaselineRun && !process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+if (qualityBaselineRun && !suppliedVideoType) {
   throw new Error("quality baseline requires one explicitly selected production E2E profile");
 }
 const benchmarkCaseFilename = (process.env.VIDEO_PIPELINE_BENCHMARK_CASE ?? "").trim();
 if (qualityBaselineRun && !benchmarkCaseFilename) {
   throw new Error("quality baseline requires VIDEO_PIPELINE_BENCHMARK_CASE");
 }
-if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
+if (!suppliedVideoType && !isResume) {
   const matrixResultRoot = path.resolve(
     process.env.VIDEO_PIPELINE_RESULT_DIR
       ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
@@ -260,7 +308,7 @@ if (!process.env.VIDEO_PIPELINE_VIDEO_TYPE) {
   }
   process.exit(0);
 }
-const expectedVideoType = process.env.VIDEO_PIPELINE_VIDEO_TYPE ?? productionE2EProfiles[0];
+const expectedVideoType = suppliedVideoType || retainedRunManifest?.videoType || productionE2EProfiles[0];
 if (!expectedVideoType || !productionE2EProfiles.includes(expectedVideoType)) {
   throw new Error(`Unsupported production E2E profile: ${expectedVideoType ?? "missing"}`);
 }
@@ -312,6 +360,9 @@ let qaSceneCount = expectedSceneCount;
 const videoJobTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS ?? 20 * 60_000,
 );
+const directorJobTimeoutMs = Number(
+  process.env.VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS ?? 20 * 60_000,
+);
 const candidateRangeTimeoutMs = Number(
   process.env.VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS ?? 60_000,
 );
@@ -331,6 +382,9 @@ if (!Number.isInteger(expectedSceneCount) || expectedSceneCount < 1) {
 if (!Number.isInteger(videoJobTimeoutMs) || videoJobTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS must be a positive integer");
 }
+if (!Number.isInteger(directorJobTimeoutMs) || directorJobTimeoutMs < 1) {
+  throw new Error("VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS must be a positive integer");
+}
 if (!Number.isInteger(candidateRangeTimeoutMs) || candidateRangeTimeoutMs < 1) {
   throw new Error("VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS must be a positive integer");
 }
@@ -347,8 +401,17 @@ const interruptAfterManifest = process.env.VIDEO_PIPELINE_INTERRUPT_AFTER_MANIFE
 const testRecompose = process.argv.includes("--recompose")
   || process.env.VIDEO_PIPELINE_TEST_RECOMPOSE === "true";
 const retainRemoteCheckpoint = process.env.VIDEO_PIPELINE_RETAIN_REMOTE_CHECKPOINT !== "false";
-const inputProfile = process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? `${expectedVideoType}_default`;
+const suppliedInputProfile = (process.env.VIDEO_PIPELINE_INPUT_PROFILE ?? "").trim();
+if (
+  isResume
+  && suppliedInputProfile
+  && suppliedInputProfile !== retainedRunManifest?.inputProfile
+) {
+  throw new Error("Cannot resume: retained run manifest conflicts with VIDEO_PIPELINE_INPUT_PROFILE.");
+}
+const inputProfile = suppliedInputProfile || retainedRunManifest?.inputProfile || `${expectedVideoType}_default`;
 const singleImageCreativeDraft = inputProfile === "explainer_single_image_draft";
+const ideaOnlyInputProfile = inputProfile === "explainer_idea_only";
 const generationInstructionOverride = (
   process.env.VIDEO_PIPELINE_GENERATION_INSTRUCTION ?? ""
 ).trim();
@@ -393,7 +456,6 @@ const defaultResultDir = path.resolve(
   process.env.VIDEO_PIPELINE_RESULT_DIR
     ?? path.join(frontendRoot, "test-results", "video-pipeline-production"),
 );
-const isResume = resumeArgIndex >= 0;
 const lifecycle = isResume
   ? resumeRetainedE2ERunLifecycle({ suite: "video-pipeline-production", runId: resumeRunId })
   : createE2ERunLifecycle({ suite: "video-pipeline-production", runId: requestedRunId, resultDir: defaultResultDir });
@@ -403,7 +465,8 @@ const resultDir = lifecycle.readState().resultDir;
 const playwrightTimingPath = path.join(lifecycle.runDir, "playwright-timing.ndjson");
 const savedLibraryInputProfile = inputProfile === "explainer_saved_library_simple"
   || singleImageCreativeDraft;
-const sourceDocumentFingerprint = savedLibraryInputProfile
+const sourceFreeInputProfile = savedLibraryInputProfile || ideaOnlyInputProfile;
+const sourceDocumentFingerprint = sourceFreeInputProfile
   ? null
   : fingerprintFile(sourceDocument);
 let expectBgm = process.env.VIDEO_PIPELINE_EXPECT_BGM !== "false";
@@ -1141,7 +1204,42 @@ function startProcess(command, args, cwd, env, logName) {
     logPath: path.join(resultDir, logName),
   });
   children.push(started);
+  started.child.once("exit", (code, signal) => {
+    lifecycle.record(`process_${logName}`, "exited", {
+      processId: started.child.pid,
+      exitCode: code,
+      signal,
+    });
+  });
   return started.child;
+}
+
+async function waitForTcpListener(port, child, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (child.exitCode != null) {
+      throw new Error(`Test listener ${port} exited with ${child.exitCode}`);
+    }
+    const connected = await new Promise((resolve) => {
+      const socket = net.connect({ host: "127.0.0.1", port });
+      socket.once("connect", () => { socket.destroy(); resolve(true); });
+      socket.once("error", () => { socket.destroy(); resolve(false); });
+    });
+    if (connected) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for test listener ${port}`);
+}
+
+async function waitForVerifiedBackend(backend, databaseFingerprint) {
+  await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+  const listener = await assertPortOwnedByChild(backendPort, backend);
+  lifecycle.record("backend_listener_identity", "verified", {
+    port: backendPort,
+    rootProcessId: listener.rootPid,
+    listenerProcessId: listener.listenerPid,
+    databaseFingerprint,
+  });
 }
 
 async function verifyCandidateVideo() {
@@ -1375,51 +1473,75 @@ async function readRetainedDirectorRetrySeed(backendEnv) {
     "import json, sys",
     "from app.db import SessionLocal",
     "from app.models import AssetConversation, AssetConversationMessage, AssetFile, AssetGenerationJob, AssetIngestJob, ContentAsset, User, VideoDecisionEvent, VideoRenderJob",
+    "from app.services.asset_generation_jobs import generation_job_is_retryable",
+    "from app.services.asset_generation_retryability import generation_job_is_regenerable",
     "benchmark_source_hashes=sorted(json.loads(sys.argv[1]))",
+    "expected_source_count=len(benchmark_source_hashes)",
     "run_id=sys.argv[2]",
     "with SessionLocal() as db:",
     " render_jobs=db.query(VideoRenderJob).all()",
     " generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
-    " if render_jobs or len(generation_jobs) != 1 or generation_jobs[0].status != 'failed':",
+    " if render_jobs or not generation_jobs or generation_jobs[-1].status != 'failed':",
     "  print('null')",
     " else:",
     "  assert len(render_jobs) == 0, 'retained director retry already has a video job'",
     "  source_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'uploaded_video').order_by(ContentAsset.id).all()",
-    "  assert len(source_assets) == 3, 'retained director retry requires exactly three source assets'",
+    "  assert len(source_assets) == expected_source_count, 'retained source asset count changed from the input profile'",
     "  assert all(asset.status == 'ready' and asset.generation_state == 'source_ready' for asset in source_assets), 'retained source asset is not ready'",
     "  understandings=[dict((asset.metadata_json or {}).get('understanding') or {}) for asset in source_assets]",
     "  assert all(item.get('status') == 'ready' for item in understandings), 'retained source understanding is not ready'",
     "  assert all(dict(item.get('temporal_index') or {}).get('status') == 'ready' for item in understandings), 'retained temporal index is not ready'",
     "  source_files=db.query(AssetFile).filter(AssetFile.asset_id.in_([asset.id for asset in source_assets]), AssetFile.file_role == 'original').order_by(AssetFile.asset_id).all()",
-    "  assert len(source_files) == 3, 'retained source originals are incomplete'",
+    "  assert len(source_files) == expected_source_count, 'retained source originals are incomplete'",
     "  assert sorted(str(item.content_hash or '').removeprefix('sha256:') for item in source_files) == benchmark_source_hashes, 'retained source fingerprints changed'",
     "  namespace=f'e2e/video-pipeline-production/{run_id}/'",
     "  assert all(namespace in str(item.storage_ref or '') for item in source_files), 'retained source ref left the isolated namespace'",
     "  ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
-    "  assert len(ingest_jobs) == 3, 'retained director retry requires exactly three ingest jobs'",
+    "  assert len(ingest_jobs) == expected_source_count, 'retained ingest job count changed from the input profile'",
     "  assert all(job.status == 'completed' and job.stage == 'ready' and job.attempts == 1 for job in ingest_jobs), 'retained ingest stage is not complete'",
-    "  generation_job=generation_jobs[0]",
+    "  generation_job=generation_jobs[-1]",
+    "  for index, historical_job in enumerate(generation_jobs[:-1]):",
+    "   assert historical_job.status == 'failed' and historical_job.stage == 'failed' and historical_job.result_asset_id is None, 'retained director history contains a non-failed predecessor'",
+    "   successor=generation_jobs[index + 1]",
+    "   successor_payload=dict(successor.request_payload or {})",
+    "   assert successor_payload.get('restart_of_generation_job_id') == historical_job.public_id, 'retained director regeneration chain is broken'",
+    "   assert successor.user_id == historical_job.user_id and successor.conversation_id == historical_job.conversation_id, 'retained director regeneration identity changed'",
     "  assert generation_job.status == 'failed' and generation_job.stage == 'failed', 'retained director job is not failed'",
-    "  assert generation_job.attempts == 1, 'retained director retry requires exactly one prior attempt'",
+    "  assert generation_job.attempts >= 1, 'retained director retry requires a prior attempt'",
     "  failure_events=db.query(VideoDecisionEvent).filter(VideoDecisionEvent.generation_job_id == generation_job.id, VideoDecisionEvent.event_type == 'director_generation_failed').all()",
-    "  choreography_overlap_failure=False",
-    "  if generation_job.error_code == 'internal_error':",
-    "   assert len(failure_events) == 1, 'retained internal failure requires one durable decision event'",
-    "   failure_event=failure_events[0]",
+    "  current_failure_events=[]",
+    "  for failure_event in failure_events:",
     "   details=dict(failure_event.details or {})",
-    "   diagnostics=dict(details.get('diagnostics') or {})",
-    "   choreography_overlap_failure=(failure_event.reason_code == 'internal_error' and details.get('attempt') == 1 and diagnostics.get('exception_type') == 'ValueError' and diagnostics.get('detail') == 'choreography source ranges must not overlap')",
-    "  retryable_failure=(generation_job.error_code == 'quality_rejected' or (generation_job.error_code == 'internal_error' and choreography_overlap_failure))",
-    "  assert retryable_failure, 'retained director failure is not an authorized retry case'",
+    "   if details.get('attempt') == generation_job.attempts:",
+    "    current_failure_events.append(failure_event)",
+    "  assert len(current_failure_events) == 1, 'retained director failure requires one durable event for the current attempt'",
+    "  current_failure_event=current_failure_events[0]",
+    "  assert current_failure_event.reason_code == generation_job.error_code, 'retained director failure event does not match the job error'",
+    "  assert generation_job_is_retryable(generation_job) or generation_job_is_regenerable(generation_job), 'retained director failure is not eligible for recovery'",
     "  assert generation_job.result_asset_id is None, 'retained failed director unexpectedly has a result asset'",
     "  director_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'video_script').all()",
-    "  assert len(director_assets) == 0, 'retained director retry must not have a persisted director asset'",
+    "  visible_director_assets=[asset for asset in director_assets if not asset.archived]",
+    "  hidden_director_reservations=[asset for asset in director_assets if asset.archived]",
+    "  assert len(visible_director_assets) == 0, 'retained director retry must not have a visible director asset'",
+    "  checkpoint=dict((generation_job.result_payload or {}).get('director_save_checkpoint') or {})",
+    "  if hidden_director_reservations:",
+    "   assert checkpoint.get('version') == 'director-save:v1', 'hidden director reservation has no matching checkpoint'",
+    "   assert len(hidden_director_reservations) == 1, 'retained director retry has multiple hidden reservations'",
+    "   reservation_asset=hidden_director_reservations[0]",
+    "   assert reservation_asset.id == int(checkpoint['asset_id']), 'hidden director reservation asset does not match checkpoint'",
+    "   assert reservation_asset.user_id == generation_job.user_id, 'hidden director reservation owner changed'",
+    "   assert reservation_asset.status == 'processing' and reservation_asset.generation_state == 'generation_reserved', 'hidden director reservation state is invalid'",
+    "   reservation_metadata=dict((reservation_asset.metadata_json or {}).get('internal_generation_reservation') or {})",
+    "   assert reservation_metadata.get('job_id') == generation_job.id, 'hidden director reservation job does not match'",
+    "   assert reservation_metadata.get('request_fingerprint') == checkpoint.get('request_fingerprint'), 'hidden director reservation fingerprint changed'",
+    "  else:",
+    "   assert not checkpoint, 'retained director checkpoint has no hidden reservation asset'",
     "  conversation=db.get(AssetConversation, generation_job.conversation_id)",
     "  user=db.get(User, generation_job.user_id)",
     "  queued_message=db.get(AssetConversationMessage, generation_job.queued_message_id)",
     "  assert conversation is not None and user is not None and queued_message is not None, 'retained director retry identity is missing'",
     "  assert conversation.user_id == user.id and queued_message.conversation_id == conversation.id, 'retained director retry ownership changed'",
-    "  result={'email': user.email, 'conversationId': conversation.public_id, 'generationJobId': generation_job.public_id, 'generationAttemptsBefore': generation_job.attempts, 'ingestJobIds': [job.public_id for job in ingest_jobs], 'sourceAssetIds': [asset.id for asset in source_assets], 'benchmarkSourceHashes': benchmark_source_hashes}",
+    "  result={'email': user.email, 'conversationId': conversation.public_id, 'generationJobId': generation_job.public_id, 'generationAttemptsBefore': generation_job.attempts, 'regenerable': generation_job_is_regenerable(generation_job), 'ingestJobIds': [job.public_id for job in ingest_jobs], 'sourceAssetIds': [asset.id for asset in source_assets], 'benchmarkSourceHashes': benchmark_source_hashes}",
     "  print(json.dumps(result, ensure_ascii=False))",
   ].join("\n");
   const { stdout } = await run(
@@ -1442,6 +1564,166 @@ async function readRetainedDirectorRetrySeed(backendEnv) {
   return hydrated;
 }
 
+async function recoverRetainedDirectorJob(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.services.asset_generation_worker import recover_asset_generation_jobs, run_asset_generation_job",
+    "dispatched=[]",
+    "def dispatch(job_id):",
+    " dispatched.append(job_id)",
+    " return run_asset_generation_job(job_id)",
+    "with SessionLocal() as db:",
+    " summary=recover_asset_generation_jobs(db, dispatch=dispatch, stale_after_seconds=1)",
+    "print(json.dumps({'summary': summary, 'dispatched': dispatched}, ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot,
+    env: backendEnv,
+  });
+  const result = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "{}");
+  fs.writeFileSync(
+    path.join(resultDir, "retained-director-recovery.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return result;
+}
+
+async function readRetainedEditableDirectorSeed(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetConversationMessage, AssetGenerationJob, ContentAsset, User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " assert jobs and jobs[0].status=='completed', 'editable resume requires a completed source director job'",
+    " job=jobs[0]",
+    " production_jobs=[item for item in jobs[1:] if (item.request_payload or {}).get('requested_capability')=='video_script' and int((item.request_payload or {}).get('selected_product_id') or 0)==job.result_asset_id]",
+    " assert all(item.status=='failed' and item.result_asset_id is None for item in production_jobs), 'editable resume history contains another live or completed production job'",
+    " source_choice_jobs=[item for item in production_jobs if item.error_code=='source_choice_required']",
+    " failed_production_job=(source_choice_jobs or production_jobs)[-1] if production_jobs else None",
+    " assert not db.query(VideoRenderJob).first(), 'editable resume has already started a video project'",
+    " director=db.get(ContentAsset, job.result_asset_id)",
+    " assert director is not None and director.content_type=='video_script' and director.status=='draft' and director.generation_state=='director_script_draft', 'editable director identity changed'",
+    " meta=dict(director.metadata_json or {})",
+    " review=dict(meta.get('director_review') or {})",
+    " plan=dict(meta.get('video_plan') or {})",
+    " scenes=[s for s in plan.get('scenes') or [] if isinstance(s, dict)]",
+    " assert (meta.get('director_draft_phase'),review.get('status')) in {('editable_reviewed','reviewed'),('editable_unreviewed','pending')}, 'editable draft is neither reviewed nor recoverable pending'",
+    " assert scenes and len(scenes)==len(plan.get('scenes') or []), 'editable scenes are incomplete'",
+    " assert not any(isinstance(f,dict) and f.get('kind')=='hard' and f.get('status')=='open' for f in review.get('findings') or []), 'editable draft has open hard findings'",
+    " conv=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conv is not None and user is not None and director.user_id==user.id and conv.user_id==user.id, 'editable ownership changed'",
+    " messages=db.query(AssetConversationMessage).filter(AssetConversationMessage.conversation_id==conv.id).order_by(AssetConversationMessage.id).all()",
+    " assert any(item.role=='assistant' and item.asset_id==director.id for item in messages), 'editable director has no conversation result'",
+    " print(json.dumps({'email':user.email,'conversationId':conv.public_id,'directorAssetId':director.id,'directorContentHash':director.content_hash,'generationJobId':job.public_id,'failedProductionJobId':failed_production_job.public_id if failed_production_job else None,'expectedSceneCount':len(scenes),'reviewStatus':review.get('status')},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot, env: backendEnv,
+  });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed,
+    backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026",
+    resultDir,
+    directorJobTimeoutMs,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-editable-director-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
+}
+
+async function readRetainedProducedDirectorSeed(backendEnv) {
+  const script = [
+    "import json",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetGenerationJob, ContentAsset, ContentAssetVersion, User, VideoRenderJob",
+    "with SessionLocal() as db:",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " completed=[j for j in jobs if j.status=='completed' and (j.request_payload or {}).get('request_context',{}).get('promote_saved_director_draft') is True and j.result_asset_id]",
+    " assert completed, 'no completed reviewed-director production job'",
+    " job=completed[-1]",
+    " assert not db.query(VideoRenderJob).first(), 'video project has already started'",
+    " director=db.get(ContentAsset,job.result_asset_id)",
+    " assert director is not None and director.id==(job.request_payload or {}).get('selected_product_id') and director.content_type=='video_script' and director.generation_state=='director_script_draft', 'produced director identity changed'",
+    " versions=db.query(ContentAssetVersion).filter_by(asset_id=director.id).order_by(ContentAssetVersion.version).all()",
+    " assert versions and versions[-1].content_hash==director.content_hash, 'current director version drifted'",
+    " reviewed=[v for v in versions if (v.metadata_json or {}).get('director_draft_phase')=='editable_reviewed' and ((v.metadata_json or {}).get('director_review') or {}).get('status')=='reviewed']",
+    " assert reviewed, 'no reviewed source version remains'",
+    " source=reviewed[-1]",
+    " prior=completed[-2] if len(completed)>1 else None",
+    " current_metadata=director.metadata_json or {}",
+    " finished_current=prior is not None and source.id!=versions[-1].id and current_metadata.get('director_draft_phase')!='editable_reviewed' and (job.request_payload or {}).get('request_context',{}).get('expected_director_version_id')==source.id and job.result_asset_id==director.id",
+    " failed=[j for j in jobs if j.id>job.id and j.status=='failed' and j.result_asset_id is None and (j.request_payload or {}).get('request_context',{}).get('promote_saved_director_draft') is True and (j.request_payload or {}).get('selected_product_id')==director.id and (j.request_payload or {}).get('request_context',{}).get('expected_director_version_id')==source.id]",
+    " retry=failed[-1] if failed and source.id==versions[-1].id and not finished_current else None",
+    " assert retry is None or (retry.user_id==job.user_id and retry.conversation_id==job.conversation_id), 'failed production job ownership changed'",
+    " source_scenes=((source.metadata_json or {}).get('video_plan') or {}).get('scenes') or []",
+    " current_scenes=((director.metadata_json or {}).get('video_plan') or {}).get('scenes') or []",
+    " assert source_scenes and len(source_scenes)==len(current_scenes), 'director scene structure changed'",
+    " chosen={s.get('id'): (s.get('asset_reference') or {}).get('chosen_asset_id') for s in source_scenes if (s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image'}",
+    " assert all((s.get('asset_reference') or {}).get('chosen_asset_id')==chosen[s.get('id')] for s in current_scenes if s.get('id') in chosen), 'confirmed image identity changed'",
+    " assert not finished_current or all((s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image' for s in current_scenes if s.get('id') in chosen), 'completed production lost user source choice'",
+    " conversation=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conversation is not None and user is not None and director.user_id==user.id and conversation.user_id==user.id, 'produced director ownership changed'",
+    " print(json.dumps({'email':user.email,'conversationId':conversation.public_id,'directorAssetId':director.id,'directorContentHash':source.content_hash,'restoreReviewedVersionId':None if retry or finished_current else source.id,'failedProductionJobId':retry.public_id if retry else None,'completedProductionJobId':job.public_id if finished_current else None,'previousProductionJobId':prior.public_id if finished_current else job.public_id,'expectedSceneCount':len(source_scenes),'reviewStatus':'reviewed','expectedSelectedImageIds':chosen},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand, ["-c", script], {
+    cwd: backendRoot, env: backendEnv,
+  });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed, backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026", resultDir, directorJobTimeoutMs,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-produced-director-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
+}
+
+async function readRetainedProducedConfirmationSeed(backendEnv, previousSeed) {
+  const script = [
+    "import json,sys",
+    "from app.db import SessionLocal",
+    "from app.models import AssetConversation, AssetGenerationJob, ContentAsset, User, VideoRenderJob",
+    "expected=json.loads(sys.argv[1])",
+    "with SessionLocal() as db:",
+    " assert not db.query(VideoRenderJob).first(), 'video project already started'",
+    " old=db.query(AssetGenerationJob).filter_by(public_id=expected['previousProductionJobId']).one()",
+    " assert old.status=='completed' and old.result_asset_id==expected['directorAssetId'], 'previous production job changed'",
+    " jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " job=jobs[-1]",
+    " assert job.id!=old.id and job.status=='completed' and job.result_asset_id==expected['directorAssetId'], 'new production job incomplete'",
+    " director=db.get(ContentAsset,job.result_asset_id)",
+    " metadata=dict(director.metadata_json or {})",
+    " plan=dict(metadata.get('video_plan') or {})",
+    " policy=dict(plan.get('video_parameters') or {})",
+    " profile=dict(plan.get('creative_profile') or {})",
+    " scenes=plan.get('scenes') or []",
+    " assert director.content_hash!=expected['directorContentHash'] and metadata.get('director_draft_phase') is None and len(scenes)==expected['expectedSceneCount'], 'produced director state invalid'",
+    " assert policy.get('schema_version')=='video_creation_policy:v1' and policy.get('confirmed') is True, 'delivery policy not frozen'",
+    " assert profile.get('schema_version')=='video_creative_profile:v1', 'creative profile missing'",
+    " chosen=expected.get('expectedSelectedImageIds') or {}",
+    " assert all((s.get('asset_reference') or {}).get('chosen_asset_id')==chosen[s.get('id')] and (s.get('asset_reference') or {}).get('selection_mode')=='user_selected_generated_image' for s in scenes if s.get('id') in chosen), 'confirmed image source was not preserved'",
+    " conv=db.get(AssetConversation,job.conversation_id)",
+    " user=db.get(User,job.user_id)",
+    " assert conv is not None and user is not None and conv.public_id==expected['conversationId'] and user.email==expected['email'], 'confirmation identity changed'",
+    " print(json.dumps({'email':user.email,'conversationId':conv.public_id,'directorAssetId':director.id,'directorContentHash':director.content_hash,'expectedSceneCount':len(scenes),'ratio':policy.get('ratio'),'targetSeconds':policy.get('target_seconds'),'aiVoiceEnabled':policy.get('ai_voice_enabled'),'voiceSource':policy.get('voice_source'),'preserveSourceAudioBefore':profile.get('preserve_source_audio'),'generationJobId':job.public_id,'generationAttempts':job.attempts},ensure_ascii=False))",
+  ].join("\n");
+  const { stdout } = await run(pythonCommand,
+    ["-c", script, JSON.stringify(previousSeed)], { cwd: backendRoot, env: backendEnv });
+  const seed = JSON.parse(stdout.trim().split(/\r?\n/).at(-1) ?? "null");
+  const hydrated = {
+    ...seed, backendUrl: `http://127.0.0.1:${backendPort}`,
+    password: "local-video-pipeline-2026", resultDir,
+  };
+  fs.writeFileSync(path.join(resultDir, "retained-produced-confirmation-seed.json"),
+    `${JSON.stringify(hydrated, null, 2)}\n`);
+  return hydrated;
+}
+
 async function readRetainedDirectorConfirmationSeed(
   backendEnv,
   { expectedGenerationAttempts = 1 } = {},
@@ -1452,11 +1734,12 @@ async function readRetainedDirectorConfirmationSeed(
     "from app.db import SessionLocal",
     "from app.models import AssetConversation, AssetConversationMessage, AssetFile, AssetGenerationJob, AssetIngestJob, ContentAsset, User, VideoRenderJob",
     "benchmark_source_hashes=sorted(json.loads(sys.argv[1]))",
+    "expected_source_count=len(benchmark_source_hashes)",
     "run_id=sys.argv[2]",
     "target_ratio=sys.argv[3]",
     "target_seconds=int(sys.argv[4])",
     "expected_scene_count=int(sys.argv[5])",
-    "content_driven_scene_count=sys.argv[6] == 'true'",
+    "content_driven_scene_min=int(sys.argv[6])",
     "expected_generation_attempts=int(sys.argv[7])",
     "with SessionLocal() as db:",
     " render_jobs=db.query(VideoRenderJob).all()",
@@ -1465,22 +1748,29 @@ async function readRetainedDirectorConfirmationSeed(
     " else:",
     "  assert len(render_jobs) == 0, 'retained director confirmation already has a video job'",
     "  source_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'uploaded_video').order_by(ContentAsset.id).all()",
-    "  assert len(source_assets) == 3, 'retained director confirmation requires exactly three source assets'",
+    "  assert len(source_assets) == expected_source_count, 'retained source asset count changed from the input profile'",
     "  assert all(asset.status == 'ready' and asset.generation_state == 'source_ready' for asset in source_assets), 'retained source asset is not ready'",
     "  understandings=[dict((asset.metadata_json or {}).get('understanding') or {}) for asset in source_assets]",
     "  assert all(item.get('status') == 'ready' for item in understandings), 'retained source understanding is not ready'",
     "  assert all(dict(item.get('temporal_index') or {}).get('status') == 'ready' for item in understandings), 'retained temporal index is not ready'",
     "  source_files=db.query(AssetFile).filter(AssetFile.asset_id.in_([asset.id for asset in source_assets]), AssetFile.file_role == 'original').order_by(AssetFile.asset_id).all()",
-    "  assert len(source_files) == 3, 'retained source originals are incomplete'",
+    "  assert len(source_files) == expected_source_count, 'retained source originals are incomplete'",
     "  assert sorted(str(item.content_hash or '').removeprefix('sha256:') for item in source_files) == benchmark_source_hashes, 'retained source fingerprints changed'",
     "  namespace=f'e2e/video-pipeline-production/{run_id}/'",
     "  assert all(namespace in str(item.storage_ref or '') for item in source_files), 'retained source ref left the isolated namespace'",
     "  ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
-    "  assert len(ingest_jobs) == 3, 'retained director confirmation requires exactly three ingest jobs'",
+    "  assert len(ingest_jobs) == expected_source_count, 'retained ingest job count changed from the input profile'",
     "  assert all(job.status == 'completed' and job.stage == 'ready' and job.attempts == 1 for job in ingest_jobs), 'retained ingest stage is not complete'",
     "  generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
-    "  assert len(generation_jobs) == 1, 'retained director confirmation requires exactly one generation job'",
-    "  generation_job=generation_jobs[0]",
+    "  completed_generation_jobs=[job for job in generation_jobs if job.status == 'completed']",
+    "  assert len(completed_generation_jobs) == 1, 'retained director confirmation requires exactly one completed generation job'",
+    "  generation_job=completed_generation_jobs[0]",
+    "  assert generation_job is generation_jobs[-1], 'retained director confirmation must use the latest generation job'",
+    "  for index, historical_job in enumerate(generation_jobs[:-1]):",
+    "   assert historical_job.status == 'failed' and historical_job.stage == 'failed' and historical_job.result_asset_id is None, 'retained director history contains a non-failed predecessor'",
+    "   successor_payload=dict(generation_jobs[index + 1].request_payload or {})",
+    "   assert successor_payload.get('restart_of_generation_job_id') == historical_job.public_id, 'retained director regeneration chain is broken'",
+    "   assert generation_jobs[index + 1].user_id == historical_job.user_id and generation_jobs[index + 1].conversation_id == historical_job.conversation_id, 'retained director regeneration identity changed'",
     "  assert generation_job.status == 'completed' and generation_job.stage == 'completed' and generation_job.attempts == expected_generation_attempts, 'retained director job is not complete'",
     "  director_assets=db.query(ContentAsset).filter(ContentAsset.content_type == 'video_script').all()",
     "  assert len(director_assets) == 1, 'retained director confirmation requires exactly one director asset'",
@@ -1493,8 +1783,8 @@ async function readRetainedDirectorConfirmationSeed(
     "  scenes=[item for item in (plan.get('scenes') or []) if isinstance(item, dict)]",
     "  assert policy.get('schema_version') == 'video_creation_policy:v1' and policy.get('confirmed') is True, 'retained video creation policy is not confirmed'",
     "  assert policy.get('ratio') == target_ratio and int(policy.get('target_seconds') or 0) == target_seconds, 'retained delivery policy changed'",
-    "  if content_driven_scene_count:",
-    "   assert 4 <= len(scenes) <= 8, 'retained content-driven scene count left the production contract'",
+    "  if content_driven_scene_min > 0:",
+    "   assert content_driven_scene_min <= len(scenes) <= 8, 'retained content-driven scene count left the production contract'",
     "  else:",
     "   assert len(scenes) == expected_scene_count, 'retained director scene count changed'",
     "  assert profile.get('schema_version') == 'video_creative_profile:v1', 'retained creative profile is missing'",
@@ -1516,7 +1806,13 @@ async function readRetainedDirectorConfirmationSeed(
       targetRatio,
       String(targetSeconds),
       String(expectedSceneCount),
-      String(savedLibraryInputProfile && expectedVideoType !== "presenter"),
+      String(
+        ideaOnlyInputProfile
+          ? 1
+          : savedLibraryInputProfile && expectedVideoType !== "presenter"
+            ? 4
+            : 0,
+      ),
       String(expectedGenerationAttempts),
     ],
     { cwd: backendRoot, env: backendEnv },
@@ -1534,6 +1830,20 @@ async function readRetainedDirectorConfirmationSeed(
     `${JSON.stringify(hydrated, null, 2)}\n`,
   );
   return hydrated;
+}
+
+function expectedRetainedDirectorAttemptsFromRecordedSeed() {
+  const seedPath = path.join(resultDir, "retained-director-retry-seed.json");
+  if (!fs.existsSync(seedPath)) return 1;
+  try {
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    const attemptsBefore = Number(seed?.generationAttemptsBefore);
+    return Number.isInteger(attemptsBefore) && attemptsBefore >= 1
+      ? seed?.regenerable === true ? 1 : attemptsBefore + 1
+      : 1;
+  } catch {
+    return 1;
+  }
 }
 
 function snapshotProviderRequestEvidence() {
@@ -1679,13 +1989,7 @@ async function waitForRetainedVideoJob(job, accessToken) {
 async function resumeRetainedVideoJob(backendEnv) {
   const job = await readRetainedVideoJob(backendEnv);
   const accessToken = await authenticateRetainedVideoUser(job);
-  let mode;
-  let completed;
-  if (job.status === "completed" && job.renderStage === "done") {
-    mode = "already_completed";
-    await recoverInterruptedVideoJob(backendEnv, { requireMainResume: false });
-    completed = await waitForRetainedVideoJob(job, accessToken);
-  } else if (job.status === "failed") {
+  const retryFailedJob = async () => {
     const response = await fetch(
       `http://127.0.0.1:${backendPort}/v1/video/jobs/${job.publicId}/retry`,
       {
@@ -1696,6 +2000,20 @@ async function resumeRetainedVideoJob(backendEnv) {
     if (!response.ok) {
       throw new Error(`Retained video job retry failed: ${response.status} ${await response.text()}`);
     }
+  };
+  let mode;
+  let completed;
+  if (job.status === "completed" && job.renderStage === "done") {
+    mode = "already_completed";
+    await recoverInterruptedVideoJob(backendEnv, { requireMainResume: false });
+    const recoveredJob = await readRetainedVideoJob(backendEnv);
+    if (recoveredJob.status === "failed") {
+      await retryFailedJob();
+      mode = "invalid_completed_retry";
+    }
+    completed = await waitForRetainedVideoJob(job, accessToken);
+  } else if (job.status === "failed") {
+    await retryFailedJob();
     mode = "failed_retry";
     completed = await waitForRetainedVideoJob(job, accessToken);
   } else {
@@ -1750,9 +2068,10 @@ async function verifyRetainedDirectorContinuation(backendEnv, seed) {
     "from app.models import AssetGenerationJob, AssetIngestJob, ContentAsset, VideoRenderJob",
     "expected=json.loads(sys.argv[1])",
     "with SessionLocal() as db:",
-    " generation_jobs=db.query(AssetGenerationJob).all()",
-    " assert len(generation_jobs) == 1, 'retained continuation created another director job'",
-    " generation_job=generation_jobs[0]",
+    " generation_jobs=db.query(AssetGenerationJob).order_by(AssetGenerationJob.id).all()",
+    " generation_job=next((job for job in generation_jobs if job.public_id == expected['generationJobId']), None)",
+    " assert generation_job is not None and generation_job is generation_jobs[-1], 'retained continuation lost the selected latest director job'",
+    " assert all(job.status == 'failed' and job.result_asset_id is None for job in generation_jobs[:-1]), 'retained continuation changed a failed predecessor'",
     " assert generation_job.public_id == expected['generationJobId'] and generation_job.attempts == expected['generationAttempts'] and generation_job.status == 'completed', 'retained director job was repeated or changed'",
     " ingest_jobs=db.query(AssetIngestJob).order_by(AssetIngestJob.id).all()",
     " assert [job.public_id for job in ingest_jobs] == expected['ingestJobIds'], 'retained ingest jobs changed'",
@@ -1903,12 +2222,12 @@ async function writeQaReport() {
   const report = `# 视频流水线浏览器验收\n\n`
     + `> Status: qa\n> Owner: workspace\n> Last verified: ${new Date().toISOString().slice(0, 10)}\n\n`
     + `## 结果\n\n- 流水线模式：${result.twoStageEnabled === true ? "两阶段开启" : "两阶段关闭"}\n- 健康评分：${health}/100\n- ${qaSceneCount} 镜主轨：通过\n- 待补素材：未出现\n`
-    + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 个${requirePublicAsset ? "（本场景必需）" : ""}\n`
+    + `- 公共素材正式采用：${Number(result.sourceMix?.public_asset ?? 0)} 镜${requirePublicAsset ? "（本场景必需）" : ""}\n`
     + `- 交付边界：${singleImageCreativeDraft ? "创意草稿（非公开、非黄金基线）" : "按本次验收模式"}\n`
     + `- 单镜重做未改动其他分镜：${recomposeResult}\n- 正式导出候选 MP4：${candidateVideoExists ? "通过" : "缺失"}\n- 浏览器 console error：${errors.length}\n- 可行动 console error：${actionableErrors.length}\n- 浏览器失败请求：${requestFailures.length}\n- 可行动失败请求：${actionableRequestFailures.length}\n\n`
     + `## 证据\n\n- 候选成片：multimix-candidate.mp4\n- 页面截图：video-pipeline-ready.png\n- 状态快照：browser-result.json\n- 后端日志：backend.log\n- 前端日志：frontend.log\n`
     + `- 分镜关键帧：keyframes/keyframe-*.png\n\n`
-    + `## 覆盖范围\n\n- 本测试证明真实上传、对话、确认、worker、${qaSceneCount} 镜落库和正式导出链路。\n`
+    + `## 覆盖范围\n\n- 本次覆盖 ${inputProfile} 输入路径、确认、worker、${qaSceneCount} 镜落库和正式导出；${resumeReuse ? "上游已完成阶段按有效断点复用。" : "上游生成按本次执行记录验收。"}\n`
     + (singleImageCreativeDraft
       ? "- 单图结果仅证明创意草稿与技术链路可用；不证明素材多样性、事实完整性、授权完整性或可公开发布。\n"
       : "");
@@ -2009,7 +2328,7 @@ try {
     frontendPort,
     visionPort: usesExternalVisionService ? null : visionPort,
   });
-  if (!savedLibraryInputProfile && !fs.existsSync(sourceDocument)) {
+  if (!sourceFreeInputProfile && !fs.existsSync(sourceDocument)) {
     throw new Error(`Source document not found: ${sourceDocument}`);
   }
   if (!fs.existsSync(backendRoot)) throw new Error(`Backend worktree not found: ${backendRoot}`);
@@ -2030,7 +2349,7 @@ try {
   }
   const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
   const productMediaManifestRef = (
-    isResume || savedLibraryInputProfile || expectedVideoType === "presenter"
+    isResume || sourceFreeInputProfile || expectedVideoType === "presenter"
   )
     ? ""
     : stageApprovedProductMediaCatalog();
@@ -2047,6 +2366,7 @@ try {
   await assertPortFree(backendPort);
   await assertPortFree(frontendPort);
   if (!usesExternalVisionService) await assertPortFree(visionPort);
+  if (separateGenerationWorker) await assertPortFree(redisPort);
 
   const providerProxyHosts = ["www.pexels.com", "videos.pexels.com", "images.pexels.com"];
   providerProxy = await startProviderEgressProxy(providerProxyHosts);
@@ -2126,6 +2446,7 @@ try {
     }, null, 2));
   }
   const databaseUrl = `sqlite:///${databasePath.replaceAll("\\", "/")}`;
+  const databaseFingerprint = crypto.createHash("sha256").update(databaseUrl).digest("hex");
   const usesRemoteArtifactStorage = expectedVideoType === "source_excerpt"
     || configuredInputIncludesVideo(savedLibraryMediaFiles);
   const remoteWriteLedgerPath = path.join(lifecycle.runDir, "remote-artifact-writes.ndjson");
@@ -2169,7 +2490,7 @@ try {
     MULTIMIX_VIDEO_DECISION_RUN_KIND: "test",
     MULTIMIX_TEST_LLM_SNAPSHOT_DIR: path.join(artifactDir, "llm-requests"),
     MULTIMIX_ASSET_GENERATION_QUEUE_ENABLED: "true",
-    MULTIMIX_REDIS_URL: "redis://127.0.0.1:6398/15",
+    MULTIMIX_REDIS_URL: `redis://127.0.0.1:${redisPort}/15`,
     MULTIMIX_LLM_BASE_URL: effectiveLlmConfig.baseUrl ?? "",
     MULTIMIX_LLM_API_KEY: effectiveLlmConfig.apiKey ?? "",
     MULTIMIX_LLM_MODEL: effectiveLlmConfig.model ?? "",
@@ -2218,6 +2539,22 @@ try {
   if (isResume) {
     await restoreCheckpointedRemoteArtifacts(backendEnv);
   }
+  let generationWorker;
+  if (separateGenerationWorker) {
+    await lifecycle.measure("generation_queue_startup", async () => {
+      const redis = startProcess(
+        "redis-server",
+        ["--bind", "127.0.0.1", "--port", String(redisPort),
+          "--save", "", "--appendonly", "no"],
+        backendRoot, process.env, "redis.log",
+      );
+      await waitForTcpListener(redisPort, redis);
+      generationWorker = startProcess(
+        pythonCommand, ["-m", "app.worker", "asset-generation-work", "--simple"],
+        backendRoot, backendEnv, "generation-worker.log",
+      );
+    });
+  }
   let vision;
   await lifecycle.measure("vision_service_startup", async () => {
     if (!usesExternalVisionService) {
@@ -2258,19 +2595,138 @@ try {
       backendEnv,
       "backend.log",
     );
-    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    await waitForVerifiedBackend(backend, databaseFingerprint);
   });
-  if (isResume) {
+  if (resumeEditable) {
+    let seed;
+    for (let attempt = 0; attempt < (separateGenerationWorker ? 30 : 1); attempt += 1) {
+      try {
+        seed = await readRetainedEditableDirectorSeed(backendEnv);
+        break;
+      } catch (error) {
+        if (
+          !separateGenerationWorker
+          || !String(error).includes("editable resume history contains another live")
+          || generationWorker?.exitCode != null
+          || attempt === 29
+        ) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot,
+        frontendEnv,
+        "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    await lifecycle.measure("retained_editable_director", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-editable.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-editable"),
+          VIDEO_PIPELINE_RETAINED_EDITABLE_SEED: JSON.stringify(seed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    lifecycle.record("worker", "editable_director_promoted");
+  } else if (resumeProduced) {
+    const previousSeed = await readRetainedProducedDirectorSeed(backendEnv);
+    await lifecycle.measure("frontend_startup", async () => {
+      const frontend = startProcess(
+        npmCommand,
+        ["run", "dev", "--", "--hostname", "127.0.0.1", "--port", String(frontendPort)],
+        frontendRoot, frontendEnv, "frontend.log",
+      );
+      await waitFor(`http://127.0.0.1:${frontendPort}/app/assets`, frontend, 180_000);
+    });
+    if (!previousSeed.completedProductionJobId) await lifecycle.measure("retained_produced_director", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-editable.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-produced"),
+          VIDEO_PIPELINE_RETAINED_EDITABLE_SEED: JSON.stringify(previousSeed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    lifecycle.record("worker", previousSeed.completedProductionJobId
+      ? "produced_director_reused" : "produced_director_replanned");
+    const confirmationSeed = await readRetainedProducedConfirmationSeed(backendEnv, previousSeed);
+    const providerRequestEvidenceBefore = snapshotProviderRequestEvidence();
+    await lifecycle.measure("retained_director_confirmation", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-confirmation.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-confirmation"),
+          VIDEO_PIPELINE_RETAINED_CONFIRMATION_SEED: JSON.stringify(confirmationSeed),
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    await verifyResumedVideoJob(backendEnv);
+    assertProviderRequestEvidenceUnchanged(providerRequestEvidenceBefore);
+    lifecycle.record("worker", "director_confirmed_and_verified");
+    const retainedExportSeed = await readRetainedExportSeed(backendEnv);
+    qaSceneCount = retainedExportSeed.expectedSceneCount;
+    await lifecycle.measure("playwright", () => run(
+      npxCommand,
+      ["playwright", "test", "e2e/video-pipeline-retained-export.spec.ts", "--workers=1"],
+      {
+        cwd: frontendRoot,
+        env: {
+          ...frontendEnv,
+          PLAYWRIGHT_BASE_URL: `http://127.0.0.1:${frontendPort}`,
+          PLAYWRIGHT_OUTPUT_DIR: path.join(resultDir, "playwright-retained-export"),
+          VIDEO_PIPELINE_RETAINED_EXPORT_SEED: JSON.stringify(retainedExportSeed),
+          VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
+          VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
+          VIDEO_PIPELINE_GENERATION_INSTRUCTION: generationInstructionOverride,
+          VIDEO_PIPELINE_BENCHMARK_CASE: benchmarkCase ? JSON.stringify(benchmarkCase) : "",
+          VIDEO_PIPELINE_BENCHMARK_SOURCE_IDENTITIES: JSON.stringify(benchmarkSourceIdentities),
+          VIDEO_PIPELINE_REFERENCE_REVIEW: benchmarkReference
+            ? JSON.stringify(benchmarkReference) : "",
+        },
+        stdout: process.stdout,
+        stderr: process.stderr,
+      },
+    ));
+    await lifecycle.measure("candidate_video_verification", () => verifyCandidateVideo());
+    await lifecycle.measure("qa_report", () => writeQaReport());
+    lifecycle.record("playwright", "passed");
+  } else if (isResume) {
+    await recoverRetainedDirectorJob(backendEnv);
     const retainedDirectorRetrySeed = await readRetainedDirectorRetrySeed(backendEnv);
-    const retainedDirectorRetryWasStarted = fs.existsSync(
-      path.join(resultDir, "retained-director-retry-seed.json"),
-    );
+    const expectedRetainedDirectorAttempts = retainedDirectorRetrySeed
+      ? retainedDirectorRetrySeed.regenerable
+        ? 1
+        : retainedDirectorRetrySeed.generationAttemptsBefore + 1
+      : expectedRetainedDirectorAttemptsFromRecordedSeed();
     let retainedDirectorSeed = retainedDirectorRetrySeed
       ? null
       : await readRetainedDirectorConfirmationSeed(
           backendEnv,
           {
-            expectedGenerationAttempts: retainedDirectorRetryWasStarted ? 2 : 1,
+            expectedGenerationAttempts: expectedRetainedDirectorAttempts,
           },
         );
     if (!retainedDirectorRetrySeed && !retainedDirectorSeed) {
@@ -2311,7 +2767,11 @@ try {
       ));
       retainedDirectorSeed = await readRetainedDirectorConfirmationSeed(
         backendEnv,
-        { expectedGenerationAttempts: 2 },
+        {
+          expectedGenerationAttempts: retainedDirectorRetrySeed.regenerable
+            ? 1
+            : retainedDirectorRetrySeed.generationAttemptsBefore + 1,
+        },
       );
       if (!retainedDirectorSeed) {
         throw new Error("Retained director retry produced no confirmable draft");
@@ -2402,6 +2862,7 @@ try {
       VIDEO_PIPELINE_DURATION_TOLERANCE: String(durationToleranceRatio),
       VIDEO_PIPELINE_EXPECTED_SCENE_COUNT: String(expectedSceneCount),
       VIDEO_PIPELINE_VIDEO_JOB_TIMEOUT_MS: String(videoJobTimeoutMs),
+      VIDEO_PIPELINE_DIRECTOR_JOB_TIMEOUT_MS: String(directorJobTimeoutMs),
       VIDEO_PIPELINE_CANDIDATE_RANGE_TIMEOUT_MS: String(candidateRangeTimeoutMs),
       VIDEO_PIPELINE_VIDEO_TYPE: expectedVideoType,
       VIDEO_PIPELINE_INPUT_PROFILE: inputProfile,
@@ -2445,6 +2906,7 @@ try {
     }
     manifestAbort.abort();
     await stopChild(backend);
+    await waitForPortFree(backendPort);
     backend = startProcess(
       pythonCommand,
       ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(backendPort)],
@@ -2452,7 +2914,7 @@ try {
       backendEnv,
       "backend-restarted.log",
     );
-    await waitFor(`http://127.0.0.1:${backendPort}/healthz`, backend, 120_000);
+    await waitForVerifiedBackend(backend, databaseFingerprint);
       await recoverInterruptedVideoJob(backendEnv);
     }
     await playwrightRun;

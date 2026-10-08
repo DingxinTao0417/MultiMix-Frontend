@@ -131,6 +131,16 @@ describe("editor layout constraints", () => {
 		expect(view).toContain("findLocalExportMarker(assetId)");
 	});
 
+	it("keeps browse preview export read-only while binding it to the loaded server revision", () => {
+		const view = readProjectFile("app/editor/EditorView.tsx");
+		expect(view).toContain("projectRevisionRef.current.load(loadedProject.projectFingerprint)");
+		expect(view).toContain("if (!embed && !previewOnly) await persistCurrentProject(currentProject)");
+		expect(view).toContain("const savedRevision = projectRevisionRef.current.current()");
+		expect(view).toContain("await projectRevisionRef.current.idle()");
+		expect(view).not.toContain("projectSaveQueueRef");
+		expect(view).toContain("projectRevision: savedRevision");
+	});
+
 	it("keeps brand export identity in the editor bridge and candidate cache", () => {
 		const view = readProjectFile("app/editor/EditorView.tsx");
 		const exportButton = readProjectFile("editor-engine/vendor/ExportButton.tsx");

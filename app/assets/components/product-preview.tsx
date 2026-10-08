@@ -1,7 +1,9 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from "react";
+import Image from "next/image";
 import { API_BASE } from "../../../lib/api";
+import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import { getProductDisplayIdentity, getProductRatioClass, isRecord, stringValue, type ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetImageGenerationTarget, AssetProductSegment } from "../lib/asset-workspace-types";
 import MarkdownProductDocument from "./markdown-product-document";
@@ -137,6 +139,16 @@ function sceneAssetReferenceSummary(scene: Record<string, unknown>): string {
   const title = stringValue(snapshot?.title);
   const reason = stringValue(reference.match_reason);
   return title ? `已引用 ${title}` : (reason || "已命中素材");
+}
+
+function confirmedSceneImageAssetId(scene: Record<string, unknown>): number | null {
+  const reference = isRecord(scene.asset_reference) ? scene.asset_reference : null;
+  if (!reference || reference.status !== "matched") return null;
+  const assetId = reference.chosen_asset_id;
+  if (typeof assetId !== "number" || !Number.isInteger(assetId) || assetId <= 0) return null;
+  const snapshot = isRecord(reference.source_snapshot) ? reference.source_snapshot : null;
+  const selectedImage = ["user_selected_generated_image", "user_selected_saved_asset"].includes(stringValue(reference.selection_mode));
+  return selectedImage || snapshot?.asset_kind === "image" || snapshot?.content_type === "image" ? assetId : null;
 }
 
 function sceneMgDecisionSummary(scene: Record<string, unknown>): string {
@@ -286,6 +298,7 @@ type ProductPreviewProps = {
   onRetryVideoJob?: (product: ProductArtifact) => Promise<void>;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
+  onSelectSegment?: (segment: AssetProductSegment) => void;
   onPreviewReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
@@ -304,7 +317,15 @@ type ProductPreviewProps = {
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
   exportRequestVariant?: ExportVariant | null;
+  onSceneSourceAction?: (action: SceneSourceAction) => Promise<void> | void;
+  sceneSourceProgress?: { sceneId: string; stage: string; error?: string } | null;
+  token?: string;
 };
+
+export type SceneSourceAction =
+  | { kind: "search" | "keep" | "generate_image" | "upload_asset" | "revise_scene" | "choose_asset"; sceneId: string }
+  | { kind: "use_asset"; sceneId: string; assetId: number }
+  | { kind: "select"; sceneId: string; candidateId: string };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
   product,
@@ -319,6 +340,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onRetryVideoJob,
   onReplaceMaterial,
   onEditVoiceover,
+  onSelectSegment,
   onPreviewReadyChange,
   onExportStart,
   onExportProgress,
@@ -337,6 +359,9 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   selectedImageFrameId,
   onSelectedImageFrameChange,
   exportRequestVariant,
+  onSceneSourceAction,
+  sceneSourceProgress,
+  token,
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
@@ -354,6 +379,11 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const [fullVideoFailed, setFullVideoFailed] = useState(false);
   const [fullVideoRecoveryPending, setFullVideoRecoveryPending] = useState(false);
   const [projectPreviewRequested, setProjectPreviewRequested] = useState(true);
+  const [sceneImagePreviews, setSceneImagePreviews] = useState<Record<number, string | null>>({});
+  const planForPreviews = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : null;
+  const previewScenes = Array.isArray(planForPreviews?.scenes) ? planForPreviews.scenes.filter(isRecord).slice(0, 8) : [];
+  const confirmedImageIds = Array.from(new Set(previewScenes.map(confirmedSceneImageAssetId).filter((id): id is number => id !== null)));
+  const confirmedImageKey = confirmedImageIds.join(",");
   const exportedVideoUrl = playableVideoUrl(product);
   const comparisonPreviousVideoUrl = comparisonProduct ? playableVideoUrl(comparisonProduct) : "";
   const comparisonHasStructure = Boolean(comparisonProduct?.segments?.length && product.segments?.length);
@@ -370,6 +400,31 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     setProjectPreviewRequested(true);
     setFullVideoRecoveryPending(false);
   }, [exportedVideoUrl, product.id]);
+
+  useEffect(() => {
+    let current = true;
+    const urls: string[] = [];
+    setSceneImagePreviews({});
+    if (product.contentType !== "video_script" || !token || !confirmedImageKey) return;
+    for (const assetId of confirmedImageKey.split(",").map(Number)) {
+      void assetWorkspaceAdapter.downloadAsset(token, assetId).then((blob) => {
+        if (!current) return;
+        if (!blob.type.startsWith("image/")) {
+          setSceneImagePreviews((previous) => ({ ...previous, [assetId]: null }));
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        setSceneImagePreviews((previous) => ({ ...previous, [assetId]: url }));
+      }).catch(() => {
+        if (current) setSceneImagePreviews((previous) => ({ ...previous, [assetId]: null }));
+      });
+    }
+    return () => {
+      current = false;
+      for (const url of urls) URL.revokeObjectURL(url);
+    };
+  }, [confirmedImageKey, product.contentType, product.id, token]);
 
   useEffect(() => {
     setActiveComparisonSegmentId(null);
@@ -392,6 +447,24 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   useImperativeHandle(forwardedRef, () => ({
     export: (exportVariant) => projectPreviewRef.current?.export(exportVariant) ?? false,
   }), []);
+
+  const sceneImagePreview = (scene: Record<string, unknown>, index: number) => {
+    const assetId = confirmedSceneImageAssetId(scene);
+    if (assetId === null || !token) return null;
+    const url = sceneImagePreviews[assetId];
+    return <figure style={{ margin: "8px 0", maxWidth: 180 }}>
+      {url ? <Image
+        data-confirmed-scene-image={assetId}
+        src={url}
+        alt={`第 ${index + 1} 镜已选画面`}
+        width={180}
+        height={112}
+        unoptimized
+        style={{ display: "block", width: "100%", height: 112, objectFit: "cover", borderRadius: 8 }}
+      /> : <span role="status">{url === null ? "已选画面预览不可用" : "正在载入已选画面"}</span>}
+      <figcaption>第 {index + 1} 镜已选图片</figcaption>
+    </figure>;
+  };
 
   if (product.status.startsWith("工程异常")) {
     return <VideoProjectRecoveryCard />;
@@ -416,9 +489,43 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 
   if (product.mode === "copy") {
     const markdown = product.markdownBody?.trim() || (product.body ?? [product.summary]).join("\n\n");
+    const copyPlan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : {};
+    const copyScenes = product.contentType === "video_script" && Array.isArray(copyPlan.scenes)
+      ? copyPlan.scenes.filter(isRecord).slice(0, 8) : [];
     return (
       <>
         <MarkdownProductDocument markdown={markdown} />
+        {copyScenes.length ? (
+          <details className="shadcn-prototype-director-scene-sources" data-scene-source-list>
+            <summary>查看逐镜来源与分镜详情</summary>
+            <ol>
+              {copyScenes.map((scene, index) => {
+                const sceneId = stringValue(scene.id);
+                if (!sceneId) return null;
+                return (
+                  <li key={sceneId} data-scene-source-id={sceneId} aria-label={stringValue(scene.title) || `分镜 ${index + 1}`}>
+                    <strong>{stringValue(scene.title) || `分镜 ${index + 1}`}</strong>
+                    <p>{stringValue(scene.visual_brief) || stringValue(scene.visual_spec) || stringValue(scene.visual)}</p>
+                    {sceneImagePreview(scene, index)}
+                    {onSceneSourceAction ? (
+                      <div aria-label="逐镜素材选择">
+                        <button type="button" onClick={() => void onSceneSourceAction({ kind: "choose_asset", sceneId })}>选择项目图片</button>
+                        <button type="button" onClick={() => void onSceneSourceAction({ kind: "generate_image", sceneId })}>生成图片</button>
+                        <button type="button" onClick={() => void onSceneSourceAction({ kind: "upload_asset", sceneId })}>上传素材</button>
+                        <button type="button" onClick={() => void onSceneSourceAction({ kind: "revise_scene", sceneId })}>修改本镜画面</button>
+                      </div>
+                    ) : null}
+                    {sceneSourceProgress?.sceneId === sceneId ? (
+                      <p role={sceneSourceProgress.error ? "alert" : "status"}>
+                        {sceneSourceProgress.error ?? sceneSourceProgress.stage}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+          </details>
+        ) : null}
         {product.sourceSummary ? <SourceRefBlock summary={product.sourceSummary} /> : null}
       </>
     );
@@ -560,6 +667,17 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const firstTimelineItems = product.timeline.slice(0, 3);
   const visualPreviewFrames = product.preview?.frames ?? [];
   const planSummary = videoPlanSummary(product);
+  const sourcePlan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : {};
+  const sourceSuggestions = Array.isArray(sourcePlan.public_stock_suggestions)
+    ? sourcePlan.public_stock_suggestions.filter(isRecord) : [];
+  const sourceDecisions = Array.isArray(sourcePlan.scene_source_decisions)
+    ? sourcePlan.scene_source_decisions.filter(isRecord) : [];
+  const sourceCandidates = isRecord(product.metadata?.scene_source_candidates)
+    ? product.metadata.scene_source_candidates : {};
+  const sourcePreference = isRecord(sourcePlan.production_preference) ? sourcePlan.production_preference : {};
+  const publicSourceExcluded = sourcePreference.primary_visual_source_scope === "project_assets_only"
+    || (Array.isArray(sourcePreference.excluded_choice_ids) && sourcePreference.excluded_choice_ids.includes("public_stock"))
+    || (sourcePreference.restriction === "only" && sourcePreference.choice_id !== "public_stock");
   const planSummaryLabel = product.metadata?.video_project ? "视频摘要" : "编导脚本摘要";
   const hasVideoProject = Boolean(product.videoProjectReady);
   const previewStageLabel = hasVideoProject ? "视频" : "编导脚本";
@@ -870,6 +988,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);
+              onSelectSegment?.(segment);
               const player = browsePlayerRef.current;
               if (showFullVideo && player && player.readyState >= 3 && segment.startSeconds != null) {
                 player.currentTime = segment.startSeconds;
@@ -964,16 +1083,74 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             {planSummary.animationEffectCount ? <span>{planSummary.animationEffectCount} 类受控效果</span> : null}
           </div>
           {gapNotice ? <p className="shadcn-prototype-video-plan-gap">{gapNotice}</p> : null}
-          {planSummary.scenes.length && !product.segments?.length ? (
+          {planSummary.scenes.length && (product.contentType === "video_script" || !product.segments?.length) ? (
             <details>
-              <summary>查看分镜详情</summary>
+              <summary>{product.contentType === "video_script" ? "查看逐镜来源与分镜详情" : "查看分镜详情"}</summary>
               <ol>
                 {planSummary.scenes.slice(0, 8).map((scene, index) => (
-                  <li key={stringValue(scene.id) || index}>
+                  <li key={stringValue(scene.id) || index} data-scene-source-id={stringValue(scene.id)} aria-label={stringValue(scene.title) || `分镜 ${index + 1}`}>
                     <strong>{stringValue(scene.title) || `分镜 ${index + 1}`}</strong>
                     <span>{stringValue(scene.subtitle_focus) || stringValue(scene.narration)}</span>
                     <em>{sceneAssetReferenceSummary(scene)}</em>
+                    {sceneImagePreview(scene, index)}
                     <em>{sceneMgDecisionSummary(scene)}</em>
+                    {(() => {
+                      const sceneId = stringValue(scene.id);
+                      const suggestion = sourceSuggestions.find((item) => item.scene_id === sceneId);
+                      const decision = sourceDecisions.find((item) => item.scene_id === sceneId);
+                      const status = stringValue(decision?.status);
+                      const candidate = isRecord(sourceCandidates[sceneId]) ? sourceCandidates[sceneId] : null;
+                      const candidateId = stringValue(candidate?.candidate_id);
+                      const evidenceRequired = scene.evidence_required === true
+                        || (isRecord(scene.asset_requirement) && scene.asset_requirement.evidence_required === true);
+                      const busy = sceneSourceProgress?.sceneId === sceneId && !sceneSourceProgress.error;
+                      const canSearch = Boolean(onSceneSourceAction && sceneId && !publicSourceExcluded && !evidenceRequired);
+                      if (!sceneId || (!suggestion && !decision && !canSearch && !onSceneSourceAction)) return null;
+                      return (
+                        <div aria-label="逐镜素材选择">
+                          {onSceneSourceAction ? (
+                            <div>
+                              <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "choose_asset", sceneId })}>选择项目图片</button>
+                              <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "generate_image", sceneId })}>生成图片</button>
+                              <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "upload_asset", sceneId })}>上传素材</button>
+                              <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "revise_scene", sceneId })}>修改本镜画面</button>
+                            </div>
+                          ) : null}
+                          {suggestion && status !== "declined" && status !== "candidate_confirmed" && status !== "no_candidate" ? (
+                            <p>可考虑公共素材：{stringValue(suggestion.visible_target) || "通用过渡画面"}。{stringValue(suggestion.reason)}</p>
+                          ) : null}
+                          {status === "declined" ? <p>已保留原方案</p> : null}
+                          {status === "search_requested" ? <p>已请求搜索，尚未选用公共素材</p> : null}
+                          {status === "no_candidate" ? <p>本次搜索无合格公共素材，原画面保持不变。请选择下一步。</p> : null}
+                          {status === "awaiting_candidate_selection" ? <p>候选待确认，原画面仍保留</p> : null}
+                          {status === "candidate_confirmed" ? <p>已确认这一镜使用公共素材</p> : null}
+                          {status === "alternative_applied" ? <p>已采用所选图片作为这一镜主画面</p> : null}
+                          {status === "awaiting_candidate_selection" && candidateId ? (
+                            <div>
+                              {/^https:\/\//i.test(stringValue(candidate?.preview_url)) ? (
+                                <a href={stringValue(candidate?.preview_url)} target="_blank" rel="noopener noreferrer">查看候选预览</a>
+                              ) : null}
+                              <p>{stringValue(candidate?.title)} · {stringValue(candidate?.provider)} · {stringValue(candidate?.license)}</p>
+                              {/^https:\/\//i.test(stringValue(candidate?.attribution_url)) ? (
+                                <a href={stringValue(candidate?.attribution_url)} target="_blank" rel="noopener noreferrer">查看素材来源</a>
+                              ) : null}
+                              {onSceneSourceAction ? <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "select", sceneId, candidateId })}>确认采用这项素材</button> : null}
+                            </div>
+                          ) : null}
+                          {canSearch && status !== "awaiting_candidate_selection" && status !== "candidate_confirmed" && status !== "no_candidate" ? (
+                            <button type="button" disabled={busy} onClick={() => void onSceneSourceAction?.({ kind: "search", sceneId })}>
+                              {status === "search_requested" ? "继续搜索公共素材" : suggestion ? "尝试搜索公共素材" : "指定公共素材并搜索"}
+                            </button>
+                          ) : null}
+                          {onSceneSourceAction && (suggestion || status === "search_requested" || status === "awaiting_candidate_selection" || status === "no_candidate") && status !== "declined" && status !== "candidate_confirmed" ? (
+                            <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "keep", sceneId })}>保留当前方案</button>
+                          ) : null}
+                          {sceneSourceProgress?.sceneId === sceneId ? (
+                            <p role={sceneSourceProgress.error ? "alert" : "status"}>{sceneSourceProgress.error || sceneSourceProgress.stage}</p>
+                          ) : null}
+                        </div>
+                      );
+                    })()}
                   </li>
                 ))}
               </ol>

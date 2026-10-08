@@ -9,6 +9,24 @@ const SUITE = /^[a-z][a-z0-9-]{0,79}$/;
 const RETAINED_RUN_STATUSES = new Set(["failed_retained", "passed_pending_cleanup"]);
 const SQLITE_HEADER = Buffer.from("SQLite format 3\0", "utf8");
 
+function isProcessAlive(processId) {
+  if (!Number.isInteger(processId) || processId <= 0) return false;
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "EPERM") return true;
+    return false;
+  }
+}
+
+function activeOwner(processId = process.pid) {
+  if (!Number.isInteger(processId) || processId <= 0) {
+    throw new Error("E2E lifecycle requires a positive runner process id");
+  }
+  return { pid: processId, acquiredAt: new Date().toISOString() };
+}
+
 function assertSegment(value, expression, label) {
   if (typeof value !== "string" || !expression.test(value)) {
     throw new Error(`Invalid ${label}: ${value}`);
@@ -81,7 +99,13 @@ export function e2eRuntimeRoot() {
   return RUNTIME_ROOT;
 }
 
-export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resultDir, now }) {
+export function createE2ERunLifecycle({
+  suite,
+  runId = crypto.randomUUID(),
+  resultDir,
+  now,
+  processId = process.pid,
+}) {
   assertSegment(suite, SUITE, "suite");
   assertSegment(runId, RUN_ID, "run id");
   const runDir = path.join(RUNTIME_ROOT, suite, runId);
@@ -107,6 +131,7 @@ export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resu
       resultDir: path.resolve(resultDir),
       databasePath,
       artifactDir,
+      activeOwner: activeOwner(processId),
     };
     writeJson(manifestPath, state);
   }
@@ -149,15 +174,34 @@ export function createE2ERunLifecycle({ suite, runId = crypto.randomUUID(), resu
   };
 }
 
-export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
+export function resumeRetainedE2ERunLifecycle({
+  suite,
+  runId,
+  processId = process.pid,
+  processIsAlive = isProcessAlive,
+}) {
   assertSegment(suite, SUITE, "suite");
   assertSegment(runId, RUN_ID, "run id");
   const runDir = path.join(RUNTIME_ROOT, suite, runId);
   const manifestPath = path.join(runDir, "run-state.json");
   if (!fs.existsSync(manifestPath)) throw new Error(`Retained E2E run not found: ${suite}/${runId}`);
   const previous = readJson(manifestPath);
-  if (previous.suite !== suite || previous.runId !== runId || !RETAINED_RUN_STATUSES.has(previous.status)) {
+  if (previous.suite !== suite || previous.runId !== runId) {
     throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
+  }
+  const resumingInterruptedActiveRun = previous.status === "active";
+  if (!resumingInterruptedActiveRun && !RETAINED_RUN_STATUSES.has(previous.status)) {
+    throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
+  }
+  const previousOwnerPid = Number(previous.activeOwner?.pid);
+  if (
+    resumingInterruptedActiveRun
+    && Number.isInteger(previousOwnerPid)
+    && previousOwnerPid > 0
+    && previousOwnerPid !== processId
+    && processIsAlive(previousOwnerPid)
+  ) {
+    throw new Error(`E2E run ${suite}/${runId} is still owned by PID ${previousOwnerPid}.`);
   }
   if (previous.resumeSupported === false) {
     throw new Error(`E2E run ${suite}/${runId} is marked non-resumable.`);
@@ -166,7 +210,15 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
     throw new Error(`E2E run ${suite}/${runId} is missing its retained SQLite or ArtifactStore.`);
   }
   assertSqliteDatabaseUsable(previous.databasePath);
-  const state = { ...previous, status: "active", resumedAt: new Date().toISOString() };
+  const state = {
+    ...previous,
+    status: "active",
+    resumedAt: new Date().toISOString(),
+    activeOwner: activeOwner(processId),
+    ...(resumingInterruptedActiveRun
+      ? { interruptedRunRecoveredAt: new Date().toISOString() }
+      : {}),
+  };
   writeJson(manifestPath, state);
   const ledgerPath = path.join(runDir, "run-ledger.ndjson");
   function record(stage, status, details = {}) {
@@ -187,7 +239,7 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
     writeJson(manifestPath, next);
     record("run", status, details);
   }
-  record("run", "resumed");
+  record("run", resumingInterruptedActiveRun ? "interrupted_active_resumed" : "resumed");
   return {
     suite,
     runId,
@@ -202,6 +254,23 @@ export function resumeRetainedE2ERunLifecycle({ suite, runId }) {
     finish,
     readState: () => ({ ...state }),
   };
+}
+
+export function readRetainedE2ERunState({ suite, runId }) {
+  assertSegment(suite, SUITE, "suite");
+  assertSegment(runId, RUN_ID, "run id");
+  const manifestPath = path.join(RUNTIME_ROOT, suite, runId, "run-state.json");
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`Retained E2E run not found: ${suite}/${runId}`);
+  }
+  const state = readJson(manifestPath);
+  if (state.suite !== suite || state.runId !== runId) {
+    throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
+  }
+  if (state.status !== "active" && !RETAINED_RUN_STATUSES.has(state.status)) {
+    throw new Error(`E2E run ${suite}/${runId} is not a retained resumable run.`);
+  }
+  return { ...state };
 }
 
 export function listRetainedE2ERuns() {

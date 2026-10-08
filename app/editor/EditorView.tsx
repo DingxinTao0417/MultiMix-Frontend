@@ -17,7 +17,7 @@ import {
 } from "@/editor-engine/vendor/ExportButton";
 import { ReplacePanel } from "@/editor-engine/vendor/ReplacePanel";
 import { API_BASE } from "@/editor-engine/vendor/api";
-import type { BGMChoice, BGMUpdateResponse } from "@/editor-engine/vendor/api";
+import { type BGMChoice, type BGMUpdateResponse } from "@/editor-engine/vendor/api";
 import { rememberRawProject, serializeBackendProject } from "@/editor-engine/vendor/serializeProject";
 import { inspectEditorProject } from "@/editor-engine/vendor/quality/preflight";
 import { videoExportFailureMessage, type VideoQualityReport } from "@/app/assets/lib/video-quality";
@@ -30,8 +30,10 @@ import { getExportMimeType } from "@editor/lib/export";
 import { videoCache } from "@editor/services/video-cache/service";
 import FilmStrip from "./FilmStrip";
 import BgmPanel from "./BgmPanel";
+import { ProjectRevisionClient, ProjectWriteError, saveVersionedProject } from "./project-revision-client";
 import { mergeBgmProjectPatch } from "./bgm-project-patch";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
+import { observeVideoActivity } from "@/lib/product-activity";
 import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
   clearLocalExportMarker,
@@ -84,8 +86,8 @@ function errorMessageFromPayload(payload: unknown, fallback: string): string {
 }
 
 type LoadedProject = {
-  fingerprint: string | null;
   project: BackendProject;
+  projectFingerprint: string | null;
 };
 
 type VerifiedExportHooks = {
@@ -135,7 +137,7 @@ async function fetchProject(endpoint: string, token: string | null, isCurrent?: 
   rememberRawProject(raw);
   return {
     project: unwrapProject(raw),
-    fingerprint: typeof data.project_fingerprint === "string" ? data.project_fingerprint : null,
+    projectFingerprint: typeof data.project_fingerprint === "string" ? data.project_fingerprint : null,
   };
 }
 
@@ -195,6 +197,7 @@ export default function EditorView({
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [exportOperationActive, setExportOperationActive] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState("");
   const [isBgmPanelOpen, setIsBgmPanelOpen] = useState(false);
   const [standaloneExportState, setStandaloneExportState] = useState<ExportProgressState>({
@@ -210,8 +213,7 @@ export default function EditorView({
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
-  const projectRevisionRef = useRef<string | null>(null);
-  const projectSaveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const projectRevisionRef = useRef(new ProjectRevisionClient());
   const candidateBlobRef = useRef<CachedExportCandidate | null>(null);
   const recoverableStandaloneExportsRef = useRef(new Map<ExportVariant, ExportFinalizeJob>());
   const standaloneExportEpochRef = useRef(0);
@@ -224,6 +226,10 @@ export default function EditorView({
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const bgmSessionRef = useRef(0);
   const previewOnly = mode === "preview";
+  const observeInteractions = state === "ready" && saveState !== "saving"
+    && !exportOperationActive && ["idle", "completed", "error"].includes(standaloneExportState.phase);
+  useEffect(() => observeVideoActivity(token, assetId ? Number(assetId) : null, observeInteractions),
+    [token, assetId, observeInteractions]);
 
   useEffect(() => {
     tokenRef.current = token;
@@ -299,62 +305,39 @@ export default function EditorView({
     });
   }, [embed, postToParent, previewOnly, state]);
 
-  useEffect(() => {
-    if (!embed || state !== "ready") return;
-    readyAcknowledgedRef.current = false;
-    const announceReady = () => {
-      if (!readyAcknowledgedRef.current) postToParent({ type: "multimix-editor-ready" });
-    };
-    announceReady();
-    const timer = window.setInterval(announceReady, EMBED_READY_RETRY_MS);
-    return () => window.clearInterval(timer);
-  }, [embed, postToParent, state]);
-
-  const persistCurrentProject = useCallback((project?: BackendProject) => {
+  const persistCurrentProject = useCallback(async (project?: BackendProject): Promise<string> => {
     if (!assetId) throw new ProjectSaveError("缺少项目 ID");
     const session = bgmSessionRef.current;
-    const save = async () => {
+    return projectRevisionRef.current.run(async (revision) => {
       if (session !== bgmSessionRef.current) throw new DOMException("Save session ended", "AbortError");
-      // Music mutations use the same lane. Ordinary saves take their snapshot
-      // when the lane is available, not before the music response is applied.
       const body = project ?? serializeBackendProject(EditorCore.getInstance());
       const identity = editorContentIdentity(body);
-      const serializedBody = JSON.stringify(body);
       if (identity !== editorContentIdentity(serializeBackendProject(EditorCore.getInstance()))) {
         throw new DOMException("Save superseded", "AbortError");
       }
-      const revision = projectRevisionRef.current;
-      if (!revision) throw new ProjectSaveError("缺少工程版本，请刷新剪辑器后重试。");
-      const currentToken = getExportToken();
-      const res = await fetch(`${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "If-Match": `"${revision}"`,
-          ...(currentToken ? { Authorization: `Bearer ${currentToken}` } : {}),
-        },
-        body: serializedBody,
-      });
-      const payload = await res.json().catch(() => null) as { project_fingerprint?: string } | null;
-      if (session !== bgmSessionRef.current) throw new DOMException("Save session ended", "AbortError");
-      if (!res.ok) {
-        throw new ProjectSaveError(
-          errorMessageFromPayload(payload, `工程保存检查失败（HTTP ${res.status}）`),
-          qualityReportFromPayload(payload),
-        );
+      let nextRevision: string;
+      try {
+        nextRevision = await saveVersionedProject({
+          apiBase: API_BASE,
+          assetId,
+          token: getExportToken(),
+          revision,
+          project: body,
+        });
+      } catch (cause) {
+        if (cause instanceof ProjectWriteError) {
+          throw new ProjectSaveError(cause.message, qualityReportFromPayload(cause.payload));
+        }
+        throw cause;
       }
-      // Advance the server base even if a new edit arrived during the PUT;
-      // the next queued save is based on this acknowledged version.
-      projectRevisionRef.current = payload?.project_fingerprint ?? null;
+      if (session !== bgmSessionRef.current) throw new DOMException("Save session ended", "AbortError");
       if (identity === editorContentIdentity(serializeBackendProject(EditorCore.getInstance()))) {
         rememberRawProject(body as unknown as ReturnType<typeof serializeBackendProject>);
         loadedProjectRef.current = unwrapProject(body as unknown as Record<string, unknown>);
         if (!embed) savedStandaloneContentIdentityRef.current = identity;
       }
-    };
-    const pending = projectSaveQueueRef.current.then(save, save);
-    projectSaveQueueRef.current = pending.catch(() => undefined);
-    return pending;
+      return { result: nextRevision, revision: nextRevision };
+    });
   }, [assetId, embed, getExportToken]);
 
   const performVerifiedExport = useCallback(async (
@@ -368,7 +351,7 @@ export default function EditorView({
     const preparingStartedAt = performance.now();
     hooks.onPreparing?.();
     if (assetId) writeLocalExportMarker(assetId, exportVariant, "preparing");
-    await projectSaveQueueRef.current;
+    await projectRevisionRef.current.idle();
     ensureCurrent();
     if (embed && !previewOnly) {
       const flush = timelineFlushRef.current;
@@ -400,8 +383,7 @@ export default function EditorView({
 
     if (!embed && !previewOnly) await persistCurrentProject(currentProject);
     ensureCurrent();
-    const expectedProjectFingerprint = projectRevisionRef.current;
-    if (!expectedProjectFingerprint) throw new Error("缺少工程版本，请重新打开剪辑器后导出。");
+    const savedRevision = projectRevisionRef.current.current();
     const preflightResponse = await fetch(
       `${API_BASE}/v1/video/projects/${encodeURIComponent(assetId)}/quality?stage=export_preflight`,
       { headers: { Authorization: `Bearer ${currentToken}` } },
@@ -513,10 +495,10 @@ export default function EditorView({
         apiBase: API_BASE,
         assetId,
         token: currentToken,
+        projectRevision: savedRevision,
         getToken: getExportToken,
         refreshToken: refreshExportToken,
         blob: candidate.blob,
-        expectedProjectFingerprint,
         format: candidate.format,
         exportVariant,
         brandSpecVersion,
@@ -571,7 +553,7 @@ export default function EditorView({
       );
       ensureCurrent();
       loadedProjectRef.current = confirmedProject.project;
-      projectRevisionRef.current = confirmedProject.fingerprint;
+      projectRevisionRef.current.load(confirmedProject.projectFingerprint);
       candidateBlobRef.current = null;
       return { blob: candidate.blob, report: verifiedReport, job: terminalJob };
     } finally {
@@ -603,6 +585,7 @@ export default function EditorView({
       if (isCurrent()) postReply(payload);
     };
     exportBusyRef.current = true;
+    setExportOperationActive(true);
     try {
       const result = await performVerifiedExport(exportVariant, {
         isCurrent,
@@ -650,6 +633,7 @@ export default function EditorView({
       });
     } finally {
       exportBusyRef.current = false;
+      setExportOperationActive(false);
     }
   }, [performVerifiedExport, postToParent]);
 
@@ -861,7 +845,6 @@ export default function EditorView({
     const patched = mergeBgmProjectPatch(unwrapProject(current), project);
     rememberRawProject(current.timeline ? { ...current, timeline: patched } : patched as unknown as Record<string, unknown>);
     loadedProjectRef.current = patched;
-    projectRevisionRef.current = result.project_fingerprint;
     if (!embed) {
       const identity = editorContentIdentity(serializeBackendProject(EditorCore.getInstance()));
       standaloneContentIdentityRef.current = identity;
@@ -890,22 +873,23 @@ export default function EditorView({
     const session = bgmSessionRef.current;
     const isCurrent = () => session === bgmSessionRef.current;
     await prepareBgmChange();
-    const update = async () => {
+    return projectRevisionRef.current.run(async () => {
       if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
       const result = await mutation();
       if (!isCurrent()) throw new DOMException("Music update superseded", "AbortError");
+      if (!/^[0-9a-f]{64}$/.test(result.project_fingerprint ?? "")) {
+        throw new ProjectSaveError("配乐响应缺少工程版本，当前编辑已保留。");
+      }
       await handleBgmProjectChanged(result, isCurrent);
-      return result;
-    };
-    const pending = projectSaveQueueRef.current.then(update, update);
-    projectSaveQueueRef.current = pending.catch(() => undefined);
-    return pending;
+      return { result, revision: result.project_fingerprint! };
+    });
   }, [handleBgmProjectChanged, prepareBgmChange]);
 
   const handleBgmOpenChange = useCallback((open: boolean) => {
     setIsBgmPanelOpen(open);
     if (!open) postToParent({ type: "multimix-editor-bgm-closed" });
   }, [postToParent]);
+
 
   const handleSave = async () => {
     if (!assetId || saveState === "saving") return;
@@ -948,12 +932,11 @@ export default function EditorView({
         recoverableStandaloneExportsRef.current.clear();
         setStandaloneExportBlobs({});
         loadedProjectRef.current = loadedProject.project;
-        projectRevisionRef.current = loadedProject.fingerprint;
+        projectRevisionRef.current.load(loadedProject.projectFingerprint);
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
         });
         setState("ready");
-        postToParent({ type: "multimix-editor-ready" });
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         setState("error");
@@ -963,7 +946,7 @@ export default function EditorView({
         });
       }
     })();
-  }, [jobId, assetId, getExportToken, postToParent, token]);
+  }, [jobId, assetId, getExportToken, postToParent, previewOnly, token]);
 
   useEffect(() => {
     if (state !== "ready") return;
@@ -1114,7 +1097,7 @@ export default function EditorView({
           return;
         }
         void (async () => {
-          await projectSaveQueueRef.current;
+          await projectRevisionRef.current.idle();
           return timelineFlushRef.current?.() ?? { status: "error" as const, message: "剪辑器已关闭，请重新打开。" };
         })().then((result) => {
           postToParent({
@@ -1159,6 +1142,17 @@ export default function EditorView({
     publishPreviewState,
     previewOnly,
   ]);
+
+  useEffect(() => {
+    if (!embed || state !== "ready") return;
+    readyAcknowledgedRef.current = false;
+    const announceReady = () => {
+      if (!readyAcknowledgedRef.current) postToParent({ type: "multimix-editor-ready" });
+    };
+    announceReady();
+    const timer = window.setInterval(announceReady, EMBED_READY_RETRY_MS);
+    return () => window.clearInterval(timer);
+  }, [embed, postToParent, state]);
 
   useEffect(() => {
     if (!embed || !previewOnly || state !== "ready") return;
@@ -1239,7 +1233,7 @@ export default function EditorView({
                   initialSegmentId={initialSegmentId}
                   openMaterialPicker={openMaterialPicker}
                   onFlushReady={registerTimelineFlush}
-                  onPersistTimeline={persistCurrentProject}
+                  onPersistTimeline={() => persistCurrentProject().then(() => undefined)}
                 />
               ) : (
                 <Timeline />

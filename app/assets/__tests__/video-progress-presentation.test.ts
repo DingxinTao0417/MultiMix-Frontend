@@ -9,8 +9,24 @@ function present(overrides: Partial<VideoProgressInput> = {}) {
     ...overrides,
   });
 }
+const PUBLIC_LABELS: Record<string, string> = {
+  queued: "内容生成已排队",
+  source_staging: "正在准备原片",
+  transcribing: "正在转写原片",
+  visual_analysis: "正在分析人物与动态安全区",
+  drafting: "正在生成内容",
+  source_fact_contract: "正在核对已确认事实",
+  scene_direction: "正在生成分镜导演稿",
+  grounding_review: "正在核对分镜事实依据",
+  grounding_review_repair: "正在修补分镜事实依据",
+  global_choreography: "正在统一安排全片节奏与镜头变化",
+  prepare_scenes: "正在准备分镜画面",
+  build_project: "正在完成质量检查",
+  mg_overlay: "正在生成图形动效",
+  completed: "内容生成已完成",
+};
 const step = (key: string, status: AgentRunStep["status"] = "done"): AgentRunStep => ({
-  key, label: "内部 Provider / MG / secret", status, elapsedSeconds: 19,
+  key, label: PUBLIC_LABELS[key] ?? "内部 Provider / MG / secret", status, elapsedSeconds: 19,
 });
 
 describe("video progress scope", () => {
@@ -30,9 +46,19 @@ describe("video progress scope", () => {
     expect(resolve({ steps: [{ ...step("drafting"), label: "正在制作视频" }] })).toBe("general");
     expect(resolve({ progressKind: "future_kind" })).toBe("general");
   });
+  it("recognizes the source fact stage as video planning when older jobs omit progressKind", () => {
+    expect(resolve({ steps: [step("source_fact_contract", "run")] })).toBe("video_plan");
+  });
 });
 
 describe("video progress presentation", () => {
+  it("shows source fact verification as the active stage", () => {
+    const result = present({ kind: "video_plan", steps: [step("source_fact_contract", "run")] });
+    expect(result.title).toBe("正在核对已确认事实");
+    expect(result.milestones.at(-1)).toMatchObject({
+      key: "source_fact_contract", label: "正在核对已确认事实", status: "run",
+    });
+  });
   it("does not promise background execution before persisted submission", () => {
     const result = present({ status: "submitting", submitted: false, steps: [step("create_job", "run")] });
     expect(result.title).toBe("正在提交任务");
@@ -47,7 +73,7 @@ describe("video progress presentation", () => {
     expect(result.milestones.map((item) => item.key)).toEqual(["submitted"]);
   });
 
-  it("groups script preparation and repairs into at most four safe milestones", () => {
+  it("shows registered public stages without exposing internal timing or labels", () => {
     const result = present({
       kind: "video_plan", status: "completed", completionConfirmed: true,
       steps: ["queued", "source_staging", "transcribing", "visual_analysis",
@@ -55,7 +81,16 @@ describe("video progress presentation", () => {
         "global_choreography", "completed"].map((key) => step(key)),
     });
     expect(result.milestones.map((item) => item.label)).toEqual([
-      "任务已提交", "整理资料", "准备视频方案", "方案已准备好",
+      "任务已提交",
+      "正在准备原片",
+      "正在转写原片",
+      "正在分析人物与动态安全区",
+      "正在生成内容",
+      "正在生成分镜导演稿",
+      "正在核对分镜事实依据",
+      "正在修补分镜事实依据",
+      "正在统一安排全片节奏与镜头变化",
+      "方案已准备好",
     ]);
     expect(result.title).toBe("视频方案已准备好");
     expect(JSON.stringify(result)).not.toMatch(/Provider|MG|secret|19|第.*步|耗时/);
@@ -81,8 +116,10 @@ describe("video progress presentation", () => {
   it("keeps required finishing work inside production until confirmed", () => {
     const result = present({ steps: [step("prepare_scenes"), step("build_project"), step("mg_overlay", "run")] });
     expect(result.completed).toBe(false);
-    expect(result.milestones).toHaveLength(3);
-    expect(result.milestones.at(-1)?.label).toBe("制作视频");
+    expect(result.milestones.map((item) => item.label)).toEqual([
+      "任务已提交", "正在准备分镜画面", "正在完成质量检查", "正在生成图形动效",
+    ]);
+    expect(result.milestones.at(-1)?.status).toBe("run");
   });
 
   it("preserves failure even when siblings are running", () => {

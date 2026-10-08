@@ -188,6 +188,38 @@ function fullVideoJob(
 }
 
 describe("video execution polling decisions", () => {
+  it("does not replay historical failure notifications, but reports a failure observed after active work", () => {
+    const production = loadProductionFunctions(
+      "app/assets/components/assets-workspace-client.tsx",
+      ["isExecutionTerminal", "shouldNotifyExecutionFailure"],
+    );
+    const shouldNotifyExecutionFailure = production.shouldNotifyExecutionFailure as unknown as (
+      job: TestFullVideoJob,
+      activeInThisPage: Set<string>,
+    ) => boolean;
+    const activeInThisPage = new Set<string>();
+    const failed = fullVideoJob("old-job", { status: "failed", errorMessage: "old failure" });
+
+    expect(shouldNotifyExecutionFailure(failed, activeInThisPage)).toBe(false);
+    expect(activeInThisPage.size).toBe(0);
+
+    const running = fullVideoJob("new-job", { status: "running" });
+    expect(shouldNotifyExecutionFailure(running, activeInThisPage)).toBe(false);
+    expect(activeInThisPage.has("new-job")).toBe(true);
+    expect(shouldNotifyExecutionFailure(
+      fullVideoJob("new-job", { status: "failed", errorMessage: "new failure" }),
+      activeInThisPage,
+    )).toBe(true);
+
+    activeInThisPage.delete("new-job");
+    expect(shouldNotifyExecutionFailure(
+      fullVideoJob("new-job", { status: "failed" }),
+      activeInThisPage,
+    )).toBe(false);
+    activeInThisPage.add("old-job"); // Explicit retry in this page is eligible.
+    expect(shouldNotifyExecutionFailure(failed, activeInThisPage)).toBe(true);
+  });
+
   it("selects pending background jobs and the selected conversation job once without duplicates", () => {
     const executionVideoJobIds = loadWorkspaceDecision<(
       conversations: TestConversation[],
@@ -1328,9 +1360,9 @@ describe("agent conversation UI copy", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
     expect(workspaceClient).toContain("新建项目");
-    expect(workspaceClient).toContain("最近项目");
+    expect(workspaceClient).toContain("项目列表");
     expect(workspaceClient).toContain("删除项目");
-    expect(workspaceClient).toContain("projectListStateLabel(conversation.projectState)");
+    expect(workspaceClient).toContain("projectStateLabel(conversation.projectState)");
     expect(workspaceClient).not.toContain(">新建对话<");
     expect(workspaceClient).not.toContain(">对话列表<");
   });
@@ -1524,6 +1556,9 @@ describe("agent conversation UI copy", () => {
     expect(conversationStudio).toContain("shadcn-prototype-composer-control has-attachments");
     expect(conversationStudio).toContain("shadcn-prototype-chat-drop-hint");
     expect(conversationStudio).toContain("添加视频后可直接发送，再选择是否先整理成片段");
+    expect(conversationStudio).toContain("图片和文档会先保存并理解");
+    expect(conversationStudio).toContain("不会因上传就用于某个分镜");
+    expect(conversationStudio).not.toContain("图片会作为素材");
     expect(globals).toContain(".shadcn-prototype-chat-attachment-tray");
     expect(globals).toContain("shadcn-prototype-composer-control.has-attachments");
     expect(globals).toContain("shadcn-prototype-composer-control.drag-active");
@@ -1548,8 +1583,7 @@ describe("agent conversation UI copy", () => {
     expect(conversationStart).toContain("shadcn-prototype-start-dock");
     expect(conversationStart).toContain("支持拖入 PDF / 图片 / 视频，也可粘贴视频链接");
     expect(conversationStart).toContain("shadcn-prototype-start-goal-card");
-    expect(conversationStart).toContain("不知道怎么描述？从一个目标开始");
-    expect(conversationStart).toContain("从一个想法、一张图片或一段视频开始");
+    expect(conversationStart).toContain("你想怎么开始？");
     expect(conversationStart).toContain("AI 生成镜头");
     expect(conversationStart).not.toContain("制作讲解型视频");
     expect(conversationStart).not.toContain("优化真人口播视频");
@@ -1559,7 +1593,6 @@ describe("agent conversation UI copy", () => {
     expect(backgroundStatus).toContain("完成后可用于视频创作");
     expect(globals).toContain(".shadcn-prototype-start-dock");
     expect(globals).toContain(".shadcn-prototype-start-goal-grid");
-    expect(globals).toContain(".shadcn-prototype-start-example-grid");
     expect(globals).toContain("min-height: 52px");
   });
 

@@ -55,6 +55,7 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
         id, status,
         result_asset_id: typeof metadata.product_id === "number" ? metadata.product_id : null,
         error_message: status === "failed" || status === "cancelled" ? message.text : null,
+        retryable: metadata.asset_generation_retryable === true,
         created_at: "", updated_at: "",
       };
       if (kind === "video_plan" || kind === "video_create" || kind === "video_update" || kind === "general") {
@@ -65,6 +66,45 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
           ...job,
           progress_events: metadata.asset_generation_progress as AssetGenerationJobResponse["progress_events"],
         });
+      }
+      if (Array.isArray(metadata.asset_generation_scene_progress)) {
+        job.scene_progress = metadata.asset_generation_scene_progress.filter((scene) => (
+          Boolean(scene) && typeof scene === "object"
+          && typeof (scene as Record<string, unknown>).scene_id === "string"
+          && typeof (scene as Record<string, unknown>).scene_number === "number"
+          && typeof (scene as Record<string, unknown>).title === "string"
+          && ["processing", "completed", "failed"].includes(
+            String((scene as Record<string, unknown>).status),
+          )
+        )) as AssetGenerationJobResponse["scene_progress"];
+      }
+      const wait = metadata.asset_generation_provider_wait;
+      if (wait && typeof wait === "object") {
+        const value = wait as Record<string, unknown>;
+        if (
+          typeof value.stage === "string"
+          && ["requested", "first_response_received", "delayed"].includes(String(value.status))
+          && (
+            typeof value.budget_seconds === "number"
+            || (
+              typeof value.idle_timeout_seconds === "number"
+              && typeof value.safety_timeout_seconds === "number"
+            )
+          )
+          && typeof value.request_sent_at === "string"
+          && typeof value.last_response_at === "string"
+        ) {
+          job.provider_wait = {
+            stage: value.stage,
+            status: value.status as NonNullable<AssetGenerationJobResponse["provider_wait"]>["status"],
+            ...(typeof value.budget_seconds === "number" ? { budget_seconds: value.budget_seconds } : {}),
+            ...(typeof value.idle_timeout_seconds === "number" ? { idle_timeout_seconds: value.idle_timeout_seconds } : {}),
+            ...(typeof value.safety_timeout_seconds === "number" ? { safety_timeout_seconds: value.safety_timeout_seconds } : {}),
+            request_sent_at: value.request_sent_at,
+            ...(typeof value.first_response_at === "string" ? { first_response_at: value.first_response_at } : {}),
+            last_response_at: value.last_response_at,
+          };
+        }
       }
       jobs.set(id, {
         conversationId: conversation.id,

@@ -181,23 +181,28 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     "E2E 新场景图",
   );
 
+  const firstSceneCard = page.getByLabel("分镜摘要").locator('li[role="button"]').first();
+  await expect(firstSceneCard).toContainText("#1");
+  await firstSceneCard.click();
+  const selectedSceneVersion = (await readAsset(page, token)).versions.at(-1)?.id;
+  expect(selectedSceneVersion).toBeTruthy();
+
   const replacement = await sendMessage(
     page,
     "把第2个分镜换成我刚加入的图片",
   );
   const replacementRequest = replacement.response.request().postDataJSON() as {
     linked_asset_ids?: number[];
+    selected_scene_id?: string;
+    selected_scene_version_id?: number;
   };
   expect(replacementRequest.linked_asset_ids).toContain(seed.replacement_asset_id);
+  expect(replacementRequest.selected_scene_id).toBe(initialScenes[0]?.id);
+  expect(replacementRequest.selected_scene_version_id).toBe(selectedSceneVersion);
   expect(replacement.body.agent_action?.asset_id).toBe(seed.video_asset_id);
   expect(["queued", "running"]).toContain(
     replacement.body.agent_action?.status,
   );
-  const runningStep = page
-    .locator(".shadcn-prototype-agent-run-step.run")
-    .filter({ hasText: "替换分镜素材" });
-  await expect(runningStep).toBeVisible({ timeout: 15_000 });
-
   await expect(page.getByText("视频修改已完成。", { exact: true }).last()).toBeVisible({
     timeout: 120_000,
   });

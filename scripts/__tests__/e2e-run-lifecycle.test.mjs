@@ -82,6 +82,66 @@ test("a retained E2E run cannot reopen after its original runtime is missing", a
   fs.rmSync(path.join(runtimeRoot, "lifecycle-test"), { recursive: true, force: true });
 });
 
+test("an active retained E2E run rejects a live owner and explicitly takes over a stopped owner", async () => {
+  const { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle, cleanupRetainedE2ERun } = await import(moduleUrl);
+  const runId = `resume-active-owner-${Date.now()}`;
+  const created = createE2ERunLifecycle({
+    suite: "lifecycle-test",
+    runId,
+    resultDir: path.join(os.tmpdir(), runId),
+    processId: 4201,
+  });
+  fs.mkdirSync(created.artifactDir, { recursive: true });
+  writeValidSqliteHeader(created.databasePath);
+
+  assert.throws(
+    () => resumeRetainedE2ERunLifecycle({
+      suite: "lifecycle-test",
+      runId,
+      processId: 4202,
+      processIsAlive: () => true,
+    }),
+    /still owned by PID 4201/,
+  );
+
+  const resumed = resumeRetainedE2ERunLifecycle({
+    suite: "lifecycle-test",
+    runId,
+    processId: 4202,
+    processIsAlive: () => false,
+  });
+  assert.equal(resumed.readState().activeOwner.pid, 4202);
+  resumed.finish("failed_retained");
+  cleanupRetainedE2ERun({ suite: "lifecycle-test", runId, confirmed: true });
+  fs.rmSync(path.join(runtimeRoot, "lifecycle-test"), { recursive: true, force: true });
+});
+
+test("an explicit resume can safely take over a legacy active E2E record without an owner lease", async () => {
+  const { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle, cleanupRetainedE2ERun } = await import(moduleUrl);
+  const runId = `resume-legacy-active-${Date.now()}`;
+  const created = createE2ERunLifecycle({
+    suite: "lifecycle-test",
+    runId,
+    resultDir: path.join(os.tmpdir(), runId),
+  });
+  fs.mkdirSync(created.artifactDir, { recursive: true });
+  writeValidSqliteHeader(created.databasePath);
+  const manifest = path.join(created.runDir, "run-state.json");
+  const legacyState = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  delete legacyState.activeOwner;
+  fs.writeFileSync(manifest, `${JSON.stringify(legacyState, null, 2)}\n`, "utf8");
+
+  const resumed = resumeRetainedE2ERunLifecycle({
+    suite: "lifecycle-test",
+    runId,
+    processId: 4203,
+  });
+  assert.equal(resumed.readState().activeOwner.pid, 4203);
+  resumed.finish("failed_retained");
+  cleanupRetainedE2ERun({ suite: "lifecycle-test", runId, confirmed: true });
+  fs.rmSync(path.join(runtimeRoot, "lifecycle-test"), { recursive: true, force: true });
+});
+
 test("a retained E2E run cannot resume from an empty or corrupt SQLite file", async () => {
   const { createE2ERunLifecycle, resumeRetainedE2ERunLifecycle, cleanupRetainedE2ERun } = await import(moduleUrl);
   const runId = `resume-invalid-sqlite-test-${Date.now()}`;

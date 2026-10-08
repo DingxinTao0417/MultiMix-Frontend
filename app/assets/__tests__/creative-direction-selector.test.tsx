@@ -73,6 +73,44 @@ const creativeDirection = {
 };
 
 describe("creative direction candidate choice", () => {
+  it("keeps the current draft's direction choice in its conversation product turn", async () => {
+    const base = displayProducts["case-01-director-draft"];
+    const product = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+    const conversation = {
+      ...conversationForDisplayProduct(product),
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "编导稿已生成。", assetId: product.backendAssetId }],
+    };
+    const onApply = vi.fn(async () => undefined);
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={product}
+      onSelectProduct={vi.fn()}
+      onApplyCreativeDirection={onApply}
+    />);
+
+    const chat = screen.getByRole("region", { name: "Content generation conversation" });
+    expect(chat.querySelector('[aria-label="创意方向"]')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看其他方向" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用“问题推进”方向" }));
+    await waitFor(() => expect(onApply).toHaveBeenCalledWith(product, {
+      candidateId: "direction-b",
+      creativeDirectionFingerprint: fingerprint,
+    }));
+  });
   it("keeps a single strong direction without a fake more-directions action", () => {
     render(<CreativeDirectionSelector direction={{
       ...creativeDirection,
@@ -254,6 +292,7 @@ describe("creative direction candidate choice", () => {
     expect(globalsCss).toMatch(
       /\.shadcn-prototype-product-card-thumbnail\s*\{[^}]*width:\s*44px;[^}]*height:\s*34px;/s,
     );
+    expect(globalsCss).not.toContain(".shadcn-prototype-product.has-creative-direction");
   });
 
   it("uses an existing image preview in the conversation card and falls back to its type icon on load failure", () => {
@@ -283,5 +322,98 @@ describe("creative direction candidate choice", () => {
     fireEvent.error(preview!);
     expect(container.querySelector(".shadcn-prototype-product-card-thumbnail")).toBeNull();
     expect(container.querySelector(".shadcn-prototype-product-card .shadcn-prototype-context-icon")).toBeInTheDocument();
+  });
+
+
+  it("keeps the draft body in the product pane and excludes presenter-source drafts from direction choices", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const genericProduct = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      markdownBody: "# 编导稿\n\n连续正文",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+    const { rerender } = render(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={genericProduct}
+        selectedConversation={conversationForDisplayProduct(genericProduct)}
+      />,
+    );
+
+    const directorBody = screen.getByText("连续正文");
+    expect(directorBody).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
+
+    const presenterProduct = {
+      ...genericProduct,
+      metadata: {
+        ...genericProduct.metadata,
+        video_plan: {
+          ...((genericProduct.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: presenterCreativeProfile,
+        },
+      },
+    };
+    rerender(
+      <ProductWorkspace
+        copied={false}
+        onCopyProduct={vi.fn(async () => undefined)}
+        onSaveProduct={vi.fn(async () => undefined)}
+        product={presenterProduct}
+        selectedConversation={conversationForDisplayProduct(presenterProduct)}
+      />,
+    );
+
+    expect(screen.queryByRole("region", { name: "创意方向" })).not.toBeInTheDocument();
+  });
+
+
+  it("styles the direction panel as conversation content without a product row", () => {
+    const base = displayProducts["case-01-director-draft"];
+    const genericProduct = {
+      ...base,
+      mode: "copy" as const,
+      contentType: "video_script",
+      markdownBody: "# 编导稿\n\n连续正文",
+      metadata: {
+        ...base.metadata,
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          creative_profile: genericCreativeProfile,
+          creative_direction: creativeDirection,
+        },
+      },
+    };
+
+    const conversation = {
+      ...conversationForDisplayProduct(genericProduct),
+      detailsLoaded: true,
+      messages: [{ role: "assistant" as const, text: "编导稿已生成。", assetId: genericProduct.backendAssetId }],
+    };
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={genericProduct}
+      onSelectProduct={vi.fn()}
+    />);
+
+    const directionRegion = screen.getByRole("region", { name: "创意方向" });
+    expect(directionRegion).toHaveClass("shadcn-prototype-creative-direction");
+    expect(directionRegion.closest(".shadcn-prototype-thread")).toBeInTheDocument();
+    expect(globalsCss).toMatch(
+      /\.shadcn-prototype-thread \.shadcn-prototype-creative-direction\s*\{[^}]*max-height:\s*none;[^}]*overflow:\s*visible;/s,
+    );
+    expect(globalsCss).not.toContain(".shadcn-prototype-product.has-creative-direction");
   });
 });

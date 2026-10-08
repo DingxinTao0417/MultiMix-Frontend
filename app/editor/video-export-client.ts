@@ -521,12 +521,12 @@ async function uploadDirectCandidateResumably(
 
 async function createUploadSession(
   args: ExportClientBase & {
+    projectRevision: string;
     sha256: string;
     sizeBytes: number;
     format: ExportCandidateFormat;
     exportVariant: ExportVariant;
     brandSpecVersion: string | null;
-    expectedProjectFingerprint?: string;
   },
 ): Promise<ExportUploadSession> {
   const response = await fetchAuthenticated(
@@ -536,7 +536,7 @@ async function createUploadSession(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(args.expectedProjectFingerprint ? { "If-Match": `"${args.expectedProjectFingerprint}"` } : {}),
+        "If-Match": `"${args.projectRevision}"`,
       },
       body: JSON.stringify({
         sha256: args.sha256,
@@ -557,14 +557,12 @@ async function createUploadSession(
     );
   }
   const session = parseUploadSession(payload, args);
-  if (args.expectedProjectFingerprint && session.projectFingerprint !== args.expectedProjectFingerprint) {
-    throw new Error("工程版本已变化，请保留修改并重新核对后导出。");
-  }
   return session;
 }
 
 export async function uploadExportCandidate(
   args: ExportClientBase & {
+    projectRevision: string;
     blob: Blob;
     format?: ExportCandidateFormat;
     exportVariant?: ExportVariant;
@@ -574,10 +572,12 @@ export async function uploadExportCandidate(
     clientTimingEvents?: ExportTimingEvent[];
     now?: () => number;
     resumableUploadFactory?: ResumableUploadFactory;
-    expectedProjectFingerprint?: string;
   },
 ): Promise<ExportFinalizeJob> {
   ensureNotAborted(args.signal);
+  if (!/^[0-9a-f]{64}$/.test(args.projectRevision)) {
+    throw new Error("工程版本不可用，请刷新剪辑器后重试。");
+  }
   const format = args.format ?? "mp4";
   const exportContract = normalizeExportContract(
     args.exportVariant,
@@ -603,6 +603,9 @@ export async function uploadExportCandidate(
       format,
       ...exportContract,
   });
+  if (session.projectFingerprint !== args.projectRevision) {
+    throw new Error("工程版本已变化，请核对当前工程后重新导出。");
+  }
 
   args.onStage?.("uploading");
   const uploadingStartedAt = now();
@@ -659,7 +662,7 @@ export async function uploadExportCandidate(
     new URL(session.uploadUrl, `${args.apiBase}/`).toString(),
     {
       method: "POST",
-      headers: { "If-Match": `"${session.projectFingerprint}"` },
+      headers: { "If-Match": `"${args.projectRevision}"` },
       body: formData,
       signal: args.signal,
     },

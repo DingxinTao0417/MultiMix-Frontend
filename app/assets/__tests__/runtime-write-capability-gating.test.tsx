@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API_CONNECTION_ERROR, type AssetGenerationJobResponse } from "../../../lib/api";
+import * as api from "../../../lib/api";
 import AssetsWorkspaceClient from "../components/assets-workspace-client";
 import ConversationStart from "../components/conversation-start";
 import ConversationStudio from "../components/conversation-studio";
@@ -13,6 +14,7 @@ import LibraryWorkshop from "../components/library-workshop";
 import { assetWorkspaceAdapter, type LibraryRow } from "../lib/asset-workspace-adapter";
 import type { AgentActionRunResponse, AgentRunStep } from "../lib/asset-workspace-types";
 import { writeConversationSummaryCache } from "../lib/conversation-summary-cache";
+import { displayProducts } from "./fixtures/display-products";
 import {
   isRuntimeConnectionError,
   resolveRuntimeWriteCapabilities,
@@ -323,7 +325,10 @@ describe("ConversationStudio runtime write gate", () => {
 
   it("hides the standalone generation retry while unavailable and restores it when available", () => {
     const onRetryGeneration = vi.fn();
-    const failedJob = generationJob("failed", "standalone-generation-lly-29");
+    const failedJob = {
+      ...generationJob("failed", "standalone-generation-lly-29"),
+      retryable: true,
+    };
     const rendered = render(
       <ConversationStudio
         basePath="/app/assets"
@@ -542,6 +547,169 @@ describe("LibraryWorkshop runtime write gate", () => {
 });
 
 describe("AssetsWorkspaceClient runtime availability integration", () => {
+  it.each([
+    { conversationId: "ordinary-upload-project", understandingStatus: "ready", shouldAdd: true },
+    { conversationId: "ordinary-upload-project", understandingStatus: "failed", shouldAdd: false },
+    { conversationId: "new", understandingStatus: "ready", shouldAdd: false },
+  ] as const)("routes an ordinary upload in $conversationId with understanding=$understandingStatus", async ({ conversationId, understandingStatus, shouldAdd }) => {
+    const detail = { ...conversation(), id: conversationId, title: "早餐项目" };
+    window.history.replaceState(null, "", `/app/assets?conversation=${conversationId}`);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:ordinary-upload") });
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockResolvedValue(
+      conversationId === "new" ? [] : [{
+        id: conversationId, title: detail.title, status: "ready", metadata: {},
+        created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z",
+      }],
+    );
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue(detail);
+    const addSource = vi.spyOn(api, "addProjectSource").mockResolvedValue({} as Awaited<ReturnType<typeof api.addProjectSource>>);
+    const uploadAsset = vi.spyOn(assetWorkspaceAdapter, "uploadAsset").mockResolvedValue({
+      id: 142, title: "用户早餐图.png", status: "ready",
+      metadata: { understanding: { status: understandingStatus } },
+    } as unknown as Awaited<ReturnType<typeof assetWorkspaceAdapter.uploadAsset>>);
+    vi.spyOn(assetWorkspaceAdapter, "getLatestAssetIngestJob").mockResolvedValue({
+      status: "completed", understanding_status: understandingStatus,
+      understanding_failure_category: understandingStatus === "failed" ? "provider_timeout" : null,
+    } as Awaited<ReturnType<typeof assetWorkspaceAdapter.getLatestAssetIngestJob>>);
+    const sendMessage = vi.spyOn(assetWorkspaceAdapter, "sendMessage");
+
+    render(<AssetsWorkspaceClient basePath="/app/assets" accountEmail="ordinary@multimix.local"
+      token="ordinary-token" initialConversationId={conversationId} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "上传图片素材" })).toBeEnabled());
+    const uploadButton = screen.getByRole("button", { name: "上传图片素材" });
+    const fileInput = uploadButton.previousElementSibling as HTMLInputElement;
+    expect(fileInput.type).toBe("file");
+    fireEvent.change(fileInput, { target: { files: [new File(["image"], "用户早餐图.png", { type: "image/png" })] } });
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalled());
+
+    if (shouldAdd) {
+      await waitFor(() => expect(addSource).toHaveBeenCalledWith("ordinary-token", conversationId, 142));
+      expect(screen.getAllByText(/用户早餐图.png/).length).toBeGreaterThan(0);
+    } else {
+      await waitFor(() => expect(screen.getAllByText(understandingStatus === "failed"
+        ? /素材理解失败|视觉服务响应超时/ : /用户早餐图.png/).length).toBeGreaterThan(0));
+      expect(addSource).not.toHaveBeenCalled();
+    }
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "为分镜选择项目图片" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { uploadStatus: "ready", versionChanged: false, understandingStatus: "ready" },
+    { uploadStatus: "processing", versionChanged: false, understandingStatus: "ready" },
+    { uploadStatus: "ready", versionChanged: true, understandingStatus: "ready" },
+    { uploadStatus: "ready", versionChanged: false, understandingStatus: "failed" },
+    { uploadStatus: "processing", versionChanged: false, understandingStatus: "failed" },
+  ] as const)("handles a $uploadStatus scene upload with understanding=$understandingStatus when versionChanged=$versionChanged", async ({ uploadStatus, versionChanged, understandingStatus }) => {
+    const conversationId = "scene-upload-conversation";
+    const product = {
+      ...displayProducts["case-01-director-draft"],
+      id: "scene-upload-director", backendAssetId: 91,
+      mode: "copy" as const, contentType: "video_script",
+      versions: [{ id: "7", label: "第 7 版", savedAt: "刚刚", status: "已保存" }],
+      metadata: { video_plan: { scenes: [{ id: "scene-2", title: "早餐主体", visual_brief: "蒸笼里的早餐" }] } },
+    };
+    const detail = {
+      ...conversation(), id: conversationId, title: "早餐视频",
+      product, products: [product],
+    };
+    const changedProduct = { ...product, versions: [{
+      id: "8", label: "第 8 版", savedAt: "刚刚", status: "已保存",
+    }] };
+    const changedDetail = { ...detail, product: changedProduct, products: [changedProduct] };
+    window.history.replaceState(null, "", `/app/assets?conversation=${conversationId}`);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:scene-upload") });
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockResolvedValue([{
+      id: conversationId, title: detail.title, status: "ready", metadata: {},
+      created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z",
+    }]);
+    const addSource = vi.spyOn(api, "addProjectSource").mockResolvedValue({} as Awaited<ReturnType<typeof api.addProjectSource>>);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockImplementation(async () =>
+      versionChanged && addSource.mock.calls.length ? changedDetail : detail);
+    vi.spyOn(assetWorkspaceAdapter, "uploadAsset").mockResolvedValue({
+      id: 42, title: "早餐.png", status: uploadStatus,
+      metadata: { understanding: { status: understandingStatus } },
+    } as unknown as Awaited<ReturnType<typeof assetWorkspaceAdapter.uploadAsset>>);
+    vi.spyOn(assetWorkspaceAdapter, "getLatestAssetIngestJob").mockResolvedValue({
+      status: "completed", understanding_status: understandingStatus,
+      understanding_failure_category: understandingStatus === "failed"
+        ? uploadStatus === "ready" ? "provider_billing" : "provider_timeout" : null,
+    } as Awaited<ReturnType<typeof assetWorkspaceAdapter.getLatestAssetIngestJob>>);
+    const reparse = vi.spyOn(assetWorkspaceAdapter, "reparseAsset").mockResolvedValue({
+      id: 42, title: "早餐.png", status: "ready",
+      metadata: { understanding: { status: "ready" } },
+    } as unknown as Awaited<ReturnType<typeof assetWorkspaceAdapter.reparseAsset>>);
+    const sendMessage = vi.spyOn(assetWorkspaceAdapter, "sendMessage").mockResolvedValue({
+      conversationId, conversation: detail, product, generationJob: null, agentAction: null,
+    });
+    const reviewFit = vi.spyOn(assetWorkspaceAdapter, "reviewSceneImageFit").mockResolvedValue({
+      status: uploadStatus === "processing" ? "mismatch" : "partial",
+      source_asset_id: 42, director_version_id: 7,
+      scene_id: "scene-2", evidence: "早餐主体可见，但热气不明显",
+      matched_required_elements: ["早餐主体"], missing_required_elements: ["热气"],
+      excluded_elements_present: [], technical_quality: { publishable: true, reason: "画面清晰" },
+      error_code: "",
+    });
+
+    render(<AssetsWorkspaceClient basePath="/app/assets" accountEmail="scene@multimix.local"
+      token="scene-token" initialConversationId={conversationId} />);
+    fireEvent.click(await screen.findByText("查看逐镜来源与分镜详情"));
+    fireEvent.click(within(screen.getByRole("listitem", { name: "早餐主体" }))
+      .getByRole("button", { name: "上传素材" }));
+    const file = new File(["image"], "早餐.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("上传图片用于指定分镜"), { target: { files: [file] } });
+
+    if (understandingStatus === "failed") {
+      await waitFor(() => expect(screen.getAllByText(uploadStatus === "ready"
+        ? /视觉服务账户或计费不可用/ : /视觉服务响应超时/).length).toBeGreaterThan(0));
+      expect(addSource).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "为分镜选择项目图片" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "重试" }));
+      await waitFor(() => expect(reparse).toHaveBeenCalledWith("scene-token", 42));
+      await waitFor(() => expect(addSource).toHaveBeenCalledWith("scene-token", conversationId, 42));
+      expect(await screen.findByRole("dialog", { name: "为分镜选择项目图片" })).toBeInTheDocument();
+      return;
+    }
+
+    await waitFor(() => expect(addSource).toHaveBeenCalledWith("scene-token", conversationId, 42));
+    expect(addSource).toHaveBeenCalledTimes(1);
+    if (versionChanged) {
+      await waitFor(() => expect(screen.getByText(/图片已保存到项目，但编导稿版本已变化/)).toBeInTheDocument());
+      expect(screen.queryByRole("dialog", { name: "为分镜选择项目图片" })).not.toBeInTheDocument();
+      expect(sendMessage).not.toHaveBeenCalled();
+      return;
+    }
+    const picker = await screen.findByRole("dialog", { name: "为分镜选择项目图片" });
+    expect(within(picker).getByText("上传图片 #42")).toBeInTheDocument();
+    expect(within(picker).getByText(/先选一张查看它与本镜目标的适配建议/)).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "暂不用于本镜，留在项目" })).toBeInTheDocument();
+    expect(within(picker).getByRole("button", { name: "先修改本镜画面" })).toBeInTheDocument();
+    expect(sendMessage).not.toHaveBeenCalled();
+    if (uploadStatus === "ready") {
+      fireEvent.click(within(picker).getByRole("button", { name: "暂不用于本镜，留在项目" }));
+      expect(screen.queryByRole("dialog", { name: "为分镜选择项目图片" })).not.toBeInTheDocument();
+      expect(sendMessage).not.toHaveBeenCalled();
+      return;
+    }
+    fireEvent.click(within(picker).getByRole("button", { name: /早餐.png/ }));
+    await waitFor(() => expect(reviewFit).toHaveBeenCalledWith("scene-token", 42, {
+      conversation_id: conversationId, director_asset_id: 91,
+      director_version_id: 7, scene_id: "scene-2",
+    }));
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(await within(picker).findByText(/早餐主体可见，但热气不明显/)).toBeInTheDocument();
+    fireEvent.click(within(picker).getByRole("button", { name: uploadStatus === "processing"
+      ? "仍用于本镜（画面目标可能不符）" : "确认用于本镜" }));
+    await waitFor(() => expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      sceneSourceDecision: expect.objectContaining({
+        directorAssetId: 91, directorVersionId: 7,
+        sceneId: "scene-2", action: "use_saved_asset", sourceAssetId: 42,
+      }),
+    })));
+  });
+
   it("keeps writes disabled while the first real backend check is pending", async () => {
     let resolveSummaries!: (value: []) => void;
     const pendingSummaries = new Promise<[]>((resolve) => {
@@ -736,7 +904,7 @@ describe("AssetsWorkspaceClient runtime availability integration", () => {
       />,
     );
 
-    await screen.findAllByText("F01 · 开场产品特写");
+    await screen.findAllByText("F01 · 开场产品特写", {}, { timeout: 5_000 });
     expect(rendered.container.querySelector(".shadcn-prototype-workspace")).toHaveClass("conversation-mode");
     expect(screen.getByRole("separator", { name: "调整对话和展示区宽度" })).toBeInTheDocument();
     const applyKeyframes = await screen.findByRole("button", { name: "将 3 张分别用于 3 个分镜" });
