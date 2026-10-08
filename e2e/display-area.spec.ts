@@ -288,11 +288,16 @@ test("saved source removal is not reported as failed when requirement refresh fa
   });
   const requirementsUrl = `**/v1/assets/conversations/${projectId}/requirements/current`;
   let requirementReads = 0;
+  let retryWrites = 0;
   let failRequirements = true;
   await page.route(requirementsUrl, async (route) => {
     requirementReads += 1;
     if (failRequirements) await route.fulfill({ status: 503, json: { detail: "Temporary read failure" } });
     else await route.continue();
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/analyze`, async (route) => {
+    if (route.request().method() === "POST") retryWrites += 1;
+    await route.continue();
   });
 
   await drawer.getByRole("button", { name: "移出项目", exact: true }).click();
@@ -310,10 +315,11 @@ test("saved source removal is not reported as failed when requirement refresh fa
     && response.request().method() === "GET");
   await drawer.getByRole("button", { name: "重新同步需求" }).click();
   expect((await retryRead).status()).toBe(404);
-  await expect(page.getByText("当前项目没有可同步的需求理解。", { exact: true })).toBeVisible();
-  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
+  await expect(page.getByText("需求分析仍未成功，已保留上一版内容；可稍后重试。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
   expect(membershipWrites).toBe(1);
-  expect(requirementReads).toBe(2);
+  expect(retryWrites).toBe(1);
+  expect(requirementReads).toBe(3);
   await drawer.getByRole("button", { name: "重新加入项目" }).click();
   await expect(drawer.getByRole("button", { name: "移出项目", exact: true })).toBeVisible();
   const readsAfterReadd = requirementReads;
@@ -483,6 +489,250 @@ test("a requirement read started before source removal cannot restore an obsolet
   } finally {
     releaseOldRead?.();
   }
+});
+
+test("library source addition refreshes requirements even when the project time label stays the same", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId) throw new Error("Missing seeded CASE-01 project");
+
+  const fixedUpdatedAt = new Date().toISOString();
+  await page.route("**/v1/assets/conversations**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (route.request().method() !== "GET"
+      || (pathname !== "/v1/assets/conversations" && pathname !== `/v1/assets/conversations/${projectId}`)) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const payload = await response.json() as AssetConversationResponse | AssetConversationResponse[];
+    for (const row of Array.isArray(payload) ? payload : [payload]) {
+      if (row.id === projectId) row.updated_at = fixedUpdatedAt;
+    }
+    await route.fulfill({ response, json: payload });
+  });
+
+  let sourceWriteCompleted = false;
+  let postWriteRequirementReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}/sources/*`, async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    sourceWriteCompleted = response.ok();
+    await route.fulfill({ response });
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/current`, async (route) => {
+    if (!sourceWriteCompleted || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    postWriteRequirementReads += 1;
+    await route.fulfill({ status: 200, json: {
+      id: "new-library-source-requirements",
+      conversation_id: projectId,
+      version: 2,
+      parent_snapshot_id: null,
+      status: "ready",
+      latest_analysis_version: 2,
+      latest_analysis_status: "ready",
+      trigger_kind: "source_added",
+      conversation_text: "已纳入新加入的门店素材",
+      conversation_media: [],
+      payload: null,
+      error_code: null,
+      error_message: null,
+      created_at: fixedUpdatedAt,
+      completed_at: fixedUpdatedAt,
+    } });
+  });
+
+  await page.goto(`/app/assets?conversation=${projectId}`);
+  await expect(page.getByRole("region", { name: "Content generation conversation" })).toBeVisible();
+  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.getByRole("button", { name: "加入项目…" }).click();
+  const picker = page.getByRole("dialog", { name: "选择目标项目" });
+  await picker.getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
+
+  await expect(page.getByText("已加入项目，并立即保存。", { exact: true })).toBeVisible();
+  expect(sourceWriteCompleted).toBe(true);
+  await expect.poll(() => postWriteRequirementReads).toBeGreaterThanOrEqual(1);
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await projectLink.click();
+  await expect(page.getByRole("region", { name: "Content generation conversation" })
+    .getByText("已纳入新加入的门店素材", { exact: true })).toBeVisible();
+});
+
+test("library source addition keeps the saved membership when requirement refresh fails", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId) throw new Error("Missing seeded CASE-01 project");
+
+  let sourceWrites = 0;
+  let failRequirementRead = true;
+  let postWriteRequirementReads = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}/sources/*`, async (route) => {
+    if (route.request().method() === "PUT") sourceWrites += 1;
+    await route.continue();
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/current`, async (route) => {
+    if (route.request().method() !== "GET" || sourceWrites === 0) {
+      await route.continue();
+      return;
+    }
+    postWriteRequirementReads += 1;
+    if (failRequirementRead) {
+      await route.fulfill({ status: 503, json: { detail: "Temporary requirement read failure" } });
+      return;
+    }
+    await route.fulfill({ status: 200, json: {
+      id: "recovered-library-source-requirements",
+      conversation_id: projectId,
+      version: 2,
+      parent_snapshot_id: null,
+      status: "ready",
+      latest_analysis_version: 2,
+      latest_analysis_status: "ready",
+      trigger_kind: "source_added",
+      conversation_text: "需求理解已恢复",
+      conversation_media: [],
+      payload: null,
+      error_code: null,
+      error_message: null,
+      created_at: "2026-10-01T08:00:00Z",
+      completed_at: "2026-10-01T08:00:01Z",
+    } });
+  });
+
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.getByRole("button", { name: "加入项目…" }).click();
+  await page.getByRole("dialog", { name: "选择目标项目" })
+    .getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
+
+  await expect(page.getByText("已加入项目并保存，但需求理解暂未同步。", { exact: true })).toBeVisible();
+  expect(sourceWrites).toBe(1);
+  expect(postWriteRequirementReads).toBeGreaterThanOrEqual(1);
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await projectLink.click();
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+
+  failRequirementRead = false;
+  await drawer.getByRole("button", { name: "重新同步需求" }).click();
+  await expect(page.getByText("需求理解已同步。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
+  expect(sourceWrites).toBe(1);
+});
+
+test("new source analysis failure keeps the older requirement visibly out of date", async ({ page }) => {
+  const projectId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!projectId) throw new Error("Missing seeded CASE-01 project");
+  let sourceWritten = false;
+  let analysisRecovered = false;
+  let latestAnalysisVersion = 2;
+  let retryAttempts = 0;
+  await page.route(`**/v1/assets/conversations/${projectId}/sources/*`, async (route) => {
+    const response = await route.fetch();
+    if (route.request().method() === "PUT") sourceWritten = response.ok();
+    await route.fulfill({ response });
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/current`, async (route) => {
+    if (!sourceWritten || route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 200, json: {
+      id: analysisRecovered ? "recovered-snapshot" : "previous-stable-snapshot",
+      conversation_id: projectId,
+      version: analysisRecovered ? latestAnalysisVersion : 1,
+      parent_snapshot_id: null,
+      status: "ready",
+      latest_analysis_version: latestAnalysisVersion,
+      latest_analysis_status: analysisRecovered ? "ready" : "failed",
+      trigger_kind: "source_added",
+      conversation_text: "上一版项目需求",
+      conversation_media: [],
+      payload: null,
+      error_code: null,
+      error_message: null,
+      created_at: "2026-10-02T08:00:00Z",
+      completed_at: "2026-10-02T08:00:01Z",
+    } });
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/versions`, async (route) => {
+    await route.fulfill({ status: 200, json: [{
+      id: `failed-snapshot-${latestAnalysisVersion}`,
+      conversation_id: projectId,
+      version: latestAnalysisVersion,
+      parent_snapshot_id: null,
+      status: "failed",
+      trigger_kind: "source_added",
+      conversation_text: "需求分析失败，请重试。",
+      conversation_media: [],
+      payload: null,
+      error_code: "RuntimeError",
+      error_message: "需求分析失败，请重试。",
+      created_at: "2026-10-02T08:00:00Z",
+      completed_at: "2026-10-02T08:00:01Z",
+    }] });
+  });
+  await page.route(`**/v1/assets/conversations/${projectId}/requirements/analyze`, async (route) => {
+    const body = route.request().postDataJSON() as { retry_failed_snapshot_id?: string };
+    expect(body.retry_failed_snapshot_id).toBe(`failed-snapshot-${latestAnalysisVersion}`);
+    retryAttempts += 1;
+    latestAnalysisVersion += 1;
+    analysisRecovered = retryAttempts === 2;
+    await route.fulfill({ status: 200, json: {
+      id: analysisRecovered ? "recovered-snapshot" : `failed-snapshot-${latestAnalysisVersion}`,
+      conversation_id: projectId,
+      version: latestAnalysisVersion,
+      parent_snapshot_id: body.retry_failed_snapshot_id,
+      status: analysisRecovered ? "ready" : "failed",
+      trigger_kind: "manual_refresh",
+      conversation_text: analysisRecovered ? "需求理解已恢复" : "需求分析失败，请重试。",
+      conversation_media: [],
+      payload: null,
+      error_code: analysisRecovered ? null : "RuntimeError",
+      error_message: analysisRecovered ? null : "需求分析失败，请重试。",
+      created_at: "2026-10-02T08:00:00Z",
+      completed_at: "2026-10-02T08:00:01Z",
+    } });
+  });
+
+  await page.goto("/app/assets");
+  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
+  const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
+  await detail.getByRole("button", { name: "加入项目…" }).click();
+  await page.getByRole("dialog", { name: "选择目标项目" })
+    .getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
+  await expect(page.getByText("已加入项目并保存，但新资料尚未计入需求理解；当前显示上一版内容。", { exact: true })).toBeVisible();
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
+  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
+  await projectLink.click();
+  const chat = page.getByRole("region", { name: "Content generation conversation" });
+  await chat.getByRole("button", { name: /^项目资料/ }).click();
+  const drawer = page.getByRole("dialog", { name: /的项目资源/ });
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: "重新同步需求" }).click();
+  await expect(page.getByText("需求分析仍未成功，已保留上一版内容；可稍后重试。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeVisible();
+  expect(retryAttempts).toBe(1);
+  await drawer.getByRole("button", { name: "重新同步需求" }).click();
+  await expect(page.getByText("需求理解已同步。", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("需求理解暂未同步，不影响已保存的项目资料。", { exact: true })).toBeHidden();
+  expect(retryAttempts).toBe(2);
 });
 
 test("library source addition remains acknowledged when target project detail refresh fails", async ({ page }) => {

@@ -11,6 +11,7 @@ import {
   libraryCategoryForAsset,
   libraryKeywordsForAsset,
   libraryVariantForAsset,
+  isCurrentRequirementAnalysis,
   retryConversationDetailLoad,
 } from "../lib/asset-workspace-adapter";
 import type {
@@ -20,6 +21,18 @@ import type {
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import { displayProducts } from "./fixtures/display-products";
 import { contentAssetToProduct } from "../../../lib/asset-mappers";
+
+it("does not treat an older stable requirement snapshot as the latest analysis", () => {
+  expect(isCurrentRequirementAnalysis({
+    version: 1, status: "ready", latestAnalysisVersion: 2, latestAnalysisStatus: "failed",
+  })).toBe(false);
+  expect(isCurrentRequirementAnalysis({
+    version: 2, status: "ready", latestAnalysisVersion: 2, latestAnalysisStatus: "ready",
+  })).toBe(true);
+  expect(isCurrentRequirementAnalysis({
+    version: 2, status: "ready", latestAnalysisVersion: null, latestAnalysisStatus: null,
+  })).toBe(false);
+});
 
 const saveApiState = vi.hoisted(() => ({ configured: undefined as boolean | undefined }));
 vi.mock("../../../lib/api", async (importOriginal) => {
@@ -562,6 +575,41 @@ describe("runtime data boundary", () => {
         expected_snapshot_version: 9,
       }),
     );
+  });
+
+  it("loads the latest failed version and posts an explicit retry reference", async () => {
+    const failed = {
+      id: "failed-7",
+      conversation_id: "project-1",
+      version: 7,
+      parent_snapshot_id: null,
+      status: "failed",
+      trigger_kind: "source_changed",
+      conversation_text: "需求分析失败，请重试。",
+      conversation_media: [],
+      payload: {},
+      error_code: "RuntimeError",
+      error_message: "需求分析失败，请重试。",
+      created_at: "2026-10-02T08:00:00Z",
+      completed_at: "2026-10-02T08:00:01Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify([failed]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...failed, id: "retry-8", version: 8 }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const latest = await assetWorkspaceAdapter.loadLatestRequirementVersion("token", "project-1");
+      const retried = await assetWorkspaceAdapter.retryRequirements("token", "project-1", "failed-7");
+      expect(latest).toMatchObject({ id: "failed-7", status: "failed" });
+      expect(retried).toMatchObject({ id: "retry-8", status: "failed" });
+      expect(fetchMock.mock.calls[0]?.[0]).toContain("/requirements/versions");
+      expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+        method: "POST",
+        body: JSON.stringify({ trigger_kind: "manual_refresh", retry_failed_snapshot_id: "failed-7" }),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("uploads every selected file with an independent idempotency key", async () => {

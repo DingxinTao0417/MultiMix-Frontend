@@ -718,6 +718,8 @@ export type ProjectRequirementSnapshot = {
   version: number;
   parentSnapshotId: string | null;
   status: RequirementSnapshotStatus;
+  latestAnalysisVersion?: number | null;
+  latestAnalysisStatus?: RequirementSnapshotStatus | null;
   triggerKind: string;
   conversationText: string;
   conversationMedia?: RequirementConversationMedia[];

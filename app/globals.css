@@ -4696,8 +4696,6 @@ button:disabled {
   padding: 8px 6px 4px;
   color: var(--sp-faint);
   font-size: 10.5px;
-  font-family: Aptos, "Aptos Display", "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI", sans-serif;
-  line-height: normal;
   font-variant-numeric: tabular-nums;
 }
 
