@@ -1881,6 +1881,66 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   expect(browserErrors).toEqual([]);
 });
 
+// Browse-only checks precede editor tests that change the shared CASE-07 project and invalidate its export.
+test("video library detail retains its media and actions across narrow viewports", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 844 });
+  await page.goto("/app/assets?view=video");
+  const openVideo = async () => {
+    await page.getByRole("textbox", { name: "搜索视频库" }).fill("CASE-07");
+    await page.getByLabel("视频库列表").getByRole("button", { name: /CASE-07/ }).click();
+  };
+  await openVideo();
+  const detail = page.getByRole("dialog", { name: /CASE-07.*详情/ });
+  const media = detail.locator("video");
+  await expect.poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
+  for (const width of [320, 375, 390, 430, 768, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    const geometry = await detail.evaluate((dialog) => {
+      const shell = dialog.getBoundingClientRect();
+      const body = dialog.querySelector(".shadcn-prototype-library-detail-body")!;
+      const selectors = [
+        ".shadcn-prototype-library-detail-header",
+        ".shadcn-prototype-library-detail-body",
+        ".shadcn-prototype-library-actions",
+        "video",
+        'button[aria-label="关闭详情"]',
+        ".shadcn-prototype-library-actions > button",
+        '.shadcn-prototype-library-actions summary[aria-label="更多操作"]',
+      ];
+      return {
+        left: shell.left,
+        right: shell.right,
+        bodyOverflow: body.scrollWidth - body.clientWidth,
+        children: selectors.flatMap((selector) => Array.from(dialog.querySelectorAll(selector), (element) => {
+          const box = element.getBoundingClientRect();
+          return { selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+        })),
+      };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(width);
+    expect(geometry.bodyOverflow, `body overflow at ${width}px`).toBeLessThanOrEqual(1);
+    for (const child of geometry.children) {
+      expect(child.left, `${child.selector} at ${width}px`).toBeGreaterThanOrEqual(geometry.left);
+      expect(child.right, `${child.selector} at ${width}px`).toBeLessThanOrEqual(geometry.right + 1);
+      if (child.selector.includes("actions")) {
+        expect(child.top).toBeGreaterThanOrEqual(0);
+        expect(child.bottom).toBeLessThanOrEqual(844);
+      }
+    }
+    expect(await media.evaluate((video: HTMLVideoElement) => ({ error: video.error?.code ?? null, fit: getComputedStyle(video).objectFit })))
+      .toEqual({ error: null, fit: "contain" });
+    if (width === 390 || width === 1280) {
+      await mkdir(desktopEvidenceDirectory, { recursive: true });
+      await page.screenshot({ path: resolve(desktopEvidenceDirectory, `video-library-detail-${width}.png`), animations: "disabled" });
+    }
+  }
+  await detail.getByRole("button", { name: "关闭详情" }).click();
+  await page.reload();
+  await openVideo();
+  await expect.poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
+});
+
 test("CASE-07 loads a real MP4 and seeks by segment", async ({ page }) => {
   test.setTimeout(240_000);
   const workspace = await openCase(page, "case-07-project-ready-mp4");
@@ -2343,65 +2403,6 @@ test("case-12-only-optional-compile-failed remains editable with a warning after
     await expect(workspace.getByText("部分可选图形动效未能完成", { exact: false })).toBeVisible();
   }
   await testInfo.attach("case-12-only-optional-compile-failed", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
-});
-
-test("video library detail retains its media and actions across narrow viewports", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 844 });
-  await page.goto("/app/assets?view=video");
-  const openVideo = async () => {
-    await page.getByRole("textbox", { name: "搜索视频库" }).fill("CASE-07");
-    await page.getByLabel("视频库列表").getByRole("button", { name: /CASE-07/ }).click();
-  };
-  await openVideo();
-  const detail = page.getByRole("dialog", { name: /CASE-07.*详情/ });
-  const media = detail.locator("video");
-  await expect.poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
-  for (const width of [320, 375, 390, 430, 768, 1280]) {
-    await page.setViewportSize({ width, height: 844 });
-    const geometry = await detail.evaluate((dialog) => {
-      const shell = dialog.getBoundingClientRect();
-      const body = dialog.querySelector(".shadcn-prototype-library-detail-body")!;
-      const selectors = [
-        ".shadcn-prototype-library-detail-header",
-        ".shadcn-prototype-library-detail-body",
-        ".shadcn-prototype-library-actions",
-        "video",
-        'button[aria-label="关闭详情"]',
-        ".shadcn-prototype-library-actions > button",
-        '.shadcn-prototype-library-actions summary[aria-label="更多操作"]',
-      ];
-      return {
-        left: shell.left,
-        right: shell.right,
-        bodyOverflow: body.scrollWidth - body.clientWidth,
-        children: selectors.flatMap((selector) => Array.from(dialog.querySelectorAll(selector), (element) => {
-          const box = element.getBoundingClientRect();
-          return { selector, left: box.left, right: box.right, top: box.top, bottom: box.bottom };
-        })),
-      };
-    });
-    expect(geometry.left).toBeGreaterThanOrEqual(0);
-    expect(geometry.right).toBeLessThanOrEqual(width);
-    expect(geometry.bodyOverflow, `body overflow at ${width}px`).toBeLessThanOrEqual(1);
-    for (const child of geometry.children) {
-      expect(child.left, `${child.selector} at ${width}px`).toBeGreaterThanOrEqual(geometry.left);
-      expect(child.right, `${child.selector} at ${width}px`).toBeLessThanOrEqual(geometry.right + 1);
-      if (child.selector.includes("actions")) {
-        expect(child.top).toBeGreaterThanOrEqual(0);
-        expect(child.bottom).toBeLessThanOrEqual(844);
-      }
-    }
-    expect(await media.evaluate((video: HTMLVideoElement) => ({ error: video.error?.code ?? null, fit: getComputedStyle(video).objectFit })))
-      .toEqual({ error: null, fit: "contain" });
-    if (width === 390 || width === 1280) {
-      await mkdir(desktopEvidenceDirectory, { recursive: true });
-      await page.screenshot({ path: resolve(desktopEvidenceDirectory, `video-library-detail-${width}.png`), animations: "disabled" });
-    }
-  }
-  await detail.getByRole("button", { name: "关闭详情" }).click();
-  await page.reload();
-  await openVideo();
-  await expect.poll(() => media.evaluate((video: HTMLVideoElement) => video.readyState)).toBe(4);
 });
 
 // Keep this destructive fixture check last: earlier CASE-02 checks need its live source.
