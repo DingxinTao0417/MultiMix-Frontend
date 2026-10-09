@@ -69,6 +69,8 @@ describe("new conversation routing", () => {
     expect(client).toMatch(
       /const selectedConversation\s*=\s*selectedPersistedConversation\?\.detailsLoaded\s*===\s*false[\s\S]*?:\s*selectedPersistedConversation\s*\?\?\s*assetWorkspaceAdapter\.getNewConversation\(\)/,
     );
+    expect(client).toContain("projectResources: undefined,");
+    expect(client).toContain("projectResourceSummary: projectResourceSummaries[selectedPersistedConversation.id],");
     expect(shouldLoadConversationDetail({
       hasToken: true,
       conversationId: "restored-snapshot",
@@ -82,8 +84,9 @@ describe("new conversation routing", () => {
     const client = readWorkspaceClient();
 
     expect(client).toContain(
-      "const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot",
+      "const { selectedProduct, displayProduct } = !selectedConversationHasDetail && !isConversationSnapshot",
     );
+    expect(client).toContain("resolveConversationStageProducts(selectedConversation, selectedProductIds[selectedConversation.id])");
   });
 
   it("loads a deep-linked historical conversation even when it is outside the recent summary page", () => {

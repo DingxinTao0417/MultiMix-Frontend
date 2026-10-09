@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
-import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
+import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, isStableDisplayProduct, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
   CHAT_SOURCE_UPLOAD_ACCEPT,
@@ -314,7 +314,9 @@ function mapProductsToConversationMessages(messages: VisibleConversationMessage[
 
   messages.forEach((message, index) => {
     if (message.role !== "assistant" || !message.assetId) return;
-    const matchedProducts = products.filter((product) => product.backendAssetId === message.assetId);
+    const matchedProducts = products.filter((product) => (
+      product.backendAssetId === message.assetId && isStableDisplayProduct(product)
+    ));
     if (!matchedProducts.length) return;
     result.set(index, matchedProducts);
   });
@@ -1621,7 +1623,9 @@ export default function ConversationStudio({
                       ?? panelProducts[0]
                       ?? products.find((product) => product.backendAssetId === message.assetId);
                     const disabled = intent.disabled
-                      || (intent.mode === "open_panel" ? !panelProduct : !canSend)
+                      || (intent.mode === "open_panel"
+                        ? !panelProduct || !isStableDisplayProduct(panelProduct)
+                        : !canSend)
                       || (
                         sending
                         && (intent.mode === "submit_message" || intent.mode === "select_source")
@@ -1831,7 +1835,7 @@ export default function ConversationStudio({
                   ? selectedProduct.videoProductCompleted || selectedProduct.productStatus === "completed"
                     ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
                     : selectedProduct.productStatus === "failed"
-                      ? "视频未完成，可按失败提示处理，或告诉我想调整什么…"
+                      ? "视频未完成，继续描述…"
                       : "视频正在制作，可随时补充想法…"
                   : "随时打断或补充，AI 会接着改…"
             }

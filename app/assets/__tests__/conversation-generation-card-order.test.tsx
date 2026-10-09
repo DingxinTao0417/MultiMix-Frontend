@@ -135,4 +135,40 @@ describe("conversation generation card order", () => {
     const suggestion = screen.getByRole("button", { name: "确认默认清理" });
     expect(productCard.compareDocumentPosition(suggestion) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
   });
+
+  it.each(["generating", "failed"] as const)("does not link to a %s record without a stable output", (productStatus) => {
+    const unfinishedProduct: ProductArtifact = {
+      ...product,
+      contentType: "video_project",
+      mode: "video",
+      productStatus,
+      status: productStatus === "failed" ? "失败" : "生成中",
+      videoProjectReady: false,
+      videoProductCompleted: false,
+    };
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: `conversation-${productStatus}`,
+      detailsLoaded: true,
+      product: unfinishedProduct,
+      products: [unfinishedProduct],
+      messages: [{
+        id: 104,
+        role: "assistant" as const,
+        text: "任务状态仍在对话中显示。",
+        assetId: 42,
+      }],
+    };
+
+    render(<ConversationStudio
+      basePath="/app/assets"
+      selectedConversation={conversation}
+      selectedProduct={unfinishedProduct}
+      onSelectProduct={vi.fn()}
+    />);
+
+    expect(screen.getByText("任务状态仍在对话中显示。")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /视频工程/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("对话产物")).not.toBeInTheDocument();
+  });
 });
