@@ -1362,6 +1362,7 @@ test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   await expect(thread.getByRole("textbox", { name: "输入对话内容" })).toHaveAttribute("placeholder", /视频未完成/);
   const detailsToggle = thread.getByRole("button", { name: "查看失败步骤" });
   await expect(detailsToggle).toBeVisible();
+  await expect(thread.getByText(/暂无可显示的费用记录/)).toHaveCount(0);
   const controlledId = await detailsToggle.getAttribute("aria-controls");
   expect(controlledId).toBeTruthy();
   const controlledDetails = page.locator(`[id="${controlledId}"]`);
@@ -1370,12 +1371,15 @@ test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   await detailsToggle.click();
   await expect(controlledDetails).toBeVisible();
   await expect(thread.getByRole("list", { name: "视频关键进展" })).toBeVisible();
+  await expect(thread.getByText(/暂无可显示的费用记录，不代表没有成本/)).toBeVisible();
   await thread.getByRole("button", { name: "收起失败步骤" }).click();
   await expect(controlledDetails).toBeHidden();
   await expect(retryAction).toBeVisible();
   const composer = thread.getByRole("textbox", { name: "输入对话内容" });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: width === 1280 ? 720 : 844 });
+    expect(await detailsToggle.evaluate((element) => window.getComputedStyle(element).fontSize))
+      .toBe("12px");
     const fits = await composer.evaluate((element) => {
       const textarea = element as HTMLTextAreaElement;
       const style = window.getComputedStyle(textarea);

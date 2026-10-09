@@ -10066,7 +10066,7 @@ label {
   background: transparent;
   color: var(--sp-subtle);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -10101,6 +10101,10 @@ label {
 
 .shadcn-prototype-video-task-progress .shadcn-prototype-agent-run-steps {
   border-top: 1px solid var(--sp-border);
+}
+
+.shadcn-prototype-video-task-progress-cost {
+  padding: 0 17px 12px;
 }
 
 .shadcn-prototype-video-task-progress .shadcn-prototype-agent-run-step {

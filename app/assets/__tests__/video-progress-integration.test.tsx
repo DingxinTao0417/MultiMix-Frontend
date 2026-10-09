@@ -84,7 +84,7 @@ describe("video progress integration", () => {
     expect(onRetryExecution).toHaveBeenCalledExactlyOnceWith("voice-child-job", "main-video-job");
   });
 
-  it("shows project video cost evidence alongside the real execution stage", () => {
+  it("keeps project video cost evidence in the real execution stage details", () => {
     const conversation = videoConversation({
       role: "assistant" as const, text: "", assetId: 42,
       runSteps: [{ key: "legacy", label: "旧步骤", status: "run" as const }],
@@ -105,6 +105,9 @@ describe("video progress integration", () => {
           scope: "main_project_narration",
         },
       } }} />);
+    expect(screen.getByText("正在制作视频")).toBeInTheDocument();
+    expect(screen.queryByText(/图生视频已记录 1 次调用.*¥0\.75/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
     expect(screen.getByText(/图生视频已记录 1 次调用.*¥0\.75/)).toBeInTheDocument();
     expect(screen.getByText(/主工程配音已记录 1 次调用.*12 个计费字符/)).toBeInTheDocument();
   });
