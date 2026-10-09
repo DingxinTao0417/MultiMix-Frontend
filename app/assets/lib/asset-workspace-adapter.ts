@@ -42,6 +42,7 @@ import {
   apiBlob,
   apiErrorStatus,
   apiForm,
+  notifyAuthExpired,
   cancelAssetGenerationJob,
   getAssetGenerationJob,
   getConversationAgentAction,
@@ -289,6 +290,7 @@ function uploadAssetWithProgress<T>(
           resolve(payload as T);
           return;
         }
+        if (request.status === 401) notifyAuthExpired();
         const retryableDatabaseFailure = request.status === 500
           && isRecord(payload)
           && payload.detail === "Database request failed.";
@@ -2166,7 +2168,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       formData.append("file", file);
       formData.append("target_kind", view === "assets" ? "asset" : view);
       if (onProgress) return uploadAssetWithProgress<ContentAsset>("/assets/upload", token, formData, onProgress, idempotencyKey);
-      return apiForm<ContentAsset>("/assets/upload", token, formData);
+      return apiForm<ContentAsset>("/assets/upload", token, formData, idempotencyKey);
     },
     async uploadAssets(token, files, view, onProgress) {
       const states: BatchUploadItemState[] = files.map((file, index) => ({

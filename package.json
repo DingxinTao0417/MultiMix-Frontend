@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "overrides": {
+    "@tailwindcss/typography": {
+      "postcss-selector-parser": "7.1.6"
+    },
     "nanoid": "3.3.18",
     "postcss": "8.5.26",
     "protobufjs": "7.6.5",

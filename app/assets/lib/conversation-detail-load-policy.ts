@@ -21,19 +21,22 @@ export function shouldLoadConversationDetail({
 }
 
 export function shouldRestoreInitialConversationFocus({
+  activeView,
   pendingConversationId,
   routeConversationId,
   initialConversationId,
   selectedConversationId,
   summaryIds,
 }: {
+  activeView: string;
   pendingConversationId: string | null;
   routeConversationId: string | null;
   initialConversationId: string | undefined;
   selectedConversationId: string;
   summaryIds: Iterable<string>;
 }): boolean {
-  return !pendingConversationId
+  return activeView === "conversation"
+    && !pendingConversationId
     && routeConversationId === initialConversationId
     && selectedConversationId !== "new"
     && Boolean(initialConversationId)

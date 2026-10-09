@@ -548,6 +548,33 @@ describe("LibraryWorkshop runtime write gate", () => {
 
 describe("AssetsWorkspaceClient runtime availability integration", () => {
   it.each([
+    { email: "person+admin@example.com", role: { is_admin: false, is_pilot: false }, visible: false },
+    { email: "owner@example.com", role: { is_admin: true, is_pilot: false }, visible: true },
+    { email: "pilot@example.com", role: { is_admin: false, is_pilot: true }, visible: true },
+  ])("uses backend roles, not $email, for the diagnostics entry", async ({ email, role, visible }) => {
+    const conversationId = "role-project";
+    window.history.replaceState(null, "", `/app/assets?conversation=${conversationId}`);
+    vi.spyOn(assetWorkspaceAdapter, "isBackendEnabled").mockReturnValue(true);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationSummaries").mockResolvedValue([{
+      id: conversationId, title: "角色测试项目", status: "active", metadata: {},
+      created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z",
+    }]);
+    vi.spyOn(assetWorkspaceAdapter, "loadConversationDetail").mockResolvedValue({
+      ...conversation(), id: conversationId, title: "角色测试项目",
+    });
+    const privileges = vi.spyOn(api, "getCurrentUserPrivileges").mockResolvedValue(role);
+
+    render(<AssetsWorkspaceClient basePath="/app/assets" accountEmail={email} token="role-token"
+      initialConversationId={conversationId} />);
+    await waitFor(() => expect(privileges).toHaveBeenCalledWith("role-token"));
+    if (visible) {
+      expect(await screen.findByRole("button", { name: "诊断" })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole("button", { name: "诊断" })).not.toBeInTheDocument();
+    }
+  });
+
+  it.each([
     { conversationId: "ordinary-upload-project", understandingStatus: "ready", shouldAdd: true },
     { conversationId: "ordinary-upload-project", understandingStatus: "failed", shouldAdd: false },
     { conversationId: "new", understandingStatus: "ready", shouldAdd: false },

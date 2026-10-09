@@ -1603,7 +1603,8 @@ describe("agent conversation UI copy", () => {
 
     expect(workspaceClient).not.toContain("<span>对话 /</span>");
     expect(workspaceClient).not.toContain('selectedConversation.title}</strong>');
-    expect(workspaceClient).toContain('accountEmail === "local@admin"');
+    expect(workspaceClient).toContain("getCurrentUserPrivileges(token)");
+    expect(workspaceClient).toContain("user.is_admin === true || user.is_pilot === true");
     expect(workspaceClient).toContain('activeView === "conversation" ? "shadcn-prototype-inset conversation-inset"');
     expect(workspaceClient).toContain("diagnosticsSlot={renderDiagnostics()}");
     expect(conversationStudio).toContain("shadcn-prototype-chat-head");

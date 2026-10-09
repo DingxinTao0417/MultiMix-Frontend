@@ -21,7 +21,7 @@ const UPLOAD_RETRY_DELAY_MS = 300;
 export const isApiConfigured = Boolean(CONFIGURED_API_BASE);
 
 // Dispatch when a 401 is received so the auth shell can clear the session.
-function notifyAuthExpired(): void {
+export function notifyAuthExpired(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(API_AUTH_EXPIRED_EVENT));
   }
@@ -136,10 +136,11 @@ export async function apiBlob(
       },
     });
     if (response.ok) return await response.blob();
+    if (response.status === 401) notifyAuthExpired();
     const body = await response
       .json()
       .catch(() => ({ detail: response.statusText }));
-    throw nonRetryableError(responseErrorMessage(body, response.statusText));
+    throw nonRetryableError(responseErrorMessage(body, response.statusText), response.status);
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
     if ((err as ApiError).retryable === false) throw err;
@@ -153,6 +154,7 @@ export async function apiForm<T>(
   path: string,
   token: string | null,
   formData: FormData,
+  idempotencyKey?: string,
 ): Promise<T> {
   try {
     let response: Response | undefined;
@@ -162,9 +164,10 @@ export async function apiForm<T>(
         body: formData,
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         },
       });
-      if (!TRANSIENT_UPLOAD_STATUSES.has(response.status) || attempt === 1)
+      if (!idempotencyKey || !TRANSIENT_UPLOAD_STATUSES.has(response.status) || attempt === 1)
         break;
       await new Promise((resolve) =>
         setTimeout(resolve, UPLOAD_RETRY_DELAY_MS),
@@ -175,16 +178,26 @@ export async function apiForm<T>(
       if (response.status === 204) return undefined as T;
       return (await response.json()) as T;
     }
+    if (response.status === 401) notifyAuthExpired();
     const body = await response
       .json()
       .catch(() => ({ detail: response.statusText }));
-    throw nonRetryableError(responseErrorMessage(body, response.statusText));
+    throw nonRetryableError(responseErrorMessage(body, response.statusText), response.status);
   } catch (error) {
     const err = error instanceof Error ? error : new Error("Request failed");
     if ((err as ApiError).retryable === false) throw err;
     if (isConnectionError(err)) throw new Error(API_CONNECTION_ERROR);
     throw err;
   }
+}
+
+export type CurrentUserPrivileges = {
+  is_admin: boolean;
+  is_pilot: boolean;
+};
+
+export async function getCurrentUserPrivileges(token: string): Promise<CurrentUserPrivileges> {
+  return api<CurrentUserPrivileges>("/auth/me", token, { cache: "no-store" });
 }
 
 // ---- Backend response types (mirror the MultiMix assets API) ----

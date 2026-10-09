@@ -30,6 +30,7 @@ import {
   apiErrorStatus,
   formatComposerError,
   getAssetLlmDiagnostics,
+  getCurrentUserPrivileges,
   getProjectResources,
   MESSAGE_NOT_SUBMITTED_ERROR,
   removeProjectSource,
@@ -984,6 +985,21 @@ export default function AssetsWorkspaceClient({
     data: null,
     error: null
   });
+  const [diagnosticsAccess, setDiagnosticsAccess] = useState<{ token: string; allowed: boolean } | null>(null);
+  useEffect(() => {
+    let active = true;
+    setDiagnostics({ open: false, loading: false, data: null, error: null });
+    if (backendConfigured && token) {
+      void getCurrentUserPrivileges(token)
+        .then((user) => {
+          if (active) setDiagnosticsAccess({ token, allowed: user.is_admin === true || user.is_pilot === true });
+        })
+        .catch(() => {
+          if (active) setDiagnosticsAccess({ token, allowed: false });
+        });
+    }
+    return () => { active = false; };
+  }, [backendConfigured, token]);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   // Conversations render straight from state: delete removes the row and rename
   // updates its title in place, both persisted to the backend, so there is no
@@ -1068,7 +1084,7 @@ export default function AssetsWorkspaceClient({
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const hasProductStage = activeView === "conversation" && selectedProduct !== null;
-  const canShowDiagnostics = process.env.NODE_ENV !== "production" || accountEmail === "local@admin" || accountEmail.endsWith("@multimix.local") || accountEmail.includes("+admin");
+  const canShowDiagnostics = Boolean(token && diagnosticsAccess?.token === token && diagnosticsAccess.allowed);
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
     setRequirementSnapshots((current) => ({ ...current, [conversationId]: snapshot }));
@@ -1404,6 +1420,7 @@ export default function AssetsWorkspaceClient({
           && productCanLeaveSilentlyRef.current?.() !== false
           && currentRoute.searchParams.get("product") === (initialProductId ?? null)
           && shouldRestoreInitialConversationFocus({
+          activeView,
           pendingConversationId: pendingConversationNavigationRef.current,
           routeConversationId: currentRouteConversationId,
           initialConversationId,
@@ -1435,7 +1452,7 @@ export default function AssetsWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [accountEmail, backendConfigured, initialConversationId, initialProductId, token, conversationLoadRevision]);
+  }, [accountEmail, activeView, backendConfigured, initialConversationId, initialProductId, token, conversationLoadRevision]);
 
   useEffect(() => {
     const selectedDetailLoaded = selectedPersistedConversation?.detailsLoaded === true;
@@ -3648,7 +3665,7 @@ export default function AssetsWorkspaceClient({
     setUploading(true);
     setUploadError(null);
     try {
-      await assetWorkspaceAdapter.uploadAsset(token, file, activeView);
+      await assetWorkspaceAdapter.uploadAsset(token, file, activeView, undefined, createUploadIdempotencyKey());
       setLibraryRefreshKey((value) => value + 1);
     } catch (error) {
       reportRuntimeWriteFailure(error);

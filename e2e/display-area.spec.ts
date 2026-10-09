@@ -128,6 +128,44 @@ test("narrow existing-project chat keeps header actions and send control inside 
   expect(consoleErrors).toEqual([]);
 });
 
+test("narrow pending video confirmation starts with its primary action unobscured", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!conversationId) throw new Error("Missing seeded CASE-01 project");
+
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 375, height: 667 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`/app/assets?conversation=${conversationId}`);
+    const button = page.getByRole("button", { name: "确认生成视频工程" });
+    await expect(button).toBeVisible();
+    await expect.poll(async () => button.evaluate((element) => {
+      const thread = element.closest(".shadcn-prototype-thread");
+      if (!thread) return false;
+      const buttonBox = element.getBoundingClientRect();
+      const threadBox = thread.getBoundingClientRect();
+      const hit = document.elementFromPoint(buttonBox.x + buttonBox.width / 2, buttonBox.y + buttonBox.height / 2);
+      return buttonBox.top >= threadBox.top
+        && buttonBox.bottom <= threadBox.bottom
+        && (hit === element || element.contains(hit));
+    })).toBe(true);
+  }
+});
+
+test("narrow new-project capability strip explains that more abilities can be viewed", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/app/assets");
+  const capabilities = page.getByRole("region", { name: "可组合的视频制作能力" });
+  await expect(capabilities.getByText("左右滑动查看更多")).toBeVisible();
+  const widths = await page.evaluate(() => ({
+    document: document.documentElement.scrollWidth,
+    viewport: window.innerWidth,
+  }));
+  expect(widths.document).toBeLessThanOrEqual(widths.viewport);
+});
+
 test("narrow project resources keep real saved-asset names readable", async ({ page }) => {
   const conversationId = seed.conversation_ids?.["case-02-saved-asset-match"];
   const assetId = seed.asset_ids?.["case-02-saved-asset-match"];
@@ -152,6 +190,11 @@ test("narrow project resources keep real saved-asset names readable", async ({ p
       expect(actionsBox?.y, `Resource actions should follow the name at ${width}px`).toBeGreaterThanOrEqual(
         (nameBox?.y ?? 0) + (nameBox?.height ?? 0),
       );
+    }
+    if (width <= 520) {
+      const action = drawer.getByRole("button", { name: "用于本轮" });
+      const actionBox = await action.boundingBox();
+      expect(actionBox?.height, `Resource action is too small at ${width}px`).toBeGreaterThanOrEqual(44);
     }
     await mkdir(desktopEvidenceDirectory, { recursive: true });
     await page.screenshot({
@@ -2389,6 +2432,8 @@ test("real archive API keeps the project source in read-only history", async ({ 
   ));
   await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
   expect((await deleted).status()).toBe(204);
+  await expect(page.getByLabel("图片库列表")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Content generation conversation" })).toBeHidden();
   await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
   await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
   await resourceEntry.click();

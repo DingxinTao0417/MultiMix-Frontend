@@ -1379,6 +1379,10 @@ button:disabled {
   font-size: var(--sp-text-meta);
 }
 
+.shadcn-prototype-start-capability-scroll-hint {
+  display: none;
+}
+
 .shadcn-prototype-start-capability-list {
   display: flex;
   max-width: 100%;
@@ -3723,6 +3727,21 @@ button:disabled {
 
   .shadcn-prototype-project-resource-actions {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 520px) {
+  .shadcn-prototype-project-resource-actions {
+    gap: 8px;
+  }
+
+  .shadcn-prototype-project-resource-actions > button,
+  .shadcn-prototype-project-resource-more summary {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    padding: 9px 8px;
+    font-size: 12px;
   }
 }
 
@@ -8880,6 +8899,10 @@ button:disabled {
   .shadcn-prototype-start-capabilities {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .shadcn-prototype-start-capability-scroll-hint {
+    display: inline;
   }
 
   .shadcn-prototype-start-goal-grid {
