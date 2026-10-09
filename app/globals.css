@@ -8886,6 +8886,22 @@ button:disabled {
   }
 }
 
+@media (max-width: 768px) {
+  .shadcn-prototype-library-page-header {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .shadcn-prototype-library-page-actions {
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .shadcn-prototype-library-search.compact {
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 620px) {
   .shadcn-prototype-start {
     place-items: start center;

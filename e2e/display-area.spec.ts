@@ -1881,6 +1881,37 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   expect(browserErrors).toEqual([]);
 });
 
+test("library page header keeps search and import actions inside narrow viewports", async ({ page }) => {
+  for (const view of ["assets", "copy", "image", "video"]) {
+    await page.goto(`/app/assets?view=${view}`);
+    const header = page.locator(".shadcn-prototype-library-page-header");
+    await expect(header.getByRole("textbox")).toBeVisible();
+    for (const width of [320, 375, 390, 430, 768, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      const geometry = await header.evaluate((element) => {
+        const shell = element.getBoundingClientRect();
+        return {
+          left: shell.left, right: shell.right,
+          overflow: element.scrollWidth - element.clientWidth,
+          controls: Array.from(element.querySelectorAll("input, .shadcn-prototype-library-search, button"), (control) => {
+            const box = control.getBoundingClientRect();
+            return { name: control.getAttribute("aria-label") ?? control.textContent, left: box.left, right: box.right, width: box.width };
+          }).filter((control) => control.width > 0),
+        };
+      });
+      expect(geometry.overflow, `${view} header overflow at ${width}px`).toBeLessThanOrEqual(1);
+      for (const control of geometry.controls) {
+        expect(control.left, `${view} ${control.name} at ${width}px`).toBeGreaterThanOrEqual(geometry.left);
+        expect(control.right, `${view} ${control.name} at ${width}px`).toBeLessThanOrEqual(geometry.right + 1);
+      }
+      if (view === "video" && width === 390) {
+        await mkdir(desktopEvidenceDirectory, { recursive: true });
+        await page.screenshot({ path: resolve(desktopEvidenceDirectory, "video-library-page-header-390.png"), animations: "disabled" });
+      }
+    }
+  }
+});
+
 // Browse-only checks precede editor tests that change the shared CASE-07 project and invalidate its export.
 test("video library detail retains its media and actions across narrow viewports", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 844 });
