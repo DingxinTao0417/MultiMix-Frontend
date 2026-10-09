@@ -1380,8 +1380,8 @@ describe("agent conversation UI copy", () => {
     const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
 
     expect(productWorkspace).not.toContain("先在左侧说说想做什么，或加入资料。");
-    expect(workspaceClient).toContain('const hasProductStage = activeView === "conversation" && selectedProduct !== null;');
-    expect(workspaceClient).toContain("{selectedProduct ? (");
+    expect(workspaceClient).toContain('const hasProductStage = activeView === "conversation" && displayProduct !== null;');
+    expect(workspaceClient).toContain("{displayProduct ? (");
     expect(productWorkspace).not.toContain("明确要文案、图片或视频后");
     expect(workspaceClient).not.toContain("短视频脚本");
     expect(workspaceClient).not.toContain("图片提示词");
@@ -1748,7 +1748,7 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("conversationDetailErrorId");
     expect(workspaceClient).toContain("conversationDetailRetryRevision");
     expect(workspaceClient).toContain("detailLoadError={conversationDetailErrorId === selectedConversation.id}");
-    expect(workspaceClient).toContain("onRetryDetail={() => setConversationDetailRetryRevision");
+    expect(workspaceClient).toMatch(/onRetryDetail=\{\(\) => \{\s*setConversationDetailRetryRevision\(\(value\) => value \+ 1\);\s*setProjectResourceSummaryRevision\(\(value\) => value \+ 1\);/);
     expect(workspaceClient).not.toContain("useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations())");
     expect(workspaceClient).toContain("正在加载你的项目");
     expect(workspaceClient).toContain("还没有项目");

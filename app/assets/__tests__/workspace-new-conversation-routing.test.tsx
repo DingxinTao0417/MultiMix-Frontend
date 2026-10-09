@@ -66,9 +66,10 @@ describe("new conversation routing", () => {
   it("keeps a restored snapshot pending so the conversation loading skeleton can render", () => {
     const client = readWorkspaceClient();
 
-    expect(client).toContain(
-      "const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();",
-    );
+    expect(client).toContain("const selectedConversation = selectedPersistedConversation?.detailsLoaded === false");
+    expect(client).toContain("projectResources: undefined,");
+    expect(client).toContain("projectResourceSummary: projectResourceSummaries[selectedPersistedConversation.id],");
+    expect(client).toContain(": selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();");
     expect(client).not.toContain("detailsLoaded: true,");
     expect(client).not.toContain("正在恢复完整对话记录。");
   });
@@ -77,8 +78,9 @@ describe("new conversation routing", () => {
     const client = readWorkspaceClient();
 
     expect(client).toContain(
-      "const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot",
+      "const { selectedProduct, displayProduct } = !selectedConversationHasDetail && !isConversationSnapshot",
     );
+    expect(client).toContain("resolveConversationStageProducts(selectedConversation, selectedProductIds[selectedConversation.id])");
   });
 
   it("loads a deep-linked historical conversation even when it is outside the recent summary page", () => {

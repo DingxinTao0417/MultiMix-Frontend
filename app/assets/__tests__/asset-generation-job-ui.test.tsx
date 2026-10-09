@@ -135,11 +135,13 @@ describe("AssetGenerationJobCard", () => {
     render(<AssetGenerationJobCard job={job({
       progress_kind: "video_plan", status: "failed", error_message: "视频方案生成失败，可以重试。",
     })} onRetry={onRetry} />);
-    expect(screen.getByRole("list")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "收起失败步骤" }));
+    expect(screen.queryByRole("list")).toBeNull();
     expect(screen.getByText("视频方案生成失败，可以重试。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(onRetry).toHaveBeenCalledWith("asset-generation-job-1");
+    fireEvent.click(screen.getByRole("button", { name: "查看失败步骤" }));
+    expect(screen.getByRole("list")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "收起失败步骤" }));
     expect(screen.queryByRole("list")).toBeNull();
   });
 
