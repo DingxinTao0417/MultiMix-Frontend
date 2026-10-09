@@ -1711,6 +1711,7 @@ test("library cross-type details and interaction states stay consistent", async 
     ...baseVideoAsset,
     ...(index === 0 ? {
       content_type: "video_project",
+      product_status: "completed",
       body: "第一步：说出你的营销想法，系统整理目标和受众。\n\n第二步：AI 生成可确认的编导方案并匹配画面。\n\n第三步：继续通过对话调整分镜、节奏和字幕。",
       metadata: { ...baseVideoAsset.metadata, artifact_category: "视频工程" },
       versions: [

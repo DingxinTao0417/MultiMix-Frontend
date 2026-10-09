@@ -1327,6 +1327,11 @@ function browserReadableAssetRef(value: unknown): string | undefined {
   return mediaProxyUrl(ref);
 }
 
+function isPublicVideoAsset(asset: ContentAsset): boolean {
+  return asset.asset_kind === "video" && (asset.content_type === "public_video"
+    || asset.metadata?.workflow === "public_material_import");
+}
+
 function previewUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   if (metadata.media_availability === "missing") return undefined;
@@ -1335,6 +1340,10 @@ function previewUrlForAsset(asset: ContentAsset): string | undefined {
     : null;
   const mp4Ref = typeof videoProject?.mp4_ref === "string" ? videoProject.mp4_ref.trim() : "";
   if (mp4Ref) return mediaProxyUrl(mp4Ref);
+  if (isPublicVideoAsset(asset)) {
+    return [asset.original_ref, metadata.download_url].map(browserReadableAssetRef)
+      .find((item): item is string => Boolean(item));
+  }
   const candidates = [
     metadata.preview_url,
     metadata.thumbnail_url,
@@ -1350,11 +1359,20 @@ function previewUrlForAsset(asset: ContentAsset): string | undefined {
 function thumbnailUrlForAsset(asset: ContentAsset): string | undefined {
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   if (metadata.media_availability === "missing") return undefined;
-  const thumbnailRef = typeof metadata.thumbnail_ref === "string" ? metadata.thumbnail_ref.trim() : "";
-  if (thumbnailRef) return mediaProxyUrl(thumbnailRef);
-  return [metadata.thumbnail_url, metadata.poster_url]
+  const project = metadata.video_project && typeof metadata.video_project === "object" && !Array.isArray(metadata.video_project)
+    ? metadata.video_project as Record<string, unknown> : null;
+  return [metadata.thumbnail_ref, metadata.poster_ref, metadata.thumbnail_url, metadata.poster_url,
+    project?.thumbnail_ref, project?.poster_ref, project?.thumbnail_url, project?.poster_url,
+    isPublicVideoAsset(asset) ? metadata.preview_url : undefined]
     .map(browserReadableAssetRef)
     .find((item): item is string => Boolean(item));
+}
+
+function isLibraryRowEligible(row: LibraryRow, view: Exclude<AssetWorkspaceView, "conversation">): boolean {
+  if (view !== "video") return true;
+  if (row.kind !== "video") return false;
+  if (row.productStatus === "failed" || row.productStatus === "generating") return false;
+  return row.contentTypeCode !== "video_project" || row.productStatus === "completed";
 }
 
 function statusLabel(status: string): string {
@@ -2133,26 +2151,29 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         const keywordRows = keywordResult.status === "fulfilled" ? keywordResult.value : [];
         const semanticRows = semanticResult.status === "fulfilled" ? semanticResult.value : [];
         const mergedRows = mergeSearchResults(keywordRows, semanticRows)
-          .filter((row) => row.assetId == null || kinds.includes(row.kind === "file" ? "asset" : row.kind));
+          .filter((row) => (row.assetId == null || kinds.includes(row.kind === "file" ? "asset" : row.kind))
+            && isLibraryRowEligible(row, view));
         if (mergedRows.length || keywordResult.status === "fulfilled" || semanticResult.status === "fulfilled") {
           return { rows: mergedRows, nextOffset: null };
         }
       }
-      const params = new URLSearchParams({
-        library_kind: libraryKindParam(view),
-        limit: String(limit + 1),
-        offset: String(offset),
-      });
-      const assets = await api<ContentAsset[]>(`/assets?${params.toString()}`, token, { signal: options.signal });
-      const hasMore = assets.length > limit;
-      const rows = assets
-        .slice(0, limit)
-        .map((asset) => contentAssetToLibraryRow(asset))
-        .sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
-      return {
-        rows,
-        nextOffset: hasMore ? offset + limit : null,
-      };
+      let pageOffset = offset;
+      for (;;) {
+        const params = new URLSearchParams({
+          library_kind: libraryKindParam(view),
+          limit: String(limit + 1),
+          offset: String(pageOffset),
+        });
+        const assets = await api<ContentAsset[]>(`/assets?${params.toString()}`, token, { signal: options.signal });
+        const hasMore = assets.length > limit;
+        const rows = assets.slice(0, limit)
+          .map((asset) => contentAssetToLibraryRow(asset))
+          .filter((row) => isLibraryRowEligible(row, view))
+          .sort((a, b) => (b.updatedAtIso ?? "").localeCompare(a.updatedAtIso ?? ""));
+        // Keep the server offset: excluded records still occupy positions in its result set.
+        if (rows.length || !hasMore) return { rows, nextOffset: hasMore ? pageOffset + limit : null };
+        pageOffset += limit;
+      }
     },
     async getLibraryAsset(token, assetId, options = {}) {
       const detail = await api<{ asset: ContentAsset }>(`/assets/detail/${assetId}`, token, {

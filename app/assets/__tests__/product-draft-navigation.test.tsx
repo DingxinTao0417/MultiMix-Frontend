@@ -70,6 +70,7 @@ describe("workspace draft navigation", () => {
     const confirmation = await screen.findByRole("dialog");
     fireEvent.click(within(confirmation).getByRole("button", { name: "取消" }));
     const restored = await screen.findByRole("dialog", { name: "工作台导航" });
+    await waitFor(() => expect(within(restored).getByRole("button", { name: "隐藏侧边栏" })).toHaveFocus());
     fireEvent.keyDown(restored, { key: "Escape" });
     await waitFor(() => expect(opener).toHaveFocus());
     expect(screen.getByRole("textbox", { name: "编辑文案稿" })).toHaveValue("重要的未保存草稿");

@@ -1409,6 +1409,7 @@ describe("runtime data boundary", () => {
         library_kind: "video",
         asset_kind: index % 2 === 0 ? "video" : "video",
         content_type: index % 2 === 0 ? "uploaded_video" : "video_project",
+        product_status: index % 2 === 0 ? undefined : "completed",
         title: `视频条目 ${index + 1}`,
         updated_at: new Date(
           Date.UTC(2026, 6, 24, 2, 0, 49 - index),
@@ -1597,20 +1598,20 @@ describe("runtime data boundary", () => {
       failure_reason: "第 1 镜素材不可用，请调整素材后再继续。",
     });
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify([video]), {
+      new Response(JSON.stringify({ asset: video }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const page = await assetWorkspaceAdapter.listLibrary(
+    const row = await assetWorkspaceAdapter.getLibraryAsset(
       "token-failed-video",
-      "video",
+      73,
     );
     vi.unstubAllGlobals();
 
-    expect(page.rows[0]).toMatchObject({
+    expect(row).toMatchObject({
       productStatus: "failed",
       failureReason: "第 1 镜素材不可用，请调整素材后再继续。",
     });

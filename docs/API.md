@@ -485,7 +485,8 @@ deleteAsset(token: string, assetId: number): Promise<void>
 - `GET /v1/assets/{asset_id}/download`：优先返回 `AssetFile.original` 原文件；不存在原文件时返回 Markdown 导出。响应使用 `Content-Disposition: attachment`。
 - `DELETE /v1/assets/{asset_id}`：软删除/归档资产，返回 `204`。归档后资产不应出现在 `/v1/assets`、`/v1/assets/search` 和 `/v1/assets/semantic-search` 的默认结果里。
 - 删除不是物理删除文件；这是为了保留历史对话、来源引用和已有产物链路的可追溯性。
-- 前端删除成功后关闭详情抽屉并刷新当前库；真实后端返回空列表时保持空态，不回退到 mock 行。
+- 前端删除成功后关闭详情弹窗、刷新当前库，保持原资源库视图并显示“已删除”反馈。项目资料/摘要刷新不得自动恢复项目对话焦点或抹掉成功提示；真实后端返回空列表时保持空态，不回退到 mock 行。
+- 归档已成功而后续项目资料同步失败时，显示“已删除，但项目资料暂未同步；请重新加载项目。”，保留归档成功事实，不按删除失败处理。
 
 ### 6.3 `ConversationStudio`（`conversation-studio.tsx`，默认导出）
 
