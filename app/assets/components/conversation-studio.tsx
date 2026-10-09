@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
@@ -568,6 +568,9 @@ export default function ConversationStudio({
   const [confirmingStoryboardKey, setConfirmingStoryboardKey] = useState<string | null>(null);
   const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const threadRef = useRef<HTMLDivElement | null>(null);
+  const followThreadBottomRef = useRef(true);
+  const threadScopeRef = useRef({ conversationId: "", detailsLoaded: false });
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
@@ -605,6 +608,18 @@ export default function ConversationStudio({
     () => mergeVisibleConversationMessages(conversationMessages, optimisticExchange),
     [conversationMessages, optimisticExchange]
   );
+  useLayoutEffect(() => {
+    const thread = threadRef.current;
+    const detailsLoaded = selectedConversation.detailsLoaded !== false;
+    const previousScope = threadScopeRef.current;
+    if (previousScope.conversationId !== selectedConversation.id || (detailsLoaded && !previousScope.detailsLoaded)) {
+      followThreadBottomRef.current = true;
+    }
+    threadScopeRef.current = { conversationId: selectedConversation.id, detailsLoaded };
+    if (thread && detailsLoaded && followThreadBottomRef.current) {
+      thread.scrollTop = Math.max(0, thread.scrollHeight - thread.clientHeight);
+    }
+  }, [selectedConversation.id, selectedConversation.detailsLoaded, visibleConversationMessages]);
   const hasPersistedRequirementSnapshotTurn = useMemo(() => {
     if (!requirementSnapshot) return false;
     return visibleConversationMessages.some((message) => {
@@ -1274,7 +1289,14 @@ export default function ConversationStudio({
           />
         ) : null}
       </div>
-      <div className="shadcn-prototype-thread">
+      <div
+        className="shadcn-prototype-thread"
+        ref={threadRef}
+        onScroll={(event) => {
+          const thread = event.currentTarget;
+          followThreadBottomRef.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 64;
+        }}
+      >
         {selectedConversation.detailsLoaded === false ? (
           detailLoadError ? (
             <div className="shadcn-prototype-message-group" role="alert">

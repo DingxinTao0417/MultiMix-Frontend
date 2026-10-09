@@ -110,7 +110,8 @@ describe("workspace draft navigation", () => {
       const input = container.querySelector('header input[type="file"]')!;
       const file = new File(["source"], "source.txt", { type: "text/plain" });
       fireEvent.change(input, { target: { files: [file] } });
-      expect(upload).toHaveBeenCalledWith("token", file, "assets");
+      expect(upload).toHaveBeenCalledWith("token", file, "assets", undefined, expect.any(String));
+      expect(upload.mock.calls[0]?.[4]).toMatch(/^[\w-]{16,}$/);
       if (destination === "project") {
         fireEvent.click(screen.getByRole("link", { name: "草稿项目" }));
         const workspace = await screen.findByRole("region", { name: "Current product workspace" });

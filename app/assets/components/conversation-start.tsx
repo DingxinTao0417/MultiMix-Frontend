@@ -429,7 +429,9 @@ export default function ConversationStart({
           {errorNotice.message ? <span key={errorNotice.revision}>{errorNotice.message}</span> : null}
         </p>
         <section className="shadcn-prototype-start-capabilities" aria-label="可组合的视频制作能力">
-          <span className="shadcn-prototype-start-capability-label">可组合能力</span>
+          <span className="shadcn-prototype-start-capability-label">
+            可组合能力<span className="shadcn-prototype-start-capability-scroll-hint"> · 左右滑动查看更多</span>
+          </span>
           <span className="shadcn-prototype-start-capability-list">
             {START_CAPABILITIES.map((capability) => (
               <span className="shadcn-prototype-start-capability" key={capability}>

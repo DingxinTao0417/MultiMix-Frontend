@@ -18,6 +18,7 @@ import type {
   AssetConversationSummaryResponse,
   ContentAsset,
 } from "../../../lib/api";
+import { API_AUTH_EXPIRED_EVENT } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 import { displayProducts } from "./fixtures/display-products";
 import { contentAssetToProduct } from "../../../lib/asset-mappers";
@@ -1765,6 +1766,57 @@ describe("runtime data boundary", () => {
       "upload-key-42",
     );
     vi.unstubAllGlobals();
+  });
+
+  it("forwards a stable idempotency key for a single library upload", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(asset({ id: 41 })), { status: 201 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(assetWorkspaceAdapter.uploadAsset(
+        "token",
+        new File(["image"], "cover.png", { type: "image/png" }),
+        "image",
+        undefined,
+        "library-upload-key",
+      )).resolves.toMatchObject({ id: 41 });
+      expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+        "Idempotency-Key": "library-upload-key",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("notifies the auth shell when a progress upload receives 401", async () => {
+    class FakeUploadRequest {
+      upload = { onprogress: null };
+      onload: (() => void) | null = null;
+      status = 401;
+      statusText = "Unauthorized";
+      responseText = JSON.stringify({ detail: "登录已过期" });
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => this.onload?.());
+    }
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal("window", { dispatchEvent });
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+
+    try {
+      await expect(assetWorkspaceAdapter.uploadAsset(
+        "expired-token",
+        new File(["image"], "cover.png", { type: "image/png" }),
+        "image",
+        vi.fn(),
+        "upload-key",
+      )).rejects.toThrow("登录已过期");
+      expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: API_AUTH_EXPIRED_EVENT }));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("reports an indeterminate progress state when the browser cannot compute total bytes", async () => {

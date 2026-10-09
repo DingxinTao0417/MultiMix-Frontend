@@ -1,13 +1,18 @@
+// @vitest-environment jsdom
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   api,
+  apiBlob,
+  API_AUTH_EXPIRED_EVENT,
   API_CONNECTION_ERROR,
   apiForm,
   formatComposerError,
   addProjectSource,
   getContentAssetVersionPreview,
   getAssetGenerationJob,
+  getCurrentUserPrivileges,
   getConversationAgentAction,
   getProjectResources,
   removeProjectSource,
@@ -34,6 +39,21 @@ describe("api", () => {
       method: "POST",
       body: JSON.stringify({ instruction: "确认" }),
     })).rejects.toThrow(API_CONNECTION_ERROR);
+  });
+
+  it.each(["json", "blob", "form"])("notifies the auth shell on a %s request 401", async (kind) => {
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "登录已过期" }), { status: 401 }),
+    ));
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    const request = kind === "blob"
+      ? apiBlob("/assets/1/download", "expired-token")
+      : kind === "form"
+        ? apiForm("/assets/upload", "expired-token", new FormData(), "upload-key")
+        : api("/assets/1", "expired-token");
+
+    await expect(request).rejects.toMatchObject({ status: 401 });
+    expect(dispatch.mock.calls.filter(([event]) => event.type === API_AUTH_EXPIRED_EVENT)).toHaveLength(1);
   });
 
   it("keeps presenter delivery conflicts as a user-visible validation error", async () => {
@@ -91,6 +111,19 @@ describe("api", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("/agent-actions/action-1"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  it("reads diagnostics eligibility from the backend user role", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ is_admin: false, is_pilot: true })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getCurrentUserPrivileges("token")).resolves.toEqual({ is_admin: false, is_pilot: true });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/auth/me"),
       expect.objectContaining({ cache: "no-store" }),
     );
   });
@@ -162,11 +195,24 @@ describe("apiForm", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const resultPromise = apiForm<{ id: number; status: string }>("/assets/upload", "token", new FormData());
+    const resultPromise = apiForm<{ id: number; status: string }>("/assets/upload", "token", new FormData(), "stable-upload-key");
     await vi.advanceTimersByTimeAsync(500);
 
     await expect(resultPromise).resolves.toEqual({ id: 42, status: "ready" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const [, request] of fetchMock.mock.calls) {
+      expect((request?.headers as Record<string, string>)?.["Idempotency-Key"]).toBe("stable-upload-key");
+    }
+  });
+
+  it("does not retry a transient response when no idempotency key was supplied", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Gateway failure" }), { status: 503 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(apiForm("/assets/upload", "token", new FormData())).rejects.toMatchObject({ status: 503 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not retry validation failures", async () => {
