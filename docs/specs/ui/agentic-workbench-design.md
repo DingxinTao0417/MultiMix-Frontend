@@ -1,8 +1,8 @@
 # MultiMix UI 重设计 · 智能体工作台（V3 Agentic Workbench）设计规范
 
-> Status: current-spec
+> Status: current
 > Owner: frontend
-> Last verified: 2026-09-29
+> Last verified: 2026-10-09
 
 - 日期：2026-07-08（定稿）
 - 状态：设计定稿 —— 方向、七屏原型、三项用户决策、功能保全清单、降级规则均已确认；历史实施计划见 `docs/archive/plans/2026-07-08-multimix-ui-redesign-implementation.md`
@@ -10,6 +10,7 @@
 - 视觉 demo：`docs/specs/ui/prototypes/explorations/2026-07-08-round3-workbench-options/screens/v3-agentic.html`（主屏基准稿）；对比页 `docs/specs/ui/prototypes/explorations/2026-07-08-round3-workbench-options/index.html`
 - 终稿可点击原型（七屏，交互基准）：`docs/specs/ui/prototypes/current/index.html` —— ①起始页 ②文案工作台（多产物切换/图片产物/失败态/托盘）③视频工作台（胶片条/素材选择器/三态演示）④四库一体（资产/文案/图片/视频，模态详情/试听/空态）⑤剪辑器换肤参考 ⑥登录 ⑦素材源管理，单文件在 `docs/specs/ui/prototypes/current/screens/`
 - 视频确认后“已确认方案卡 + 独立执行卡”的状态、消息折叠、真实步骤、失败恢复与完成后自动收起，以 `docs/specs/ui/video-confirmation-execution-card.md` 为准
+- 当前资源库导航、手机页头/搜索、详情滚动与归档反馈，以[工作台设计第4节](../../MULTIMIX_WORKSPACE_DESIGN.md#4-导航和资源库)为准；本规范的范围说明已同步已落地的资源库响应式，不再将起始页之外的所有界面限制为1280px以上桌面。
 - 配套参考：C 系三屏（`docs/specs/ui/prototypes/explorations/2026-07-08-round1-visual-style/screens/c-ai-canvas/` 的 workspace / library / start）是同一视觉语言的图片库与起始页底稿，落地时按本规范的 V3 元素升级
 
 ## 1. 背景与目标
@@ -226,7 +227,9 @@
 
 ## 13. 范围外（本期明确不做）
 
-暗色模式（token 已预留结构）、除 5.6 起始页之外的移动端/响应式（其余工作台仍锁 1280+ 桌面）、库批量操作、多轨时间轴进展示区、自研剪辑引擎。
+暗色模式（token 已预留结构）、起始页和资源库之外的完整创作/剪辑流程移动端适配、库批量操作、多轨时间轴进展示区、自研剪辑引擎。
+
+起始页及资源库的窄屏/响应式规则属于当前支持范围。资源库页头搜索、导入/上传操作按可用宽度换行，详情内容独立滚动并保留底部操作；具体规则统一引用[当前工作台设计](../../MULTIMIX_WORKSPACE_DESIGN.md#4-导航和资源库)。现有[设备验收记录](../../../../MultiMix-Backend/docs/qa/segment-recompose-and-device-validation.md)覆盖四库320–1280px相关浏览器回归及iPhone 15 / Chrome的实际反馈；其他实体设备仍未覆盖，不能据此宣称所有平台或完整创作/剪辑手机流程均已验收。
 
 ## 附录：三轮探索归档
 
