@@ -12,6 +12,7 @@ import {
   type RuntimeWriteConnectionState,
 } from "../lib/runtime-write-capabilities";
 import useDialogFocusManagement from "../lib/use-dialog-focus-management";
+import { readVideoThumbnail } from "../lib/video-thumbnail";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import { apiErrorStatus } from "../../../lib/api";
 import {
@@ -279,12 +280,43 @@ function LibraryMediaThumbnail({
 }) {
   const url = mediaKind === "image" ? row.previewUrl : row.thumbnailUrl;
   const [failed, setFailed] = useState(false);
-  const unavailable = row.mediaAvailability === "missing" || failed || !url;
+  const [frame, setFrame] = useState<string>();
+  const [frameFailed, setFrameFailed] = useState(false);
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  const canReadFrame = mediaKind === "video" && (!url || failed) && Boolean(row.previewUrl)
+    && row.mediaAvailability !== "missing" && !frameFailed;
+  useEffect(() => {
+    if (!canReadFrame || !row.previewUrl) return;
+    const controller = new AbortController();
+    let observer: IntersectionObserver | undefined;
+    let started = false;
+    const read = () => {
+      if (started) return;
+      started = true;
+      observer?.disconnect();
+      void readVideoThumbnail(row.previewUrl!, controller.signal).then((result) => {
+        if (!controller.signal.aborted) setFrame(result);
+      }).catch(() => {
+        if (!controller.signal.aborted) setFrameFailed(true);
+      });
+    };
+    if (typeof IntersectionObserver === "undefined") read();
+    else {
+      observer = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) read();
+      });
+      if (thumbRef.current) observer.observe(thumbRef.current);
+    }
+    return () => { observer?.disconnect(); controller.abort(); };
+  }, [canReadFrame, row.previewUrl]);
+  const visibleUrl = !failed && url ? url : !frameFailed ? frame : undefined;
+  const unavailable = row.mediaAvailability === "missing" || !visibleUrl;
   const placeholderRow = unavailable && row.mediaAvailability !== "available"
     ? { ...row, format: "原文件不可用" }
-    : row;
+    : mediaKind === "video" ? { ...row, format: canReadFrame && !frame ? "正在读取封面" : "封面暂不可用" } : row;
   return (
     <span
+      ref={thumbRef}
       className={unavailable
         ? `shadcn-prototype-library-media-thumb empty ${mediaKind}${viewClass}`
         : `shadcn-prototype-library-media-thumb ${mediaKind}${viewClass}`}
@@ -292,7 +324,9 @@ function LibraryMediaThumbnail({
     >
       {unavailable ? renderLibraryMediaPlaceholder(placeholderRow, mediaKind) : (
         // eslint-disable-next-line @next/next/no-img-element -- dynamic blob:/remote thumbnail URLs are unsupported by next/image
-        <img src={url} alt="" loading="lazy" onError={() => setFailed(true)} />
+        <img src={visibleUrl} alt="" loading="lazy" onError={() => {
+          if (visibleUrl === frame) setFrameFailed(true); else setFailed(true);
+        }} />
       )}
     </span>
   );
@@ -302,9 +336,9 @@ function renderLibraryRowMedia(row: LibraryRow, view: Exclude<ActiveView, "conve
   const viewClass = view === "image" || view === "video" ? " grid" : "";
   const mediaKind = libraryRowMediaKind(row);
   return row.kind === "copy" ? null : mediaKind === "image" ? (
-    <LibraryMediaThumbnail row={row} mediaKind="image" viewClass={viewClass} />
+    <LibraryMediaThumbnail key={`${row.previewUrl}:${row.mediaAvailability}`} row={row} mediaKind="image" viewClass={viewClass} />
   ) : mediaKind === "video" ? (
-    <LibraryMediaThumbnail row={row} mediaKind="video" viewClass={viewClass} />
+    <LibraryMediaThumbnail key={`${row.thumbnailUrl}:${row.previewUrl}:${row.mediaAvailability}`} row={row} mediaKind="video" viewClass={viewClass} />
   ) : null;
 }
 
