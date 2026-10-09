@@ -66,9 +66,14 @@ describe("new conversation routing", () => {
   it("keeps a restored snapshot pending so the conversation loading skeleton can render", () => {
     const client = readWorkspaceClient();
 
-    expect(client).toContain(
-      "const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();",
+    expect(client).toMatch(
+      /const selectedConversation\s*=\s*selectedPersistedConversation\?\.detailsLoaded\s*===\s*false[\s\S]*?:\s*selectedPersistedConversation\s*\?\?\s*assetWorkspaceAdapter\.getNewConversation\(\)/,
     );
+    expect(shouldLoadConversationDetail({
+      hasToken: true,
+      conversationId: "restored-snapshot",
+      detailsLoaded: false,
+    })).toBe(true);
     expect(client).not.toContain("detailsLoaded: true,");
     expect(client).not.toContain("正在恢复完整对话记录。");
   });

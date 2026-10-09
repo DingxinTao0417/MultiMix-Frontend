@@ -1748,7 +1748,9 @@ describe("agent conversation UI copy", () => {
     expect(workspaceClient).toContain("conversationDetailErrorId");
     expect(workspaceClient).toContain("conversationDetailRetryRevision");
     expect(workspaceClient).toContain("detailLoadError={conversationDetailErrorId === selectedConversation.id}");
-    expect(workspaceClient).toContain("onRetryDetail={() => setConversationDetailRetryRevision");
+    const detailRetry = workspaceClient.match(/onRetryDetail=\{\(\)\s*=>\s*\{([\s\S]*?)\}\}/)?.[1];
+    expect(detailRetry).toMatch(/setConversationDetailRetryRevision\(\(value\)\s*=>\s*value\s*\+\s*1\)/);
+    expect(detailRetry).toMatch(/setProjectResourceSummaryRevision\(\(value\)\s*=>\s*value\s*\+\s*1\)/);
     expect(workspaceClient).not.toContain("useState<Conversation[]>(() => assetWorkspaceAdapter.listConversations())");
     expect(workspaceClient).toContain("正在加载你的项目");
     expect(workspaceClient).toContain("还没有项目");
