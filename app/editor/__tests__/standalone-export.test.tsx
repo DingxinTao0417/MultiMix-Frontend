@@ -450,7 +450,7 @@ describe("standalone branded export recovery", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("ref=old.mp4"), expect.anything()));
     mocks.serialize.mockReturnValue({ tracks: [{ id: "edited-during-download", elements: [] }] });
     act(() => { mocks.listeners.forEach((listener) => listener()); });
-    await act(async () => { finish(new Response(new Blob(["old-video"]))); await pending; });
+    await act(async () => { finish(new Response("old-video")); await pending; });
     await waitFor(() => expect(screen.getByRole("button", { name: "导出视频" })).toBeEnabled());
     chooseExport(label);
     await screen.findByText(/当前编辑内容需要检查/);

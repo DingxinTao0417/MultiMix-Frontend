@@ -20,6 +20,14 @@ describe("library detail visual hierarchy", () => {
     expect(css).toMatch(/\.shadcn-prototype-library-content\s*\{[^}]*min-height:\s*max-content;/s);
   });
 
+  it("constrains the dialog and body columns so narrow screens retain every control", () => {
+    for (const selector of ["library-detail-dialog", "library-detail-body"]) {
+      expect(css).toMatch(new RegExp(`\\.shadcn-prototype-${selector}\\s*\\{[^}]*grid-template-columns:\\s*minmax\\(0, 1fr\\);`, "s"));
+    }
+    expect(css).toMatch(/\.shadcn-prototype-library-detail-body\s*\{[^}]*min-width:\s*0;/s);
+    expect(css).toMatch(/\.shadcn-prototype-library-actions\s*\{[^}]*flex-wrap:\s*wrap;/s);
+  });
+
   it("keeps one primary action and moves management actions into an overflow menu", () => {
     expect(source.match(/shadcn-prototype-library-detail-primary/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
     expect(source).toContain("shadcn-prototype-library-detail-overflow");
