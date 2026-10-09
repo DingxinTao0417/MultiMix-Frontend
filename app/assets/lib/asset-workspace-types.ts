@@ -237,6 +237,39 @@ export type AssetVideoSceneReplacement = {
   sceneId: string;
 };
 
+export type AssetSubtitleControls = {
+  available: true;
+  enabled: boolean;
+  revision: number;
+  mode: "source" | "translated" | "bilingual";
+  source_language: string | null;
+  target_language: string | null;
+  original_audio_ref: string | null;
+  can_enable: boolean;
+  enable_requires_generation?: boolean;
+  can_undo: boolean;
+  cues: Array<{
+    cue_id: string;
+    text: string;
+    source_text: string;
+    start_seconds: number;
+    end_seconds: number;
+    user_edited: boolean;
+  }>;
+  revisions: Array<{ revision: number; active: boolean }>;
+} | { available: false; reason: string };
+
+export type AssetSubtitleOperation = {
+  assetId: number;
+  expectedContentHash: string;
+  expectedSubtitleRevision: number;
+} & (
+  | { action: "correct_subtitle"; cueId: string; text: string }
+  | { action: "set_subtitle_visibility"; subtitlesEnabled: boolean }
+  | { action: "undo_subtitle_edit" }
+  | { action: "restore_subtitle_revision"; subtitleRevision: number }
+);
+
 // Structured confirmation plan attached to an assistant message. Rendered as
 // the ConfirmCard two-state card (spec §5.2). Absent → fall back to plain
 // message + suggestion chips (spec §12 降级规则). Only fields actually present
@@ -260,6 +293,7 @@ export type AssetVideoParameterConfirmation = {
   ratio: string;
   targetSeconds: number;
   aiVoiceEnabled?: boolean;
+  subtitlesEnabled?: boolean;
   productionChoiceId?: string;
 };
 
@@ -267,6 +301,7 @@ export type AssetVideoProjectConfirmation = {
   directorAssetId?: number;
   directorContentHash?: string;
   ratio?: string;
+  subtitlesEnabled?: boolean;
   catalogVersion?: string;
   enabled?: boolean;
   catalogId?: string;
@@ -355,6 +390,7 @@ export type AssetPlanConfirmationValues = {
   ratio?: string;
   targetSeconds?: number;
   aiVoiceEnabled?: boolean;
+  subtitlesEnabled?: boolean;
   productionChoiceId?: string;
   directorCandidateId?: string;
   cleanupCandidateIds?: string[];
@@ -420,6 +456,8 @@ export type AssetPresenterDirectionConfirmation = {
   directorCandidateId: string;
   ratio?: string;
   subtitleMode?: "translated_zh" | "source" | "bilingual";
+  subtitlesEnabled?: boolean;
+  bgmEnabled?: boolean;
   targetSeconds?: number;
 };
 
@@ -484,6 +522,7 @@ export type AssetMessagePlan = {
   ratioConfirmationRequired?: boolean;
   voiceOptions?: AssetPlanVoiceOption[];
   voiceDefault?: boolean;
+  subtitlesEnabledDefault?: boolean;
   ttsAvailable?: boolean;
   voiceBlockedUntilDisabled?: boolean;
   recommendationMode?: "single_winner";
@@ -499,6 +538,8 @@ export type AssetMessagePlan = {
   cleanupPlanHash?: string;
   cleanupItems?: AssetPresenterCleanupItem[];
   requiresClarification?: boolean;
+  clarificationReason?: string;
+  durationConstraint?: { retainedSeconds: number; toleranceSeconds: number };
   audioTrackOptions?: AssetPresenterAudioTrackOption[];
   audioTrackDefault?: number;
   subtitleOptions?: AssetPlanSubtitleOption[];

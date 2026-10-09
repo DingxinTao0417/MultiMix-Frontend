@@ -67,6 +67,27 @@ function testRevision(index: number | "bgm") {
   return index === "bgm" ? "b".repeat(64) : index.toString(16).padStart(64, "0");
 }
 
+it("reports media preparation to the embedded preview parent before readiness", async () => {
+  const parentFrame = document.createElement("iframe");
+  document.body.appendChild(parentFrame);
+  const parentWindow = parentFrame.contentWindow!;
+  const postMessage = vi.spyOn(parentWindow, "postMessage");
+  const originalParent = Object.getOwnPropertyDescriptor(window, "parent")!;
+  Object.defineProperty(window, "parent", { configurable: true, value: parentWindow });
+  mocks.init.mockImplementation(async (_project, onProgress) => { onProgress(0, 2); });
+  try {
+    render(<EditorView jobId={null} assetId="42" token="test-token" embed mode="preview" previewChannel="preparation-test" />);
+    await waitFor(() => expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      source: "multimix-editor", assetId: "42", previewChannel: "preparation-test",
+      type: "multimix-editor-preview-loading", totalMedia: 2,
+    }), window.location.origin));
+  } finally {
+    cleanup();
+    Object.defineProperty(window, "parent", originalParent);
+    parentFrame.remove();
+  }
+});
+
 const running: ExportFinalizeJob = {
   id: "brand-job", assetId: 42, status: "running", stage: "verifying",
   retryable: false, errorMessage: null, qualityReport: null, mp4Ref: null,

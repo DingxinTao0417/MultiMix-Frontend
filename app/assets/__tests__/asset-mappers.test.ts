@@ -1845,6 +1845,20 @@ describe("agent timeline steps", () => {
 });
 
 describe("message plan mapping", () => {
+  it.each([true, false, undefined])("restores the server subtitle default %s without inventing one", (enabled) => {
+    const conversation = conversationFromPersisted({
+      id: "subtitle-parameter-conversation", title: "字幕选择", status: "active", metadata: {},
+      created_at: "2026-10-08T00:00:00Z", updated_at: "2026-10-08T00:00:00Z", products: [],
+      messages: [{ id: 1, role: "assistant", text: "请确认视频参数。", asset_id: null,
+        created_at: "2026-10-08T00:00:00Z", metadata: { plan: {
+          kind: "video_parameter_confirmation", title: "确认视频参数", status: "pending",
+          fields: [{ key: "subtitles", label: "字幕", value: enabled === false ? "关闭" : "开启" }],
+          ...(typeof enabled === "boolean" ? { subtitles_default: enabled } : {}),
+        } } }],
+    }, newConversationProduct);
+    expect(conversation.messages?.[0]?.plan?.subtitlesEnabledDefault).toBe(enabled);
+  });
+
   it("classifies persisted confirmation control events for presentation", () => {
     const conversation = conversationFromPersisted(
       {
@@ -1993,6 +2007,29 @@ describe("message plan mapping", () => {
       pendingIntentId: "pending-1",
       pendingIntentVersion: 2,
     });
+  });
+
+  it.each([
+    [{ retained_seconds: 30.6305, tolerance_seconds: 0.5 }, { retainedSeconds: 30.6305, toleranceSeconds: 0.5 }],
+    [{ retained_seconds: 0, tolerance_seconds: 0.5 }, undefined],
+    [{ retained_seconds: 31, tolerance_seconds: -1 }, undefined],
+    [{ retained_seconds: 31, tolerance_seconds: "0.5" }, undefined],
+    [{ retained_seconds: Infinity, tolerance_seconds: 0.5 }, undefined],
+  ])("maps only finite server duration facts: %j", (constraint, expected) => {
+    const conversation = conversationFromPersisted({
+      id: "conv-duration", title: "视频", status: "ready", metadata: {},
+      created_at: "2026-10-09T00:00:00Z", updated_at: "2026-10-09T00:00:00Z", products: [],
+      messages: [{ id: 1, role: "assistant", text: "请确认", asset_id: null,
+        created_at: "2026-10-09T00:00:00Z", metadata: { plan: {
+          kind: "presenter_project_confirmation", title: "视频制作方案", status: "pending",
+          fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+          duration_constraint: constraint, requires_clarification: true,
+          clarification_reason: "duration_mismatch",
+        } },
+      }],
+    }, newConversationProduct);
+    expect(conversation.messages?.[0]?.plan?.durationConstraint).toEqual(expected);
+    expect(conversation.messages?.[0]?.plan?.clarificationReason).toBe("duration_mismatch");
   });
 
   it("maps the four public FLUX image states without leaking provider details", () => {

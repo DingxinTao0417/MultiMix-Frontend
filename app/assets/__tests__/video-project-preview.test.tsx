@@ -33,6 +33,67 @@ function publishPreviewState(iframe: HTMLIFrameElement, overrides: Record<string
 }
 
 describe("video project preview", () => {
+  it("keeps preparing during the bounded media download and does not extend it on repeated progress", () => {
+    vi.useFakeTimers();
+    render(<VideoProjectPreview assetId={9100} ratioClassName="ratio-landscape" durationSeconds={3} channelId="preview-test" />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 2 });
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    expect(screen.getByText("正在准备预览")).toBeInTheDocument();
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 2 });
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(screen.getByRole("alert")).toHaveTextContent("预览暂时无法加载");
+  });
+
+  it("does not let invalid media progress defer the handshake deadline", () => {
+    vi.useFakeTimers();
+    render(<VideoProjectPreview assetId={9100} ratioClassName="ratio-landscape" durationSeconds={3} channelId="preview-test" />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: Infinity });
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(screen.getByRole("alert")).toHaveTextContent("预览暂时无法加载");
+  });
+
+  it("recovers a slow iframe handshake on its first preparation signal without recovering a real editor error", () => {
+    vi.useFakeTimers();
+    render(<VideoProjectPreview assetId={9100} ratioClassName="ratio-landscape" durationSeconds={3} channelId="preview-test" />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    act(() => vi.advanceTimersByTime(12_000));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 2 });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    publishPreviewState(iframe, { type: "multimix-editor-error" });
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 2 });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
+
+  it("bounds multiple batches and cancels the preparation deadline on real readiness", () => {
+    vi.useFakeTimers();
+    render(<VideoProjectPreview assetId={9100} ratioClassName="ratio-landscape" durationSeconds={3} channelId="preview-test" />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 7 });
+    act(() => vi.advanceTimersByTime(5 * 60_000 + 12_000));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    publishPreviewState(iframe);
+    act(() => vi.advanceTimersByTime(5 * 60_000));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeEnabled();
+  });
+
+  it("requires real readiness after loading and still fails immediately on an editor error", () => {
+    const onReadyChange = vi.fn();
+    render(<VideoProjectPreview assetId={9100} ratioClassName="ratio-landscape" durationSeconds={3} channelId="preview-test" onReadyChange={onReadyChange} />);
+    const iframe = screen.getByTitle("视频工程预播") as HTMLIFrameElement;
+    publishPreviewState(iframe, { type: "multimix-editor-preview-loading", totalMedia: 2 });
+    expect(onReadyChange).not.toHaveBeenCalledWith(true);
+    expect(screen.getByRole("slider", { name: "播放进度" })).toBeDisabled();
+    publishPreviewState(iframe, { type: "multimix-editor-error", message: "下载失败" });
+    expect(screen.getByRole("alert")).toHaveTextContent("预览暂时无法加载");
+  });
+
   it("uses a short user-facing loading message inside the player", () => {
     render(
       <VideoProjectPreview

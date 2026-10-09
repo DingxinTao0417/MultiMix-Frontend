@@ -370,6 +370,12 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   const visualPreviews = planVisualPreviewsValue(value.visual_previews);
   const bgmOptions = planBgmOptionsValue(value.bgm_options);
   const planKind = stringValue(value.kind);
+  const constraint = isRecord(value.duration_constraint) ? value.duration_constraint : undefined;
+  const retainedSeconds = nonNegativeNumberValue(constraint?.retained_seconds);
+  const toleranceSeconds = nonNegativeNumberValue(constraint?.tolerance_seconds);
+  const durationConstraint = retainedSeconds !== undefined && retainedSeconds > 0
+    && toleranceSeconds !== undefined
+    ? { retainedSeconds, toleranceSeconds } : undefined;
   const rawPreservationSummary = isRecord(value.preservation_summary)
     ? value.preservation_summary
     : undefined;
@@ -424,6 +430,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     ratioConfirmationRequired: value.ratio_confirmation_required === true,
     voiceOptions: voiceOptions.length ? voiceOptions : undefined,
     voiceDefault: typeof value.voice_default === "boolean" ? value.voice_default : undefined,
+    subtitlesEnabledDefault: typeof value.subtitles_default === "boolean" ? value.subtitles_default : undefined,
     ttsAvailable: typeof value.tts_available === "boolean" ? value.tts_available : undefined,
     voiceBlockedUntilDisabled: value.voice_blocked_until_disabled === true,
     recommendationMode: value.recommendation_mode === "single_winner"
@@ -441,6 +448,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     cleanupPlanHash: stringValue(value.cleanup_plan_hash) || undefined,
     cleanupItems: cleanupItems.length ? cleanupItems : undefined,
     requiresClarification: value.requires_clarification === true,
+    clarificationReason: stringValue(value.clarification_reason) || undefined,
+    durationConstraint,
     audioTrackOptions: audioTrackOptions.length ? audioTrackOptions : undefined,
     audioTrackDefault: typeof value.audio_track_default === "number"
       ? value.audio_track_default

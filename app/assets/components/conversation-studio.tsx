@@ -40,6 +40,7 @@ import type {
   AssetPresenterDirectionRequest,
   AssetPresenterCleanupConfirmation,
   AssetSourceResolutionSelection,
+  AssetSubtitleOperation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -512,6 +513,7 @@ export default function ConversationStudio({
     imageGenerationApplication?: AssetImageGenerationApplication,
     imageGenerationSetApplication?: AssetImageGenerationSetApplication,
     sourceResolutionSelection?: AssetSourceResolutionSelection,
+    subtitleOperation?: AssetSubtitleOperation,
   ) => Promise<void>;
   generationJob?: AssetGenerationJobResponse | null;
   generationJobs?: AssetGenerationJobResponse[];
@@ -864,6 +866,9 @@ export default function ConversationStudio({
         ...(typeof values.aiVoiceEnabled === "boolean"
           ? { aiVoiceEnabled: values.aiVoiceEnabled }
           : {}),
+        ...(typeof values.subtitlesEnabled === "boolean"
+          ? { subtitlesEnabled: values.subtitlesEnabled }
+          : {}),
       } : undefined;
     if (isVideoParameterConfirmation && !videoParameterConfirmation) {
       setSendError("视频参数确认信息不完整，请刷新后重试。");
@@ -989,6 +994,8 @@ export default function ConversationStudio({
               directorCandidateId: values.directorCandidateId,
               ...(ratio ? { ratio } : {}),
               ...(values?.sourceSubtitleMode ? { subtitleMode: values.sourceSubtitleMode } : {}),
+              ...(typeof values?.subtitlesEnabled === "boolean" ? { subtitlesEnabled: values.subtitlesEnabled } : {}),
+              ...(typeof values?.bgmEnabled === "boolean" ? { bgmEnabled: values.bgmEnabled } : {}),
               ...(values?.targetSeconds ? { targetSeconds: values.targetSeconds } : {}),
             }
           : undefined,
@@ -1004,6 +1011,7 @@ export default function ConversationStudio({
               directorAssetId,
               ...(plan.directorContentHash ? { directorContentHash: plan.directorContentHash } : {}),
               ...(ratio ? { ratio } : {}),
+              ...(typeof values?.subtitlesEnabled === "boolean" ? { subtitlesEnabled: values.subtitlesEnabled } : {}),
             }
           : videoProjectConfirmation,
         imageGenerationConfirmation,

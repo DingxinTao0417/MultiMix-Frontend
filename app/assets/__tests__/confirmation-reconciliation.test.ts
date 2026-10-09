@@ -9,6 +9,26 @@ import type { AssetConversationResponse } from "../../../lib/api";
 
 
 describe("video confirmation transport reconciliation", () => {
+  it.each([true, false, undefined])("preserves subtitle choice %s in JSON and recovery headers", (enabled) => {
+    const confirmation = {
+      pendingIntentId: "subtitle-pending", version: 2, ratio: "16:9", targetSeconds: 30,
+      aiVoiceEnabled: false,
+      ...(typeof enabled === "boolean" ? { subtitlesEnabled: enabled } : {}),
+    };
+    const payload = buildConversationMessagePayload({
+      conversationId: "subtitle-conversation", instruction: "确认参数并生成编导稿",
+      videoParameterConfirmation: confirmation,
+    }).video_parameter_confirmation;
+    const header = buildVideoParameterConfirmationHeaders(confirmation)["X-MultiMix-Video-Parameter-Confirmation"];
+    const recovered = JSON.parse(decodeURIComponent(header.slice(3)));
+    expect(recovered).toEqual(payload);
+    if (typeof enabled === "boolean") {
+      expect(payload).toHaveProperty("subtitles_enabled", enabled);
+    } else {
+      expect(payload).not.toHaveProperty("subtitles_enabled");
+    }
+  });
+
   it("sends the stable client request id in the conversation payload", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-450",

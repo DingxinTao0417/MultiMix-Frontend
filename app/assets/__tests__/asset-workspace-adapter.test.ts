@@ -23,6 +23,12 @@ import type { AssetProduct } from "../lib/asset-workspace-types";
 import { displayProducts } from "./fixtures/display-products";
 import { contentAssetToProduct } from "../../../lib/asset-mappers";
 
+it.each([true, false])("serializes project confirmation subtitle visibility %s", (enabled) => {
+  expect(buildConversationMessagePayload({ conversationId: "c", instruction: "确认制作",
+    videoProjectConfirmation: { directorAssetId: 42, subtitlesEnabled: enabled } }))
+    .toMatchObject({ video_project_confirmation: { director_asset_id: 42, subtitles_enabled: enabled } });
+});
+
 it("does not treat an older stable requirement snapshot as the latest analysis", () => {
   expect(isCurrentRequirementAnalysis({
     version: 1, status: "ready", latestAnalysisVersion: 2, latestAnalysisStatus: "failed",
@@ -1140,12 +1146,14 @@ describe("runtime data boundary", () => {
     });
   });
 
-  it("serializes presenter direction as an explicit id instead of embedding it in prose", () => {
+  it.each([true, false])("serializes presenter direction and subtitle visibility %s", (enabled) => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
       instruction: "确认，生成视频工程",
       presenterDirectionConfirmation: {
         directorCandidateId: "direction-b",
+        subtitlesEnabled: enabled,
+        bgmEnabled: enabled,
         ratio: "9:16",
         subtitleMode: "bilingual",
         targetSeconds: 30,
@@ -1156,6 +1164,8 @@ describe("runtime data boundary", () => {
       instruction: "确认，生成视频工程",
       presenter_direction_confirmation: {
         director_candidate_id: "direction-b",
+        subtitles_enabled: enabled,
+        bgm_enabled: enabled,
         ratio: "9:16",
         subtitle_mode: "bilingual",
         target_seconds: 30,
@@ -1852,6 +1862,103 @@ describe("runtime data boundary", () => {
 
     expect(progress).toHaveBeenCalledWith(null);
     vi.unstubAllGlobals();
+  });
+
+  it("waits for the server after all upload bytes are sent, including a late progress event", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload: {
+        onprogress: ((event: ProgressEvent<EventTarget>) => void) | null;
+        onload: (() => void) | null;
+      } = { onprogress: null, onload: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 201;
+      statusText = "Created";
+      responseText = JSON.stringify(asset({ id: 46 }));
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => this.upload.onload?.());
+      abort = vi.fn(() => this.onabort?.());
+      constructor() { FakeUploadRequest.instances.push(this); }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    try {
+      const result = assetWorkspaceAdapter.uploadAsset(
+        "token", new File(["video"], "source.mp4", { type: "video/mp4" }),
+        "assets", vi.fn(), "server-wait-key",
+      ).catch((error: Error) => error);
+      FakeUploadRequest.instances[0]?.upload.onprogress?.({
+        lengthComputable: true, loaded: 100, total: 100,
+      } as ProgressEvent<EventTarget>);
+      await vi.advanceTimersByTimeAsync(80_000);
+      expect(FakeUploadRequest.instances).toHaveLength(1);
+      expect(FakeUploadRequest.instances[0]?.abort).not.toHaveBeenCalled();
+      FakeUploadRequest.instances[0]?.onload?.();
+      await expect(result).resolves.toMatchObject({ id: 46 });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("bounds the server response wait and never resends an already uploaded file on timeout", async () => {
+    vi.useFakeTimers();
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload = { onprogress: null, onload: null as (() => void) | null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => this.upload.onload?.());
+      abort = vi.fn(() => this.onabort?.());
+      constructor() { FakeUploadRequest.instances.push(this); }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    try {
+      const result = assetWorkspaceAdapter.uploadAsset(
+        "token", new File(["video"], "source.mp4", { type: "video/mp4" }),
+        "assets", vi.fn(), "bounded-server-wait-key",
+      ).catch((error: Error) => error);
+      await vi.advanceTimersByTimeAsync(20 * 60_000 + 1);
+      expect(await result).toMatchObject({ message: expect.stringContaining("处理超时") });
+      expect(FakeUploadRequest.instances).toHaveLength(1);
+      expect(FakeUploadRequest.instances[0]?.abort).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not automatically resend when the connection fails after the file was sent", async () => {
+    class FakeUploadRequest {
+      static instances: FakeUploadRequest[] = [];
+      upload = { onprogress: null, onload: null as (() => void) | null };
+      onerror: (() => void) | null = null;
+      onload: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn(() => { this.upload.onload?.(); this.onerror?.(); });
+      abort = vi.fn();
+      constructor() { FakeUploadRequest.instances.push(this); }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    try {
+      await expect(assetWorkspaceAdapter.uploadAsset(
+        "token", new File(["video"], "source.mp4", { type: "video/mp4" }),
+        "assets", vi.fn(), "no-postsend-retry-key",
+      )).rejects.toThrow();
+      expect(FakeUploadRequest.instances).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("retries one stalled multipart upload with the same idempotency key and form data", async () => {

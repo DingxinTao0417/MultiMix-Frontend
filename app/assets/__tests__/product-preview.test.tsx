@@ -7,6 +7,29 @@ import { displayProducts } from "./fixtures/display-products";
 
 afterEach(cleanup);
 
+it("reloads the current project after a saved revision even when its body hash and duration are unchanged", () => {
+  const product = { ...displayProducts["case-06-project-ready-no-mp4"],
+    backendAssetId: 3, version: "v6", contentHash: "unchanged-body-hash" };
+  const { container, rerender } = render(<ProductPreview product={product} />);
+  const initial = container.querySelector("iframe");
+  expect(initial).not.toBeNull();
+  rerender(<ProductPreview product={{ ...product, summary: "same saved version" }} />);
+  expect(container.querySelector("iframe")).toBe(initial);
+  rerender(<ProductPreview product={{ ...product, version: "v7" }} />);
+  expect(container.querySelector("iframe")).not.toBe(initial);
+  expect(container.querySelector("iframe")?.src).toContain("asset=3");
+});
+
+it("reloads a project without a version when its server revision changes", () => {
+  const product = { ...displayProducts["case-06-project-ready-no-mp4"],
+    backendAssetId: 3, version: undefined, backendUpdatedAt: "2026-10-09T16:00:00Z" };
+  const { container, rerender } = render(<ProductPreview product={product} />);
+  const initial = container.querySelector("iframe");
+  expect(initial).not.toBeNull();
+  rerender(<ProductPreview product={{ ...product, backendUpdatedAt: "2026-10-09T16:01:00Z" }} />);
+  expect(container.querySelector("iframe")).not.toBe(initial);
+});
+
 it("plays a persisted single-scene candidate using the shared player instead of a director placeholder", () => {
   const product = { ...displayProducts["case-01-director-draft"], mode: "video" as const,
     contentType: "generated_image_to_video_scene", videoProjectReady: false,

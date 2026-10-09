@@ -9,6 +9,74 @@ import { describe, expect, it, vi } from "vitest";
 import ConfirmCard from "../components/confirm-card";
 
 describe("ConfirmCard pending state", () => {
+  it("allows the user to turn off music at presenter delivery confirmation", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "presenter_project_confirmation" as const, title: "视频制作方案", status: "pending" as const,
+      fields: [{ key: "bgm", label: "背景音乐", value: "开启" }],
+      bgmEnabledDefault: true, directionDefault: "direction-a",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }], ratioDefault: "16:9",
+    };
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByRole("radio", { name: "无配乐" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+    expect(onConfirm).toHaveBeenCalledWith(plan, expect.objectContaining({ bgmEnabled: false }));
+  });
+  it("rechecks the server duration constraint after a user edits the target", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "presenter_project_confirmation" as const,
+      title: "视频制作方案", status: "pending" as const,
+      fields: [{ key: "duration", label: "目标时长", value: "30 秒，需要调整" }],
+      confirmLabel: "确认推荐方案并生成视频", directionDefault: "direction-a",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }], ratioDefault: "16:9",
+      durationSeconds: 30, durationMin: 5, durationMax: 600,
+      requiresClarification: true, clarificationReason: "duration_mismatch",
+      durationConstraint: { retainedSeconds: 30.6305, toleranceSeconds: 0.5 },
+    };
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+    const button = screen.getByRole("button", { name: plan.confirmLabel });
+    const input = screen.getByLabelText("目标时长（秒）");
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(input, { target: { value: "31" } });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(button);
+    expect(onConfirm).toHaveBeenCalledWith(plan, expect.objectContaining({ targetSeconds: 31 }));
+    for (const value of ["30", "31.2", "0", "601", ""]) {
+      fireEvent.change(input, { target: { value } });
+      expect(button.hasAttribute("disabled")).toBe(true);
+    }
+    fireEvent.change(input, { target: { value: "31" } });
+    expect(button.hasAttribute("disabled")).toBe(false);
+  });
+
+  it.each([
+    { clarificationReason: undefined, durationConstraint: undefined },
+    { clarificationReason: "other_quality_issue", durationConstraint: { retainedSeconds: 31, toleranceSeconds: 0.5 } },
+    { clarificationReason: "duration_mismatch", durationConstraint: undefined },
+  ])("keeps unresolved or historical clarification blocked: %j", (facts) => {
+    render(<ConfirmCard plan={{
+      kind: "presenter_project_confirmation", title: "视频制作方案", status: "pending",
+      fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
+      durationSeconds: 30, requiresClarification: true, ...facts,
+    }} onConfirm={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "31" } });
+    expect(screen.getByRole("button", { name: "确认" }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("uses the supplied duration tolerance and blocks a new mismatch on an initially valid card", () => {
+    render(<ConfirmCard plan={{
+      kind: "presenter_project_confirmation", title: "视频制作方案", status: "pending",
+      fields: [{ key: "duration", label: "目标时长", value: "31 秒" }],
+      durationSeconds: 31, requiresClarification: false,
+      durationConstraint: { retainedSeconds: 31.25, toleranceSeconds: 0.25 },
+    }} onConfirm={vi.fn()} />);
+    const button = screen.getByRole("button", { name: "确认" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    fireEvent.change(screen.getByLabelText("目标时长（秒）"), { target: { value: "32" } });
+    expect(button.hasAttribute("disabled")).toBe(true);
+  });
+
   it("shows editable video parameters once instead of repeating summary values", () => {
     render(
       <ConfirmCard
