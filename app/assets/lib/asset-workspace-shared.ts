@@ -53,6 +53,33 @@ export function resolveConversationProduct(conversation: Conversation, selectedP
   return products.find((product) => product.id === selectedProductId) ?? products[products.length - 1] ?? null;
 }
 
+export function isStableDisplayProduct(product: ProductArtifact): boolean {
+  // A completed video remains a real output while a later local operation is
+  // running or has failed. The operation status does not replace its lifecycle.
+  if (product.contentType === "video_project"
+    && (product.videoProductCompleted === true || product.videoProjectReady === true)) return true;
+  if (product.productStatus === "generating" || product.productStatus === "failed") return false;
+  if (product.contentType === "video_project") {
+    return product.productStatus === "completed" || product.videoProjectReady === true;
+  }
+  return true;
+}
+
+export function resolveConversationDisplayProduct(conversation: Conversation, selectedProductId: string | undefined) {
+  const products = getConversationProducts(conversation).filter(isStableDisplayProduct);
+  return products.find((product) => product.id === selectedProductId) ?? products[products.length - 1] ?? null;
+}
+
+export function resolveConversationStageProducts(conversation: Conversation, selectedProductId: string | undefined) {
+  const displayProduct = resolveConversationDisplayProduct(conversation, selectedProductId);
+  return {
+    // Keep product-bound actions on the same stable artifact as the visible
+    // workspace; use the unfinished record only when there is no display yet.
+    selectedProduct: displayProduct ?? resolveConversationProduct(conversation, selectedProductId),
+    displayProduct,
+  };
+}
+
 export function isPlaceholderProduct(product: ProductArtifact | null | undefined) {
   return !product || product.id === "empty-product" || product.status === "等待指令";
 }

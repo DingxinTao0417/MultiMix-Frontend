@@ -35,7 +35,7 @@ describe("compact video progress card", () => {
     fireEvent.click(toggle);
     expect(document.getElementById(detailsId!)).toBe(details);
     expect(details?.hidden).toBe(false);
-    expect(screen.getByRole("list", { name: "视频关键进展" })).toBe(details);
+    expect(details?.contains(screen.getByRole("list", { name: "视频关键进展" }))).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "收起进度详情" }));
     expect(details?.hidden).toBe(true);
@@ -137,6 +137,8 @@ describe("compact video progress card", () => {
       recordedCallCount: 2, pricedCallCount: 1, unknownCostCallCount: 1,
       standardPriceCostCny: 0.75, historicalCoverage: "since_ledger_enabled",
     }} />);
+    expect(screen.queryByText(/图生视频.*¥0\.75.*标准原价估算/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
     expect(screen.getByText(/图生视频.*¥0\.75.*标准原价估算/)).toBeTruthy();
     expect(screen.getByText(/1 次调用费用未知/)).toBeTruthy();
     expect(screen.getByText(/不含留账前调用、渲染和配音/)).toBeTruthy();
@@ -147,10 +149,12 @@ describe("compact video progress card", () => {
       billedTextWords: 12, historicalCoverage: "since_ledger_enabled",
       scope: "main_project_narration",
     }} />);
+    expect(screen.queryByText(/配音.*12.*计费字符/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
     expect(screen.getByText(/配音.*12.*计费字符/)).toBeTruthy();
     expect(screen.getByText(/1 次用量未知/)).toBeTruthy();
     expect(screen.getByText(/配音金额未知/)).toBeTruthy();
-    expect(screen.getByText(/渲染金额未知/)).toBeTruthy();
+    expect(screen.getByText(/渲染费用暂无法确认/)).toBeTruthy();
   });
   it("does not mistake an empty post-ledger record for zero lifetime spend", () => {
     render(<Card {...running} narrationUsageSummary={{
@@ -158,7 +162,25 @@ describe("compact video progress card", () => {
       billedTextWords: 0, historicalCoverage: "since_ledger_enabled",
       scope: "main_project_narration",
     }} />);
-    expect(screen.getByText(/尚无已留账的调用/)).toBeTruthy();
+    expect(screen.queryByText(/尚无已留账的调用/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "查看进度详情" }));
+    expect(screen.getByText(/暂无可显示的费用记录，不代表没有成本/)).toBeTruthy();
     expect(screen.queryByText(/¥0\.00/)).toBeNull();
+  });
+  it("keeps the failure reason and retry visible while cost details stay collapsed", () => {
+    render(<Card {...running} status="failed" errorMessage="配音生成失败，可以重试。"
+      actions={<button>重试</button>} narrationUsageSummary={{
+        recordedCallCount: 0, knownUsageCallCount: 0, unknownUsageCallCount: 0,
+        billedTextWords: 0, historicalCoverage: "since_ledger_enabled",
+        scope: "main_project_narration",
+      }} />);
+    expect(screen.getByText("配音生成失败，可以重试。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重试" })).toBeTruthy();
+    expect(screen.queryByText(/暂无可显示的费用记录/)).toBeNull();
+    const toggle = screen.getByRole("button", { name: "查看失败步骤" });
+    fireEvent.click(toggle);
+    expect(screen.getByText(/暂无可显示的费用记录/)).toBeTruthy();
+    expect(document.getElementById(toggle.getAttribute("aria-controls")!)?.textContent)
+      .toContain("暂无可显示的费用记录");
   });
 });

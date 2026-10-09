@@ -32,7 +32,7 @@ async function captureDesktopEvidence(page: Page, slug: string) {
   }
 }
 
-async function openCase(page: Page, caseId: string) {
+async function openCase(page: Page, caseId: string, expectProductWorkspace = true) {
   const conversationId = seed.conversation_ids?.[caseId];
   if (!conversationId) throw new Error(`Missing seeded conversation id for ${caseId}`);
   await page.goto("/app/assets");
@@ -46,7 +46,7 @@ async function openCase(page: Page, caseId: string) {
   await conversationLink.click();
   await expect(conversationLink).toHaveAttribute("aria-current", "page");
   const workspace = page.getByRole("region", { name: "Current product workspace" });
-  await expect(workspace).toBeVisible();
+  if (expectProductWorkspace) await expect(workspace).toBeVisible();
   return workspace;
 }
 
@@ -324,10 +324,12 @@ test("project resources remain accessible when conversation detail and snapshot 
   await entry.click();
   const drawer = page.getByRole("dialog", { name: /的项目资源/ });
   await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "用于本轮" })).toHaveCount(0);
   await mkdir(desktopEvidenceDirectory, { recursive: true });
   await page.screenshot({ path: resolve(desktopEvidenceDirectory, "detail-error-resources-1280x720.png"), animations: "disabled" });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(drawer.getByRole("button", { name: "测试门店素材", exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "用于本轮" })).toHaveCount(0);
   await page.screenshot({ path: resolve(desktopEvidenceDirectory, "detail-error-resources-390x844.png"), animations: "disabled" });
 });
 
@@ -1323,16 +1325,23 @@ test("CASE-03 tells public fallback apart from saved assets", async ({ page }) =
 });
 
 test("CASE-04 stays in progress after reload", async ({ page }) => {
-  const workspace = await openCase(page, "case-04-project-running");
+  const workspace = await openCase(page, "case-04-project-running", false);
   const composer = page.getByRole("region", { name: "Content generation conversation" })
     .getByRole("textbox", { name: "输入对话内容" });
   await expect(composer).toHaveAttribute("placeholder", /视频正在制作/);
-  const progress = workspace.getByRole("status").filter({ hasText: "视频生成中" });
+  const progress = page.getByRole("region", { name: "Content generation conversation" })
+    .getByText("视频生成中", { exact: false }).first();
   await expect(progress).toBeVisible();
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-product-card")).toHaveCount(0);
   await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
   await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await page.reload();
   await expect(progress).toBeVisible();
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
   await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
   await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
@@ -1341,18 +1350,19 @@ test("CASE-04 stays in progress after reload", async ({ page }) => {
 });
 
 test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
-  const workspace = await openCase(page, "case-05-project-failed");
-  const failure = workspace.getByRole("alert");
+  const workspace = await openCase(page, "case-05-project-failed", false);
   const thread = page.getByRole("region", { name: "Content generation conversation" });
-  await expect(failure.getByText("视频生成未能完成，请重试。", { exact: true })).toBeVisible();
-  await expect(failure.getByText("请在左侧重试失败步骤", { exact: false })).toBeVisible();
-  await expect(failure.getByRole("button", { name: /重试生成/ })).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-product-card")).toHaveCount(0);
   const retryAction = thread.getByRole("button", { name: "重试", exact: true });
   await expect(retryAction).toHaveCount(1);
   await expect(retryAction).toBeVisible();
   await expect(thread.getByRole("textbox", { name: "输入对话内容" })).toHaveAttribute("placeholder", /视频未完成/);
   const detailsToggle = thread.getByRole("button", { name: "查看失败步骤" });
   await expect(detailsToggle).toBeVisible();
+  await expect(thread.getByText(/暂无可显示的费用记录/)).toHaveCount(0);
   const controlledId = await detailsToggle.getAttribute("aria-controls");
   expect(controlledId).toBeTruthy();
   const controlledDetails = page.locator(`[id="${controlledId}"]`);
@@ -1361,17 +1371,37 @@ test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {
   await detailsToggle.click();
   await expect(controlledDetails).toBeVisible();
   await expect(thread.getByRole("list", { name: "视频关键进展" })).toBeVisible();
+  await expect(thread.getByText(/暂无可显示的费用记录，不代表没有成本/)).toBeVisible();
   await thread.getByRole("button", { name: "收起失败步骤" }).click();
   await expect(controlledDetails).toBeHidden();
   await expect(retryAction).toBeVisible();
+  const composer = thread.getByRole("textbox", { name: "输入对话内容" });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: width === 1280 ? 720 : 844 });
+    expect(await detailsToggle.evaluate((element) => window.getComputedStyle(element).fontSize))
+      .toBe("12px");
+    const fits = await composer.evaluate((element) => {
+      const textarea = element as HTMLTextAreaElement;
+      const style = window.getComputedStyle(textarea);
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context) return false;
+      context.font = style.font;
+      const available = textarea.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+      return context.measureText(textarea.placeholder).width <= available + 1;
+    });
+    expect(fits, `Failure placeholder should fit one line at ${width}px`).toBe(true);
+  }
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "failure-390x844.png"), animations: "disabled" });
   await captureDesktopEvidence(page, "failure");
 });
 
 test("CASE-09 keeps an invalid video-render record out of the legacy preview", async ({ page }) => {
-  const workspace = await openCase(page, "case-09-invalid-video-render");
-  const recovery = workspace.getByRole("alert");
-
-  await expect(recovery.getByText("视频失败", { exact: false })).toBeVisible();
+  const workspace = await openCase(page, "case-09-invalid-video-render", false);
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-product-card")).toHaveCount(0);
   await expect(workspace.getByLabel("编导脚本预览")).toHaveCount(0);
   await expect(workspace.getByText("当前是可编辑编导脚本", { exact: false })).toHaveCount(0);
   await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);

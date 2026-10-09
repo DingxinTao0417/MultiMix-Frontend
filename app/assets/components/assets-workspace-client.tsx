@@ -80,7 +80,7 @@ import type {
   ProjectRequirementSnapshot,
 } from "../lib/asset-workspace-types";
 import {
-  resolveConversationProduct,
+  resolveConversationStageProducts,
   runExclusiveConversationDelete,
   chatAttachmentFileKind,
   pendingAttachmentReconciliationKeys,
@@ -1081,9 +1081,9 @@ export default function AssetsWorkspaceClient({
       }
     : selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
   const selectedConversationHasDetail = selectedConversation.detailsLoaded === true;
-  const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
-    ? null
-    : resolveConversationProduct(selectedConversation, selectedProductIds[selectedConversation.id]);
+  const { selectedProduct, displayProduct } = !selectedConversationHasDetail && !isConversationSnapshot
+    ? { selectedProduct: null, displayProduct: null }
+    : resolveConversationStageProducts(selectedConversation, selectedProductIds[selectedConversation.id]);
   const selectedProductRef = useRef(selectedProduct);
   selectedProductRef.current = selectedProduct;
   const observedVideoId = selectedProduct?.contentType === "video_project"
@@ -1134,7 +1134,7 @@ export default function AssetsWorkspaceClient({
   const currentChatImageUploads = chatImageUploads[selectedConversation.id] ?? [];
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
-  const hasProductStage = activeView === "conversation" && selectedProduct !== null;
+  const hasProductStage = activeView === "conversation" && displayProduct !== null;
   const canShowDiagnostics = Boolean(token && diagnosticsAccess?.token === token && diagnosticsAccess.allowed);
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
@@ -4401,7 +4401,7 @@ export default function AssetsWorkspaceClient({
                 }
                 requirementAnalyticsToken={token}
               />
-              {selectedProduct ? (
+              {displayProduct ? (
                 <>
                   <div
                     className="shadcn-prototype-resize-handle"
@@ -4430,7 +4430,7 @@ export default function AssetsWorkspaceClient({
                           operation.assetId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, operation);
                       } : undefined}
                     onRegisterBeforeLeave={registerProductBeforeLeave}
-                    copied={copiedProductId === selectedProduct.id}
+                    copied={copiedProductId === displayProduct.id}
                     onCopyProduct={handleCopyProduct}
                     onSaveProduct={isConversationSnapshot
                       ? async () => { toast.info("完整对话仍在加载，请稍后再保存修改。"); }
@@ -4486,17 +4486,17 @@ export default function AssetsWorkspaceClient({
                         ? undefined
                         : handleApplyGeneratedImageSet
                     }
-                    selectedImageFrameId={selectedImageFrameIds[selectedProduct.id]}
+                    selectedImageFrameId={selectedImageFrameIds[displayProduct.id]}
                     onSelectedImageFrameChange={(frameId) => {
-                      setSelectedImageFrameIds((current) => ({ ...current, [selectedProduct.id]: frameId }));
+                      setSelectedImageFrameIds((current) => ({ ...current, [displayProduct.id]: frameId }));
                     }}
                   onSelectSegment={(segment: AssetProductSegment) => {
-                    if (!selectedProduct.backendAssetId) return;
+                    if (!displayProduct.backendAssetId) return;
                     setClickedSceneFocus((current) => ({
                       ...current,
-                      [selectedProduct.backendAssetId!]: {
+                      [displayProduct.backendAssetId!]: {
                         sceneId: segment.id,
-                        versionId: latestProductVersionId(selectedProduct),
+                        versionId: latestProductVersionId(displayProduct),
                       },
                     }));
                   }}
@@ -4511,18 +4511,18 @@ export default function AssetsWorkspaceClient({
                     }
                     : undefined}
                   sceneSourceProgress={sceneSourceProgress}
-                    product={selectedProduct}
-                    savedVersion={savedVersionForProduct(selectedProduct, savedProductIds[selectedProduct.id])}
-                    savingProduct={productMutationStates[selectedProduct.id] === "saving"}
-                    restoringProduct={productMutationStates[selectedProduct.id] === "restoring"}
-                    refreshingProduct={productMutationStates[selectedProduct.id] === "refreshing"}
-                    productSaveConflict={productSaveConflicts[selectedProduct.id]?.baseUpdatedAt === selectedProduct.backendUpdatedAt
-                      ? productSaveConflicts[selectedProduct.id]?.message : undefined}
+                    product={displayProduct}
+                    savedVersion={savedVersionForProduct(displayProduct, savedProductIds[displayProduct.id])}
+                    savingProduct={productMutationStates[displayProduct.id] === "saving"}
+                    restoringProduct={productMutationStates[displayProduct.id] === "restoring"}
+                    refreshingProduct={productMutationStates[displayProduct.id] === "refreshing"}
+                    productSaveConflict={productSaveConflicts[displayProduct.id]?.baseUpdatedAt === displayProduct.backendUpdatedAt
+                      ? productSaveConflicts[displayProduct.id]?.message : undefined}
                     onReloadProduct={handleReloadProduct}
                     selectedConversation={selectedConversation}
                     token={token}
                     creativeProfileVisible={creativeProfileVisible}
-                    videoJobLive={selectedProduct.backendAssetId ? videoJobLive[selectedProduct.backendAssetId] ?? null : null}
+                    videoJobLive={displayProduct.backendAssetId ? videoJobLive[displayProduct.backendAssetId] ?? null : null}
                   />
                 </>
               ) : null}
@@ -4690,7 +4690,9 @@ export default function AssetsWorkspaceClient({
         onRemoveSource={(assetId) => changeSelectedProjectSource(assetId, "remove")}
         onReaddSource={(assetId) => changeSelectedProjectSource(assetId, "add")}
         onOpenResource={handleOpenProjectResource}
-        onUseSourceForNextMessage={(item) => {
+        onUseSourceForNextMessage={selectedConversationHasDetail
+          && !selectedConversation.readonly
+          && runtimeWriteCapabilities.canGenerate ? (item) => {
           if (item.kind !== "source" || item.membershipState !== "active") return;
           setConversationContextAssets((current) => ({
             ...current,
@@ -4698,7 +4700,7 @@ export default function AssetsWorkspaceClient({
           }));
           setProjectResourcesOpen(false);
           toast.info(`已将「${item.title}」用于本轮。`);
-        }}
+        } : undefined}
       /> : null}
       <ProjectTargetPicker
         open={Boolean(projectTargetRow)}
