@@ -1258,9 +1258,9 @@ export default function ConversationStudio({
         <header className="shadcn-prototype-chat-head">
           {navigationSlot}
           <strong title={selectedConversation.title}>{selectedConversation.title}</strong>
-          {(projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false) || diagnosticsSlot ? (
+          {projectResourceTotal > 0 || diagnosticsSlot ? (
             <div className="shadcn-prototype-chat-head-actions">
-              {projectResourceTotal > 0 && selectedConversation.detailsLoaded !== false ? (
+              {projectResourceTotal > 0 ? (
                 <button
                   type="button"
                   className="shadcn-prototype-project-resources"
@@ -1827,9 +1827,13 @@ export default function ConversationStudio({
                   ? "后端暂时不可用，暂不能创作"
                 : adjustHint
                   ? ADJUST_HINT_PLACEHOLDER
-                  : selectedProduct && ["video", "mg-overlay"].includes(selectedProduct.mode)
+                : selectedProduct && ["video", "mg-overlay"].includes(selectedProduct.mode)
+                  ? selectedProduct.videoProductCompleted || selectedProduct.productStatus === "completed"
                     ? "说说想改哪段，比如「第 2 段字卡换成保修年限」…"
-                    : "随时打断或补充，AI 会接着改…"
+                    : selectedProduct.productStatus === "failed"
+                      ? "视频未完成，可按失败提示处理，或告诉我想调整什么…"
+                      : "视频正在制作，可随时补充想法…"
+                  : "随时打断或补充，AI 会接着改…"
             }
             rows={1}
             value={composerValue}

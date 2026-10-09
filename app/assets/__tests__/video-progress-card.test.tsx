@@ -22,6 +22,26 @@ describe("compact video progress card", () => {
     expect(container.textContent).not.toMatch(/Provider|MG|12|共.*步|耗时/);
   });
 
+  it("keeps the controlled details node present and hidden until expanded", () => {
+    render(<Card {...running} />);
+    const toggle = screen.getByRole("button", { name: "查看进度详情" });
+    const detailsId = toggle.getAttribute("aria-controls");
+    expect(detailsId).toBeTruthy();
+    const details = document.getElementById(detailsId!);
+    expect(details).not.toBeNull();
+    expect(details?.hidden).toBe(true);
+    expect(screen.queryByRole("list", { name: "视频关键进展" })).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(document.getElementById(detailsId!)).toBe(details);
+    expect(details?.hidden).toBe(false);
+    expect(screen.getByRole("list", { name: "视频关键进展" })).toBe(details);
+
+    fireEvent.click(screen.getByRole("button", { name: "收起进度详情" }));
+    expect(details?.hidden).toBe(true);
+    expect(screen.queryByRole("list", { name: "视频关键进展" })).toBeNull();
+  });
+
   it("shows one explicit supplier-delay notice without adding a fake stage", () => {
     render(<Card {...running} providerWaitLabel="模型服务响应慢 · 已等待 3 分 · 本阶段剩余 0 秒" />);
 
@@ -52,17 +72,18 @@ describe("compact video progress card", () => {
     expect(screen.getByText("正在匹配素材")).toBeTruthy();
     expect(screen.getAllByText("正在审核事实边界")).toHaveLength(2);
   });
-  it("opens the failed step when a task fails, then keeps it open while retrying", () => {
+  it("keeps failed details collapsed and the failure reason visible while retrying", () => {
     const { rerender } = render(<Card {...running} />);
     rerender(<Card {...running} status="failed" errorMessage="配音生成失败，可以重试。" />);
-    expect(screen.getByRole("list")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "收起失败步骤" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.getByRole("button", { name: "查看失败步骤" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByText("配音生成失败，可以重试。")).toBeTruthy();
     rerender(<Card {...running} status="queued" />);
-    expect(screen.getByRole("list")).toBeTruthy();
+    expect(screen.queryByRole("list")).toBeNull();
   });
   it("preserves an open panel while retrying", () => {
     const { rerender } = render(<Card {...running} status="failed" />);
+    fireEvent.click(screen.getByRole("button", { name: "查看失败步骤" }));
     expect(screen.getByRole("button", { name: "收起失败步骤" })).toBeTruthy();
     rerender(<Card {...running} status="queued" />);
     expect(screen.getByRole("list")).toBeTruthy();
@@ -81,10 +102,10 @@ describe("compact video progress card", () => {
     const retry = vi.fn();
     render(<Card {...running} status="failed"
       actions={<button onClick={() => retry("child-1")}>重试</button>} />);
-    expect(screen.getByRole("list")).toBeTruthy();
+    expect(screen.queryByRole("list")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(retry).toHaveBeenCalledExactlyOnceWith("child-1");
-    expect(screen.getByRole("list")).toBeTruthy();
+    expect(screen.queryByRole("list")).toBeNull();
   });
   it("does not invent a retry or stop action", () => {
     render(<Card {...running} status="failed" />);

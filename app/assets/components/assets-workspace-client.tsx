@@ -31,6 +31,7 @@ import {
   formatComposerError,
   getAssetLlmDiagnostics,
   getCurrentUserPrivileges,
+  getProjectResourceSummary,
   getProjectResources,
   MESSAGE_NOT_SUBMITTED_ERROR,
   removeProjectSource,
@@ -74,6 +75,7 @@ import type {
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
+  AssetProjectResourceSummary,
   ProjectRequirementSnapshot,
 } from "../lib/asset-workspace-types";
 import {
@@ -946,6 +948,46 @@ export default function AssetsWorkspaceClient({
   const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [showAllProjectRows, setShowAllProjectRows] = useState(false);
   const [projectResourcesOpen, setProjectResourcesOpen] = useState(false);
+  const [projectResourceSummaries, setProjectResourceSummaries] = useState<Record<string, AssetProjectResourceSummary>>({});
+  const [projectResourceSummaryRevision, setProjectResourceSummaryRevision] = useState(0);
+  const invalidateProjectResourceSummary = (projectId: string) => {
+    setProjectResourceSummaries((current) => {
+      if (!(projectId in current)) return current;
+      const next = { ...current };
+      delete next[projectId];
+      return next;
+    });
+    if (selectedConversationIdRef.current === projectId) {
+      setProjectResourceSummaryRevision((revision) => revision + 1);
+    }
+  };
+  useEffect(() => {
+    setProjectResourceSummaries({});
+  }, [accountEmail, token]);
+  useEffect(() => {
+    if (!token || selectedConversationId === "new") return;
+    const controller = new AbortController();
+    const projectId = selectedConversationId;
+    void getProjectResourceSummary(token, projectId, controller.signal)
+      .then((summary) => {
+        if (controller.signal.aborted) return;
+        setProjectResourceSummaries((current) => ({
+          ...current,
+          [projectId]: {
+            sources: summary.sources,
+            historicalSources: summary.historical_sources,
+            copies: summary.copies,
+            covers: summary.covers,
+            videos: summary.videos,
+          },
+        }));
+      })
+      .catch(() => {
+        // A detail read can still provide the summary. Do not invent counts
+        // or block conversation recovery when this independent read fails.
+      });
+    return () => controller.abort();
+  }, [projectResourceSummaryRevision, selectedConversationId, token]);
   const [requirementRefreshErrorProjectId, setRequirementRefreshErrorProjectId] = useState<string | null>(null);
   const [requirementSnapshots, setRequirementSnapshots] = useState<Record<string, ProjectRequirementSnapshot>>({});
   const requirementReadGenerationRef = useRef(new Map<string, number>());
@@ -1028,7 +1070,15 @@ export default function AssetsWorkspaceClient({
   const isConversationSnapshot = selectedPersistedConversation?.detailsLoaded === false;
   // Keep snapshot detail pending so the conversation pane shows its loading
   // skeleton. Its recovered product can still render read-only on the right.
-  const selectedConversation = selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
+  const selectedConversation = selectedPersistedConversation?.detailsLoaded === false
+    ? {
+        ...selectedPersistedConversation,
+        // Snapshot and stale detail projections cannot prove the current
+        // resource count. The independent selected-project read is authoritative.
+        projectResources: undefined,
+        projectResourceSummary: projectResourceSummaries[selectedPersistedConversation.id],
+      }
+    : selectedPersistedConversation ?? assetWorkspaceAdapter.getNewConversation();
   const selectedConversationHasDetail = selectedConversation.detailsLoaded === true;
   const selectedProduct = !selectedConversationHasDetail && !isConversationSnapshot
     ? null
@@ -2376,6 +2426,7 @@ export default function AssetsWorkspaceClient({
       return next;
     });
     const selectedProjectId = selectedConversationIdRef.current;
+    if (selectedProjectId !== "new") invalidateProjectResourceSummary(selectedProjectId);
     // An earlier project-detail response must not restore pre-archive resources.
     const generation = conversationDetailGenerationRef.current + 1;
     conversationDetailGenerationRef.current = generation;
@@ -2415,6 +2466,7 @@ export default function AssetsWorkspaceClient({
       setSubmittingProjectId(null);
       return;
     }
+    invalidateProjectResourceSummary(projectId);
     invalidateProjectRequirements(projectId);
     if (projectId === selectedConversation.id) {
       setConversationContextAssets((current) => ({
@@ -3749,6 +3801,7 @@ export default function AssetsWorkspaceClient({
         [projectId]: (current[projectId] ?? []).filter((asset) => asset.id !== assetId),
       }));
     }
+    invalidateProjectResourceSummary(projectId);
     requirementReadGenerationRef.current.set(projectId, (requirementReadGenerationRef.current.get(projectId) ?? 0) + 1);
     const completedAction = action === "add" ? "已重新加入项目并保存" : "已移出项目并保存";
     try {
@@ -3769,6 +3822,10 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleOpenProjectResource = (item: ProjectResourceItem) => {
+    if (item.kind !== "source" && isConversationSnapshot) {
+      toast.info("对话内容尚未加载，请重试加载后查看这个产物。", { id: "project-resource-detail-pending" });
+      return;
+    }
     // Only one focus-isolating surface may be active during cross-drawer navigation.
     setProjectResourcesOpen(false);
     navigateWorkspace(() => {
@@ -4326,7 +4383,10 @@ export default function AssetsWorkspaceClient({
                   }));
                 }}
                 detailLoadError={conversationDetailErrorId === selectedConversation.id}
-                onRetryDetail={() => setConversationDetailRetryRevision((value) => value + 1)}
+                onRetryDetail={() => {
+                  setConversationDetailRetryRevision((value) => value + 1);
+                  setProjectResourceSummaryRevision((value) => value + 1);
+                }}
                 readonly={(selectedConversation.readonly ?? false) || isConversationSnapshot}
                 writeCapabilities={runtimeWriteCapabilities}
                 onRetryWriteAvailability={handleRetryWriteAvailability}
@@ -4606,7 +4666,7 @@ export default function AssetsWorkspaceClient({
           </section>
         </div>
       ) : null}
-      {projectResourcesOpen && selectedConversation.id !== "new" && !isConversationSnapshot ? <ProjectResourcesDrawer
+      {projectResourcesOpen && selectedConversation.id !== "new" ? <ProjectResourcesDrawer
         key={selectedConversation.id}
         open
         projectTitle={selectedConversation.title}

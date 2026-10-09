@@ -947,6 +947,18 @@ export async function getProjectResources(
   );
 }
 
+export async function getProjectResourceSummary(
+  token: string,
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<ProjectResourceSummaryResponse> {
+  return api<ProjectResourceSummaryResponse>(
+    `/assets/conversations/${encodeURIComponent(conversationId)}/resources/summary`,
+    token,
+    { signal, cache: "no-store" },
+  );
+}
+
 export async function addProjectSource(
   token: string,
   conversationId: string,

@@ -40,17 +40,9 @@ export type VideoProgressCardProps = VideoProgressInput & {
 
 export function VideoProgressCard({ errorMessage, actions, failureContext, completionLabel, imageToVideoCostSummary, narrationUsageSummary, sceneProgress = [], ...input }: VideoProgressCardProps) {
   const presentation = videoProgressPresentation(input);
-  const [expanded, setExpanded] = useState(input.status === "failed");
+  const [expanded, setExpanded] = useState(false);
   const collapsedOnSuccess = useRef(false);
-  const previousStatus = useRef(input.status);
   const detailsId = useId();
-
-  useEffect(() => {
-    if (input.status === "failed" && previousStatus.current !== "failed") {
-      setExpanded(true);
-    }
-    previousStatus.current = input.status;
-  }, [input.status]);
 
   useEffect(() => {
     if (presentation.completed && !collapsedOnSuccess.current) {
@@ -161,9 +153,9 @@ export function VideoProgressCard({ errorMessage, actions, failureContext, compl
           ))}
         </ol>
       ) : null}
-      {expanded ? (
-        <ol id={detailsId} className="shadcn-prototype-agent-run-steps" aria-label="视频关键进展">
-          {presentation.milestones.map((milestone) => (
+      <ol id={detailsId} className="shadcn-prototype-agent-run-steps" aria-label="视频关键进展"
+        hidden={!expanded} style={expanded ? undefined : { display: "none" }}>
+          {expanded ? presentation.milestones.map((milestone) => (
             <li key={milestone.key} className={"shadcn-prototype-agent-run-step " + milestone.status}>
               <span className="shadcn-prototype-agent-run-ic" aria-hidden="true">
                 <MilestoneIcon status={milestone.status} />
@@ -174,9 +166,8 @@ export function VideoProgressCard({ errorMessage, actions, failureContext, compl
                   : milestone.status === "stopped" ? "已停止" : "进行中"}
               </span>
             </li>
-          ))}
-        </ol>
-      ) : null}
+          )) : null}
+      </ol>
     </section>
   );
 }

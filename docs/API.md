@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-03
+> Last verified: 2026-10-09
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -122,6 +122,7 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 - `GET /v1/assets/conversations/summaries` 返回轻量项目列表字段及 `project_state.code`；不返回消息、正文、完整产物或版本。状态只允许是 `needs_input / script_review / generating / ready / needs_attention`，前端只负责中文展示。
 - 摘要按账号缓存在浏览器本地，页面先显示最近一次真实摘要，再后台刷新；缓存不保存 token、消息正文或产物正文。旧缓存缺少 `project_state` 时直接失效，不在浏览器猜测状态。
 - `GET /v1/assets/conversations/{conversation_id}` 在用户选中项目后加载消息、产物和 `project_resource_summary`。新客户端传 `include_project_resource_items=false`，不再把完整项目资源塞进详情首屏。
+- `GET /v1/assets/conversations/{conversation_id}/resources/summary` 独立返回当前项目的素材、历史素材、文案、封面和视频计数；用户归属与项目详情同样校验。详情读取失败时可据此保留非空项目的“资料”入口；摘要自身读取失败时不伪造数量。
 - `GET /v1/assets/conversations/{conversation_id}/resources?kind=&scope=&offset=&limit=` 按需分页读取项目资源；`source` 支持 `active / history / all`，文案、封面和视频使用 `all`。默认 20 条，最多 50 条。
 - 项目资源项的 `readd_status` 用于已移出或当前不可用的源素材：`available` 表示已移出且可重新加入，`archived` 表示源文件已从资源库归档，`not_ready` 表示尚不可用；其他资源项为 `null`。服务端依据成员状态、归档标记和就绪状态判定，不可仅用 `status=ready` 推断可重新加入。
 - `PUT /v1/assets/conversations/{conversation_id}/sources/{asset_id}` 与同路径 `DELETE` 立即持久化加入/移出。重复操作幂等；项目和素材都必须属于当前用户。
@@ -1261,7 +1262,7 @@ mapper 将其映射为 `directorAssetId`、`directorContentHash`。点击确认�
 会话时使用同一任务用途。旧记录缺少字段时，客户端只使用已绑定产物类型或稳定结构化事件键兼容识别；
 无法证明用途时继续显示原通用生成卡。
 
-`progress_events` 和视频工程步骤继续完整保留，客户端将视频事件归并为最多四个产品阶段，不从阶段数量
+`progress_events` 和视频工程步骤继续完整保留，客户端只展示已发生且已登记的公开阶段；未知事件合并为通用工作阶段，不按固定四阶段截断，也不从阶段数量
 推导百分比或完成状态。任务状态、`product_status`、`operation_status` 和既有完成对账共同决定终态；
 `failure_action` / `operation_failure_action` 决定是否允许准确重试、改稿或换素材，展示聚合不能改变动作目标。
 

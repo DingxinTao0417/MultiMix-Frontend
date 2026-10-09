@@ -149,6 +149,52 @@ describe("conversation project resources", () => {
     expect(screen.getByRole("button", { name: "项目资料，共 1 项" })).toHaveTextContent("资料1");
   });
 
+  it("keeps saved resources accessible when the conversation detail fails", () => {
+    const onOpenProjectResources = vi.fn();
+    const conversation = {
+      ...assetWorkspaceAdapter.getNewConversation(),
+      id: "asset-conversation-detail-error",
+      detailsLoaded: false,
+      projectResourceSummary: { sources: 1, historicalSources: 0, copies: 0, covers: 0, videos: 0 },
+    };
+
+    render(
+      <ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+        selectedProduct={null} onSelectProduct={vi.fn()}
+        detailLoadError onOpenProjectResources={onOpenProjectResources} />,
+    );
+
+    expect(screen.getByText("对话内容加载失败。")).toBeInTheDocument();
+    screen.getByRole("button", { name: "项目资料，共 1 项" }).click();
+    expect(onOpenProjectResources).toHaveBeenCalledOnce();
+  });
+
+  it("guides creation states without implying there is a finished segment to edit", () => {
+    const base = assetWorkspaceAdapter.getNewConversation();
+    const product = { ...base.product, mode: "video" as const, contentType: "video_project" };
+    const conversation = { ...base, id: "video-pending", detailsLoaded: true };
+    const { rerender } = render(
+      <ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+        selectedProduct={{ ...product, productStatus: "generating" }} onSelectProduct={vi.fn()} />,
+    );
+    expect(screen.getByRole("textbox", { name: "输入对话内容" })).toHaveAttribute(
+      "placeholder", expect.stringContaining("正在制作"),
+    );
+    rerender(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={{ ...product, productStatus: "failed" }} onSelectProduct={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "输入对话内容" })).toHaveAttribute(
+      "placeholder", expect.stringContaining("未完成"),
+    );
+    expect(screen.getByRole("textbox", { name: "输入对话内容" }).getAttribute("placeholder"))
+      .not.toContain("改哪段");
+    rerender(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={{ ...product, productStatus: "completed", videoProductCompleted: true,
+        operationStatus: "failed" }} onSelectProduct={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "输入对话内容" })).toHaveAttribute(
+      "placeholder", expect.stringContaining("改哪段"),
+    );
+  });
+
   it("keeps project resources in the chat title without adding a row above the message thread", () => {
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
