@@ -154,6 +154,58 @@ test("narrow pending video confirmation starts with its primary action unobscure
   }
 });
 
+test("narrow confirmation follows delayed layout growth without stealing manual scroll", async ({ page }) => {
+  const conversationId = seed.conversation_ids?.["case-01-director-draft"];
+  if (!conversationId) throw new Error("Missing seeded CASE-01 project");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/app/assets?conversation=${conversationId}`);
+  const thread = page.locator(".shadcn-prototype-thread");
+  const button = page.getByRole("button", { name: "确认生成视频工程" });
+  await expect(button).toBeVisible();
+  // A server-rendered button can be visible before the client scroll observer
+  // has mounted. Confirm hydration before simulating content that arrives later.
+  const diagnostics = page.getByRole("button", { name: "诊断" });
+  await diagnostics.click();
+  await expect(diagnostics).toHaveAttribute("aria-expanded", "true");
+  await diagnostics.click();
+  await expect(diagnostics).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(() => thread.evaluate((element) =>
+    Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight)
+  )).toBeLessThanOrEqual(1);
+  await thread.evaluate((element) => { element.style.overflowAnchor = "none"; });
+
+  await thread.locator(".shadcn-prototype-message-group").first().evaluate((element) => {
+    const lateContent = document.createElement("div");
+    lateContent.style.height = "180px";
+    lateContent.dataset.testLateContent = "true";
+    element.append(lateContent);
+  });
+  await expect.poll(() => thread.evaluate((element) =>
+    Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight)
+  )).toBeLessThanOrEqual(1);
+  await expect.poll(async () => button.evaluate((element) => {
+    const scroller = element.closest(".shadcn-prototype-thread");
+    if (!scroller) return false;
+    const box = element.getBoundingClientRect();
+    const bounds = scroller.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return box.top >= bounds.top && box.bottom <= bounds.bottom
+      && (hit === element || element.contains(hit));
+  })).toBe(true);
+
+  await thread.hover();
+  await page.mouse.wheel(0, -1000);
+  await expect.poll(() => thread.evaluate((element) => element.scrollTop)).toBe(0);
+  await thread.locator(".shadcn-prototype-message-group").first().evaluate((element) => {
+    const lateContent = element.querySelector<HTMLElement>("[data-test-late-content]");
+    if (lateContent) lateContent.style.height = "260px";
+  });
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  await expect.poll(() => thread.evaluate((element) => element.scrollTop)).toBe(0);
+});
+
 test("narrow new-project capability strip explains that more abilities can be viewed", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto("/app/assets");
@@ -182,6 +234,13 @@ test("narrow project resources keep real saved-asset names readable", async ({ p
     await expect(drawer).toBeVisible();
     const resourceName = drawer.getByRole("button", { name: "测试门店素材", exact: true });
     await expect(resourceName).toBeVisible();
+    const fontSize = (selector: string) => drawer.locator(selector).first().evaluate(
+      (element) => Number.parseFloat(getComputedStyle(element).fontSize),
+    );
+    expect(await fontSize(".shadcn-prototype-project-resources-tabs button")).toBeGreaterThanOrEqual(12.5);
+    expect(await fontSize(".shadcn-prototype-project-resource-identity button")).toBeGreaterThanOrEqual(14);
+    expect(await fontSize(".shadcn-prototype-project-resource-identity small")).toBeGreaterThanOrEqual(12);
+    expect(await fontSize(".shadcn-prototype-project-resource-actions button")).toBeGreaterThanOrEqual(12.5);
     if (width <= 380) {
       const isNameUnclipped = await resourceName.evaluate((node) => node.scrollWidth <= node.clientWidth + 1);
       expect(isNameUnclipped, `Saved-asset name is visually clipped at ${width}px`).toBe(true);

@@ -124,6 +124,7 @@ const VIDEO_ONLY_INSTRUCTION = "我上传了一条视频，请先询问我是否
 const ATTACHMENT_HELP_TEXT = "图片和文档会先保存并理解；说出目标或用途后，我会建议作为画面、参考或需求证据，不会因上传就用于某个分镜。添加视频后可直接发送，再选择是否先整理成片段。";
 const COMPOSER_MIN_HEIGHT = 36;
 const COMPOSER_MAX_HEIGHT = 128;
+const USER_SCROLL_INTENT_WINDOW_MS = 750;
 const ADJUST_HINT_PLACEHOLDER = "说说想怎么调整，比如换个开场、缩短时长、改用某个素材…";
 
 function generationJobFromMessage(message: AssetConversationMessage): AssetGenerationJobResponse | null {
@@ -571,7 +572,9 @@ export default function ConversationStudio({
   const optimisticExchange = pendingExchange;
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const threadContentRef = useRef<HTMLDivElement | null>(null);
   const followThreadBottomRef = useRef(true);
+  const userScrollIntentUntilRef = useRef(0);
   const threadScopeRef = useRef({ conversationId: "", detailsLoaded: false });
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
@@ -616,12 +619,26 @@ export default function ConversationStudio({
     const previousScope = threadScopeRef.current;
     if (previousScope.conversationId !== selectedConversation.id || (detailsLoaded && !previousScope.detailsLoaded)) {
       followThreadBottomRef.current = true;
+      userScrollIntentUntilRef.current = 0;
     }
     threadScopeRef.current = { conversationId: selectedConversation.id, detailsLoaded };
     if (thread && detailsLoaded && followThreadBottomRef.current) {
       thread.scrollTop = Math.max(0, thread.scrollHeight - thread.clientHeight);
     }
   }, [selectedConversation.id, selectedConversation.detailsLoaded, visibleConversationMessages]);
+  useLayoutEffect(() => {
+    const thread = threadRef.current;
+    const content = threadContentRef.current;
+    if (!thread || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (selectedConversation.detailsLoaded !== false && followThreadBottomRef.current) {
+        thread.scrollTop = Math.max(0, thread.scrollHeight - thread.clientHeight);
+      }
+    });
+    observer.observe(content);
+    observer.observe(thread);
+    return () => observer.disconnect();
+  }, [selectedConversation.id, selectedConversation.detailsLoaded]);
   const hasPersistedRequirementSnapshotTurn = useMemo(() => {
     if (!requirementSnapshot) return false;
     return visibleConversationMessages.some((message) => {
@@ -1294,11 +1311,21 @@ export default function ConversationStudio({
       <div
         className="shadcn-prototype-thread"
         ref={threadRef}
+        onWheel={() => { userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_WINDOW_MS; }}
+        onTouchMove={() => { userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_WINDOW_MS; }}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) {
+            userScrollIntentUntilRef.current = performance.now() + USER_SCROLL_INTENT_WINDOW_MS;
+          }
+        }}
         onScroll={(event) => {
           const thread = event.currentTarget;
-          followThreadBottomRef.current = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 64;
+          const nearBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 64;
+          if (nearBottom) followThreadBottomRef.current = true;
+          else if (performance.now() <= userScrollIntentUntilRef.current) followThreadBottomRef.current = false;
         }}
       >
+        <div className="shadcn-prototype-thread-content" ref={threadContentRef}>
         {selectedConversation.detailsLoaded === false ? (
           detailLoadError ? (
             <div className="shadcn-prototype-message-group" role="alert">
@@ -1707,6 +1734,7 @@ export default function ConversationStudio({
             token={requirementAnalyticsToken}
           />
         ) : null}
+        </div>
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>

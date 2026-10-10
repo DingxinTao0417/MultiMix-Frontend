@@ -49,6 +49,7 @@ describe("conversation thread visibility", () => {
       clientHeight: { configurable: true, value: 250 },
     });
     thread.scrollTop = 100;
+    fireEvent.wheel(thread, { deltaY: -100 });
     fireEvent.scroll(thread);
 
     view.rerender(renderStudio({
@@ -67,6 +68,25 @@ describe("conversation thread visibility", () => {
       messages: [...conversation.messages, { role: "assistant", text: "下一条进度" }],
     }));
     expect(thread.scrollTop).toBe(750);
+  });
+
+  it("keeps following when layout moves the scroll position without user input", () => {
+    const view = render(renderStudio({ ...conversation, detailsLoaded: true }));
+    const thread = view.container.querySelector<HTMLDivElement>(".shadcn-prototype-thread")!;
+    Object.defineProperties(thread, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 250 },
+    });
+    thread.scrollTop = 100;
+    fireEvent.scroll(thread);
+
+    view.rerender(renderStudio({
+      ...conversation,
+      detailsLoaded: true,
+      messages: [...conversation.messages, { role: "assistant", text: "新进度" }],
+    }));
+
+    expect(thread.scrollTop).toBe(650);
   });
 
   it("positions a different project at its latest message even after reading old history", () => {

@@ -1871,13 +1871,17 @@ button:disabled {
 }
 
 .shadcn-prototype-thread {
-  display: grid;
-  align-content: start;
-  gap: 14px;
   width: 100%;
   min-height: 0;
   overflow: auto;
   padding: 24px clamp(18px, 4vw, 30px);
+}
+
+.shadcn-prototype-thread-content {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
 }
 
 .shadcn-prototype-thread article {
@@ -3563,6 +3567,14 @@ button:disabled {
   font-size: 12px;
 }
 
+.shadcn-prototype-project-resources-drawer :is(
+  .shadcn-prototype-project-resources-tabs button,
+  .shadcn-prototype-project-resources-scope button,
+  .shadcn-prototype-project-resources-pagination button
+) {
+  font-size: 13px;
+}
+
 .shadcn-prototype-project-resources-tabs button[aria-pressed="true"],
 .shadcn-prototype-project-resources-scope button[aria-pressed="true"] {
   border-color: #d9d0ff;
@@ -3650,7 +3662,7 @@ button:disabled {
   overflow: hidden;
   border: 0;
   padding: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   text-align: left;
   text-overflow: ellipsis;
@@ -3660,7 +3672,7 @@ button:disabled {
 .shadcn-prototype-project-resource-identity small {
   overflow: hidden;
   color: var(--sp-subtle);
-  font-size: 11px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3675,7 +3687,7 @@ button:disabled {
 .shadcn-prototype-project-resource-actions > button {
   padding: 5px 7px;
   color: var(--sp-subtle);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .shadcn-prototype-project-resource-actions > button:last-of-type {
@@ -3694,7 +3706,7 @@ button:disabled {
   background: #f5f3f0;
   padding: 5px 7px;
   color: var(--sp-subtle);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .shadcn-prototype-project-resource-more summary::-webkit-details-marker {
@@ -3712,7 +3724,7 @@ button:disabled {
   background: #fff;
   padding: 7px 8px;
   box-shadow: 0 7px 18px rgba(32, 31, 30, 0.12);
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .shadcn-prototype-project-source-permanent-delete {
@@ -3741,7 +3753,7 @@ button:disabled {
     min-height: 44px;
     align-items: center;
     padding: 9px 8px;
-    font-size: 12px;
+    font-size: 13px;
   }
 }
 
@@ -12300,8 +12312,11 @@ label {
 }
 
 .agent-visual-refresh .shadcn-prototype-thread {
-  gap: 18px;
   padding: 28px clamp(22px, 4vw, 34px);
+}
+
+.agent-visual-refresh .shadcn-prototype-thread-content {
+  gap: 18px;
 }
 
 .agent-visual-refresh .shadcn-prototype-message-group {
