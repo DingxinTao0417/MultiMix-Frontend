@@ -25,9 +25,10 @@ function clearAuthorizedPlaybackUrls(): void {
 
 function resolveAuthorizedPlaybackUrl(playbackUrl: string): string {
   try {
-    const candidate = new URL(playbackUrl);
-    if (!candidate.pathname.startsWith("/v1/video/bgm/media/")) return playbackUrl;
     const apiBase = new URL(API_BASE);
+    const candidate = new URL(playbackUrl, apiBase);
+    const isOriginalMedia = /^\/v1\/video\/projects\/\d+\/media\/\d+$/.test(candidate.pathname);
+    if (!candidate.pathname.startsWith("/v1/video/bgm/media/") && !isOriginalMedia) return playbackUrl;
     return new URL(`${candidate.pathname}${candidate.search}${candidate.hash}`, apiBase).toString();
   } catch {
     return playbackUrl;

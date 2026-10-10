@@ -18,6 +18,34 @@ import {
   removeProjectSource,
 } from "./api";
 
+describe("shared API base address", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("normalizes deployment whitespace and trailing slashes for workspace and editor", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", " https://api.example.test///\r\n");
+    vi.resetModules();
+    const client = await import("./api");
+    const editor = await import("../editor-engine/vendor/api");
+    expect(client.API_BASE).toBe("https://api.example.test");
+    expect(client.isApiConfigured).toBe(true);
+    expect(editor.API_BASE).toBe(client.API_BASE);
+    expect(editor.mediaUrl("supabase://bucket/source")).toBe(
+      "https://api.example.test/v1/video/media?ref=supabase%3A%2F%2Fbucket%2Fsource",
+    );
+  });
+
+  it("treats whitespace-only configuration as disconnected", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", " \r\n");
+    vi.resetModules();
+    const client = await import("./api");
+    expect(client.isApiConfigured).toBe(false);
+    expect(client.API_BASE).toBe("http://127.0.0.1:8199");
+  });
+});
+
 describe("api", () => {
   afterEach(() => {
     vi.restoreAllMocks();
