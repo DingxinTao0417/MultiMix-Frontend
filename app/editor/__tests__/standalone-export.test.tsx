@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExportFinalizeJob } from "../video-export-client";
 import { useEffect } from "react";
 import EditorView from "../EditorView";
+import type { ProjectLoadEvent } from "../project-load-diagnostics";
 
 const mocks = vi.hoisted(() => ({
   getCurrent: vi.fn(), wait: vi.fn(), retry: vi.fn(), upload: vi.fn(),
@@ -120,6 +121,50 @@ function chooseExport(label: "原始成片" | "品牌展示版") {
   fireEvent.click(screen.getByRole("button", { name: "导出视频" }));
   fireEvent.click(screen.getByRole("menuitem", { name: label }));
 }
+
+describe("initial project load diagnostics", () => {
+  function events(spy: { mock: { calls: unknown[][] } }): ProjectLoadEvent[] {
+    return spy.mock.calls.filter(([tag]) => tag === "[EditorLoad]").map(([, event]) => event as ProjectLoadEvent);
+  }
+
+  it("distinguishes request rejection without logging credentials or retrying", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const failure = new TypeError("private-response-text");
+    vi.mocked(fetch).mockRejectedValue(failure);
+    render(<EditorView assetId="42" jobId={null} token="private-auth-token" embed mode="preview" />);
+    await screen.findByText("private-response-text");
+    expect(events(info)).toContainEqual(expect.objectContaining({
+      phase: "failed", failed_at: "request_started", error_kind: "type_error",
+    }));
+    expect(JSON.stringify(events(info))).not.toMatch(/private-auth-token|private-response-text|Authorization|test\.invalid/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.init).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes media hydration failure after project parsing", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    mocks.init.mockRejectedValue(new TypeError("media unavailable"));
+    render(<EditorView assetId="42" jobId={null} token="token" embed mode="preview" />);
+    await screen.findByText("media unavailable");
+    expect(events(info)).toContainEqual(expect.objectContaining({
+      phase: "failed", failed_at: "media_hydration_started", error_kind: "type_error",
+    }));
+    expect(events(info)).toContainEqual(expect.objectContaining({ phase: "response_received", http_status: 200 }));
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("records the successful initial load and actual component unmount", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const view = render(<EditorView assetId="42" jobId={null} token="token" embed mode="preview" />);
+    await waitFor(() => expect(events(info)).toContainEqual(expect.objectContaining({ phase: "ready" })));
+    view.unmount();
+    expect(events(info).map((event) => (event as { phase: string }).phase)).toEqual([
+      "mounted", "request_started", "response_received", "project_parsed",
+      "media_hydration_started", "ready", "unmounted",
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("embedded export live content guard", () => {
   it("announces readiness after the current message bridge and save coordinator are installed", async () => {
@@ -484,6 +529,8 @@ describe("standalone branded export recovery", () => {
     mocks.getCurrent.mockReturnValue(original);
     render(<EditorView assetId="42" jobId={null} token="token" />);
     await screen.findByRole("button", { name: "保存项目" });
+    // Establish the in-flight recovery before simulating a later save.
+    await waitFor(() => expect(mocks.getCurrent).toHaveBeenCalledOnce());
     mocks.serialize.mockReturnValue({ tracks: [{ id: "new-saved", elements: [] }] });
     fireEvent.click(screen.getByRole("button", { name: "保存项目" }));
     await screen.findByRole("button", { name: "已保存" });
