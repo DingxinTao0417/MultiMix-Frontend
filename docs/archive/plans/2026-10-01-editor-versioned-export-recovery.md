@@ -1,8 +1,10 @@
 # 视频工程带版本保存与断点导出修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
-> Last verified: 2026-10-01
+> Last verified: 2026-10-10
+
+> 归档口径：仅完成所记录工程断点的页面导出与下载；首尾图形软质量、其他样本和用户接受度未由此证明，原证据范围保留。后续能力与验收见[首版能力计划](../../../../MultiMix-Backend/docs/plans/active/2026-09-21-first-release-capability-readiness.md)及相关QA，不把归档解释为从零完整E2E通过。
 
 ## 背景与最早根因
 
