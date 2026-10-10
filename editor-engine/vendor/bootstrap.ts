@@ -49,12 +49,45 @@ type DownloadedMediaBlob = {
   status: number;
 };
 
+type MediaFailureBoundary = "await_response" | "read_body" | "validate";
+type MediaFailureMetadata = Partial<Omit<DownloadedMediaBlob, "blob" | "durationMs">> & {
+  failedAt?: MediaFailureBoundary;
+  rangeStart?: number;
+  requestTimeoutMs?: number;
+};
+type MediaLoadEvent = {
+  stage: "preview" | "export";
+  outcome: "prepared" | "failed";
+  mediaIndex: number;
+  mediaType: string;
+  durationMs: number;
+  bytes?: number;
+  status?: number;
+  reason?: MediaHydrationFailureReason;
+  failedAt?: MediaFailureBoundary;
+  rangeStart?: number;
+  requestTimeoutMs?: number;
+};
+
+function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
+  try {
+    console[level]("[MediaLoad] " + JSON.stringify({
+      timestamp: new Date().toISOString(),
+      stage: event.stage, outcome: event.outcome,
+      mediaIndex: event.mediaIndex, mediaType: event.mediaType,
+      durationMs: event.durationMs, bytes: event.bytes, status: event.status,
+      reason: event.reason, failedAt: event.failedAt,
+      rangeStart: event.rangeStart, requestTimeoutMs: event.requestTimeoutMs,
+    }));
+  } catch { /* Diagnostics must not change preparation results. */ }
+}
+
 class MediaHydrationError extends Error {
   constructor(
     readonly reason: MediaHydrationFailureReason,
     readonly durationMs: number,
     message: string,
-    readonly metadata: Partial<Omit<DownloadedMediaBlob, "blob" | "durationMs">> = {},
+    readonly metadata: MediaFailureMetadata = {},
   ) {
     super(message);
     this.name = "MediaHydrationError";
@@ -63,17 +96,6 @@ class MediaHydrationError extends Error {
 
 function elapsedMs(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
-}
-
-function diagnosticUrl(url: string): string {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return url.split(/[?#]/, 1)[0] || url;
-  }
 }
 
 function normalizedContentType(response: Response, blob: Blob): string {
@@ -97,6 +119,9 @@ async function fetchMediaPart(
   timeoutMs: number,
 ): Promise<{ response: Response; blob: Blob }> {
   const controller = new AbortController();
+  const startedAt = performance.now();
+  let failedAt: MediaFailureBoundary = "await_response";
+  let observedStatus: number | undefined;
   let timedOut = false;
   const timeout = window.setTimeout(() => {
     timedOut = true;
@@ -107,15 +132,18 @@ async function fetchMediaPart(
       headers: { Range: range },
       signal: controller.signal,
     });
+    observedStatus = response.status;
+    failedAt = "read_body";
     const blob = await response.blob();
     return { response, blob };
   } catch (error) {
     throw new MediaHydrationError(
       timedOut ? "timeout" : "network",
-      timeoutMs,
+      elapsedMs(startedAt),
       timedOut
         ? `Media range request timed out after ${timeoutMs}ms`
         : error instanceof Error ? error.message : String(error),
+      { failedAt, status: observedStatus, rangeStart: Number(range.slice(6).split("-", 1)[0]), requestTimeoutMs: timeoutMs },
     );
   } finally {
     window.clearTimeout(timeout);
@@ -268,7 +296,7 @@ export async function hydrateAssetFiles(
   for (let i = 0; i < assets.length; i += MEDIA_HYDRATION_BATCH_SIZE) {
     const batch = assets.slice(i, i + MEDIA_HYDRATION_BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(async (asset) => {
+      batch.map(async (asset, batchIndex) => {
         const url = playbackUrlById[asset.id];
         const startedAt = performance.now();
         try {
@@ -283,32 +311,26 @@ export async function hydrateAssetFiles(
             });
           }
           const file = new File([blob], asset.name, { type: blob.type });
-          console.info("media hydration succeeded", {
-            assetId: asset.id,
-            assetName: asset.name,
-            assetType: asset.type,
+          reportMediaLoad("info", {
+            stage: "preview", outcome: "prepared", mediaIndex: i + batchIndex, mediaType: asset.type,
             bytes: downloaded.bytes,
-            contentType: downloaded.contentType,
             durationMs: downloaded.durationMs,
             status: downloaded.status,
-            url: diagnosticUrl(url),
           });
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
           const failure = e instanceof MediaHydrationError
             ? e
             : new MediaHydrationError("network", elapsedMs(startedAt), e instanceof Error ? e.message : String(e));
-          console.warn("media hydration failed", {
-            assetId: asset.id,
-            assetName: asset.name,
-            assetType: asset.type,
+          reportMediaLoad("warn", {
+            stage: "preview", outcome: "failed", mediaIndex: i + batchIndex, mediaType: asset.type,
             bytes: failure.metadata.bytes,
-            contentType: failure.metadata.contentType,
             durationMs: failure.durationMs,
-            error: failure.message,
             reason: failure.reason,
             status: failure.metadata.status,
-            url: url ? diagnosticUrl(url) : undefined,
+            failedAt: failure.metadata.failedAt ?? "validate",
+            rangeStart: failure.metadata.rangeStart,
+            requestTimeoutMs: failure.metadata.requestTimeoutMs,
           });
           throw failure;
         } finally {
@@ -338,7 +360,7 @@ export async function hydrateAssetFilesForExport(
   }
 
   const results: MediaAsset[] = [];
-  for (const asset of assets) {
+  for (const [mediaIndex, asset] of assets.entries()) {
     if (asset.file.size > 0) {
       results.push(asset);
       continue;
@@ -351,17 +373,19 @@ export async function hydrateAssetFilesForExport(
       const downloaded = await fetchPreparedMediaBlob(asset, url, options);
       const file = new File([downloaded.blob], asset.name, { type: downloaded.contentType });
       results.push({ ...asset, file, url: URL.createObjectURL(downloaded.blob) });
-      console.info("export media hydration succeeded", {
-        assetId: asset.id,
-        assetName: asset.name,
-        assetType: asset.type,
+      reportMediaLoad("info", {
+        stage: "export", outcome: "prepared", mediaIndex, mediaType: asset.type,
         bytes: downloaded.bytes,
-        contentType: downloaded.contentType,
         durationMs: downloaded.durationMs,
         status: downloaded.status,
-        url: diagnosticUrl(url),
       });
     } catch (error) {
+      if (error instanceof MediaHydrationError) reportMediaLoad("warn", {
+        stage: "export", outcome: "failed", mediaIndex, mediaType: asset.type,
+        durationMs: error.durationMs, bytes: error.metadata.bytes, status: error.metadata.status,
+        reason: error.reason, failedAt: error.metadata.failedAt ?? "validate",
+        rangeStart: error.metadata.rangeStart, requestTimeoutMs: error.metadata.requestTimeoutMs,
+      });
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`导出素材“${asset.name}”准备失败：${message}`, { cause: error });
     }

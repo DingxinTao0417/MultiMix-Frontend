@@ -16,6 +16,11 @@ import { EditorCore } from "@editor/core";
 
 const { hydrateAssetFiles } = bootstrap;
 
+function mediaEvents(mock: { mock: { calls: unknown[][] } }) {
+  return mock.mock.calls.flatMap(([message]) => typeof message === "string" && message.startsWith("[MediaLoad] ")
+    ? [JSON.parse(message.slice("[MediaLoad] ".length))] : []);
+}
+
 type ExportHydrator = (
   assets: Array<typeof stalledMedia & { file: File }>,
   project: BackendProject,
@@ -67,6 +72,56 @@ afterEach(() => {
 });
 
 describe("hydrateAssetFiles", () => {
+  it.each(["await_response", "read_body"] as const)("records a readable network failure at %s without sensitive values", async (failedAt) => {
+    vi.stubGlobal("window", globalThis);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const secret = "private-name token=private-token body-private-error";
+    const response = new Response("valid", { status: 206 });
+    vi.spyOn(response, "blob").mockRejectedValue(new TypeError(secret));
+    vi.stubGlobal("fetch", vi.fn(() => failedAt === "await_response"
+      ? Promise.reject(new TypeError(secret)) : Promise.resolve(response)));
+    await expect(hydrateAssetFiles([readyMedia], projectWithMedia())).rejects.toThrow(secret);
+    const [event] = mediaEvents(warning);
+    expect(event).toMatchObject({ stage: "preview", outcome: "failed", mediaIndex: 0, mediaType: "video", reason: "network", failedAt, rangeStart: 0, requestTimeoutMs: 60_000 });
+    if (failedAt === "read_body") expect(event.status).toBe(206);
+    else expect(event).not.toHaveProperty("status");
+    expect(JSON.stringify(event)).not.toContain(secret);
+    expect(JSON.stringify(event)).not.toContain(readyMedia.url);
+    expect(JSON.stringify(event)).not.toContain(readyMedia.name);
+    expect(Object.keys(event)).toEqual(expect.arrayContaining(["timestamp", "durationMs"]));
+  });
+
+  it("distinguishes a response-body timeout after successful headers", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const response = new Response("valid", { status: 206 });
+      vi.spyOn(response, "blob").mockImplementation(() => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      }));
+      return Promise.resolve(response);
+    }));
+    const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
+    const rejected = expect(pending).rejects.toThrow("timed out after 60000ms");
+    await vi.advanceTimersByTimeAsync(60_000);
+    await rejected;
+    expect(mediaEvents(warning)).toEqual([expect.objectContaining({ reason: "timeout", failedAt: "read_body", status: 206, requestTimeoutMs: 60_000 })]);
+  });
+
+  it("keeps success and original failure semantics when console logging throws", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => { throw new Error("writer unavailable"); });
+    vi.spyOn(console, "warn").mockImplementation(() => { throw new Error("writer unavailable"); });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("valid", { headers: { "content-type": "video/mp4" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const [asset] = await hydrateAssetFiles([readyMedia], projectWithMedia());
+    expect(asset.file.size).toBe(5);
+    fetchMock.mockRejectedValue(new TypeError("original network failure"));
+    await expect(hydrateAssetFiles([readyMedia], projectWithMedia())).rejects.toThrow("original network failure");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects when valid individual ranges exceed the total preparation deadline", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
@@ -240,15 +295,14 @@ describe("hydrateAssetFiles", () => {
     await rejected;
     expect(progress).toHaveBeenLastCalledWith(2, 2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(warning).toHaveBeenCalledWith(
-      "media hydration failed",
+    expect(mediaEvents(warning)).toEqual([
       expect.objectContaining({
-        assetId: stalledMedia.id,
+        mediaIndex: 0,
         reason: "timeout",
         durationMs: expect.any(Number),
-        url: "https://example.test/stalled.mp4",
+        failedAt: "await_response",
       }),
-    );
+    ]);
   });
 
   it("hydrates a slow but valid WebM before allowing the export renderer to use it", async () => {
@@ -297,18 +351,15 @@ describe("hydrateAssetFiles", () => {
     const assets = await hydrateAssetFiles([readyMedia], projectWithMedia());
 
     expect(assets[0].file).toBeInstanceOf(File);
-    expect(info).toHaveBeenCalledWith(
-      "media hydration succeeded",
+    expect(mediaEvents(info)).toEqual([
       expect.objectContaining({
-        assetId: readyMedia.id,
-        assetType: "video",
+        stage: "preview", outcome: "prepared", mediaIndex: 0, mediaType: "video",
         bytes: 2,
-        contentType: "video/mp4",
         durationMs: expect.any(Number),
         status: 200,
-        url: readyMedia.url,
       }),
-    );
+    ]);
+    expect(Object.keys(mediaEvents(info)[0]).sort()).toEqual(["bytes", "durationMs", "mediaIndex", "mediaType", "outcome", "stage", "status", "timestamp"]);
   });
 
   it("separates unavailable media from an unexpected response type in diagnostics", async () => {
@@ -323,18 +374,44 @@ describe("hydrateAssetFiles", () => {
 
     await expect(hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia())).rejects.toThrow("HTTP 404");
 
-    expect(warning).toHaveBeenCalledWith(
-      "media hydration failed",
-      expect.objectContaining({ assetId: stalledMedia.id, reason: "http", status: 404 }),
-    );
-    expect(warning).toHaveBeenCalledWith(
-      "media hydration failed",
-      expect.objectContaining({ assetId: readyMedia.id, contentType: "text/plain", reason: "mime", status: 200 }),
-    );
+    expect(mediaEvents(warning)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mediaIndex: 0, reason: "http", status: 404, failedAt: "validate" }),
+      expect.objectContaining({ mediaIndex: 1, reason: "mime", status: 200, failedAt: "validate" }),
+    ]));
   });
 });
 
 describe("hydrateAssetFilesForExport", () => {
+  it.each(["prepared", "failed"] as const)("reports %s export preparation using the same private-data-free contract", async (outcome) => {
+    vi.stubGlobal("window", globalThis);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => outcome === "failed"
+      ? Promise.reject(new TypeError("private-error"))
+      : Promise.resolve(new Response("valid", { headers: { "content-type": "video/mp4" } }))));
+    const pending = bootstrap.hydrateAssetFilesForExport([{ ...readyMedia, file: new File([], readyMedia.name) }], projectWithMedia());
+    if (outcome === "failed") await expect(pending).rejects.toThrow("private-error");
+    else expect((await pending)[0].file.size).toBe(5);
+    const [event] = [...mediaEvents(info), ...mediaEvents(warning)];
+    expect(event).toMatchObject({ stage: "export", outcome, mediaIndex: 0, mediaType: "video" });
+    if (outcome === "failed") expect(event).toMatchObject({ reason: "network", failedAt: "await_response" });
+    expect(JSON.stringify(event)).not.toMatch(/private-error|example\.test|ready\.mp4|url|headers|stack|message/);
+  });
+
+  it("records actual failure elapsed time instead of the configured timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((_resolve, reject) => {
+      window.setTimeout(() => reject(new TypeError("network unavailable")), 12);
+    })));
+    const pending = bootstrap.hydrateAssetFilesForExport([{ ...readyMedia, file: new File([], readyMedia.name) }], projectWithMedia());
+    const rejected = expect(pending).rejects.toThrow("network unavailable");
+    await vi.advanceTimersByTimeAsync(12);
+    await rejected;
+    expect(mediaEvents(warning)[0]).toMatchObject({ durationMs: 12, requestTimeoutMs: 60_000, reason: "network" });
+  });
+
   it("retains the canonical original playback address after serialization for export", async () => {
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
