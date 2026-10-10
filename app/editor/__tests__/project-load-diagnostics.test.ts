@@ -1,7 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createProjectLoadDiagnostic, type ProjectLoadEvent, type ProjectLoadOptions } from "../project-load-diagnostics";
 
 describe("project load diagnostic privacy and isolation", () => {
+  it("writes readable JSON text through the default console collector", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    try {
+      createProjectLoadDiagnostic({ embedded: true, online: true, apiSameOrigin: false });
+      const [tag, raw] = info.mock.calls[0];
+      expect(tag).toBe("[EditorLoad]");
+      expect(typeof raw).toBe("string");
+      expect(JSON.parse(raw)).toMatchObject({ phase: "mounted", embedded: true, online: true, api_same_origin: false });
+    } finally { info.mockRestore(); }
+  });
+
   it("constructs an allowlisted event without copying input or error text", () => {
     const events: ProjectLoadEvent[] = [];
     const options = { embedded: true, online: true, apiSameOrigin: false, token: "secret-token", url: "private-url" };

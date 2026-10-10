@@ -124,7 +124,7 @@ function chooseExport(label: "原始成片" | "品牌展示版") {
 
 describe("initial project load diagnostics", () => {
   function events(spy: { mock: { calls: unknown[][] } }): ProjectLoadEvent[] {
-    return spy.mock.calls.filter(([tag]) => tag === "[EditorLoad]").map(([, event]) => event as ProjectLoadEvent);
+    return spy.mock.calls.filter(([tag]) => tag === "[EditorLoad]").map(([, event]) => JSON.parse(event as string) as ProjectLoadEvent);
   }
 
   it("distinguishes request rejection without logging credentials or retrying", async () => {

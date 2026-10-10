@@ -27,7 +27,7 @@ function errorKind(error: unknown): ProjectLoadEvent["error_kind"] {
 
 export function createProjectLoadDiagnostic(
   options: ProjectLoadOptions,
-  write: (event: ProjectLoadEvent) => void = (event) => console.info("[EditorLoad]", event),
+  write: (event: ProjectLoadEvent) => void = (event) => console.info("[EditorLoad]", JSON.stringify(event)),
 ) {
   // The identifier is local correlation only and contains no project identity.
   let id: string;
