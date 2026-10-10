@@ -947,6 +947,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             />
           ) : product.backendAssetId && projectPreviewRequested ? (
             <VideoProjectPreview
+              key={`${product.id}:${product.version ?? product.backendUpdatedAt ?? ""}`}
               ref={projectPreviewRef}
               assetId={product.backendAssetId}
               ratioClassName={getProductRatioClass(product.ratio)}

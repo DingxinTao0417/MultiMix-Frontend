@@ -33,6 +33,8 @@ import SourceRefBlock from "./source-ref-block";
 import VideoQualityPanel from "./video-quality-panel";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import VideoFilmReviewPanel from "./video-film-review-panel";
+import SubtitleReviewPanel from "./subtitle-review-panel";
+import type { AssetSubtitleControls, AssetSubtitleOperation } from "../lib/asset-workspace-types";
 import {
   isFiveLayerVideoPlan,
   isPresenterSourceVideoPlan,
@@ -78,6 +80,30 @@ function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function subtitleControlsValue(value: unknown): AssetSubtitleControls | null {
+  const record = recordValue(value);
+  if (!record) return null;
+  if (record.available === false && typeof record.reason === "string") return record as AssetSubtitleControls;
+  if (record.available !== true || typeof record.enabled !== "boolean"
+      || !Number.isInteger(record.revision) || Number(record.revision) < 0
+      || !["source", "translated", "bilingual"].includes(String(record.mode))
+      || typeof record.source_language !== "string" || typeof record.target_language !== "string"
+      || typeof record.can_enable !== "boolean" || typeof record.can_undo !== "boolean"
+      || !(record.enable_requires_generation === undefined || typeof record.enable_requires_generation === "boolean")
+      || !(record.original_audio_ref === null || typeof record.original_audio_ref === "string")
+      || !Array.isArray(record.cues) || !record.cues.every((cue: unknown) => {
+        const item = recordValue(cue);
+        return item && typeof item.cue_id === "string" && typeof item.text === "string"
+          && typeof item.source_text === "string" && typeof item.user_edited === "boolean"
+          && typeof item.start_seconds === "number" && Number.isFinite(item.start_seconds) && item.start_seconds >= 0
+          && typeof item.end_seconds === "number" && Number.isFinite(item.end_seconds) && item.end_seconds > item.start_seconds;
+      }) || !Array.isArray(record.revisions) || !record.revisions.every((revision: unknown) => {
+        const item = recordValue(revision);
+        return item && Number.isInteger(item.revision) && Number(item.revision) >= 0 && typeof item.active === "boolean";
+      })) return { available: false, reason: "字幕信息需要重新读取，请刷新作品。" };
+  return record as AssetSubtitleControls;
 }
 
 function positiveAssetId(value: unknown): number | null {
@@ -183,6 +209,7 @@ export default function ProductWorkspace({
   onSelectSegment,
   onSceneSourceAction,
   onContinueDirectorProduction,
+  onSubtitleRequest,
   sceneSourceProgress,
   product,
   savedVersion,
@@ -212,6 +239,7 @@ export default function ProductWorkspace({
   onSelectSegment?: (segment: AssetProductSegment) => void;
   onSceneSourceAction?: (action: SceneSourceAction) => Promise<void> | void;
   onContinueDirectorProduction?: (product: ProductArtifact) => Promise<void> | void;
+  onSubtitleRequest?: (operation: AssetSubtitleOperation) => Promise<void>;
   sceneSourceProgress?: { sceneId: string; stage: string; error?: string } | null;
   product: ProductArtifact;
   savedVersion?: string;
@@ -2697,6 +2725,15 @@ export default function ProductWorkspace({
               />
             </div>
           </div>
+        ) : null}
+
+        {product.mode === "video" && product.backendAssetId && subtitleControlsValue(presenterVideoPlan?.subtitle_controls)
+          && !isTextEditing && !showEditorEmbed && !historicalPreview ? (
+          <SubtitleReviewPanel key={`${selectedConversation.id}:${product.id}:${token ?? ""}`}
+            assetId={product.backendAssetId} contentHash={product.contentHash ?? ""}
+            controls={subtitleControlsValue(presenterVideoPlan?.subtitle_controls)!}
+            disabled={!onSubtitleRequest || Boolean(selectedConversation.readonly) || productMutationPending || orchestrationPending || !canBrowseVideo || isFailedStatus}
+            onRequest={onSubtitleRequest ?? (async () => { throw new Error("当前预览只读。"); })} />
         ) : null}
 
         {materialJobId ? (

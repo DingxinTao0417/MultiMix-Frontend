@@ -24,6 +24,7 @@ import type {
   RequirementTriggerKind,
   RequirementConflictResolution,
   AssetSourceResolutionSelection,
+  AssetSubtitleOperation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -213,6 +214,8 @@ export class BatchUploadError extends Error {
 }
 const UPLOAD_STALL_TIMEOUT_MS = 60_000;
 const UPLOAD_STALL_ERROR = "上传长时间没有进展，请检查网络后重试。";
+const UPLOAD_RESPONSE_TIMEOUT_MS = 20 * 60_000;
+const UPLOAD_RESPONSE_ERROR = "文件已发送，但服务器处理超时，请检查素材状态后再操作。";
 
 export function assertVideoWritesAvailable(paused = VIDEO_WRITES_PAUSED): void {
   if (paused) throw new Error(VIDEO_WRITES_PAUSED_MESSAGE);
@@ -236,18 +239,27 @@ function uploadAssetWithProgress<T>(
     const send = () => {
       const request = new XMLHttpRequest();
       let requestFinished = false;
+      let bodySent = false;
       let stallTimer: ReturnType<typeof setTimeout> | null = null;
+      let responseTimer: ReturnType<typeof setTimeout> | null = null;
       const clearStallTimer = () => {
         if (stallTimer !== null) {
           clearTimeout(stallTimer);
           stallTimer = null;
         }
       };
+      const clearTimers = () => {
+        clearStallTimer();
+        if (responseTimer !== null) {
+          clearTimeout(responseTimer);
+          responseTimer = null;
+        }
+      };
       const finishWithError = (error: Error, retryable: boolean) => {
         if (settled || requestFinished) return;
         requestFinished = true;
-        clearStallTimer();
-        if (retryable && idempotencyKey && attempt === 0) {
+        clearTimers();
+        if (retryable && !bodySent && idempotencyKey && attempt === 0) {
           attempt += 1;
           setTimeout(send, 300);
           return;
@@ -268,17 +280,29 @@ function uploadAssetWithProgress<T>(
       if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
       if (idempotencyKey) request.setRequestHeader("Idempotency-Key", idempotencyKey);
       request.upload.onprogress = (event) => {
-        armStallTimer();
+        if (settled || requestFinished) return;
+        if (!bodySent) armStallTimer();
         onProgress(event.lengthComputable && event.total > 0
           ? Math.min(99, Math.round((event.loaded / event.total) * 100))
           : null);
       };
+      request.upload.onload = () => {
+        if (settled || requestFinished || bodySent) return;
+        bodySent = true;
+        clearStallTimer();
+        responseTimer = setTimeout(() => {
+          if (settled || requestFinished) return;
+          request.onabort = null;
+          request.abort();
+          finishWithError(new Error(UPLOAD_RESPONSE_ERROR), false);
+        }, UPLOAD_RESPONSE_TIMEOUT_MS);
+      };
       request.onerror = () => finishWithError(new Error(API_CONNECTION_ERROR), true);
-      request.onabort = () => finishWithError(new Error(UPLOAD_STALL_ERROR), false);
+      request.onabort = () => finishWithError(new Error(bodySent ? UPLOAD_RESPONSE_ERROR : UPLOAD_STALL_ERROR), false);
       request.onload = () => {
         if (settled || requestFinished) return;
         requestFinished = true;
-        clearStallTimer();
+        clearTimers();
         let payload: unknown;
         try {
           payload = request.responseText ? JSON.parse(request.responseText) as unknown : undefined;
@@ -547,6 +571,7 @@ export function buildConversationMessagePayload({
   sceneSourceDecision,
   sceneImageGenerationRequest,
   directorProductionPlan,
+  subtitleOperation,
 }: {
   conversationId: string;
   instruction: string;
@@ -574,6 +599,7 @@ export function buildConversationMessagePayload({
   sceneSourceDecision?: AssetSceneSourceDecision;
   sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
   directorProductionPlan?: AssetDirectorProductionPlan;
+  subtitleOperation?: AssetSubtitleOperation;
 }) {
   const serializedLongFormAction = longFormAction
     ? {
@@ -596,6 +622,15 @@ export function buildConversationMessagePayload({
     ...(selectedSceneId ? { selected_scene_id: selectedSceneId, selected_scene_version_id: selectedSceneVersionId } : {}),
     linked_asset_ids: linkedAssetIds ?? [],
     client_request_id: clientRequestId,
+    ...(subtitleOperation ? { subtitle_operation: {
+      asset_id: subtitleOperation.assetId,
+      expected_content_hash: subtitleOperation.expectedContentHash,
+      expected_subtitle_revision: subtitleOperation.expectedSubtitleRevision,
+      action: subtitleOperation.action,
+      ...(subtitleOperation.action === "correct_subtitle" ? { cue_id: subtitleOperation.cueId, text: subtitleOperation.text } : {}),
+      ...(subtitleOperation.action === "set_subtitle_visibility" ? { subtitles_enabled: subtitleOperation.subtitlesEnabled } : {}),
+      ...(subtitleOperation.action === "restore_subtitle_revision" ? { subtitle_revision: subtitleOperation.subtitleRevision } : {}),
+    } } : {}),
     ...(agentConfirmationId ? { agent_confirmation_id: agentConfirmationId } : {}),
     ...(sourceSubtitleMode ? { source_subtitle_mode: sourceSubtitleMode } : {}),
     ...(sourceResolutionSelection ? {
@@ -638,6 +673,8 @@ export function buildConversationMessagePayload({
         director_candidate_id: presenterDirectionConfirmation.directorCandidateId,
         ...(presenterDirectionConfirmation.ratio ? { ratio: presenterDirectionConfirmation.ratio } : {}),
         ...(presenterDirectionConfirmation.subtitleMode ? { subtitle_mode: presenterDirectionConfirmation.subtitleMode } : {}),
+        ...(typeof presenterDirectionConfirmation.subtitlesEnabled === "boolean" ? { subtitles_enabled: presenterDirectionConfirmation.subtitlesEnabled } : {}),
+        ...(typeof presenterDirectionConfirmation.bgmEnabled === "boolean" ? { bgm_enabled: presenterDirectionConfirmation.bgmEnabled } : {}),
         ...(presenterDirectionConfirmation.targetSeconds ? { target_seconds: presenterDirectionConfirmation.targetSeconds } : {}),
       },
     } : {}),
@@ -732,6 +769,9 @@ export function buildConversationMessagePayload({
         ...(typeof videoParameterConfirmation.aiVoiceEnabled === "boolean"
           ? { ai_voice_enabled: videoParameterConfirmation.aiVoiceEnabled }
           : {}),
+        ...(typeof videoParameterConfirmation.subtitlesEnabled === "boolean"
+          ? { subtitles_enabled: videoParameterConfirmation.subtitlesEnabled }
+          : {}),
       },
     } : {}),
     ...(videoProjectConfirmation ? {
@@ -739,6 +779,8 @@ export function buildConversationMessagePayload({
         ...(videoProjectConfirmation.directorAssetId ? { director_asset_id: videoProjectConfirmation.directorAssetId } : {}),
         ...(videoProjectConfirmation.directorContentHash ? { director_content_hash: videoProjectConfirmation.directorContentHash } : {}),
         ...(videoProjectConfirmation.ratio ? { ratio: videoProjectConfirmation.ratio } : {}),
+        ...(typeof videoProjectConfirmation.subtitlesEnabled === "boolean"
+          ? { subtitles_enabled: videoProjectConfirmation.subtitlesEnabled } : {}),
         catalog_version: videoProjectConfirmation.catalogVersion,
         enabled: videoProjectConfirmation.enabled,
         ...(videoProjectConfirmation.catalogId
@@ -772,6 +814,9 @@ export function buildVideoParameterConfirmationHeaders(
     target_seconds: confirmation.targetSeconds,
     ...(typeof confirmation.aiVoiceEnabled === "boolean"
       ? { ai_voice_enabled: confirmation.aiVoiceEnabled }
+      : {}),
+    ...(typeof confirmation.subtitlesEnabled === "boolean"
+      ? { subtitles_enabled: confirmation.subtitlesEnabled }
       : {}),
   };
   return {
@@ -941,6 +986,7 @@ export type AssetWorkspaceAdapter = {
     sceneSourceDecision?: AssetSceneSourceDecision;
     sceneImageGenerationRequest?: AssetSceneImageGenerationRequest;
     directorProductionPlan?: AssetDirectorProductionPlan;
+    subtitleOperation?: AssetSubtitleOperation;
     signal?: AbortSignal;
   }): Promise<{
     conversationId: string;
@@ -1862,9 +1908,10 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       sceneSourceDecision,
       sceneImageGenerationRequest,
       directorProductionPlan,
+      subtitleOperation,
       signal,
     }) {
-      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan) {
+      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan || subtitleOperation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse & {
@@ -1903,6 +1950,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           sceneSourceDecision,
           sceneImageGenerationRequest,
           directorProductionPlan,
+          subtitleOperation,
         }))
       });
       const generatedProduct = response.product ? contentAssetToProduct(response.product) : undefined;

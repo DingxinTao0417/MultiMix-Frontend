@@ -160,6 +160,10 @@ export default function ConfirmCard({
   const [selectedAiVoice, setSelectedAiVoice] = useState<boolean | undefined>(
     () => plan.voiceDefault,
   );
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState(plan.subtitlesEnabledDefault);
+  useEffect(() => {
+    setSubtitlesEnabled(plan.subtitlesEnabledDefault);
+  }, [plan.pendingIntentId, plan.pendingIntentVersion, plan.directorAssetId, plan.directorContentHash, plan.subtitlesEnabledDefault]);
   const [targetSeconds, setTargetSeconds] = useState(
     () => plan.durationSeconds ?? 30
   );
@@ -191,7 +195,7 @@ export default function ConfirmCard({
   );
   const bgmOptions = plan.bgmOptions ?? [];
   const [bgmEnabled, setBgmEnabled] = useState(
-    () => bgmOptions.length > 0 && plan.bgmEnabledDefault !== false,
+    () => typeof plan.bgmEnabledDefault === "boolean" ? plan.bgmEnabledDefault : bgmOptions.length > 0,
   );
   const [selectedBgmId, setSelectedBgmId] = useState(
     () => plan.bgmDefault ?? bgmOptions[0]?.id ?? "",
@@ -222,6 +226,15 @@ export default function ConfirmCard({
     && plan.ttsAvailable === false;
   const durationMin = plan.durationMin ?? 5;
   const durationMax = plan.durationMax ?? 600;
+  const durationConstraint = isPresenterProjectConfirmation ? plan.durationConstraint : undefined;
+  const durationBlocked = Boolean(durationConstraint && (
+    !Number.isInteger(targetSeconds) || targetSeconds < durationMin || targetSeconds > durationMax
+    || Math.abs(durationConstraint.retainedSeconds - targetSeconds) > durationConstraint.toleranceSeconds
+  ));
+  const clarificationBlocked = Boolean(plan.requiresClarification) && !(
+    isPresenterProjectConfirmation && plan.clarificationReason === "duration_mismatch"
+    && durationConstraint && !durationBlocked
+  );
   useEffect(() => {
     if (!assetId || !loadBgmCatalog || !bgmOptions.length) return;
     let cancelled = false;
@@ -240,7 +253,13 @@ export default function ConfirmCard({
   const withBgmConfirmation = (
     values?: AssetPlanConfirmationValues,
   ): AssetPlanConfirmationValues | undefined => {
-    if (plan.kind !== "video_project_confirmation" || !bgmOptions.length) return values;
+    if (isPresenterProjectConfirmation && typeof plan.bgmEnabledDefault === "boolean") {
+      return { ...values, bgmEnabled };
+    }
+    if (isVideoProjectConfirmation && typeof subtitlesEnabled === "boolean") {
+      values = { ...values, subtitlesEnabled };
+    }
+    if (!isVideoProjectConfirmation || !bgmOptions.length) return values;
     return {
       ...(values ?? {}),
       ...(bgmEnabled && selectedBgmId ? { bgmCatalogId: selectedBgmId } : {}),
@@ -248,7 +267,7 @@ export default function ConfirmCard({
       bgmEnabled,
     };
   };
-  const currentFields = isVideoParameterConfirmation
+  const currentFields = isVideoParameterConfirmation || isPresenterProjectConfirmation || isVideoProjectConfirmation
     ? plan.fields.map((field) => {
         if (field.key === "ratio" && selectedRatio && selectedRatio !== plan.ratioDefault) {
           return {
@@ -269,6 +288,12 @@ export default function ConfirmCard({
         ) {
           return { ...field, value: selectedAiVoice ? "开启" : "关闭" };
         }
+        if (field.key === "subtitles" && typeof subtitlesEnabled === "boolean") {
+          return { ...field, value: subtitlesEnabled ? "开启" : "关闭" };
+        }
+        if (field.key === "bgm" && isPresenterProjectConfirmation && typeof plan.bgmEnabledDefault === "boolean") {
+          return { ...field, value: bgmEnabled ? "开启" : "关闭" };
+        }
         return field;
       })
     : plan.fields;
@@ -277,6 +302,7 @@ export default function ConfirmCard({
         if (field.key === "ratio" && ratioOptions.length > 0) return false;
         if (field.key === "duration") return false;
         if (field.key === "ai_voice" && voiceOptions.length > 0) return false;
+        if (field.key === "subtitles" && typeof subtitlesEnabled === "boolean") return false;
         return true;
       })
     : currentFields;
@@ -702,7 +728,43 @@ export default function ConfirmCard({
           AI 配音当前不可用。你可以关闭配音继续，系统不会生成半成品。
         </p>
       ) : null}
-      {subtitleOptions.length ? (
+      {(isVideoParameterConfirmation || isPresenterProjectConfirmation || isVideoProjectConfirmation) && typeof subtitlesEnabled === "boolean" ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="添加字幕">
+          <span className="shadcn-prototype-confirm-ratio-label">添加字幕</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {[true, false].map((enabled) => (
+              <button
+                key={String(enabled)}
+                type="button"
+                role="radio"
+                aria-checked={enabled === subtitlesEnabled}
+                className={enabled === subtitlesEnabled ? "active" : undefined}
+                disabled={disabled}
+                onClick={() => setSubtitlesEnabled(enabled)}
+              >
+                {enabled ? "添加字幕" : "不添加字幕"}
+              </button>
+            ))}
+          </div>
+          <p className="shadcn-prototype-confirm-subtitle-help">仅控制新增的语音字幕，原视频中的已有文字会保留。</p>
+        </div>
+      ) : null}
+      {isPresenterProjectConfirmation && typeof plan.bgmEnabledDefault === "boolean" ? (
+        <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="背景音乐">
+          <span className="shadcn-prototype-confirm-ratio-label">背景音乐</span>
+          <div className="shadcn-prototype-confirm-ratio-options">
+            {[true, false].map((enabled) => (
+              <button key={String(enabled)} type="button" role="radio"
+                aria-checked={enabled === bgmEnabled} disabled={disabled}
+                className={enabled === bgmEnabled ? "active" : undefined}
+                onClick={() => setBgmEnabled(enabled)}>
+                {enabled ? "添加配乐" : "无配乐"}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {subtitleOptions.length && subtitlesEnabled !== false ? (
         <div className="shadcn-prototype-confirm-ratio" role="radiogroup" aria-label="字幕语言">
           <span className="shadcn-prototype-confirm-ratio-label">字幕语言</span>
           <div className="shadcn-prototype-confirm-ratio-options">
@@ -736,6 +798,11 @@ export default function ConfirmCard({
           />
         </label>
       ) : null}
+      {durationBlocked && durationConstraint ? (
+        <p role="alert" className="shadcn-prototype-confirm-warning">
+          当前保留 {durationConstraint.retainedSeconds.toFixed(3)} 秒，请调整目标时长或保留内容。
+        </p>
+      ) : null}
       <div className="shadcn-prototype-confirm-foot">
         <button
           type="button"
@@ -743,7 +810,8 @@ export default function ConfirmCard({
           disabled={
             disabled
             || !onConfirm
-            || Boolean(plan.requiresClarification)
+            || clarificationBlocked
+            || durationBlocked
             || (isVideoParameterConfirmation && plan.ratioConfirmationRequired === true && !selectedRatio)
             || (isVideoParameterConfirmation && voiceOptions.length > 0 && selectedAiVoice === undefined)
             || (bgmOptions.length > 0 && bgmEnabled && !selectedBgmId)
@@ -796,6 +864,7 @@ export default function ConfirmCard({
                   ratio: selectedRatio,
                   targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
                   aiVoiceEnabled: selectedAiVoice,
+                  ...(typeof subtitlesEnabled === "boolean" ? { subtitlesEnabled } : {}),
                   ...(selectedProductionId ? { productionChoiceId: selectedProductionId } : {}),
                 }
               : ratioOptions.length
@@ -803,13 +872,14 @@ export default function ConfirmCard({
                     ratio: selectedRatio,
                     ...(isPresenterProjectConfirmation ? {
                       targetSeconds: Math.max(durationMin, Math.min(durationMax, targetSeconds)),
+                      ...(typeof subtitlesEnabled === "boolean" ? { subtitlesEnabled } : {}),
                     } : {}),
                     ...(selectedDirection ? { directorCandidateId: selectedDirection } : {}),
-                    ...(selectedSubtitleMode ? { sourceSubtitleMode: selectedSubtitleMode } : {}),
+                    ...(selectedSubtitleMode && subtitlesEnabled !== false ? { sourceSubtitleMode: selectedSubtitleMode } : {}),
                   }
                 : selectedDirection
                   ? { directorCandidateId: selectedDirection }
-                  : selectedSubtitleMode
+                  : selectedSubtitleMode && subtitlesEnabled !== false
                     ? { sourceSubtitleMode: selectedSubtitleMode }
                     : undefined),
             );

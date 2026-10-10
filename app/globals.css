@@ -11111,6 +11111,14 @@ label {
   gap: 8px;
 }
 
+.shadcn-prototype-confirm-subtitle-help {
+  grid-column: 2;
+  margin: 0;
+  color: var(--sp-subtle);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 .shadcn-prototype-confirm-ratio-options button {
   height: 30px;
   padding: 0 12px;

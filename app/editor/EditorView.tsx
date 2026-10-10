@@ -935,6 +935,7 @@ export default function EditorView({
         projectRevisionRef.current.load(loadedProject.projectFingerprint);
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
+          if (previewOnly) postToParent({ type: "multimix-editor-preview-loading", totalMedia: total });
         });
         setState("ready");
       } catch (e) {

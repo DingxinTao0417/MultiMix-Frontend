@@ -15,6 +15,7 @@ import {
 
 import { formatPreviewTime } from "./video-preview-player";
 import type { VideoQualityReport } from "../lib/video-quality";
+import { MEDIA_HYDRATION_BATCH_SIZE, MEDIA_TOTAL_TIMEOUT_MS } from "../../../editor-engine/media-hydration-contract";
 import {
   BRAND_SHOWCASE_SPEC_VERSION,
   type ExportVariant,
@@ -29,6 +30,7 @@ type EditorPreviewMessage = {
   playing?: boolean;
   message?: string;
   progress?: number;
+  totalMedia?: number;
   report?: VideoQualityReport;
   blob?: Blob;
   previewChannel?: string;
@@ -100,6 +102,8 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(durationSeconds);
     const [iframeRevision, setIframeRevision] = useState(0);
+    const [preparationBudgetMs, setPreparationBudgetMs] = useState<number | null>(null);
+    const preparationSignalConsumedRef = useRef(false);
     const pendingSeekAndPlayRef = useRef<number | null>(null);
     const safeDuration = duration > 0 ? duration : Math.max(0, durationSeconds);
     const progressPercent = safeDuration > 0
@@ -116,6 +120,8 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
       setPlaying(false);
       setCurrentTime(0);
       setDuration(durationSeconds);
+      setPreparationBudgetMs(null);
+      preparationSignalConsumedRef.current = false;
     }, [assetId, durationSeconds, iframeRevision]);
 
     const retryPreview = useCallback(() => {
@@ -155,9 +161,9 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         setReady(false);
         setFailed(true);
         setPlaying(false);
-      }, PREVIEW_READY_TIMEOUT_MS);
+      }, preparationBudgetMs ?? PREVIEW_READY_TIMEOUT_MS);
       return () => window.clearTimeout(timer);
-    }, [assetId, failed, iframeRevision, previewChannel, ready]);
+    }, [assetId, failed, iframeRevision, preparationBudgetMs, previewChannel, ready]);
 
     const seek = useCallback((time: number) => {
       if (!Number.isFinite(time)) return;
@@ -204,6 +210,18 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
         if (String(data.assetId ?? "") !== String(assetId)) return;
         if (data.previewChannel !== previewChannel) return;
 
+        if (data.type === "multimix-editor-preview-loading") {
+          if (preparationSignalConsumedRef.current) return;
+          const total = data.totalMedia;
+          if (typeof total !== "number" || !Number.isSafeInteger(total) || total < 0) return;
+          const budget = Math.ceil(total / MEDIA_HYDRATION_BATCH_SIZE) * MEDIA_TOTAL_TIMEOUT_MS + PREVIEW_READY_TIMEOUT_MS;
+          if (!Number.isSafeInteger(budget)) return;
+          preparationSignalConsumedRef.current = true;
+          setPreparationBudgetMs(budget);
+          setFailed(false);
+          return;
+        }
+
         if (data.type === "multimix-editor-ready") {
           postCommand("multimix-editor-ready-ack");
           setReady(true);
@@ -211,6 +229,7 @@ const VideoProjectPreview = forwardRef<VideoProjectPreviewHandle, VideoProjectPr
           return;
         }
         if (data.type === "multimix-editor-error") {
+          preparationSignalConsumedRef.current = true;
           setReady(false);
           setFailed(true);
           setPlaying(false);

@@ -72,6 +72,7 @@ import type {
   AssetPresenterAudioSelectionConfirmation,
   AssetProductSegment,
   AssetSourceResolutionSelection,
+  AssetSubtitleOperation,
   AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
@@ -3098,6 +3099,7 @@ export default function AssetsWorkspaceClient({
     imageGenerationApplication?: AssetImageGenerationApplication,
     imageGenerationSetApplication?: AssetImageGenerationSetApplication,
     sourceResolutionSelection?: AssetSourceResolutionSelection,
+    subtitleOperation?: AssetSubtitleOperation,
   ) => {
     if (conversation.readonly) {
       throw new Error("参考样例只读，不能继续对话。");
@@ -3108,7 +3110,7 @@ export default function AssetsWorkspaceClient({
     const effectiveLongFormAction = longFormAction;
     const selectedBackendAssetId = effectiveLongFormAction?.kind === "analyze"
       ? undefined
-      : confirmationProductId ?? selectedProduct?.backendAssetId;
+      : subtitleOperation?.assetId ?? confirmationProductId ?? selectedProduct?.backendAssetId;
     const directorProductionPlan: AssetDirectorProductionPlan | undefined =
       instruction.trim() === "完善制作方案"
       && selectedProduct?.contentType === "video_script"
@@ -3119,7 +3121,7 @@ export default function AssetsWorkspaceClient({
       && selectedProduct.metadata?.director_draft_phase === "editable_reviewed"
         ? { directorAssetId: selectedBackendAssetId, baseContentHash: selectedProduct.contentHash }
         : undefined;
-    const focusedScene = !agentConfirmationId && !directorProductionPlan && selectedBackendAssetId != null
+    const focusedScene = !agentConfirmationId && !directorProductionPlan && !subtitleOperation && selectedBackendAssetId != null
       ? resolveSelectedSceneFocus(
         selectedProduct, selectedBackendAssetId, clickedSceneFocus[selectedBackendAssetId],
       )
@@ -3187,6 +3189,7 @@ export default function AssetsWorkspaceClient({
         linkedAssetIds: combinedLinkedAssetIds,
         clientRequestId,
         videoParameterConfirmation,
+        subtitleOperation,
         videoProjectConfirmation,
         agentConfirmationId,
         longFormAction: effectiveLongFormAction,
@@ -4417,6 +4420,15 @@ export default function AssetsWorkspaceClient({
                     <GripVertical size={14} aria-hidden="true" />
                   </div>
                   <ProductWorkspace
+                    onSubtitleRequest={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot && !selectedConversation.readonly
+                      ? async (operation) => {
+                        const instruction = operation.action === "correct_subtitle" ? `修改这条字幕为：${operation.text}`
+                          : operation.action === "set_subtitle_visibility" ? operation.subtitlesEnabled ? "在视频中添加字幕" : "关闭视频字幕"
+                            : operation.action === "undo_subtitle_edit" ? "撤销上一次字幕修改" : `恢复字幕版本 ${operation.subtitleRevision}`;
+                        await handleSendConversationMessage(selectedConversation, instruction, undefined, [], globalThis.crypto.randomUUID(),
+                          undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+                          operation.assetId, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, operation);
+                      } : undefined}
                     onRegisterBeforeLeave={registerProductBeforeLeave}
                     copied={copiedProductId === displayProduct.id}
                     onCopyProduct={handleCopyProduct}

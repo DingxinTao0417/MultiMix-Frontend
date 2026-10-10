@@ -65,6 +65,51 @@ afterEach(() => {
 });
 
 describe("hydrateAssetFiles", () => {
+  it("prepares a complete large video in bounded ranges when the total download exceeds one minute", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const chunkBytes = 1024 * 1024;
+    const original = new Uint8Array(chunkBytes * 2 + 4).fill(7);
+    original[0] = 11;
+    original[original.length - 1] = 13;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const range = new Headers(init?.headers).get("range");
+      const match = range?.match(/^bytes=(\d+)-(\d+)$/);
+      const timer = window.setTimeout(() => {
+        if (!match) {
+          resolve(new Response(original, { headers: { "content-type": "video/mp4" } }));
+          return;
+        }
+        const start = Number(match[1]);
+        const end = Math.min(Number(match[2]), original.length - 1);
+        resolve(new Response(original.slice(start, end + 1), {
+          status: 206,
+          headers: {
+            "content-type": "video/mp4",
+            "content-range": `bytes ${start}-${end}/${original.length}`,
+            "content-length": String(end - start + 1),
+          },
+        }));
+      }, match ? 27_000 : 81_000);
+      init?.signal?.addEventListener("abort", () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
+    await vi.advanceTimersByTimeAsync(81_000);
+    const [asset] = await pending;
+
+    expect(asset.file).toBeInstanceOf(File);
+    expect(asset.file.size).toBe(original.length);
+    expect(Buffer.from(await asset.file.arrayBuffer()).equals(Buffer.from(original))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("abandons one no-response resource and still hydrates the remaining media", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);

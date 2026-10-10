@@ -28,6 +28,27 @@ const queuedAction: AgentActionRunResponse = {
 };
 
 describe("Conversation Agent actions", () => {
+  it.each([true, false])("forwards the user's subtitle choice %s from the confirmation card", async (enabled) => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = {
+      kind: "video_parameter_confirmation", title: "确认视频参数", status: "pending",
+      fields: [{ key: "subtitles", label: "字幕", value: enabled ? "关闭" : "开启" }],
+      confirmLabel: "确认参数并生成编导稿", ratioDefault: "16:9", durationSeconds: 30,
+      pendingIntentId: "subtitle-pending", pendingIntentVersion: 2,
+      subtitlesEnabledDefault: !enabled,
+    };
+    const conversation = { ...assetWorkspaceAdapter.getNewConversation(), id: "subtitle-conversation",
+      detailsLoaded: true, messages: [{ role: "assistant" as const, text: "请确认。", plan }] };
+    render(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={null} onSelectProduct={vi.fn()} onSendMessage={onSendMessage} />);
+    fireEvent.click(screen.getByRole("radio", { name: enabled ? "添加字幕" : "不添加字幕" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认参数并生成编导稿" }));
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[5]).toMatchObject({
+      pendingIntentId: "subtitle-pending", version: 2, subtitlesEnabled: enabled,
+    });
+  });
+
   it.each(["video_script", "short_video_narration"] as const)("does not announce a video after modifying %s", (contentType) => {
     const product: ProductArtifact = { id: "asset-42", backendAssetId: 42, title: "一杯茶", status: "ready", version: "v2",
       mode: "copy", contentType, summary: "三段文字稿", ratio: "16:9", duration: "15秒", phase: "编导稿", sections: [], timeline: [], actions: [] };
@@ -552,6 +573,23 @@ describe("Conversation Agent actions", () => {
     });
   });
 
+  it.each([true, false])("submits subtitle visibility %s on project confirmation", async (enabled) => {
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    const plan: AssetMessagePlan = { kind: "video_project_confirmation", title: "制作视频", status: "pending",
+      fields: [{ key: "subtitles", label: "字幕", value: "开启" }], confirmLabel: "确认制作",
+      directorAssetId: 42, subtitlesEnabledDefault: !enabled,
+      subtitleDefault: "source", subtitleOptions: [{ value: "source", label: "原文字幕" }] };
+    const conversation = { ...assetWorkspaceAdapter.getNewConversation(), id: "subtitle-project-confirm",
+      detailsLoaded: true, messages: [{ role: "assistant" as const, text: "请确认。", assetId: 42, plan }] };
+    render(<ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={null} onSelectProduct={vi.fn()} onSendMessage={onSendMessage} />);
+    fireEvent.click(screen.getByRole("radio", { name: enabled ? "添加字幕" : "不添加字幕" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认制作" }));
+    await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
+    expect(onSendMessage.mock.calls[0]?.[15]).toMatchObject({ directorAssetId: 42, subtitlesEnabled: enabled });
+    if (!enabled) expect(onSendMessage.mock.calls[0]?.[14]).toBeUndefined();
+  });
+
   it("submits an explicit source subtitle choice on the initial video confirmation", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const plan: AssetMessagePlan = {
@@ -909,7 +947,7 @@ describe("Conversation Agent actions", () => {
     expect(onSendMessage.mock.calls[0]?.[13]).toBe(1501);
   });
 
-  it("keeps first Presenter subtitle choice inside direction confirmation", async () => {
+  it.each([true, false])("keeps Presenter subtitle visibility %s inside direction confirmation", async (enabled) => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const plan: AssetMessagePlan = {
       kind: "presenter_project_confirmation",
@@ -938,6 +976,7 @@ describe("Conversation Agent actions", () => {
         { value: "source", label: "原文字幕" },
       ],
       subtitleDefault: "translated_zh",
+      subtitlesEnabledDefault: !enabled,
     };
     const conversation = {
       ...assetWorkspaceAdapter.getNewConversation(),
@@ -961,14 +1000,16 @@ describe("Conversation Agent actions", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("radio", { name: "原文字幕" }));
+    fireEvent.click(screen.getByRole("radio", { name: enabled ? "添加字幕" : "不添加字幕" }));
+    if (enabled) fireEvent.click(screen.getByRole("radio", { name: "原文字幕" }));
     fireEvent.click(screen.getByRole("button", { name: "确认推荐方案并生成视频" }));
 
     await waitFor(() => expect(onSendMessage).toHaveBeenCalledOnce());
     expect(onSendMessage.mock.calls[0]?.[9]).toEqual({
       directorCandidateId: "direction-a",
       ratio: "16:9",
-      subtitleMode: "source",
+      ...(enabled ? { subtitleMode: "source" } : {}),
+      subtitlesEnabled: enabled,
       targetSeconds: 30,
     });
     expect(onSendMessage.mock.calls[0]?.[14]).toBeUndefined();

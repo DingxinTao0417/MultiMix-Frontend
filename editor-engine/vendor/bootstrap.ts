@@ -5,20 +5,16 @@ import { buildProject } from "./buildProject";
 import { API_BASE, mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 import { isBgmMedia, isBgmTrack } from "@/app/editor/bgm-project-patch";
+import { MEDIA_HYDRATION_BATCH_SIZE, MEDIA_TOTAL_TIMEOUT_MS } from "../media-hydration-contract";
 
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
 
-// The canvas export renderer needs actual Blob/File objects, not only direct
-// playback URLs. Allow a bounded preparation window for a remote source file
-// before falling back to direct playback for the editor UI.
-const MEDIA_HYDRATION_PREPARATION_TIMEOUT_MS = 60_000;
-
+// Preview and export both require complete, validated File objects for canvas decoding.
 type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "range" | "timeout";
 
-const EXPORT_MEDIA_RANGE_CHUNK_BYTES = 1024 * 1024;
-const EXPORT_MEDIA_RANGE_REQUEST_TIMEOUT_MS = 60_000;
-const EXPORT_MEDIA_TOTAL_TIMEOUT_MS = 5 * 60_000;
+const MEDIA_RANGE_CHUNK_BYTES = 1024 * 1024;
+const MEDIA_RANGE_REQUEST_TIMEOUT_MS = 60_000;
 const authorizedPlaybackUrlByMediaId: Record<string, string> = {};
 
 function clearAuthorizedPlaybackUrls(): void {
@@ -79,43 +75,6 @@ function diagnosticUrl(url: string): string {
   }
 }
 
-async function fetchMediaBlob(url: string): Promise<DownloadedMediaBlob> {
-  const startedAt = performance.now();
-  const controller = new AbortController();
-  let timedOut = false;
-  const timeout = window.setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, MEDIA_HYDRATION_PREPARATION_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    const contentType = response.headers.get("content-type") || "unknown";
-    if (!response.ok) {
-      throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
-        contentType,
-        status: response.status,
-      });
-    }
-    const blob = await response.blob();
-    return {
-      blob,
-      bytes: blob.size,
-      contentType: blob.type || contentType,
-      durationMs: elapsedMs(startedAt),
-      status: response.status,
-    };
-  } catch (error) {
-    if (error instanceof MediaHydrationError) throw error;
-    throw new MediaHydrationError(
-      timedOut ? "timeout" : "network",
-      elapsedMs(startedAt),
-      error instanceof Error ? error.message : String(error),
-    );
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
 function normalizedContentType(response: Response, blob: Blob): string {
   return (blob.type || response.headers.get("content-type") || "unknown")
     .split(";", 1)[0]
@@ -131,7 +90,7 @@ function assertMediaMime(asset: MediaAsset, contentType: string, durationMs: num
   });
 }
 
-async function fetchExportMediaPart(
+async function fetchMediaPart(
   url: string,
   range: string,
   timeoutMs: number,
@@ -154,7 +113,7 @@ async function fetchExportMediaPart(
       timedOut ? "timeout" : "network",
       timeoutMs,
       timedOut
-        ? `Export media range request timed out after ${timeoutMs}ms`
+        ? `Media range request timed out after ${timeoutMs}ms`
         : error instanceof Error ? error.message : String(error),
     );
   } finally {
@@ -162,17 +121,17 @@ async function fetchExportMediaPart(
   }
 }
 
-async function fetchExportMediaBlob(
+async function fetchPreparedMediaBlob(
   asset: MediaAsset,
   url: string,
   options: ExportMediaHydrationOptions,
 ): Promise<DownloadedMediaBlob> {
   const startedAt = performance.now();
-  const chunkBytes = options.chunkBytes ?? EXPORT_MEDIA_RANGE_CHUNK_BYTES;
-  const requestTimeoutMs = options.requestTimeoutMs ?? EXPORT_MEDIA_RANGE_REQUEST_TIMEOUT_MS;
-  const totalTimeoutMs = options.totalTimeoutMs ?? EXPORT_MEDIA_TOTAL_TIMEOUT_MS;
+  const chunkBytes = options.chunkBytes ?? MEDIA_RANGE_CHUNK_BYTES;
+  const requestTimeoutMs = options.requestTimeoutMs ?? MEDIA_RANGE_REQUEST_TIMEOUT_MS;
+  const totalTimeoutMs = options.totalTimeoutMs ?? MEDIA_TOTAL_TIMEOUT_MS;
   if (![chunkBytes, requestTimeoutMs, totalTimeoutMs].every((value) => Number.isInteger(value) && value > 0)) {
-    throw new MediaHydrationError("range", elapsedMs(startedAt), "Export media hydration limits must be positive integers");
+    throw new MediaHydrationError("range", elapsedMs(startedAt), "Media hydration limits must be positive integers");
   }
 
   const chunks: Blob[] = [];
@@ -184,17 +143,23 @@ async function fetchExportMediaBlob(
   while (totalSize === null || nextStart < totalSize) {
     const remainingMs = totalTimeoutMs - elapsedMs(startedAt);
     if (remainingMs <= 0) {
-      throw new MediaHydrationError("timeout", elapsedMs(startedAt), "Export media hydration exceeded its total deadline");
+      throw new MediaHydrationError("timeout", elapsedMs(startedAt), "Media hydration exceeded its total deadline");
     }
     const requestedEnd = nextStart + chunkBytes - 1;
     const requestedRange = `bytes=${nextStart}-${requestedEnd}`;
-    const { response, blob } = await fetchExportMediaPart(
+    const { response, blob } = await fetchMediaPart(
       url,
       requestedRange,
       Math.min(requestTimeoutMs, remainingMs),
     );
     finalStatus = response.status;
     const contentType = normalizedContentType(response, blob);
+    if (response.status !== 206 && !(response.status === 200 && nextStart === 0)) {
+      throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
+        contentType,
+        status: response.status,
+      });
+    }
     assertMediaMime(asset, contentType, elapsedMs(startedAt), response.status);
 
     if (response.status === 200 && nextStart === 0) {
@@ -214,13 +179,6 @@ async function fetchExportMediaBlob(
         status: response.status,
       };
     }
-    if (response.status !== 206) {
-      throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
-        contentType,
-        status: response.status,
-      });
-    }
-
     const contentRange = response.headers.get("content-range") || "";
     const match = /^bytes (\d+)-(\d+)\/(\d+)$/i.exec(contentRange);
     if (!match) {
@@ -303,19 +261,18 @@ export async function hydrateAssetFiles(
   }
 
   // Download in small batches so network isn't flooded by 30+ parallel fetches.
-  const BATCH = 6;
   const results: MediaAsset[] = [];
   let loaded = 0;
   onProgress?.(0, assets.length);
-  for (let i = 0; i < assets.length; i += BATCH) {
-    const batch = assets.slice(i, i + BATCH);
+  for (let i = 0; i < assets.length; i += MEDIA_HYDRATION_BATCH_SIZE) {
+    const batch = assets.slice(i, i + MEDIA_HYDRATION_BATCH_SIZE);
     const batchResults = await Promise.all(
       batch.map(async (asset) => {
         const url = playbackUrlById[asset.id];
         const startedAt = performance.now();
         try {
           if (!url) throw new MediaHydrationError("missing-url", elapsedMs(startedAt), "Missing media playback URL");
-          const downloaded = await fetchMediaBlob(url);
+          const downloaded = await fetchPreparedMediaBlob(asset, url, {});
           const { blob } = downloaded;
           if (!blob.type.startsWith(`${asset.type}/`)) {
             throw new MediaHydrationError("mime", downloaded.durationMs, `Unexpected media type ${blob.type || "unknown"}`, {
@@ -364,9 +321,8 @@ export async function hydrateAssetFiles(
   return results;
 }
 
-// Preview may fall back to a direct URL, but export cannot render from a
-// zero-byte placeholder File. Re-fetch only missing files in validated,
-// bounded ranges so editor startup stays responsive while export stays strict.
+// Export reuses files prepared by preview and fetches only missing files through
+// the same bounded range and integrity contract.
 export async function hydrateAssetFilesForExport(
   assets: MediaAsset[],
   bp: BackendProject,
@@ -391,7 +347,7 @@ export async function hydrateAssetFilesForExport(
       throw new MediaHydrationError("missing-url", 0, `Missing export media URL for ${asset.name}`);
     }
     try {
-      const downloaded = await fetchExportMediaBlob(asset, url, options);
+      const downloaded = await fetchPreparedMediaBlob(asset, url, options);
       const file = new File([downloaded.blob], asset.name, { type: downloaded.contentType });
       results.push({ ...asset, file, url: URL.createObjectURL(downloaded.blob) });
       console.info("export media hydration succeeded", {
