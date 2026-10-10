@@ -656,7 +656,7 @@ export default function ConversationStudio({
       );
     });
   }, [requirementSnapshot, visibleConversationMessages]);
-  // Presenter cleanup is a bound, two-step confirmation.  A legacy generic
+  // Source video cleanup is a bound, two-step confirmation.  A legacy generic
   // `submit_message` suggestion may carry only "确认" and cannot include the
   // cleanup plan ID/hash or selected cleanup items.  Keep that unbound shortcut
   // out of the UI while the structured card is the active confirmation path.
