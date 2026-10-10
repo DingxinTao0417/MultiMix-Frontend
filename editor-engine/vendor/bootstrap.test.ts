@@ -11,6 +11,8 @@ vi.mock("./api", () => ({
 
 import * as bootstrap from "./bootstrap";
 import type { BackendProject } from "./buildProject";
+import { buildProject } from "./buildProject";
+import { EditorCore } from "@editor/core";
 
 const { hydrateAssetFiles } = bootstrap;
 
@@ -65,6 +67,94 @@ afterEach(() => {
 });
 
 describe("hydrateAssetFiles", () => {
+  it("rejects when valid individual ranges exceed the total preparation deadline", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const original = new Uint8Array(8 * 1024 * 1024);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const range = new Headers(init?.headers).get("range")!.match(/^bytes=(\d+)-(\d+)$/)!;
+      const start = Number(range[1]);
+      const end = Math.min(Number(range[2]), original.length - 1);
+      const timer = window.setTimeout(() => resolve(new Response(original.slice(start, end + 1), {
+        status: 206,
+        headers: { "content-type": "video/mp4", "content-range": `bytes ${start}-${end}/${original.length}` },
+      })), 40_000);
+      init?.signal?.addEventListener("abort", () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
+    const rejected = expect(pending).rejects.toThrow(/deadline|timed out/);
+    await vi.advanceTimersByTimeAsync(300_001);
+    await rejected;
+    expect(fetchMock).toHaveBeenCalledTimes(8);
+  });
+
+  it.each([
+    ["HTTP failure", () => new Response("missing", { status: 404 }), /HTTP 404/],
+    ["wrong MIME", () => new Response("wrong", { headers: { "content-type": "text/plain" } }), /Unexpected media type/],
+    ["invalid range", () => new Response("wrong", { status: 206, headers: { "content-type": "video/mp4" } }), /Invalid Content-Range/],
+  ] as const)("rejects preparation on %s instead of returning media without a File", async (_name, response, error) => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(response()));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(hydrateAssetFiles([readyMedia], projectWithMedia())).rejects.toThrow(error);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["initial", "project update", "music update"] as const)("keeps editor state unpublished after a failed %s preparation", async (operation) => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("transport unavailable")));
+    const editor = {
+      project: { setActiveProject: vi.fn() },
+      scenes: { initializeScenes: vi.fn() },
+      media: { clearAllAssets: vi.fn(), setAssets: vi.fn(), getAssets: vi.fn(() => [readyMedia]) },
+      timeline: { updateTracks: vi.fn(), getTracks: vi.fn(() => []) },
+    };
+    vi.mocked(EditorCore.getInstance).mockReturnValue(editor as unknown as ReturnType<typeof EditorCore.getInstance>);
+    const asset = operation === "music update"
+      ? { ...readyMedia, id: "media-bgm-kept", type: "audio" as const }
+      : readyMedia;
+    const project = { ...projectWithMedia(), media: [{ id: asset.id, name: asset.name, type: asset.type, file_path: asset.url }] };
+    vi.mocked(buildProject).mockReturnValue({ project: { scenes: [{ tracks: [] }] }, assets: [asset] } as unknown as ReturnType<typeof buildProject>);
+    const pending = operation === "initial" ? bootstrap.initEditorWithProject(project)
+      : operation === "project update" ? bootstrap.updateEditorProject(project)
+        : bootstrap.updateEditorBgm(project, () => true);
+    await expect(pending).rejects.toThrow("transport unavailable");
+    expect(editor.project.setActiveProject).not.toHaveBeenCalled();
+    expect(editor.scenes.initializeScenes).not.toHaveBeenCalled();
+    expect(editor.media.clearAllAssets).not.toHaveBeenCalled();
+    expect(editor.media.setAssets).not.toHaveBeenCalled();
+    expect(editor.timeline.updateTracks).not.toHaveBeenCalled();
+  });
+
+  it.each(["initial", "project update"] as const)("publishes a successful %s only after media preparation completes", async (operation) => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const calls: string[] = [];
+    const editor = {
+      project: { setActiveProject: vi.fn(() => calls.push("project")) },
+      scenes: { initializeScenes: vi.fn(() => calls.push("scenes")) },
+      media: { clearAllAssets: vi.fn(() => calls.push("clear")), setAssets: vi.fn(() => calls.push("media")) },
+    };
+    vi.mocked(EditorCore.getInstance).mockReturnValue(editor as unknown as ReturnType<typeof EditorCore.getInstance>);
+    vi.mocked(buildProject).mockReturnValue({ project: { scenes: [{ tracks: [] }] }, assets: [readyMedia] } as unknown as ReturnType<typeof buildProject>);
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    const pending = operation === "initial" ? bootstrap.initEditorWithProject(projectWithMedia())
+      : bootstrap.updateEditorProject(projectWithMedia());
+    expect(calls).toEqual([]);
+    finish(new Response("valid-file", { headers: { "content-type": "video/mp4" } }));
+    await pending;
+    expect(calls).toEqual(["clear", "project", "scenes", "media"]);
+    expect(editor.media.setAssets).toHaveBeenCalledWith({ assets: [expect.objectContaining({ file: expect.any(File) })] });
+  });
+
   it("loads signed original video through the configured HTTPS API origin", async () => {
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -127,7 +217,7 @@ describe("hydrateAssetFiles", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("abandons one no-response resource and still hydrates the remaining media", async () => {
+  it("rejects a stalled resource instead of publishing a partial preview", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -143,13 +233,11 @@ describe("hydrateAssetFiles", () => {
     const progress = vi.fn();
 
     const hydrated = hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia(), progress);
+    const rejected = expect(hydrated).rejects.toThrow("Media range request timed out after 60000ms");
     await vi.advanceTimersByTimeAsync(59_999);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     await vi.advanceTimersByTimeAsync(1);
-    const assets = await hydrated;
-
-    expect(assets[0]).toMatchObject({ ...stalledMedia, url: "https://example.test/stalled.mp4" });
-    expect(assets[1].file).toBeInstanceOf(File);
+    await rejected;
     expect(progress).toHaveBeenLastCalledWith(2, 2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(warning).toHaveBeenCalledWith(
@@ -233,7 +321,7 @@ describe("hydrateAssetFiles", () => {
       return Promise.resolve(new Response("not a video", { status: 200, headers: { "content-type": "text/plain" } }));
     }));
 
-    await hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia());
+    await expect(hydrateAssetFiles([stalledMedia, readyMedia], projectWithMedia())).rejects.toThrow("HTTP 404");
 
     expect(warning).toHaveBeenCalledWith(
       "media hydration failed",
@@ -313,8 +401,8 @@ describe("hydrateAssetFilesForExport", () => {
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const previewAssets = await hydrateAssetFiles([bgmAsset], loadedProject);
-    expect(previewAssets[0].file.size).toBe(0);
+    await expect(hydrateAssetFiles([bgmAsset], loadedProject)).rejects.toThrow("HTTP 503");
+    const previewAssets = [bgmAsset];
     exporting = true;
 
     const hydrated = await exportHydrator()(previewAssets, serializedProject, { chunkBytes: 64 });

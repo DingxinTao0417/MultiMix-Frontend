@@ -310,7 +310,7 @@ export async function hydrateAssetFiles(
             status: failure.metadata.status,
             url: url ? diagnosticUrl(url) : undefined,
           });
-          return url ? { ...asset, url } : asset;
+          throw failure;
         } finally {
           loaded += 1;
           onProgress?.(loaded, assets.length);
@@ -381,7 +381,6 @@ export async function initEditorWithProject(bp: BackendProject, onProgress?: Hyd
 // re-render via manager notify() as new segments arrive.
 export async function updateEditorProject(bp: BackendProject): Promise<EditorCore> {
   const editor = EditorCore.getInstance();
-  editor.media.clearAllAssets();
   await applyProject(editor, bp);
   return editor;
 }
@@ -410,6 +409,7 @@ async function applyProject(editor: EditorCore, bp: BackendProject, onProgress?:
 
   const hydratedAssets = await hydrateAssetFiles(assets, bp, onProgress);
 
+  editor.media.clearAllAssets();
   editor.project.setActiveProject({ project });
   editor.scenes.initializeScenes({
     scenes: project.scenes,
