@@ -299,7 +299,7 @@ describe("hydrateAssetFiles", () => {
     expect(editor.media.setAssets).toHaveBeenCalledWith({ assets: [expect.objectContaining({ file: expect.any(File) })] });
   });
 
-  it("loads signed original video through the configured HTTPS API origin", async () => {
+  it("loads signed original video through same-origin delivery", async () => {
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const fetchMock = vi.fn().mockResolvedValue(
@@ -311,7 +311,7 @@ describe("hydrateAssetFiles", () => {
       "http://internal-api:8000/v1/video/projects/42/media/7?token=signed%2Bvalue";
     const [asset] = await hydrateAssetFiles([stalledMedia], project);
     expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://api.example.test/v1/video/projects/42/media/7?token=signed%2Bvalue",
+      "/api/video-media/projects/42/media/7?token=signed%2Bvalue",
     );
     expect(asset.file).toBeInstanceOf(File);
   });
@@ -516,7 +516,7 @@ describe("hydrateAssetFilesForExport", () => {
     fetchMock.mockClear();
     await bootstrap.hydrateAssetFilesForExport([{ ...stalledMedia, file: new File([], "source.mp4") }], serialized);
     expect(fetchMock.mock.calls[0][0]).toBe(
-      "https://api.example.test/v1/video/projects/42/media/7?token=signed%2Bvalue",
+      "/api/video-media/projects/42/media/7?token=signed%2Bvalue",
     );
   });
 
@@ -555,7 +555,7 @@ describe("hydrateAssetFilesForExport", () => {
           headers: { "content-type": "application/json" },
         }));
       }
-      expect(url).toBe(signedPlaybackUrl);
+      expect(url).toBe("/api/video-media/bgm/media/jungle-shop?token=signed");
       return Promise.resolve(new Response(source, {
         status: 200,
         headers: {

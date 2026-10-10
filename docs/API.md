@@ -1340,3 +1340,12 @@ POST  /v1/assets/conversations/messages
 `creative_advice`、制作方式选项以及 `video.project.set_ratio`、`video.project.reorder_scenes`、`video.project.set_duration` 已按本章契约接入并完成生产真实工程验收。后端旧总开关在本地代码中退役；新版本发布前生产仍运行上一部署。前端必须以接口返回为准，不把静态入口文案解释为服务已成功执行。
 
 首次视频成功发布后，`versions` 至少包含一个完整工程快照；后续修改、恢复、保存和导出都绑定当前服务端版本。导出返回的 `quality_report.status=pass` 才能视为服务器已发布成片，浏览器完成本地合成或上传不等于发布成功。
+
+
+## 有界同源媒体交付候选（2026-10-11）
+
+候选端点 `GET /api/video-media/projects/<projectId>/media/<fileAssetId>?token=<既有签名>` 与 `GET /api/video-media/bgm/media/<安全键>?token=<既有签名>`，用于预览及导出消费同一媒体授权。当前等待新候选发布/真实网络验收，不能将其文档描述当作已上线成功。
+
+仅接受单个闭区间Range，最多1MiB；只转送token和Range到已配置的当前生产API，不接收任意网址，不转送Cookie/Authorization，不跟随重定向，不新签发权限。开发机可明确配置loopback API；Vercel环境禁止loopback及其它API目标。上游操作最多30秒，实际字节、206、Content-Range、Content-Length和媒体MIME均通过后才返回；媒体类型只保留既有视频、音频和栅格图片原片消费者，拒绝SVG/HTML。拒绝无界200、截短及超长正文。取消关闭上游，不增加重试。响应private/no-store，不记录token/媒体内容。
+
+浏览器完整File、60秒无进展/5分钟总时限、工程身份、原音、字幕与导出质量门保持。该交付会增加Vercel调用和转送流量，不能声称降低Supabase账单；若真实路径无改善或预算不允许，则停止该候选验证。后续替换为可靠直接交付或正式媒体CDN时，应同步迁移全部预览/导出消费方并删除临时转送实现。

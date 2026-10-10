@@ -29,7 +29,7 @@ function resolveAuthorizedPlaybackUrl(playbackUrl: string): string {
     const candidate = new URL(playbackUrl, apiBase);
     const isOriginalMedia = /^\/v1\/video\/projects\/\d+\/media\/\d+$/.test(candidate.pathname);
     if (!candidate.pathname.startsWith("/v1/video/bgm/media/") && !isOriginalMedia) return playbackUrl;
-    return new URL(`${candidate.pathname}${candidate.search}${candidate.hash}`, apiBase).toString();
+    return `/api/video-media/${candidate.pathname.slice("/v1/video/".length)}${candidate.search}${candidate.hash}`;
   } catch {
     return playbackUrl;
   }
