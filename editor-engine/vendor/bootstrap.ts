@@ -54,6 +54,9 @@ type MediaFailureMetadata = Partial<Omit<DownloadedMediaBlob, "blob" | "duration
   failedAt?: MediaFailureBoundary;
   rangeStart?: number;
   requestTimeoutMs?: number;
+  receivedBytes?: number;
+  expectedBytes?: number;
+  bodyIdleMs?: number;
 };
 type MediaLoadEvent = {
   stage: "preview" | "export";
@@ -67,6 +70,9 @@ type MediaLoadEvent = {
   failedAt?: MediaFailureBoundary;
   rangeStart?: number;
   requestTimeoutMs?: number;
+  receivedBytes?: number;
+  expectedBytes?: number;
+  bodyIdleMs?: number;
 };
 
 function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
@@ -78,6 +84,7 @@ function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
       durationMs: event.durationMs, bytes: event.bytes, status: event.status,
       reason: event.reason, failedAt: event.failedAt,
       rangeStart: event.rangeStart, requestTimeoutMs: event.requestTimeoutMs,
+      receivedBytes: event.receivedBytes, expectedBytes: event.expectedBytes, bodyIdleMs: event.bodyIdleMs,
     }));
   } catch { /* Diagnostics must not change preparation results. */ }
 }
@@ -117,36 +124,87 @@ async function fetchMediaPart(
   url: string,
   range: string,
   timeoutMs: number,
+  remainingTotalMs: number,
 ): Promise<{ response: Response; blob: Blob }> {
   const controller = new AbortController();
   const startedAt = performance.now();
   let failedAt: MediaFailureBoundary = "await_response";
   let observedStatus: number | undefined;
   let timedOut = false;
-  const timeout = window.setTimeout(() => {
+  let deadlineExceeded = false;
+  let receivedBytes = 0;
+  let expectedBytes: number | undefined;
+  let lastProgressAt = startedAt;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let reachedEnd = false;
+  let rejectInterrupted!: (error: Error) => void;
+  const interrupted = new Promise<never>((_resolve, reject) => { rejectInterrupted = reject; });
+  const interrupt = () => {
     timedOut = true;
     controller.abort();
-  }, timeoutMs);
+    rejectInterrupted(new DOMException("Media reception aborted", "AbortError"));
+  };
+  let inactivityTimeout = window.setTimeout(interrupt, timeoutMs);
+  const resetInactivityTimeout = () => {
+    window.clearTimeout(inactivityTimeout);
+    inactivityTimeout = window.setTimeout(interrupt, timeoutMs);
+  };
+  const totalTimeout = window.setTimeout(() => {
+    deadlineExceeded = true;
+    interrupt();
+  }, remainingTotalMs);
   try {
-    const response = await fetch(url, {
+    const response = await Promise.race([fetch(url, {
       headers: { Range: range },
       signal: controller.signal,
-    });
+    }), interrupted]);
     observedStatus = response.status;
     failedAt = "read_body";
-    const blob = await response.blob();
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength !== null && /^\d+$/.test(declaredLength)) {
+      const length = Number(declaredLength);
+      if (Number.isSafeInteger(length)) expectedBytes = length;
+    }
+    lastProgressAt = performance.now();
+    resetInactivityTimeout();
+    const parts: BlobPart[] = [];
+    reader = response.body?.getReader();
+    if (reader) {
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), interrupted]);
+        if (done) { reachedEnd = true; break; }
+        if (value.byteLength === 0) continue;
+        parts.push(value.slice().buffer);
+        receivedBytes += value.byteLength;
+        lastProgressAt = performance.now();
+        resetInactivityTimeout();
+      }
+    } else {
+      reachedEnd = true;
+    }
+    const blob = new Blob(parts, { type: response.headers.get("content-type") || "" });
     return { response, blob };
   } catch (error) {
     throw new MediaHydrationError(
       timedOut ? "timeout" : "network",
       elapsedMs(startedAt),
       timedOut
-        ? `Media range request timed out after ${timeoutMs}ms`
+        ? deadlineExceeded ? "Media hydration exceeded its total deadline" : `Media range request timed out after ${timeoutMs}ms without progress`
         : error instanceof Error ? error.message : String(error),
-      { failedAt, status: observedStatus, rangeStart: Number(range.slice(6).split("-", 1)[0]), requestTimeoutMs: timeoutMs },
+      {
+        failedAt, status: observedStatus, rangeStart: Number(range.slice(6).split("-", 1)[0]), requestTimeoutMs: timeoutMs,
+        receivedBytes: failedAt === "read_body" ? receivedBytes : undefined,
+        expectedBytes, bodyIdleMs: failedAt === "read_body" ? elapsedMs(lastProgressAt) : undefined,
+      },
     );
   } finally {
-    window.clearTimeout(timeout);
+    window.clearTimeout(inactivityTimeout);
+    window.clearTimeout(totalTimeout);
+    if (!reachedEnd) {
+      controller.abort();
+      void reader?.cancel().catch(() => undefined);
+    }
+    reader?.releaseLock();
   }
 }
 
@@ -179,7 +237,8 @@ async function fetchPreparedMediaBlob(
     const { response, blob } = await fetchMediaPart(
       url,
       requestedRange,
-      Math.min(requestTimeoutMs, remainingMs),
+      requestTimeoutMs,
+      remainingMs,
     );
     finalStatus = response.status;
     const contentType = normalizedContentType(response, blob);
@@ -331,6 +390,9 @@ export async function hydrateAssetFiles(
             failedAt: failure.metadata.failedAt ?? "validate",
             rangeStart: failure.metadata.rangeStart,
             requestTimeoutMs: failure.metadata.requestTimeoutMs,
+            receivedBytes: failure.metadata.receivedBytes,
+            expectedBytes: failure.metadata.expectedBytes,
+            bodyIdleMs: failure.metadata.bodyIdleMs,
           });
           throw failure;
         } finally {
@@ -385,6 +447,7 @@ export async function hydrateAssetFilesForExport(
         durationMs: error.durationMs, bytes: error.metadata.bytes, status: error.metadata.status,
         reason: error.reason, failedAt: error.metadata.failedAt ?? "validate",
         rangeStart: error.metadata.rangeStart, requestTimeoutMs: error.metadata.requestTimeoutMs,
+        receivedBytes: error.metadata.receivedBytes, expectedBytes: error.metadata.expectedBytes, bodyIdleMs: error.metadata.bodyIdleMs,
       });
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`导出素材“${asset.name}”准备失败：${message}`, { cause: error });

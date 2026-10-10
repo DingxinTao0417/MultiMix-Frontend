@@ -72,12 +72,101 @@ afterEach(() => {
 });
 
 describe("hydrateAssetFiles", () => {
+  it("keeps reading a slow response while bytes arrive within the inactivity limit", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let index = 0; index < 5; index++) {
+            timers.push(setTimeout(() => {
+              controller.enqueue(new Uint8Array([index + 1]));
+              if (index === 4) controller.close();
+            }, index * 20_000));
+          }
+          init?.signal?.addEventListener("abort", () => {
+            timers.forEach(clearTimeout);
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 206, headers: {
+        "content-type": "video/mp4", "content-range": "bytes 0-4/5", "content-length": "5",
+      } }));
+    }));
+    const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
+    void pending.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(80_000);
+    const [asset] = await pending;
+    expect(Array.from(new Uint8Array(await asset.file.arrayBuffer()))).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("reports partial receipt and times out after the last byte when a body stops progressing", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const timer = setTimeout(() => controller.enqueue(new Uint8Array([1, 2])), 10_000);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 206, headers: {
+        "content-type": "video/mp4", "content-range": "bytes 0-4/5", "content-length": "5",
+      } }));
+    }));
+    const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
+    const rejected = expect(pending).rejects.toThrow(/timed out/);
+    await vi.advanceTimersByTimeAsync(70_000);
+    await rejected;
+    expect(mediaEvents(warning)).toEqual([expect.objectContaining({
+      failedAt: "read_body", status: 206, receivedBytes: 2, expectedBytes: 5, bodyIdleMs: 60_000,
+    })]);
+  });
+
+  it("cannot extend the total deadline by continuously receiving small body parts", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let index = 0; index < 10; index++) {
+            timers.push(setTimeout(() => controller.enqueue(new Uint8Array([index])), index * 20_000));
+          }
+          init?.signal?.addEventListener("abort", () => {
+            timers.forEach(clearTimeout);
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 206, headers: {
+        "content-type": "video/mp4", "content-range": "bytes 0-99/100", "content-length": "100",
+      } }));
+    }));
+    const pending = bootstrap.hydrateAssetFilesForExport(
+      [{ ...readyMedia, file: new File([], readyMedia.name) }], projectWithMedia(), { totalTimeoutMs: 100_000 },
+    );
+    const rejected = expect(pending).rejects.toThrow("total deadline");
+    await vi.advanceTimersByTimeAsync(100_000);
+    await rejected;
+  });
+
   it.each(["await_response", "read_body"] as const)("records a readable network failure at %s without sensitive values", async (failedAt) => {
     vi.stubGlobal("window", globalThis);
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const secret = "private-name token=private-token body-private-error";
-    const response = new Response("valid", { status: 206 });
-    vi.spyOn(response, "blob").mockRejectedValue(new TypeError(secret));
+    const response = new Response(new ReadableStream({
+      start(controller) { controller.error(new TypeError(secret)); },
+    }), { status: 206 });
     vi.stubGlobal("fetch", vi.fn(() => failedAt === "await_response"
       ? Promise.reject(new TypeError(secret)) : Promise.resolve(response)));
     await expect(hydrateAssetFiles([readyMedia], projectWithMedia())).rejects.toThrow(secret);
@@ -96,11 +185,11 @@ describe("hydrateAssetFiles", () => {
     vi.stubGlobal("window", globalThis);
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
-      const response = new Response("valid", { status: 206 });
-      vi.spyOn(response, "blob").mockImplementation(() => new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
-      }));
-      return Promise.resolve(response);
+      return Promise.resolve(new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")));
+        },
+      }), { status: 206 }));
     }));
     const pending = hydrateAssetFiles([readyMedia], projectWithMedia());
     const rejected = expect(pending).rejects.toThrow("timed out after 60000ms");
