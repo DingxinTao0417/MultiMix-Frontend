@@ -1,6 +1,6 @@
 # 已关闭 BGM 不请求曲库并阻塞导出修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-04
 

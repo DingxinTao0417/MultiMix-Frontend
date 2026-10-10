@@ -1,6 +1,6 @@
 # 视频生成进度标题实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-12
 

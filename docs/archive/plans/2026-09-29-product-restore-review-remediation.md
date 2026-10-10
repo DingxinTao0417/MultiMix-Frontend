@@ -1,6 +1,6 @@
 # 历史版本恢复并发与冲突恢复整改
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-29
 

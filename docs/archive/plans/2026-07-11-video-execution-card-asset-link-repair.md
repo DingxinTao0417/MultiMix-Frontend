@@ -1,6 +1,6 @@
 # 视频执行卡产物关联修复计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-11
 

@@ -1,6 +1,6 @@
 # 合并视频生成说明与素材使用摘要
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-06
 

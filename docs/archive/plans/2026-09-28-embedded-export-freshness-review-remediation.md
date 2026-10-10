@@ -1,6 +1,6 @@
 # 工作台内嵌剪辑导出新鲜度整改（已完成）
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-28
 

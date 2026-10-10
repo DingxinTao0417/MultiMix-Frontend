@@ -1,6 +1,6 @@
 # 文稿保存与草稿版本一致性整改
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-29
 

@@ -1,6 +1,6 @@
 # 编导稿与视频工程浏览状态实施计划
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-12
 

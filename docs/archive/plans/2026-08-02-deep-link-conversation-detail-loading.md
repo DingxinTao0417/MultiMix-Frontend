@@ -1,6 +1,6 @@
 # 深链接对话详情加载修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-02
 

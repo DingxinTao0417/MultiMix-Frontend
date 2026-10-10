@@ -1,6 +1,6 @@
 # 前端三套换素材入口单轨收口实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-17
 

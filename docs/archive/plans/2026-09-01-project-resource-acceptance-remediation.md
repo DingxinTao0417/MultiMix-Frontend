@@ -1,6 +1,6 @@
 # 项目资源验收问题整改计划
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-01
 

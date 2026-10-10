@@ -1,6 +1,6 @@
 # 生产视频 E2E Runner 工作区根路径修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-22
 

@@ -1,6 +1,6 @@
 # 移除前端运行时演示数据实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-12
 

@@ -1,6 +1,6 @@
 # 编辑页配乐详情入口与上下文素材替换
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-06
 

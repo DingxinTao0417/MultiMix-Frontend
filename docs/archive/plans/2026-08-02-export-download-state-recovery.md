@@ -1,6 +1,6 @@
 # 已导出成片下载状态恢复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-02
 

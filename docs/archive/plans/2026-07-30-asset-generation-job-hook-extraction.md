@@ -2,7 +2,7 @@
 
 > Status: archived
 > Owner: frontend
-> Last verified: 2026-07-30
+> Last verified: 2026-10-10
 
 ## 背景与根因
 
@@ -26,7 +26,7 @@
 
 - `docs/authority/conversation-orchestration-rules.md`
 - `docs/authority/asset-understanding-and-segment-referencing.md`
-- `docs/archive/plans/2026-07-30-active-plan-reconciliation-and-hotspot-selection.md`
+- `MultiMix-Backend/docs/archive/plans/2026-10-10-document-context-cleanup.md`
 
 本次不修改对话路由、确认门、素材理解、素材引用、生成接口或用户可见文案。
 
@@ -117,3 +117,5 @@
 - `check:agents`、视频预览契约、三仓 `git diff --check` 通过；后端未修改。
 - `next-env.d.ts` 的 SHA-256 保持为
   `F4E8976C19FC926644D72610BF1058BD6BF52ADD97E46A02BC0B912A751625C0`。
+
+旧热点选择台账已删除，具体当时排序由Git保留；上述整理入口仅说明现在的默认文档阅读规则，不重新启动旧重构。

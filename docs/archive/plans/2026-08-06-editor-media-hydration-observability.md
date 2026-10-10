@@ -1,6 +1,6 @@
 # 编辑器媒体下载超时与可观测性修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-06
 

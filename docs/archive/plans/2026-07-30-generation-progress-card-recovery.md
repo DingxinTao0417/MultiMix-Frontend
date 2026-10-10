@@ -1,6 +1,6 @@
 # 生成任务进度卡载入恢复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-30
 

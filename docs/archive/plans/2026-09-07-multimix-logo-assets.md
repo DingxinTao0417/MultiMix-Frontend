@@ -1,6 +1,6 @@
 # MultiMix Logo Assets Implementation Plan
 
-> Status: current
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-09-07
 

@@ -1,6 +1,6 @@
 # MultiMix 产品定位浏览器验收计划
 
-> Status: qa
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-08-28
 

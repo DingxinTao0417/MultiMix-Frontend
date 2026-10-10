@@ -1,6 +1,6 @@
 # Source Upload Readiness Polling
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-30
 

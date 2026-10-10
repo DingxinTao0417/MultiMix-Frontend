@@ -1,6 +1,6 @@
 # MultiMix 对话加载与回复动效实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-07-12
 

@@ -1,12 +1,14 @@
 # 对话附件真实上传进度实施计划
 
+> 视频附件曾被临时关闭，后已恢复；旧禁用方案已删除，链接指向当前工作台设计，历史限制不再生效。
+
 > Status: archived
 > Owner: frontend
 > Last verified: 2026-07-30
 
 > **Current product decision (2026-07-30):** 对话输入框暂不支持视频附件。
 > 本文中“开放聊天视频选择”和视频浏览器冒烟属于历史实施目标，已被
-> `docs/archive/plans/2026-07-30-chat-video-attachment-temporary-disable-design.md`
+> `docs/MULTIMIX_WORKSPACE_DESIGN.md`
 > 取代；视频素材库和底层上传能力继续保留。
 
 > **For agentic workers:** 在当前会话内逐项执行本计划；未经用户明确批准不得委派 Subagent。每一步先写失败测试、确认失败，再做最小实现。
