@@ -65,6 +65,23 @@ afterEach(() => {
 });
 
 describe("hydrateAssetFiles", () => {
+  it("loads signed original video through the configured HTTPS API origin", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(["original"], { type: "video/mp4" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const project = projectWithMedia();
+    project.media[0].playback_url =
+      "http://internal-api:8000/v1/video/projects/42/media/7?token=signed%2Bvalue";
+    const [asset] = await hydrateAssetFiles([stalledMedia], project);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://api.example.test/v1/video/projects/42/media/7?token=signed%2Bvalue",
+    );
+    expect(asset.file).toBeInstanceOf(File);
+  });
+
   it("prepares a complete large video in bounded ranges when the total download exceeds one minute", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
@@ -230,6 +247,25 @@ describe("hydrateAssetFiles", () => {
 });
 
 describe("hydrateAssetFilesForExport", () => {
+  it("retains the canonical original playback address after serialization for export", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn(() => Promise.resolve(
+      new Response(new Blob(["original"], { type: "video/mp4" })),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const project = projectWithMedia();
+    project.media[0].playback_url =
+      "http://internal-api:8000/v1/video/projects/42/media/7?token=signed%2Bvalue";
+    await hydrateAssetFiles([stalledMedia], project);
+    const serialized = { ...project, media: project.media.map(({ playback_url: _url, ...m }) => m) };
+    fetchMock.mockClear();
+    await bootstrap.hydrateAssetFilesForExport([{ ...stalledMedia, file: new File([], "source.mp4") }], serialized);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "https://api.example.test/v1/video/projects/42/media/7?token=signed%2Bvalue",
+    );
+  });
+
   it("reuses the authorized BGM playback URL after project serialization strips the token", async () => {
     vi.stubGlobal("window", globalThis);
     const signedPlaybackUrl = "https://api.example.test/v1/video/bgm/media/jungle-shop?token=signed";
