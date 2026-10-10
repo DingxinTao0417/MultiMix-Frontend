@@ -3,9 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildVideoParameterConfirmationHeaders,
   buildConversationMessagePayload,
-  findConversationByClientRequestId,
 } from "../lib/asset-workspace-adapter";
-import type { AssetConversationResponse } from "../../../lib/api";
 
 
 describe("video confirmation transport reconciliation", () => {
@@ -87,26 +85,4 @@ describe("video confirmation transport reconciliation", () => {
     });
   });
 
-  it("finds a server-committed conversation by client request id", () => {
-    const rows = [{
-      id: "asset-conversation-450",
-      title: "30秒短视频",
-      status: "active",
-      metadata: { video_workflow_stage: "video_project_queued" },
-      messages: [{
-        id: 1,
-        role: "user",
-        text: "确认，生成视频工程（横屏 16:9）",
-        asset_id: null,
-        metadata: { client_request_id: "request-1" },
-        created_at: "2026-07-10T00:00:00Z",
-      }],
-      products: [],
-      created_at: "2026-07-10T00:00:00Z",
-      updated_at: "2026-07-10T00:00:00Z",
-    }] as AssetConversationResponse[];
-
-    expect(findConversationByClientRequestId(rows, "request-1")?.id).toBe("asset-conversation-450");
-    expect(findConversationByClientRequestId(rows, "missing")).toBeNull();
-  });
 });

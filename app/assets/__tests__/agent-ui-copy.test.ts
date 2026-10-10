@@ -151,6 +151,25 @@ type TestVideoJob = {
   steps: Array<{ status: string }>;
 };
 
+it("resolves execution refresh to its own conversation even after selection changes", () => {
+  const resolve = loadWorkspaceDecision<(rows: unknown[], jobId: string, assetId: number) => string | null>(
+    "executionConversationId",
+  );
+  const rows = [
+    { id: "other", product: { backendAssetId: 20, metadata: {} }, messages: [] },
+    { id: "owner", product: { backendAssetId: 10, metadata: {} }, messages: [
+      { metadata: { job_public_id: "job-1" } },
+    ] },
+  ];
+  expect(resolve(rows, "job-1", 20)).toBe("owner");
+  expect(resolve(rows, "unknown-job", 10)).toBe("owner");
+  expect(resolve(rows, "unknown-job", 999)).toBeNull();
+  expect(resolve([...rows, { ...rows[1], id: "duplicate" }], "job-1", 10)).toBeNull();
+  expect(resolve([{ id: "product-owner", product: {
+    backendAssetId: 10, metadata: { latest_job_public_id: "job-2" },
+  } }], "job-2", 10)).toBe("product-owner");
+});
+
 type TestFullVideoJob = {
   id: string;
   assetId: number;

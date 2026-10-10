@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-09
+> Last verified: 2026-10-10
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -130,7 +130,10 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 - `GET /v1/assets/{asset_id}/versions/{version_id}/preview` 只读预览历史版本；`POST .../restore` 在 UI 中表达为“基于此版本继续”，继续追加新版本，不覆盖历史版本。
 - 工作台普通保存、历史恢复及冲突读取共享同一产物的同步互斥。恢复期间禁用全部历史恢复、保存与进入编辑；进入文本或视频编辑后不允许历史恢复。回包仅在账号作用域、项目、资产身份与请求基准仍匹配时回填，不覆盖晚到期间产生的新产物。
 - 过渡期 `project_resources` 保留为服务端兼容投影；前端不得用当前产物自行猜测或补造项目资源。
-- `loadConversations` 保留给任务完成刷新与幂等 reconciliation，不再作为首屏列表请求。
+- 工程 ready 和全体子任务 terminal 各刷新一次对应会话详情；通过任务身份/工程 ID 定位唯一会话，只更新该行，不重载全部会话。
+- `GET /v1/assets/conversations/requests/{client_request_id}?conversation_id=` 只读核对当前用户的已保存请求。已知真实会话时限定该会话；新建请求的 `new/draft-*` 临时 ID 不传给服务器，只按用户和请求 ID 查唯一未归档会话。不存在返回404，歧义返回409，不重复提交制作。
+- `reconcileMessage` 返回已加载详情的单个会话及相关作品/任务。旧 `loadConversations` 和全量 `GET /v1/assets/conversations` 已退役；列表使用摘要，历史使用指定详情。
+- 列表、搜索、详情和会话响应保留版本标题/正文；数据库不读取公开响应未使用的历史 `metadata/structured_payload`。指定版本预览/恢复继续明确读取完整快照，读取不修改作品。
 
 #### `listConversations(): AssetConversation[]`
 同步快照仍不包含演示对话；首屏历史由真实摘要缓存和 `loadConversationSummaries` 提供，不回退样例。
@@ -160,7 +163,7 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 
 ### 2.3 真实后端边界
 
-- `loadConversations`、`listLibrary` 和所有写操作只访问真实后端。
+- `loadConversationDetail`、`reconcileMessage`、`listLibrary` 和所有写操作只访问真实后端。
 - 同步方法只提供空结构和纯展示 helper；不能提供演示内容。
 - 失败由调用组件显示可重试状态；不能回退 fixture。
 - 服务端密钥只能在服务端代码路径使用，**禁止加 `NEXT_PUBLIC_` 前缀**。
