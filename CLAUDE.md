@@ -22,6 +22,7 @@ MultiMix 是对话式 AI 短视频创作工作台，帮助商家通过对话完�
 ## Linear Issue 与开发占用门禁
 
 - 跨仓规则以 `../MultiMix-Backend/docs/authority/development-change-coordination.md` 为准，不在本文件复制完整口径。
+- 与后端联合开发时，分工主轴、编导与视频提示词归属、跨端交接协议和跨端任务顺序门禁以 `../MultiMix-Backend/docs/authority/agent-collaboration-division.md` 为准。同一个计划含前后端任务时，下游开工前必须回读计划确认上游状态已达 `[~]` 或 `[x]`，并与对端声明同一个 `--contract` slug；该门禁对 Claude Code 与 Codex 同等生效。只在其中一端发起时，对端负责的前序任务仍为 `[ ]` 就只能等待，不得代做对端任务或按推测预做，须告知用户被哪项阻塞、需到哪一端发起。
 - 创建或实质修改 Linear 代码 Issue 前，先读取同团队未完成 Issue 和相关 active plan，比较 `area`、`path`、`contract`、`issue`；向用户报告 `no_conflict`、`soft_conflict` 或 `hard_conflict`，并确认负责人、优先级和验收条件后才可写入 Linear。
 - 硬冲突不得作为两个可并行 Issue 进入 `In Progress`；必须合并、拆公共地基、设置 `Blocks / Blocked by`，或由用户确认新的不重叠边界。
 - 多文件、行为、接口、状态、数据契约或共享模块改动先写 active plan，再运行 `npm run work:guard -- status` 和 `begin`。已发布代码任务登记 `--issue`；共享 API、数据库、状态或类型登记重复 `--contract`。
