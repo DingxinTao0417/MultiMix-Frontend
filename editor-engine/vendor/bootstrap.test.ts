@@ -90,6 +90,54 @@ function originalRangeResponse(source: Uint8Array, init?: RequestInit): Response
 }
 
 describe("registered original reuse", () => {
+  it("distinguishes waiting for headers from receiving a delayed body in safe per-part evidence", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    vi.stubGlobal("window", globalThis);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => {
+      setTimeout(() => {
+        const body = new ReadableStream({ start(controller) {
+          setTimeout(() => { controller.enqueue(new Uint8Array([1, 2])); controller.close(); }, 40);
+        } });
+        resolve(new Response(body, { status: 206, headers: {
+          "content-type": "video/mp4", "content-range": "bytes 0-1/2", "content-length": "2",
+          "server-timing": "media_headers;dur=3, media_body;dur=4, media_relay;dur=7",
+        } }));
+      }, 20);
+    })));
+    const pending = hydrateAssetFiles([stalledMedia], registeredProject());
+    await vi.advanceTimersByTimeAsync(60);
+    const result = await pending;
+    expect(result[0].file?.size).toBe(2);
+    const records = info.mock.calls.map(([s]) => String(s)).filter(s => s.startsWith("[MediaPart] ") && s.includes('"outcome":"received"'));
+    expect(records).toHaveLength(1);
+    const event = JSON.parse(records[0].slice("[MediaPart] ".length));
+    expect(event).toMatchObject({ outcome: "received", rangeStart: 0, receivedBytes: 2,
+      responseWaitMs: 20, bodyReadMs: 40, durationMs: 60, interPartGapMs: 0,
+      firstByteMs: 40, lastByteMs: 40, maxBodyIdleMs: 40,
+      upstreamHeadersMs: 3, upstreamBodyMs: 4, relayMs: 7 });
+    expect(records.join("")).not.toMatch(/token|projects|stalled|api\.example|playback_url/);
+  });
+
+  it("records a body EOF stall separately from arrival of the last byte", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    vi.stubGlobal("window", globalThis);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
+        setTimeout(() => controller.enqueue(new Uint8Array([1, 2])), 10);
+        setTimeout(() => controller.close(), 30);
+      },
+    }), { status: 206, headers: { "content-type": "video/mp4", "content-range": "bytes 0-1/2", "content-length": "2" } }))));
+    const pending = hydrateAssetFiles([stalledMedia], registeredProject());
+    await vi.advanceTimersByTimeAsync(30);
+    expect((await pending)[0].file?.size).toBe(2);
+    const message = info.mock.calls.map(([s]) => String(s)).find(s => s.startsWith("[MediaPart] ") && s.includes('"outcome":"received"'))!;
+    expect(JSON.parse(message.slice("[MediaPart] ".length))).toMatchObject({ responseWaitMs: 0, bodyReadMs: 30,
+      firstByteMs: 10, lastByteMs: 10, maxBodyIdleMs: 20 });
+    expect(message).not.toContain("relayMs");
+  });
+
   it("keeps the configured limits mandatory for a cached export original", async () => {
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "info").mockImplementation(() => undefined);

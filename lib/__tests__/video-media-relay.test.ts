@@ -13,9 +13,32 @@ const media = (body: BodyInit = new Uint8Array([1, 2, 3, 4]), headers: Record<st
   new Response(body, { status: 206, headers: {
     "content-type": "video/mp4", "content-range": "bytes 0-3/100", "content-length": "4", ...headers,
   } });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("same-origin signed media range delivery", () => {
+  it("separates upstream headers and body timing without exposing signed identities", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => {
+      setTimeout(() => resolve(media(new ReadableStream({ start(controller) {
+        setTimeout(() => { controller.enqueue(new Uint8Array([1, 2, 3, 4])); controller.close(); }, 40);
+      } }))), 20);
+    })));
+    const pending = relayVideoMedia(request(), path, base);
+    await vi.advanceTimersByTimeAsync(60);
+    const response = await pending;
+    expect(response.status).toBe(206);
+    expect(response.headers.get("server-timing") ?? "").toMatch(/media_relay;dur=60/);
+    expect(response.headers.get("server-timing")).not.toContain("signed");
+    const records = info.mock.calls.map(([s]) => String(s)).filter(s => s.startsWith("[MediaRelay] ") && s.includes('"outcome":"delivered"'));
+    expect(records).toHaveLength(1);
+    const event = JSON.parse(records[0].slice("[MediaRelay] ".length));
+    expect(event).toMatchObject({ outcome: "delivered", rangeStart: 0, receivedBytes: 4,
+      upstreamHeadersMs: 20, upstreamBodyMs: 40, relayMs: 60 });
+    expect(records.join("")).not.toMatch(/signed|token|Cookie|projects|must-not-forward/);
+    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+  });
+
   it("keeps the media Node function next to the Singapore API", () => {
     expect(runtime).toBe("nodejs");
     const config = JSON.parse(readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"));
@@ -35,6 +58,17 @@ describe("same-origin signed media range delivery", () => {
     expect(response.status).toBe(206);
     expect(Buffer.from(await response.arrayBuffer()).equals(Buffer.from(bytes))).toBe(true);
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("delivers the same bytes even when the diagnostic writer throws", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => { throw new Error("diagnostic failed"); });
+    vi.spyOn(console, "warn").mockImplementation(() => { throw new Error("diagnostic failed"); });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(media()));
+    const response = await relayVideoMedia(request(), path, base);
+    expect(response.status).toBe(206);
+    expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([1, 2, 3, 4]);
+    vi.mocked(fetch).mockResolvedValue(media(new Uint8Array([1])));
+    expect((await relayVideoMedia(request(), path, base)).status).toBe(502);
   });
 
   it("serves the public Next route using its configured target and async path parameters", async () => {

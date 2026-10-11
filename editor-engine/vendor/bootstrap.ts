@@ -8,6 +8,7 @@ import { isBgmMedia, isBgmTrack } from "@/app/editor/bgm-project-patch";
 import { MEDIA_HYDRATION_BATCH_SIZE, MEDIA_TOTAL_TIMEOUT_MS } from "../media-hydration-contract";
 import { MEDIA_RANGE_CHUNK_BYTES } from "@/lib/video-media-delivery-policy";
 import { PrivateMediaCache } from "@/lib/private-media-cache";
+import { observeMediaPage, parseRelayTiming, reportMediaDiagnostic, type RelayTiming } from "@/lib/media-transfer-diagnostics";
 
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
@@ -134,6 +135,7 @@ async function fetchMediaPart(
   range: string,
   timeoutMs: number,
   remainingTotalMs: number,
+  interPartGapMs = 0,
 ): Promise<{ response: Response; blob: Blob }> {
   const controller = new AbortController();
   const startedAt = performance.now();
@@ -144,6 +146,20 @@ async function fetchMediaPart(
   let receivedBytes = 0;
   let expectedBytes: number | undefined;
   let lastProgressAt = startedAt;
+  let responseAt: number | undefined;
+  let firstByteAt: number | undefined;
+  let maxBodyIdleMs = 0;
+  let relayTiming: RelayTiming | undefined;
+  const page = observeMediaPage();
+  const diagnostic = () => ({ rangeStart: Number(range.slice(6).split("-", 1)[0]),
+    interPartGapMs, receivedBytes, status: observedStatus, durationMs: elapsedMs(startedAt),
+    responseWaitMs: responseAt === undefined ? undefined : Math.round(responseAt - startedAt),
+    bodyReadMs: responseAt === undefined ? undefined : elapsedMs(responseAt),
+    firstByteMs: firstByteAt === undefined || responseAt === undefined ? undefined : Math.round(firstByteAt - responseAt),
+    lastByteMs: receivedBytes === 0 || responseAt === undefined ? undefined : Math.round(lastProgressAt - responseAt),
+    maxBodyIdleMs, ...relayTiming, ...page.snapshot() });
+  reportMediaDiagnostic("MediaPart", { outcome: "started", rangeStart: Number(range.slice(6).split("-", 1)[0]),
+    interPartGapMs, ...page.snapshot() });
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let reachedEnd = false;
   let rejectInterrupted!: (error: Error) => void;
@@ -167,6 +183,8 @@ async function fetchMediaPart(
       headers: { Range: range },
       signal: controller.signal,
     }), interrupted]);
+    responseAt = performance.now();
+    relayTiming = parseRelayTiming(response.headers.get("server-timing"));
     observedStatus = response.status;
     failedAt = "read_body";
     const declaredLength = response.headers.get("content-length");
@@ -181,10 +199,12 @@ async function fetchMediaPart(
     if (reader) {
       for (;;) {
         const { done, value } = await Promise.race([reader.read(), interrupted]);
+        maxBodyIdleMs = Math.max(maxBodyIdleMs, performance.now() - lastProgressAt);
         if (done) { reachedEnd = true; break; }
         if (value.byteLength === 0) continue;
         parts.push(value.slice().buffer);
         receivedBytes += value.byteLength;
+        firstByteAt ??= performance.now();
         lastProgressAt = performance.now();
         resetInactivityTimeout();
       }
@@ -192,8 +212,11 @@ async function fetchMediaPart(
       reachedEnd = true;
     }
     const blob = new Blob(parts, { type: response.headers.get("content-type") || "" });
+    reportMediaDiagnostic("MediaPart", { outcome: "received", ...diagnostic() });
     return { response, blob };
   } catch (error) {
+    reportMediaDiagnostic("MediaPart", { outcome: "failed", failedAt, ...diagnostic(),
+      maxBodyIdleMs: Math.max(maxBodyIdleMs, responseAt === undefined ? 0 : performance.now() - lastProgressAt) });
     throw new MediaHydrationError(
       timedOut ? "timeout" : "network",
       elapsedMs(startedAt),
@@ -207,6 +230,7 @@ async function fetchMediaPart(
       },
     );
   } finally {
+    page.dispose();
     window.clearTimeout(inactivityTimeout);
     window.clearTimeout(totalTimeout);
     if (!reachedEnd) {
@@ -232,6 +256,7 @@ async function downloadPreparedMediaBlob(
   let finalStatus = 0;
   let requestCount = 0;
   let transferredBytes = 0;
+  let previousPartCompletedAt: number | undefined;
 
   while (totalSize === null || nextStart < totalSize) {
     const remainingMs = totalTimeoutMs - elapsedMs(startedAt);
@@ -245,7 +270,9 @@ async function downloadPreparedMediaBlob(
       requestedRange,
       requestTimeoutMs,
       remainingMs,
+      previousPartCompletedAt === undefined ? 0 : elapsedMs(previousPartCompletedAt),
     );
+    previousPartCompletedAt = performance.now();
     requestCount += 1;
     transferredBytes += blob.size;
     finalStatus = response.status;

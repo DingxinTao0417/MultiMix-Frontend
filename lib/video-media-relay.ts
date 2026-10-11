@@ -1,4 +1,5 @@
 import { MEDIA_RANGE_CHUNK_BYTES } from "./video-media-delivery-policy";
+import { relayTimingHeader, reportMediaDiagnostic } from "./media-transfer-diagnostics";
 
 const API_ORIGIN = "https://multimix-backend-production.up.railway.app";
 const UPSTREAM_TIMEOUT_MS = 30_000;
@@ -49,6 +50,10 @@ export async function relayVideoMedia(request: Request, segments: string[], apiB
   }
   if (request.signal.aborted) return failure(408);
 
+  const startedAt = performance.now();
+  let headersAt: number | undefined;
+  reportMediaDiagnostic("MediaRelay", { outcome: "started", rangeStart: start });
+
   const upstreamUrl = new URL(path, base);
   upstreamUrl.search = new URL(request.url).search;
   const controller = new AbortController();
@@ -70,6 +75,7 @@ export async function relayVideoMedia(request: Request, segments: string[], apiB
       headers: { Range: range, "Accept-Encoding": "identity" },
       signal: controller.signal, cache: "no-store", redirect: "error",
     }), interrupted]);
+    headersAt = performance.now();
     if ([401, 403, 404, 416].includes(upstream.status)) return failure(upstream.status);
     reason = "contract";
     if (upstream.status !== 206 || upstream.redirected) throw new Error("Invalid media response status");
@@ -96,14 +102,24 @@ export async function relayVideoMedia(request: Request, segments: string[], apiB
       bytes.set(value, receivedBytes); receivedBytes += value.byteLength;
     }
     if (receivedBytes !== expectedBytes) throw new Error("Incomplete media body");
+    const timing = { upstreamHeadersMs: headersAt - startedAt,
+      upstreamBodyMs: performance.now() - headersAt, relayMs: performance.now() - startedAt };
+    reportMediaDiagnostic("MediaRelay", { outcome: "delivered", rangeStart: start,
+      status: 206, receivedBytes, ...timing });
     complete = true;
     return new Response(bytes, { status: 206, headers: {
       ...PRIVATE_HEADERS, "Content-Type": contentType, "Content-Range": contentRange,
       "Content-Length": String(expectedBytes), "Accept-Ranges": "bytes",
+      "Server-Timing": relayTimingHeader(timing),
     } });
   } catch {
     const status = timedOut ? 504 : request.signal.aborted ? 408 : 502;
-    console.warn("[MediaRelay] " + JSON.stringify({ status, reason: timedOut ? "timeout" : request.signal.aborted ? "cancelled" : reason, receivedBytes }));
+    reportMediaDiagnostic("MediaRelay", { outcome: "failed", rangeStart: start, status, receivedBytes,
+      reason: timedOut ? "timeout" : request.signal.aborted ? "cancelled" : reason as "upstream" | "contract" | "body",
+      relayMs: performance.now() - startedAt,
+      upstreamHeadersMs: headersAt === undefined ? undefined : headersAt - startedAt,
+      upstreamBodyMs: headersAt === undefined ? undefined : performance.now() - headersAt,
+      failedAt: reason === "body" ? "read_body" : reason === "contract" ? "validate" : "await_response" });
     return failure(status);
   } finally {
     clearTimeout(timeout);
