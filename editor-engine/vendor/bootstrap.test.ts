@@ -66,12 +66,188 @@ function projectWithMedia(): BackendProject {
 }
 
 afterEach(() => {
+  bootstrap.disposeEditor();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
+function registeredProject(overrides: Record<string, unknown> = {}): BackendProject {
+  const payload = { uid: 1, aid: 42, fid: 7, identity: "a".repeat(64), exp: Math.floor(Date.now() / 1000) + 600, ...overrides };
+  const token = `${Buffer.from(JSON.stringify(payload)).toString("base64url")}.${"s".repeat(43)}`;
+  const project = projectWithMedia();
+  project.media[0].playback_url = `https://api.example.test/v1/video/projects/42/media/7?token=${token}`;
+  return project;
+}
+
+function originalRangeResponse(source: Uint8Array, init?: RequestInit): Response {
+  const match = /^bytes=(\d+)-(\d+)$/.exec(new Headers(init?.headers).get("range")!);
+  const start = Number(match![1]), end = Math.min(Number(match![2]), source.length - 1);
+  return new Response(source.slice(start, end + 1), { status: 206, headers: {
+    "content-type": "video/mp4", "content-range": `bytes ${start}-${end}/${source.length}`,
+    "content-length": String(end - start + 1),
+  } });
+}
+
+describe("registered original reuse", () => {
+  it("keeps the configured limits mandatory for a cached export original", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(new Uint8Array([1, 2]), init)));
+    vi.stubGlobal("fetch", fetchMock);
+    const project = registeredProject();
+    await hydrateAssetFiles([stalledMedia], project);
+    await expect(bootstrap.hydrateAssetFilesForExport([{ ...stalledMedia, file: new File([], stalledMedia.name) }], project, { chunkBytes: 0 })).rejects.toThrow("positive integers");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cannot publish cached media if dispose occurs during its permission check", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const source = new Uint8Array([1, 2]);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(source, init)));
+    vi.stubGlobal("fetch", fetchMock);
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }));
+    const pending = hydrateAssetFiles([stalledMedia], registeredProject());
+    bootstrap.disposeEditor();
+    finish(originalRangeResponse(source, { headers: { Range: "bytes=0-0" } }));
+    await expect(pending).rejects.toThrow("lifecycle ended");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("never caches a truncated original and reuses only a subsequently complete download", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const source = new Uint8Array([1, 2]);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(source, init)));
+    fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(new Uint8Array([1]), { status: 206, headers: {
+      "content-type": "video/mp4", "content-length": "2", "content-range": "bytes 0-1/2",
+    } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(hydrateAssetFiles([stalledMedia], registeredProject())).rejects.toThrow("length");
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("range"))).toEqual([
+      "bytes=0-3145727", "bytes=0-3145727", "bytes=0-0",
+    ]);
+  });
+
+  it("reuses unchanged complete bytes after a one-byte server check with a renewed grant", async () => {
+    vi.stubGlobal("window", globalThis);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const source = new TextEncoder().encode("complete-original");
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(source, init)));
+    vi.stubGlobal("fetch", fetchMock);
+    const [cold] = await hydrateAssetFiles([stalledMedia], registeredProject());
+    const renewedProject = registeredProject({ exp: Math.floor(Date.now() / 1000) + 700, vid: 2 });
+    const [warm] = await hydrateAssetFiles([stalledMedia], renewedProject);
+    expect(Buffer.from(await warm.file.arrayBuffer()).equals(Buffer.from(await cold.file.arrayBuffer()))).toBe(true);
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("range"))).toEqual([
+      "bytes=0-3145727", "bytes=0-0",
+    ]);
+    expect(mediaEvents(info)).toEqual([
+      expect.objectContaining({ cache: "miss", requestCount: 1, transferredBytes: source.length }),
+      expect.objectContaining({ cache: "hit", requestCount: 1, transferredBytes: 1, bytes: source.length }),
+    ]);
+    expect(JSON.stringify(mediaEvents(info))).not.toMatch(/token|identity|api\.example|original|uid|fid/);
+  });
+
+  it.each([401, 403, 404, 416])("cannot reuse a cached original after server denial %s and does not retry", async status => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const source = new Uint8Array([1, 2, 3, 4]);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(source, init)));
+    vi.stubGlobal("fetch", fetchMock);
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    fetchMock.mockImplementationOnce(() => Promise.resolve(new Response("denied", { status })));
+    await expect(hydrateAssetFiles([stalledMedia], registeredProject())).rejects.toThrow(`HTTP ${status}`);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("range")).toBe("bytes=0-0");
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("range")).toBe("bytes=0-3145727");
+  });
+
+  it.each(["total", "mime", "first-byte", "full-200"])("fails rather than serving cached bytes when validation changes %s", async fault => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const source = new Uint8Array([1, 2, 3, 4]);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(source, init)));
+    vi.stubGlobal("fetch", fetchMock);
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    fetchMock.mockImplementationOnce(() => Promise.resolve(new Response(new Uint8Array([fault === "first-byte" ? 9 : 1]), {
+      status: fault === "full-200" ? 200 : 206, headers: {
+        "content-type": fault === "mime" ? "video/webm" : "video/mp4", "content-length": "1",
+        "content-range": `bytes 0-0/${fault === "total" ? 5 : 4}`,
+      },
+    })));
+    await expect(hydrateAssetFiles([stalledMedia], registeredProject())).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    expect(new Headers(fetchMock.mock.calls[2][1]?.headers).get("range")).toBe("bytes=0-3145727");
+  });
+
+  it.each([{ uid: 2 }, { identity: "b".repeat(64) }])("downloads another user's or changed original independently", async changed => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(new Uint8Array([1, 2]), init)));
+    vi.stubGlobal("fetch", fetchMock);
+    await hydrateAssetFiles([stalledMedia], registeredProject());
+    await hydrateAssetFiles([stalledMedia], registeredProject(changed));
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("range"))).toEqual([
+      "bytes=0-3145727", "bytes=0-3145727",
+    ]);
+  });
+
+  it("reuses originals across editor reinitialization but releases them on dispose", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const editor = {
+      project: { setActiveProject: vi.fn() }, scenes: { initializeScenes: vi.fn() },
+      media: { clearAllAssets: vi.fn(), setAssets: vi.fn() },
+    };
+    vi.mocked(EditorCore.getInstance).mockReturnValue(editor as unknown as ReturnType<typeof EditorCore.getInstance>);
+    vi.mocked(buildProject).mockReturnValue({ project: { scenes: [{ tracks: [] }] }, assets: [stalledMedia] } as unknown as ReturnType<typeof buildProject>);
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(originalRangeResponse(new Uint8Array([1, 2]), init)));
+    vi.stubGlobal("fetch", fetchMock);
+    await bootstrap.initEditorWithProject(registeredProject());
+    await bootstrap.initEditorWithProject(registeredProject());
+    bootstrap.disposeEditor();
+    await bootstrap.initEditorWithProject(registeredProject());
+    expect(fetchMock.mock.calls.map(([, init]) => new Headers(init?.headers).get("range"))).toEqual([
+      "bytes=0-3145727", "bytes=0-0", "bytes=0-3145727",
+    ]);
+  });
+});
+
 describe("hydrateAssetFiles", () => {
+  it("prepares 36,077,615 identical bytes in twelve bounded requests", async () => {
+    vi.stubGlobal("window", globalThis);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const source = new Uint8Array(36_077_615).fill(7);
+    source[0] = 11; source[source.length - 1] = 13;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const range = /^bytes=(\d+)-(\d+)$/.exec(new Headers(init?.headers).get("range")!);
+      const start = Number(range![1]), requestedEnd = Number(range![2]);
+      expect(requestedEnd - start + 1).toBeLessThanOrEqual(3 * 1024 * 1024);
+      const end = Math.min(requestedEnd, source.length - 1);
+      return Promise.resolve(new Response(source.slice(start, end + 1), { status: 206, headers: {
+        "content-type": "video/mp4", "content-range": `bytes ${start}-${end}/${source.length}`,
+        "content-length": String(end - start + 1),
+      } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const [asset] = await hydrateAssetFiles([readyMedia], projectWithMedia());
+    expect(Buffer.from(await asset.file.arrayBuffer()).equals(Buffer.from(source))).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(12);
+  });
+
   it("keeps reading a slow response while bytes arrive within the inactivity limit", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
@@ -215,7 +391,7 @@ describe("hydrateAssetFiles", () => {
     vi.useFakeTimers();
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const original = new Uint8Array(8 * 1024 * 1024);
+    const original = new Uint8Array(24 * 1024 * 1024);
     const fetchMock = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
       const range = new Headers(init?.headers).get("range")!.match(/^bytes=(\d+)-(\d+)$/)!;
       const start = Number(range[1]);
@@ -321,7 +497,7 @@ describe("hydrateAssetFiles", () => {
     vi.stubGlobal("window", globalThis);
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const chunkBytes = 1024 * 1024;
+    const chunkBytes = 3 * 1024 * 1024;
     const original = new Uint8Array(chunkBytes * 2 + 4).fill(7);
     original[0] = 11;
     original[original.length - 1] = 13;
@@ -448,7 +624,7 @@ describe("hydrateAssetFiles", () => {
         status: 200,
       }),
     ]);
-    expect(Object.keys(mediaEvents(info)[0]).sort()).toEqual(["bytes", "durationMs", "mediaIndex", "mediaType", "outcome", "stage", "status", "timestamp"]);
+    expect(Object.keys(mediaEvents(info)[0]).sort()).toEqual(["bytes", "cache", "durationMs", "mediaIndex", "mediaType", "outcome", "requestCount", "stage", "status", "timestamp", "transferredBytes"]);
   });
 
   it("separates unavailable media from an unexpected response type in diagnostics", async () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { relayVideoMedia } from "../video-media-relay";
-import { GET } from "../../app/api/video-media/[...path]/route";
+import { GET, preferredRegion, runtime } from "../../app/api/video-media/[...path]/route";
 
 const base = "https://multimix-backend-production.up.railway.app";
 const path = ["projects", "42", "media", "7"];
@@ -15,6 +15,24 @@ const media = (body: BodyInit = new Uint8Array([1, 2, 3, 4]), headers: Record<st
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("same-origin signed media range delivery", () => {
+  it("keeps the media Node function next to the Singapore API", () => {
+    expect(runtime).toBe("nodejs");
+    expect(preferredRegion).toBe("sin1");
+  });
+
+  it("delivers an identical complete three MiB block below the platform body limit", async () => {
+    const bytes = new Uint8Array(3 * 1024 * 1024).fill(9);
+    bytes[bytes.length - 1] = 11;
+    const fetchMock = vi.fn().mockResolvedValue(media(bytes, {
+      "content-range": `bytes 0-${bytes.length - 1}/${bytes.length + 4}`, "content-length": String(bytes.length),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await relayVideoMedia(request("token=t", `bytes=0-${bytes.length - 1}`), path, base);
+    expect(response.status).toBe(206);
+    expect(Buffer.from(await response.arrayBuffer()).equals(Buffer.from(bytes))).toBe(true);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("serves the public Next route using its configured target and async path parameters", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", base);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(media()));
@@ -49,7 +67,7 @@ describe("same-origin signed media range delivery", () => {
     [path, "token=t", ""],
     [path, "token=t", "bytes=0-"],
     [path, "token=t", "bytes=0-3,5-7"],
-    [path, "token=t", "bytes=0-1048576"],
+    [path, "token=t", "bytes=0-3145728"],
     [path, "token=t", "bytes=10-1"],
   ])("rejects invalid paths, authorization/query contracts or unbounded ranges before fetch", async (segments, query, range) => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);

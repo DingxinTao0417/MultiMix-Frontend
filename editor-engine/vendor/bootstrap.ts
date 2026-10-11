@@ -6,6 +6,8 @@ import { API_BASE, mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 import { isBgmMedia, isBgmTrack } from "@/app/editor/bgm-project-patch";
 import { MEDIA_HYDRATION_BATCH_SIZE, MEDIA_TOTAL_TIMEOUT_MS } from "../media-hydration-contract";
+import { MEDIA_RANGE_CHUNK_BYTES } from "@/lib/video-media-delivery-policy";
+import { PrivateMediaCache } from "@/lib/private-media-cache";
 
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
@@ -13,9 +15,9 @@ export type HydrateProgress = (loaded: number, total: number) => void;
 // Preview and export both require complete, validated File objects for canvas decoding.
 type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "range" | "timeout";
 
-const MEDIA_RANGE_CHUNK_BYTES = 1024 * 1024;
 const MEDIA_RANGE_REQUEST_TIMEOUT_MS = 60_000;
 const authorizedPlaybackUrlByMediaId: Record<string, string> = {};
+const privateMediaCache = new PrivateMediaCache();
 
 function clearAuthorizedPlaybackUrls(): void {
   for (const mediaId of Object.keys(authorizedPlaybackUrlByMediaId)) {
@@ -47,6 +49,9 @@ type DownloadedMediaBlob = {
   contentType: string;
   durationMs: number;
   status: number;
+  cache: "hit" | "miss" | "ineligible";
+  requestCount: number;
+  transferredBytes: number;
 };
 
 type MediaFailureBoundary = "await_response" | "read_body" | "validate";
@@ -73,6 +78,9 @@ type MediaLoadEvent = {
   receivedBytes?: number;
   expectedBytes?: number;
   bodyIdleMs?: number;
+  cache?: DownloadedMediaBlob["cache"];
+  requestCount?: number;
+  transferredBytes?: number;
 };
 
 function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
@@ -85,6 +93,7 @@ function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
       reason: event.reason, failedAt: event.failedAt,
       rangeStart: event.rangeStart, requestTimeoutMs: event.requestTimeoutMs,
       receivedBytes: event.receivedBytes, expectedBytes: event.expectedBytes, bodyIdleMs: event.bodyIdleMs,
+      cache: event.cache, requestCount: event.requestCount, transferredBytes: event.transferredBytes,
     }));
   } catch { /* Diagnostics must not change preparation results. */ }
 }
@@ -208,24 +217,21 @@ async function fetchMediaPart(
   }
 }
 
-async function fetchPreparedMediaBlob(
+async function downloadPreparedMediaBlob(
   asset: MediaAsset,
   url: string,
-  options: ExportMediaHydrationOptions,
+  options: Required<ExportMediaHydrationOptions>,
 ): Promise<DownloadedMediaBlob> {
   const startedAt = performance.now();
-  const chunkBytes = options.chunkBytes ?? MEDIA_RANGE_CHUNK_BYTES;
-  const requestTimeoutMs = options.requestTimeoutMs ?? MEDIA_RANGE_REQUEST_TIMEOUT_MS;
-  const totalTimeoutMs = options.totalTimeoutMs ?? MEDIA_TOTAL_TIMEOUT_MS;
-  if (![chunkBytes, requestTimeoutMs, totalTimeoutMs].every((value) => Number.isInteger(value) && value > 0)) {
-    throw new MediaHydrationError("range", elapsedMs(startedAt), "Media hydration limits must be positive integers");
-  }
+  const { chunkBytes, requestTimeoutMs, totalTimeoutMs } = options;
 
   const chunks: Blob[] = [];
   let nextStart = 0;
   let totalSize: number | null = null;
   let expectedContentType: string | null = null;
   let finalStatus = 0;
+  let requestCount = 0;
+  let transferredBytes = 0;
 
   while (totalSize === null || nextStart < totalSize) {
     const remainingMs = totalTimeoutMs - elapsedMs(startedAt);
@@ -240,12 +246,15 @@ async function fetchPreparedMediaBlob(
       requestTimeoutMs,
       remainingMs,
     );
+    requestCount += 1;
+    transferredBytes += blob.size;
     finalStatus = response.status;
     const contentType = normalizedContentType(response, blob);
     if (response.status !== 206 && !(response.status === 200 && nextStart === 0)) {
       throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
         contentType,
         status: response.status,
+        cache: "ineligible", requestCount, transferredBytes,
       });
     }
     assertMediaMime(asset, contentType, elapsedMs(startedAt), response.status);
@@ -265,6 +274,7 @@ async function fetchPreparedMediaBlob(
         contentType,
         durationMs: elapsedMs(startedAt),
         status: response.status,
+        cache: "ineligible", requestCount, transferredBytes,
       };
     }
     const contentRange = response.headers.get("content-range") || "";
@@ -318,16 +328,71 @@ async function fetchPreparedMediaBlob(
     contentType: expectedContentType || blob.type,
     durationMs: elapsedMs(startedAt),
     status: finalStatus,
+    cache: "ineligible", requestCount, transferredBytes,
   };
 }
 
-export function disposeEditor(): void {
+async function fetchPreparedMediaBlob(
+  asset: MediaAsset,
+  url: string,
+  options: ExportMediaHydrationOptions,
+): Promise<DownloadedMediaBlob> {
+  const startedAt = performance.now();
+  const limits = {
+    chunkBytes: options.chunkBytes ?? MEDIA_RANGE_CHUNK_BYTES,
+    requestTimeoutMs: options.requestTimeoutMs ?? MEDIA_RANGE_REQUEST_TIMEOUT_MS,
+    totalTimeoutMs: options.totalTimeoutMs ?? MEDIA_TOTAL_TIMEOUT_MS,
+  };
+  if (!Object.values(limits).every(value => Number.isInteger(value) && value > 0)) {
+    throw new MediaHydrationError("range", elapsedMs(startedAt), "Media hydration limits must be positive integers");
+  }
+  const scope = privateMediaCache.scope(url);
+  const cached = scope ? privateMediaCache.get(scope) : null;
+  try {
+    if (cached && scope) {
+      const { response, blob } = await fetchMediaPart(
+        url, "bytes=0-0", limits.requestTimeoutMs, limits.totalTimeoutMs,
+      );
+      const contentType = normalizedContentType(response, blob);
+      if (response.status !== 206) {
+        throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, { status: response.status });
+      }
+      assertMediaMime(asset, contentType, elapsedMs(startedAt), response.status);
+      if (contentType !== cached.type) {
+        throw new MediaHydrationError("mime", elapsedMs(startedAt), "Cached media type changed");
+      }
+      if (response.headers.get("content-range") !== `bytes 0-0/${cached.size}`
+        || response.headers.get("content-length") !== "1" || blob.size !== 1
+        || new Uint8Array(await blob.arrayBuffer())[0] !== new Uint8Array(await cached.slice(0, 1).arrayBuffer())[0]) {
+        throw new MediaHydrationError("range", elapsedMs(startedAt), "Cached media validation did not match the original");
+      }
+      if (privateMediaCache.get(scope) !== cached) {
+        throw new MediaHydrationError("network", elapsedMs(startedAt), "Cached media lifecycle ended during validation");
+      }
+      return { blob: cached, bytes: cached.size, contentType, durationMs: elapsedMs(startedAt), status: 206,
+        cache: "hit", requestCount: 1, transferredBytes: 1 };
+    }
+    const downloaded = await downloadPreparedMediaBlob(asset, url, limits);
+    if (scope && downloaded.status === 206) privateMediaCache.put(scope, downloaded.blob);
+    return { ...downloaded, durationMs: elapsedMs(startedAt), cache: scope ? "miss" : "ineligible" };
+  } catch (error) {
+    if (scope) privateMediaCache.remove(scope);
+    throw error;
+  }
+}
+
+function resetEditor(): void {
   EditorCore.reset();
   clearAuthorizedPlaybackUrls();
   if (typeof window !== "undefined") {
     const editorWindow = window as Window & { __editor?: EditorCore };
     delete editorWindow.__editor;
   }
+}
+
+export function disposeEditor(): void {
+  resetEditor();
+  privateMediaCache.clear();
 }
 
 // Download media files into real Blob/File objects. The canvas renderer uses
@@ -375,6 +440,7 @@ export async function hydrateAssetFiles(
             bytes: downloaded.bytes,
             durationMs: downloaded.durationMs,
             status: downloaded.status,
+            cache: downloaded.cache, requestCount: downloaded.requestCount, transferredBytes: downloaded.transferredBytes,
           });
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
@@ -440,6 +506,7 @@ export async function hydrateAssetFilesForExport(
         bytes: downloaded.bytes,
         durationMs: downloaded.durationMs,
         status: downloaded.status,
+        cache: downloaded.cache, requestCount: downloaded.requestCount, transferredBytes: downloaded.transferredBytes,
       });
     } catch (error) {
       if (error instanceof MediaHydrationError) reportMediaLoad("warn", {
@@ -457,7 +524,7 @@ export async function hydrateAssetFilesForExport(
 }
 
 export async function initEditorWithProject(bp: BackendProject, onProgress?: HydrateProgress): Promise<EditorCore> {
-  disposeEditor();
+  resetEditor();
   const editor = EditorCore.getInstance();
   await applyProject(editor, bp, onProgress);
   return editor;

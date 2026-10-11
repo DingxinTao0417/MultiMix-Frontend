@@ -1,5 +1,6 @@
+import { MEDIA_RANGE_CHUNK_BYTES } from "./video-media-delivery-policy";
+
 const API_ORIGIN = "https://multimix-backend-production.up.railway.app";
-const MAX_RANGE_BYTES = 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 30_000;
 const PRIVATE_HEADERS = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 const RASTER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/bmp", "image/tiff", "image/x-icon", "image/vnd.microsoft.icon"]);
@@ -43,7 +44,7 @@ export async function relayVideoMedia(request: Request, segments: string[], apiB
   const match = /^bytes=(\d+)-(\d+)$/.exec(range);
   if (!match) return failure(416);
   const start = Number(match[1]), end = Number(match[2]);
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end - start + 1 > MAX_RANGE_BYTES) {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end - start + 1 > MEDIA_RANGE_CHUNK_BYTES) {
     return failure(416);
   }
   if (request.signal.aborted) return failure(408);
