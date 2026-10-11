@@ -164,8 +164,13 @@ describe("video project browse-player contract", () => {
     expect(bgmPatch).not.toContain("clearAllAssets");
     expect(bgmPatch).not.toContain("initializeScenes");
     expect(bgmPatch).toMatch(/await hydrateAssetFiles[\s\S]*?editor\.timeline\.getTracks\(\)/);
-    expect(editorBootstrap).toMatch(
-      /updateEditorProject[\s\S]*?editor\.media\.clearAllAssets\(\)[\s\S]*?applyProject\(editor,\s*bp\)/,
+    const projectPatch = editorBootstrap.slice(editorBootstrap.indexOf("export async function updateEditorProject"),
+      editorBootstrap.indexOf("export async function updateEditorBgm"));
+    expect(projectPatch).not.toContain("clearAllAssets");
+    expect(projectPatch).toMatch(/await applyProject\(editor,\s*bp\)/);
+    const applyProject = editorBootstrap.slice(editorBootstrap.indexOf("async function applyProject"));
+    expect(applyProject).toMatch(
+      /await hydrateAssetFiles[\s\S]*?editor\.media\.clearAllAssets\(\)[\s\S]*?editor\.project\.setActiveProject/,
     );
   });
 });

@@ -66,7 +66,7 @@ import {
   type RequirementConversationMediaResponse,
   type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
-import { conversationFromPersisted, contentAssetToProduct, mergePersistedConversations, relativeTimeLabel } from "../../../lib/asset-mappers";
+import { conversationFromPersisted, contentAssetToProduct, relativeTimeLabel } from "../../../lib/asset-mappers";
 import { isRecord, normalizeAssetTitle } from "./asset-workspace-shared";
 import type { VideoQualityReport } from "./video-quality";
 import {
@@ -837,15 +837,6 @@ function mapAgentAction(response: ApiAgentActionRunResponse): AgentActionRunResp
   };
 }
 
-export function findConversationByClientRequestId(
-  rows: AssetConversationResponse[],
-  clientRequestId: string,
-): AssetConversationResponse | null {
-  return rows.find((row) => row.messages.some(
-    (message) => stringValue(message.metadata?.client_request_id) === clientRequestId,
-  )) ?? null;
-}
-
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -929,7 +920,6 @@ export type AssetWorkspaceAdapter = {
   mergeConversationSummaries(summaries: AssetConversationSummaryResponse[], current: AssetConversation[]): AssetConversation[];
   loadConversationSnapshot(token: string, conversationId: string): Promise<AssetConversation>;
   loadConversationDetail(token: string, conversationId: string): Promise<AssetConversation>;
-  loadConversations(token: string, current: AssetConversation[]): Promise<AssetConversation[]>;
   loadCurrentRequirements(token: string, conversationId: string): Promise<ProjectRequirementSnapshot | null>;
   loadLatestRequirementVersion(token: string, conversationId: string): Promise<ProjectRequirementSnapshot | null>;
   retryRequirements(token: string, conversationId: string, failedSnapshotId: string): Promise<ProjectRequirementSnapshot>;
@@ -998,6 +988,7 @@ export type AssetWorkspaceAdapter = {
   }>;
   reconcileMessage(args: {
     token: string;
+    conversationId: string;
     clientRequestId: string;
   }): Promise<{
     conversationId: string;
@@ -1755,13 +1746,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         detailsLoaded: false,
       };
     },
-    async loadConversations(token, current) {
-      const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
-      return mergePersistedConversations(rows, current, data.newConversation.product).map((conversation) => ({
-        ...conversation,
-        detailsLoaded: true,
-      }));
-    },
     async loadCurrentRequirements(token, conversationId) {
       try {
         const snapshot = await api<RawProjectRequirementSnapshot>(
@@ -2012,10 +1996,20 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       });
       return { directorVersionId: response.director_version_id };
     },
-    async reconcileMessage({ token, clientRequestId }) {
-      const rows = await api<AssetConversationResponse[]>("/assets/conversations", token);
-      const row = findConversationByClientRequestId(rows, clientRequestId);
-      if (!row) return null;
+    async reconcileMessage({ token, conversationId, clientRequestId }) {
+      let row: AssetConversationResponse;
+      const scope = conversationId === "new" || conversationId.startsWith("draft-")
+        ? ""
+        : `?conversation_id=${encodeURIComponent(conversationId)}`;
+      try {
+        row = await api<AssetConversationResponse>(
+          `/assets/conversations/requests/${encodeURIComponent(clientRequestId)}${scope}`,
+          token,
+        );
+      } catch (error) {
+        if (apiErrorStatus(error) === 404) return null;
+        throw error;
+      }
       const matchedMessage = row.messages.find(
         (message) => stringValue(message.metadata?.client_request_id) === clientRequestId && message.asset_id,
       );
@@ -2053,7 +2047,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       );
       return {
         conversationId: row.id,
-        conversation: mappedConversation,
+        conversation: { ...mappedConversation, detailsLoaded: true },
         product: generatedProduct ?? null,
         generationJob,
         agentAction,

@@ -11,6 +11,7 @@ const editorMock = vi.hoisted(() => ({
   media: {
     getAssets: vi.fn(),
     setAssets: vi.fn(),
+    clearAllAssets: vi.fn(),
   },
   scenes: {
     initializeScenes: vi.fn(),

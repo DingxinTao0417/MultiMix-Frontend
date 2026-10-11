@@ -34,6 +34,7 @@ import { ProjectRevisionClient, ProjectWriteError, saveVersionedProject } from "
 import { mergeBgmProjectPatch } from "./bgm-project-patch";
 import { subscribePreviewPlaybackUpdates } from "./preview-playback-sync";
 import { observeVideoActivity } from "@/lib/product-activity";
+import { createProjectLoadDiagnostic, type ProjectLoadStep } from "./project-load-diagnostics";
 import type { TimelineFlushResult } from "./timeline-save-coordinator";
 import {
   clearLocalExportMarker,
@@ -120,10 +121,12 @@ function editorContentIdentity(serialized: BackendProject | Record<string, unkno
   return JSON.stringify({ tracks: project.tracks, media: project.media, settings: project.settings, metadata: project.metadata });
 }
 
-async function fetchProject(endpoint: string, token: string | null, isCurrent?: () => boolean): Promise<LoadedProject> {
+async function fetchProject(endpoint: string, token: string | null, isCurrent?: () => boolean, onLoadStage?: (stage: ProjectLoadStep, status?: number) => void): Promise<LoadedProject> {
+  onLoadStage?.("request_started");
   const res = await fetch(`${API_BASE}${endpoint}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {}
   });
+  onLoadStage?.("response_received", res.status);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "无法加载视频项目");
@@ -135,8 +138,10 @@ async function fetchProject(endpoint: string, token: string | null, isCurrent?: 
   }
   const raw = data.project;
   rememberRawProject(raw);
+  const project = unwrapProject(raw);
+  onLoadStage?.("project_parsed");
   return {
-    project: unwrapProject(raw),
+    project,
     projectFingerprint: typeof data.project_fingerprint === "string" ? data.project_fingerprint : null,
   };
 }
@@ -210,6 +215,7 @@ export default function EditorView({
   const [standaloneExportBusy, setStandaloneExportBusy] = useState(false);
   const tokenRef = useRef(token);
   const startedRef = useRef(false);
+  const loadDiagnosticRef = useRef<ReturnType<typeof createProjectLoadDiagnostic> | null>(null);
   const exportBusyRef = useRef(false);
   const readyAcknowledgedRef = useRef(false);
   const loadedProjectRef = useRef<BackendProject | null>(null);
@@ -268,11 +274,13 @@ export default function EditorView({
     if (typeof window === "undefined") return;
     const onPageHide = () => {
       bgmSessionRef.current += 1;
+      loadDiagnosticRef.current?.pageHide();
     };
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("pagehide", disposeEditor);
     return () => {
       bgmSessionRef.current += 1;
+      loadDiagnosticRef.current?.unmount();
       activeExportAbortRef.current?.abort();
       standaloneRequestAbortRef.current?.abort();
       standaloneExportEpochRef.current += 1;
@@ -916,7 +924,6 @@ export default function EditorView({
       : assetId
         ? `/v1/video/projects/${encodeURIComponent(assetId)}`
         : null;
-    console.log("[Editor] load:", { jobId, assetId, token: token ? "set" : "null", endpoint, API_BASE });
     if (!endpoint) {
       setState("error");
       setError("缺少项目 ID。请从对话中生成视频后再打开剪辑器。");
@@ -924,21 +931,29 @@ export default function EditorView({
     }
     if (startedRef.current) return;
     startedRef.current = true;
+    let apiSameOrigin = false;
+    try { apiSameOrigin = new URL(API_BASE, window.location.origin).origin === window.location.origin; }
+    catch { /* A diagnostic cannot prevent loading when the URL is unavailable. */ }
+    const diagnostic = createProjectLoadDiagnostic({ embedded: embed === true, online: navigator.onLine, apiSameOrigin });
+    loadDiagnosticRef.current = diagnostic;
     setState("loading");
     void (async () => {
       try {
-        const loadedProject = await fetchProject(endpoint, getExportToken());
+        const loadedProject = await fetchProject(endpoint, getExportToken(), undefined, diagnostic.stage);
         candidateBlobRef.current = null;
         recoverableStandaloneExportsRef.current.clear();
         setStandaloneExportBlobs({});
         loadedProjectRef.current = loadedProject.project;
         projectRevisionRef.current.load(loadedProject.projectFingerprint);
+        diagnostic.stage("media_hydration_started");
         await initEditorWithProject(loadedProject.project, (loaded, total) => {
           setLoadingDetail(total > 0 ? `正在下载素材 ${loaded}/${total}` : "");
           if (previewOnly) postToParent({ type: "multimix-editor-preview-loading", totalMedia: total });
         });
+        diagnostic.stage("ready");
         setState("ready");
       } catch (e) {
+        diagnostic.fail(e);
         setError(e instanceof Error ? e.message : String(e));
         setState("error");
         postToParent({
@@ -947,7 +962,7 @@ export default function EditorView({
         });
       }
     })();
-  }, [jobId, assetId, getExportToken, postToParent, previewOnly, token]);
+  }, [jobId, assetId, getExportToken, postToParent, previewOnly, token, embed]);
 
   useEffect(() => {
     if (state !== "ready") return;

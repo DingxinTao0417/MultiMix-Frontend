@@ -393,6 +393,25 @@ function latestProductVersionId(product: ProductArtifact): number | null {
   return ids.length ? Math.max(...ids) : null;
 }
 
+export function executionConversationId(
+  conversations: Conversation[],
+  jobId: string,
+  assetId: number,
+): string | null {
+  const productsFor = (conversation: Conversation) => (
+    conversation.products?.length ? conversation.products : [conversation.product]
+  );
+  const jobMatches = conversations.filter((conversation) => (
+    (conversation.messages ?? []).some((message) => message.metadata?.job_public_id === jobId)
+    || productsFor(conversation).some((product) => product.metadata?.latest_job_public_id === jobId)
+  ));
+  if (jobMatches.length) return jobMatches.length === 1 ? jobMatches[0].id : null;
+  const assetMatches = conversations.filter((conversation) => (
+    productsFor(conversation).some((product) => product.backendAssetId === assetId)
+  ));
+  return assetMatches.length === 1 ? assetMatches[0].id : null;
+}
+
 export function isExecutionTerminal(job: VideoJobResult): boolean {
   if (job.productStatus === "generating") return false;
   if (job.productStatus === "failed" || job.productStatus === "completed") return true;
@@ -1703,8 +1722,13 @@ export default function AssetsWorkspaceClient({
       if (timer) clearInterval(timer);
     };
 
-    const startReadyRefresh = (jobId: string, phase: "project_ready" | "terminal") => {
+    const startReadyRefresh = (jobId: string, phase: "project_ready" | "terminal", assetId: number) => {
       if (cancelled) return;
+      const conversationId = executionConversationId(conversationsRef.current, jobId, assetId);
+      if (!conversationId) {
+        setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
+        return;
+      }
       const runIdentity = executionRunKey(
         jobId,
         executionRunGenerationRef.current.get(jobId) ?? 0,
@@ -1723,13 +1747,10 @@ export default function AssetsWorkspaceClient({
         successfulJobIds: readyConversationRefreshRef.current,
         inFlightJobIds: readyConversationRefreshInFlightRef.current,
         isCancelled: () => cancelled,
-        refresh: () => assetWorkspaceAdapter.loadConversations(
-          token,
-          assetWorkspaceAdapter.listConversations(),
-        ),
-        onRefreshed: (rows) => {
+        refresh: () => assetWorkspaceAdapter.loadConversationDetail(token, conversationId),
+        onRefreshed: (row) => {
           if (cancelled) return;
-          setConversations(rows);
+          setConversations((current) => current.map((item) => item.id === row.id ? row : item));
         },
         onRefreshError: () => {
           setVideoJobLive((current) => markExecutionConnectionLost(current, jobId));
@@ -1787,7 +1808,7 @@ export default function AssetsWorkspaceClient({
         job,
         isCancelled: () => cancelled,
         publishJob,
-        startReadyRefresh,
+        startReadyRefresh: (jobId, phase) => startReadyRefresh(jobId, phase, job.assetId),
         readyRefreshSucceeded: (jobId, phase) => readyConversationRefreshRef.current.has(
           `${executionRunKey(
             jobId,
@@ -3217,7 +3238,10 @@ export default function AssetsWorkspaceClient({
         && error.message === API_CONNECTION_ERROR
       ) {
         try {
-          result = await assetWorkspaceAdapter.reconcileMessage({ token, clientRequestId });
+          result = await assetWorkspaceAdapter.reconcileMessage({
+            token, clientRequestId,
+            conversationId: createdProjectId ?? optimisticConversationId ?? conversation.id,
+          });
         } catch {
           // The reconciliation request is also unreachable, so submission state
           // remains unknown and the original connection error stays visible.

@@ -143,7 +143,7 @@ describe("display-area eight-case matrix", () => {
   });
 
   it.each([
-    ["case-01-director-draft", "编导脚本"],
+    ["case-01-director-draft", "编导稿"],
     ["case-02-saved-asset-match", "已引用 测试门店素材"],
     ["case-03-no-asset-hit", "未命中素材"],
     ["case-08-mg-failed-project-ready", "第 1 镜动效未能完成"],
@@ -367,6 +367,45 @@ describe("display-area eight-case matrix", () => {
     expect(screen.queryByText("字幕/标题卡占位", { exact: false })).not.toBeInTheDocument();
   });
 
+  it("reports an unfilled scene without claiming a title card was created", () => {
+    const base = displayProducts["case-03-no-asset-hit"];
+    render(<ProductPreview product={{
+      ...base,
+      metadata: {
+        ...base.metadata,
+        material_gap_notice: "1 个分镜没有找到合适素材，已用字幕/标题卡占位。",
+        video_plan: {
+          ...((base.metadata?.video_plan as Record<string, unknown>) ?? {}),
+          summary: { material_unfilled_count: 1, material_gap_count: 1 },
+        },
+      },
+    }} />);
+
+    expect(screen.getByText("1 个分镜仍缺可用画面", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("字幕/标题卡占位", { exact: false })).not.toBeInTheDocument();
+  });
+
+  it("does not call a persisted title visual an unfilled scene", () => {
+    const base = displayProducts["case-06-project-ready-no-mp4"];
+    render(<ProductPreview product={{
+      ...base,
+      segments: [{
+        id: "title-scene", index: 1, title: "收束标题", line: "欢迎了解",
+        isFallback: true, primaryVisualPersisted: true,
+        primaryVisualIdentity: "title-card-1",
+      }],
+      metadata: {
+        ...base.metadata,
+        material_gap_notice: "1 个分镜已用字幕/标题卡占位。",
+        video_plan: { summary: { material_unfilled_count: 1, material_gap_count: 1 } },
+      },
+    }} />);
+
+    expect(screen.queryByText("仍缺可用画面", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByText("字幕/标题卡占位", { exact: false })).not.toBeInTheDocument();
+    expect(screen.getByText("1 个分镜未命中已保存素材", { exact: false })).toBeInTheDocument();
+  });
+
   it("shows the single automatic animation mode and its delivered scene counts", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
     const videoPlan = base.metadata?.video_plan as Record<string, unknown>;
@@ -398,7 +437,7 @@ describe("display-area eight-case matrix", () => {
     expect(document.querySelector(".shadcn-prototype-video-plan-summary")).not.toBeInTheDocument();
   });
 
-  it("prioritizes material-search failure over the generic material-gap notice", () => {
+  it("hides stale material-search notices when the project scenes are covered", () => {
     const base = displayProducts["case-06-project-ready-no-mp4"];
     render(<ProductPreview product={{
       ...base,
@@ -409,7 +448,7 @@ describe("display-area eight-case matrix", () => {
       },
     }} />);
 
-    expect(screen.getByText("公共素材搜索暂不可用", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("公共素材搜索暂不可用", { exact: false })).not.toBeInTheDocument();
     expect(screen.queryByText("2 个分镜没有找到合适素材。", { exact: true })).not.toBeInTheDocument();
   });
 

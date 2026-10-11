@@ -739,7 +739,7 @@ describe("video browse actions", () => {
     );
 
     expect(screen.getByText(product.operationFailureReason)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "补充素材或修改编导脚本" }));
+    fireEvent.click(screen.getByRole("button", { name: "补充素材或修改编导稿" }));
     expect(composerFocus).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "重试本次修改" })).not.toBeInTheDocument();
     window.removeEventListener("multimix:composer-focus", composerFocus);
@@ -2113,7 +2113,7 @@ describe("video browse actions", () => {
     expect(retry).not.toHaveBeenCalled();
     expect(composerSend).toHaveBeenCalledTimes(1);
     expect((composerSend.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-      utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+      utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
       videoSceneReplacement: {
         failedProjectAssetId: 440,
         sceneId: "seg-4",

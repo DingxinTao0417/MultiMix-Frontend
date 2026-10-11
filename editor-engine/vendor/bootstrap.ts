@@ -6,6 +6,9 @@ import { API_BASE, mediaUrl } from "./api";
 import type { MediaAsset } from "@editor/lib/media/types";
 import { isBgmMedia, isBgmTrack } from "@/app/editor/bgm-project-patch";
 import { MEDIA_HYDRATION_BATCH_SIZE, MEDIA_TOTAL_TIMEOUT_MS } from "../media-hydration-contract";
+import { MEDIA_RANGE_CHUNK_BYTES } from "@/lib/video-media-delivery-policy";
+import { PrivateMediaCache } from "@/lib/private-media-cache";
+import { observeMediaPage, parseRelayTiming, reportMediaDiagnostic, type RelayTiming } from "@/lib/media-transfer-diagnostics";
 
 // Progress callback while media blobs download (loaded, total).
 export type HydrateProgress = (loaded: number, total: number) => void;
@@ -13,9 +16,9 @@ export type HydrateProgress = (loaded: number, total: number) => void;
 // Preview and export both require complete, validated File objects for canvas decoding.
 type MediaHydrationFailureReason = "http" | "mime" | "missing-url" | "network" | "range" | "timeout";
 
-const MEDIA_RANGE_CHUNK_BYTES = 1024 * 1024;
 const MEDIA_RANGE_REQUEST_TIMEOUT_MS = 60_000;
 const authorizedPlaybackUrlByMediaId: Record<string, string> = {};
+const privateMediaCache = new PrivateMediaCache();
 
 function clearAuthorizedPlaybackUrls(): void {
   for (const mediaId of Object.keys(authorizedPlaybackUrlByMediaId)) {
@@ -29,7 +32,7 @@ function resolveAuthorizedPlaybackUrl(playbackUrl: string): string {
     const candidate = new URL(playbackUrl, apiBase);
     const isOriginalMedia = /^\/v1\/video\/projects\/\d+\/media\/\d+$/.test(candidate.pathname);
     if (!candidate.pathname.startsWith("/v1/video/bgm/media/") && !isOriginalMedia) return playbackUrl;
-    return new URL(`${candidate.pathname}${candidate.search}${candidate.hash}`, apiBase).toString();
+    return `/api/video-media/${candidate.pathname.slice("/v1/video/".length)}${candidate.search}${candidate.hash}`;
   } catch {
     return playbackUrl;
   }
@@ -47,14 +50,61 @@ type DownloadedMediaBlob = {
   contentType: string;
   durationMs: number;
   status: number;
+  cache: "hit" | "miss" | "ineligible";
+  requestCount: number;
+  transferredBytes: number;
 };
+
+type MediaFailureBoundary = "await_response" | "read_body" | "validate";
+type MediaFailureMetadata = Partial<Omit<DownloadedMediaBlob, "blob" | "durationMs">> & {
+  failedAt?: MediaFailureBoundary;
+  rangeStart?: number;
+  requestTimeoutMs?: number;
+  receivedBytes?: number;
+  expectedBytes?: number;
+  bodyIdleMs?: number;
+};
+type MediaLoadEvent = {
+  stage: "preview" | "export";
+  outcome: "prepared" | "failed";
+  mediaIndex: number;
+  mediaType: string;
+  durationMs: number;
+  bytes?: number;
+  status?: number;
+  reason?: MediaHydrationFailureReason;
+  failedAt?: MediaFailureBoundary;
+  rangeStart?: number;
+  requestTimeoutMs?: number;
+  receivedBytes?: number;
+  expectedBytes?: number;
+  bodyIdleMs?: number;
+  cache?: DownloadedMediaBlob["cache"];
+  requestCount?: number;
+  transferredBytes?: number;
+};
+
+function reportMediaLoad(level: "info" | "warn", event: MediaLoadEvent): void {
+  try {
+    console[level]("[MediaLoad] " + JSON.stringify({
+      timestamp: new Date().toISOString(),
+      stage: event.stage, outcome: event.outcome,
+      mediaIndex: event.mediaIndex, mediaType: event.mediaType,
+      durationMs: event.durationMs, bytes: event.bytes, status: event.status,
+      reason: event.reason, failedAt: event.failedAt,
+      rangeStart: event.rangeStart, requestTimeoutMs: event.requestTimeoutMs,
+      receivedBytes: event.receivedBytes, expectedBytes: event.expectedBytes, bodyIdleMs: event.bodyIdleMs,
+      cache: event.cache, requestCount: event.requestCount, transferredBytes: event.transferredBytes,
+    }));
+  } catch { /* Diagnostics must not change preparation results. */ }
+}
 
 class MediaHydrationError extends Error {
   constructor(
     readonly reason: MediaHydrationFailureReason,
     readonly durationMs: number,
     message: string,
-    readonly metadata: Partial<Omit<DownloadedMediaBlob, "blob" | "durationMs">> = {},
+    readonly metadata: MediaFailureMetadata = {},
   ) {
     super(message);
     this.name = "MediaHydrationError";
@@ -63,17 +113,6 @@ class MediaHydrationError extends Error {
 
 function elapsedMs(startedAt: number): number {
   return Math.round(performance.now() - startedAt);
-}
-
-function diagnosticUrl(url: string): string {
-  try {
-    const parsed = new URL(url, window.location.origin);
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return url.split(/[?#]/, 1)[0] || url;
-  }
 }
 
 function normalizedContentType(response: Response, blob: Blob): string {
@@ -95,51 +134,129 @@ async function fetchMediaPart(
   url: string,
   range: string,
   timeoutMs: number,
+  remainingTotalMs: number,
+  interPartGapMs = 0,
 ): Promise<{ response: Response; blob: Blob }> {
   const controller = new AbortController();
+  const startedAt = performance.now();
+  let failedAt: MediaFailureBoundary = "await_response";
+  let observedStatus: number | undefined;
   let timedOut = false;
-  const timeout = window.setTimeout(() => {
+  let deadlineExceeded = false;
+  let receivedBytes = 0;
+  let expectedBytes: number | undefined;
+  let lastProgressAt = startedAt;
+  let responseAt: number | undefined;
+  let firstByteAt: number | undefined;
+  let maxBodyIdleMs = 0;
+  let relayTiming: RelayTiming | undefined;
+  const page = observeMediaPage();
+  const diagnostic = () => ({ rangeStart: Number(range.slice(6).split("-", 1)[0]),
+    interPartGapMs, receivedBytes, status: observedStatus, durationMs: elapsedMs(startedAt),
+    responseWaitMs: responseAt === undefined ? undefined : Math.round(responseAt - startedAt),
+    bodyReadMs: responseAt === undefined ? undefined : elapsedMs(responseAt),
+    firstByteMs: firstByteAt === undefined || responseAt === undefined ? undefined : Math.round(firstByteAt - responseAt),
+    lastByteMs: receivedBytes === 0 || responseAt === undefined ? undefined : Math.round(lastProgressAt - responseAt),
+    maxBodyIdleMs, ...relayTiming, ...page.snapshot() });
+  reportMediaDiagnostic("MediaPart", { outcome: "started", rangeStart: Number(range.slice(6).split("-", 1)[0]),
+    interPartGapMs, ...page.snapshot() });
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let reachedEnd = false;
+  let rejectInterrupted!: (error: Error) => void;
+  const interrupted = new Promise<never>((_resolve, reject) => { rejectInterrupted = reject; });
+  const interrupt = () => {
     timedOut = true;
     controller.abort();
-  }, timeoutMs);
+    rejectInterrupted(new DOMException("Media reception aborted", "AbortError"));
+  };
+  let inactivityTimeout = window.setTimeout(interrupt, timeoutMs);
+  const resetInactivityTimeout = () => {
+    window.clearTimeout(inactivityTimeout);
+    inactivityTimeout = window.setTimeout(interrupt, timeoutMs);
+  };
+  const totalTimeout = window.setTimeout(() => {
+    deadlineExceeded = true;
+    interrupt();
+  }, remainingTotalMs);
   try {
-    const response = await fetch(url, {
+    const response = await Promise.race([fetch(url, {
       headers: { Range: range },
       signal: controller.signal,
-    });
-    const blob = await response.blob();
+    }), interrupted]);
+    responseAt = performance.now();
+    relayTiming = parseRelayTiming(response.headers.get("server-timing"));
+    observedStatus = response.status;
+    failedAt = "read_body";
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength !== null && /^\d+$/.test(declaredLength)) {
+      const length = Number(declaredLength);
+      if (Number.isSafeInteger(length)) expectedBytes = length;
+    }
+    lastProgressAt = performance.now();
+    resetInactivityTimeout();
+    const parts: BlobPart[] = [];
+    reader = response.body?.getReader();
+    if (reader) {
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), interrupted]);
+        maxBodyIdleMs = Math.max(maxBodyIdleMs, performance.now() - lastProgressAt);
+        if (done) { reachedEnd = true; break; }
+        if (value.byteLength === 0) continue;
+        parts.push(value.slice().buffer);
+        receivedBytes += value.byteLength;
+        firstByteAt ??= performance.now();
+        lastProgressAt = performance.now();
+        resetInactivityTimeout();
+      }
+    } else {
+      reachedEnd = true;
+    }
+    const blob = new Blob(parts, { type: response.headers.get("content-type") || "" });
+    reportMediaDiagnostic("MediaPart", { outcome: "received", ...diagnostic() });
     return { response, blob };
   } catch (error) {
+    reportMediaDiagnostic("MediaPart", { outcome: "failed", failedAt, ...diagnostic(),
+      maxBodyIdleMs: Math.max(maxBodyIdleMs, responseAt === undefined ? 0 : performance.now() - lastProgressAt) });
     throw new MediaHydrationError(
       timedOut ? "timeout" : "network",
-      timeoutMs,
+      elapsedMs(startedAt),
       timedOut
-        ? `Media range request timed out after ${timeoutMs}ms`
+        ? deadlineExceeded ? "Media hydration exceeded its total deadline" : `Media range request timed out after ${timeoutMs}ms without progress`
         : error instanceof Error ? error.message : String(error),
+      {
+        failedAt, status: observedStatus, rangeStart: Number(range.slice(6).split("-", 1)[0]), requestTimeoutMs: timeoutMs,
+        receivedBytes: failedAt === "read_body" ? receivedBytes : undefined,
+        expectedBytes, bodyIdleMs: failedAt === "read_body" ? elapsedMs(lastProgressAt) : undefined,
+      },
     );
   } finally {
-    window.clearTimeout(timeout);
+    page.dispose();
+    window.clearTimeout(inactivityTimeout);
+    window.clearTimeout(totalTimeout);
+    if (!reachedEnd) {
+      controller.abort();
+      void reader?.cancel().catch(() => undefined);
+    }
+    reader?.releaseLock();
   }
 }
 
-async function fetchPreparedMediaBlob(
+async function downloadPreparedMediaBlob(
   asset: MediaAsset,
   url: string,
-  options: ExportMediaHydrationOptions,
+  options: Required<ExportMediaHydrationOptions>,
 ): Promise<DownloadedMediaBlob> {
   const startedAt = performance.now();
-  const chunkBytes = options.chunkBytes ?? MEDIA_RANGE_CHUNK_BYTES;
-  const requestTimeoutMs = options.requestTimeoutMs ?? MEDIA_RANGE_REQUEST_TIMEOUT_MS;
-  const totalTimeoutMs = options.totalTimeoutMs ?? MEDIA_TOTAL_TIMEOUT_MS;
-  if (![chunkBytes, requestTimeoutMs, totalTimeoutMs].every((value) => Number.isInteger(value) && value > 0)) {
-    throw new MediaHydrationError("range", elapsedMs(startedAt), "Media hydration limits must be positive integers");
-  }
+  const { chunkBytes, requestTimeoutMs, totalTimeoutMs } = options;
 
   const chunks: Blob[] = [];
   let nextStart = 0;
   let totalSize: number | null = null;
   let expectedContentType: string | null = null;
   let finalStatus = 0;
+  let requestCount = 0;
+  let transferredBytes = 0;
+  let previousPartCompletedAt: number | undefined;
 
   while (totalSize === null || nextStart < totalSize) {
     const remainingMs = totalTimeoutMs - elapsedMs(startedAt);
@@ -151,14 +268,20 @@ async function fetchPreparedMediaBlob(
     const { response, blob } = await fetchMediaPart(
       url,
       requestedRange,
-      Math.min(requestTimeoutMs, remainingMs),
+      requestTimeoutMs,
+      remainingMs,
+      previousPartCompletedAt === undefined ? 0 : elapsedMs(previousPartCompletedAt),
     );
+    previousPartCompletedAt = performance.now();
+    requestCount += 1;
+    transferredBytes += blob.size;
     finalStatus = response.status;
     const contentType = normalizedContentType(response, blob);
     if (response.status !== 206 && !(response.status === 200 && nextStart === 0)) {
       throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, {
         contentType,
         status: response.status,
+        cache: "ineligible", requestCount, transferredBytes,
       });
     }
     assertMediaMime(asset, contentType, elapsedMs(startedAt), response.status);
@@ -178,6 +301,7 @@ async function fetchPreparedMediaBlob(
         contentType,
         durationMs: elapsedMs(startedAt),
         status: response.status,
+        cache: "ineligible", requestCount, transferredBytes,
       };
     }
     const contentRange = response.headers.get("content-range") || "";
@@ -231,16 +355,71 @@ async function fetchPreparedMediaBlob(
     contentType: expectedContentType || blob.type,
     durationMs: elapsedMs(startedAt),
     status: finalStatus,
+    cache: "ineligible", requestCount, transferredBytes,
   };
 }
 
-export function disposeEditor(): void {
+async function fetchPreparedMediaBlob(
+  asset: MediaAsset,
+  url: string,
+  options: ExportMediaHydrationOptions,
+): Promise<DownloadedMediaBlob> {
+  const startedAt = performance.now();
+  const limits = {
+    chunkBytes: options.chunkBytes ?? MEDIA_RANGE_CHUNK_BYTES,
+    requestTimeoutMs: options.requestTimeoutMs ?? MEDIA_RANGE_REQUEST_TIMEOUT_MS,
+    totalTimeoutMs: options.totalTimeoutMs ?? MEDIA_TOTAL_TIMEOUT_MS,
+  };
+  if (!Object.values(limits).every(value => Number.isInteger(value) && value > 0)) {
+    throw new MediaHydrationError("range", elapsedMs(startedAt), "Media hydration limits must be positive integers");
+  }
+  const scope = privateMediaCache.scope(url);
+  const cached = scope ? privateMediaCache.get(scope) : null;
+  try {
+    if (cached && scope) {
+      const { response, blob } = await fetchMediaPart(
+        url, "bytes=0-0", limits.requestTimeoutMs, limits.totalTimeoutMs,
+      );
+      const contentType = normalizedContentType(response, blob);
+      if (response.status !== 206) {
+        throw new MediaHydrationError("http", elapsedMs(startedAt), `HTTP ${response.status}`, { status: response.status });
+      }
+      assertMediaMime(asset, contentType, elapsedMs(startedAt), response.status);
+      if (contentType !== cached.type) {
+        throw new MediaHydrationError("mime", elapsedMs(startedAt), "Cached media type changed");
+      }
+      if (response.headers.get("content-range") !== `bytes 0-0/${cached.size}`
+        || response.headers.get("content-length") !== "1" || blob.size !== 1
+        || new Uint8Array(await blob.arrayBuffer())[0] !== new Uint8Array(await cached.slice(0, 1).arrayBuffer())[0]) {
+        throw new MediaHydrationError("range", elapsedMs(startedAt), "Cached media validation did not match the original");
+      }
+      if (privateMediaCache.get(scope) !== cached) {
+        throw new MediaHydrationError("network", elapsedMs(startedAt), "Cached media lifecycle ended during validation");
+      }
+      return { blob: cached, bytes: cached.size, contentType, durationMs: elapsedMs(startedAt), status: 206,
+        cache: "hit", requestCount: 1, transferredBytes: 1 };
+    }
+    const downloaded = await downloadPreparedMediaBlob(asset, url, limits);
+    if (scope && downloaded.status === 206) privateMediaCache.put(scope, downloaded.blob);
+    return { ...downloaded, durationMs: elapsedMs(startedAt), cache: scope ? "miss" : "ineligible" };
+  } catch (error) {
+    if (scope) privateMediaCache.remove(scope);
+    throw error;
+  }
+}
+
+function resetEditor(): void {
   EditorCore.reset();
   clearAuthorizedPlaybackUrls();
   if (typeof window !== "undefined") {
     const editorWindow = window as Window & { __editor?: EditorCore };
     delete editorWindow.__editor;
   }
+}
+
+export function disposeEditor(): void {
+  resetEditor();
+  privateMediaCache.clear();
 }
 
 // Download media files into real Blob/File objects. The canvas renderer uses
@@ -268,7 +447,7 @@ export async function hydrateAssetFiles(
   for (let i = 0; i < assets.length; i += MEDIA_HYDRATION_BATCH_SIZE) {
     const batch = assets.slice(i, i + MEDIA_HYDRATION_BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(async (asset) => {
+      batch.map(async (asset, batchIndex) => {
         const url = playbackUrlById[asset.id];
         const startedAt = performance.now();
         try {
@@ -283,34 +462,32 @@ export async function hydrateAssetFiles(
             });
           }
           const file = new File([blob], asset.name, { type: blob.type });
-          console.info("media hydration succeeded", {
-            assetId: asset.id,
-            assetName: asset.name,
-            assetType: asset.type,
+          reportMediaLoad("info", {
+            stage: "preview", outcome: "prepared", mediaIndex: i + batchIndex, mediaType: asset.type,
             bytes: downloaded.bytes,
-            contentType: downloaded.contentType,
             durationMs: downloaded.durationMs,
             status: downloaded.status,
-            url: diagnosticUrl(url),
+            cache: downloaded.cache, requestCount: downloaded.requestCount, transferredBytes: downloaded.transferredBytes,
           });
           return { ...asset, file, url: URL.createObjectURL(blob) };
         } catch (e) {
           const failure = e instanceof MediaHydrationError
             ? e
             : new MediaHydrationError("network", elapsedMs(startedAt), e instanceof Error ? e.message : String(e));
-          console.warn("media hydration failed", {
-            assetId: asset.id,
-            assetName: asset.name,
-            assetType: asset.type,
+          reportMediaLoad("warn", {
+            stage: "preview", outcome: "failed", mediaIndex: i + batchIndex, mediaType: asset.type,
             bytes: failure.metadata.bytes,
-            contentType: failure.metadata.contentType,
             durationMs: failure.durationMs,
-            error: failure.message,
             reason: failure.reason,
             status: failure.metadata.status,
-            url: url ? diagnosticUrl(url) : undefined,
+            failedAt: failure.metadata.failedAt ?? "validate",
+            rangeStart: failure.metadata.rangeStart,
+            requestTimeoutMs: failure.metadata.requestTimeoutMs,
+            receivedBytes: failure.metadata.receivedBytes,
+            expectedBytes: failure.metadata.expectedBytes,
+            bodyIdleMs: failure.metadata.bodyIdleMs,
           });
-          return url ? { ...asset, url } : asset;
+          throw failure;
         } finally {
           loaded += 1;
           onProgress?.(loaded, assets.length);
@@ -338,7 +515,7 @@ export async function hydrateAssetFilesForExport(
   }
 
   const results: MediaAsset[] = [];
-  for (const asset of assets) {
+  for (const [mediaIndex, asset] of assets.entries()) {
     if (asset.file.size > 0) {
       results.push(asset);
       continue;
@@ -351,17 +528,21 @@ export async function hydrateAssetFilesForExport(
       const downloaded = await fetchPreparedMediaBlob(asset, url, options);
       const file = new File([downloaded.blob], asset.name, { type: downloaded.contentType });
       results.push({ ...asset, file, url: URL.createObjectURL(downloaded.blob) });
-      console.info("export media hydration succeeded", {
-        assetId: asset.id,
-        assetName: asset.name,
-        assetType: asset.type,
+      reportMediaLoad("info", {
+        stage: "export", outcome: "prepared", mediaIndex, mediaType: asset.type,
         bytes: downloaded.bytes,
-        contentType: downloaded.contentType,
         durationMs: downloaded.durationMs,
         status: downloaded.status,
-        url: diagnosticUrl(url),
+        cache: downloaded.cache, requestCount: downloaded.requestCount, transferredBytes: downloaded.transferredBytes,
       });
     } catch (error) {
+      if (error instanceof MediaHydrationError) reportMediaLoad("warn", {
+        stage: "export", outcome: "failed", mediaIndex, mediaType: asset.type,
+        durationMs: error.durationMs, bytes: error.metadata.bytes, status: error.metadata.status,
+        reason: error.reason, failedAt: error.metadata.failedAt ?? "validate",
+        rangeStart: error.metadata.rangeStart, requestTimeoutMs: error.metadata.requestTimeoutMs,
+        receivedBytes: error.metadata.receivedBytes, expectedBytes: error.metadata.expectedBytes, bodyIdleMs: error.metadata.bodyIdleMs,
+      });
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`导出素材“${asset.name}”准备失败：${message}`, { cause: error });
     }
@@ -370,7 +551,7 @@ export async function hydrateAssetFilesForExport(
 }
 
 export async function initEditorWithProject(bp: BackendProject, onProgress?: HydrateProgress): Promise<EditorCore> {
-  disposeEditor();
+  resetEditor();
   const editor = EditorCore.getInstance();
   await applyProject(editor, bp, onProgress);
   return editor;
@@ -381,7 +562,6 @@ export async function initEditorWithProject(bp: BackendProject, onProgress?: Hyd
 // re-render via manager notify() as new segments arrive.
 export async function updateEditorProject(bp: BackendProject): Promise<EditorCore> {
   const editor = EditorCore.getInstance();
-  editor.media.clearAllAssets();
   await applyProject(editor, bp);
   return editor;
 }
@@ -410,6 +590,7 @@ async function applyProject(editor: EditorCore, bp: BackendProject, onProgress?:
 
   const hydratedAssets = await hydrateAssetFiles(assets, bp, onProgress);
 
+  editor.media.clearAllAssets();
   editor.project.setActiveProject({ project });
   editor.scenes.initializeScenes({
     scenes: project.scenes,
