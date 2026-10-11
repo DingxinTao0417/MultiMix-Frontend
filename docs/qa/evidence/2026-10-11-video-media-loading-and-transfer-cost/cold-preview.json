@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-11T01:13:22Z",
+  "scope": "one existing project cold media preparation and first frame; no new playback/export/warm-cache acceptance",
+  "production": {
+    "team": "lywgood96-1172s-projects",
+    "project": "multimix-frontend",
+    "codeCommit": "2c2dc9c9db9f378521d55e5851d54e1d46d44ee4",
+    "acceptanceDeployment": "dpl_FrQG2AX4hKZ9n4BAYkLWcpmDTbCD",
+    "officialHost": "multimix-frontend.vercel.app",
+    "edgeRegion": "hnd1",
+    "mediaFunctionRegion": "sin1",
+    "regionProbe": {
+      "method": "HEAD",
+      "tokenProvided": false,
+      "status": 405,
+      "backendRequests": 0
+    },
+    "backendProject": "multimix-production",
+    "backendEnvironment": "production",
+    "backendDeployment": "d0c7b3bb-a754-45f2-ba4f-29c1c482bb6a",
+    "backendRegion": "sin"
+  },
+  "browser": {
+    "name": "Codex In-app Browser",
+    "mountedAt": "2026-10-11T01:07:26.842Z",
+    "readyAt": "2026-10-11T01:08:44.502Z",
+    "video": {
+      "bytes": 36077615,
+      "transferredBytes": 36077615,
+      "durationMs": 75542,
+      "requestCount": 12,
+      "status": 206,
+      "cache": "miss"
+    },
+    "audio": {
+      "bytes": 765203,
+      "transferredBytes": 765203,
+      "durationMs": 771,
+      "requestCount": 1,
+      "status": 206,
+      "cache": "ineligible"
+    },
+    "previousSameBrowserVideoMs": 118389,
+    "singleComparisonReductionPercent": 36.19,
+    "previousVideoRequestCount": 35,
+    "firstFrameObserved": true,
+    "actualPlaybackRetested": false,
+    "warmCacheRetested": false,
+    "exportRetested": false
+  },
+  "checkpoint": {
+    "existingAssetsReused": true,
+    "newMediaGeneration": false,
+    "priorSourceSha256": "c4d171002592d4b87917349d75c9c4fdfd99e4186f8aa71420d6d98acbeb31ca",
+    "expectedVideoBytes": 36077615,
+    "liveVideoBytes": 36077615,
+    "serverRevalidatesCurrentSignedIdentityPerRange": true,
+    "browserComputedNewSourceSha256": false
+  },
+  "backendVideoTiming": {
+    "count": 12,
+    "status": 206,
+    "sumMs": 7249,
+    "minMs": 475,
+    "maxMs": 878,
+    "entries": [
+      {
+        "status": 206,
+        "ms": 878,
+        "timestamp": "2026-10-11T01:07:30.119565373Z"
+      },
+      {
+        "status": 206,
+        "ms": 535,
+        "timestamp": "2026-10-11T01:07:31.541481751Z"
+      },
+      {
+        "status": 206,
+        "ms": 518,
+        "timestamp": "2026-10-11T01:07:32.981161094Z"
+      },
+      {
+        "status": 206,
+        "ms": 766,
+        "timestamp": "2026-10-11T01:07:34.354419064Z"
+      },
+      {
+        "status": 206,
+        "ms": 758,
+        "timestamp": "2026-10-11T01:08:34.468578896Z"
+      },
+      {
+        "status": 206,
+        "ms": 537,
+        "timestamp": "2026-10-11T01:08:35.750135040Z"
+      },
+      {
+        "status": 206,
+        "ms": 475,
+        "timestamp": "2026-10-11T01:08:37.190733908Z"
+      },
+      {
+        "status": 206,
+        "ms": 644,
+        "timestamp": "2026-10-11T01:08:38.575272589Z"
+      },
+      {
+        "status": 206,
+        "ms": 590,
+        "timestamp": "2026-10-11T01:08:40.028404310Z"
+      },
+      {
+        "status": 206,
+        "ms": 482,
+        "timestamp": "2026-10-11T01:08:41.280039121Z"
+      },
+      {
+        "status": 206,
+        "ms": 568,
+        "timestamp": "2026-10-11T01:08:42.703056055Z"
+      },
+      {
+        "status": 206,
+        "ms": 498,
+        "timestamp": "2026-10-11T01:08:44.049610111Z"
+      }
+    ],
+    "unexplainedFourthToFifthResponseGapMs": 60114
+  },
+  "budget": {
+    "start": "2026-10-11T00:49:00Z",
+    "end": "2026-10-11T01:13:22Z",
+    "total": 19,
+    "methods": {
+      "OPTIONS": 2,
+      "GET": 14,
+      "POST": 3
+    },
+    "status": {
+      "200": 3,
+      "201": 3,
+      "206": 13
+    },
+    "productEventRequests": 4,
+    "videoCount": 12,
+    "videoBackendDurationSumMs": 7249,
+    "cumulative": 1340,
+    "remaining": 142,
+    "browserMediaRetryCount": 0,
+    "applicationDocumentRecoveryCount": 1,
+    "writesOutsideProductEvents": 0,
+    "requestLimit": 30,
+    "sharedRequestLimit": 1482,
+    "sharedUsdCeiling": 1,
+    "actualUsdCostKnown": false,
+    "projectOrSubtitleMutationRequests": 0,
+    "newAsrCalls": 0,
+    "newModelCalls": 0,
+    "newVideoGenerationCalls": 0
+  },
+  "recovery": {
+    "initialDocumentNavigationTimedOut": true,
+    "initialBackendRequests": 0,
+    "initialMediaPreparations": 0,
+    "publicDocumentHealthStatus": 200,
+    "documentRecoveryAttempts": 1,
+    "completedColdPreparations": 1,
+    "mediaFailureRetries": 0
+  },
+  "localFirstFrameArtifact": {
+    "capturedViaProductSaveSnapshot": true,
+    "sha256": "86fc7e0b73289d9917f102431cef7478ce3ea6f4cff37435afdebe3c06e10de9",
+    "imagePublished": false
+  },
+  "limitations": [
+    "single cold comparison only",
+    "75.5 seconds of video preparation remains",
+    "60.1-second response gap is not causally decomposed",
+    "no same-page ordinary playback control in direct embed entry",
+    "warm-cache benefit only validated offline",
+    "no monthly billing attribution",
+    "external direct-media connectivity root cause remains unresolved"
+  ]
+}
