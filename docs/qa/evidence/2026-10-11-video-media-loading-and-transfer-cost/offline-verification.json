@@ -1,0 +1,66 @@
+{
+  "verifiedAt": "2026-10-11T00:59:03.8227703Z",
+  "sourceFiles": [
+    {
+      "path": "editor-engine/vendor/bootstrap.ts",
+      "sha256": "246dd1d4090ca11bd7a34ac3f21690db708dac8464412c199f6c1ea044353845"
+    },
+    {
+      "path": "editor-engine/vendor/bootstrap.test.ts",
+      "sha256": "70b23763ce70a951aad6783dcb704fef9abdb98bb3b2b155bae09ed368ba5942"
+    },
+    {
+      "path": "lib/video-media-relay.ts",
+      "sha256": "e4bb11fe3867b6a4247f3c8d74eada1ccc11ec420eed9a8b535651fd353cf5ed"
+    },
+    {
+      "path": "lib/__tests__/video-media-relay.test.ts",
+      "sha256": "a5603e6e6c2e0d9e80a53afe936dd2630888fa96655a1378d6ae886a48a1ffa0"
+    },
+    {
+      "path": "app/api/video-media/[...path]/route.ts",
+      "sha256": "cca437a488c178bac66f2241cf0661a83711e5c7ff10a6794e1fc7b772adc0fc"
+    },
+    {
+      "path": "lib/video-media-delivery-policy.ts",
+      "sha256": "07d5b620450cf21fc140cec26e976a02c019f3b5a5fae487cf6a9858ffe4cf88"
+    },
+    {
+      "path": "lib/private-media-cache.ts",
+      "sha256": "4b4636b7fa10ac93f346e2b859f79200e34306130532a8ec98b0f442b3940523"
+    },
+    {
+      "path": "lib/__tests__/private-media-cache.test.ts",
+      "sha256": "cf03fa2c1134e04979af23a331d0bd2cbfa57bd9eee78ad5c6afda8f211cd7fc"
+    },
+    {
+      "path": "vercel.json",
+      "sha256": "728b141ad55d60ac654ddb0ff532ef9413cf351115ca543cd3b98ae9c41d0d2f"
+    }
+  ],
+  "checks": {
+    "lint": "pass",
+    "agents": "pass",
+    "build": "pass",
+    "unchangedMediaLogicFullFastPreviouslyPassed": true,
+    "relayTests": 34,
+    "typecheck": "pass"
+  },
+  "priorFullMediaChecks": {
+    "l2Files": 8,
+    "l2Passed": 244,
+    "fastFiles": 160,
+    "fastPassed": 1689,
+    "demoPassed": 8,
+    "scriptPassed": 260,
+    "scriptSkipped": 1
+  },
+  "regionRedTest": {
+    "failed": 1,
+    "passed": 33
+  },
+  "regionGreenTest": {
+    "passed": 34
+  },
+  "productionCallsDuringOfflineChecks": 0
+}
