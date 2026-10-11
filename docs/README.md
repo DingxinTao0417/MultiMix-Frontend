@@ -2,8 +2,9 @@
 
 前端文档只描述工作台产品、UI、adapter、路由、环境变量和部署。跨仓库权威入口见根 `docs/README.md`；如与工作区权威规则冲突，以根入口列出的 `docs/authority/` 为准。
 
-- `MULTIMIX_WORKSPACE_DESIGN.md`：前端工作台产品定位、交互规则、创作档案、资源库分类和数据边界。
+- `MULTIMIX_WORKSPACE_DESIGN.md`：前端工作台的当前产品行为、交互规则、资源库和播放器外壳合同。
 - `specs/ui/product-positioning.md`：对话式 AI 短视频定位、统一文案，以及用户任务、产品能力、底层技术、技术壁垒与验证证据的产品地图。
+- `specs/ui/agentic-workbench-design.md` 与 `specs/ui/prototypes/current/`：当前视觉语言和可点击原型；页面行为以工作台设计及专项规格为准。
 - `API.md`：adapter、类型、helper、测试 fixture 边界、URL、环境变量和后端接入契约。
 - [视频清晰度审查与确认后增强](../../MultiMix-Backend/docs/specs/video-clarity-review-and-enhancement.md)：跨端统一产品规格，覆盖建议/确认、前后对比与明确采用；设计已确认，专项能力尚未实现/验收。
 - `DEPLOYMENT.md`：Vercel/Railway 部署与本地端到端冒烟。
