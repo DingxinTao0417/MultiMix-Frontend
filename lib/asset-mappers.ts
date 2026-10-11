@@ -58,6 +58,14 @@ function positiveIntegerValue(value: unknown): number | undefined {
     : undefined;
 }
 
+// Duration fields carry backend-decided decimals (e.g. a 30.63s source window);
+// only IDs, versions and counts stay integer-constrained.
+function finitePositiveNumberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
 function nonNegativeNumberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -436,9 +444,9 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     recommendationMode: value.recommendation_mode === "single_winner"
       ? "single_winner"
       : undefined,
-    durationSeconds: positiveIntegerValue(value.duration_seconds),
-    durationMin: positiveIntegerValue(value.duration_min),
-    durationMax: positiveIntegerValue(value.duration_max),
+    durationSeconds: finitePositiveNumberValue(value.duration_seconds),
+    durationMin: finitePositiveNumberValue(value.duration_min),
+    durationMax: finitePositiveNumberValue(value.duration_max),
     pendingIntentId: stringValue(value.pending_intent_id) || undefined,
     pendingIntentVersion: positiveIntegerValue(value.pending_intent_version),
     confirmationId: stringValue(value.confirmation_id) || undefined,

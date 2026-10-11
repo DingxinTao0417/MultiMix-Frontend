@@ -1956,6 +1956,51 @@ describe("message plan mapping", () => {
     expect(plan?.confirmUtterance).toBe("确认，开始生成");
   });
 
+  it("keeps decimal duration seconds and rejects invalid duration values", () => {
+    const planWithDuration = (duration: unknown) => conversationFromPersisted(
+      {
+        id: "conv-decimal-duration",
+        title: "视频参数",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-10-11T00:00:00Z",
+        updated_at: "2026-10-11T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请确认视频参数",
+          asset_id: null,
+          created_at: "2026-10-11T00:00:00Z",
+          metadata: {
+            plan: {
+              kind: "video_parameter_confirmation",
+              title: "确认视频参数",
+              status: "pending",
+              fields: [{ key: "duration", label: "目标时长", value: "30.63 秒" }],
+              duration_seconds: duration,
+              duration_min: 5,
+              duration_max: 600,
+              pending_intent_id: "pending-decimal",
+              pending_intent_version: 2,
+              director_asset_id: 1553,
+            },
+          },
+        }],
+      },
+      newConversationProduct,
+    ).messages?.[0]?.plan;
+
+    expect(planWithDuration(30.63)?.durationSeconds).toBe(30.63);
+    expect(planWithDuration(30)?.durationSeconds).toBe(30);
+    for (const invalid of [0, -1, -30.63, Number.NaN, Number.POSITIVE_INFINITY, "30.63", true, null]) {
+      expect(planWithDuration(invalid)?.durationSeconds).toBeUndefined();
+    }
+    const decimalPlan = planWithDuration(30.63);
+    expect(decimalPlan?.directorAssetId).toBe(1553);
+    expect(decimalPlan?.pendingIntentVersion).toBe(2);
+  });
+
   it("maps video parameter confirmation transport fields", () => {
     const conversation = conversationFromPersisted(
       {

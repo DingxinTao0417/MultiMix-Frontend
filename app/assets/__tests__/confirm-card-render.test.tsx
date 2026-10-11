@@ -22,6 +22,25 @@ describe("ConfirmCard pending state", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认" }));
     expect(onConfirm).toHaveBeenCalledWith(plan, expect.objectContaining({ bgmEnabled: false }));
   });
+  it("shows and submits the backend decimal duration without rounding", () => {
+    const onConfirm = vi.fn();
+    const plan = {
+      kind: "video_parameter_confirmation" as const,
+      title: "确认视频参数", status: "pending" as const,
+      fields: [{ key: "duration", label: "目标时长", value: "30.63 秒" }],
+      confirmLabel: "确认参数并生成编导稿",
+      ratioOptions: [{ value: "16:9", label: "横屏 16:9" }], ratioDefault: "16:9",
+      durationSeconds: 30.63, durationMin: 5, durationMax: 600,
+    };
+    render(<ConfirmCard plan={plan} onConfirm={onConfirm} />);
+    const input = screen.getByLabelText("目标时长（秒）") as HTMLInputElement;
+    expect(input.value).toBe("30.63");
+    expect(input.getAttribute("step")).toBe("any");
+    expect(input.checkValidity()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: plan.confirmLabel }));
+    expect(onConfirm).toHaveBeenCalledWith(plan, expect.objectContaining({ targetSeconds: 30.63 }));
+  });
+
   it("rechecks the server duration constraint after a user edits the target", () => {
     const onConfirm = vi.fn();
     const plan = {

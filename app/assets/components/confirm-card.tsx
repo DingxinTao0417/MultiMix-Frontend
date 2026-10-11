@@ -792,6 +792,7 @@ export default function ConfirmCard({
             aria-label="目标时长（秒）"
             min={durationMin}
             max={durationMax}
+            step="any"
             value={targetSeconds}
             disabled={disabled}
             onChange={(event) => setTargetSeconds(Number(event.currentTarget.value))}
