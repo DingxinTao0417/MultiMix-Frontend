@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { relayVideoMedia } from "../video-media-relay";
-import { GET, preferredRegion, runtime } from "../../app/api/video-media/[...path]/route";
+import { GET, runtime } from "../../app/api/video-media/[...path]/route";
 
 const base = "https://multimix-backend-production.up.railway.app";
 const path = ["projects", "42", "media", "7"];
@@ -17,7 +18,10 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers();
 describe("same-origin signed media range delivery", () => {
   it("keeps the media Node function next to the Singapore API", () => {
     expect(runtime).toBe("nodejs");
-    expect(preferredRegion).toBe("sin1");
+    const config = JSON.parse(readFileSync(new URL("../../vercel.json", import.meta.url), "utf8"));
+    expect(config.regions).toBeUndefined();
+    expect(Object.keys(config.functions)).toEqual(["app/api/video-media/**/route.ts"]);
+    expect(config.functions["app/api/video-media/**/route.ts"].regions).toEqual(["sin1"]);
   });
 
   it("delivers an identical complete three MiB block below the platform body limit", async () => {

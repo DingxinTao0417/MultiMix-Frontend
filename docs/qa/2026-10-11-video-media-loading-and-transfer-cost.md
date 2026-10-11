@@ -6,7 +6,7 @@
 
 ## 结论范围
 
-本轮用户要求优化速度和转送成本。候选已通过 L1/L2 及完整前端检查，尚未提交、推送、部署或生产复测；不宣称真实加载已加速或账单已下降。当前计划完成4/5，用户已明确授权推送、发布及30请求上限的一次现有工程只读复测。
+本轮用户要求优化速度和转送成本。首版2ca92f8已推送并发布至正式域名，但发布核验发现地域设置未生效，正在修正；一次生产冷预览尚未开始。L1/L2及完整前端检查已通过，不宣称真实加载已加速或账单已下降。当前计划完成4/5，用户已明确授权推送、发布及30请求上限的一次现有工程只读复测。
 
 实施依据：[当前优化计划](../plans/active/2026-10-11-video-media-loading-and-transfer-cost.md)。前轮实际媒体证据见[超时修复验证](2026-10-10-video-media-body-timeout.md)。
 
@@ -17,6 +17,14 @@ Chrome 已有完整媒体：视频 36,077,615 bytes / 122,402 ms，音频 765,20
 候选离线相同长度字节夹具完整拼装正确：默认 3 MiB，12 个闭合范围 GET。冷读字节不变，仅少 65.7% 请求。同编辑上下文内缓存命中仍以当前签名向后端读取 1 字节核验，总量/MIME/首字节与完整缓存一致后复用。该比例只适用于命中场景的正文传输，不是月账单节省率。
 
 官方已发布部署元数据 regions=[iad1]，唯一当前 Railway API=sin；候选单媒体函数设 sin1，尚未确认生产产物生效。
+
+## 发布地域核验与修正
+
+2ca92f800b05f614aeeac0e41ffe8d067c0f0e56推送后HEAD/origin/main/真实远端refs相等、ahead/behind=0/0、无冲突；Vercel dpl_CghyeCJtFLWRYYzYA5tCAmVKwEse READY并接正式域名。无token HEAD返回405，relay在取token/后端fetch之前拒绝，x-vercel-id提取地域hnd1::iad1；部署元数据iad1。本轮0新后端HTTP、0完整媒体准备，尚未消费一次冷读。
+
+初版Node.js路由使用Edge-only preferredRegion，本地manifest sin1不能证明真实Node部署配置。修正为vercel.json仅媒体函数glob的regions=[sin1]，同轮删除无效preferredRegion，并禁止项目全局regions字段。配置缺失时新合同测试1失败/33通过，修正后34通过；仍需实际发布响应核验。正式参考：[官方单函数地域](https://vercel.com/docs/functions/configuring-functions/region)、[官方Node迁移说明](https://github.com/vercel/vercel-plugin/blob/main/skills/vercel-functions/SKILL.md)。
+
+账本复核：截至2026-10-11T00:49:00Z，前次1251基础上再纳入70条全部GET/OPTIONS，保守1321/1482、余161。这些包含用户/其他页面背景请求，不全部归为本会话；本轮最多30新增后端HTTP，仍只做一次现有工程冷预览。
 
 ## L1 记录
 

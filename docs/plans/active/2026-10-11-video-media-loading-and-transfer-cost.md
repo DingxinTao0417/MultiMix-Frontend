@@ -19,7 +19,7 @@
 采用有限前端优化：扩大块、媒体路由靠近后端、当前编辑页面内复用完整原件。保留完整 File 和现有 60 秒无进展 / 5 分钟总期限。暂不增加并发，不截断或转码原视频，不引入公共 CDN、跨页面持久缓存或后台预取。
 
 1. 客户端默认和服务器最大闭合 Range 共用 3 MiB 常量。36,077,615 bytes 从 35 次降到 12 次，少 65.7% 往返；首次视频字节不变。Vercel 官方函数响应上限为 4.5 MB，3 MiB 留有余量。仍验证 206、逐块范围/总量/MIME/真实 EOF；合法静态媒体完整 200 的既有消费者继续保留，relay 不允许 200。
-2. 仅 `/api/video-media/[...path]` 指定 Node.js / preferredRegion=sin1，靠近唯一生产后端；不更改其它路由或项目全局地域。必须在后续部署产物确认该设置生效；本地配置不能当作生产地域已变更。
+2. 仅媒体 Node.js 函数通过 `vercel.json` 的 `functions["app/api/video-media/**/route.ts"].regions=["sin1"]` 靠近唯一生产后端；不更改其它路由或项目全局地域。初版误用Edge专属preferredRegion；发布核验仍为iad1后，同轮删除该无效设置，采用Vercel Node.js真正支持的逐函数配置。必须在后续部署响应/产物确认生效，本地配置不能当作生产地域已变更。
 3. 当前编辑上下文保存完整、校验通过的 Blob，最多 64 MiB / 8 项、固定 5 分钟且不超过原授权期限；页面离开/显式 dispose 清空，编辑器内部重新初始化保留有限缓存。页面刷新或 iframe 重建不保证命中。
 4. 缓存索引只使用后端正常返回签名载荷里的用户、工程、文件、身份；该载荷是未验证的索引提示，绝不作为授权依据。每次命中先用当前地址请求 `bytes=0-0`，由原后端重新核验签名/期限/归属/引用/文件身份，再核验 206、精确总量、MIME、长度和首字节一致。拒绝、错误或不一致立即清掉此项并停止，不悄悄重试或使用缓存。身份或用户不同直接重新下载；未注册/BGM 不缓存。
 5. 缓存清理递增生命周期代数，已清理或用户切换前的在途下载不能重新写入；失败/半文件永不入缓存。诊断仅增加枚举 cache 和数字 requestCount/transferredBytes，不记录 URL、token、文件名、用户或作品身份。
@@ -37,7 +37,7 @@
 - `lib/private-media-cache.ts` 与 `lib/__tests__/private-media-cache.test.ts`：私有有界缓存、签名载荷索引解析、生命周期/容量测试。
 - `editor-engine/vendor/bootstrap.ts`、`bootstrap.test.ts`：缓存核验、统一块大小、安全诊断、初始化与清理、预览/导出共同消费。
 - `lib/video-media-relay.ts`、`lib/__tests__/video-media-relay.test.ts`：3 MiB 上界、真实完整正文与超限拒绝。
-- `app/api/video-media/[...path]/route.ts`：单媒体路由地域。
+- `app/api/video-media/[...path]/route.ts`、`vercel.json`：Node.js合同与单媒体函数地域，不修改全局默认。
 - `docs/API.md`、`docs/qa/2026-10-11-video-media-loading-and-transfer-cost.md`：只同步本轮媒体合同与真实验证范围。
 
 ## 验证与授权
@@ -68,3 +68,11 @@ T5 已获授权，正在推进：最多一次现有工程冷预览，新增后�
 - [Vercel Function regions](https://vercel.com/docs/functions/configuring-functions/region)：函数靠近数据源及单路由地域。
 - [Next.js 15 route segment config](https://nextjs.org/docs/15/app/api-reference/file-conventions/route-segment-config)：当前项目 Next 15.5.27 的 preferredRegion 合同。
 - [Vercel CDN usage](https://vercel.com/docs/manage-cdn-usage)：字节传输、CDN 请求与函数用量分别计算，价格因地域而异。
+
+## 发布地域整改（T5内部，2026-10-11）
+
+2ca92f8已推送并发布为dpl_CghyeCJtFLWRYYzYA5tCAmVKwEse，正式域名READY。无token的HEAD在relay本地拒绝405、不触达后端，响应地域标记为hnd1::iad1；发布元数据也是iad1。最早可修根因是Node.js误用Edge-only preferredRegion，Next本地manifest有sin1不等于Vercel Node部署支持。此时一次冷读尚未开始、生产新后端请求0。
+
+修复前先扩占用到vercel.json。移除route中的preferredRegion，并把配置放到官方支持的functions媒体路径glob；更新地域契约测试，使旧配置缺失时先失败。只跑relay相关L1、typecheck/lint、docs/agents及构建；确认配置仅匹配现有媒体route，再推送发布，先用不触达后端的响应核验地域。仍只允许一次现有工程只读冷读、后端HTTP≤30，发布后的原生播放失败回退到原9798部署。若平台拒绝单函数地域，不扩大到项目全局或升级套餐，记录限制后按已授权范围处理。
+
+共享账本新增核对：18:51:05Z至2026-10-11T00:49:00Z返回70条HTTP，全为GET/OPTIONS（含已归档对话页面背景请求），全部保守纳入后1321/1482、余161。该累计不全归属本会话；USD1仍是上限而非可确认实付。
