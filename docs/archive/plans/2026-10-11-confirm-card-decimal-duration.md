@@ -1,10 +1,14 @@
 # 确认卡小数时长接收修复
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
-> Last verified: 2026-10-11
+> Last verified: 2026-10-12
 
-上游计划：`MultiMix-Backend/docs/plans/active/2026-10-11-original-source-intent-release.md`「最终核卡阻塞与前端接续」。本文件只沉淀前端侧改动。
+## 完成状态
+
+c1d2c46已进入本地main，生产部署包含该修复。用户普通Chrome确认目标30.63秒、范围0–30.63秒、原声保留、字幕开启、配音/音乐关闭；专用项目已归档，未点击制作。本计划按纯文档收尾归档，当前组件内其它任务未提交改动不纳入本次提交。
+
+上游记录：`MultiMix-Backend/docs/archive/plans/2026-10-11-original-source-intent-release.md`「最终完成状态（2026-10-12）」；实际确认卡及专用项目清理已由用户完成并记录于后端QA。本文件只沉淀前端侧改动，归档由前端负责人处理。
 
 ## 背景与根因
 
