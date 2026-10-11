@@ -402,7 +402,7 @@ export function AssetGenerationJobCard({
         completionLabel={
           completionLabel ??
           (isDirectorScriptGeneration
-            ? "编导脚本已生成，可确认或修改"
+            ? "编导稿已生成，可确认或修改"
             : "内容已生成，可查看")
         }
         footer={

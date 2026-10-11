@@ -47,6 +47,57 @@ vi.mock("../../../lib/api", async (importOriginal) => {
   return { ...actual, get isApiConfigured() { return saveApiState.configured ?? actual.isApiConfigured; } };
 });
 
+describe("targeted message reconciliation", () => {
+  beforeEach(() => { saveApiState.configured = true; });
+  afterEach(() => { saveApiState.configured = undefined; vi.unstubAllGlobals(); });
+
+  const row = {
+    id: "owner", title: "当前作品", status: "active", metadata: {},
+    messages: [{ id: 1, role: "user", text: "确认", asset_id: null,
+      metadata: { client_request_id: "request-1" }, created_at: "2026-10-10T00:00:00Z" }],
+    products: [], created_at: "2026-10-10T00:00:00Z", updated_at: "2026-10-10T00:00:00Z",
+  };
+
+  it("reads only the submitted conversation and durable request", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(row)));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await assetWorkspaceAdapter.reconcileMessage({
+      token: "token", conversationId: "owner", clientRequestId: "request-1",
+    });
+    expect(result?.conversationId).toBe("owner");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname)
+      .toBe("/v1/assets/conversations/requests/request-1");
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get("conversation_id")).toBe("owner");
+    expect(fetchMock.mock.calls[0]?.[1]?.method ?? "GET").toBe("GET");
+  });
+
+  it.each(["new", "draft-optimistic-1"])("recovers a newly saved request without using temporary id %s", async (conversationId) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(row)));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await assetWorkspaceAdapter.reconcileMessage({
+      token: "token", conversationId, clientRequestId: "request-1",
+    });
+    expect(result?.conversationId).toBe("owner");
+    expect(result?.conversation.detailsLoaded).toBe(true);
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/v1/assets/conversations/requests/request-1");
+    expect(url.searchParams.has("conversation_id")).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an absent request unconfirmed without scanning or submitting again", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(
+      JSON.stringify({ detail: "Not found" }), { status: 404 },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(assetWorkspaceAdapter.reconcileMessage({
+      token: "token", conversationId: "owner", clientRequestId: "missing",
+    })).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 it("sends a project-bound versioned director import with explicit image mapping", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
     new Response(JSON.stringify({ id: 88 }), {

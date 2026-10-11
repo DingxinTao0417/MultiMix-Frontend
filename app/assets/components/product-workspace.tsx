@@ -2403,13 +2403,13 @@ export default function ProductWorkspace({
         {isTextEditing ? (
           <div className="shadcn-prototype-text-editor-shell">
             <div className="shadcn-prototype-text-editor-status">
-              <span>{isDirectorText ? "整篇 Markdown 编导脚本" : "整篇 Markdown 文案"}</span>
+              <span>{isDirectorText ? "整篇 Markdown 编导稿" : "整篇 Markdown 文案"}</span>
               <strong>{textEditDirty ? "有未保存修改" : "尚未修改"}</strong>
             </div>
             {textEditSaved && textEditDirty ? <p role="status">本次已保存，新增文字仍未保存</p> : null}
             <textarea
               ref={textEditorElementRef}
-              aria-label={isDirectorText ? "编辑编导脚本" : "编辑文案稿"}
+              aria-label={isDirectorText ? "编辑编导稿" : "编辑文案稿"}
               value={textEditBody}
               onChange={(event) => {
                 setTextEditBody(event.target.value);
@@ -2521,7 +2521,7 @@ export default function ProductWorkspace({
                       className="primary"
                       onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
                     >
-                      补充素材或修改编导脚本
+                      补充素材或修改编导稿
                     </button>
                   </div>
                 ) : onRetryVideoJob && operationRetryJobId ? (
@@ -2663,7 +2663,7 @@ export default function ProductWorkspace({
                     title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
                     onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
                       detail: {
-                        utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+                        utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
                         videoSceneReplacement: {
                           failedProjectAssetId: product.backendAssetId,
                           sceneId: replacementSceneId,
@@ -2679,7 +2679,7 @@ export default function ProductWorkspace({
                     className="primary"
                     onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}
                   >
-                    修改编导脚本
+                    修改编导稿
                   </button>
                   ) : onRetryVideoJob && (failureAction === "retry" || failureAction === "retry_scene_generation") ? (
                   <button

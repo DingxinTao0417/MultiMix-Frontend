@@ -1285,7 +1285,7 @@ export function videoJobStageLabel(stage: string): string {
     rendering: "正在生成视频",
     reviewing: "正在完成质量检查",
     quality: "正在完成质量检查",
-    needs_script_revision: "需要调整编导脚本"
+    needs_script_revision: "需要调整编导稿"
   };
   return labels[stage] ?? "正在生成";
 }
@@ -1327,7 +1327,7 @@ const SAFE_BACKEND_STEP_COPY: Record<string, { key: string; label: string }> = {
   rendering: { key: "build_project", label: "正在生成视频" },
   reviewing: { key: "quality_check", label: "正在完成质量检查" },
   quality: { key: "quality_check", label: "正在完成质量检查" },
-  needs_script_revision: { key: "revise_director_script", label: "需要调整编导脚本" },
+  needs_script_revision: { key: "revise_director_script", label: "需要调整编导稿" },
 };
 
 // Steps come directly from the public job DTO; callers never infer progress
@@ -1390,7 +1390,7 @@ function artifactCategory(asset: ContentAsset): string {
   const explicit = stringValue(metadata.artifact_category);
   if (explicit) return explicit;
   if (asset.content_type === "content_plan") return "选题方案";
-  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导脚本";
+  if (asset.content_type === "short_video_narration" || asset.content_type === "video_script") return "编导稿";
   if (asset.content_type === "social_post") return "文案稿";
   if (asset.content_type === "video_project") return "视频";
   return stringValue(metadata.capability_label) || contentAssetTypeLabel(asset.content_type);
@@ -1409,8 +1409,8 @@ function contentAssetTypeLabel(contentType: string): string {
   const labels: Record<string, string> = {
     content_plan: "内容方案",
     social_post: "发帖文案",
-    short_video_narration: "编导脚本",
-    video_script: "编导脚本",
+    short_video_narration: "编导稿",
+    video_script: "编导稿",
     cover_image: "封面图方案",
     storyboard_image: "分镜图方案",
     video_project: "视频",
@@ -1546,7 +1546,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     {
       label: "能力",
       title: capabilityLabel,
-      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导脚本已完成，包含旁白、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
+      detail: mp4Artifact ? "这是视频的一次导出结果，原视频仍可继续调整。" : videoProject ? "视频已完成，可继续在对话中调整分镜。" : completedGeneratedImage ? "图片已生成并保存到图片素材库，可用于视频封面或继续调整。" : generatingImage ? "图片正在生成，完成后会自动显示真实图片。" : unsupported ? "当前先生成可执行方案，暂未创建真实生成任务。" : directorDraft ? "编导稿已完成，包含旁白、分镜、画面建议和字幕重点；确认后再生成视频。" : "已根据对话生成草稿。",
       status: productStatusLabel(lifecycle?.status) ?? (mp4Artifact ? "完成" : videoProject ? "完成" : unsupported ? "生成中" : directorDraft ? "完成" : "完成")
     },
     {
@@ -1640,7 +1640,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     })),
     preview: {
       title: normalizeAssetTitle(asset.title),
-    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : completedGeneratedImage ? "图片已生成，可作为视频封面或继续调整" : generatingImage ? "图片正在后台生成，完成后自动展示" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导脚本已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
+    subtitle: mp4Artifact ? "已有导出文件，可直接播放" : mp4State === "ready" ? "已有导出文件，可直接播放" : videoProject ? "视频已完成，可查看关键轨道并继续调整分镜" : completedGeneratedImage ? "图片已生成，可作为视频封面或继续调整" : generatingImage ? "图片正在后台生成，完成后自动展示" : orchestrationFailed ? `生成失败：${lifecycle?.failureReason || asset.error_message || "请查看原因后重试或修改脚本"}` : orchestrationPending ? "视频正在后台生成，完成后自动展示" : invalidVideoProject ? "视频内容不完整，无法正常播放或编辑。" : unsupported ? "准备产物，未渲染图片或视频" : templateMode ? "按关键词生成的可编辑模板，不代表真实业务事实" : directorDraft ? "编导稿已完成，确认后可继续生成视频" : (noAssetHit ? "通用能力生成，未命中素材" : "后端 LLM 生成草稿"),
       eyebrow: capabilityLabel
     }
   };

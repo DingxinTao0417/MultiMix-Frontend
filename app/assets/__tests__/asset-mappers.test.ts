@@ -911,8 +911,8 @@ describe("asset product mapper", () => {
 
     expect(product.mode).toBe("copy");
     expect(product.status).toBe("完成");
-    expect(product.phase).toBe("编导脚本");
-    expect(product.preview?.eyebrow).toBe("编导脚本");
+    expect(product.phase).toBe("编导稿");
+    expect(product.preview?.eyebrow).toBe("编导稿");
     expect(product.preview?.subtitle).toContain("确认后");
   });
 
@@ -1767,7 +1767,7 @@ describe("video job stage helpers", () => {
     expect(videoJobStageLabel("rendering")).toBe("正在生成视频");
     expect(videoJobStageLabel("reviewing")).toBe("正在完成质量检查");
     expect(videoJobStageLabel("quality")).toBe("正在完成质量检查");
-    expect(videoJobStageLabel("needs_script_revision")).toBe("需要调整编导脚本");
+    expect(videoJobStageLabel("needs_script_revision")).toBe("需要调整编导稿");
   });
 
   it("maps stages onto ordered progress steps", () => {

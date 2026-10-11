@@ -151,6 +151,25 @@ type TestVideoJob = {
   steps: Array<{ status: string }>;
 };
 
+it("resolves execution refresh to its own conversation even after selection changes", () => {
+  const resolve = loadWorkspaceDecision<(rows: unknown[], jobId: string, assetId: number) => string | null>(
+    "executionConversationId",
+  );
+  const rows = [
+    { id: "other", product: { backendAssetId: 20, metadata: {} }, messages: [] },
+    { id: "owner", product: { backendAssetId: 10, metadata: {} }, messages: [
+      { metadata: { job_public_id: "job-1" } },
+    ] },
+  ];
+  expect(resolve(rows, "job-1", 20)).toBe("owner");
+  expect(resolve(rows, "unknown-job", 10)).toBe("owner");
+  expect(resolve(rows, "unknown-job", 999)).toBeNull();
+  expect(resolve([...rows, { ...rows[1], id: "duplicate" }], "job-1", 10)).toBeNull();
+  expect(resolve([{ id: "product-owner", product: {
+    backendAssetId: 10, metadata: { latest_job_public_id: "job-2" },
+  } }], "job-2", 10)).toBe("product-owner");
+});
+
 type TestFullVideoJob = {
   id: string;
   assetId: number;
@@ -1391,19 +1410,31 @@ describe("agent conversation UI copy", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-summary");
-    expect(productPreview).toContain("编导脚本摘要");
-    expect(productPreview).toContain('previewStageLabel = hasVideoProject ? "视频" : "编导脚本"');
-    expect(productPreview).toContain("当前是可编辑编导脚本");
+    expect(productPreview).toContain("编导稿摘要");
+    expect(productPreview).toContain('previewStageLabel = hasVideoProject ? "视频" : "编导稿"');
+    expect(productPreview).toContain("当前是可编辑编导稿");
+    expect(productPreview).not.toContain("编导脚本");
     expect(productPreview).not.toContain("<span>视频方案</span>");
     expect(productPreview).toContain("查看分镜详情");
     expect(productPreview).toContain("自动补素材");
+  });
+
+  it("uses 编导稿 for workspace-generated controls", () => {
+    const productWorkspace = readAssetFile("app/assets/components/product-workspace.tsx");
+    const generationCard = readAssetFile("app/assets/components/asset-generation-job-card.tsx");
+    expect(productWorkspace).toContain("编辑编导稿");
+    expect(productWorkspace).toContain("修改编导稿");
+    expect(productWorkspace).not.toContain("编导脚本");
+    expect(generationCard).toContain("编导稿已生成，可确认或修改");
+    expect(generationCard).not.toContain("编导脚本");
   });
 
   it("keeps material gap display lightweight", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-gap");
-    expect(productPreview).toContain("字幕/标题卡占位");
+    expect(productPreview).toContain("个分镜仍缺可用画面");
+    expect(productPreview).not.toContain("已用字幕/标题卡占位");
     expect(productPreview).toContain("个分镜自动加 MG");
     expect(productPreview).toContain("MG 风格：");
     expect(productPreview).toContain("MG：");
