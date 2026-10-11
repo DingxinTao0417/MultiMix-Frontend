@@ -121,17 +121,22 @@ function videoPlanSummary(product: ProductArtifact) {
   };
 }
 
-function materialGapNotice(product: ProductArtifact, fallbackCount = 0, allSegmentsCovered = false) {
-  const searchNotice = product.metadata?.material_search_notice;
-  if (typeof searchNotice === "string" && searchNotice.trim()) return searchNotice;
+function materialGapNotice(
+  product: ProductArtifact,
+  unfilledCount = 0,
+  unmatchedCount = 0,
+  allSegmentsCovered = false,
+) {
   if (allSegmentsCovered) return "";
-  const metadataNotice = product.metadata?.material_gap_notice;
-  if (typeof metadataNotice === "string" && metadataNotice.trim()) return metadataNotice;
-  const project = isRecord(product.metadata?.video_project) ? product.metadata.video_project : null;
-  const orchestration = project && isRecord(project.orchestration) ? project.orchestration : null;
-  const projectNotice = orchestration?.material_gap_notice;
-  if (typeof projectNotice === "string" && projectNotice.trim()) return projectNotice;
-  return fallbackCount > 0 ? `${fallbackCount} 个分镜未匹配到合适素材，已用字幕/标题卡占位，可在编辑器中替换。` : "";
+  const projectSegments = product.videoProjectReady && product.segments?.length
+    ? product.segments : null;
+  const missingCount = projectSegments
+    ? projectSegments.filter((segment) => segmentNeedsMaterial(segment) && !segment.primaryVisualPersisted).length
+    : unfilledCount;
+  if (missingCount > 0) return `${missingCount} 个分镜仍缺可用画面，请补充素材或调整分镜。`;
+  return unmatchedCount > 0
+    ? `${unmatchedCount} 个分镜未命中已保存素材，请检查画面来源。`
+    : "";
 }
 
 function sceneAssetReferenceSummary(scene: Record<string, unknown>): string {
@@ -214,7 +219,7 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
             title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
             onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
               detail: {
-                utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导脚本。",
+                utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
                 videoSceneReplacement: {
                   failedProjectAssetId: product.backendAssetId,
                   sceneId: product.failureSceneId,
@@ -226,7 +231,7 @@ function ProductFailureCard({ product }: { product: ProductArtifact }) {
           </button>
           ) : product.failureAction === "modify_script" ? (
           <button type="button" className="primary" onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}>
-            修改编导脚本
+            修改编导稿
           </button>
           ) : product.failureAction === "retry" || product.failureAction === "retry_scene_generation" ? (
           <button
@@ -681,19 +686,20 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const publicSourceExcluded = sourcePreference.primary_visual_source_scope === "project_assets_only"
     || (Array.isArray(sourcePreference.excluded_choice_ids) && sourcePreference.excluded_choice_ids.includes("public_stock"))
     || (sourcePreference.restriction === "only" && sourcePreference.choice_id !== "public_stock");
-  const planSummaryLabel = product.metadata?.video_project ? "视频摘要" : "编导脚本摘要";
+  const planSummaryLabel = product.metadata?.video_project ? "视频摘要" : "编导稿摘要";
   const hasVideoProject = Boolean(product.videoProjectReady);
-  const previewStageLabel = hasVideoProject ? "视频" : "编导脚本";
+  const previewStageLabel = hasVideoProject ? "视频" : "编导稿";
   const previewStageDescription = hasVideoProject
     ? "视频已完成，包含脚本、关键段落和素材匹配方向；可以继续在对话中调整分镜。"
-    : "当前是可编辑编导脚本，包含内容结构、关键段落和分镜方向；确认后可生成视频。";
+    : "当前是可编辑编导稿，包含内容结构、关键段落和分镜方向；确认后可生成视频。";
   const previewPosterText = product.preview?.posterText ?? product.preview?.title ?? previewStageLabel;
   const allSegmentsCovered = hasVideoProject
     && Boolean(product.segments?.length)
     && !product.segments?.some(segmentNeedsMaterial);
   const gapNotice = materialGapNotice(
     product,
-    planSummary?.materialUnfilledCount ?? planSummary?.materialGapCount ?? 0,
+    planSummary?.materialUnfilledCount ?? 0,
+    planSummary?.materialGapCount ?? 0,
     allSegmentsCovered,
   );
   const videoBrowseModeSwitch = comparisonAvailable ? (

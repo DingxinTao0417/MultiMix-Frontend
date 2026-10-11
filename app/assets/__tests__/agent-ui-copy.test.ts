@@ -1410,19 +1410,31 @@ describe("agent conversation UI copy", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-summary");
-    expect(productPreview).toContain("编导脚本摘要");
-    expect(productPreview).toContain('previewStageLabel = hasVideoProject ? "视频" : "编导脚本"');
-    expect(productPreview).toContain("当前是可编辑编导脚本");
+    expect(productPreview).toContain("编导稿摘要");
+    expect(productPreview).toContain('previewStageLabel = hasVideoProject ? "视频" : "编导稿"');
+    expect(productPreview).toContain("当前是可编辑编导稿");
+    expect(productPreview).not.toContain("编导脚本");
     expect(productPreview).not.toContain("<span>视频方案</span>");
     expect(productPreview).toContain("查看分镜详情");
     expect(productPreview).toContain("自动补素材");
+  });
+
+  it("uses 编导稿 for workspace-generated controls", () => {
+    const productWorkspace = readAssetFile("app/assets/components/product-workspace.tsx");
+    const generationCard = readAssetFile("app/assets/components/asset-generation-job-card.tsx");
+    expect(productWorkspace).toContain("编辑编导稿");
+    expect(productWorkspace).toContain("修改编导稿");
+    expect(productWorkspace).not.toContain("编导脚本");
+    expect(generationCard).toContain("编导稿已生成，可确认或修改");
+    expect(generationCard).not.toContain("编导脚本");
   });
 
   it("keeps material gap display lightweight", () => {
     const productPreview = readAssetFile("app/assets/components/product-preview.tsx");
 
     expect(productPreview).toContain("shadcn-prototype-video-plan-gap");
-    expect(productPreview).toContain("字幕/标题卡占位");
+    expect(productPreview).toContain("个分镜仍缺可用画面");
+    expect(productPreview).not.toContain("已用字幕/标题卡占位");
     expect(productPreview).toContain("个分镜自动加 MG");
     expect(productPreview).toContain("MG 风格：");
     expect(productPreview).toContain("MG：");
