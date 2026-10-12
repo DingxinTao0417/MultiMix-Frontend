@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-09-08
+> Last verified: 2026-10-11
 
 这套文件用于 MultiMix 产品对外展示、视频角标、图片署名、头像和宣传材料。
 
@@ -10,6 +10,7 @@
 
 - 浅色背景：使用 `multimix-logo-horizontal-black.*` 或 `multimix-logo-icon-black.*`。
 - 深色或复杂背景：优先使用 `multimix-logo-horizontal-white.*` 或 `multimix-logo-icon-white.*`，必要时在合成层加轻微中性阴影。
+- 极小尺寸（≤48px）或画面繁杂、线性标识会被吞掉时：改用实心角标 `multimix-logo-badge-black.*`（深色画面）或 `multimix-logo-badge-white.*`（浅色画面）。badge 自带底板，不要再叠加阴影。
 - 视频与图片角标：优先使用横版白色 PNG，放在右下角。画面短边为 1080 px 时，宽度 160 px，距右侧与底部各 28 px；其他尺寸等比例缩放。
 - SVG 是长期主文件；PNG 适合视频、图片和不支持 SVG 的平台。
 
@@ -18,6 +19,8 @@
 - 纯图标不小于 24 px；横版标识不小于 96 px 宽。
 - 不拉伸、不旋转、不重绘、不改色，也不要改变图标与 `MultiMix` 标准字的比例。
 - 不把阴影、底板或其他效果写回透明 LOGO 主文件。
+- badge 是补充版，只用于小尺寸和复杂画面；产品页面、宣传材料和常规署名仍用线性横版或纯图标。
+- 本目录全部文件由 `scripts/generate-multimix-logo-assets.mjs` 生成，请勿手工编辑。
 
 ## 在 MultiMix 中导出
 

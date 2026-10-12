@@ -8,6 +8,7 @@
 
 - `MULTIMIX_WORKSPACE_DESIGN.md`：前端工作台的当前产品行为、交互规则、资源库和播放器外壳合同。
 - `specs/ui/product-positioning.md`：对话式 AI 短视频定位、统一文案，以及用户任务、产品能力、底层技术、技术壁垒与验证证据的产品地图。
+- `specs/ui/multimix-logo-identity.md`：LOGO 权威规范。概念与颜色、纯图标与 badge 的构图基准、使用规则与最小尺寸、交付文件清单、已否决的设计方向，以及产品内品牌展示版导出。改动 `public/brand/` 下任何资产前必读。
 - `specs/ui/agentic-workbench-design.md` 与 `specs/ui/prototypes/current/`：当前视觉语言和可点击原型；页面行为以工作台设计及专项规格为准。
 - `API.md`：adapter、类型、helper、测试 fixture 边界、URL、环境变量和后端接入契约。
 - [视频清晰度审查与确认后增强](../../MultiMix-Backend/docs/specs/video-clarity-review-and-enhancement.md)：跨端统一产品规格，覆盖建议/确认、前后对比与明确采用；设计已确认，专项能力尚未实现/验收。

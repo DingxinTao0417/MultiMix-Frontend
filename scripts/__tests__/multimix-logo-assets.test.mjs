@@ -11,7 +11,41 @@ const variants = [
   ["multimix-logo-horizontal-white.svg", "#FFFFFF"],
   ["multimix-logo-icon-black.svg", "#151515"],
   ["multimix-logo-icon-white.svg", "#FFFFFF"],
+  ["multimix-logo-badge-black.svg", "#151515"],
+  ["multimix-logo-badge-white.svg", "#FFFFFF"],
 ];
+
+// Pixel-accurate visible bounds; getBBox ignores stroke width in Chromium.
+async function visibleBounds(page, svg) {
+  return page.evaluate(async (src) => {
+    const scale = 8;
+    const size = 192 * scale;
+    const image = new Image();
+    image.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(src)))}`;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, size, size);
+    const data = context.getImageData(0, 0, size, size).data;
+    let minX = size;
+    let minY = size;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        if (data[(y * size + x) * 4 + 3] > 10) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    return { minX: minX / scale, minY: minY / scale, maxX: (maxX + 1) / scale, maxY: (maxY + 1) / scale };
+  }, svg);
+}
 
 function pngMetadata(buffer) {
   assert.deepEqual([...buffer.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
@@ -31,6 +65,7 @@ test("SVG masters are portable path-only black/white assets", async () => {
     assert.doesNotMatch(svg, /(font-family|filter=|linearGradient|radialGradient)/i);
     assert.match(svg, /data-part="mark"/);
     if (filename.includes("horizontal")) assert.match(svg, /data-part="wordmark"/);
+    if (filename.includes("badge")) assert.match(svg, /data-part="plate"/);
   }
 });
 
@@ -40,6 +75,36 @@ test("the forward arrow keeps visible negative space from the M", async () => {
     svg,
     /<path data-part="forward-arrow" d="M164 63l20 33-20 33" stroke-width="12"\/>/,
   );
+});
+
+test("icon and badge masters stay centered with a usable safe area", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent("<!doctype html><body></body>");
+    for (const filename of [
+      "multimix-logo-icon-black.svg",
+      "multimix-logo-icon-white.svg",
+      "multimix-logo-badge-black.svg",
+      "multimix-logo-badge-white.svg",
+    ]) {
+      const svg = await readFile(path.join(brandDir, filename), "utf8");
+      const bounds = await visibleBounds(page, svg);
+      const gaps = [bounds.minX, 192 - bounds.maxX, bounds.minY, 192 - bounds.maxY];
+      assert.ok(
+        Math.min(...gaps) >= 15,
+        `${filename} needs a safe area on every edge, got ${gaps.map((gap) => gap.toFixed(2)).join("/")}`,
+      );
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      assert.ok(
+        Math.abs(centerX - 96) <= 1 && Math.abs(centerY - 96) <= 1,
+        `${filename} must be optically centered, got ${centerX.toFixed(2)},${centerY.toFixed(2)}`,
+      );
+    }
+  } finally {
+    await browser.close();
+  }
 });
 
 test("brand kit manifest and archive publish the approved reusable assets", async () => {
@@ -68,6 +133,8 @@ test("PNG exports have exact dimensions and transparent corners", async () => {
     ["multimix-logo-horizontal-white.png", [1800, 480]],
     ["multimix-logo-icon-black.png", [1024, 1024]],
     ["multimix-logo-icon-white.png", [1024, 1024]],
+    ["multimix-logo-badge-black.png", [1024, 1024]],
+    ["multimix-logo-badge-white.png", [1024, 1024]],
   ]);
   const browser = await chromium.launch({ headless: true });
   try {
