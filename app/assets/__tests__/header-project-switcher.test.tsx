@@ -36,7 +36,10 @@ it("shows the current project and counts projects that need attention", async ()
   renderWorkspace();
   const switcher = await screen.findByRole("button", { name: /^切换项目或资源库/ }, { timeout: 5_000 });
 
-  expect(switcher).toHaveTextContent("已完成的项目");
+  // On a project the header title already names it, so the switcher does not
+  // repeat it visually; its accessible name still does.
+  expect(switcher).not.toHaveTextContent("已完成的项目");
+  expect(document.querySelector(".shadcn-prototype-chat-head > strong")).toHaveTextContent("已完成的项目");
   // Badge matches the rows that show 待确认 / 生成中 / 需处理; "ready" is not counted.
   expect(switcher).toHaveAccessibleName("切换项目或资源库，当前：已完成的项目，2 个项目需要处理");
   expect(switcher).toHaveTextContent("2");

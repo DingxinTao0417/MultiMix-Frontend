@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
+import { openNavigation } from "./workspace-navigation";
 
 const resultDir = process.env.CREATIVE_MEMORY_RESULT_DIR;
 const runId = process.env.CREATIVE_MEMORY_RUN_ID;
@@ -79,8 +80,8 @@ test("completed video prompts for typed long-term memory and survives refresh", 
   expect(conversationId).toMatch(/^asset-conversation-lly77-/);
 
   await page.reload();
-  await expect(page.getByText(`LLY-77 创作档案验收 ${runId}`).first()).toBeVisible({ timeout: 30_000 });
-  await page.getByText(`LLY-77 创作档案验收 ${runId}`).first().click();
+  await expect(page.getByRole("button", { name: /^切换项目或资源库/ })).toBeVisible({ timeout: 30_000 });
+  await (await openNavigation(page)).getByText(`LLY-77 创作档案验收 ${runId}`).first().click();
   const prompt = page.getByRole("region", { name: "保存创作偏好" });
   await expect(prompt).toBeVisible({ timeout: 30_000 });
   await expect(prompt.getByText("附近的烘焙新手")).toBeVisible();
@@ -99,9 +100,9 @@ test("completed video prompts for typed long-term memory and survives refresh", 
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.reload();
-  await page.getByText(`LLY-77 创作档案验收 ${runId}`).first().click();
+  await (await openNavigation(page)).getByText(`LLY-77 创作档案验收 ${runId}`).first().click();
   await expect(page.getByRole("region", { name: "保存创作偏好" })).toHaveCount(0);
-  await page.getByRole("button", { name: "创作档案" }).last().click();
+  await (await openNavigation(page)).getByRole("button", { name: "创作档案" }).click();
   await expect(page.getByText("附近的烘焙新手")).toBeVisible();
   await page.screenshot({ path: path.join(resultDir, "creative-memory-profile-after-save.png"), fullPage: true });
   await page.setViewportSize({ width: 375, height: 812 });

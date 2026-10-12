@@ -3948,6 +3948,9 @@ export default function AssetsWorkspaceClient({
   const switcherTitle = activeView === "conversation"
     ? selectedConversation.id === "new" ? "新建项目" : selectedConversation.title
     : assetWorkspaceAdapter.getWorkshop(activeView).title;
+  // The project name is shown once per page: the conversation header renders
+  // it as its own title, so there the switcher shows only mark, badge and ▾.
+  const showSwitcherTitle = !(activeView === "conversation" && selectedConversation.id !== "new");
   const openNavigation = (trigger: HTMLElement | null) => {
     navigationTriggerRef.current = trigger instanceof HTMLButtonElement ? trigger : null;
     handleExpandSidebar();
@@ -3969,7 +3972,9 @@ export default function AssetsWorkspaceClient({
           <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
-      <span className="shadcn-prototype-project-switcher-title">{switcherTitle}</span>
+      {showSwitcherTitle ? (
+        <span className="shadcn-prototype-project-switcher-title">{switcherTitle}</span>
+      ) : null}
       {attentionProjectCount ? (
         <span className="shadcn-prototype-project-switcher-badge" aria-hidden="true">{attentionProjectCount}</span>
       ) : null}

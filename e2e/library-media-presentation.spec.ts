@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openLibrary } from "./workspace-navigation";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -46,7 +47,7 @@ async function setup(page: Page) {
 
 test("landscape, portrait and missing images stay square without tall card gaps", async ({ page }) => {
   await setup(page);
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   const grid = page.getByLabel("图片库列表");
   await expect(grid.locator("button")).toHaveCount(3);
   await expect.poll(() => grid.locator("img").evaluateAll((images) => images.every((image) => (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
@@ -73,7 +74,7 @@ test("landscape, portrait and missing images stay square without tall card gaps"
 
 test("video cards exclude incomplete projects and decode a real legacy frame", async ({ page }) => {
   await setup(page);
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "视频库", exact: true }).click();
+  await openLibrary(page, "视频库");
   const grid = page.getByLabel("视频库列表");
   await expect(grid.locator("button")).toHaveCount(2);
   await expect(grid.getByText("资源4")).toHaveCount(0);
