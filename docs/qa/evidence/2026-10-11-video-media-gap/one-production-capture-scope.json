@@ -1,0 +1,69 @@
+{
+  "status": "executed-once-analyzed-not-reproduced",
+  "date": "2026-10-11",
+  "level": "L3",
+  "changeScope": "One read-only existing-project media-preparation diagnostic after controlled request receive/renderer/EOF gate; no runtime change or upstream recomputation",
+  "evidenceClaim": "checkpoint-to-output",
+  "commands": [
+    "Chrome manual NetLog default privacy mode plus Performance ordinary Record from about:blank; one initial existing-project navigation; stop at ready/error or 180 seconds; no reload",
+    "Offline parse both user-exported recordings; verify request identity, response media invariants and clock association; count actual backend HTTP; no repeated sample"
+  ],
+  "changedStage": "Media preparation observation only; added local browser network/main-thread recording, no product implementation change",
+  "checkpoint": {
+    "id": "existing-project1555/source1553/director1554/analysis415/media573; resumed-path-comparison.json",
+    "fingerprintsVerified": true,
+    "verificationMode": "Equivalent retained artifact identities and exact freshly verified relevant frontend/backend deployments match last successful full media preparation; original source SHA not freshly recomputed",
+    "invalidationBoundary": "First normal public response disagrees with expected project/media identity, size/range/type or confirmed release; absent identity or time association is unknown, never fabricated",
+    "fallbackStage": "Stop collection/interpretation and return to normal public project identity verification; no automatic recapture, unarchive or upstream generation"
+  },
+  "equivalenceEvidence": "resumed-path-comparison.json; native-final-acceptance.json retained assets; current official platform deployment readback",
+  "expected": {
+    "projectAsset": 1555,
+    "source": 1553,
+    "director": 1554,
+    "analysis": 415,
+    "media": 573,
+    "trimSeconds": 30.6305,
+    "videoBytes": 36077615,
+    "audioBytes": 765203,
+    "frontendCommit": "db13b0927f241316cbc9290190b76bb22ce9079d",
+    "frontendDeployment": "dpl_GmT4k1G8CYVnh1vqhETtkXfcFq3u",
+    "apiDeployment": "86c4dc60-a952-4bd6-be33-1145d6e4bfc6"
+  },
+  "limits": {
+    "captures": 1,
+    "maxBackendHttp": 25,
+    "inflightReserve": 10,
+    "totalHttpCap": 1482,
+    "currentHttpUsed": 1402,
+    "totalUsdCap": 1,
+    "newAsr": 0,
+    "newVision": 0,
+    "newGeneration": 0
+  },
+  "actual": {
+    "executed": true,
+    "applicationHttpAdded": 15,
+    "agentAddedApplicationHttp": 0,
+    "netlogAndPerformanceAnalyzed": true,
+    "historicalSixtySecondGapReproduced": false,
+    "videoNetworkCompletedMs": 231828,
+    "browserWasHidden": true,
+    "visibleColdSpeedBaselineValid": false,
+    "clockResponseMaxErrorMs": 1.405029296875,
+    "recordingDeviation": "Record continued beyond180s; 12 media ranges and no second media pass, later editor navigation logged without extra backend project/media requests. Do not present as strict3-minute single-navigation compliant capture."
+  },
+  "limitations": [
+    "Network-service reads are not physical packet-arrival timestamps",
+    "Main-thread capture overhead must be separated from user baseline",
+    "No stall means not reproduced, not repaired",
+    "Do not change browser network, cache, security or CPU throttling; record warm-cache outcome honestly"
+  ],
+  "preflight": {
+    "scopeValidation": "passed",
+    "docsCheck": "passed",
+    "workGuardCheck": "passed",
+    "fixtureServerListening": false,
+    "productionCollectionExecuted": false
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "status": "page-controls-completed-netlog-file-pending",
+  "cases": [
+    {
+      "name": "supply",
+      "wallStart": 1791697861694,
+      "startMs": 71.40000009536743,
+      "timeOrigin": 1791697861623.1,
+      "skewStartMs": -0.5,
+      "skewEndMs": -0.7001953125,
+      "durationMs": 228,
+      "bytes": 8192,
+      "valid": true,
+      "reads": [
+        {
+          "atMs": 92.19999980926514,
+          "bytes": 4096
+        },
+        {
+          "atMs": 227.59999990463257,
+          "bytes": 8192
+        }
+      ],
+      "longTasks": [],
+      "maxDataCallbackGapMs": 135.40000009536743,
+      "eofWaitMs": 0.40000009536743164
+    },
+    {
+      "name": "cpu",
+      "wallStart": 1791697861923,
+      "startMs": 300.2999999523163,
+      "timeOrigin": 1791697861623.1,
+      "skewStartMs": -0.400146484375,
+      "skewEndMs": -0.300048828125,
+      "durationMs": 304.5,
+      "bytes": 8192,
+      "valid": true,
+      "reads": [
+        {
+          "atMs": 3.700000047683716,
+          "bytes": 4096
+        },
+        {
+          "atMs": 304.2999999523163,
+          "bytes": 8192
+        }
+      ],
+      "longTasks": [
+        {
+          "atMs": 3.700000047683716,
+          "durationMs": 300
+        }
+      ],
+      "maxDataCallbackGapMs": 300.59999990463257,
+      "eofWaitMs": 0.20000004768371582
+    },
+    {
+      "name": "eof",
+      "wallStart": 1791697862228,
+      "startMs": 605.4000000953674,
+      "timeOrigin": 1791697861623.1,
+      "skewStartMs": -0.5,
+      "skewEndMs": -0.7001953125,
+      "durationMs": 238,
+      "bytes": 8192,
+      "valid": true,
+      "reads": [
+        {
+          "atMs": 4.699999809265137,
+          "bytes": 8192
+        }
+      ],
+      "longTasks": [],
+      "maxDataCallbackGapMs": null,
+      "eofWaitMs": 233.30000019073486
+    }
+  ],
+  "serverSupply": [
+    {
+      "name": "supply",
+      "event": "start",
+      "wallMs": 1791697861696
+    },
+    {
+      "name": "supply",
+      "event": "first-write",
+      "wallMs": 1791697861697,
+      "bytes": 4096
+    },
+    {
+      "name": "supply",
+      "event": "last-write",
+      "wallMs": 1791697861921,
+      "bytes": 8192
+    },
+    {
+      "name": "supply",
+      "event": "end-called",
+      "wallMs": 1791697861921
+    },
+    {
+      "name": "cpu",
+      "event": "start",
+      "wallMs": 1791697861924
+    },
+    {
+      "name": "cpu",
+      "event": "first-write",
+      "wallMs": 1791697861924,
+      "bytes": 4096
+    },
+    {
+      "name": "cpu",
+      "event": "last-write",
+      "wallMs": 1791697861983,
+      "bytes": 8192
+    },
+    {
+      "name": "cpu",
+      "event": "end-called",
+      "wallMs": 1791697861983
+    },
+    {
+      "name": "eof",
+      "event": "start",
+      "wallMs": 1791697862230
+    },
+    {
+      "name": "eof",
+      "event": "first-write",
+      "wallMs": 1791697862230,
+      "bytes": 8192
+    },
+    {
+      "name": "eof",
+      "event": "end-called",
+      "wallMs": 1791697862464
+    }
+  ],
+  "clockSkewMeasurementMeaning": "Only page Date.now vs performance clock; NetLog clock calibration still pending",
+  "fixtureServerStopped": true,
+  "missingSpecifiedFile": true,
+  "productionRequestsAdded": 0,
+  "productionRequestLedger": 1387,
+  "productionRequestCap": 1482,
+  "rootCauseConfirmed": false
+}

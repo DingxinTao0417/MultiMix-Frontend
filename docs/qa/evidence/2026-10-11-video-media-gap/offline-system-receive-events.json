@@ -1,0 +1,578 @@
+[
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.2803135Z",
+    "Connection": "connection-1",
+    "Bytes": 647,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.2803368Z",
+    "Connection": "connection-1",
+    "Bytes": 647,
+    "Length": 647,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2803395Z",
+    "Connection": "connection-1",
+    "Bytes": 647,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2803599Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.2812313Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.2812459Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": 196,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2812469Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2812560Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.2815665Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.2815806Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": 4104,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2815812Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.2815873Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5131383Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5131641Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": 4109,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5131657Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5131792Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5261135Z",
+    "Connection": "connection-1",
+    "Bytes": 645,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5261324Z",
+    "Connection": "connection-1",
+    "Bytes": 645,
+    "Length": 645,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5261346Z",
+    "Connection": "connection-1",
+    "Bytes": 645,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5261515Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5266107Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5266227Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": 388,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5266237Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5266320Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5575093Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5575307Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": 644,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5575330Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5575509Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5580470Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5580600Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": 196,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5580609Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5580692Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5582644Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5582780Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": 4104,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5582787Z",
+    "Connection": "connection-2",
+    "Bytes": 4104,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5582841Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.5916968Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.5917305Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": 4109,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5917321Z",
+    "Connection": "connection-2",
+    "Bytes": 4109,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.5917501Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.8828329Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.8828607Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": 642,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8828634Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8828869Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.8833808Z",
+    "Connection": "connection-2",
+    "Bytes": 385,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.8833938Z",
+    "Connection": "connection-2",
+    "Bytes": 385,
+    "Length": 385,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8833947Z",
+    "Connection": "connection-2",
+    "Bytes": 385,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8834033Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.8902593Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.8902817Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": 644,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8902839Z",
+    "Connection": "connection-1",
+    "Bytes": 644,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8903044Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.8907194Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.8907317Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": 196,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8907327Z",
+    "Connection": "connection-2",
+    "Bytes": 196,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8907411Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:19.8909181Z",
+    "Connection": "connection-2",
+    "Bytes": 8200,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:19.8909342Z",
+    "Connection": "connection-2",
+    "Bytes": 8200,
+    "Length": 8200,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8909348Z",
+    "Connection": "connection-2",
+    "Bytes": 8200,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:19.8909397Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:20.1218009Z",
+    "Connection": "connection-2",
+    "Bytes": 5,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:20.1218209Z",
+    "Connection": "connection-2",
+    "Bytes": 5,
+    "Length": 5,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1218226Z",
+    "Connection": "connection-2",
+    "Bytes": 5,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1218402Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:20.1260134Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:20.1260358Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": 642,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1260378Z",
+    "Connection": "connection-1",
+    "Bytes": 642,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1260566Z",
+    "Connection": "connection-2",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1602,
+    "Time": "2026-10-11T05:08:20.1264513Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1157,
+    "Time": "2026-10-11T05:08:20.1264618Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": 388,
+    "Status": 0
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1264625Z",
+    "Connection": "connection-2",
+    "Bytes": 388,
+    "Length": null,
+    "Status": null
+  },
+  {
+    "Id": 1074,
+    "Time": "2026-10-11T05:08:20.1264703Z",
+    "Connection": "connection-1",
+    "Bytes": 0,
+    "Length": null,
+    "Status": null
+  }
+]

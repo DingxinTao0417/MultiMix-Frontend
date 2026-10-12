@@ -1,0 +1,1361 @@
+{
+  "deployment": "dpl_GmT4k1G8CYVnh1vqhETtkXfcFq3u",
+  "commit": "db13b0927f241316cbc9290190b76bb22ce9079d",
+  "firstFrameObserved": true,
+  "tabClosed": true,
+  "load": {
+    "videoMs": 37667,
+    "audioMs": 4519,
+    "videoBytes": 36077615,
+    "audioBytes": 765203,
+    "videoRequests": 12,
+    "audioRequests": 1,
+    "cache": "miss",
+    "mountedUTC": "2026-10-11T03:28:21.783Z",
+    "readyUTC": "2026-10-11T03:29:02.651Z"
+  },
+  "parts": [
+    {
+      "rangeStart": 0,
+      "endTimeUTC": "2026-10-11T03:28:29.925Z",
+      "receivedBytes": 3145728,
+      "durationMs": 4945,
+      "responseWaitMs": 1366,
+      "bodyReadMs": 3579,
+      "firstByteMs": 0,
+      "lastByteMs": 3576,
+      "maxBodyIdleMs": 533,
+      "upstreamHeadersMs": 639,
+      "upstreamBodyMs": 122,
+      "relayMs": 760,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 3145728,
+      "endTimeUTC": "2026-10-11T03:28:34.243Z",
+      "receivedBytes": 3145728,
+      "durationMs": 4317,
+      "responseWaitMs": 844,
+      "bodyReadMs": 3473,
+      "firstByteMs": 0,
+      "lastByteMs": 3470,
+      "maxBodyIdleMs": 296,
+      "upstreamHeadersMs": 480,
+      "upstreamBodyMs": 181,
+      "relayMs": 661,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 6291456,
+      "endTimeUTC": "2026-10-11T03:28:37.860Z",
+      "receivedBytes": 3145728,
+      "durationMs": 3617,
+      "responseWaitMs": 782,
+      "bodyReadMs": 2836,
+      "firstByteMs": 84,
+      "lastByteMs": 2833,
+      "maxBodyIdleMs": 213,
+      "upstreamHeadersMs": 401,
+      "upstreamBodyMs": 171,
+      "relayMs": 572,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 9437184,
+      "endTimeUTC": "2026-10-11T03:28:41.960Z",
+      "receivedBytes": 3145728,
+      "durationMs": 4100,
+      "responseWaitMs": 1442,
+      "bodyReadMs": 2658,
+      "firstByteMs": 15,
+      "lastByteMs": 2654,
+      "maxBodyIdleMs": 232,
+      "upstreamHeadersMs": 397,
+      "upstreamBodyMs": 163,
+      "relayMs": 559,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 12582912,
+      "endTimeUTC": "2026-10-11T03:28:44.965Z",
+      "receivedBytes": 3145728,
+      "durationMs": 3004,
+      "responseWaitMs": 919,
+      "bodyReadMs": 2085,
+      "firstByteMs": 52,
+      "lastByteMs": 2083,
+      "maxBodyIdleMs": 327,
+      "upstreamHeadersMs": 310,
+      "upstreamBodyMs": 248,
+      "relayMs": 558,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 15728640,
+      "endTimeUTC": "2026-10-11T03:28:48.275Z",
+      "receivedBytes": 3145728,
+      "durationMs": 3309,
+      "responseWaitMs": 956,
+      "bodyReadMs": 2354,
+      "firstByteMs": 0,
+      "lastByteMs": 2350,
+      "maxBodyIdleMs": 235,
+      "upstreamHeadersMs": 366,
+      "upstreamBodyMs": 248,
+      "relayMs": 614,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 18874368,
+      "endTimeUTC": "2026-10-11T03:28:52.357Z",
+      "receivedBytes": 3145728,
+      "durationMs": 4082,
+      "responseWaitMs": 1404,
+      "bodyReadMs": 2678,
+      "firstByteMs": 0,
+      "lastByteMs": 2676,
+      "maxBodyIdleMs": 345,
+      "upstreamHeadersMs": 433,
+      "upstreamBodyMs": 215,
+      "relayMs": 648,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 22020096,
+      "endTimeUTC": "2026-10-11T03:28:54.663Z",
+      "receivedBytes": 3145728,
+      "durationMs": 2307,
+      "responseWaitMs": 555,
+      "bodyReadMs": 1751,
+      "firstByteMs": 94,
+      "lastByteMs": 1748,
+      "maxBodyIdleMs": 452,
+      "upstreamHeadersMs": 306,
+      "upstreamBodyMs": 64,
+      "relayMs": 369,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 25165824,
+      "endTimeUTC": "2026-10-11T03:28:56.903Z",
+      "receivedBytes": 3145728,
+      "durationMs": 2240,
+      "responseWaitMs": 710,
+      "bodyReadMs": 1530,
+      "firstByteMs": 0,
+      "lastByteMs": 1527,
+      "maxBodyIdleMs": 207,
+      "upstreamHeadersMs": 356,
+      "upstreamBodyMs": 130,
+      "relayMs": 486,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 28311552,
+      "endTimeUTC": "2026-10-11T03:28:59.044Z",
+      "receivedBytes": 3145728,
+      "durationMs": 2140,
+      "responseWaitMs": 1054,
+      "bodyReadMs": 1086,
+      "firstByteMs": 0,
+      "lastByteMs": 1083,
+      "maxBodyIdleMs": 78,
+      "upstreamHeadersMs": 379,
+      "upstreamBodyMs": 482,
+      "relayMs": 861,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 31457280,
+      "endTimeUTC": "2026-10-11T03:29:00.851Z",
+      "receivedBytes": 3145728,
+      "durationMs": 1807,
+      "responseWaitMs": 899,
+      "bodyReadMs": 908,
+      "firstByteMs": 124,
+      "lastByteMs": 906,
+      "maxBodyIdleMs": 202,
+      "upstreamHeadersMs": 373,
+      "upstreamBodyMs": 274,
+      "relayMs": 647,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    },
+    {
+      "rangeStart": 34603008,
+      "endTimeUTC": "2026-10-11T03:29:02.610Z",
+      "receivedBytes": 1474607,
+      "durationMs": 1759,
+      "responseWaitMs": 749,
+      "bodyReadMs": 1010,
+      "firstByteMs": 6,
+      "lastByteMs": 994,
+      "maxBodyIdleMs": 384,
+      "upstreamHeadersMs": 423,
+      "upstreamBodyMs": 153,
+      "relayMs": 577,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible",
+      "status": 206
+    }
+  ],
+  "relay": [
+    {
+      "timestamp": "2026-10-11T03:29:01.550Z",
+      "outcome": "delivered",
+      "rangeStart": 34603008,
+      "receivedBytes": 1474607,
+      "status": 206,
+      "upstreamHeadersMs": 423,
+      "upstreamBodyMs": 153,
+      "relayMs": 577
+    },
+    {
+      "timestamp": "2026-10-11T03:29:00.973Z",
+      "outcome": "started",
+      "rangeStart": 34603008
+    },
+    {
+      "timestamp": "2026-10-11T03:28:59.819Z",
+      "outcome": "delivered",
+      "rangeStart": 31457280,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 373,
+      "upstreamBodyMs": 274,
+      "relayMs": 647
+    },
+    {
+      "timestamp": "2026-10-11T03:28:59.172Z",
+      "outcome": "started",
+      "rangeStart": 31457280
+    },
+    {
+      "timestamp": "2026-10-11T03:28:57.898Z",
+      "outcome": "delivered",
+      "rangeStart": 28311552,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 379,
+      "upstreamBodyMs": 482,
+      "relayMs": 861
+    },
+    {
+      "timestamp": "2026-10-11T03:28:57.037Z",
+      "outcome": "started",
+      "rangeStart": 28311552
+    },
+    {
+      "timestamp": "2026-10-11T03:28:55.318Z",
+      "outcome": "delivered",
+      "rangeStart": 25165824,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 356,
+      "upstreamBodyMs": 130,
+      "relayMs": 486
+    },
+    {
+      "timestamp": "2026-10-11T03:28:54.832Z",
+      "outcome": "started",
+      "rangeStart": 25165824
+    },
+    {
+      "timestamp": "2026-10-11T03:28:52.856Z",
+      "outcome": "delivered",
+      "rangeStart": 22020096,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 306,
+      "upstreamBodyMs": 64,
+      "relayMs": 369
+    },
+    {
+      "timestamp": "2026-10-11T03:28:52.487Z",
+      "outcome": "started",
+      "rangeStart": 22020096
+    },
+    {
+      "timestamp": "2026-10-11T03:28:49.334Z",
+      "outcome": "delivered",
+      "rangeStart": 18874368,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 433,
+      "upstreamBodyMs": 215,
+      "relayMs": 648
+    },
+    {
+      "timestamp": "2026-10-11T03:28:48.686Z",
+      "outcome": "started",
+      "rangeStart": 18874368
+    },
+    {
+      "timestamp": "2026-10-11T03:28:45.870Z",
+      "outcome": "delivered",
+      "rangeStart": 15728640,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 366,
+      "upstreamBodyMs": 248,
+      "relayMs": 614
+    },
+    {
+      "timestamp": "2026-10-11T03:28:45.256Z",
+      "outcome": "started",
+      "rangeStart": 15728640
+    },
+    {
+      "timestamp": "2026-10-11T03:28:42.828Z",
+      "outcome": "delivered",
+      "rangeStart": 12582912,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 310,
+      "upstreamBodyMs": 248,
+      "relayMs": 558
+    },
+    {
+      "timestamp": "2026-10-11T03:28:42.270Z",
+      "outcome": "started",
+      "rangeStart": 12582912
+    },
+    {
+      "timestamp": "2026-10-11T03:28:39.214Z",
+      "outcome": "delivered",
+      "rangeStart": 9437184,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 397,
+      "upstreamBodyMs": 163,
+      "relayMs": 559
+    },
+    {
+      "timestamp": "2026-10-11T03:28:38.655Z",
+      "outcome": "started",
+      "rangeStart": 9437184
+    },
+    {
+      "timestamp": "2026-10-11T03:28:34.960Z",
+      "outcome": "delivered",
+      "rangeStart": 6291456,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 401,
+      "upstreamBodyMs": 171,
+      "relayMs": 572
+    },
+    {
+      "timestamp": "2026-10-11T03:28:34.387Z",
+      "outcome": "started",
+      "rangeStart": 6291456
+    },
+    {
+      "timestamp": "2026-10-11T03:28:30.714Z",
+      "outcome": "delivered",
+      "rangeStart": 3145728,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 480,
+      "upstreamBodyMs": 181,
+      "relayMs": 661
+    },
+    {
+      "timestamp": "2026-10-11T03:28:30.053Z",
+      "outcome": "started",
+      "rangeStart": 3145728
+    },
+    {
+      "timestamp": "2026-10-11T03:28:26.172Z",
+      "outcome": "delivered",
+      "rangeStart": 0,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 639,
+      "upstreamBodyMs": 122,
+      "relayMs": 760
+    },
+    {
+      "timestamp": "2026-10-11T03:28:25.412Z",
+      "outcome": "started",
+      "rangeStart": 0
+    }
+  ],
+  "http": [
+    {
+      "timestamp": "2026-10-11T03:28:22.427136306Z",
+      "method": "OPTIONS",
+      "path": "/v1/video/projects/1555",
+      "status": 200,
+      "durationMs": 15
+    },
+    {
+      "timestamp": "2026-10-11T03:28:24.459925340Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555",
+      "status": 200,
+      "durationMs": 1877
+    },
+    {
+      "timestamp": "2026-10-11T03:28:25.467818143Z",
+      "method": "GET",
+      "path": "/v1/video/media",
+      "status": 206,
+      "durationMs": 400
+    },
+    {
+      "timestamp": "2026-10-11T03:28:26.164409668Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 708
+    },
+    {
+      "timestamp": "2026-10-11T03:28:30.704361166Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 647
+    },
+    {
+      "timestamp": "2026-10-11T03:28:34.952819055Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 561
+    },
+    {
+      "timestamp": "2026-10-11T03:28:39.210470109Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 520
+    },
+    {
+      "timestamp": "2026-10-11T03:28:42.830064211Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 553
+    },
+    {
+      "timestamp": "2026-10-11T03:28:45.869420963Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 610
+    },
+    {
+      "timestamp": "2026-10-11T03:28:49.255690125Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 567
+    },
+    {
+      "timestamp": "2026-10-11T03:28:52.855556355Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 365
+    },
+    {
+      "timestamp": "2026-10-11T03:28:55.320300144Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 481
+    },
+    {
+      "timestamp": "2026-10-11T03:28:57.895144950Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 855
+    },
+    {
+      "timestamp": "2026-10-11T03:28:59.810847290Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 636
+    },
+    {
+      "timestamp": "2026-10-11T03:29:01.547410668Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 571
+    }
+  ],
+  "sums": {
+    "durationMs": 37627,
+    "responseWaitMs": 11680,
+    "bodyReadMs": 25948,
+    "relayMs": 7312,
+    "receivedBytes": 36077615
+  },
+  "budget": {
+    "previous": 1340,
+    "added": 15,
+    "total": 1355,
+    "cap": 1482,
+    "remaining": 127,
+    "newModels": 0
+  },
+  "limitations": [
+    "Historical 60s gap not reproduced; root cause not established",
+    "No performance behavior changed by this diagnostic patch",
+    "Preparation and first-frame only; full playback and subtitles not retested",
+    "Private-cache miss, unchanged full byte count; no fresh source SHA measured"
+  ],
+  "comparison": {
+    "previousVideoMs": 75542,
+    "currentVideoMs": 37667,
+    "percentFaster": 50.13767175875672
+  },
+  "historicalGap": {
+    "httpWindow": "2026-10-11T01:07:20Z/2026-10-11T01:08:50Z",
+    "gapFlowWindow": "2026-10-11T01:07:33Z/2026-10-11T01:08:34Z",
+    "flowCount": 61,
+    "flowLimit": 200,
+    "interpretation": "No request-level browser body/lifecycle evidence exists for the historical gap; packet counts and drop enums cannot establish its root cause.",
+    "http": [
+      {
+        "timestamp": "2026-10-11T01:07:27.388698898Z",
+        "status": 200,
+        "method": "OPTIONS",
+        "path": "/v1/video/projects/1555",
+        "durationMs": 16
+      },
+      {
+        "timestamp": "2026-10-11T01:07:28.934385001Z",
+        "status": 200,
+        "method": "GET",
+        "path": "/v1/video/projects/1555",
+        "durationMs": 1415
+      },
+      {
+        "timestamp": "2026-10-11T01:07:29.421514468Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/media",
+        "durationMs": 309
+      },
+      {
+        "timestamp": "2026-10-11T01:07:30.119565373Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 878
+      },
+      {
+        "timestamp": "2026-10-11T01:07:31.541481751Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 535
+      },
+      {
+        "timestamp": "2026-10-11T01:07:32.981161094Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 518
+      },
+      {
+        "timestamp": "2026-10-11T01:07:34.354419064Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 766
+      },
+      {
+        "timestamp": "2026-10-11T01:08:34.468578896Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 758
+      },
+      {
+        "timestamp": "2026-10-11T01:08:35.750135040Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 537
+      },
+      {
+        "timestamp": "2026-10-11T01:08:37.190733908Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 475
+      },
+      {
+        "timestamp": "2026-10-11T01:08:38.575272589Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 644
+      },
+      {
+        "timestamp": "2026-10-11T01:08:40.028404310Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 590
+      },
+      {
+        "timestamp": "2026-10-11T01:08:41.280039121Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 482
+      },
+      {
+        "timestamp": "2026-10-11T01:08:42.703056055Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 568
+      },
+      {
+        "timestamp": "2026-10-11T01:08:44.049610111Z",
+        "status": 206,
+        "method": "GET",
+        "path": "/v1/video/projects/1555/media/573",
+        "durationMs": 498
+      }
+    ],
+    "flows": [
+      {
+        "start": "2026-10-11T01:08:33.982144046Z",
+        "end": "2026-10-11T01:08:33.982168920Z",
+        "direction": "egress",
+        "bytes": 224,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:08:33.725388695Z",
+        "end": "2026-10-11T01:08:33.726789394Z",
+        "direction": "egress",
+        "bytes": 411,
+        "drop": null,
+        "latency": 0,
+        "state": "complete",
+        "packets": 6,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:33.726678575Z",
+        "end": "2026-10-11T01:08:33.726780197Z",
+        "direction": "ingress",
+        "bytes": 288,
+        "drop": "NO_SOCKET",
+        "latency": 0,
+        "state": "partial",
+        "packets": 4,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:33.726252193Z",
+        "end": "2026-10-11T01:08:33.726355453Z",
+        "direction": "ingress",
+        "bytes": 877,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:08:33.726071251Z",
+        "end": "2026-10-11T01:08:33.726089372Z",
+        "direction": "egress",
+        "bytes": 240,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:08:25.496335734Z",
+        "end": "2026-10-11T01:08:25.496763504Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 15,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:25.493678914Z",
+        "end": "2026-10-11T01:08:25.493678914Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:25.278721817Z",
+        "end": "2026-10-11T01:08:25.278721817Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:25.278612167Z",
+        "end": "2026-10-11T01:08:25.278682995Z",
+        "direction": "ingress",
+        "bytes": 120,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:25.278566708Z",
+        "end": "2026-10-11T01:08:25.278566708Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:25.278239834Z",
+        "end": "2026-10-11T01:08:25.278484521Z",
+        "direction": "ingress",
+        "bytes": 120,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:16.274255100Z",
+        "end": "2026-10-11T01:08:16.274420197Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:16.274214523Z",
+        "end": "2026-10-11T01:08:16.274404014Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:16.269184834Z",
+        "end": "2026-10-11T01:08:16.269184834Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:16.269149525Z",
+        "end": "2026-10-11T01:08:16.269149525Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:15.251942049Z",
+        "end": "2026-10-11T01:08:15.252105553Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 15,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:15.248294872Z",
+        "end": "2026-10-11T01:08:15.248294872Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:06.094510659Z",
+        "end": "2026-10-11T01:08:06.094939772Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:06.094483076Z",
+        "end": "2026-10-11T01:08:06.094923500Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:06.044167879Z",
+        "end": "2026-10-11T01:08:06.044167879Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:06.044140862Z",
+        "end": "2026-10-11T01:08:06.044140862Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:05.028782239Z",
+        "end": "2026-10-11T01:08:05.029036981Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 15,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:08:05.018522053Z",
+        "end": "2026-10-11T01:08:05.018522053Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:55.800883002Z",
+        "end": "2026-10-11T01:07:55.800886092Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:55.800862636Z",
+        "end": "2026-10-11T01:07:55.800871357Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:55.799754530Z",
+        "end": "2026-10-11T01:07:55.799754530Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:55.799713728Z",
+        "end": "2026-10-11T01:07:55.799713728Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:54.764918358Z",
+        "end": "2026-10-11T01:07:54.764929663Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 15,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:54.763719404Z",
+        "end": "2026-10-11T01:07:54.763719404Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:45.549161859Z",
+        "end": "2026-10-11T01:07:45.549172006Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:45.548968845Z",
+        "end": "2026-10-11T01:07:45.548983336Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:45.547837882Z",
+        "end": "2026-10-11T01:07:45.547837882Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:45.547793074Z",
+        "end": "2026-10-11T01:07:45.547793074Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:44.529478414Z",
+        "end": "2026-10-11T01:07:44.529500423Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 15,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:44.528094684Z",
+        "end": "2026-10-11T01:07:44.528094684Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:38.362954295Z",
+        "end": "2026-10-11T01:07:38.363611763Z",
+        "direction": "ingress",
+        "bytes": 172,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:38.363242074Z",
+        "end": "2026-10-11T01:07:38.363242074Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:32.726717241Z",
+        "end": "2026-10-11T01:07:36.983139526Z",
+        "direction": "ingress",
+        "bytes": 42194,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 481,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:32.721529544Z",
+        "end": "2026-10-11T01:07:36.982441601Z",
+        "direction": "egress",
+        "bytes": 3313325,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2496,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:35.540125475Z",
+        "end": "2026-10-11T01:07:35.543005775Z",
+        "direction": "ingress",
+        "bytes": 172,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:35.540384074Z",
+        "end": "2026-10-11T01:07:35.540384074Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:35.317404949Z",
+        "end": "2026-10-11T01:07:35.317410970Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 3,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:35.317107126Z",
+        "end": "2026-10-11T01:07:35.317156352Z",
+        "direction": "ingress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 4,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:35.315932461Z",
+        "end": "2026-10-11T01:07:35.315932461Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:35.315891642Z",
+        "end": "2026-10-11T01:07:35.315891642Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:32.700209710Z",
+        "end": "2026-10-11T01:07:34.375945284Z",
+        "direction": "egress",
+        "bytes": 2847,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 11,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:32.982318130Z",
+        "end": "2026-10-11T01:07:34.375865474Z",
+        "direction": "ingress",
+        "bytes": 1664,
+        "drop": null,
+        "latency": 17,
+        "state": "partial",
+        "packets": 9,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.629758553Z",
+        "end": "2026-10-11T01:07:34.354643822Z",
+        "direction": "ingress",
+        "bytes": 47414,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 531,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:33.629791392Z",
+        "end": "2026-10-11T01:07:34.354121208Z",
+        "direction": "egress",
+        "bytes": 3322512,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2501,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.910852850Z",
+        "end": "2026-10-11T01:07:34.133329115Z",
+        "direction": "egress",
+        "bytes": 17187,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 212,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:34.119573563Z",
+        "end": "2026-10-11T01:07:34.120908134Z",
+        "direction": "ingress",
+        "bytes": 172,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:34.119798101Z",
+        "end": "2026-10-11T01:07:34.119798101Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.913999618Z",
+        "end": "2026-10-11T01:07:34.041656378Z",
+        "direction": "ingress",
+        "bytes": 3182994,
+        "drop": "TCP_FLAGS",
+        "latency": 5,
+        "state": "partial",
+        "packets": 375,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.910413481Z",
+        "end": "2026-10-11T01:07:33.910533056Z",
+        "direction": "ingress",
+        "bytes": 412,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:07:33.907015970Z",
+        "end": "2026-10-11T01:07:33.907046996Z",
+        "direction": "egress",
+        "bytes": 224,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:07:33.804656186Z",
+        "end": "2026-10-11T01:07:33.904130154Z",
+        "direction": "egress",
+        "bytes": 3048,
+        "drop": null,
+        "latency": 0,
+        "state": "complete",
+        "packets": 10,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.821470142Z",
+        "end": "2026-10-11T01:07:33.904060422Z",
+        "direction": "ingress",
+        "bytes": 6072,
+        "drop": "NO_SOCKET",
+        "latency": 17,
+        "state": "partial",
+        "packets": 9,
+        "peer": "internet"
+      },
+      {
+        "start": "2026-10-11T01:07:33.804289283Z",
+        "end": "2026-10-11T01:07:33.804416177Z",
+        "direction": "ingress",
+        "bytes": 412,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:07:33.803933849Z",
+        "end": "2026-10-11T01:07:33.803957338Z",
+        "direction": "egress",
+        "bytes": 224,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "local_dns"
+      },
+      {
+        "start": "2026-10-11T01:07:33.442868430Z",
+        "end": "2026-10-11T01:07:33.447977281Z",
+        "direction": "ingress",
+        "bytes": 172,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 2,
+        "peer": "service"
+      },
+      {
+        "start": "2026-10-11T01:07:33.443157370Z",
+        "end": "2026-10-11T01:07:33.443157370Z",
+        "direction": "egress",
+        "bytes": 66,
+        "drop": null,
+        "latency": 0,
+        "state": "partial",
+        "packets": 1,
+        "peer": "internet"
+      }
+    ]
+  }
+}

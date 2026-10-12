@@ -1,0 +1,416 @@
+{
+  "status": "offline-stage-boundary-gate-passed",
+  "date": "2026-10-11",
+  "jsonValid": true,
+  "eventCount": 25673,
+  "tests": [
+    "exact three controlled request identities",
+    "filtered payload totals equal validated page bytes",
+    "calibration: network first read follows local first write within 3ms",
+    "supply case separates true later supply from renderer processing delay",
+    "cpu case: network completes before busy task, EOF callback delayed",
+    "eof case: payload at 2ms, network body-end at 232ms, no long task"
+  ],
+  "checksPassed": 6,
+  "controlledCases": [
+    {
+      "name": "supply",
+      "page": {
+        "name": "supply",
+        "wallStart": 1791699514541,
+        "startMs": 418.10000014305115,
+        "timeOrigin": 1791699514123.8,
+        "skewStartMs": -0.900146484375,
+        "skewEndMs": -0.60009765625,
+        "durationMs": 446.5,
+        "bytes": 8192,
+        "valid": true,
+        "reads": [
+          {
+            "atMs": 442.59999990463257,
+            "bytes": 8192
+          }
+        ],
+        "longTasks": [
+          {
+            "atMs": 20,
+            "durationMs": 260
+          },
+          {
+            "atMs": 280.7999999523163,
+            "durationMs": 157
+          }
+        ]
+      },
+      "networkEvents": [
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 1,
+          "atMs": 1
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 1,
+          "atMs": 1
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 4,
+          "byteCount": 3894
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 4,
+          "byteCount": 202
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 232
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 232,
+          "byteCount": 4096
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 232
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 232
+        },
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 2,
+          "atMs": 233
+        }
+      ],
+      "serverEvents": [
+        {
+          "event": "start",
+          "atMs": 2
+        },
+        {
+          "event": "first-write",
+          "atMs": 3,
+          "bytes": 4096
+        },
+        {
+          "event": "last-write",
+          "atMs": 232,
+          "bytes": 8192
+        },
+        {
+          "event": "end-called",
+          "atMs": 232
+        }
+      ]
+    },
+    {
+      "name": "cpu",
+      "page": {
+        "name": "cpu",
+        "wallStart": 1791699514997,
+        "startMs": 873.4000000953674,
+        "timeOrigin": 1791699514123.8,
+        "skewStartMs": -0.199951171875,
+        "skewEndMs": -0.5,
+        "durationMs": 369.09999990463257,
+        "bytes": 8192,
+        "valid": true,
+        "reads": [
+          {
+            "atMs": 62.700000047683716,
+            "bytes": 8192
+          }
+        ],
+        "longTasks": [
+          {
+            "atMs": 62.59999990463257,
+            "durationMs": 300
+          }
+        ]
+      },
+      "networkEvents": [
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 1,
+          "atMs": 0
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 1,
+          "atMs": 0
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 4,
+          "byteCount": 3894
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 4
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 4,
+          "byteCount": 202
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 4
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 59
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 59,
+          "byteCount": 4096
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 59
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 59
+        },
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 2,
+          "atMs": 60
+        }
+      ],
+      "serverEvents": [
+        {
+          "event": "start",
+          "atMs": 2
+        },
+        {
+          "event": "first-write",
+          "atMs": 2,
+          "bytes": 4096
+        },
+        {
+          "event": "last-write",
+          "atMs": 59,
+          "bytes": 8192
+        },
+        {
+          "event": "end-called",
+          "atMs": 59
+        }
+      ]
+    },
+    {
+      "name": "eof",
+      "page": {
+        "name": "eof",
+        "wallStart": 1791699515367,
+        "startMs": 1243.7000000476837,
+        "timeOrigin": 1791699514123.8,
+        "skewStartMs": -0.5,
+        "skewEndMs": -0.199951171875,
+        "durationMs": 233.70000004768372,
+        "bytes": 8192,
+        "valid": true,
+        "reads": [
+          {
+            "atMs": 31.100000143051147,
+            "bytes": 8192
+          }
+        ],
+        "longTasks": []
+      },
+      "networkEvents": [
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 1,
+          "atMs": 0
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 1,
+          "atMs": 0
+        },
+        {
+          "name": "URL_REQUEST_START_JOB",
+          "phase": 2,
+          "atMs": 2
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 1,
+          "atMs": 2
+        },
+        {
+          "name": "URL_REQUEST_DELEGATE_RESPONSE_STARTED",
+          "phase": 2,
+          "atMs": 2
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 2
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 2
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 2,
+          "byteCount": 3894
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 2
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 2
+        },
+        {
+          "name": "URL_REQUEST_JOB_FILTERED_BYTES_READ",
+          "phase": 0,
+          "atMs": 2,
+          "byteCount": 4298
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 1,
+          "atMs": 2
+        },
+        {
+          "name": "HTTP_TRANSACTION_READ_BODY",
+          "phase": 2,
+          "atMs": 232
+        },
+        {
+          "name": "REQUEST_ALIVE",
+          "phase": 2,
+          "atMs": 232
+        }
+      ],
+      "serverEvents": [
+        {
+          "event": "start",
+          "atMs": 1
+        },
+        {
+          "event": "first-write",
+          "atMs": 1,
+          "bytes": 8192
+        },
+        {
+          "event": "end-called",
+          "atMs": 232
+        }
+      ]
+    }
+  ],
+  "scope": "Independent browser network request read vs renderer and EOF; real public HTTP2/HTTP3 association separately verified",
+  "limitations": [
+    "Supply control contains extra renderer long tasks; not a pure idle-renderer baseline",
+    "CPU control coalesced both data pieces before busy loop; demonstrates delayed EOF processing, not a reproduced delayed second data callback",
+    "NetLog request read is a network-service boundary, not physical NIC packet arrival",
+    "Production flow control/backpressure/network service pause still require evidence",
+    "HTTP2 receive DATA event observes frame header, not complete payload",
+    "No production stall or root cause established"
+  ],
+  "productionCallsAdded": 0,
+  "productionLedger": 1387,
+  "productionCap": 1482,
+  "fixtureServerStopped": true
+}

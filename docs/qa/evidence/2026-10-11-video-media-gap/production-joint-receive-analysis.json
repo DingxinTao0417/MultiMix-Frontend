@@ -1,0 +1,642 @@
+{
+  "date": "2026-10-11",
+  "status": "one-production-capture-analyzed-history-gap-not-reproduced",
+  "rawFiles": {
+    "netlog": {
+      "name": "multimix-production-netlog.json",
+      "bytes": 19721058,
+      "events": 93849
+    },
+    "performance": {
+      "name": "Trace-20261011T143127.json.gz",
+      "compressedBytes": 5881360,
+      "events": 233718
+    },
+    "retention": "User-owned originals unchanged; no raw logs uploaded or copied into evidence"
+  },
+  "timeCalibration": {
+    "responseEpochMaxErrorMs": 1.405029296875,
+    "requestSendMaxErrorMs": 26.881999969482422
+  },
+  "media": {
+    "asset": 1555,
+    "media": 573,
+    "bytes": 36077615,
+    "rangeRequests": 12,
+    "networkCompleteMs": 231828,
+    "audioBytes": 765203,
+    "audioNetworkCompleteMs": 5534,
+    "rows": [
+      {
+        "i": 1,
+        "startMs": 0,
+        "firstMs": 2874,
+        "lastMs": 12825,
+        "endMs": 12827,
+        "bytes": 3145728,
+        "reads": 104,
+        "readType": "filtered",
+        "maxGapMs": 1088,
+        "gap": [
+          3929,
+          5017
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 0-3145727/36077615",
+        "relayTiming": "media_headers;dur=554, media_body;dur=102, media_relay;dur=657"
+      },
+      {
+        "i": 2,
+        "startMs": 12834,
+        "firstMs": 13990,
+        "lastMs": 20905,
+        "endMs": 20907,
+        "bytes": 3145728,
+        "reads": 110,
+        "readType": "filtered",
+        "maxGapMs": 502,
+        "gap": [
+          16059,
+          16561
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 3145728-6291455/36077615",
+        "relayTiming": "media_headers;dur=376, media_body;dur=63, media_relay;dur=439"
+      },
+      {
+        "i": 3,
+        "startMs": 20912,
+        "firstMs": 22047,
+        "lastMs": 28077,
+        "endMs": 28078,
+        "bytes": 3145728,
+        "reads": 91,
+        "readType": "filtered",
+        "maxGapMs": 479,
+        "gap": [
+          22047,
+          22526
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 6291456-9437183/36077615",
+        "relayTiming": "media_headers;dur=250, media_body;dur=43, media_relay;dur=293"
+      },
+      {
+        "i": 4,
+        "startMs": 28082,
+        "firstMs": 29478,
+        "lastMs": 34668,
+        "endMs": 34670,
+        "bytes": 3145728,
+        "reads": 93,
+        "readType": "filtered",
+        "maxGapMs": 427,
+        "gap": [
+          30653,
+          31080
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 9437184-12582911/36077615",
+        "relayTiming": "media_headers;dur=314, media_body;dur=36, media_relay;dur=350"
+      },
+      {
+        "i": 5,
+        "startMs": 34675,
+        "firstMs": 35863,
+        "lastMs": 41062,
+        "endMs": 41064,
+        "bytes": 3145728,
+        "reads": 100,
+        "readType": "filtered",
+        "maxGapMs": 303,
+        "gap": [
+          40565,
+          40868
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 12582912-15728639/36077615",
+        "relayTiming": "media_headers;dur=275, media_body;dur=49, media_relay;dur=325"
+      },
+      {
+        "i": 6,
+        "startMs": 41069,
+        "firstMs": 42167,
+        "lastMs": 47511,
+        "endMs": 47514,
+        "bytes": 3145728,
+        "reads": 102,
+        "readType": "filtered",
+        "maxGapMs": 373,
+        "gap": [
+          43210,
+          43583
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 15728640-18874367/36077615",
+        "relayTiming": "media_headers;dur=223, media_body;dur=39, media_relay;dur=261"
+      },
+      {
+        "i": 7,
+        "startMs": 47518,
+        "firstMs": 48704,
+        "lastMs": 69260,
+        "endMs": 69261,
+        "bytes": 3145728,
+        "reads": 96,
+        "readType": "filtered",
+        "maxGapMs": 1023,
+        "gap": [
+          57164,
+          58187
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 18874368-22020095/36077615",
+        "relayTiming": "media_headers;dur=350, media_body;dur=112, media_relay;dur=461"
+      },
+      {
+        "i": 8,
+        "startMs": 69268,
+        "firstMs": 71941,
+        "lastMs": 133579,
+        "endMs": 133580,
+        "bytes": 3145728,
+        "reads": 113,
+        "readType": "filtered",
+        "maxGapMs": 1995,
+        "gap": [
+          117683,
+          119678
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 22020096-25165823/36077615",
+        "relayTiming": "media_headers;dur=543, media_body;dur=42, media_relay;dur=585"
+      },
+      {
+        "i": 9,
+        "startMs": 133623,
+        "firstMs": 135046,
+        "lastMs": 146891,
+        "endMs": 146892,
+        "bytes": 3145728,
+        "reads": 108,
+        "readType": "filtered",
+        "maxGapMs": 535,
+        "gap": [
+          135573,
+          136108
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 25165824-28311551/36077615",
+        "relayTiming": "media_headers;dur=885, media_body;dur=101, media_relay;dur=986"
+      },
+      {
+        "i": 10,
+        "startMs": 146918,
+        "firstMs": 148615,
+        "lastMs": 162885,
+        "endMs": 162887,
+        "bytes": 3145728,
+        "reads": 98,
+        "readType": "filtered",
+        "maxGapMs": 904,
+        "gap": [
+          159125,
+          160029
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 28311552-31457279/36077615",
+        "relayTiming": "media_headers;dur=396, media_body;dur=52, media_relay;dur=447"
+      },
+      {
+        "i": 11,
+        "startMs": 172595,
+        "firstMs": 174969,
+        "lastMs": 222568,
+        "endMs": 222570,
+        "bytes": 3145728,
+        "reads": 105,
+        "readType": "filtered",
+        "maxGapMs": 1399,
+        "gap": [
+          177639,
+          179038
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 31457280-34603007/36077615",
+        "relayTiming": "media_headers;dur=298, media_body;dur=50, media_relay;dur=348"
+      },
+      {
+        "i": 12,
+        "startMs": 222609,
+        "firstMs": 223846,
+        "lastMs": 231826,
+        "endMs": 231828,
+        "bytes": 1474607,
+        "reads": 57,
+        "readType": "filtered",
+        "maxGapMs": 501,
+        "gap": [
+          228208,
+          228709
+        ],
+        "status": 206,
+        "mime": "video/mp4",
+        "contentRange": "bytes 34603008-36077614/36077615",
+        "relayTiming": "media_headers;dur=543, media_body;dur=32, media_relay;dur=574"
+      }
+    ],
+    "h2": [
+      {
+        "ordinal": 1,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 223,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 2871,
+          "lastFrameAfterSendMs": 12823,
+          "maxFrameGapMs": 1099,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 2,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 241,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1145,
+          "lastFrameAfterSendMs": 8070,
+          "maxFrameGapMs": 502,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 3,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 238,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1133,
+          "lastFrameAfterSendMs": 7164,
+          "maxFrameGapMs": 478,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 4,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 234,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1392,
+          "lastFrameAfterSendMs": 6585,
+          "maxFrameGapMs": 425,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 5,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 235,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1174,
+          "lastFrameAfterSendMs": 6385,
+          "maxFrameGapMs": 303,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 6,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 241,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1084,
+          "lastFrameAfterSendMs": 6440,
+          "maxFrameGapMs": 376,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 7,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 239,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1183,
+          "lastFrameAfterSendMs": 21740,
+          "maxFrameGapMs": 1023,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 8,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 245,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 2657,
+          "lastFrameAfterSendMs": 64309,
+          "maxFrameGapMs": 1997,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 9,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 248,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1421,
+          "lastFrameAfterSendMs": 13267,
+          "maxFrameGapMs": 537,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 10,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 224,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 1695,
+          "lastFrameAfterSendMs": 15966,
+          "maxFrameGapMs": 892,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 11,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 233,
+          "transportPayloadBytes": 3145728,
+          "firstFrameAfterSendMs": 2371,
+          "lastFrameAfterSendMs": 49971,
+          "maxFrameGapMs": 1451,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      },
+      {
+        "ordinal": 12,
+        "status": "associated",
+        "protocol": "h2",
+        "summary": {
+          "protocol": "h2",
+          "frameCount": 120,
+          "transportPayloadBytes": 1474607,
+          "firstFrameAfterSendMs": 1232,
+          "lastFrameAfterSendMs": 9215,
+          "maxFrameGapMs": 495,
+          "finObserved": true,
+          "note": "H2 RECV_DATA length is declared frame length, not independent completed-body arrival"
+        }
+      }
+    ],
+    "maxFilteredReceiveGapMs": 1995,
+    "maxH2DeclaredFrameGapMs": 1997,
+    "minimumConnectionRecvWindow": 15624659,
+    "minimumStreamRecvWindow": 6187475,
+    "slowestPart": {
+      "ordinal": 8,
+      "bodyMs": 61638,
+      "bytes": 3145728,
+      "relayMs": 585,
+      "mainLongestTaskMs": 152.883
+    },
+    "transportInference": "Slow reception observed after relay prepared full response; exact physical link/proxy/server-egress cause not established. H2 receive-window exhaustion not observed. Target endpoint is in synthetic-address range; no proof this path is direct physical internet."
+  },
+  "browser": {
+    "targetRendererOrdinal": 1,
+    "heapBeforeLongestGcBytes": 66419080,
+    "heapAfterLongestGcBytes": 62699068,
+    "longestGc": {
+      "startMs": 229893.025,
+      "wallMs": 26223.723,
+      "threadCpuMs": 14.676
+    },
+    "otherGc": {
+      "startMs": 157550.182,
+      "wallMs": 8240.347,
+      "threadCpuMs": 18.718
+    },
+    "criticalPressureRendererCount": 4,
+    "pageDataCallbackAfterLongestGcMs": 256116.868,
+    "networkCompleteBeforeGcEnds": true,
+    "hiddenIntervalsMs": [
+      [
+        2412.505,
+        10660.988
+      ],
+      [
+        70800.307,
+        366088.67
+      ]
+    ],
+    "firstVisibleVideoScreenshotMs": 366669.039,
+    "firstFrameBaselineValid": false,
+    "resourceFinishDiagnostic": {
+      "videoDidFailFlag": true,
+      "videoDecodedBodyLength": 0,
+      "networkPayloadsComplete": true,
+      "meaning": "Browser trace reports loader failure/cancellation after fully received streamed payload; lacks cancellation reason. Do not infer transport truncation or product quality failure solely from this flag. Last screenshot contains video frame; no fresh full-playback/ready baseline claim."
+    },
+    "gcInference": "Long GC span blocks renderer processing, with very small measured CPU time and critical-memory notifications in multiple renderers. Worker waiting / resource or scheduling pressure plausible; OS paging, responsible other application, and product leak not established. Capture overhead not isolated."
+  },
+  "http": {
+    "rows": [
+      {
+        "path": "/v1/video/projects/1555",
+        "method": "OPTIONS",
+        "status": 200,
+        "at": "2026-10-11T06:31:40.394481615Z",
+        "totalDurationMs": 7
+      },
+      {
+        "path": "/v1/video/projects/1555",
+        "method": "GET",
+        "status": 200,
+        "at": "2026-10-11T06:31:41.374246909Z",
+        "totalDurationMs": 626
+      },
+      {
+        "path": "/v1/video/media",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:31:42.103256581Z",
+        "totalDurationMs": 313
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:31:43.054638645Z",
+        "totalDurationMs": 549
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:31:55.181774635Z",
+        "totalDurationMs": 392
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:03.147651572Z",
+        "totalDurationMs": 279
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:10.369818441Z",
+        "totalDurationMs": 337
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:16.831395660Z",
+        "totalDurationMs": 308
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:23.243306406Z",
+        "totalDurationMs": 249
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:29.781521614Z",
+        "totalDurationMs": 414
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:32:51.708817870Z",
+        "totalDurationMs": 567
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:33:56.427230897Z",
+        "totalDurationMs": 970
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:34:09.191204854Z",
+        "totalDurationMs": 434
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:34:34.761673249Z",
+        "totalDurationMs": 331
+      },
+      {
+        "path": "/v1/video/projects/1555/media/573",
+        "method": "GET",
+        "status": 206,
+        "at": "2026-10-11T06:35:25.012382643Z",
+        "totalDurationMs": 561
+      }
+    ],
+    "actualAppAdded": 15,
+    "usedBefore": 1387,
+    "usedAfter": 1402,
+    "cap": 1482,
+    "remaining": 80
+  },
+  "verification": {
+    "checks": [
+      "exact target media request count matches both files",
+      "unique request identities plus send anchors within30ms and independent response epoch anchors within2ms",
+      "every media response is 206 with complete contiguous ranges and video mime",
+      "H2 session/stream cross-confirmation unique for each request",
+      "historical 60-second network-receive gap not reproduced",
+      "H2 observed receive windows remain positive during transfer",
+      "last-part page data callback is delayed across major GC after network completion",
+      "critical pressure exists in multiple renderer processes",
+      "target page is hidden during last slow blocks and visible again before final screenshot",
+      "audio bytes complete and browser finish successful"
+    ],
+    "passed": 10,
+    "newProductRequestsByAgent": 0,
+    "newModelCalls": 0,
+    "newRuntimeCodeEdits": 0,
+    "newDeployments": 0
+  },
+  "decision": {
+    "historical59850msCallbackGapRoot": "unconfirmed",
+    "sixtySecondReceiveGapReproduced": false,
+    "automaticRecapture": false,
+    "guessedPerformancePatch": false,
+    "overallPlanCompleted": 3,
+    "overallPlanTotal": 5,
+    "remaining": [
+      "Evidence-supported general root fix for historical gap / separately designed eager-whole-original preparation improvement",
+      "Postfix first-load speed verification in valid visible normal-use conditions"
+    ],
+    "branch": "Execute planned no-reproduction stop branch; preserve G0/G1 evidence, do not claim bug fixed or weaken quality/deadlines"
+  },
+  "primaryReferences": [
+    "https://www.chromium.org/developers/how-tos/trace-event-profiling-tool/trace-event-reading/",
+    "https://raw.githubusercontent.com/v8/v8/main/include/v8-isolate.h",
+    "https://raw.githubusercontent.com/chromium/chromium/main/third_party/blink/renderer/core/inspector/inspector_trace_events.cc"
+  ]
+}

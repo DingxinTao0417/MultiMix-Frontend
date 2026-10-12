@@ -1,0 +1,200 @@
+{
+  "status": "sample-association-verified-controlled-clock-check-pending",
+  "chromeVersion": "153.0.8010.53",
+  "eventCount": 14793,
+  "publicSampleRequestCount": 9,
+  "publicSampleTransactionCount": 10,
+  "publicSampleWindowMs": 5881,
+  "multimixRequestCount": 0,
+  "productionRequestLedger": 1387,
+  "productionRequestLimit": 1482,
+  "checks": [
+    "real sample: nine requests / ten transactions",
+    "missing HTTP2 job link refuses association",
+    "duplicate HTTP2 binding is ambiguous",
+    "missing HTTP3 confirmation refuses association",
+    "same URL labels cannot merge concurrent request identities",
+    "another multiplexed stream delay cannot contaminate target",
+    "QUIC duplicate overlapping offsets are not media bytes"
+  ],
+  "requests": [
+    {
+      "request": 1,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h2",
+          "frameCount": 1,
+          "transportPayloadBytes": 68,
+          "firstFrameAfterSendMs": 811,
+          "lastFrameAfterSendMs": 811,
+          "maxFrameGapMs": null,
+          "finObserved": true,
+          "finMeaning": "frame-header-fin-flag-not-body-eof",
+          "byteMeaning": "declared-data-frame-length"
+        }
+      ]
+    },
+    {
+      "request": 2,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h2",
+          "frameCount": 1,
+          "transportPayloadBytes": 34,
+          "firstFrameAfterSendMs": 896,
+          "lastFrameAfterSendMs": 896,
+          "maxFrameGapMs": null,
+          "finObserved": true,
+          "finMeaning": "frame-header-fin-flag-not-body-eof",
+          "byteMeaning": "declared-data-frame-length"
+        },
+        {
+          "protocol": "h3",
+          "frameCount": 3,
+          "transportPayloadBytes": 2901,
+          "firstFrameAfterSendMs": 388,
+          "lastFrameAfterSendMs": 388,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 3,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h2",
+          "frameCount": 1,
+          "transportPayloadBytes": 745,
+          "firstFrameAfterSendMs": 895,
+          "lastFrameAfterSendMs": 895,
+          "maxFrameGapMs": null,
+          "finObserved": true,
+          "finMeaning": "frame-header-fin-flag-not-body-eof",
+          "byteMeaning": "declared-data-frame-length"
+        }
+      ]
+    },
+    {
+      "request": 4,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 3,
+          "transportPayloadBytes": 3152,
+          "firstFrameAfterSendMs": 289,
+          "lastFrameAfterSendMs": 289,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 5,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 3,
+          "transportPayloadBytes": 2900,
+          "firstFrameAfterSendMs": 288,
+          "lastFrameAfterSendMs": 288,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 6,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 2,
+          "transportPayloadBytes": 958,
+          "firstFrameAfterSendMs": 288,
+          "lastFrameAfterSendMs": 288,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 7,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 2,
+          "transportPayloadBytes": 2096,
+          "firstFrameAfterSendMs": 1134,
+          "lastFrameAfterSendMs": 1134,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 8,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 3,
+          "transportPayloadBytes": 3258,
+          "firstFrameAfterSendMs": 1136,
+          "lastFrameAfterSendMs": 1136,
+          "maxFrameGapMs": 0,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    },
+    {
+      "request": 9,
+      "association": "associated",
+      "transactions": [
+        {
+          "protocol": "h3",
+          "frameCount": 23,
+          "transportPayloadBytes": 26866,
+          "firstFrameAfterSendMs": 1134,
+          "lastFrameAfterSendMs": 1135,
+          "maxFrameGapMs": 1,
+          "finObserved": true,
+          "finMeaning": "quic-stream-fin-not-page-eof",
+          "byteMeaning": "quic-stream-frame-length-includes-http3-framing"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "No MultiMix media request or historical sixty-second window",
+    "No renderer task timeline in NetLog",
+    "TimeTickOffset conversion not yet controlled against page clock",
+    "HTTP2 receive-data event observes frame header, not complete body",
+    "Missing long tasks cannot identify a network fault"
+  ],
+  "privacy": {
+    "socketOrRequestBodyByteDumps": 0,
+    "preservedRawHeaders": false,
+    "preservedRawURLs": false,
+    "preservedOriginalSourceIds": false,
+    "originalUserFileUnmodified": true
+  }
+}

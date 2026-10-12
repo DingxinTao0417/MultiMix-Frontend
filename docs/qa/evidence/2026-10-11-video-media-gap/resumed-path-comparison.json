@@ -1,0 +1,184 @@
+{
+  "date": "2026-10-11",
+  "scope": "Human resumed task; one Chrome existing-project preparation and two existing transport path range reads; total17 application requests",
+  "frontend": {
+    "commit": "db13b0927f241316cbc9290190b76bb22ce9079d",
+    "deployment": "dpl_GmT4k1G8CYVnh1vqhETtkXfcFq3u"
+  },
+  "backend": {
+    "deployment": "86c4dc60-a952-4bd6-be33-1145d6e4bfc6",
+    "target": "woshiliyuewen's Projects / multimix-production / production"
+  },
+  "video": {
+    "durationMs": 14512,
+    "bytes": 36077615,
+    "requestCount": 12,
+    "cache": "miss",
+    "maxBodyIdleMs": 133
+  },
+  "audio": {
+    "durationMs": 1058,
+    "bytes": 765203,
+    "requestCount": 1
+  },
+  "firstFrameVisible": true,
+  "fullPlaybackVerified": false,
+  "tabClosed": true,
+  "transport": [
+    {
+      "mode": "process_without_http_proxy",
+      "status": 206,
+      "receivedBytes": 3145728,
+      "responseWaitMs": 1766,
+      "bodyReadMs": 810,
+      "elapsedMs": 2576,
+      "maxReadIdleMs": 102,
+      "sha256": "d75643e086849f6033f2f1290c750723a6759b205f3bcc4c49745ed75dc3ba9e"
+    },
+    {
+      "mode": "existing_loopback_http_proxy",
+      "status": 206,
+      "receivedBytes": 3145728,
+      "responseWaitMs": 907,
+      "bodyReadMs": 898,
+      "elapsedMs": 1805,
+      "maxReadIdleMs": 122,
+      "sha256": "d75643e086849f6033f2f1290c750723a6759b205f3bcc4c49745ed75dc3ba9e"
+    }
+  ],
+  "http": [
+    {
+      "timestamp": "2026-10-11T04:37:07.074791558Z",
+      "method": "OPTIONS",
+      "path": "/v1/video/projects/1555",
+      "status": 200,
+      "durationMs": 8
+    },
+    {
+      "timestamp": "2026-10-11T04:37:08.128791001Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555",
+      "status": 200,
+      "durationMs": 859
+    },
+    {
+      "timestamp": "2026-10-11T04:37:08.700082875Z",
+      "method": "GET",
+      "path": "/v1/video/media",
+      "status": 206,
+      "durationMs": 298
+    },
+    {
+      "timestamp": "2026-10-11T04:37:09.600052865Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 507
+    },
+    {
+      "timestamp": "2026-10-11T04:37:11.178002158Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 309
+    },
+    {
+      "timestamp": "2026-10-11T04:37:12.180572885Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 262
+    },
+    {
+      "timestamp": "2026-10-11T04:37:13.272100269Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 387
+    },
+    {
+      "timestamp": "2026-10-11T04:37:14.280883966Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 280
+    },
+    {
+      "timestamp": "2026-10-11T04:37:15.342243377Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 263
+    },
+    {
+      "timestamp": "2026-10-11T04:37:16.428312246Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 329
+    },
+    {
+      "timestamp": "2026-10-11T04:37:17.657699309Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 275
+    },
+    {
+      "timestamp": "2026-10-11T04:37:18.806522968Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 383
+    },
+    {
+      "timestamp": "2026-10-11T04:37:19.994525465Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 319
+    },
+    {
+      "timestamp": "2026-10-11T04:37:21.214068185Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 386
+    },
+    {
+      "timestamp": "2026-10-11T04:37:22.275179192Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 321
+    },
+    {
+      "timestamp": "2026-10-11T04:38:10.003030129Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 517
+    },
+    {
+      "timestamp": "2026-10-11T04:38:11.799495691Z",
+      "method": "GET",
+      "path": "/v1/video/projects/1555/media/573",
+      "status": 206,
+      "durationMs": 300
+    }
+  ],
+  "budget": {
+    "requestsThisScope": 17,
+    "cumulativeBefore": 1370,
+    "cumulativeAfter": 1387,
+    "cumulativeCap": 1482,
+    "newModelCalls": 0,
+    "totalUsdCeiling": 1
+  },
+  "limits": [
+    "No-HTTP-proxy requests still use the active system tunnel; these are not proven independent egress routes.",
+    "Two quick range reads do not identify or fix the historical intermittent60-second stall.",
+    "No performance code changes, no deploy, no project or database writes.",
+    "Selected System events for03:33–03:37UTC had no power/network records returned; this does not rule out browser scheduling or transport delays."
+  ]
+}

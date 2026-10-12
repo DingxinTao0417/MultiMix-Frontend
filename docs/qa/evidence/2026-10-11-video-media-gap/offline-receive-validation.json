@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-11",
+  "scope": "Synthetic loopback bytes only; not production acceptance",
+  "firstControlledRun": [
+    {
+      "scenario": "delayed_supply",
+      "receivedBytes": 8192,
+      "valid": true,
+      "readGapMs": 167.1,
+      "longTaskOverlapMs": 0,
+      "eofWaitMs": 0.9,
+      "resourceTimingState": "available",
+      "serverLastWriteMs": 233.1034
+    },
+    {
+      "scenario": "main_thread_block",
+      "receivedBytes": 8192,
+      "valid": true,
+      "readGapMs": 301,
+      "longTaskOverlapMs": 299.9,
+      "eofWaitMs": 0.2,
+      "resourceTimingState": "missing",
+      "serverLastWriteMs": 43.8598
+    },
+    {
+      "scenario": "delayed_eof",
+      "receivedBytes": 8192,
+      "valid": true,
+      "readGapMs": 19.6,
+      "longTaskOverlapMs": 0,
+      "eofWaitMs": 215.8,
+      "resourceTimingState": "available",
+      "serverLastWriteMs": 0.2014
+    }
+  ],
+  "independentReceiverRun": [
+    {
+      "scenario": "delayed_supply",
+      "serverStartUtc": "2026-10-11T05:08:19.280Z",
+      "lastSystemReceiveUtc": "2026-10-11T05:08:19.5131657Z",
+      "lastSystemReceiveMsFromServerStart": 233.1657,
+      "receivedBytes": 8192,
+      "valid": true,
+      "readGapMs": 193.7,
+      "longTaskOverlapMs": 0,
+      "lastByteCallbackMs": 240.4,
+      "eofWaitMs": 4.1
+    },
+    {
+      "scenario": "main_thread_block",
+      "serverStartUtc": "2026-10-11T05:08:19.557Z",
+      "lastSystemReceiveUtc": "2026-10-11T05:08:19.5917321Z",
+      "lastSystemReceiveMsFromServerStart": 34.7321,
+      "receivedBytes": 8192,
+      "valid": true,
+      "readGapMs": 313.5,
+      "longTaskOverlapMs": 300.9,
+      "lastByteCallbackMs": 323.9,
+      "eofWaitMs": 0.9,
+      "resourceTimingState": "missing"
+    },
+    {
+      "scenario": "delayed_eof",
+      "serverStartUtc": "2026-10-11T05:08:19.890Z",
+      "lastDataSystemReceiveUtc": "2026-10-11T05:08:19.8909348Z",
+      "endMarkerSystemReceiveUtc": "2026-10-11T05:08:20.1218226Z",
+      "receivedBytes": 8192,
+      "valid": true,
+      "lastByteCallbackMs": 7.2,
+      "eofWaitMs": 230.6
+    }
+  ],
+  "clockLimits": "ETW UTC offsets above use the local server UTC marker (millisecond precision). Browser callback offsets use that document's performance clock relative to fetch. These have different origins and must not be subtracted as an exact dispatch delay.",
+  "eventDefinitions": {
+    "1074": "TCP received data; verified against the installed provider manifest",
+    "1157": "TCP delivery and accepted bytes; verified against the installed provider manifest",
+    "1602": "TCP fast RX batch; verified against the installed provider manifest"
+  },
+  "systemTraceLimits": "Connection aliases are for the controlled loopback run. TCP counts include HTTP headers/chunk framing. They do not identify a production HTTPS request or HTTP/2/3 stream. General provider events ignored port filtering; raw traces and diagnostic CAB must be removed, never published.",
+  "checks": {
+    "newObservationTests": 13,
+    "existingBoundaryTests": 98,
+    "focusedTotal": 111,
+    "passed": true,
+    "focusedLintPassed": true,
+    "observationTypecheckPassed": true
+  },
+  "productionReadiness": {
+    "gatePassed": false,
+    "reason": "No supported request/stream-level independent receive capture through the current browser control APIs. ResourceTiming plus missing long-task events or encrypted connection-level ETW cannot establish a network root cause.",
+    "newApplicationRequests": 0,
+    "ledgerUsed": 1387,
+    "ledgerCap": 1482,
+    "remaining": 95,
+    "newASR": 0,
+    "newVision": 0,
+    "newGeneration": 0,
+    "deployment": false,
+    "historicalRootCauseConfirmed": false
+  },
+  "experimentalSourceHashes": {
+    "lib/media-receive-observation.ts": "7c06ca86017babc304ba0fdf725891d73433c70b9a78b71fb5172ab2391ee45a",
+    "lib/__tests__/media-receive-observation.test.ts": "bdce737fcd2ed4841a0c2fc87994d4dbf572c2a520cb2fbbad60f2dd94eae859"
+  },
+  "cleanup": {
+    "taskTabsClosed": true,
+    "fixtureRemoved": true,
+    "rawTraceRemoved": true,
+    "systemTraceStopped": true,
+    "taskServerStopped": true,
+    "productionDataUnchanged": true
+  }
+}

@@ -1,0 +1,554 @@
+{
+  "date": "2026-10-11",
+  "deployment": "dpl_GmT4k1G8CYVnh1vqhETtkXfcFq3u",
+  "commit": "db13b0927f241316cbc9290190b76bb22ce9079d",
+  "browser": "Chrome extension-controlled ordinary browser",
+  "scope": "Approved one existing-video cold preparation, at most 30 application HTTP; no generation, ASR, analysis or product writes",
+  "observedFirstFrame": true,
+  "fullPlaybackVerified": false,
+  "tabClosed": true,
+  "video": {
+    "durationMs": 88474,
+    "bytes": 36077615,
+    "requests": 12,
+    "cache": "miss"
+  },
+  "audio": {
+    "durationMs": 1254,
+    "bytes": 765203,
+    "requests": 1
+  },
+  "editor": {
+    "mounted": "2026-10-11T03:34:05.675Z",
+    "ready": "2026-10-11T03:35:37.442Z",
+    "elapsedMs": 91767
+  },
+  "parts": [
+    {
+      "timestamp": "2026-10-11T03:34:15.721Z",
+      "rangeStart": 0,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 6755,
+      "responseWaitMs": 1248,
+      "bodyReadMs": 5508,
+      "firstByteMs": 25,
+      "lastByteMs": 5502,
+      "maxBodyIdleMs": 296,
+      "relayMs": 855,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:18.998Z",
+      "rangeStart": 3145728,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 3277,
+      "responseWaitMs": 1080,
+      "bodyReadMs": 2197,
+      "firstByteMs": 89,
+      "lastByteMs": 2193,
+      "maxBodyIdleMs": 119,
+      "relayMs": 900,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:21.226Z",
+      "rangeStart": 6291456,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 2226,
+      "responseWaitMs": 836,
+      "bodyReadMs": 1390,
+      "firstByteMs": 1,
+      "lastByteMs": 1383,
+      "maxBodyIdleMs": 103,
+      "relayMs": 590,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:23.060Z",
+      "rangeStart": 9437184,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 1834,
+      "responseWaitMs": 627,
+      "bodyReadMs": 1206,
+      "firstByteMs": 1,
+      "lastByteMs": 1204,
+      "maxBodyIdleMs": 153,
+      "relayMs": 456,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:24.996Z",
+      "rangeStart": 12582912,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 1932,
+      "responseWaitMs": 898,
+      "bodyReadMs": 1034,
+      "firstByteMs": 41,
+      "lastByteMs": 1032,
+      "maxBodyIdleMs": 92,
+      "relayMs": 678,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:26.943Z",
+      "rangeStart": 15728640,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 1947,
+      "responseWaitMs": 871,
+      "bodyReadMs": 1076,
+      "firstByteMs": 69,
+      "lastByteMs": 1073,
+      "maxBodyIdleMs": 101,
+      "relayMs": 674,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:28.975Z",
+      "rangeStart": 18874368,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 2032,
+      "responseWaitMs": 1166,
+      "bodyReadMs": 866,
+      "firstByteMs": 89,
+      "lastByteMs": 863,
+      "maxBodyIdleMs": 89,
+      "relayMs": 990,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:30.708Z",
+      "rangeStart": 22020096,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 1733,
+      "responseWaitMs": 804,
+      "bodyReadMs": 929,
+      "firstByteMs": 0,
+      "lastByteMs": 879,
+      "maxBodyIdleMs": 119,
+      "relayMs": 627,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:34:32.570Z",
+      "rangeStart": 25165824,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 1861,
+      "responseWaitMs": 838,
+      "bodyReadMs": 1023,
+      "firstByteMs": 90,
+      "lastByteMs": 1017,
+      "maxBodyIdleMs": 277,
+      "relayMs": 660,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:35:34.071Z",
+      "rangeStart": 28311552,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 61501,
+      "responseWaitMs": 905,
+      "bodyReadMs": 60596,
+      "firstByteMs": 10,
+      "lastByteMs": 60593,
+      "maxBodyIdleMs": 59850,
+      "relayMs": 722,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:35:36.162Z",
+      "rangeStart": 31457280,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "durationMs": 2090,
+      "responseWaitMs": 1002,
+      "bodyReadMs": 1088,
+      "firstByteMs": 3,
+      "lastByteMs": 1078,
+      "maxBodyIdleMs": 160,
+      "relayMs": 795,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    },
+    {
+      "timestamp": "2026-10-11T03:35:37.434Z",
+      "rangeStart": 34603008,
+      "receivedBytes": 1474607,
+      "status": 206,
+      "durationMs": 1272,
+      "responseWaitMs": 729,
+      "bodyReadMs": 544,
+      "firstByteMs": 0,
+      "lastByteMs": 540,
+      "maxBodyIdleMs": 149,
+      "relayMs": 563,
+      "interPartGapMs": 0,
+      "freezeCount": 0,
+      "resumeCount": 0,
+      "startVisibility": "visible",
+      "endVisibility": "visible"
+    }
+  ],
+  "relay": [
+    {
+      "timestamp": "2026-10-11T03:35:36.848Z",
+      "outcome": "delivered",
+      "rangeStart": 34603008,
+      "receivedBytes": 1474607,
+      "status": 206,
+      "upstreamHeadersMs": 471,
+      "upstreamBodyMs": 92,
+      "relayMs": 563
+    },
+    {
+      "timestamp": "2026-10-11T03:35:36.286Z",
+      "outcome": "started",
+      "rangeStart": 34603008
+    },
+    {
+      "timestamp": "2026-10-11T03:35:35.004Z",
+      "outcome": "delivered",
+      "rangeStart": 31457280,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 573,
+      "upstreamBodyMs": 222,
+      "relayMs": 795
+    },
+    {
+      "timestamp": "2026-10-11T03:35:34.209Z",
+      "outcome": "started",
+      "rangeStart": 31457280
+    },
+    {
+      "timestamp": "2026-10-11T03:34:33.427Z",
+      "outcome": "delivered",
+      "rangeStart": 28311552,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 376,
+      "upstreamBodyMs": 346,
+      "relayMs": 722
+    },
+    {
+      "timestamp": "2026-10-11T03:34:32.705Z",
+      "outcome": "started",
+      "rangeStart": 28311552
+    },
+    {
+      "timestamp": "2026-10-11T03:34:31.478Z",
+      "outcome": "delivered",
+      "rangeStart": 25165824,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 450,
+      "upstreamBodyMs": 209,
+      "relayMs": 660
+    },
+    {
+      "timestamp": "2026-10-11T03:34:30.818Z",
+      "outcome": "started",
+      "rangeStart": 25165824
+    },
+    {
+      "timestamp": "2026-10-11T03:34:29.721Z",
+      "outcome": "delivered",
+      "rangeStart": 22020096,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 501,
+      "upstreamBodyMs": 126,
+      "relayMs": 627
+    },
+    {
+      "timestamp": "2026-10-11T03:34:29.094Z",
+      "outcome": "started",
+      "rangeStart": 22020096
+    },
+    {
+      "timestamp": "2026-10-11T03:34:28.064Z",
+      "outcome": "delivered",
+      "rangeStart": 18874368,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 684,
+      "upstreamBodyMs": 306,
+      "relayMs": 990
+    },
+    {
+      "timestamp": "2026-10-11T03:34:27.074Z",
+      "outcome": "started",
+      "rangeStart": 18874368
+    },
+    {
+      "timestamp": "2026-10-11T03:34:25.788Z",
+      "outcome": "delivered",
+      "rangeStart": 15728640,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 381,
+      "upstreamBodyMs": 293,
+      "relayMs": 674
+    },
+    {
+      "timestamp": "2026-10-11T03:34:25.114Z",
+      "outcome": "started",
+      "rangeStart": 15728640
+    },
+    {
+      "timestamp": "2026-10-11T03:34:23.862Z",
+      "outcome": "delivered",
+      "rangeStart": 12582912,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 537,
+      "upstreamBodyMs": 142,
+      "relayMs": 678
+    },
+    {
+      "timestamp": "2026-10-11T03:34:23.184Z",
+      "outcome": "started",
+      "rangeStart": 12582912
+    },
+    {
+      "timestamp": "2026-10-11T03:34:21.802Z",
+      "outcome": "delivered",
+      "rangeStart": 9437184,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 343,
+      "upstreamBodyMs": 113,
+      "relayMs": 456
+    },
+    {
+      "timestamp": "2026-10-11T03:34:21.346Z",
+      "outcome": "started",
+      "rangeStart": 9437184
+    },
+    {
+      "timestamp": "2026-10-11T03:34:19.713Z",
+      "outcome": "delivered",
+      "rangeStart": 6291456,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 399,
+      "upstreamBodyMs": 191,
+      "relayMs": 590
+    },
+    {
+      "timestamp": "2026-10-11T03:34:19.123Z",
+      "outcome": "started",
+      "rangeStart": 6291456
+    },
+    {
+      "timestamp": "2026-10-11T03:34:16.748Z",
+      "outcome": "delivered",
+      "rangeStart": 3145728,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 726,
+      "upstreamBodyMs": 174,
+      "relayMs": 900
+    },
+    {
+      "timestamp": "2026-10-11T03:34:15.847Z",
+      "outcome": "started",
+      "rangeStart": 3145728
+    },
+    {
+      "timestamp": "2026-10-11T03:34:10.116Z",
+      "outcome": "delivered",
+      "rangeStart": 0,
+      "receivedBytes": 3145728,
+      "status": 206,
+      "upstreamHeadersMs": 678,
+      "upstreamBodyMs": 178,
+      "relayMs": 855
+    },
+    {
+      "timestamp": "2026-10-11T03:34:09.261Z",
+      "outcome": "started",
+      "rangeStart": 0
+    }
+  ],
+  "http": [
+    {
+      "timestamp": "2026-10-11T03:34:06.721065794Z",
+      "status": 200,
+      "method": "OPTIONS",
+      "route": "project",
+      "durationMs": 6
+    },
+    {
+      "timestamp": "2026-10-11T03:34:08.713469170Z",
+      "status": 200,
+      "method": "GET",
+      "route": "project",
+      "durationMs": 1639
+    },
+    {
+      "timestamp": "2026-10-11T03:34:09.530343249Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 342
+    },
+    {
+      "timestamp": "2026-10-11T03:34:10.114249076Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 811
+    },
+    {
+      "timestamp": "2026-10-11T03:34:16.746216566Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 888
+    },
+    {
+      "timestamp": "2026-10-11T03:34:19.711127692Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 585
+    },
+    {
+      "timestamp": "2026-10-11T03:34:21.801068440Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 450
+    },
+    {
+      "timestamp": "2026-10-11T03:34:23.861746607Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 674
+    },
+    {
+      "timestamp": "2026-10-11T03:34:25.786262941Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 670
+    },
+    {
+      "timestamp": "2026-10-11T03:34:28.065920281Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 986
+    },
+    {
+      "timestamp": "2026-10-11T03:34:29.720187649Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 623
+    },
+    {
+      "timestamp": "2026-10-11T03:34:31.474852517Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 654
+    },
+    {
+      "timestamp": "2026-10-11T03:34:33.426102273Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 718
+    },
+    {
+      "timestamp": "2026-10-11T03:35:35.003031059Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 773
+    },
+    {
+      "timestamp": "2026-10-11T03:35:36.846830636Z",
+      "status": 206,
+      "method": "GET",
+      "route": "media",
+      "durationMs": 558
+    }
+  ],
+  "budget": {
+    "start": 1355,
+    "used": 15,
+    "end": 1370,
+    "cap": 1482,
+    "remaining": 112,
+    "usdCeiling": 1,
+    "newModelCalls": 0
+  },
+  "conclusion": "Mid-body no-progress interval 59850ms after relay completed in 722ms. The exact downstream transport cause is unconfirmed; no performance behavior patch implemented.",
+  "networkFacts": {
+    "windowsSystemProxyEnabled": false,
+    "chromeExplicitProxyFlagsPresent": false,
+    "cliProxyConfigured": true,
+    "proxyLocalPort": 7893,
+    "activeTunnel": true,
+    "tunnelDefaultRouteMetric": 0,
+    "wlanDefaultRouteMetric": 100,
+    "mediaSpecificAppendRuleFound": false,
+    "actualBrowserRouteNotProven": true
+  }
+}

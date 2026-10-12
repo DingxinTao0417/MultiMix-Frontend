@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-11
+> Last verified: 2026-10-13
 
 前端文档只描述工作台产品、UI、adapter、路由、环境变量和部署。跨仓库权威入口见[后端文档地图](../../MultiMix-Backend/docs/README.md)，共享规则以该入口列出的authority为准。
 
@@ -14,6 +14,10 @@
 - [视频清晰度审查与增强（暂停）](../../MultiMix-Backend/docs/specs/video-clarity-review-and-enhancement.md)：模型未指定，审查面板及增强确认入口关闭；历史媒体保留，未发布。历史软件6/7不代表真实增强验收通过，重新开启须新决定。
 - [视频内容局部修改](../../MultiMix-Backend/docs/specs/video-element-editing-future-capability.md)：口型、烧录文字/Logo、改色、动作迁移、换人和复杂物品的分批验证路线、开源候选、工具分工及统一确认/候选应用/恢复；不自动扩大首发P0或销售承诺。
 - `DEPLOYMENT.md`：Vercel/Railway 部署与本地端到端冒烟。
+
+- [历史视频通知与下载](plans/active/2026-09-26-historical-video-notice-and-download.md)：历史通知的离线验证已记录，产品下载验收因素材质量失败停止，仍未完成；原会话接续，本轮只保存文档。
+- [加载间隔诊断（已取消）](qa/2026-10-11-video-media-gap-diagnostic.md)与[归档计划](archive/plans/2026-10-11-video-media-sixty-second-gap.md)：2026-10-12用户取消，历史3/5不代表性能问题已修复。
+- [文档证据与恢复库存](../../MultiMix-Backend/docs/qa/2026-10-13-documentation-inventory-closeout.md)：前端15条文档记录、2份stash及.tmp清点；其他会话代码和工作树保留。
 
 前端专属缺口、整改范围和验证状态记录在 `plans/active/`；后端与跨端计划统一见[后端active目录](../../MultiMix-Backend/docs/plans/active/)。已完成计划进入各自对应的 `archive/`，不维护容易与代码漂移的第二份 GAPS 清单。
 
