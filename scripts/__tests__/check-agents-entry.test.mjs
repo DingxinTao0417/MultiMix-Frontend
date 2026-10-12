@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -94,4 +95,35 @@ test("checkAll surfaces drift in the workspace root", (t) => {
   const result = checkAll(frontend);
   assert.equal(result.errors.length, 1);
   assert.match(result.errors[0], /^workspace root:/);
+});
+
+test("a frontend task worktree still checks the root and backend entries", (t) => {
+  const root = realpathSync.native(makeDir(t));
+  for (const directory of [root, path.join(root, "MultiMix-Frontend"), path.join(root, "MultiMix-Backend")]) {
+    writePair(directory, { agents: VALID_AGENTS, claude: VALID_CLAUDE });
+  }
+  for (const repo of ["MultiMix-Frontend", "MultiMix-Backend"]) {
+    const directory = path.join(root, repo);
+    mkdirSync(path.join(directory, "docs"), { recursive: true });
+    writeFileSync(path.join(directory, "docs", "README.md"), "# Docs\n");
+    writeFileSync(path.join(directory, ".gitignore"), ".worktrees/\n");
+    const run = (args) =>
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+        cwd: directory,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    run(["init", "-q", "-b", "main"]);
+    run(["add", "."]);
+    run(["commit", "-q", "-m", "init"]);
+  }
+  const worktree = path.join(root, "MultiMix-Frontend", ".worktrees", "task-a");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "claude/task-a", worktree], {
+    cwd: path.join(root, "MultiMix-Frontend"),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  assert.deepEqual(checkAll(worktree).checked, ["MultiMix-Frontend", "workspace root", "MultiMix-Backend"]);
+  // A broken root entry is caught from inside the worktree, not silently skipped.
+  writeFileSync(path.join(root, "CLAUDE.md"), "# Root\n\n- no import\n");
+  assert.ok(checkAll(worktree).errors.some((error) => error.startsWith("workspace root")));
 });

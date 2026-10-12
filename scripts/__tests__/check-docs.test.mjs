@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { checkDocs } from "../check-docs.mjs";
+import { execFileSync } from "node:child_process";
+
+import { checkDocs, findDocsWorkspaceRoot } from "../check-docs.mjs";
 
 const HEADER = `> Status: current
 > Owner: docs
@@ -344,4 +346,65 @@ test("flags archive documents presented as current authority", () => {
   const issues = checkDocs(root);
 
   assert.equal(issues.some((issue) => issue.code === "archive-current-reference"), true);
+});
+
+function gitInit(directory) {
+  const run = (args) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], {
+      cwd: directory,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  fs.writeFileSync(path.join(directory, ".gitignore"), ".worktrees/\n");
+  run(["init", "-q", "-b", "main"]);
+  run(["add", "."]);
+  run(["commit", "-q", "-m", "init"]);
+  return run;
+}
+
+test("a frontend task worktree checks the primary workspace instead of skipping", () => {
+  const root = fs.realpathSync.native(makeSplitWorkspace());
+  try {
+    const frontend = path.join(root, "MultiMix-Frontend");
+    const run = gitInit(frontend);
+    gitInit(path.join(root, "MultiMix-Backend"));
+    const worktree = path.join(frontend, ".worktrees", "task-a");
+    run(["worktree", "add", "-q", "-b", "claude/task-a", worktree]);
+
+    assert.deepEqual(findDocsWorkspaceRoot(frontend), { root, via: "sibling" });
+    assert.deepEqual(findDocsWorkspaceRoot(worktree), { root, via: "git-common-dir" });
+    assert.deepEqual(checkDocs(findDocsWorkspaceRoot(worktree).root), []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a standalone frontend clone without a workspace still skips", () => {
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "standalone-frontend-")));
+  try {
+    const frontend = path.join(base, "MultiMix-Frontend");
+    writeFile(frontend, "docs/README.md", "# Frontend Docs\n");
+    gitInit(frontend);
+    assert.equal(findDocsWorkspaceRoot(frontend), null);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("does not treat a plan with items awaiting cross-side verification as completed", () => {
+  const root = makeSplitWorkspace();
+  try {
+    writeFile(root, "MultiMix-Backend/docs/plans/active/plan.md", `> Status: active-plan
+> Owner: docs
+> Last verified: 2026-10-12
+
+# Cross-stack
+
+- [x] T1 backend field
+- [~] T2 frontend display, awaiting backend verification
+`);
+
+    assert.equal(checkDocs(root).some((issue) => issue.code === "active-plan"), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -183,11 +183,62 @@ function unlinkSharedDependencies(worktree, linked) {
   if (stat?.isSymbolicLink()) unlinkSync(target);
 }
 
-function removeWorktree(workspaceRoot, repo, worktree, linked, branch) {
-  unlinkSharedDependencies(worktree, linked);
-  git(repoRoot(workspaceRoot, repo), ["worktree", "remove", worktree]);
+function isRegisteredWorktree(workspaceRoot, repo, worktree) {
+  const listing = git(repoRoot(workspaceRoot, repo), ["worktree", "list", "--porcelain"]);
+  const wanted = path.resolve(worktree).toLowerCase();
+  return listing
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .some((line) => path.resolve(line.slice("worktree ".length)).toLowerCase() === wanted);
+}
+
+function branchExists(workspaceRoot, repo, branch) {
+  return Boolean(
+    git(repoRoot(workspaceRoot, repo), ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
+      allowFailure: true,
+    }),
+  );
+}
+
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// Windows can briefly hold a just-used directory (indexer, antivirus, editor
+// watchers), so `worktree remove` may fail once and then succeed.
+export const REMOVE_RETRY_DELAYS_MS = [200, 600, 1200];
+
+function removeWorktreeDirectory(workspaceRoot, repo, worktree, { retryDelays = REMOVE_RETRY_DELAYS_MS } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      git(repoRoot(workspaceRoot, repo), ["worktree", "remove", worktree]);
+      return;
+    } catch (error) {
+      lastError = error;
+      const transient = /permission denied|device or resource busy|ebusy|being used by another process/i.test(
+        error instanceof Error ? error.message : String(error),
+      );
+      if (!transient || attempt === retryDelays.length) break;
+      sleep(retryDelays[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+// Every step is safe to repeat, so a cleanup interrupted after landing can be
+// completed by running finish again: removed worktrees and deleted branches are
+// skipped instead of failing.
+function removeWorktree(workspaceRoot, repo, worktree, linked, branch, options) {
+  if (existsSync(worktree)) unlinkSharedDependencies(worktree, linked);
+  if (isRegisteredWorktree(workspaceRoot, repo, worktree)) {
+    if (existsSync(worktree)) removeWorktreeDirectory(workspaceRoot, repo, worktree, options);
+    else git(repoRoot(workspaceRoot, repo), ["worktree", "prune"]);
+  }
   // -d only: an unmerged branch is never deleted here.
-  git(repoRoot(workspaceRoot, repo), ["branch", "-d", branch]);
+  if (branchExists(workspaceRoot, repo, branch)) {
+    git(repoRoot(workspaceRoot, repo), ["branch", "-d", branch]);
+  }
 }
 
 export function startTask({
@@ -297,7 +348,7 @@ export function landRepository({ workspaceRoot, repo, branch, owner, base = "mai
   );
 }
 
-export function finishTask({ workspaceRoot, token, keep = false }) {
+export function finishTask({ workspaceRoot, token, keep = false, retryDelays = REMOVE_RETRY_DELAYS_MS }) {
   const root = path.resolve(workspaceRoot);
   const entry = findTask(root, token);
   // The plan may only exist on the task branch until it lands.
@@ -307,15 +358,29 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   }));
   checkWorkGuard({ workspaceRoot: root, token, extraPlanRoots: taskPlanRoots });
 
+  // A worktree that is already gone was removed by an earlier, interrupted
+  // finish; its branch is still checked by the fast-forward rules below.
   for (const { worktree } of entry.repos) {
-    const dirty = git(path.join(root, worktree), ["status", "--porcelain"]);
+    const absolute = path.join(root, worktree);
+    if (!existsSync(absolute)) continue;
+    const dirty = git(absolute, ["status", "--porcelain"]);
     if (dirty) {
       throw new Error(`${worktree} has uncommitted changes; commit or discard them before finishing:\n${dirty}`);
     }
   }
 
   const landed = [];
-  for (const { repo } of entry.repos) {
+  for (const { repo, worktree } of entry.repos) {
+    // `branch -d` only ever deletes a branch that is fully merged, so a missing
+    // branch whose worktree is also gone means an earlier finish already landed
+    // and cleaned this repository.
+    if (
+      !branchExists(root, repo, entry.branch) &&
+      !isRegisteredWorktree(root, repo, path.join(root, worktree))
+    ) {
+      landed.push({ repo, status: "already-cleaned" });
+      continue;
+    }
     try {
       landed.push(
         landRepository({ workspaceRoot: root, repo, branch: entry.branch, owner: entry.owner, base: entry.base }),
@@ -329,8 +394,17 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   }
 
   if (!keep) {
+    const cleaned = [];
     for (const { repo, worktree, linked } of entry.repos) {
-      removeWorktree(root, repo, path.join(root, worktree), linked, entry.branch);
+      try {
+        removeWorktree(root, repo, path.join(root, worktree), linked, entry.branch, { retryDelays });
+        cleaned.push(repo);
+      } catch (error) {
+        const pending = entry.repos.map((item) => item.repo).filter((item) => !cleaned.includes(item));
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nAll repositories are landed; cleanup is pending for: ${pending.join(", ")}. The claim and task record are kept; run finish again to complete the cleanup.`,
+        );
+      }
     }
     endWorkGuard({ workspaceRoot: root, token });
     updateTasks(root, (data) => {

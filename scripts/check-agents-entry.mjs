@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { resolveWorkspaceRoot } from "./workspace-work-guard.mjs";
+
 export const IMPORT_LINE = "@AGENTS.md";
 export const MAX_ENTRY_LINES = 60;
 
@@ -51,9 +53,23 @@ export function checkEntryPair(directory, label = directory) {
 }
 
 // The frontend pair is always checked. Workspace-level pairs are checked only when
-// present, so a standalone frontend checkout (CI) still passes.
+// present, so a standalone frontend checkout (CI) still passes. A task worktree
+// has no sibling root/backend, so those pairs come from the primary workspace
+// that owns the git common directory.
+function workspaceRootFor(frontendRoot) {
+  const sibling = path.resolve(frontendRoot, "..");
+  if (existsSync(path.join(sibling, "AGENTS.md"))) return sibling;
+  try {
+    const primary = resolveWorkspaceRoot(frontendRoot);
+    if (existsSync(path.join(primary, "AGENTS.md"))) return primary;
+  } catch {
+    // Standalone frontend clone: only the frontend pair applies.
+  }
+  return sibling;
+}
+
 export function checkAll(frontendRoot) {
-  const workspaceRoot = path.resolve(frontendRoot, "..");
+  const workspaceRoot = workspaceRootFor(frontendRoot);
   const targets = [{ directory: frontendRoot, label: "MultiMix-Frontend", required: true }];
   if (existsSync(path.join(workspaceRoot, "AGENTS.md"))) {
     targets.push({ directory: workspaceRoot, label: "workspace root", required: true });

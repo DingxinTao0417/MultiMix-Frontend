@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -19,6 +20,7 @@ import {
   finishTask,
   landRepository,
   mergeLockName,
+  REMOVE_RETRY_DELAYS_MS,
   releaseTask,
   startTask,
   taskStatus,
@@ -405,4 +407,88 @@ test("release refuses tokens that do not own a task", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("finish completes a cleanup interrupted after landing, even with the worktree gone", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+
+    // Simulate the 2026-10-12 F3 state: landed on main, git emptied the
+    // worktree but could not delete its directory, branch and claim remain.
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+    assert.equal(git(frontend, ["rev-parse", "main"]), head);
+    unlinkSync(path.join(worktree, "node_modules"));
+    rmSync(worktree, { recursive: true, force: true });
+    assert.equal(existsSync(worktree), false);
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.cleanedUp, true);
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(git(frontend, ["worktree", "list"]).includes("task-a"), false, "stale worktree entry pruned");
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    assert.ok(existsSync(path.join(frontend, "node_modules", "pkg", "index.js")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("finish resumes after the worktree and branch were already removed", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    // Cleanup got as far as removing worktree and branch, then stopped.
+    unlinkSync(path.join(worktree, "node_modules"));
+    git(frontend, ["worktree", "remove", worktree]);
+    git(frontend, ["branch", "-d", "claude/task-a"]);
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.deepEqual(result.landed, [{ repo: "frontend", status: "already-cleaned" }]);
+    assert.equal(result.cleanedUp, true);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a cleanup failure after landing keeps the claim and reports what is pending", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    // A locked worktree makes `git worktree remove` refuse with a non-transient
+    // error, so finish must stop without retrying or forcing the removal.
+    git(frontend, ["worktree", "lock", worktree, "--reason", "test"]);
+    assert.throws(
+      () => finishTask({ workspaceRoot: root, token: entry.token, retryDelays: [] }),
+      /All repositories are landed; cleanup is pending for: frontend.*run finish again/s,
+    );
+    assert.equal(git(frontend, ["rev-parse", "main"]), head, "landing is kept");
+    assert.ok(existsSync(worktree), "worktree is kept");
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1, "claim is kept");
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks.length, 1, "task record is kept");
+
+    git(frontend, ["worktree", "unlock", worktree]);
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(existsSync(worktree), false);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("worktree removal retries are bounded", () => {
+  assert.ok(REMOVE_RETRY_DELAYS_MS.length <= 3);
+  assert.ok(REMOVE_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0) <= 2000);
 });

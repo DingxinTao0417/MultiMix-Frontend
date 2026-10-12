@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { resolveWorkspaceRoot } from "./workspace-work-guard.mjs";
+
 const GOVERNED_MARKDOWN_DIRS = [
   "docs",
   "MultiMix-Frontend/docs",
@@ -306,7 +308,9 @@ function checkActivePlans(workspaceRoot, files, issues) {
 
     const content = readText(file);
     const hasCheckedItem = /^\s*-\s*\[[xX]\]/m.test(content);
-    const hasUncheckedItem = /^\s*-\s*\[ \]/m.test(content);
+    // `[~]` (done, awaiting the other side's verification) is still open under
+    // the cross-stack ordering rule; only an all-[x] checklist is complete.
+    const hasUncheckedItem = /^\s*-\s*\[[ ~]\]/m.test(content);
     const completedChecklist = hasCheckedItem && !hasUncheckedItem;
     if (
       completedChecklist ||
@@ -392,19 +396,31 @@ export function formatIssues(issues) {
   return lines.join("\n");
 }
 
-function getDefaultWorkspaceRoot() {
-  const scriptPath = fileURLToPath(import.meta.url);
-  const frontendRoot = path.resolve(path.dirname(scriptPath), "..");
-  const workspaceRoot = path.resolve(frontendRoot, "..");
-
-  if (
+function hasSplitDocs(workspaceRoot) {
+  return (
     exists(path.join(workspaceRoot, "MultiMix-Frontend", "docs", "README.md")) &&
     exists(path.join(workspaceRoot, "MultiMix-Backend", "docs", "README.md"))
-  ) {
-    return workspaceRoot;
-  }
+  );
+}
 
+// A task worktree (MultiMix-Frontend/.worktrees/<task>) has no sibling backend,
+// so fall back to the primary workspace that owns the git common directory
+// instead of silently skipping. A standalone frontend clone (CI) still skips.
+export function findDocsWorkspaceRoot(frontendRoot) {
+  const sibling = path.resolve(frontendRoot, "..");
+  if (hasSplitDocs(sibling)) return { root: sibling, via: "sibling" };
+  try {
+    const primary = resolveWorkspaceRoot(frontendRoot);
+    if (hasSplitDocs(primary)) return { root: primary, via: "git-common-dir" };
+  } catch {
+    // Not inside a MultiMix workspace: fall through to the standalone skip.
+  }
   return null;
+}
+
+function getDefaultWorkspaceRoot() {
+  const scriptPath = fileURLToPath(import.meta.url);
+  return findDocsWorkspaceRoot(path.resolve(path.dirname(scriptPath), ".."));
 }
 
 function isCliEntry() {
@@ -413,14 +429,19 @@ function isCliEntry() {
 
 if (isCliEntry()) {
   const explicitRoot = process.argv[2] || process.env.MULTIMIX_WORKSPACE_ROOT;
-  const workspaceRoot = explicitRoot ? path.resolve(explicitRoot) : getDefaultWorkspaceRoot();
-  if (!workspaceRoot) {
+  const found = explicitRoot ? { root: path.resolve(explicitRoot), via: "explicit" } : getDefaultWorkspaceRoot();
+  if (!found) {
     console.log(
       "Docs check skipped: split frontend/backend docs were not found next to this frontend checkout. Pass MULTIMIX_WORKSPACE_ROOT or a CLI path to check it explicitly.",
     );
     process.exitCode = 0;
   } else {
-    const issues = checkDocs(workspaceRoot);
+    if (found.via === "git-common-dir") {
+      // Edits still on the task branch are not in the primary workspace yet;
+      // rerun after landing to cover them.
+      console.log(`Docs check uses the primary workspace ${found.root} (task worktree has no sibling docs).`);
+    }
+    const issues = checkDocs(found.root);
     console.log(formatIssues(issues));
     process.exitCode = issues.length === 0 ? 0 : 1;
   }
