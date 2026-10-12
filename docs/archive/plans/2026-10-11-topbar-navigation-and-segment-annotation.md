@@ -1,6 +1,6 @@
 # 顶栏导航（N1）与分镜批注式修改（B）实施计划
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-10-12
 
@@ -90,7 +90,7 @@
 - 发送后、切换产物、点 × 后提示条消失，下一次发送不带 `selected_scene_id`。
 - 无写入能力时（`canGenerate=false`）不显示「说这镜」。
 
-### T5 项目切换器与浮层面板
+### T5 项目切换器与浮层面板 ✅（提交 C `06d5313`）
 
 **改法：**
 
@@ -112,7 +112,7 @@
 - 新增：角标数与需处理项目数一致；为 0 时不存在。
 - 保留：最近 8 条、搜索覆盖全集、三种状态文字。
 
-### T6 AI 后台状态迁入头部与 ⌘K
+### T6 AI 后台状态迁入头部与 ⌘K ✅（提交 C `06d5313`）
 
 1. `<AiBackgroundStatus>`（`:4282`）从 `<aside>` 移到三个页面头部右侧，无任务时整条隐藏。
    紧凑形态：「● AI 后台工作中」胶囊，点击展开现有说明文字。
@@ -122,7 +122,7 @@
 
 **测试：** ⌘K 与 Ctrl+K 均能打开；Escape 关闭后焦点回到触发前的元素。
 
-### T7 移除左侧常驻导航
+### T7 移除左侧常驻导航 ✅（提交 C `06d5313`；浏览器验收与截图基线 `d7ca0c8`）
 
 1. `globals.css:146` 外壳 `grid-template-columns: 264px minmax(0,1fr)` 改为 `minmax(0,1fr)`。
 2. 删除 `sidebar-collapsed`、`sidebar-expanded` 在桌面上的布局规则与 52px 折叠轨（`:4000` 起）。
@@ -140,7 +140,7 @@
 - 新增：桌面宽度下不存在常驻 `aside`，工作区占满宽度。
 - 1280–1920px 无横向溢出。
 
-### T8 同步文档、原型与截图基线
+### T8 同步文档、原型与截图基线 ✅（提交 D）
 
 1. `docs/MULTIMIX_WORKSPACE_DESIGN.md` 第 3、4 节改写为新结构，删除顶部「方向变更」提示。
 2. `docs/specs/ui/agentic-workbench-design.md` 第 4、5.1 节改写，决策 10、11 的「实施中」改为已落地。
@@ -219,3 +219,17 @@ npm --prefix MultiMix-Frontend run docs:check
 - 手机端完整创作流程（用户确认桌面优先，窄屏仅保证可看）。
 - 资源库四库页面本身的浏览体验。
 - 生成态极光、打字光标、实时引用亮框。
+
+## 10. 完成结果（2026-10-12）
+
+- 全部 7 项完成（T2 复核后撤回）。提交：`8870b48` 计划，`91a4a10` T1+T3，`60c6c49`、`40321c7` T4，`06d5313` T5–T7，`d7ca0c8` 浏览器测试与截图基线，提交 D 文档与原型。
+- **与原设计的偏离，均已在执行中确认：**
+  - T4 只解除「说这镜」自身的绑定，普通点分镜卡跳转的既有焦点行为不变。
+  - T5–T7 合并为一次提交：三项改的是同一个导航外壳，拆开会产生没有独立验收意义的中间形态。
+  - 对话页的切换器不重复显示项目名（头部已有），避免 521px 窄屏下标题只剩约 26px。
+  - 项目列表加载失败的提示与「重新加载」移到页面头部，面板关闭时也可见。这是去掉侧栏后发现的回归。
+- **播放器截图基线：** 用户 2026-10-12 当次明确批准。展示区变宽，播放器按既有规则从约 434×280 放大到约 560×350，外壳 CSS 未改动。win32 与 ci-win32 已更新；darwin 基线需在 macOS 上重新生成，**本次未更新**。
+- **验证：** typecheck、lint、`check:video-preview-contract`（含 13 项自检）、`test:product-stage-style` 通过；单元测试 1729/1729；隔离 `test:display-coverage` 中本任务引起的 5 项回归全部修复，复跑通过。
+- **与本任务无关、在干净 `main` 上同样失败的既有问题：** `CASE-14 exports distinct original and branded images`、`case-10-required-media-optional-compile-failed`、`case-11-non-retryable-reframe-failed`。另有 `product-draft-navigation`、`runtime-write-capability-gating` 各一项在全量并发下偶发失败，单独运行稳定通过。
+- **遗留待用户确认：** 品牌 mark 是否从渐变改为单色（V3 规范第 8 节）。
+- **未转交成功的跨任务问题：** 改造后的 `work:guard` 在 `<repo>/.worktrees/<task>` 嵌套布局下找不到只存在于 worktree 的计划文件（`localCheckoutRoot()` 解析到主工作区根）。曾发给改造任务负责会话，因权限模式不同未送达，需用户转达。

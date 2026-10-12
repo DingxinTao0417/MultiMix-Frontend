@@ -23,7 +23,7 @@ body{
   -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.6;
   display:grid;grid-template-rows:44px minmax(0,1fr);min-width:1280px;
 }
-.app{display:grid;grid-template-columns:264px minmax(0,1fr);min-height:0}
+.app{display:grid;grid-template-columns:minmax(0,1fr);min-height:0}
 .topbar{display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);
   background:var(--bg);position:relative;z-index:3}
 .crumb{font-size:12.5px;color:var(--ink-3)}
@@ -31,15 +31,6 @@ body{
 .diag{margin-left:auto;display:flex;align-items:center;gap:5px;height:28px;padding:0 11px;border-radius:999px;
   border:1px solid var(--line);font-size:12px;color:var(--ink-3);background:var(--surface)}
 .diag:hover{color:var(--ink-2);transform:translateY(-1px)}
-.rail{display:none;flex-direction:column;align-items:center;gap:8px;padding:14px 0;border-right:1px solid var(--line);
-  position:relative;z-index:2;background:var(--bg)}
-body.side-collapsed .rail{display:flex}
-body.side-collapsed .app{grid-template-columns:52px minmax(0,1fr)}
-.rail .ico-sm{width:32px;height:32px;border-radius:9px}
-.rail .plus{background:var(--ink);color:#fff}
-.rail .plus:hover{background:var(--ink);color:#fff}
-.rail .sp2{flex:1}
-.rail .avatar{width:30px;height:30px;font-size:12px}
 .tray{display:none;flex-wrap:wrap;gap:7px;padding:0 2px 4px}
 .tray.show{display:flex}
 .tray .att{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface-2);
@@ -241,11 +232,6 @@ svg{flex:none;display:block}
 .cmenu button:hover{background:var(--surface-2);color:var(--ink)}
 .cmenu button.danger{color:#B42318}
 .user .logout{margin-left:auto}
-body.side-collapsed{grid-template-columns:minmax(0,1fr)}
-body.side-collapsed .sidebar{display:none}
-.expand-btn{position:fixed;left:12px;top:12px;z-index:70;width:34px;height:34px;border-radius:50%;
-  background:var(--surface);border:1px solid var(--line);display:none;place-items:center;color:var(--ink-2);box-shadow:var(--shadow-card)}
-body.side-collapsed .expand-btn{display:grid}
 
 @media (max-width:1024px){
   body{min-width:0}
@@ -258,7 +244,7 @@ body.side-collapsed .expand-btn{display:grid}
 @media (max-width:768px){
   body{height:auto;min-height:100vh;overflow:auto;grid-template-rows:44px auto}
   .app{display:block}
-  .sidebar,.rail{display:none!important}
+  .rail{display:none!important}
   .stage-col{min-height:calc(100vh - 44px);place-items:start center;overflow:visible}
   .hero{max-width:680px;padding:36px 16px 52px}
   .capabilities{align-items:flex-start;flex-direction:column}
@@ -279,36 +265,49 @@ body.side-collapsed .expand-btn{display:grid}
   .case-grid,.case-process,.case-media{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+
+/* 2026-10-12 · 顶栏项目切换器取代常驻侧栏：导航只在点击后以浮层出现 */
+.switcher{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:360px;height:34px;padding:0 10px 0 6px;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.switcher:hover,.switcher[aria-expanded="true"]{border-color:var(--line-2,#ddd9d1);box-shadow:0 8px 18px rgba(24,24,27,.06)}
+.switcher .mk{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;background:var(--ai-grad)}
+.switcher .tt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.switcher .bd{display:grid;place-items:center;flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  background:#FFF3D9;color:#9A6A00;font-size:11.5px;font-weight:700}
+.switcher .cv{flex:none;color:var(--ink-3)}
+.topbar .ai-pill{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px 0 9px;border:1px solid transparent;border-radius:999px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;font-size:12px;font-weight:600;white-space:nowrap}
+.topbar .ai-pill .dot{width:8px;height:8px;border-radius:50%;background:var(--ai-grad)}
+.nav-mask{position:fixed;inset:0;z-index:80;background:rgba(31,28,25,.28);display:none}
+body.nav-open .nav-mask{display:block}
+.app .sidebar{display:none}
+body.nav-open .app .sidebar{display:grid;position:fixed;z-index:81;top:0;left:0;bottom:0;width:min(320px,calc(100vw - 48px));
+  overflow-y:auto;background:var(--bg);box-shadow:8px 0 30px rgba(31,28,25,.12)}
+/* 资源库：四行文字入口，无卡面、无阴影、无彩色底座 */
+.nav{grid-template-columns:minmax(0,1fr)!important;gap:1px!important;border-top:1px solid var(--line);margin-top:10px}
+.nav-title{padding:0 8px 4px!important}
+.nav-item{height:36px!important;border:0!important;border-radius:8px!important;background:transparent!important;box-shadow:none!important;
+  transform:none!important;font-weight:500!important;padding:0 8px!important}
+.nav-item:hover{background:var(--surface-2)!important}
+.nav-item.active{background:#f0ede8!important;font-weight:650!important}
+.nav-icon{width:auto!important;height:auto!important;background:transparent!important;color:var(--ink-3)!important}
 </style>
 </head>
 <body>
 
 <!-- 顶栏 -->
 <div class="topbar">
-  <span class="crumb"><b>新建项目</b></span>
+  <button class="switcher" id="btnExpand" aria-haspopup="dialog" aria-expanded="false" title="切换项目或资源库（⌘K / Ctrl+K）"><span class="mk"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="tt">新建项目</span><span class="bd" title="2 个项目需要处理">2</span><svg class="cv" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <span class="ai-pill" title="正在理解「施工过程记录 #1」，完成后可直接在对话中引用"><span class="dot"></span>AI 正在理解素材</span>
   <button class="diag" onclick="toast('LLM 诊断面板（管理员入口）')">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1.8 8h3l1.6-4.2L9.6 12l1.6-4h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     诊断
   </button>
 </div>
 
+<div class="nav-mask" id="navMask"></div>
 <div class="app">
 
-<!-- 折叠态图标 rail -->
-<div class="rail">
-  <button class="ico-sm" id="btnExpand" title="展开侧边栏">
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M9 6.5 10.5 8 9 9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  </button>
-  <button class="ico-sm plus" title="新建项目" onclick="toast('已在新建项目页')">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-  </button>
-  <button class="ico-sm" title="资产库" onclick="toast('资产库')"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 5.2 8 2.3l5.5 2.9v5.6L8 13.7l-5.5-2.9V5.2Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M2.7 5.3 8 8l5.3-2.7M8 8v5.5" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-  <button class="ico-sm" title="文案库" onclick="toast('文案库')"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5.6 8h4.8M5.6 10.6h3.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
-  <button class="ico-sm" title="图片库" onclick="toast('图片库')"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-  <button class="ico-sm" title="视频库" onclick="toast('视频库')"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-  <span class="sp2"></span>
-  <div class="avatar">陈</div>
-</div>
 
 <!-- 侧边栏 -->
 <aside class="sidebar">
@@ -321,9 +320,7 @@ body.side-collapsed .expand-btn{display:grid}
     <button class="ico-sm" title="首页" onclick="toast('回到首页')">
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.8 6.8 8 2.5l5.2 4.3V13a.8.8 0 0 1-.8.8H9.8V9.6H6.2v4.2H3.6a.8.8 0 0 1-.8-.8V6.8Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </button>
-    <button class="ico-sm" id="btnCollapse" title="折叠侧边栏">
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M6 2.5v11M10.5 6.5 9 8l1.5 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
+    <button class="ico-sm" id="btnCollapse" title="关闭导航（Esc）"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
   </div>
   <button class="new-btn">
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -350,10 +347,6 @@ body.side-collapsed .expand-btn{display:grid}
     <a class="nav-item image"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="1.6" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><path d="M13.2 10.2 10 7.4l-5.6 6" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span>图片</span></a>
     <a class="nav-item video"><span class="nav-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8.4" height="9" rx="1.6" stroke="currentColor" stroke-width="1.5"/><path d="M10.9 7.2 13.5 5v6l-2.6-2.2" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><span>视频</span></a>
   </nav>
-  <div class="ai-status">
-    <div class="t"><span class="gdot"></span>AI 正在后台工作</div>
-    <div class="s">正在理解 <b>「施工过程记录 #1」</b>，完成后可直接在对话中引用。</div>
-  </div>
   <div class="user">
     <div class="avatar">陈</div>
     <div class="info"><span class="n">陈老板</span><span class="e">demo@multimix.local</span></div>
@@ -511,8 +504,7 @@ document.getElementById('btnSend').addEventListener('click', function(){
 window.addEventListener('load', function(){ input.focus(); });
 
 /* 侧边栏 chrome */
-document.getElementById('btnCollapse').addEventListener('click', function(){ document.body.classList.add('side-collapsed'); });
-document.getElementById('btnExpand').addEventListener('click', function(){ document.body.classList.remove('side-collapsed'); });
+(function(){var b=document.body,t=document.getElementById('btnExpand');function set(o){b.classList.toggle('nav-open',o);t.setAttribute('aria-expanded',String(o));}t.addEventListener('click',function(){set(true)});document.getElementById('btnCollapse').addEventListener('click',function(){set(false)});document.getElementById('navMask').addEventListener('click',function(){set(false)});document.addEventListener('keydown',function(e){if(e.key==='Escape')set(false);if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();set(true);}});})();
 var cm = document.getElementById('cmenu');
 document.querySelectorAll('.conv').forEach(function(c){
   var b = document.createElement('button');
