@@ -20,6 +20,7 @@ import {
   checkWorkGuard,
   endWorkGuard,
   resolveWorkspaceRoot,
+  workGuardStatus,
 } from "./workspace-work-guard.mjs";
 
 // Task flow: every task develops and commits on its own branch in its own
@@ -339,12 +340,36 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   return { task: entry.task, branch: entry.branch, landed, cleanedUp: !keep };
 }
 
+// Keeps the worktree and branch for later handling but ends the task: the claim
+// (if still held) and the task record both go away. Use this instead of a bare
+// `work:guard end`, which would leave the task record behind and block both
+// `finish` and a restart under the same name.
+export function releaseTask({ workspaceRoot, token }) {
+  const root = path.resolve(workspaceRoot);
+  const entry = findTask(root, token);
+  const claimed = workGuardStatus({ workspaceRoot: root }).some((claim) => claim.task === entry.task);
+  if (claimed) endWorkGuard({ workspaceRoot: root, token });
+  updateTasks(root, (data) => {
+    data.tasks = data.tasks.filter((item) => item.token !== token);
+  });
+  return {
+    task: entry.task,
+    branch: entry.branch,
+    releasedClaim: claimed,
+    keptWorktrees: entry.repos.map(({ repo, worktree }) => ({ repo, worktree })),
+  };
+}
+
 export function taskStatus({ workspaceRoot }) {
   const root = path.resolve(workspaceRoot);
+  const claimedTasks = new Set(workGuardStatus({ workspaceRoot: root }).map((claim) => claim.task));
   return {
-    // Tokens authorize finish/end, so status never exposes them.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    tasks: readTasks(root).tasks.map(({ token, ...visible }) => visible),
+    // Tokens authorize finish/release, so status never exposes them.
+    tasks: readTasks(root).tasks.map((entry) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { token, ...visible } = entry;
+      return { ...visible, claimed: claimedTasks.has(entry.task) };
+    }),
     landingLocks: Object.keys(REPOSITORIES)
       .map((repo) => {
         const filePath = path.join(root, mergeLockName(repo));
@@ -376,6 +401,7 @@ function usage() {
     "Usage:",
     "  workspace-task.mjs start --task <slug> --owner <claude-*|codex-*> --plan <active-plan.md> --repo <frontend|backend|root>... [--area <slug>]... [--path <workspace-path>]... [--contract <slug>]... [--issue <TEAM-123>]",
     "  workspace-task.mjs finish --token <token> [--keep]",
+    "  workspace-task.mjs release --token <token>",
     "  workspace-task.mjs status",
   ].join("\n");
 }
@@ -403,6 +429,10 @@ function runCli() {
   if (command === "finish") {
     const result = finishTask({ workspaceRoot, token: option(args, "--token"), keep: args.includes("--keep") });
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "release") {
+    console.log(JSON.stringify(releaseTask({ workspaceRoot, token: option(args, "--token") }), null, 2));
     return;
   }
   if (command === "status") {
