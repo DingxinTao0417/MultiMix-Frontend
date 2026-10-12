@@ -146,7 +146,7 @@ button:disabled {
   --sp-control-primary: 40px;
   --sp-text-meta: 12px;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100svh;
   min-height: 0;
   overflow: hidden;
@@ -156,23 +156,6 @@ button:disabled {
   font-size: 14px;
   font-synthesis: none;
   letter-spacing: 0;
-  transition: grid-template-columns 180ms ease;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed {
-  grid-template-columns: 52px minmax(0, 1fr);
-}
-
-.shadcn-prototype-shell.sidebar-visual-collapsed {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.shadcn-prototype-shell.sidebar-visual-collapsed .shadcn-prototype-sidebar {
-  display: none;
-}
-
-.shadcn-prototype-shell.sidebar-visual-collapsed .shadcn-prototype-inset {
-  grid-column: 1;
 }
 
 .shadcn-prototype-shell button,
@@ -189,11 +172,6 @@ button:disabled {
   border-right: 1px solid #eae7e1;
   background: #f8f6f3;
   padding: 0 12px 14px;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-sidebar {
-  grid-template-rows: minmax(0, 1fr);
-  padding: 0 10px 14px;
 }
 
 .shadcn-prototype-team {
@@ -226,10 +204,6 @@ button:disabled {
   display: block;
   width: 17px;
   height: 17px;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-team {
-  display: none;
 }
 
 .shadcn-prototype-home {
@@ -268,105 +242,6 @@ button:disabled {
 .shadcn-prototype-sidebar-toggle:hover {
   background: #f5f3ef;
   color: #201f1e;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-brand,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-sidebar-toggle,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-new-conversation,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-nav,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-conversation-section,
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-user {
-  display: none;
-}
-
-.shadcn-prototype-collapsed-rail {
-  display: none;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-collapsed-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-  padding-top: 12px;
-}
-
-.shadcn-prototype-collapsed-rail-group {
-  display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding-top: 2px;
-}
-
-.shadcn-prototype-collapsed-rail-button {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  min-height: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: #6e6a64;
-  padding: 0;
-  cursor: pointer;
-  transition:
-    background-color 160ms ease,
-    color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
-.shadcn-prototype-collapsed-rail-button:hover,
-.shadcn-prototype-collapsed-rail-button:focus-visible {
-  background: #f5f3ef;
-  color: #201f1e;
-  outline: none;
-}
-
-.shadcn-prototype-collapsed-rail-button.active {
-  background: #f5f3ef;
-  color: #201f1e;
-  box-shadow: inset 2px 0 0 #201f1e;
-}
-
-.shadcn-prototype-collapsed-rail-button.accent {
-  background: #201f1e;
-  color: #ffffff;
-  box-shadow: 0 8px 18px rgba(24, 24, 27, 0.16);
-}
-
-.shadcn-prototype-collapsed-rail-button.accent:hover,
-.shadcn-prototype-collapsed-rail-button.accent:focus-visible,
-.shadcn-prototype-collapsed-rail-button.accent.active {
-  background: #201f1e;
-  color: #ffffff;
-}
-
-
-.shadcn-prototype-collapsed-rail-user {
-  display: none;
-}
-
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-collapsed-rail-user {
-  display: grid;
-  place-items: center;
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid #eae7e1;
-}
-
-.shadcn-prototype-collapsed-rail-user span {
-  display: inline-grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border-radius: 999px;
-  background: #f5f3ef;
-  color: #4a4640;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
 }
 
 .shadcn-prototype-team strong,
@@ -472,18 +347,20 @@ button:disabled {
     var(--sp-shadow);
 }
 
+/* Libraries are a utility for finding and reusing existing resources, so in
+   the navigation panel they are four plain text rows: no card surface, no
+   shadow, no per-library colour. A neutral icon keeps them scannable. */
 .shadcn-prototype-nav {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
+  gap: 1px;
   margin-top: 10px;
+  border-top: 1px solid #eae7e1;
   padding-top: 10px;
 }
 
 .shadcn-prototype-nav-title {
-  grid-column: 1 / -1;
   color: #625e58;
-  padding: 0 3px 1px;
+  padding: 0 8px 4px;
   font-size: var(--sp-text-meta);
   font-weight: 680;
   letter-spacing: 0.01em;
@@ -492,83 +369,46 @@ button:disabled {
 .shadcn-prototype-nav button {
   display: flex;
   min-width: 0;
-  min-height: 54px;
+  min-height: var(--sp-control-default, 36px);
   align-items: center;
-  gap: 8px;
-  border: 1px solid #e9e5de;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.82);
+  gap: 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
   color: #3d3a36;
-  padding: 0 9px;
-  font-size: 12px;
-  font-weight: 590;
+  padding: 0 8px;
+  font-size: 13.5px;
+  font-weight: 500;
   text-align: left;
-  box-shadow: 0 2px 7px rgba(48, 43, 35, 0.035);
   cursor: pointer;
-  transition:
-    border-color var(--motion-fast),
-    background var(--motion-fast),
-    box-shadow var(--motion-fast),
-    transform var(--motion-fast);
+  transition: background var(--motion-fast), color var(--motion-fast);
 }
 
 .shadcn-prototype-nav button:hover {
-  background: #fff;
-  color: var(--sp-text);
-}
-
-.shadcn-prototype-nav button:hover {
-  border-color: #ddd8cf;
-  box-shadow: 0 5px 14px rgba(48, 43, 35, 0.07);
-  transform: translateY(-1px);
-}
-
-.shadcn-prototype-conversation-row:hover {
   background: #f5f3ef;
   color: var(--sp-text);
 }
 
 .shadcn-prototype-nav button:focus-visible {
-  border-color: rgba(74, 118, 205, 0.62);
-  outline: 2px solid rgba(74, 118, 205, 0.18);
-  outline-offset: 2px;
+  outline: 2px solid rgba(74, 118, 205, 0.4);
+  outline-offset: 1px;
 }
 
 .shadcn-prototype-nav button.active {
-  border-color: #cbd8f1;
-  background: #f5f8ff;
-  color: #315ca8;
+  background: #f0ede8;
+  color: var(--sp-text);
   font-weight: 650;
-  box-shadow: 0 3px 10px rgba(60, 94, 155, 0.07);
 }
 
 .shadcn-prototype-nav-icon {
   display: inline-grid;
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
   place-items: center;
-  border-radius: 9px;
+  color: #9b968e;
 }
 
-.shadcn-prototype-nav-item.assets .shadcn-prototype-nav-icon {
-  background: #edf3ff;
-  color: #4677dd;
-}
-
-.shadcn-prototype-nav-item.copy .shadcn-prototype-nav-icon {
-  background: #fbf2e6;
-  color: #a66d27;
-}
-
-.shadcn-prototype-nav-item.image .shadcn-prototype-nav-icon {
-  background: #f2effb;
-  color: #7d68c7;
-}
-
-.shadcn-prototype-nav-item.video .shadcn-prototype-nav-icon {
-  background: #eaf7f3;
-  color: #2d8a75;
+.shadcn-prototype-nav button.active .shadcn-prototype-nav-icon {
+  color: var(--sp-text);
 }
 
 .shadcn-prototype-conversation-row.active {
@@ -923,39 +763,110 @@ button:disabled {
   padding: 0 20px;
 }
 
-.shadcn-prototype-shell.sidebar-visual-collapsed .shadcn-prototype-sidebar-toggle {
-  display: none;
-}
-
-.shadcn-prototype-shell.sidebar-visual-collapsed .shadcn-prototype-topbar {
-  padding-left: 12px;
-}
-
-.shadcn-prototype-topbar-sidebar-toggle {
+.shadcn-prototype-header-navigation {
   display: inline-flex;
-  width: 34px;
-  min-width: 34px;
-  min-height: 34px;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  color: #6e6a64;
+  gap: 10px;
+}
+
+.shadcn-prototype-header-load-error {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--sp-danger, #b42318);
+  font-size: 12.5px;
+}
+
+.shadcn-prototype-header-load-error strong {
+  font-weight: 600;
+}
+
+.shadcn-prototype-header-load-error button {
+  min-height: 28px;
+  border: 1px solid #ddd9d1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #201f1e;
+  padding: 0 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Header project switcher: the only navigation entry. Neutral surface (no AI
+   gradient): opening navigation is not AI activity. The badge counts projects
+   whose row shows an actionable state (待确认 / 生成中 / 需处理). */
+.shadcn-prototype-project-switcher {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(360px, 100%);
+  min-height: var(--sp-control-default, 36px);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #eae7e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #201f1e;
+  padding: 0 10px 0 6px;
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
   transition:
     border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    color 160ms ease;
+    box-shadow 160ms ease;
 }
 
-.shadcn-prototype-topbar-sidebar-toggle:hover,
-.shadcn-prototype-topbar-sidebar-toggle:focus-visible {
+.shadcn-prototype-project-switcher:hover,
+.shadcn-prototype-project-switcher:focus-visible,
+.shadcn-prototype-project-switcher[aria-expanded="true"] {
   border-color: #ddd9d1;
-  background: #ffffff;
   box-shadow: 0 8px 18px rgba(24, 24, 27, 0.06);
-  color: #201f1e;
+}
+
+.shadcn-prototype-project-switcher:focus-visible {
+  outline: 2px solid rgba(91, 69, 224, 0.28);
+  outline-offset: 2px;
+}
+
+.shadcn-prototype-project-switcher .shadcn-prototype-brand-mark {
+  display: inline-grid;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--sp-ai-grad);
+}
+
+.shadcn-prototype-project-switcher-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shadcn-prototype-project-switcher-badge {
+  display: inline-grid;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--sp-warn-soft, #fff3d9);
+  color: var(--sp-warn, #9a6a00);
+  padding: 0 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.shadcn-prototype-project-switcher > svg {
+  flex: none;
+  color: #9b968e;
 }
 
 .shadcn-prototype-breadcrumb,
@@ -1161,7 +1072,7 @@ button:disabled {
 }
 
 .shadcn-prototype-navigation-surface {
-  display: contents;
+  display: none;
 }
 
 .shadcn-prototype-navigation-surface[hidden] {
@@ -8721,66 +8632,6 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
-  .shadcn-prototype-shell {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .shadcn-prototype-sidebar {
-    display: none;
-  }
-
-  .shadcn-prototype-home,
-  .shadcn-prototype-brand,
-  .shadcn-prototype-new-conversation,
-  .shadcn-prototype-nav,
-  .shadcn-prototype-conversation-section,
-  .shadcn-prototype-user {
-    display: none;
-  }
-
-  .shadcn-prototype-team {
-    grid-template-columns: 30px;
-    justify-content: start;
-    padding: 0;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded {
-    grid-template-columns: 264px minmax(0, 1fr);
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-topbar-sidebar-toggle {
-    display: none;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-sidebar {
-    display: grid;
-    padding: 0 12px 14px;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-team {
-    grid-template-columns: 30px minmax(0, 1fr) 30px;
-    justify-content: stretch;
-    padding: 0 6px;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-home {
-    display: inline-flex;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-brand {
-    display: block;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-new-conversation {
-    display: flex;
-  }
-
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-nav,
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-conversation-section,
-  .shadcn-prototype-shell.sidebar-expanded .shadcn-prototype-user {
-    display: grid;
-  }
-
   .shadcn-prototype-workspace {
     grid-template-columns: 248px 340px minmax(0, 1fr);
   }
@@ -9988,24 +9839,24 @@ label {
 /* AiBackgroundStatus: sidebar capsule for off-thread understanding (spec §5.1 ★).
    Gradient-bordered, breathing dot; hidden entirely when there is no task. */
 .shadcn-prototype-ai-status {
-  margin-top: 10px;
-  display: grid;
-  gap: 5px;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 999px;
   background:
     linear-gradient(var(--sp-card), var(--sp-card)) padding-box,
     var(--sp-ai-grad) border-box;
-  padding: 10px 12px;
+  padding: 0 11px 0 9px;
 }
 
 .shadcn-prototype-ai-status-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11.5px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--sp-text);
+  white-space: nowrap;
 }
 
 .shadcn-prototype-ai-status-dot {
@@ -10017,24 +9868,18 @@ label {
   animation: shadcn-prototype-confirm-breathe 2.2s ease infinite;
 }
 
-.shadcn-prototype-ai-status-body {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--sp-faint);
+.shadcn-prototype-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-.shadcn-prototype-ai-status-body b {
-  color: var(--sp-subtle);
-  font-weight: 600;
-}
 
 /* Collapsed sidebar hides the background-status capsule with the rest of chrome. */
-.shadcn-prototype-shell.sidebar-collapsed .shadcn-prototype-ai-status,
-.shadcn-prototype-shell.sidebar-visual-collapsed .shadcn-prototype-ai-status {
-  display: none;
-}
-
 /* AgentRunTimeline: real task steps mapped to merchant language (spec §5.2 ★).
    done = green check + elapsed; run = gradient breathing + shimmer; wait = hollow. */
 .shadcn-prototype-agent-run {
@@ -12069,16 +11914,6 @@ label {
 
 .shadcn-prototype-profile-entry:hover { color: #4f399e; }
 
-.shadcn-prototype-collapsed-rail-user button {
-  padding: 3px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.shadcn-prototype-collapsed-rail-user button:hover { background: #eeeaf9; }
-
 .creative-profile-backdrop {
   position: fixed;
   z-index: 180;
@@ -12353,27 +12188,6 @@ label {
   box-shadow: inset 0 0 0 1px rgba(221, 217, 209, 0.74);
 }
 
-.agent-visual-refresh .shadcn-prototype-nav {
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 12px;
-}
-
-.agent-visual-refresh .shadcn-prototype-nav button {
-  min-height: 64px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 5px;
-  border-radius: 12px;
-  padding: 8px;
-  font-weight: 650;
-}
-
-.agent-visual-refresh .shadcn-prototype-nav-icon {
-  width: 31px;
-  height: 31px;
-}
-
 .agent-visual-refresh .shadcn-prototype-chat {
   background: #ffffff;
 }
@@ -12569,52 +12383,39 @@ label {
 }
 
 /* Narrow navigation overlays the existing workspace; it never consumes a column. */
-@media (max-width: 1180px) {
-  .shadcn-prototype-shell.sidebar-expanded {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* Workspace navigation is an on-demand overlay at every width: the persistent
+   264px sidebar was retired in favour of the header project switcher. */
+.shadcn-prototype-navigation-surface[role="dialog"] {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: block;
+}
 
-  .shadcn-prototype-shell .shadcn-prototype-topbar-sidebar-toggle {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    min-height: 40px;
-  }
+.shadcn-prototype-navigation-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgb(31 28 25 / 28%);
+}
 
-  .shadcn-prototype-navigation-surface[role="dialog"] {
-    position: fixed;
-    inset: 0;
-    z-index: 180;
-    display: block;
-  }
+.shadcn-prototype-shell .shadcn-prototype-navigation-surface[role="dialog"] .shadcn-prototype-sidebar {
+  position: relative;
+  display: grid;
+  width: min(320px, calc(100vw - 48px));
+  height: 100%;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
+  background: var(--sp-bg, #f8f7f4);
+  box-shadow: 8px 0 30px rgb(31 28 25 / 12%);
+}
 
-  .shadcn-prototype-navigation-backdrop {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: rgb(31 28 25 / 28%);
-  }
-
-  .shadcn-prototype-shell .shadcn-prototype-navigation-surface[role="dialog"] .shadcn-prototype-sidebar {
-    position: relative;
-    display: grid;
-    width: min(320px, calc(100vw - 48px));
-    height: 100%;
-    max-height: 100dvh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: max(12px, env(safe-area-inset-top)) 12px max(14px, env(safe-area-inset-bottom));
-    background: var(--sp-bg, #f8f7f4);
-    box-shadow: 8px 0 30px rgb(31 28 25 / 12%);
-  }
-
-  .shadcn-prototype-shell .shadcn-prototype-navigation-surface .shadcn-prototype-team {
-    grid-template-columns: 30px minmax(0, 1fr) 30px 30px;
-  }
+.shadcn-prototype-shell .shadcn-prototype-navigation-surface .shadcn-prototype-team {
+  grid-template-columns: 30px minmax(0, 1fr) 30px 30px;
 }
