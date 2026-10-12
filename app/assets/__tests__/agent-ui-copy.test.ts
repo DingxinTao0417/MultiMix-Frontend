@@ -1468,16 +1468,34 @@ describe("agent conversation UI copy", () => {
     );
   });
 
-  it("uses the same MultiMix brand glyph in the sidebar and login shell", () => {
-    const workspaceClient = readAssetFile("app/assets/components/assets-workspace-client.tsx");
-    const appShell = readAssetFile("app/multimix-app.tsx");
-    const globals = readAssetFile("app/globals.css");
-    const brandPath = 'd="M2 12V2.5L7 8l5-5.5V12"';
+  it("draws every product brand mark with the shared black-and-white badge", () => {
+    const brandMark = readAssetFile("app/components/brand-mark.tsx");
+    const badge = readAssetFile("public/brand/multimix-logo-badge-black.svg");
+    const surfaces = {
+      workspace: readAssetFile("app/assets/components/assets-workspace-client.tsx"),
+      signIn: readAssetFile("app/multimix-app.tsx"),
+      resetPassword: readAssetFile("app/auth/reset-password/page.tsx"),
+      legal: readAssetFile("app/legal/legal-shell.tsx"),
+    };
+    const styles = [
+      readAssetFile("app/globals.css"),
+      readAssetFile("app/styles/login-shell.css"),
+      readAssetFile("app/legal/legal.module.css"),
+    ].join("\n");
 
-    expect(appShell).toContain(brandPath);
-    expect(workspaceClient).toContain(brandPath);
-    expect(workspaceClient).not.toContain("shadcn-prototype-brand-letter");
-    expect(globals).toContain(".shadcn-prototype-brand-mark svg");
+    // The component carries the delivered badge glyph: #151515 plate, white M + arrow.
+    expect(badge).toContain('fill="#151515"');
+    for (const part of ['d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96"', 'd="M164 63l20 33-20 33"', 'fill="#151515"', 'stroke="#FFFFFF"']) {
+      expect(brandMark).toContain(part);
+    }
+    for (const [name, source] of Object.entries(surfaces)) {
+      expect(source, name).toContain("<BrandMark");
+      // The retired simplified glyph must not come back inline.
+      expect(source, name).not.toContain('d="M2 12V2.5L7 8l5-5.5V12"');
+    }
+    // No gradient (or any painted plate) on a brand-mark rule: brand spec §2.2.
+    expect(styles).not.toMatch(/brand-mark[^{]*\{[^}]*(?:gradient|ai-grad|background)/s);
+    expect(styles).not.toMatch(/\.mark\s*\{[^}]*(?:gradient|ai-grad)/s);
   });
 
   it("keeps local auth details out of the login shell", () => {

@@ -187,23 +187,11 @@ button:disabled {
   box-shadow: none;
 }
 
-/* Higher specificity (0,2,1) to win over the generic
-   `.shadcn-prototype-team span` rule below, while using the same brand glyph
-   as the login shell at the sidebar's compact size. */
-.shadcn-prototype-team span.shadcn-prototype-brand-mark {
-  display: inline-grid;
-  width: 26px;
-  height: 26px;
-  overflow: visible;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--sp-ai-grad);
-}
-
-.shadcn-prototype-brand-mark svg {
+/* Black-and-white brand badge shared with the sign-in shell (brand spec
+   §2.2, §2.4). The plate is part of the SVG, so no background or shadow. */
+.shadcn-prototype-brand-mark {
   display: block;
-  width: 17px;
-  height: 17px;
+  flex: none;
 }
 
 .shadcn-prototype-home {
@@ -830,16 +818,6 @@ button:disabled {
 .shadcn-prototype-project-switcher:focus-visible {
   outline: 2px solid rgba(91, 69, 224, 0.28);
   outline-offset: 2px;
-}
-
-.shadcn-prototype-project-switcher .shadcn-prototype-brand-mark {
-  display: inline-grid;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--sp-ai-grad);
 }
 
 .shadcn-prototype-project-switcher-title {
@@ -8319,15 +8297,6 @@ button:disabled {
   padding: 0 16px;
 }
 
-.shadcn-prototype-admin-brand-mark {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--ai-grad);
-}
-
 .shadcn-prototype-admin-crumb {
   color: var(--quiet);
   font-size: 12.5px;
@@ -12142,11 +12111,6 @@ label {
 
 .agent-visual-refresh .shadcn-prototype-team {
   min-height: 58px;
-}
-
-.agent-visual-refresh .shadcn-prototype-team span.shadcn-prototype-brand-mark {
-  border-radius: 9px;
-  box-shadow: 0 5px 14px rgba(92, 69, 224, 0.16);
 }
 
 .agent-visual-refresh .shadcn-prototype-brand strong {

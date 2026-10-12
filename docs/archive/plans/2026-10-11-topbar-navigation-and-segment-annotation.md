@@ -233,3 +233,18 @@ npm --prefix MultiMix-Frontend run docs:check
 - **与本任务无关、在干净 `main` 上同样失败的既有问题：** `CASE-14 exports distinct original and branded images`、`case-10-required-media-optional-compile-failed`、`case-11-non-retryable-reframe-failed`。另有 `product-draft-navigation`、`runtime-write-capability-gating` 各一项在全量并发下偶发失败，单独运行稳定通过。
 - **遗留待用户确认：** 品牌 mark 是否从渐变改为单色（V3 规范第 8 节）。
 - **未转交成功的跨任务问题：** 改造后的 `work:guard` 在 `<repo>/.worktrees/<task>` 嵌套布局下找不到只存在于 worktree 的计划文件（`localCheckoutRoot()` 解析到主工作区根）。曾发给改造任务负责会话，因权限模式不同未送达，需用户转达。
+
+## 11. 追加：产品内品牌标记改为黑白单色（用户 2026-10-12 确认）
+
+**背景与根因：** 品牌规范 2.2 已确认 LOGO 主版本为黑白极简、不使用紫青渐变，但产品内的品牌标记（工作台头部切换器、导航面板、登录页、重置密码页）仍是渐变圆底配白色线稿，规范第 10 节当时把这些界面排除在 LOGO 任务之外。用户在本任务中确认改为黑白单色，此项不再是待确认事项。
+
+**改法：**
+- 产品内品牌标记统一使用已交付的 badge 黑色版字形（`public/brand/multimix-logo-badge-black.svg`）：`#151515` 圆角底板 + 反白 `M + 前进箭头`。依据：这些位置都是 `≤48px` 的小尺寸场景，规范 2.4 规定该尺寸使用 badge；底板本身即对比来源，不再加阴影或半透明底板。
+- 产品代码不再内联旧的简化 M 线稿，改为一个共享组件，工作台与登录页共用同一字形，避免再次分叉。
+- 删除只服务于旧渐变圆底的样式（含无人使用的 `.shadcn-prototype-admin-brand-mark`）。
+- 7 个当前原型的 `.brand-mark` 同步改为黑白 badge。
+- 品牌规范第 10 节同步更新：工作台导航与登录页的品牌标记已纳入，favicon 与播放器 UI 仍在范围外。
+
+**渐变纪律：** 品牌标记不是「AI 正在参与」时刻，改为单色后与 V3 规范第 2 节的渐变纪律一致；AI 后台状态胶囊等真正的 AI 时刻保留渐变。
+
+**验证：** 契约测试锁定共享组件被工作台与登录页使用、源码中不再有渐变圆底品牌标记；typecheck、lint、单元测试、播放器两项视觉契约；浏览器核对头部与登录页渲染。

@@ -97,6 +97,7 @@ import type {
   GeneratedImageGallerySetApplication,
 } from "./generated-image-gallery";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
+import BrandMark from "../../components/brand-mark";
 import type { LibraryActionIntent } from "./library-workshop";
 import type { SceneSourceAction } from "./product-preview";
 import { sceneImageGenerationUtterance } from "../lib/scene-source-utterance";
@@ -3967,11 +3968,7 @@ export default function AssetsWorkspaceClient({
       title="切换项目或资源库（⌘K / Ctrl+K）"
       onClick={(event) => openNavigation(event.currentTarget)}
     >
-      <span className="shadcn-prototype-brand-mark" aria-hidden="true">
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
+      <BrandMark className="shadcn-prototype-brand-mark" size={22} />
       {showSwitcherTitle ? (
         <span className="shadcn-prototype-project-switcher-title">{switcherTitle}</span>
       ) : null}
@@ -4066,11 +4063,7 @@ export default function AssetsWorkspaceClient({
       ) : null}
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
-          <span className="shadcn-prototype-brand-mark" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 14 14" fill="none">
-              <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
+          <BrandMark className="shadcn-prototype-brand-mark" size={26} />
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
           </div>

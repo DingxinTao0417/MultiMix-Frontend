@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import BrandMark from "../../components/brand-mark";
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
@@ -99,9 +100,7 @@ export default function ResetPasswordPage() {
     <main className="multimix-auth-shell">
       <section className="multimix-auth-card">
         <div className="multimix-auth-brand">
-          <span className="multimix-auth-brand-mark" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          </span>
+          <BrandMark className="multimix-auth-brand-mark" size={34} />
           <b>MultiMix</b>
         </div>
 
