@@ -1185,6 +1185,15 @@ export default function AssetsWorkspaceClient({
       return next;
     });
   }, []);
+  // Switching project or product ends the "说这镜" binding: coming back later
+  // must not silently re-pin a new message to that scene.
+  const displayProductAssetId = displayProduct?.backendAssetId ?? null;
+  useEffect(() => {
+    const current = segmentAnnotationRef.current;
+    if (current && (current.conversationId !== selectedConversation.id || current.assetId !== displayProductAssetId)) {
+      clearSegmentAnnotation();
+    }
+  }, [selectedConversation.id, displayProductAssetId, clearSegmentAnnotation]);
   const canShowDiagnostics = Boolean(token && diagnosticsAccess?.token === token && diagnosticsAccess.allowed);
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {

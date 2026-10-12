@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import AssetsWorkspaceClient from "../components/assets-workspace-client";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
@@ -15,13 +15,18 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 // A finished video project as the backend returns it: the scene-focus contract
 // requires contentType and a persisted version before a scene can be targeted.
-function renderWorkspace() {
+function renderWorkspace({ withSecondProduct = false } = {}) {
   const source = displayProducts["case-07-project-ready-mp4"];
   const product = { ...source, contentType: "video_project",
     versions: [{ id: "7", label: "v1", savedAt: "2026-10-12T00:00:00Z", status: "completed" }] };
+  const other = { ...displayProducts["case-01-director-draft"], id: "other-product", backendAssetId: 9300 };
+  const products = withSecondProduct ? [product, other] : [product];
   const conversation = { ...conversationForDisplayProduct(product), id: "annotate-project", readonly: false,
-    detailsLoaded: true, product, products: [product],
-    messages: [{ role: "assistant" as const, text: "视频已生成", assetId: product.backendAssetId }] };
+    detailsLoaded: true, product, products,
+    messages: [
+      { role: "assistant" as const, text: "视频已生成", assetId: product.backendAssetId },
+      ...(withSecondProduct ? [{ role: "assistant" as const, text: "编导稿已更新", assetId: other.backendAssetId }] : []),
+    ] };
   window.localStorage.clear();
   window.history.replaceState(null, "", `/app/assets?conversation=${conversation.id}&product=${product.id}`);
   Object.defineProperty(window, "matchMedia", { configurable: true,
@@ -83,4 +88,24 @@ it("clears the binding manually without sending", async () => {
   await submit("整体节奏再快一点");
   await waitFor(() => expect(send).toHaveBeenCalledOnce());
   expect(send.mock.calls[0][0].selectedSceneId).toBeUndefined();
+});
+
+it("releases the binding when the user switches to another product", async () => {
+  renderWorkspace({ withSecondProduct: true });
+  fireEvent.click(await screen.findByRole("button", { name: "说第 2 镜" }, { timeout: 5_000 }));
+  expect(await screen.findByRole("status", { name: "正在说第 2 镜" })).toBeVisible();
+
+  // Product cards are links keyed by product id in their href.
+  const card = (productId: string) => screen.getAllByLabelText("对话产物")
+    .flatMap((list) => within(list).queryAllByRole("link"))
+    .find((link) => link.getAttribute("href")?.includes(`product=${productId}`))!;
+
+  fireEvent.click(card("other-product"));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "说第 2 镜" })).not.toBeInTheDocument());
+  expect(screen.queryByRole("status", { name: "正在说第 2 镜" })).not.toBeInTheDocument();
+
+  // Coming back must not resurrect the binding: the switch ended it.
+  fireEvent.click(card("case-07-project-ready-mp4"));
+  expect(await screen.findByRole("button", { name: "说第 2 镜" }, { timeout: 5_000 })).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByRole("status", { name: "正在说第 2 镜" })).not.toBeInTheDocument();
 });
