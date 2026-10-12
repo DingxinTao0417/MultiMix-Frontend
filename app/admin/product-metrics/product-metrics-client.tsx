@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import BrandMark from "@/app/components/brand-mark";
 import { parseStoredLocalUser } from "@/app/lib/local-auth-session";
 import {
   apiErrorStatus,
@@ -42,7 +43,7 @@ function AccessState({ title, detail }: { title: string; detail: string }) {
   return (
     <main className={styles.shell}>
       <section className={styles.accessCard}>
-        <div className={styles.brand}>MultiMix</div>
+        <div className={styles.brand}><BrandMark size={20} />MultiMix</div>
         <h1>{title}</h1>
         <p>{detail}</p>
         <Link href="/app/assets">返回登录页</Link>
@@ -207,7 +208,7 @@ export default function ProductMetricsClient() {
       <div className={styles.page}>
         <header className={styles.header}>
           <div>
-            <div className={styles.brand}>MultiMix 管理后台</div>
+            <div className={styles.brand}><BrandMark size={20} />MultiMix 管理后台</div>
             <h1>产品指标</h1>
             <p>业务结果来自权威业务表；界面行为仅使用脱敏事件补充。</p>
           </div>

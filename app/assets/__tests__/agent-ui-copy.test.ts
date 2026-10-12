@@ -1476,11 +1476,13 @@ describe("agent conversation UI copy", () => {
       signIn: readAssetFile("app/multimix-app.tsx"),
       resetPassword: readAssetFile("app/auth/reset-password/page.tsx"),
       legal: readAssetFile("app/legal/legal-shell.tsx"),
+      adminMetrics: readAssetFile("app/admin/product-metrics/product-metrics-client.tsx"),
     };
     const styles = [
       readAssetFile("app/globals.css"),
       readAssetFile("app/styles/login-shell.css"),
       readAssetFile("app/legal/legal.module.css"),
+      readAssetFile("app/admin/product-metrics/product-metrics.module.css"),
     ].join("\n");
 
     // The component carries the delivered badge glyph: #151515 plate, white M + arrow.
@@ -1496,6 +1498,25 @@ describe("agent conversation UI copy", () => {
     // No gradient (or any painted plate) on a brand-mark rule: brand spec §2.2.
     expect(styles).not.toMatch(/brand-mark[^{]*\{[^}]*(?:gradient|ai-grad|background)/s);
     expect(styles).not.toMatch(/\.mark\s*\{[^}]*(?:gradient|ai-grad)/s);
+  });
+
+  it("serves the black badge as the site favicon and Apple touch icon", () => {
+    // App Router file conventions: app/icon.svg, app/favicon.ico, app/apple-icon.png.
+    const icon = readAssetFile("app/icon.svg");
+    expect(icon).toContain('viewBox="16 16 160 160"');
+    for (const part of ['fill="#151515"', 'stroke="#FFFFFF"', 'd="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96"', 'd="M164 63l20 33-20 33"']) {
+      expect(icon).toContain(part);
+    }
+    expect(icon).not.toMatch(/gradient/i);
+    const ico = readFileSync(join(root, "app/favicon.ico"));
+    // ICONDIR header: reserved 0, type 1 (icon), then one 16-byte entry per size.
+    expect(ico.readUInt16LE(0)).toBe(0);
+    expect(ico.readUInt16LE(2)).toBe(1);
+    const sizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + i * 16]).sort((a, b) => a - b);
+    expect(sizes).toEqual([16, 32, 48]);
+    const apple = readFileSync(join(root, "app/apple-icon.png"));
+    expect(apple.subarray(1, 4).toString("ascii")).toBe("PNG");
+    expect([apple.readUInt32BE(16), apple.readUInt32BE(20)]).toEqual([180, 180]);
   });
 
   it("keeps local auth details out of the login shell", () => {
