@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +19,8 @@ import {
   checkWorkGuard,
   endWorkGuard,
   findWorkspaceRoot,
+  loadWorkAreas,
+  resolveWorkspaceRoot,
   workGuardStatus,
 } from "../workspace-work-guard.mjs";
 
@@ -84,7 +88,7 @@ test("allows non-overlapping work and hides tokens from status", () => {
         owner: "agent-b",
         issue: "LLY-101",
         plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
-        areas: ["asset-library-ui"],
+        areas: ["asset-library"],
         paths: ["MultiMix-Frontend/app/assets/components/library"],
         contracts: ["type/asset-card"],
         token: "token-b",
@@ -138,7 +142,7 @@ test("rejects duplicate Linear issue ownership across otherwise independent work
             owner: "agent-b",
             issue: "lly-100",
             plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
-            areas: ["asset-library-ui"],
+            areas: ["asset-library"],
             paths: ["MultiMix-Frontend/app/assets/components/library"],
             contracts: ["type/asset-card"],
             token: "token-b",
@@ -167,7 +171,7 @@ test("rejects shared contract conflicts across different files and areas", () =>
             owner: "agent-b",
             issue: "LLY-101",
             plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
-            areas: ["asset-library-ui"],
+            areas: ["asset-library"],
             paths: ["MultiMix-Frontend/app/assets/components/library"],
             contracts: ["API/Video-Project"],
             token: "token-b",
@@ -196,6 +200,42 @@ test("validates Linear issue identifiers and shared contract slugs", () => {
     assert.deepEqual(workGuardStatus({ workspaceRoot }), []);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("rejects areas outside the fixed catalog and lists the allowed ones", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    const catalog = loadWorkAreas();
+    assert.ok(catalog.includes("video-confirmation"));
+    assert.ok(catalog.includes("workspace-governance"));
+
+    // Near-duplicates are exactly what used to slip past the area check.
+    for (const offCatalog of ["video-confirm", "brand-logo-assets", "asset-library-ui"]) {
+      assert.throws(
+        () => beginWorkGuard({ workspaceRoot, ...claim({ areas: [offCatalog] }) }),
+        (error) =>
+          error.message.includes(`'${offCatalog}' is not in scripts/work-areas.json`) &&
+          error.message.includes("video-confirmation"),
+      );
+    }
+    assert.deepEqual(workGuardStatus({ workspaceRoot }), []);
+
+    // Case and whitespace still normalize onto the catalog entry.
+    const registered = beginWorkGuard({ workspaceRoot, ...claim({ areas: [" Video-Confirmation "] }) });
+    assert.deepEqual(registered.areas, ["video-confirmation"]);
+    endWorkGuard({ workspaceRoot, token: "token-a" });
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("every area in the catalog is a lowercase slug with a description", () => {
+  const raw = JSON.parse(readFileSync(new URL("../work-areas.json", import.meta.url), "utf8"));
+  for (const [area, description] of Object.entries(raw.areas)) {
+    assert.match(area, /^[a-z0-9][a-z0-9-]*$/, area);
+    assert.equal(typeof description, "string");
+    assert.ok(description.trim().length > 0, `${area} needs a description`);
   }
 });
 
@@ -272,7 +312,7 @@ test("reads legacy claims without issue or contract fields", () => {
           owner: "agent-b",
           issue: "LLY-101",
           plan: "MultiMix-Frontend/docs/plans/active/task-b.md",
-          areas: ["asset-library-ui"],
+          areas: ["asset-library"],
           paths: ["MultiMix-Frontend/app/assets/components/library"],
           contracts: ["type/asset-card"],
           token: "token-b",
@@ -298,7 +338,7 @@ test("rejects semantic and parent-child path conflicts before writing", () => {
           ...claim({
             task: "task-b",
             owner: "agent-b",
-            areas: ["asset-library-ui"],
+            areas: ["asset-library"],
             paths: ["MultiMix-Frontend/app/assets"],
             token: "token-b",
           }),
@@ -330,7 +370,7 @@ test("rejects semantic and parent-child path conflicts before writing", () => {
             task: "task-c",
             owner: "agent-c",
             plan: "MultiMix-Backend/docs/plans/active/task-c.md",
-            areas: ["render-jobs"],
+            areas: ["video-render"],
             paths: [
               "multimix-backend\\app\\services\\video_studio\\jobs.py",
             ],
@@ -383,7 +423,7 @@ test("validates plans, unique task names, and token ownership", () => {
           ...claim({
             owner: "agent-b",
             plan: "MultiMix-Backend/docs/plans/active/task-b.md",
-            areas: ["asset-library-ui"],
+            areas: ["asset-library"],
             paths: ["MultiMix-Frontend/app/assets"],
             token: "token-b",
           }),
@@ -434,3 +474,130 @@ test("finds the split workspace root instead of the nested frontend docs root", 
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
+
+function git(cwd, args) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+function initRepository(repository) {
+  mkdirSync(path.join(repository, "docs", "plans", "active"), { recursive: true });
+  writeFileSync(path.join(repository, "docs", "README.md"), "# Docs\n");
+  writeFileSync(path.join(repository, "docs", "plans", "active", "README.md"), "# Active\n");
+  git(repository, ["init", "-q", "-b", "main"]);
+  git(repository, ["-c", "user.name=test", "-c", "user.email=test@example.com", "add", "."]);
+  git(repository, [
+    "-c", "user.name=test", "-c", "user.email=test@example.com",
+    "commit", "-q", "-m", "init",
+  ]);
+}
+
+// Mirrors the three layouts seen on 2026-10-12: a nested `.worktrees` checkout,
+// a Codex workspace copy under another drive path, and a temp release copy.
+function createGitWorkspaces() {
+  const base = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "multimix-root-")));
+  const primary = path.join(base, "multimix");
+  const frontend = path.join(primary, "MultiMix-Frontend");
+  const backend = path.join(primary, "MultiMix-Backend");
+  initRepository(frontend);
+  initRepository(backend);
+
+  const nested = path.join(frontend, ".worktrees", "task-a");
+  git(frontend, ["worktree", "add", "-q", "-b", "claude/task-a", nested]);
+
+  const copy = path.join(base, "codex-worktrees", "task-b", "multimix");
+  git(frontend, ["worktree", "add", "-q", "-b", "codex/task-b", path.join(copy, "MultiMix-Frontend")]);
+  git(backend, ["worktree", "add", "-q", "-b", "codex/task-b", path.join(copy, "MultiMix-Backend")]);
+  return { base, primary, frontend, backend, nested, copy };
+}
+
+test("resolves every worktree and workspace copy to the primary checkout", () => {
+  const layout = createGitWorkspaces();
+  try {
+    const { primary, frontend, backend, nested, copy } = layout;
+    assert.equal(resolveWorkspaceRoot(path.join(frontend, "docs")), primary);
+    assert.equal(resolveWorkspaceRoot(backend), primary);
+    assert.equal(resolveWorkspaceRoot(nested), primary);
+    assert.equal(resolveWorkspaceRoot(path.join(copy, "MultiMix-Frontend", "docs")), primary);
+    assert.equal(resolveWorkspaceRoot(path.join(copy, "MultiMix-Backend")), primary);
+
+    // The old directory-shape lookup is what split the registry.
+    assert.equal(findWorkspaceRoot(path.join(copy, "MultiMix-Frontend")), copy);
+  } finally {
+    rmSync(layout.base, { recursive: true, force: true });
+  }
+});
+
+test("claims made from a workspace copy conflict with primary checkout claims", () => {
+  const layout = createGitWorkspaces();
+  try {
+    const { primary, copy } = layout;
+    writeFileSync(path.join(primary, "MultiMix-Backend", "docs", "plans", "active", "task-a.md"), "# A\n");
+    // Plan exists only in the copy: begin must still accept it.
+    writeFileSync(path.join(copy, "MultiMix-Backend", "docs", "plans", "active", "task-b.md"), "# B\n");
+
+    beginWorkGuard({ workspaceRoot: resolveWorkspaceRoot(primary), ...claim() });
+    assert.throws(
+      () =>
+        beginWorkGuard({
+          workspaceRoot: resolveWorkspaceRoot(path.join(copy, "MultiMix-Backend")),
+          extraPlanRoots: [copy],
+          ...claim({
+            task: "task-b",
+            owner: "agent-b",
+            issue: "LLY-101",
+            plan: "MultiMix-Backend/docs/plans/active/task-b.md",
+            areas: ["video-confirmation"],
+            paths: ["MultiMix-Backend/app/services/other"],
+            contracts: [],
+            token: "token-b",
+          }),
+        }),
+      /task-a.*area:video-confirmation/is,
+    );
+    assert.equal(existsSync(path.join(copy, ".multimix-work-claims.json")), false);
+    assert.equal(workGuardStatus({ workspaceRoot: primary }).length, 1);
+    endWorkGuard({ workspaceRoot: primary, token: "token-a" });
+  } finally {
+    rmSync(layout.base, { recursive: true, force: true });
+  }
+});
+
+test("CLI run from a workspace copy writes to the primary registry", () => {
+  const layout = createGitWorkspaces();
+  try {
+    const { primary, copy } = layout;
+    writeFileSync(path.join(copy, "MultiMix-Backend", "docs", "plans", "active", "task-b.md"), "# B\n");
+    const copyFrontend = path.join(copy, "MultiMix-Frontend");
+    const copyScripts = path.join(copyFrontend, "scripts");
+    mkdirSync(copyScripts, { recursive: true });
+    const script = path.join(copyScripts, "workspace-work-guard.mjs");
+    writeFileSync(script, readGuardSource());
+    writeFileSync(
+      path.join(copyScripts, "work-areas.json"),
+      readFileSync(new URL("../work-areas.json", import.meta.url), "utf8"),
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        script, "begin",
+        "--task", "task-b",
+        "--owner", "agent-b",
+        "--plan", "MultiMix-Backend/docs/plans/active/task-b.md",
+        "--area", "subtitle",
+        "--token", "token-b",
+      ],
+      { cwd: copyFrontend, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(path.join(primary, ".multimix-work-claims.json")), true);
+    assert.equal(existsSync(path.join(copy, ".multimix-work-claims.json")), false);
+    endWorkGuard({ workspaceRoot: primary, token: "token-b" });
+  } finally {
+    rmSync(layout.base, { recursive: true, force: true });
+  }
+});
+
+function readGuardSource() {
+  return readFileSync(workGuardScript, "utf8");
+}

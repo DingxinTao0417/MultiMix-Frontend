@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "description": "Fixed work areas for work:guard. One area = one user-facing behavior or shared capability. Add an area only with a reason in the active plan; never invent one for a single task.",
+  "areas": {
+    "conversation-orchestration": "Conversation state, intent interpretation, confirmation gates, revise/generate routing",
+    "director-draft": "Director draft generation, prompts and structured fields",
+    "video-pipeline": "video_plan -> video_segments -> video project assembly",
+    "video-confirmation": "Draft confirmation, video_project_ready, duplicate confirmation and recovery",
+    "video-render": "Render jobs, MG overlay, final video export",
+    "video-editor": "Editor, timeline and scoped edits",
+    "video-clarity": "Video clarity review, enhancement suggestions and before/after comparison",
+    "subtitle": "Subtitle generation, editing and burn-in",
+    "source-video": "Uploaded source videos: ingest, naming, storyboarding and repurposing",
+    "asset-library": "Library UI, upload, categories and asset references",
+    "asset-understanding": "Asset understanding, metadata.understanding, document image extraction",
+    "image-generation": "Image generation and enhancement",
+    "creative-memory": "Creative profile and preference memory",
+    "workspace-shell": "Workbench navigation, layout, global styles and the video preview shell",
+    "account-auth": "Login, registration, accounts and permissions",
+    "admin-metrics": "Admin console and product metrics",
+    "brand-assets": "Logo and brand kit",
+    "release-deploy": "Deployment, release verification, CI and git hooks",
+    "workspace-governance": "Rule files, guard scripts and authority document structure"
+  }
+}

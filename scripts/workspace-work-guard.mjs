@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   closeSync,
   existsSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -50,15 +52,35 @@ function normalizeRelativePath(value, label) {
   return normalized;
 }
 
-function normalizeAreas(values = []) {
+const AREA_CATALOG_PATH = fileURLToPath(new URL("./work-areas.json", import.meta.url));
+
+// Free-form names let near-duplicates slip past the area conflict check, so new
+// claims must pick from the fixed catalog. Existing claims are read as-is.
+export function loadWorkAreas(catalogPath = AREA_CATALOG_PATH) {
+  let catalog;
+  try {
+    catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Cannot read work area catalog ${catalogPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const areas = Object.keys(catalog?.areas ?? {});
+  if (catalog?.version !== 1 || areas.length === 0) {
+    throw new Error(`Work area catalog ${catalogPath} has an unsupported or empty format`);
+  }
+  return areas.sort();
+}
+
+function normalizeAreas(values = [], allowedAreas = loadWorkAreas()) {
   const areas = values.map((value) => {
     if (typeof value !== "string" || value.trim() === "") {
       throw new Error("Work area cannot be empty");
     }
     const normalized = value.trim().toLowerCase();
-    if (!/^[a-z0-9][a-z0-9._/-]*$/.test(normalized)) {
+    if (!allowedAreas.includes(normalized)) {
       throw new Error(
-        `Work area '${value}' must be a stable lowercase slug using letters, numbers, '.', '_', '/', or '-'`,
+        `Work area '${value}' is not in scripts/work-areas.json. Choose one of: ${allowedAreas.join(", ")}`,
       );
     }
     return normalized;
@@ -120,7 +142,7 @@ function normalizeIssue(value) {
   return normalized;
 }
 
-function normalizePlan(workspaceRoot, value, { requireExists = true } = {}) {
+function normalizePlan(planRoots, value) {
   const plan = normalizeRelativePath(value, "Active plan");
   if (
     !ACTIVE_PLAN_PREFIXES.some((prefix) => plan.startsWith(prefix)) ||
@@ -130,10 +152,27 @@ function normalizePlan(workspaceRoot, value, { requireExists = true } = {}) {
       "Active plan must be a Markdown file under docs/plans/active/, MultiMix-Frontend/docs/plans/active/, or MultiMix-Backend/docs/plans/active/",
     );
   }
-  if (requireExists && !existsSync(path.join(workspaceRoot, ...plan.split("/")))) {
+  const segments = plan.split("/");
+  if (!planRoots.some((root) => existsSync(planLocation(root, segments)))) {
     throw new Error(`Active plan does not exist: ${plan}`);
   }
   return plan;
+}
+
+// A root is either a workspace-shaped directory, or a single repository
+// checkout `{ repo, dir }` (e.g. a task worktree) that holds plans for that
+// repository; `repo: "."` is the workspace root repository.
+function planLocation(root, segments) {
+  if (typeof root === "string") return path.join(root, ...segments);
+  const isRepoPlan = segments[0] === "MultiMix-Frontend" || segments[0] === "MultiMix-Backend";
+  if (root.repo === "." ? isRepoPlan : segments[0] !== root.repo) return "";
+  return path.join(root.dir, ...(root.repo === "." ? segments : segments.slice(1)));
+}
+
+// Coordination state is always shared; plans may additionally be found in the
+// checkout the command runs from or in a task's own worktrees.
+function planSearchRoots(root, extraRoots = []) {
+  return [root, ...extraRoots];
 }
 
 function emptyRegistry() {
@@ -263,9 +302,10 @@ export function beginWorkGuard({
   paths = [],
   contracts = [],
   token = crypto.randomUUID(),
+  extraPlanRoots = [],
 }) {
   const root = path.resolve(workspaceRoot);
-  const normalizedPlan = normalizePlan(root, plan);
+  const normalizedPlan = normalizePlan(planSearchRoots(root, extraPlanRoots), plan);
   const normalizedAreas = normalizeAreas(areas);
   const normalizedWorkPaths = normalizePaths(paths);
   const normalizedContracts = normalizeContracts(contracts);
@@ -326,11 +366,11 @@ export function workGuardStatus({ workspaceRoot }) {
   return readRegistry(path.resolve(workspaceRoot)).claims.map(publicClaim);
 }
 
-export function checkWorkGuard({ workspaceRoot, token }) {
+export function checkWorkGuard({ workspaceRoot, token, extraPlanRoots = [] }) {
   const root = path.resolve(workspaceRoot);
   const registry = readRegistry(root);
   const claim = assertTokenOwner(registry, token);
-  normalizePlan(root, claim.plan);
+  normalizePlan(planSearchRoots(root, extraPlanRoots), claim.plan);
   return publicClaim(claim);
 }
 
@@ -361,15 +401,27 @@ function repeatedOptions(args, name) {
   return values;
 }
 
+function hasWorkspaceShape(candidate) {
+  return (
+    existsSync(path.join(candidate, "MultiMix-Frontend", "docs", "README.md")) &&
+    existsSync(path.join(candidate, "MultiMix-Backend", "docs", "README.md"))
+  );
+}
+
+function canonicalPath(value) {
+  try {
+    return realpathSync.native(value);
+  } catch {
+    return path.resolve(value);
+  }
+}
+
+// Directory-shape lookup only: finds the checkout a command runs from, which is
+// a private copy for Codex worktrees. Coordination must use resolveWorkspaceRoot.
 export function findWorkspaceRoot(startPath) {
   let candidate = path.resolve(startPath);
   while (true) {
-    if (
-      existsSync(path.join(candidate, "MultiMix-Frontend", "docs", "README.md")) &&
-      existsSync(path.join(candidate, "MultiMix-Backend", "docs", "README.md"))
-    ) {
-      return candidate;
-    }
+    if (hasWorkspaceShape(candidate)) return candidate;
     const parent = path.dirname(candidate);
     if (parent === candidate) {
       throw new Error(
@@ -380,8 +432,47 @@ export function findWorkspaceRoot(startPath) {
   }
 }
 
+function gitCommonDirectory(startPath) {
+  try {
+    const output = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { cwd: startPath, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return output.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Every linked worktree and workspace-shaped copy shares one git common
+// directory per repository, so the primary checkout that owns it is the single
+// place for claims and locks. Falls back to the directory shape when the start
+// path is not inside a MultiMix repository (e.g. isolated test fixtures).
+export function resolveWorkspaceRoot(startPath) {
+  const start = path.resolve(startPath);
+  const commonDirectory = gitCommonDirectory(start);
+  if (commonDirectory && path.basename(commonDirectory).toLowerCase() === ".git") {
+    const repository = canonicalPath(path.dirname(commonDirectory));
+    const name = path.basename(repository);
+    if (name === "MultiMix-Frontend" || name === "MultiMix-Backend") {
+      const workspace = path.dirname(repository);
+      if (hasWorkspaceShape(workspace)) return workspace;
+    }
+  }
+  return findWorkspaceRoot(start);
+}
+
 function defaultWorkspaceRoot() {
-  return findWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
+  return resolveWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
+}
+
+function localCheckoutRoot() {
+  try {
+    return findWorkspaceRoot(process.cwd());
+  } catch {
+    return undefined;
+  }
 }
 
 function usage() {
@@ -396,9 +487,10 @@ function usage() {
 
 function runCli() {
   const [command, ...args] = process.argv.slice(2);
-  const workspaceRoot = path.resolve(
-    option(args, "--workspace-root") ?? defaultWorkspaceRoot(),
-  );
+  const explicitRoot = option(args, "--workspace-root");
+  const workspaceRoot = path.resolve(explicitRoot ?? defaultWorkspaceRoot());
+  const localRoot = explicitRoot ? undefined : localCheckoutRoot();
+  const extraPlanRoots = localRoot ? [localRoot] : [];
 
   if (command === "begin") {
     const claim = beginWorkGuard({
@@ -411,6 +503,7 @@ function runCli() {
       paths: repeatedOptions(args, "--path"),
       contracts: repeatedOptions(args, "--contract"),
       token: option(args, "--token"),
+      extraPlanRoots,
     });
     console.log(JSON.stringify(claim, null, 2));
     return;
@@ -422,7 +515,7 @@ function runCli() {
 
   const token = option(args, "--token");
   if (command === "check") {
-    console.log(JSON.stringify(checkWorkGuard({ workspaceRoot, token }), null, 2));
+    console.log(JSON.stringify(checkWorkGuard({ workspaceRoot, token, extraPlanRoots }), null, 2));
     return;
   }
   if (command === "end") {
