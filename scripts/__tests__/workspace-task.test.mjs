@@ -19,11 +19,12 @@ import {
   finishTask,
   landRepository,
   mergeLockName,
+  releaseTask,
   startTask,
   taskStatus,
   worktreePath,
 } from "../workspace-task.mjs";
-import { workGuardStatus } from "../workspace-work-guard.mjs";
+import { endWorkGuard, workGuardStatus } from "../workspace-work-guard.mjs";
 
 const IDENTITY = ["-c", "user.name=test", "-c", "user.email=test@example.com"];
 
@@ -88,6 +89,7 @@ test("start creates a branch worktree with shared dependencies and a claim", () 
     const worktree = worktreePath(root, "frontend", "task-a");
 
     assert.equal(entry.branch, "claude/task-a");
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks[0].claimed, true);
     assert.deepEqual(entry.repos, [
       { repo: "frontend", worktree: "MultiMix-Frontend/.worktrees/task-a", linked: "node_modules" },
     ]);
@@ -332,6 +334,74 @@ test("finish --keep lands but keeps the worktree, branch and claim", () => {
     const again = finishTask({ workspaceRoot: root, token: entry.token });
     assert.equal(again.landed[0].status, "already-landed");
     assert.equal(existsSync(worktree), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a bare work:guard end leaves the task visibly unclaimed and release clears it", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+
+    // The 2026-10-12 orphan: claim released on its own, task record left behind.
+    endWorkGuard({ workspaceRoot: root, token: entry.token });
+    const orphan = taskStatus({ workspaceRoot: root }).tasks;
+    assert.equal(orphan.length, 1);
+    assert.equal(orphan[0].claimed, false, "status must flag the missing claim");
+    assert.throws(() => finishTask({ workspaceRoot: root, token: entry.token }), /does not own a registered task/);
+
+    const released = releaseTask({ workspaceRoot: root, token: entry.token });
+    assert.deepEqual(released, {
+      task: "task-a",
+      branch: "claude/task-a",
+      releasedClaim: false,
+      keptWorktrees: [{ repo: "frontend", worktree: "MultiMix-Frontend/.worktrees/task-a" }],
+    });
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    // Nothing of the work is touched: worktree, branch and commit stay, main does not move.
+    assert.ok(existsSync(worktree));
+    assert.equal(git(frontend, ["rev-parse", "claude/task-a"]), head);
+    assert.notEqual(git(frontend, ["rev-parse", "main"]), head);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release ends a claimed task but keeps its worktree, branch and uncommitted files", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    writeFileSync(path.join(worktree, "draft.txt"), "keep me\n");
+
+    const released = releaseTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(released.releasedClaim, true);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    assert.equal(readFileSync(path.join(worktree, "draft.txt"), "utf8"), "keep me\n");
+    assert.equal(git(frontend, ["rev-parse", "--verify", "--quiet", "refs/heads/claude/task-a"]).length, 40);
+    assert.ok(lstatSync(path.join(worktree, "node_modules")).isSymbolicLink(), "dependency link left for the holder");
+
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: entry.token }), /does not own a started task/);
+    // The kept worktree occupies the name, so a restart fails clearly instead of silently reusing it.
+    assert.throws(() => start(root), /Worktree already exists/);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), [], "a failed restart leaves no claim");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release refuses tokens that do not own a task", () => {
+  const { root } = createWorkspace();
+  try {
+    start(root);
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: "wrong" }), /does not own a started task/);
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: "" }), /task token is required/);
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks.length, 1);
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
