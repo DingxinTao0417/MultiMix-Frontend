@@ -3,7 +3,7 @@
 import Link from "next/link";
 import ClarityProcessingNotice from "./clarity-processing-notice";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
-import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
+import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video, X } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, isStableDisplayProduct, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
 import {
   CHAT_IMAGE_UPLOAD_ACCEPT,
@@ -477,8 +477,13 @@ export default function ConversationStudio({
   requirementSnapshot,
   inheritedRequirementNotice = false,
   requirementAnalyticsToken,
+  segmentFocus = null,
+  onClearSegmentFocus,
 }: {
   navigationSlot?: ReactNode;
+  /** Scene the composer is currently bound to via "说这镜". */
+  segmentFocus?: { index: number } | null;
+  onClearSegmentFocus?: () => void;
   basePath: string;
   contextAssets?: Array<{ id: number; title: string }>;
   selectedConversation: Conversation;
@@ -1750,6 +1755,16 @@ export default function ConversationStudio({
       </div>
 
       <form className={canSend ? "shadcn-prototype-composer" : "shadcn-prototype-composer readonly"} onSubmit={handleSubmit}>
+        {segmentFocus ? (
+          <div className="shadcn-prototype-segment-focus" role="status" aria-label={`正在说第 ${segmentFocus.index} 镜`}>
+            <span>正在说第 {segmentFocus.index} 镜</span>
+            {onClearSegmentFocus ? (
+              <button type="button" aria-label={`取消针对第 ${segmentFocus.index} 镜`} onClick={onClearSegmentFocus}>
+                <X size={13} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className={composerControlClassName}>
           {contextAssets.length ? (
             <div className="shadcn-prototype-chat-attachment-tray" role="status" aria-label="本轮已选素材">

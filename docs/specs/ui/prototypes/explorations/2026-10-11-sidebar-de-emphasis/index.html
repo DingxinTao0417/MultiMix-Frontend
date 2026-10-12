@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · 侧栏弱化方案对比</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF;
+  --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --ok:#0E8A6B; --warn:#9A6A00; --bad:#B42318;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.65;padding:40px 24px 90px}
+.wrap{max-width:1280px;margin:0 auto}
+.topline{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--accent);
+  background:var(--accent-soft);padding:5px 13px;border-radius:999px;margin-bottom:18px}
+h1{font-size:26px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+.lede{font-size:15px;color:var(--ink-2);max-width:860px;margin-bottom:8px}
+.verdict{font-size:14px;max-width:900px;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:15px 19px;margin:22px 0 40px;box-shadow:var(--shadow-card)}
+.verdict b{color:var(--accent)}
+h2{font-size:18px;font-weight:700;margin:46px 0 6px}
+h2 .n{display:inline-grid;place-items:center;width:25px;height:25px;border-radius:8px;background:var(--ink);color:#fff;
+  font-size:12.5px;margin-right:9px;vertical-align:middle}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:20px;max-width:900px}
+
+/* ===== 真实比例侧栏样本 ===== */
+.specimens{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.spec{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  box-shadow:var(--shadow-card);display:flex;flex-direction:column}
+.spec.rec{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.spec-h{padding:13px 15px 11px;border-bottom:1px solid var(--line)}
+.spec-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-3);margin-bottom:7px}
+.spec.rec .spec-badge{background:var(--ai-grad);color:#fff}
+.spec-h h3{font-size:13.5px;font-weight:700;margin-bottom:3px}
+.spec-h p{font-size:11.5px;color:var(--ink-2);line-height:1.5}
+.stage{background:var(--bg);padding:13px;border-bottom:1px solid var(--line);
+  display:flex;gap:0;height:356px;overflow:hidden}
+.stage-inner{display:flex;gap:0;width:100%;min-width:430px}
+
+/* 侧栏本体：按真实 CSS 比例还原（264px → 本图 152px，约 0.58×） */
+.sb{width:152px;flex:none;border-right:1px solid #eae7e1;background:#f8f6f3;
+  padding:0 7px 9px;display:flex;flex-direction:column;gap:5px;border-radius:3px 0 0 3px}
+.sb.flat{background:var(--bg);border-right:1px solid #eae7e1}
+.sb.narrow{width:136px}
+.sb-team{display:flex;align-items:center;gap:6px;min-height:30px;padding:0 3px;margin-bottom:1px}
+.sb-mark{width:16px;height:16px;border-radius:999px;background:var(--ai-grad);flex:none}
+.sb-mark.mono{background:#151515}
+.sb-wordmark{font-size:9.5px;font-weight:700;letter-spacing:-.01em}
+.sb-new{min-height:23px;display:flex;align-items:center;justify-content:center;gap:4px;
+  border:1px solid #201f1e;border-radius:7px;background:#201f1e;color:#fff;font-size:8.5px;font-weight:650;
+  box-shadow:0 2px 6px rgba(32,31,30,.08)}
+.sb-new.ghost{border:1px solid var(--line-2);background:transparent;color:var(--ink);box-shadow:none;font-weight:600}
+.sb-lbl{font-size:8px;font-weight:700;color:#625e58;padding:0 3px;margin-top:4px}
+.sb-row{min-height:17px;display:flex;align-items:center;padding:0 5px;border-radius:5px;
+  font-size:8.5px;color:#4a4641;white-space:nowrap;overflow:hidden}
+.sb-row.on{background:#f0ede8;font-weight:650;color:var(--ink)}
+.sb-row .st{margin-left:auto;font-size:7.5px;color:var(--ink-3);flex:none;padding-left:4px}
+
+/* 现状：2×2 彩色宫格 */
+.sb-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:4px}
+.sb-cell{min-height:31px;display:flex;align-items:center;gap:5px;border:1px solid #e9e5de;border-radius:7px;
+  background:rgba(255,255,255,.82);padding:0 5px;font-size:7.5px;font-weight:590;color:#3d3a36;
+  box-shadow:0 2px 7px rgba(48,43,35,.035)}
+.sb-ic{width:17px;height:17px;border-radius:6px;flex:none}
+.ic-a{background:#edf3ff}.ic-b{background:#fbf2e6}.ic-c{background:#eef6f0}.ic-d{background:#f3eefb}
+
+/* 弱化：纯文字行（与项目行同款 17px，真实 CSS 下 4 行约 71px，对比宫格 115px） */
+.sb-plain{display:grid;gap:1px;margin-top:2px}
+.sb-plain .sb-row{font-size:8.5px;color:var(--ink-2);min-height:10px;line-height:10px}
+.sb-plain .sb-row .d{width:5px;height:5px;border-radius:2px;background:var(--line-2);margin-right:6px;flex:none}
+
+/* 折叠成一行 */
+.sb-fold{min-height:18px;display:flex;align-items:center;gap:5px;padding:0 5px;margin-top:3px;
+  border-radius:5px;font-size:8.5px;color:var(--ink-2)}
+.sb-fold .ch{margin-left:auto;color:var(--ink-3);font-size:8px}
+
+.sb-user{margin-top:auto;display:flex;align-items:center;gap:5px;padding:6px 3px 0;border-top:1px solid var(--line)}
+.sb-av{width:15px;height:15px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);flex:none}
+.sb-un{font-size:8px;color:var(--ink-2);overflow:hidden;white-space:nowrap}
+
+/* 右侧工作区（恒定，用于对比视觉重心） */
+.main{flex:1;display:flex;flex-direction:column;gap:6px;padding-left:9px;min-width:0}
+.m-top{min-height:15px;display:flex;align-items:center;font-size:8px;color:var(--ink-3)}
+.m-body{flex:1;display:grid;grid-template-columns:1fr 1.1fr;gap:6px;min-height:0}
+.m-col{display:flex;flex-direction:column;gap:5px;min-width:0}
+.m-b{border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:8px;color:var(--ink-3);
+  display:grid;place-items:center;text-align:center;line-height:1.35;padding:3px 2px;flex:none}
+.m-b.grow{flex:1}
+.m-b.media{background:#2A2827;border-color:#2A2827;color:#C9C4BC}
+.m-b.ai{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  color:var(--ink-2);font-weight:650}
+.m-b.soft{background:var(--accent-soft);border-color:#DCD5FF;color:var(--accent);font-weight:650}
+.m-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+
+.spec-body{padding:13px 15px 16px;display:grid;gap:11px;flex:1}
+.mini{font-size:10px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase}
+.spec-body ul{list-style:none;display:grid;gap:7px;margin-top:6px}
+.spec-body li{display:grid;grid-template-columns:13px 1fr;gap:6px;font-size:11.5px;color:var(--ink-2);line-height:1.5}
+.spec-body li .m{color:var(--ink-3);text-align:center}
+.spec-body li.plus .m{color:var(--ok)}.spec-body li.minus .m{color:var(--bad)}
+
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;overflow:hidden;box-shadow:var(--shadow-card);font-size:12.5px}
+th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-size:11px;font-weight:700;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td b{color:var(--ink)}
+.y{color:var(--ok);font-weight:700}.n{color:var(--bad);font-weight:700}.p{color:var(--warn);font-weight:700}
+
+.final{border:1px solid transparent;border-radius:14px;padding:21px 23px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-card)}
+.final h3{font-size:15.5px;font-weight:700;margin-bottom:11px}
+.final ol{margin-left:19px;display:grid;gap:9px;font-size:13.5px;color:var(--ink-2)}
+.final ol b{color:var(--ink)}
+.gate{margin-top:17px;padding-top:15px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}
+.gate b{color:var(--warn)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--surface-2);
+  padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow-card)}
+.card ul{list-style:none;display:grid;gap:10px}
+.card li{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:13px;color:var(--ink-2)}
+.card li b{color:var(--ink)}
+.tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;height:18px;align-self:start;margin-top:3px;white-space:nowrap}
+.tag.keep{background:#E3F3EE;color:var(--ok)}.tag.gate{background:#FFF3D9;color:var(--warn)}
+@media (max-width:1100px){.specimens{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="topline">● 2026-10-11 · 侧栏弱化方案（配合 B 批注式修改）</div>
+<h1>最左侧侧栏弱化：四个方案</h1>
+<p class="lede">目标是把视觉重心让给成片与分镜，同时不牺牲「继续做某个项目」这个侧栏主任务。
+四个样本按真实 CSS 比例还原，右侧工作区保持恒定，方便直接比较重心变化。</p>
+
+<div class="verdict">
+<b>先说结论：侧栏最重的一块不是宽度，是资源库那四张卡。</b><br>
+它们每张都有白色卡面、边框、阴影和一个彩色图标底座（<code>globals.css:493</code> 起，<code>min-height:54px</code>），
+四张合计约 115px 高（两行 54px + 7px 间距），是侧栏里最抢眼的区域。但按设计文档，资源库只是「查找、复用和管理已有资源」的工具，
+不是新建视频的主要入口。<b>现在最重的视觉给了最次要的任务。</b>推荐 S2：弱化外观 + 把资源库降为文字行。
+</div>
+<h2><span class="n">1</span>四个样本（真实比例，右侧工作区恒定）</h2>
+<p class="sub">每个样本都已叠加 B 方案的成片侧改动（「说这镜」常驻 + 复用范围条），差别只在左侧侧栏。</p>
+
+<div class="specimens">
+
+<!-- S0 现状 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="sb">
+      <div class="sb-team"><span class="sb-mark"></span><span class="sb-wordmark">MultiMix</span></div>
+      <div class="sb-new">＋ 新建项目</div>
+      <div class="sb-lbl">最近项目</div>
+      <div class="sb-row on">门窗案例小红书<span class="st">生成中</span></div>
+      <div class="sb-row">全屋定制获客<span class="st">待确认</span></div>
+      <div class="sb-row">春季促销稿子</div>
+      <div class="sb-row">小户型收纳宣传</div>
+      <div class="sb-lbl">资源库</div>
+      <div class="sb-grid">
+        <div class="sb-cell"><span class="sb-ic ic-a"></span>资产</div>
+        <div class="sb-cell"><span class="sb-ic ic-b"></span>文案</div>
+        <div class="sb-cell"><span class="sb-ic ic-c"></span>图片</div>
+        <div class="sb-cell"><span class="sb-ic ic-d"></span>视频</div>
+      </div>
+      <div class="sb-user"><span class="sb-av"></span><span class="sb-un">陈老板</span></div>
+    </div>
+    <div class="main">
+      <div class="m-top">项目 / 全屋定制获客视频方案</div>
+      <div class="m-body">
+        <div class="m-col">
+          <div class="m-b" style="height:13px">对话标题</div>
+          <div class="m-b grow">对话流</div>
+          <div class="m-b ai" style="height:20px">输入框</div>
+        </div>
+        <div class="m-col">
+          <div class="m-b" style="height:12px">视频工程 · v2</div>
+          <div class="m-b media" style="height:74px">播放器</div>
+          <div class="m-seg">
+            <div class="m-b soft" style="height:20px">#1<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#2<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#3<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#4<br>说这镜</div>
+          </div>
+          <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">现状基线</span>
+    <h3>S0 · 当前实现</h3>
+    <p>264px，米色底，深色实底「新建项目」，资源库 2×2 彩色宫格。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">问题</div>
+      <ul>
+        <li class="minus"><span class="m">−</span><div>四张资源库卡约 115px 高，侧栏最抢眼的区域给了最次要任务</div></li>
+        <li class="minus"><span class="m">−</span><div>四种彩色图标底座在中性配色里是唯一的多色点</div></li>
+        <li class="minus"><span class="m">−</span><div>米色底 + 深色实底按钮，左侧整体比成片区更"实"</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- S1 降噪 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="sb flat narrow">
+      <div class="sb-team"><span class="sb-mark mono"></span><span class="sb-wordmark">MultiMix</span></div>
+      <div class="sb-new ghost">＋ 新建项目</div>
+      <div class="sb-lbl">最近项目</div>
+      <div class="sb-row on">门窗案例小红书<span class="st">生成中</span></div>
+      <div class="sb-row">全屋定制获客<span class="st">待确认</span></div>
+      <div class="sb-row">春季促销稿子</div>
+      <div class="sb-row">小户型收纳宣传</div>
+      <div class="sb-lbl">资源库</div>
+      <div class="sb-grid">
+        <div class="sb-cell" style="min-height:20px;border-color:#efece6;background:transparent;box-shadow:none">资产</div>
+        <div class="sb-cell" style="min-height:20px;border-color:#efece6;background:transparent;box-shadow:none">文案</div>
+        <div class="sb-cell" style="min-height:20px;border-color:#efece6;background:transparent;box-shadow:none">图片</div>
+        <div class="sb-cell" style="min-height:20px;border-color:#efece6;background:transparent;box-shadow:none">视频</div>
+      </div>
+      <div class="sb-user"><span class="sb-av"></span><span class="sb-un">陈老板</span></div>
+    </div>
+    <div class="main">
+      <div class="m-top">项目 / 全屋定制获客视频方案</div>
+      <div class="m-body">
+        <div class="m-col">
+          <div class="m-b" style="height:13px">对话标题</div>
+          <div class="m-b grow">对话流</div>
+          <div class="m-b ai" style="height:20px">输入框</div>
+        </div>
+        <div class="m-col">
+          <div class="m-b" style="height:12px">视频工程 · v2</div>
+          <div class="m-b media" style="height:74px">播放器</div>
+          <div class="m-seg">
+            <div class="m-b soft" style="height:20px">#1<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#2<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#3<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#4<br>说这镜</div>
+          </div>
+          <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">只改外观</span>
+    <h3>S1 · 降噪</h3>
+    <p>保留 2×2 结构，去掉彩色图标底座、卡面和阴影；底色并入页面；主按钮改幽灵式；264→236px。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>改动最小，纯 CSS，不动结构与已确认决策</div></li>
+        <li class="plus"><span class="m">+</span><div>彩色噪点消失，左侧明显退后</div></li>
+        <li class="minus"><span class="m">−</span><div>四个入口仍占两行高度，仍比项目列表显眼</div></li>
+        <li class="minus"><span class="m">−</span><div>幽灵按钮削弱「新建项目」的首次可发现性</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- S2 推荐 -->
+<div class="spec rec">
+  <div class="stage"><div class="stage-inner">
+    <div class="sb flat narrow">
+      <div class="sb-team"><span class="sb-mark mono"></span><span class="sb-wordmark">MultiMix</span></div>
+      <div class="sb-new">＋ 新建项目</div>
+      <div class="sb-lbl">最近项目</div>
+      <div class="sb-row on">门窗案例小红书<span class="st">生成中</span></div>
+      <div class="sb-row">全屋定制获客<span class="st">待确认</span></div>
+      <div class="sb-row">春季促销稿子</div>
+      <div class="sb-row">小户型收纳宣传</div>
+      <div class="sb-row">SaaS 宣传视频脚本</div>
+      <div class="sb-row" style="color:#9B968E">查看全部</div>
+      <div class="sb-lbl">资源库</div>
+      <div class="sb-plain">
+        <div class="sb-row"><span class="d"></span>资产</div>
+        <div class="sb-row"><span class="d"></span>文案</div>
+        <div class="sb-row"><span class="d"></span>图片</div>
+        <div class="sb-row"><span class="d"></span>视频</div>
+      </div>
+      <div class="sb-user"><span class="sb-av"></span><span class="sb-un">陈老板</span></div>
+    </div>
+    <div class="main">
+      <div class="m-top">项目 / 全屋定制获客视频方案</div>
+      <div class="m-body">
+        <div class="m-col">
+          <div class="m-b" style="height:13px">对话标题</div>
+          <div class="m-b grow">对话流</div>
+          <div class="m-b ai" style="height:20px">输入框</div>
+        </div>
+        <div class="m-col">
+          <div class="m-b" style="height:12px">视频工程 · v2</div>
+          <div class="m-b media" style="height:74px">播放器</div>
+          <div class="m-seg">
+            <div class="m-b soft" style="height:20px">#1<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#2<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#3<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#4<br>说这镜</div>
+          </div>
+          <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">推荐</span>
+    <h3>S2 · 降噪 + 资源库降级</h3>
+    <p>在 S1 基础上，把 2×2 宫格换成四行纯文字（与项目行同款）。省出的高度给最近项目，默认可见 8 条。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>视觉权重与任务重要性对齐：项目列表成为侧栏唯一主角</div></li>
+        <li class="plus"><span class="m">+</span><div>四个入口全部保留，零点击成本，不进二级菜单</div></li>
+        <li class="plus"><span class="m">+</span><div>省出约 44px（115px → 71px），最近项目可见条数变多</div></li>
+        <li class="plus"><span class="m">+</span><div>「新建项目」保留深色实底，不牺牲首次可发现性</div></li>
+        <li class="minus"><span class="m">−</span><div>推翻 V3 规范「2×2 轻量卡片」的已确认决策，需你本次明确批准</div></li>
+        <li class="minus"><span class="m">−</span><div>四库辨识从图标色变为纯文字，老用户需短暂适应</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- S3 默认折叠 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="sb" style="width:40px;padding:0 5px 9px;align-items:center">
+      <div class="sb-team" style="justify-content:center;padding:0"><span class="sb-mark mono"></span></div>
+      <div class="sb-new" style="min-height:21px;width:24px;padding:0">＋</div>
+      <div class="sb-row" style="justify-content:center;width:24px;min-height:19px;background:#f0ede8">▣</div>
+      <div class="sb-plain" style="gap:3px;width:24px">
+        <div class="sb-row" style="justify-content:center;min-height:17px">◫</div>
+        <div class="sb-row" style="justify-content:center;min-height:17px">◳</div>
+        <div class="sb-row" style="justify-content:center;min-height:17px">▤</div>
+        <div class="sb-row" style="justify-content:center;min-height:17px">▦</div>
+      </div>
+      <div class="sb-user" style="justify-content:center;border-top:0"><span class="sb-av"></span></div>
+    </div>
+    <div class="main">
+      <div class="m-top">项目 / 全屋定制获客视频方案</div>
+      <div class="m-body">
+        <div class="m-col">
+          <div class="m-b" style="height:13px">对话标题</div>
+          <div class="m-b grow">对话流</div>
+          <div class="m-b ai" style="height:20px">输入框</div>
+        </div>
+        <div class="m-col">
+          <div class="m-b" style="height:12px">视频工程 · v2</div>
+          <div class="m-b media" style="height:82px">播放器（更大）</div>
+          <div class="m-seg">
+            <div class="m-b soft" style="height:20px">#1<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#2<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#3<br>说这镜</div>
+            <div class="m-b soft" style="height:20px">#4<br>说这镜</div>
+          </div>
+          <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">最激进</span>
+    <h3>S3 · 默认折叠成图标轨</h3>
+    <p>进入项目后侧栏默认收成 52px 图标轨，需要换项目时再展开。复用现有折叠态，不新建形态。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>让出 212px 宽（264→52px），成片区最大</div></li>
+        <li class="plus"><span class="m">+</span><div>折叠态已存在，无需新设计</div></li>
+        <li class="minus"><span class="m">−</span><div>最近项目完全不可见，与设计文档「侧栏以继续项目为主要任务」直接冲突</div></li>
+        <li class="minus"><span class="m">−</span><div>每次换项目多两次点击，多项目并行的商家受损</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2><span class="n">2</span>方案对比</h2>
+<table>
+<tr><th style="width:26%">维度</th><th style="width:18%">S1 降噪</th><th style="width:20%">S2 降噪+降级</th><th>S3 默认折叠</th></tr>
+<tr><td><b>视觉重心让给成片</b></td><td class="p">部分</td><td class="y">是</td><td class="y">最强</td></tr>
+<tr><td><b>保住「继续项目」主任务</b></td><td class="y">是</td><td class="y">是，更强</td><td class="n">否</td></tr>
+<tr><td><b>四库零点击可达</b></td><td class="y">是</td><td class="y">是</td><td class="p">图标可点，名称需悬停</td></tr>
+<tr><td><b>与设计文档一致</b></td><td class="y">一致</td><td class="p">需改 2×2 已确认决策</td><td class="n">与侧栏主任务冲突</td></tr>
+<tr><td><b>新建项目可发现性</b></td><td class="p">幽灵按钮偏弱</td><td class="y">保留深色实底</td><td class="p">仅图标</td></tr>
+<tr><td><b>相对工作量</b></td><td>0.5×</td><td>1×</td><td>0.3×（已有折叠态）</td></tr>
+<tr><td><b>主要风险</b></td><td>弱化不彻底，过阵子还想再动</td><td>需同步改规范、原型与实现三处</td><td>商家找不到自己的项目</td></tr>
+</table>
+
+<h2><span class="n">3</span>建议</h2>
+<div class="final">
+<h3>推荐 S2，并与 B 方案同轮落地</h3>
+<ol>
+<li><b>资源库从 2×2 彩色宫格改为四行纯文字</b>，与项目行同款高度和字号，只用浅色圆点区分。
+这是侧栏弱化收益最大的一步：它同时去掉了彩色噪点、卡面阴影，并把该区高度从约 115px 降到约 71px。</li>
+<li><b>侧栏底色并入页面</b>（<code>#f8f6f3</code> → <code>--bg</code>），只保留右侧 1px 分隔线。
+左侧不再是一块"面板"，而是页面边缘的一列文字。</li>
+<li><b>宽度 264px → 236px</b>，省出的宽度按设计文档规则优先分配给展示区。</li>
+<li><b>「新建项目」保留深色实底</b>。弱化不等于全部变淡，它是侧栏唯一的创建动作，应当是侧栏里最显眼的一个元素。</li>
+<li><b>最近项目保持现状不动</b>，默认 8 条 + 「查看全部」。弱化完成后它自然成为侧栏主角，不需要额外加强。</li>
+</ol>
+<div class="gate">
+<b>需要你明确批准的一点：</b>V3 设计规范第 5.1 节与工作台设计第 3 节把「资源库 2×2 轻量卡片」写成已确认决策。
+改成文字行属于推翻该决策，按工作区规则必须有你当次的明确批准，并同轮更新规范、当前原型和实现三处，不能只改实现。
+你说「弱化侧栏」我理解为已经认可方向，但 2×2 这条具体决策我不替你改，<b>请确认是否连这条一起改</b>。
+</div>
+</div>
+
+<h2><span class="n">4</span>不建议动的部分</h2>
+<div class="card">
+<ul>
+<li><span class="tag keep">保留</span><div><b>最近项目列表本身。</b>设计文档明确侧栏以「继续项目」为主要任务。弱化的对象是装饰，不是这个列表。</div></li>
+<li><span class="tag keep">保留</span><div><b>项目状态文字（生成中 / 待确认 / 需处理）。</b>这三种有行动价值，且已按规则做成纯文字右对齐，不是噪点。</div></li>
+<li><span class="tag keep">保留</span><div><b>AI 后台状态胶囊。</b>它是渐变纪律允许的「AI 正在参与」时刻，且无任务时整条隐藏，不构成常驻权重。</div></li>
+<li><span class="tag gate">注意</span><div><b>不要靠调淡文字颜色来弱化。</b>规范要求正文对比度 ≥4.5:1，<code>--ink-3</code> 只能用于辅助信息。
+弱化应当靠去掉卡面、边框、填充和阴影实现，不是把字变浅。</div></li>
+<li><span class="tag gate">注意</span><div><b>品牌 mark 的渐变圆底可一并改为单色。</b>品牌规范已确认 LOGO 主版本为黑白极简、不使用紫青渐变，
+当前侧栏仍用渐变圆底，与品牌规范存在口径差。顺手改成单色会更一致，但这属于额外一项，你可以单独定。</div></li>
+</ul>
+</div>
+<p class="sub" style="margin-top:22px">本页为设计选型稿，未修改任何产品代码。你确认 S2（及是否含 2×2 改动）后，
+我把 B 与侧栏弱化合并写入 <code>MultiMix-Frontend/docs/plans/active/2026-10-11-segment-annotation-and-sidebar-de-emphasis.md</code>，
+登记开发占用，再开始改代码。</p>
+</div></body>
+</html>

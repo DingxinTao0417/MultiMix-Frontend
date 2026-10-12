@@ -154,6 +154,41 @@ export function compareVideoVersionSegments(
   return changes;
 }
 
+/**
+ * Reuse scope between two persisted versions, used to make incremental
+ * execution visible to the user ("第 2 镜已重做 · 其余 3 镜原样复用").
+ *
+ * This is a deterministic fact derived from the two persisted segment lists,
+ * not a semantic judgement: a segment counts as reused only when it exists in
+ * both versions and `compareVideoVersionSegments` found no change in it.
+ * Returns null when either side lacks identifiable segments, so the caller
+ * renders nothing instead of guessing a count.
+ */
+export type VideoVersionReuseScope = {
+  changedIndexes: number[];
+  reusedCount: number;
+  totalCount: number;
+};
+
+export function videoVersionReuseScope(
+  previousSegments: AssetProductSegment[] | undefined,
+  currentSegments: AssetProductSegment[] | undefined,
+  changes: VideoVersionSegmentChange[],
+): VideoVersionReuseScope | null {
+  const previous = previousSegments ?? [];
+  const current = currentSegments ?? [];
+  if (!previous.length || !current.length) return null;
+  const changedIndexes = Array.from(new Set(
+    changes
+      .map((change) => change.currentSegment?.index ?? change.previousSegment?.index)
+      .filter((index): index is number => Number.isInteger(index)),
+  )).sort((a, b) => a - b);
+  const totalCount = current.length;
+  const reusedCount = current.filter((segment) => !changedIndexes.includes(segment.index)).length;
+  if (reusedCount === totalCount) return null;
+  return { changedIndexes, reusedCount, totalCount };
+}
+
 export type VideoSegmentChangeDetail = { label: string; before: string; after: string };
 
 function secondsLabel(value: number): string {

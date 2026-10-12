@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openLibrary, openNavigation, openProject } from "./workspace-navigation";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -36,15 +37,7 @@ async function openCase(page: Page, caseId: string, expectProductWorkspace = tru
   const conversationId = seed.conversation_ids?.[caseId];
   if (!conversationId) throw new Error(`Missing seeded conversation id for ${caseId}`);
   await page.goto("/app/assets");
-  const conversationLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`);
-  if (await conversationLink.count() === 0) {
-    const showAllProjects = page.getByRole("button", { name: "查看全部", exact: true });
-    await expect(showAllProjects).toBeVisible();
-    await showAllProjects.click();
-  }
-  await expect(conversationLink).toBeVisible();
-  await conversationLink.click();
-  await expect(conversationLink).toHaveAttribute("aria-current", "page");
+  await openProject(page, conversationId);
   const workspace = page.getByRole("region", { name: "Current product workspace" });
   if (expectProductWorkspace) await expect(workspace).toBeVisible();
   return workspace;
@@ -99,7 +92,7 @@ test("narrow existing-project chat keeps header actions and send control inside 
     });
 
     const controls = [
-      ...(width <= 1180 ? [chat.getByRole("button", { name: "展开侧边栏" })] : []),
+      chat.getByRole("button", { name: /^切换项目或资源库/ }),
       chat.getByRole("button", { name: /^项目资料/ }),
       chat.getByRole("button", { name: "诊断", exact: true }),
       composer,
@@ -509,14 +502,8 @@ test("saved source removal is not reported as failed when requirement refresh fa
   await drawer.getByRole("button", { name: "关闭项目资源" }).click();
   const otherProjectId = seed.conversation_ids?.["case-01-director-draft"];
   if (!otherProjectId) throw new Error("Missing seeded CASE-01 project");
-  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
-  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await otherProjectLink.click();
-  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
-  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
-  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await projectLink.click();
-  await expect(projectLink).toHaveAttribute("aria-current", "page");
+  await openProject(page, otherProjectId);
+  await openProject(page, projectId);
   await expect.poll(() => requirementReads).toBe(readsAfterReadd + 1);
 });
 
@@ -604,10 +591,7 @@ test("a requirement read started before source removal cannot restore an obsolet
     && response.request().method() === "GET");
   await page.goto(`/app/assets?conversation=${projectId}`);
   await initialRequirementRead;
-  const otherProjectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${otherProjectId}"]`);
-  if (await otherProjectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await otherProjectLink.click();
-  await expect(otherProjectLink).toHaveAttribute("aria-current", "page");
+  await openProject(page, otherProjectId);
 
   let releaseOldRead: (() => void) | undefined;
   const oldReadGate = new Promise<void>((resolve) => { releaseOldRead = resolve; });
@@ -646,10 +630,7 @@ test("a requirement read started before source removal cannot restore an obsolet
   });
 
   try {
-    const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
-    if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-    await projectLink.click();
-    await expect(projectLink).toHaveAttribute("aria-current", "page");
+    await openProject(page, projectId);
     await expect.poll(() => requirementReads).toBe(1);
     const chat = page.getByRole("region", { name: "Content generation conversation" });
     await chat.getByRole("button", { name: /^项目资料/ }).click();
@@ -732,7 +713,7 @@ test("library source addition refreshes requirements even when the project time 
 
   await page.goto(`/app/assets?conversation=${projectId}`);
   await expect(page.getByRole("region", { name: "Content generation conversation" })).toBeVisible();
-  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.getByRole("button", { name: "加入项目…" }).click();
@@ -743,9 +724,7 @@ test("library source addition refreshes requirements even when the project time 
   expect(sourceWriteCompleted).toBe(true);
   await expect.poll(() => postWriteRequirementReads).toBeGreaterThanOrEqual(1);
   await detail.getByRole("button", { name: "关闭详情" }).click();
-  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
-  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await projectLink.click();
+  await openProject(page, projectId);
   await expect(page.getByRole("region", { name: "Content generation conversation" })
     .getByText("已纳入新加入的门店素材", { exact: true })).toBeVisible();
 });
@@ -791,7 +770,7 @@ test("library source addition keeps the saved membership when requirement refres
   });
 
   await page.goto("/app/assets");
-  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.getByRole("button", { name: "加入项目…" }).click();
@@ -802,9 +781,7 @@ test("library source addition keeps the saved membership when requirement refres
   expect(sourceWrites).toBe(1);
   expect(postWriteRequirementReads).toBeGreaterThanOrEqual(1);
   await detail.getByRole("button", { name: "关闭详情" }).click();
-  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
-  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await projectLink.click();
+  await openProject(page, projectId);
   const chat = page.getByRole("region", { name: "Content generation conversation" });
   await chat.getByRole("button", { name: /^项目资料/ }).click();
   const drawer = page.getByRole("dialog", { name: /的项目资源/ });
@@ -893,7 +870,7 @@ test("new source analysis failure keeps the older requirement visibly out of dat
   });
 
   await page.goto("/app/assets");
-  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.getByRole("button", { name: "加入项目…" }).click();
@@ -901,9 +878,7 @@ test("new source analysis failure keeps the older requirement visibly out of dat
     .getByRole("button", { name: /^CASE-01 普通编导稿，/ }).click();
   await expect(page.getByText("已加入项目并保存，但新资料尚未计入需求理解；当前显示上一版内容。", { exact: true })).toBeVisible();
   await detail.getByRole("button", { name: "关闭详情" }).click();
-  const projectLink = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${projectId}"]`);
-  if (await projectLink.count() === 0) await page.getByRole("button", { name: "查看全部", exact: true }).click();
-  await projectLink.click();
+  await openProject(page, projectId);
   const chat = page.getByRole("region", { name: "Content generation conversation" });
   await chat.getByRole("button", { name: /^项目资料/ }).click();
   const drawer = page.getByRole("dialog", { name: /的项目资源/ });
@@ -923,7 +898,7 @@ test("library source addition remains acknowledged when target project detail re
   if (!projectId) throw new Error("Missing seeded CASE-01 project");
 
   await page.goto("/app/assets");
-  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.getByRole("button", { name: "加入项目…" }).click();
@@ -1084,7 +1059,7 @@ test("archiving the only project source in the library refreshes project history
     await route.continue();
   });
 
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await openLibrary(page, "图片库");
   const imageGrid = page.getByLabel("图片库列表");
   await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
@@ -1092,7 +1067,7 @@ test("archiving the only project source in the library refreshes project history
   await detail.getByRole("button", { name: "删除", exact: true }).click();
   await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
-  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await openProject(page, conversationId);
   await expect(resourceEntry).toBeVisible();
   await resourceEntry.click();
   const drawer = page.getByRole("dialog", { name: /的项目资源/ });
@@ -1147,7 +1122,7 @@ test("project detail can retry after the library archive refresh fails once", as
     await route.fulfill({ response, json: payload });
   });
 
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await openLibrary(page, "图片库");
   const imageGrid = page.getByLabel("图片库列表");
   await imageGrid.getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
@@ -1155,7 +1130,7 @@ test("project detail can retry after the library archive refresh fails once", as
   await detail.getByRole("button", { name: "删除", exact: true }).click();
   await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
   await expect.poll(() => failedAttempts).toBe(2);
-  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await openProject(page, conversationId);
   await expect(chat.getByText("对话内容加载失败。")).toBeVisible();
   await chat.getByRole("button", { name: "重试加载" }).click();
   await expect(chat.getByText("对话内容加载失败。")).toHaveCount(0);
@@ -1194,14 +1169,14 @@ test("a pre-archive project detail response cannot replace the refreshed project
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/app/assets?conversation=${conversationId}`);
   await expect.poll(() => detailCalls).toBeGreaterThanOrEqual(1);
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.locator('summary[aria-label="更多操作"]').click();
   await detail.getByRole("button", { name: "删除", exact: true }).click();
   await page.getByRole("dialog", { name: "删除「测试门店素材」？" }).getByRole("button", { name: "删除" }).click();
   await expect.poll(() => freshDetailDelivered).toBe(true);
-  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await openProject(page, conversationId);
   const chat = page.getByRole("region", { name: "Content generation conversation" });
   await expect(chat.getByText("归档后的新详情")).toBeVisible();
   releaseOldDetail?.();
@@ -1685,7 +1660,7 @@ test("video library renders one bounded page without eager video elements", asyn
   });
   await page.goto("/app/assets");
   captureLibraryMedia = true;
-  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "视频库", exact: true }).click();
+  await openLibrary(page, "视频库");
 
   const grid = page.getByLabel("视频库列表");
   const cards = grid.locator("button.shadcn-prototype-library-media-card");
@@ -1698,12 +1673,13 @@ test("video library renders one bounded page without eager video elements", asyn
   expect(listRequests[0].searchParams.get("limit")).toBe("49");
   expect(listRequests[0].searchParams.get("offset")).toBe("0");
 
-  const collapseStartedAt = Date.now();
-  await page.getByRole("button", { name: "隐藏侧边栏" }).click();
-  await expect(shell).toHaveClass(/sidebar-collapsed/);
-  expect(Date.now() - collapseStartedAt).toBeLessThan(1_500);
-  await page.getByRole("button", { name: "展开侧边栏" }).click();
-  await expect(shell).not.toHaveClass(/sidebar-collapsed/);
+  const navigationStartedAt = Date.now();
+  await page.getByRole("button", { name: /^切换项目或资源库/ }).click();
+  await expect(page.getByRole("dialog", { name: "工作台导航" })).toBeVisible();
+  expect(Date.now() - navigationStartedAt).toBeLessThan(1_500);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "工作台导航" })).toHaveCount(0);
+  await expect(shell).not.toHaveClass(/sidebar-/);
 
   await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "加载更多内容" }).click();
@@ -1823,9 +1799,8 @@ test("library cross-type details and interaction states stay consistent", async 
   await page.route("**/v1/assets/semantic-search?**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
 
   await page.goto("/app/assets");
-  const navigation = page.locator(".shadcn-prototype-nav");
 
-  await navigation.getByRole("button", { name: "文案库", exact: true }).click();
+  await openLibrary(page, "文案库");
   const copyGrid = page.getByLabel("文案库列表");
   await copyGrid.locator("button.shadcn-prototype-library-text-card").first().click();
   let detail = page.getByRole("dialog", { name: "秋季门店焕新推广文案详情" });
@@ -1850,7 +1825,7 @@ test("library cross-type details and interaction states stay consistent", async 
   await expect(page.getByText("没有找到匹配内容", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "清除搜索和筛选", exact: true }).click();
 
-  await navigation.getByRole("button", { name: "视频库", exact: true }).click();
+  await openLibrary(page, "视频库");
   const videoGrid = page.getByLabel("视频库列表");
   await expect(page.getByText("当前显示 48 项", { exact: true })).toBeVisible();
   await videoGrid.locator("button.shadcn-prototype-library-media-card").first().click();
@@ -1871,7 +1846,7 @@ test("library cross-type details and interaction states stay consistent", async 
   await expect(videoGrid.locator("button.shadcn-prototype-library-media-card")).toHaveCount(52);
   await expect(page.getByRole("button", { name: "加载更多内容", exact: true })).toHaveCount(0);
 
-  await navigation.getByRole("button", { name: "资产库", exact: true }).click();
+  await openLibrary(page, "资产库");
   const assetGrid = page.getByLabel("资产库列表");
   await assetGrid.locator("button.shadcn-prototype-library-text-card").first().click();
   detail = page.getByRole("dialog", { name: "门窗行业获客白皮书详情" });
@@ -2505,9 +2480,11 @@ test("CASE-07 rejects an obsolete editor without overwriting a newer project", a
 
 test("desktop start and image library keep the approved hierarchy", async ({ page }) => {
   await page.goto("/app/assets");
-  await page.getByRole("button", { name: "新建项目", exact: true }).first().click();
+  await (await openNavigation(page)).getByRole("button", { name: "新建项目", exact: true }).click();
   await expect(page.getByRole("heading", { name: "新建视频项目", exact: true })).toBeVisible();
-  const sidebar = page.getByRole("complementary", { name: "Workspace navigation" });
+  // No persistent sidebar: navigation is only present while the panel is open.
+  await expect(page.getByRole("complementary", { name: "Workspace navigation" })).toBeHidden();
+  const sidebar = await openNavigation(page);
   const projectRows = sidebar.locator(".shadcn-prototype-conversation-row");
   const projectSection = sidebar.locator(".shadcn-prototype-conversation-section");
   const libraryNavigation = sidebar.getByRole("navigation", { name: "资源库" });
@@ -2519,7 +2496,7 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await expect(libraryNavigation.getByRole("button", { name: "文案库", exact: true })).toContainText("文案");
   await expect(libraryNavigation.getByRole("button", { name: "图片库", exact: true })).toContainText("图片");
   await expect(libraryNavigation.getByRole("button", { name: "视频库", exact: true })).toContainText("视频");
-  await expect.poll(async () => libraryNavigation.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(2);
+  await expect.poll(async () => libraryNavigation.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
   await expect(projectRows).toHaveCount(8);
   await expect(sidebar.getByText("可继续编辑", { exact: true })).toHaveCount(0);
   await expect(sidebar.getByText("待完善需求", { exact: true })).toHaveCount(0);
@@ -2534,7 +2511,8 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await expect(projectRows).toHaveCount(8);
   await captureDesktopEvidence(page, "new-project");
 
-  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "图片库", exact: true }).click();
+  await sidebar.getByRole("button", { name: "图片库", exact: true }).click();
+  await expect(sidebar).toHaveCount(0);
   const breadcrumb = page.locator(".shadcn-prototype-topbar .shadcn-prototype-breadcrumb");
   await expect(breadcrumb).toContainText("资源库");
   await expect(breadcrumb).toContainText("图片库");
@@ -2562,7 +2540,7 @@ test("desktop start and image library keep the approved hierarchy", async ({ pag
   await detailDialog.getByLabel("更多操作").click();
   await page.getByRole("button", { name: "关闭详情", exact: true }).click();
 
-  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "资产库", exact: true }).click();
+  await openLibrary(page, "资产库");
   await page.setViewportSize({ width: 1280, height: 720 });
   const assetHeader = page.locator(".shadcn-prototype-library-page-header");
   await expect(page.getByRole("heading", { name: "资产库", exact: true })).toBeVisible();
@@ -2650,7 +2628,7 @@ test("real archive API keeps the project source in read-only history", async ({ 
   if (!source || typeof source.id !== "number") throw new Error("Missing seeded project source");
   await page.getByRole("dialog", { name: /的项目资源/ }).getByRole("button", { name: "关闭项目资源" }).click();
 
-  await page.getByRole("navigation", { name: "资源库" }).getByRole("button", { name: "图片库" }).click();
+  await openLibrary(page, "图片库");
   await page.getByLabel("图片库列表").getByRole("button", { name: /测试门店素材/ }).click();
   const detail = page.getByRole("dialog", { name: "测试门店素材详情" });
   await detail.locator('summary[aria-label="更多操作"]').click();
@@ -2664,7 +2642,7 @@ test("real archive API keeps the project source in read-only history", async ({ 
   await expect(page.getByLabel("图片库列表")).toBeVisible();
   await expect(page.getByRole("region", { name: "Content generation conversation" })).toBeHidden();
   await expect(page.getByText("已删除。", { exact: true })).toBeVisible();
-  await page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`).click();
+  await openProject(page, conversationId);
   await resourceEntry.click();
   const drawer = page.getByRole("dialog", { name: /的项目资源/ });
   await expect(drawer.getByRole("button", { name: "素材 1" })).toBeVisible();

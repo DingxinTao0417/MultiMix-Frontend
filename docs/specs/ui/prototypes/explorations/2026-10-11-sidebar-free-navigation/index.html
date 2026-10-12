@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · 无侧栏导航方案</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF;
+  --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --ok:#0E8A6B; --warn:#9A6A00; --bad:#B42318;
+  --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.65;padding:40px 24px 90px}
+.wrap{max-width:1280px;margin:0 auto}
+.topline{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--accent);
+  background:var(--accent-soft);padding:5px 13px;border-radius:999px;margin-bottom:18px}
+h1{font-size:26px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+.lede{font-size:15px;color:var(--ink-2);max-width:880px}
+.verdict{font-size:14px;max-width:920px;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:15px 19px;margin:22px 0 10px;box-shadow:var(--shadow-card)}
+.verdict b{color:var(--accent)}
+.scope{font-size:12.5px;color:var(--ink-3);max-width:920px;margin-bottom:40px}
+h2{font-size:18px;font-weight:700;margin:46px 0 6px}
+h2 .n{display:inline-grid;place-items:center;width:25px;height:25px;border-radius:8px;background:var(--ink);color:#fff;
+  font-size:12.5px;margin-right:9px;vertical-align:middle}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:20px;max-width:920px}
+
+.specs{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.spec{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  box-shadow:var(--shadow-card);display:flex;flex-direction:column}
+.spec.rec{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.spec-h{padding:13px 16px 12px;border-bottom:1px solid var(--line)}
+.spec-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-3);margin-bottom:7px}
+.spec.rec .spec-badge{background:var(--ai-grad);color:#fff}
+.spec-h h3{font-size:13.5px;font-weight:700;margin-bottom:3px}
+.spec-h p{font-size:11.5px;color:var(--ink-2);line-height:1.5}
+.stage{background:var(--bg);padding:13px;border-bottom:1px solid var(--line);height:342px;overflow:hidden;position:relative;display:flex}
+.stage-inner{position:relative;display:flex;flex-direction:column;gap:7px;width:100%;min-width:420px;height:100%}
+
+/* 顶栏 */
+.tb{display:flex;align-items:center;gap:7px;min-height:22px;flex:none}
+.tb-mark{width:15px;height:15px;border-radius:999px;background:#151515;flex:none}
+.tb-sw{display:flex;align-items:center;gap:5px;border:1px solid var(--line-2);border-radius:7px;
+  background:var(--surface);padding:3px 7px;font-size:8.5px;font-weight:650;color:var(--ink);
+  box-shadow:0 1px 3px rgba(32,31,30,.05)}
+.tb-sw .cv{color:var(--ink-3);font-size:8px}
+.tb-sw .bdg{background:#FFF3D9;color:var(--warn);border-radius:999px;padding:0 4px;font-size:7px;font-weight:700}
+.tb-k{margin-left:auto;display:flex;align-items:center;gap:5px}
+.tb-pill{border:1px solid transparent;border-radius:999px;padding:2px 7px;font-size:7.5px;font-weight:650;color:var(--ink-2);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.tb-ic{width:16px;height:16px;border-radius:5px;border:1px solid var(--line);background:var(--surface);
+  display:grid;place-items:center;font-size:8px;color:var(--ink-3);flex:none}
+
+/* 主工作区（无侧栏，全宽） */
+.main{flex:1;display:grid;grid-template-columns:1fr 1.12fr;gap:7px;min-height:0}
+.m-col{display:flex;flex-direction:column;gap:5px;min-width:0}
+.m-b{border:1px solid var(--line);border-radius:6px;background:var(--surface);font-size:8px;color:var(--ink-3);
+  display:grid;place-items:center;text-align:center;line-height:1.35;padding:3px 2px;flex:none}
+.m-b.grow{flex:1}
+.m-b.media{background:#2A2827;border-color:#2A2827;color:#C9C4BC}
+.m-b.ai{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  color:var(--ink-2);font-weight:650}
+.m-b.soft{background:var(--accent-soft);border-color:#DCD5FF;color:var(--accent);font-weight:650}
+.m-seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+
+/* 覆盖层 */
+.ovl{position:absolute;inset:0;background:rgba(31,28,25,.28);display:flex;justify-content:center;
+  align-items:flex-start;padding:34px 13px 13px}
+.ovl.center{align-items:center;padding:13px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 50px rgba(32,31,30,.22);
+  width:188px;flex:none;padding:7px;display:grid;gap:2px}
+.panel.wide{width:258px}
+.panel.full{width:330px;max-width:100%;padding:11px}
+.p-srch{display:flex;align-items:center;gap:5px;border:1px solid var(--line-2);border-radius:6px;
+  background:var(--surface-2);padding:4px 7px;font-size:8px;color:var(--ink-3);margin-bottom:4px}
+.p-lbl{font-size:7.5px;font-weight:700;color:var(--ink-3);padding:3px 5px 1px}
+.p-row{display:flex;align-items:center;min-height:15px;padding:0 5px;border-radius:4px;
+  font-size:8.5px;line-height:11px;color:#4a4641;white-space:nowrap;overflow:hidden}
+.p-row.on{background:#f0ede8;font-weight:650;color:var(--ink)}
+.p-row .st{margin-left:auto;font-size:7px;color:var(--ink-3);padding-left:4px;flex:none}
+.p-row .d{width:5px;height:5px;border-radius:2px;background:var(--line-2);margin-right:6px;flex:none}
+.p-div{height:1px;background:var(--line);margin:4px 2px}
+.p-new{min-height:19px;display:flex;align-items:center;justify-content:center;gap:4px;border-radius:6px;
+  background:#201f1e;color:#fff;font-size:8px;font-weight:650;margin-bottom:4px}
+.p-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:5px}
+.p-card{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface-2)}
+.p-thumb{height:26px;background:#2A2827}
+.p-ct{padding:3px 4px;font-size:7px;color:var(--ink-2);line-height:1.3}
+.p-hint{font-size:7px;color:var(--ink-3);text-align:center;margin-top:6px}
+
+.spec-body{padding:13px 16px 17px;display:grid;gap:11px;flex:1}
+.mini{font-size:10px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase}
+.spec-body ul{list-style:none;display:grid;gap:7px;margin-top:6px}
+.spec-body li{display:grid;grid-template-columns:13px 1fr;gap:6px;font-size:11.5px;color:var(--ink-2);line-height:1.5}
+.spec-body li .m{color:var(--ink-3);text-align:center}
+.spec-body li.plus .m{color:var(--ok)}.spec-body li.minus .m{color:var(--bad)}
+
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:14px;overflow:hidden;box-shadow:var(--shadow-card);font-size:12.5px}
+th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-size:11px;font-weight:700;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td b{color:var(--ink)}
+.y{color:var(--ok);font-weight:700}.n{color:var(--bad);font-weight:700}.p{color:var(--warn);font-weight:700}
+
+.final{border:1px solid transparent;border-radius:14px;padding:21px 23px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-card)}
+.final h3{font-size:15.5px;font-weight:700;margin-bottom:11px}
+.final ol{margin-left:19px;display:grid;gap:9px;font-size:13.5px;color:var(--ink-2)}
+.final ol b{color:var(--ink)}
+.gate{margin-top:17px;padding-top:15px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}
+.gate b{color:var(--warn)}
+code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--surface-2);
+  padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow-card)}
+.card ul{list-style:none;display:grid;gap:10px}
+.card li{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:13px;color:var(--ink-2)}
+.card li b{color:var(--ink)}
+.tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;height:18px;align-self:start;margin-top:3px;white-space:nowrap}
+.tag.keep{background:#E3F3EE;color:var(--ok)}.tag.gate{background:#FFF3D9;color:var(--warn)}
+.tag.p0{background:#FAE9E6;color:var(--bad)}
+@media (max-width:1100px){.specs{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="topline">● 2026-10-11 · 无侧栏导航方案（配合 B 批注式修改）</div>
+<h1>不占左侧：四个按需出现的导航方案</h1>
+<p class="lede">把导航从常驻左栏改成按需出现的浮层。四个样本的工作区都是全宽双栏，
+差别在于导航从哪里来、用什么形态、以及代价是什么。</p>
+
+<div class="verdict">
+<b>好消息：覆盖式导航的技术底子已经有了。</b><br>
+代码里已有完整的浮层导航实现——遮罩、Escape 关闭、Tab 焦点隔离、关闭后焦点归还
+（<code>assets-workspace-client.tsx:903</code> 起，<code>use-dialog-focus-management.ts</code>），
+现在只在 ≤1180px 窄屏生效。桌面改用浮层<b>主要是放开触发条件和重做触发入口，不需要从零造无障碍逻辑</b>。<br>
+真正的代价不在技术，在<b>被动感知</b>：项目的「生成中 / 待确认 / 需处理」现在扫一眼就知道，收进浮层后必须主动打开才能看到。
+</div>
+<p class="scope">本页为设计选型稿，未修改产品代码。四个样本按真实 CSS 比例还原，工作区已叠加 B 方案的成片侧改动。</p>
+<h2><span class="n">1</span>四个方案（工作区全宽，导航按需出现）</h2>
+<p class="sub">每个样本都画成「浮层已打开」的状态，方便看清导航内容；关闭后工作区即为全宽双栏。</p>
+
+<div class="specs">
+
+<!-- N1 顶栏项目切换器（推荐） -->
+<div class="spec rec">
+  <div class="stage"><div class="stage-inner">
+    <div class="tb">
+      <span class="tb-mark"></span>
+      <div class="tb-sw">全屋定制获客视频方案 <span class="cv">▾</span> <span class="bdg">2</span></div>
+      <div class="tb-k">
+        <span class="tb-pill">● AI 后台工作中</span>
+        <span class="tb-ic">⌕</span>
+        <span class="tb-ic">◔</span>
+      </div>
+    </div>
+    <div class="main">
+      <div class="m-col">
+        <div class="m-b" style="height:12px">对话标题</div>
+        <div class="m-b grow">对话流</div>
+        <div class="m-b ai" style="height:19px">输入框</div>
+      </div>
+      <div class="m-col">
+        <div class="m-b" style="height:11px">视频工程 · v2</div>
+        <div class="m-b media" style="height:84px">播放器（更宽）</div>
+        <div class="m-seg">
+          <div class="m-b soft" style="height:19px">#1<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#2<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#3<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#4<br>说这镜</div>
+        </div>
+        <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+      </div>
+    </div>
+    <div class="ovl" style="justify-content:flex-start;padding-left:35px">
+      <div class="panel wide">
+        <div class="p-new">＋ 新建项目</div>
+        <div class="p-srch">⌕ 搜索项目</div>
+        <div class="p-lbl">最近项目</div>
+        <div class="p-row on">全屋定制获客视频方案<span class="st">待确认</span></div>
+        <div class="p-row">门窗案例小红书<span class="st">生成中</span></div>
+        <div class="p-row">春季促销稿子</div>
+        <div class="p-row">小户型收纳宣传</div>
+        <div class="p-row">SaaS 宣传视频脚本</div>
+        <div class="p-row" style="color:#9B968E">查看全部项目</div>
+        <div class="p-div"></div>
+        <div class="p-lbl">资源库</div>
+        <div class="p-row"><span class="d"></span>资产</div>
+        <div class="p-row"><span class="d"></span>文案</div>
+        <div class="p-row"><span class="d"></span>图片</div>
+        <div class="p-row"><span class="d"></span>视频</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">推荐</span>
+    <h3>N1 · 顶栏项目切换器</h3>
+    <p>顶栏左侧常驻「当前项目名 ▾」，点击下拉出项目列表与资源库。当前位置始终可见，其余按需展开。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>当前项目名常驻，用户不会迷失位置</div></li>
+        <li class="plus"><span class="m">+</span><div>「▾」是商家熟悉的下拉手势，不需要学快捷键</div></li>
+        <li class="plus"><span class="m">+</span><div>待办数角标补回被动感知：有项目需处理时顶栏显示数字</div></li>
+        <li class="plus"><span class="m">+</span><div>复用现有浮层无障碍逻辑，只换触发入口</div></li>
+        <li class="minus"><span class="m">−</span><div>换项目从 1 次点击变成 2 次</div></li>
+        <li class="minus"><span class="m">−</span><div>顶栏同时承载项目和资源库，面板偏长</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- N2 命令面板 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="tb">
+      <span class="tb-mark"></span>
+      <div class="tb-sw" style="font-weight:600;color:var(--ink-2)">⌕ 搜索项目或资源 <span class="cv">⌘K</span></div>
+      <div class="tb-k">
+        <span class="tb-pill">● AI 后台工作中</span>
+        <span class="tb-ic">◔</span>
+      </div>
+    </div>
+    <div class="main">
+      <div class="m-col">
+        <div class="m-b" style="height:12px">对话标题</div>
+        <div class="m-b grow">对话流</div>
+        <div class="m-b ai" style="height:19px">输入框</div>
+      </div>
+      <div class="m-col">
+        <div class="m-b" style="height:11px">视频工程 · v2</div>
+        <div class="m-b media" style="height:84px">播放器（更宽）</div>
+        <div class="m-seg">
+          <div class="m-b soft" style="height:19px">#1<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#2<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#3<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#4<br>说这镜</div>
+        </div>
+        <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+      </div>
+    </div>
+    <div class="ovl center">
+      <div class="panel full">
+        <div class="p-srch" style="font-size:9px;padding:6px 8px">⌕ 输入项目名、素材名或动作…</div>
+        <div class="p-lbl">项目</div>
+        <div class="p-row on">全屋定制获客视频方案<span class="st">待确认</span></div>
+        <div class="p-row">门窗案例小红书<span class="st">生成中</span></div>
+        <div class="p-div"></div>
+        <div class="p-lbl">动作</div>
+        <div class="p-row"><span class="d"></span>新建项目</div>
+        <div class="p-row"><span class="d"></span>打开图片库</div>
+        <div class="p-hint">↑↓ 选择 · Enter 打开 · Esc 关闭</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">效率最高</span>
+    <h3>N2 · 命令面板（⌘K）</h3>
+    <p>顶栏一个搜索条，点击或 ⌘K/Ctrl+K 唤出居中面板，搜索即导航，项目、资源、动作同一个入口。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>项目再多也不怕，搜索比列表更快</div></li>
+        <li class="plus"><span class="m">+</span><div>顶栏最干净，常驻元素最少</div></li>
+        <li class="minus"><span class="m">−</span><div>对非技术商家不直观：不知道自己有哪些项目时，搜索框帮不上忙</div></li>
+        <li class="minus"><span class="m">−</span><div>当前项目名不常驻，位置感最弱</div></li>
+        <li class="minus"><span class="m">−</span><div>待办状态完全隐形，除非额外加角标</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- N3 全屏项目台 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="tb">
+      <span class="tb-mark"></span>
+      <div class="tb-sw">全屋定制获客视频方案 <span class="cv">▾</span></div>
+      <div class="tb-k"><span class="tb-pill">● AI 后台工作中</span><span class="tb-ic">◔</span></div>
+    </div>
+    <div class="main">
+      <div class="m-col">
+        <div class="m-b" style="height:12px">对话标题</div>
+        <div class="m-b grow">对话流</div>
+        <div class="m-b ai" style="height:19px">输入框</div>
+      </div>
+      <div class="m-col">
+        <div class="m-b" style="height:11px">视频工程 · v2</div>
+        <div class="m-b media" style="height:84px">播放器（更宽）</div>
+        <div class="m-seg">
+          <div class="m-b soft" style="height:19px">#1<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#2<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#3<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#4<br>说这镜</div>
+        </div>
+        <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+      </div>
+    </div>
+    <div class="ovl center" style="background:rgba(250,249,247,.97)">
+      <div class="panel full" style="box-shadow:none;border:0;background:transparent">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="p-new" style="margin:0;flex:1">＋ 新建项目</div>
+          <div class="p-srch" style="margin:0;flex:1">⌕ 搜索</div>
+        </div>
+        <div class="p-lbl" style="margin-top:6px">最近项目</div>
+        <div class="p-cards">
+          <div class="p-card"><div class="p-thumb"></div><div class="p-ct">全屋定制获客<br><span style="color:#9A6A00">待确认</span></div></div>
+          <div class="p-card"><div class="p-thumb"></div><div class="p-ct">门窗案例小红书<br><span style="color:#9A6A00">生成中</span></div></div>
+          <div class="p-card"><div class="p-thumb"></div><div class="p-ct">春季促销稿子<br><span style="color:#9B968E">—</span></div></div>
+        </div>
+        <div class="p-lbl" style="margin-top:6px">资源库</div>
+        <div style="display:flex;gap:5px">
+          <div class="p-row" style="border:1px solid var(--line);border-radius:5px;flex:1;justify-content:center">资产</div>
+          <div class="p-row" style="border:1px solid var(--line);border-radius:5px;flex:1;justify-content:center">文案</div>
+          <div class="p-row" style="border:1px solid var(--line);border-radius:5px;flex:1;justify-content:center">图片</div>
+          <div class="p-row" style="border:1px solid var(--line);border-radius:5px;flex:1;justify-content:center">视频</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">信息最全</span>
+    <h3>N3 · 全屏项目台</h3>
+    <p>点品牌 mark 或项目名，整屏切换成项目台：项目卡带封面和状态，资源库一行，新建项目最醒目。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>项目带封面和状态，比文字列表好认，适合多项目并行</div></li>
+        <li class="plus"><span class="m">+</span><div>像一个「家」，新建项目的地位最清楚</div></li>
+        <li class="minus"><span class="m">−</span><div>整屏切换打断当前工作，换项目的心理成本最高</div></li>
+        <li class="minus"><span class="m">−</span><div>项目封面需要后端提供代表帧，缺图时要降级，工作量最大</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- N4 悬浮迷你轨 -->
+<div class="spec">
+  <div class="stage"><div class="stage-inner">
+    <div class="tb">
+      <span class="tb-mark"></span>
+      <div class="tb-sw" style="border-style:dashed;color:var(--ink-3)">全屋定制获客视频方案</div>
+      <div class="tb-k"><span class="tb-pill">● AI 后台工作中</span><span class="tb-ic">◔</span></div>
+    </div>
+    <div class="main">
+      <div class="m-col">
+        <div class="m-b" style="height:12px">对话标题</div>
+        <div class="m-b grow">对话流</div>
+        <div class="m-b ai" style="height:19px">输入框</div>
+      </div>
+      <div class="m-col">
+        <div class="m-b" style="height:11px">视频工程 · v2</div>
+        <div class="m-b media" style="height:84px">播放器（更宽）</div>
+        <div class="m-seg">
+          <div class="m-b soft" style="height:19px">#1<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#2<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#3<br>说这镜</div>
+          <div class="m-b soft" style="height:19px">#4<br>说这镜</div>
+        </div>
+        <div class="m-b ai grow">第2镜已重做<br>其余3镜复用</div>
+      </div>
+    </div>
+    <div style="position:absolute;left:13px;top:50%;transform:translateY(-50%);display:grid;gap:4px;
+      background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 3px;
+      box-shadow:0 6px 20px rgba(32,31,30,.14)">
+      <div class="tb-ic" style="border-radius:999px;background:#f0ede8">▣</div>
+      <div class="tb-ic" style="border-radius:999px">＋</div>
+      <div class="tb-ic" style="border-radius:999px">◫</div>
+      <div class="tb-ic" style="border-radius:999px">▦</div>
+    </div>
+    <div class="ovl" style="background:transparent;align-items:center;justify-content:flex-start;padding-left:42px">
+      <div class="panel" style="width:150px">
+        <div class="p-lbl">最近项目</div>
+        <div class="p-row on">全屋定制获客<span class="st">待确认</span></div>
+        <div class="p-row">门窗案例小红书<span class="st">生成中</span></div>
+        <div class="p-row">春季促销稿子</div>
+      </div>
+    </div>
+  </div></div>
+  <div class="spec-h">
+    <span class="spec-badge">折中</span>
+    <h3>N4 · 悬浮迷你轨</h3>
+    <p>左侧一条脱离布局的悬浮胶囊（约 26px，浮在内容上不占列宽），点击展开为浮层面板。</p>
+  </div>
+  <div class="spec-body">
+    <div>
+      <div class="mini">代价</div>
+      <ul>
+        <li class="plus"><span class="m">+</span><div>导航位置仍在左侧，肌肉记忆不变</div></li>
+        <li class="plus"><span class="m">+</span><div>不占布局列宽，工作区实际全宽</div></li>
+        <li class="minus"><span class="m">−</span><div>图标无文字，四库靠猜；这正是我上一轮批评过的「靠悬停才知道是什么」</div></li>
+        <li class="minus"><span class="m">−</span><div>悬浮元素会盖住内容，长文案和分镜卡需要避让</div></li>
+        <li class="minus"><span class="m">−</span><div>既不如 N1 清楚，也不如 N2 干净，两头不靠</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2><span class="n">2</span>方案对比</h2>
+<table>
+<tr><th style="width:22%">维度</th><th style="width:20%">N1 顶栏切换器</th><th style="width:19%">N2 命令面板</th><th style="width:19%">N3 全屏项目台</th><th>N4 悬浮轨</th></tr>
+<tr><td><b>工作区让出宽度</b></td><td class="y">264px 全让</td><td class="y">264px 全让</td><td class="y">264px 全让</td><td class="y">264px 全让</td></tr>
+<tr><td><b>知道自己在哪个项目</b></td><td class="y">常驻可见</td><td class="n">不可见</td><td class="y">常驻可见</td><td class="p">可见但弱</td></tr>
+<tr><td><b>不打开也知道有事要办</b></td><td class="y">角标</td><td class="n">否</td><td class="n">否</td><td class="n">否</td></tr>
+<tr><td><b>非技术商家易懂</b></td><td class="y">下拉是通用手势</td><td class="n">需知道搜什么</td><td class="y">卡片直观</td><td class="p">图标需猜</td></tr>
+<tr><td><b>换项目成本</b></td><td class="p">2 次点击</td><td class="p">1 次 + 打字</td><td class="n">整屏切换</td><td class="p">2 次点击</td></tr>
+<tr><td><b>复用现有浮层逻辑</b></td><td class="y">可复用</td><td class="p">需新建面板</td><td class="p">需新建整屏</td><td class="y">可复用</td></tr>
+<tr><td><b>相对工作量</b></td><td>1×</td><td>1.5×</td><td>2.5×</td><td>1.2×</td></tr>
+</table>
+
+<h2><span class="n">3</span>建议</h2>
+<div class="final">
+<h3>推荐 N1 顶栏项目切换器，⌘K 作为附加加速器</h3>
+<ol>
+<li><b>顶栏左侧常驻「当前项目名 ▾」</b>，点击下拉出「新建项目 + 搜索 + 最近项目 + 资源库」。
+位置感和创建动作都保住，列表按需出现。</li>
+<li><b>待处理项目数做成切换器上的角标。</b>这是无侧栏方案里最关键的一笔：
+不打开面板也知道有几个项目在等你，补回被动感知。</li>
+<li><b>AI 后台状态移到顶栏右侧</b>，仍遵守渐变纪律，无任务时整条隐藏。</li>
+<li><b>⌘K / Ctrl+K 指向同一个面板</b>，熟练用户可以跳过点击。它是加速器，不是唯一入口。</li>
+<li><b>复用现有浮层无障碍逻辑</b>（遮罩、Escape、焦点隔离、焦点归还），只把触发条件从窄屏放开到桌面。</li>
+</ol>
+<div class="gate">
+<b>需要你明确批准的两点：</b><br>
+一、<b>这比弱化侧栏改动大得多。</b>工作台设计第 3 节写明桌面是「左侧导航 + 对话区 + 展示区」三区、
+`&gt;1180px` 时左栏固定 264px；V3 规范第 4 节也把三栏 grid 定为骨架。去掉左栏等于改这两条已确认结构，
+并要同轮更新：工作台设计、V3 规范、七屏原型（全部含侧栏）、实现、截图基线。<br>
+二、<b>「单独的窗口」我按应用内浮层理解。</b>如果你指的是操作系统级的独立窗口（像 PS 的工具面板那样可拖到另一个屏幕），
+那是另一个量级的工程，当前 Web 工作台不具备该能力，需要单独评估。<b>请确认是哪一种。</b>
+</div>
+</div>
+
+<h2><span class="n">4</span>与弱化侧栏（S2）的取舍</h2>
+<div class="card">
+<ul>
+<li><span class="tag keep">相同</span><div><b>两条路都能让视觉重心回到成片。</b>S2 靠减重，N1 靠移走。</div></li>
+<li><span class="tag p0">差异</span><div><b>被动感知是真实损失。</b>S2 下你扫一眼就知道哪个项目在生成、哪个待确认；
+N1 要靠角标数字提示，知道「有 2 件事」但不知道是哪两件。多项目并行的商家对此敏感。</div></li>
+<li><span class="tag p0">差异</span><div><b>改动量差一个量级。</b>S2 主要是 CSS 加一处结构调整；
+N1 要改已确认的三区布局，并同步七屏原型和截图基线。</div></li>
+<li><span class="tag gate">建议</span><div><b>如果你想先看效果再决定，可以把 N1 做成可切换的导航模式</b>，
+默认保持侧栏，顶栏提供「收起导航」。这样不推翻已确认结构，也能真实体验全宽工作区，验证后再定是否转为默认。
+代价是两套导航要同时维护一段时间。</div></li>
+</ul>
+</div>
+<p class="sub" style="margin-top:22px">你选定方向后（S2 / N1 / N1 可切换模式），我把 B 与导航改动合并写入
+<code>MultiMix-Frontend/docs/plans/active/</code>，登记开发占用，再开始改代码。</p>
+</div></body>
+</html>

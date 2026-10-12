@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BookOpen,
+  ChevronDown,
   FileText,
   Gauge,
   GripVertical,
@@ -14,8 +15,6 @@ import {
   LogOut,
   MoreHorizontal,
   Package,
-  PanelLeftClose,
-  PanelLeftOpen,
   Pencil,
   Plus,
   Search,
@@ -98,6 +97,7 @@ import type {
   GeneratedImageGallerySetApplication,
 } from "./generated-image-gallery";
 import AiBackgroundStatus, { type AiBackgroundTask } from "./ai-background-status";
+import BrandMark from "../../components/brand-mark";
 import type { LibraryActionIntent } from "./library-workshop";
 import type { SceneSourceAction } from "./product-preview";
 import { sceneImageGenerationUtterance } from "../lib/scene-source-utterance";
@@ -156,7 +156,6 @@ const ProductWorkspace = dynamic(() => import("./product-workspace"), { ssr: fal
 
 const LibraryWorkshop = dynamic(() => import("./library-workshop"), { ssr: false, loading: () => <LibraryWorkspaceLoading title="素材库" /> });
 
-type SidebarState = "auto" | "collapsed" | "expanded";
 type ConversationLoadState = "unconfigured" | "loading" | "ready" | "error";
 const PROJECT_STATE_LABELS: Record<NonNullable<Conversation["projectState"]>, string> = {
   needs_input: "待完善需求",
@@ -837,7 +836,7 @@ export default function AssetsWorkspaceClient({
   }, []);
   const navigateWorkspace = (action: () => void, onDenied?: () => void) => {
     if (navigationPendingRef.current) { onDenied?.(); return; }
-    const reopenNavigation = isNarrowViewport && narrowNavigationOpen;
+    const reopenNavigation = narrowNavigationOpen;
     if (reopenNavigation) setNarrowNavigationOpen(false);
     const denied = () => {
       if (reopenNavigation) setNarrowNavigationOpen(true);
@@ -866,6 +865,14 @@ export default function AssetsWorkspaceClient({
     sceneId: string;
     versionId: number | null;
   }>>({});
+  // "说这镜" binds the composer to one scene until the message is accepted.
+  // Tracked apart from clickedSceneFocus so passive "jump to scene" clicks keep
+  // their existing behaviour.
+  const [segmentAnnotation, setSegmentAnnotation] = useState<{
+    conversationId: string;
+    assetId: number;
+    sceneId: string;
+  } | null>(null);
   const [sceneSourceProgress, setSceneSourceProgress] = useState<{
     sceneId: string; stage: string; error?: string;
   } | null>(null);
@@ -894,22 +901,47 @@ export default function AssetsWorkspaceClient({
   const conversationDetailRequestKeyRef = useRef<string | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const isDividerDraggingRef = useRef(false);
-  const [sidebarState, setSidebarState] = useState<SidebarState>("auto");
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [narrowNavigationOpen, setNarrowNavigationOpen] = useState(false);
   const navigationDialogRef = useRef<HTMLDivElement | null>(null);
   const navigationCloseRef = useRef<HTMLButtonElement | null>(null);
+  const projectSearchInputRef = useRef<HTMLInputElement | null>(null);
+  // Opening navigation lands on project search when it exists, since finding
+  // a project is the panel's main job; otherwise on the close button.
+  const navigationInitialFocusRef = useRef<HTMLElement | null>(null);
   const navigationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Where focus returns on close: the switcher when it opened the panel,
+  // otherwise whatever was focused before the keyboard shortcut.
+  const lastFocusBeforeNavigationRef = useRef<HTMLElement | null>(null);
   const closeNarrowNavigation = () => {
     setNarrowNavigationOpen(false);
-    window.requestAnimationFrame(() => navigationTriggerRef.current?.focus({ preventScroll: true }));
+    const target = navigationTriggerRef.current ?? lastFocusBeforeNavigationRef.current;
+    window.requestAnimationFrame(() => target?.focus({ preventScroll: true }));
   };
   useDialogFocusManagement({
-    open: isNarrowViewport && narrowNavigationOpen,
+    open: narrowNavigationOpen,
     dialogRef: navigationDialogRef,
-    initialFocusRef: navigationCloseRef,
+    initialFocusRef: navigationInitialFocusRef,
     onEscape: closeNarrowNavigation,
   });
+  // Read at open time by the focus manager (it runs in a microtask after the
+  // panel mounts, so the search input ref is populated by then).
+  navigationInitialFocusRef.current = projectSearchInputRef.current ?? navigationCloseRef.current;
+  // Global shortcut for the same panel the header switcher opens.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      if (narrowNavigationOpen) return;
+      navigationTriggerRef.current = document.activeElement instanceof HTMLButtonElement
+        ? document.activeElement : null;
+      lastFocusBeforeNavigationRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement : null;
+      setNarrowNavigationOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [narrowNavigationOpen]);
   const [chatPanelWidth, setChatPanelWidth] = useState(640);
   // Desktop starts from the approved 52/48 balance and then respects the
   // shared chat/result bounds. Dragging continues to override this default.
@@ -1154,6 +1186,38 @@ export default function AssetsWorkspaceClient({
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const hasProductStage = activeView === "conversation" && displayProduct !== null;
+  const activeSegmentAnnotation = segmentAnnotation
+    && segmentAnnotation.conversationId === selectedConversation.id
+    && displayProduct?.backendAssetId === segmentAnnotation.assetId
+    && clickedSceneFocus[segmentAnnotation.assetId]?.sceneId === segmentAnnotation.sceneId
+    ? segmentAnnotation : null;
+  const annotatedSegment = activeSegmentAnnotation
+    ? displayProduct?.segments?.find((segment) => segment.id === activeSegmentAnnotation.sceneId) ?? null
+    : null;
+  const segmentAnnotationRef = useRef(segmentAnnotation);
+  segmentAnnotationRef.current = segmentAnnotation;
+  // Releases the binding and the scene focus it set; a different focus chosen
+  // later (e.g. a passive jump click on another scene) is left untouched.
+  const clearSegmentAnnotation = useCallback(() => {
+    const current = segmentAnnotationRef.current;
+    if (!current) return;
+    setSegmentAnnotation(null);
+    setClickedSceneFocus((focus) => {
+      if (focus[current.assetId]?.sceneId !== current.sceneId) return focus;
+      const next = { ...focus };
+      delete next[current.assetId];
+      return next;
+    });
+  }, []);
+  // Switching project or product ends the "说这镜" binding: coming back later
+  // must not silently re-pin a new message to that scene.
+  const displayProductAssetId = displayProduct?.backendAssetId ?? null;
+  useEffect(() => {
+    const current = segmentAnnotationRef.current;
+    if (current && (current.conversationId !== selectedConversation.id || current.assetId !== displayProductAssetId)) {
+      clearSegmentAnnotation();
+    }
+  }, [selectedConversation.id, displayProductAssetId, clearSegmentAnnotation]);
   const canShowDiagnostics = Boolean(token && diagnosticsAccess?.token === token && diagnosticsAccess.allowed);
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
@@ -1381,7 +1445,6 @@ export default function AssetsWorkspaceClient({
     const mediaQuery = window.matchMedia("(max-width: 1180px)");
     const syncViewport = () => {
       setIsNarrowViewport(mediaQuery.matches);
-      if (!mediaQuery.matches) setNarrowNavigationOpen(false);
     };
 
     syncViewport();
@@ -2198,13 +2261,12 @@ export default function AssetsWorkspaceClient({
   };
 
   const handleCollapseSidebar = () => {
-    if (isNarrowViewport) closeNarrowNavigation();
-    else setSidebarState("collapsed");
+    closeNarrowNavigation();
   };
 
   const handleExpandSidebar = () => {
-    if (isNarrowViewport) setNarrowNavigationOpen(true);
-    else setSidebarState("expanded");
+    lastFocusBeforeNavigationRef.current = null;
+    setNarrowNavigationOpen(true);
   };
 
   const handleOpenCreativeProfile = () => {
@@ -3290,6 +3352,11 @@ export default function AssetsWorkspaceClient({
       agentAction,
       requirementSnapshot,
     } = result;
+    // The scene binding applied to this message only; the next instruction
+    // must not silently stay pinned to the same scene.
+    if (focusedScene && segmentAnnotationRef.current?.sceneId === focusedScene.sceneId) {
+      clearSegmentAnnotation();
+    }
     if (requirementSnapshot) {
       storeRequirementSnapshot(targetConversationId, requirementSnapshot);
     }
@@ -3874,33 +3941,55 @@ export default function AssetsWorkspaceClient({
     }, () => setProjectResourcesOpen(true));
   };
 
-  const effectiveSidebarState = isNarrowViewport ? narrowNavigationOpen ? "expanded" : "auto" : sidebarState;
-  const isSidebarVisuallyCollapsed = effectiveSidebarState === "auto" && isNarrowViewport;
-  const navigationSlot = isNarrowViewport ? (
+  // Projects that need the user's attention, counted from the same labels the
+  // project rows show, so the badge and the list can never disagree.
+  const attentionProjectCount = conversations.filter(
+    (conversation) => projectListStateLabel(conversation.projectState) !== null,
+  ).length;
+  const switcherTitle = activeView === "conversation"
+    ? selectedConversation.id === "new" ? "新建项目" : selectedConversation.title
+    : assetWorkspaceAdapter.getWorkshop(activeView).title;
+  // The project name is shown once per page: the conversation header renders
+  // it as its own title, so there the switcher shows only mark, badge and ▾.
+  const showSwitcherTitle = !(activeView === "conversation" && selectedConversation.id !== "new");
+  const openNavigation = (trigger: HTMLElement | null) => {
+    navigationTriggerRef.current = trigger instanceof HTMLButtonElement ? trigger : null;
+    handleExpandSidebar();
+  };
+  const navigationSlot = (
+    <div className="shadcn-prototype-header-navigation">
     <button
-      className="shadcn-prototype-topbar-sidebar-toggle"
+      className="shadcn-prototype-project-switcher"
       type="button"
-      aria-label="展开侧边栏"
       aria-haspopup="dialog"
       aria-expanded={narrowNavigationOpen}
       aria-controls="workspace-navigation"
-      title="展开侧边栏"
-      onClick={(event) => {
-        navigationTriggerRef.current = event.currentTarget;
-        handleExpandSidebar();
-      }}
+      aria-label={`切换项目或资源库，当前：${switcherTitle}${attentionProjectCount ? `，${attentionProjectCount} 个项目需要处理` : ""}`}
+      title="切换项目或资源库（⌘K / Ctrl+K）"
+      onClick={(event) => openNavigation(event.currentTarget)}
     >
-      <PanelLeftOpen size={16} aria-hidden="true" />
+      <BrandMark className="shadcn-prototype-brand-mark" size={22} />
+      {showSwitcherTitle ? (
+        <span className="shadcn-prototype-project-switcher-title">{switcherTitle}</span>
+      ) : null}
+      {attentionProjectCount ? (
+        <span className="shadcn-prototype-project-switcher-badge" aria-hidden="true">{attentionProjectCount}</span>
+      ) : null}
+      <ChevronDown size={14} aria-hidden="true" />
     </button>
-  ) : null;
+    {conversationLoadState === "error" ? (
+      // The project list lives in the on-demand panel; a failed load must stay
+      // visible and recoverable without opening it first.
+      <div className="shadcn-prototype-header-load-error" role="alert">
+        <strong>项目加载失败</strong>
+        <button type="button" onClick={() => setConversationLoadRevision((value) => value + 1)}>重新加载</button>
+      </div>
+    ) : null}
+    <AiBackgroundStatus tasks={backgroundTasks} />
+    </div>
+  );
 
-  const shellClassName = [
-    "shadcn-prototype-shell",
-    "agent-visual-refresh",
-    effectiveSidebarState === "collapsed" ? "sidebar-collapsed" : "",
-    effectiveSidebarState === "expanded" ? "sidebar-expanded" : "",
-    isSidebarVisuallyCollapsed ? "sidebar-visual-collapsed" : ""
-  ].filter(Boolean).join(" ");
+  const shellClassName = "shadcn-prototype-shell agent-visual-refresh";
   const insetClassName = activeView === "conversation" ? "shadcn-prototype-inset conversation-inset" : "shadcn-prototype-inset";
   const renderDiagnostics = () => canShowDiagnostics ? (
     <div className="shadcn-prototype-diagnostics">
@@ -3962,23 +4051,19 @@ export default function AssetsWorkspaceClient({
         ref={navigationDialogRef}
         id="workspace-navigation"
         className="shadcn-prototype-navigation-surface"
-        role={isNarrowViewport && narrowNavigationOpen ? "dialog" : undefined}
-        aria-modal={isNarrowViewport && narrowNavigationOpen ? true : undefined}
-        aria-label={isNarrowViewport && narrowNavigationOpen ? "工作台导航" : undefined}
-        hidden={isNarrowViewport && !narrowNavigationOpen}
+        role={narrowNavigationOpen ? "dialog" : undefined}
+        aria-modal={narrowNavigationOpen ? true : undefined}
+        aria-label={narrowNavigationOpen ? "工作台导航" : undefined}
+        hidden={!narrowNavigationOpen}
         tabIndex={-1}
       >
-      {isNarrowViewport && narrowNavigationOpen ? (
+      {narrowNavigationOpen ? (
         <button type="button" className="shadcn-prototype-navigation-backdrop" aria-label="关闭导航遮罩"
           tabIndex={-1} onClick={handleCollapseSidebar} />
       ) : null}
       <aside className="shadcn-prototype-sidebar" aria-label="Workspace navigation">
         <div className="shadcn-prototype-team">
-          <span className="shadcn-prototype-brand-mark" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 14 14" fill="none">
-              <path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
+          <BrandMark className="shadcn-prototype-brand-mark" size={26} />
           <div className="shadcn-prototype-brand">
             <strong>MultiMix</strong>
           </div>
@@ -3990,91 +4075,12 @@ export default function AssetsWorkspaceClient({
             ref={navigationCloseRef}
             className="shadcn-prototype-sidebar-toggle"
             type="button"
-            aria-label="隐藏侧边栏"
-            title="隐藏侧边栏"
+            aria-label="关闭导航"
+            title="关闭导航（Esc）"
             onClick={handleCollapseSidebar}
           >
-            <PanelLeftClose size={16} aria-hidden="true" />
+            <X size={16} aria-hidden="true" />
           </button>
-        </div>
-
-        <div className="shadcn-prototype-collapsed-rail" aria-label="收起导航">
-          <div className="shadcn-prototype-collapsed-rail-group">
-            <button
-              className="shadcn-prototype-collapsed-rail-button"
-              type="button"
-              aria-label="展开侧边栏"
-              title="展开侧边栏"
-              onClick={handleExpandSidebar}
-            >
-              <PanelLeftOpen size={17} aria-hidden="true" />
-            </button>
-            <Link className="shadcn-prototype-collapsed-rail-button" href="/" aria-label="返回主页" title="返回主页"
-              onClick={(event) => { event.preventDefault(); navigateWorkspace(() => router.push("/")); }}>
-              <House size={17} aria-hidden="true" />
-            </Link>
-          </div>
-
-          <div className="shadcn-prototype-collapsed-rail-group">
-            <button
-              className={activeView === "conversation" && selectedConversation.id === "new" ? "shadcn-prototype-collapsed-rail-button active accent" : "shadcn-prototype-collapsed-rail-button accent"}
-              type="button"
-              aria-label="新建项目"
-              title="新建项目"
-              onClick={() => {
-                void handleStartConversation();
-              }}
-            >
-              <Plus size={18} aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="shadcn-prototype-collapsed-rail-group">
-            <button
-              className={activeView === "assets" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
-              type="button"
-              aria-label="资产库"
-              title="资产库"
-              onClick={() => navigateView("assets")}
-            >
-              <Package size={17} aria-hidden="true" />
-            </button>
-            <button
-              className={activeView === "copy" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
-              type="button"
-              aria-label="文案库"
-              title="文案库"
-              onClick={() => navigateView("copy")}
-            >
-              <FileText size={17} aria-hidden="true" />
-            </button>
-            <button
-              className={activeView === "image" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
-              type="button"
-              aria-label="图片库"
-              title="图片库"
-              onClick={() => navigateView("image")}
-            >
-              <ImageIcon size={17} aria-hidden="true" />
-            </button>
-            <button
-              className={activeView === "video" ? "shadcn-prototype-collapsed-rail-button active" : "shadcn-prototype-collapsed-rail-button"}
-              type="button"
-              aria-label="视频库"
-              title="视频库"
-              onClick={() => navigateView("video")}
-            >
-              <Video size={17} aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="shadcn-prototype-collapsed-rail-user" aria-label="账户">
-            {creativeProfileVisible ? (
-              <button type="button" title="创作档案" aria-label="创作档案" onClick={handleOpenCreativeProfile}>
-                <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>
-              </button>
-            ) : <span title={accountEmail}>{getConversationMonogram(accountEmail)}</span>}
-          </div>
         </div>
 
         <button
@@ -4096,6 +4102,7 @@ export default function AssetsWorkspaceClient({
             <label className="shadcn-prototype-project-search">
               <Search size={14} aria-hidden="true" />
               <input
+                ref={projectSearchInputRef}
                 type="search"
                 aria-label="搜索项目"
                 placeholder="搜索项目"
@@ -4118,10 +4125,10 @@ export default function AssetsWorkspaceClient({
                 <span>请联系管理员完成配置后重试。</span>
               </div>
             ) : conversationLoadState === "error" ? (
-              <div className="shadcn-prototype-conversation-state" role="alert">
-                <strong>项目加载失败</strong>
-                <span>你的项目没有改变，请重新加载。</span>
-                <button type="button" onClick={() => setConversationLoadRevision((value) => value + 1)}>重新加载</button>
+              // The failure and its single reload action are shown in the page
+              // header, so they stay visible while this panel is closed.
+              <div className="shadcn-prototype-conversation-state">
+                <span>项目暂时无法加载，你的项目没有改变。</span>
               </div>
             ) : visibleConversationRows.length === 0 && projectSearchQuery.trim() ? (
               <div className="shadcn-prototype-conversation-state">
@@ -4241,7 +4248,7 @@ export default function AssetsWorkspaceClient({
             title="资产库"
             onClick={() => navigateView("assets")}
           >
-            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Package size={16} /></span>
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Package size={15} /></span>
             资产
           </button>
           <button
@@ -4252,7 +4259,7 @@ export default function AssetsWorkspaceClient({
             title="文案库"
             onClick={() => navigateView("copy")}
           >
-            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><FileText size={16} /></span>
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><FileText size={15} /></span>
             文案
           </button>
           <button
@@ -4263,7 +4270,7 @@ export default function AssetsWorkspaceClient({
             title="图片库"
             onClick={() => navigateView("image")}
           >
-            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><ImageIcon size={16} /></span>
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><ImageIcon size={15} /></span>
             图片
           </button>
           <button
@@ -4274,12 +4281,11 @@ export default function AssetsWorkspaceClient({
             title="视频库"
             onClick={() => navigateView("video")}
           >
-            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Video size={16} /></span>
+            <span className="shadcn-prototype-nav-icon" aria-hidden="true"><Video size={15} /></span>
             视频
           </button>
         </nav>
 
-        <AiBackgroundStatus tasks={backgroundTasks} />
 
         <div className="shadcn-prototype-user">
           <span className="shadcn-prototype-user-avatar" aria-hidden="true">{getConversationMonogram(accountEmail)}</span>
@@ -4360,6 +4366,8 @@ export default function AssetsWorkspaceClient({
               <ConversationStudio
                 navigationSlot={navigationSlot}
                 basePath={basePath}
+                segmentFocus={annotatedSegment ? { index: annotatedSegment.index } : null}
+                onClearSegmentFocus={clearSegmentAnnotation}
                 contextAssets={currentContextAssets}
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
@@ -4524,6 +4532,20 @@ export default function AssetsWorkspaceClient({
                       },
                     }));
                   }}
+                  annotatingSegmentId={activeSegmentAnnotation?.sceneId ?? null}
+                  onAnnotateSegment={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot && displayProduct.backendAssetId
+                    ? (segment: AssetProductSegment) => {
+                      const assetId = displayProduct.backendAssetId!;
+                      setClickedSceneFocus((current) => ({
+                        ...current,
+                        [assetId]: { sceneId: segment.id, versionId: latestProductVersionId(displayProduct) },
+                      }));
+                      setSegmentAnnotation({ conversationId: selectedConversation.id, assetId, sceneId: segment.id });
+                      window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+                        detail: { utterance: `第 ${segment.index} 镜：` },
+                      }));
+                    }
+                    : undefined}
                   onSceneSourceAction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot ? handleSceneSourceAction : undefined}
                   onContinueDirectorProduction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot
                     ? async () => {

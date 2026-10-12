@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import BrandMark from "./components/brand-mark";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import AssetsWorkspaceClient from "./assets/components/assets-workspace-client";
@@ -229,9 +230,7 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
 function MultiMixBrand() {
   return (
     <div className="multimix-auth-brand">
-      <span className="multimix-auth-brand-mark" aria-hidden="true">
-        <svg width="17" height="17" viewBox="0 0 14 14" fill="none"><path d="M2 12V2.5L7 8l5-5.5V12" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </span>
+      <BrandMark className="multimix-auth-brand-mark" size={34} />
       <b>MultiMix</b>
     </div>
   );

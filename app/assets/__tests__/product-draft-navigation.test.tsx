@@ -51,26 +51,35 @@ async function mountDraft(omitProduct = false) {
   return { ...rendered, editor, logout };
 }
 
+// Project and library entries live in the on-demand navigation panel, opened
+// from the header project switcher (the persistent sidebar was retired).
+function openNavigation() {
+  const opener = screen.getAllByRole("button", { name: /^切换项目或资源库/ })[0];
+  fireEvent.click(opener);
+  return screen.getByRole("dialog", { name: "工作台导航" });
+}
+
 describe("workspace draft navigation", () => {
-  it("keeps narrow navigation reachable and releases it before draft confirmation", async () => {
+  it.each([true, false])("keeps navigation reachable and releases it before draft confirmation (narrow=%s)", async (narrow) => {
     Object.defineProperty(window, "matchMedia", { configurable: true, value: () => ({
-      matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn(),
+      matches: narrow, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     }) });
     vi.spyOn(assetWorkspaceAdapter, "listLibrary").mockResolvedValue({ rows: [], nextOffset: null });
     const { container } = await mountDraft();
     const header = container.querySelector(".shadcn-prototype-chat-head")!;
-    const opener = within(header as HTMLElement).getByRole("button", { name: "展开侧边栏" });
+    const opener = within(header as HTMLElement).getByRole("button", { name: /^切换项目或资源库/ });
     opener.focus();
     fireEvent.click(opener);
     const navigation = await screen.findByRole("dialog", { name: "工作台导航" });
-    await waitFor(() => expect(within(navigation).getByRole("button", { name: "隐藏侧边栏" })).toHaveFocus());
+    // Finding a project is the panel's main job, so it opens on project search.
+    await waitFor(() => expect(within(navigation).getByRole("searchbox", { name: "搜索项目" })).toHaveFocus());
     expect(container.querySelector(".shadcn-prototype-inset")).toHaveAttribute("inert");
     fireEvent.click(within(navigation).getAllByRole("button", { name: "资产库" }).at(-1)!);
     expect(screen.queryByRole("dialog", { name: "工作台导航" })).not.toBeInTheDocument();
     const confirmation = await screen.findByRole("dialog");
     fireEvent.click(within(confirmation).getByRole("button", { name: "取消" }));
     const restored = await screen.findByRole("dialog", { name: "工作台导航" });
-    await waitFor(() => expect(within(restored).getByRole("button", { name: "隐藏侧边栏" })).toHaveFocus());
+    await waitFor(() => expect(within(restored).getByRole("searchbox", { name: "搜索项目" })).toHaveFocus());
     fireEvent.keyDown(restored, { key: "Escape" });
     await waitFor(() => expect(opener).toHaveFocus());
     expect(screen.getByRole("textbox", { name: "编辑文案稿" })).toHaveValue("重要的未保存草稿");
@@ -79,7 +88,8 @@ describe("workspace draft navigation", () => {
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "放弃修改并离开" })); });
     await screen.findByRole("heading", { name: "资产库" });
     expect(screen.queryByRole("dialog", { name: "工作台导航" })).not.toBeInTheDocument();
-    expect(container.querySelector(".shadcn-prototype-topbar button[aria-label='展开侧边栏']")).toBeInTheDocument();
+    expect(within(container.querySelector(".shadcn-prototype-topbar") as HTMLElement)
+      .getByRole("button", { name: /^切换项目或资源库/ })).toBeInTheDocument();
   });
 
   it("exposes navigation on the new-project screen without submitting a message", async () => {
@@ -89,7 +99,7 @@ describe("workspace draft navigation", () => {
     window.history.replaceState(null, "", "/app/assets");
     render(<AssetsWorkspaceClient accountEmail="draft@multimix.local" token="token" />);
     const start = await screen.findByRole("region", { name: "新建对话" });
-    fireEvent.click(within(start).getByRole("button", { name: "展开侧边栏" }));
+    fireEvent.click(within(start).getByRole("button", { name: /^切换项目或资源库/ }));
     const navigation = await screen.findByRole("dialog", { name: "工作台导航" });
     expect(within(navigation).getByRole("navigation", { name: "资源库" })).toBeInTheDocument();
     fireEvent.click(within(navigation).getByRole("button", { name: "关闭导航遮罩" }));
@@ -105,7 +115,7 @@ describe("workspace draft navigation", () => {
         new Promise((resolve) => { finishUpload = resolve; }),
       );
       const { container } = await mountDraft();
-      fireEvent.click(screen.getAllByRole("button", { name: "资产库" })[0]);
+      fireEvent.click(within(openNavigation()).getByRole("button", { name: "资产库" }));
       await act(async () => { fireEvent.click(screen.getByRole("button", { name: "放弃修改并离开" })); });
       await screen.findByRole("heading", { name: "资产库" });
       const input = container.querySelector('header input[type="file"]')!;
@@ -114,12 +124,12 @@ describe("workspace draft navigation", () => {
       expect(upload).toHaveBeenCalledWith("token", file, "assets", undefined, expect.any(String));
       expect(upload.mock.calls[0]?.[4]).toMatch(/^[\w-]{16,}$/);
       if (destination === "project") {
-        fireEvent.click(screen.getByRole("link", { name: "草稿项目" }));
+        fireEvent.click(within(openNavigation()).getByRole("link", { name: "草稿项目" }));
         const workspace = await screen.findByRole("region", { name: "Current product workspace" });
         fireEvent.click(within(workspace).getByRole("button", { name: "编辑" }));
         fireEvent.change(screen.getByRole("textbox", { name: "编辑文案稿" }), { target: { value: "上传期间的新草稿" } });
       } else if (destination === "other-library") {
-        fireEvent.click(screen.getAllByRole("button", { name: "文案库" })[0]);
+        fireEvent.click(within(openNavigation()).getByRole("button", { name: "文案库" }));
         await screen.findByRole("heading", { name: "文案库" });
       }
       const readsBeforeCompletion = listLibrary.mock.calls.length;
@@ -138,12 +148,13 @@ describe("workspace draft navigation", () => {
   it.each(["product", "project", "library", "new", "home", "logout"])(
     "keeps the draft when cancelling %s navigation", async (entry) => {
       const { container, editor, logout } = await mountDraft();
+      const panel = entry === "product" ? null : within(openNavigation());
       const action = entry === "product" ? container.querySelector('a[href$="product=asset-89"]')!
-        : entry === "project" ? screen.getByRole("link", { name: "另一个项目" })
-          : entry === "library" ? screen.getAllByRole("button", { name: "文案库" })[0]
-            : entry === "new" ? screen.getAllByRole("button", { name: "新建项目" })[0]
-              : entry === "home" ? screen.getAllByRole("link", { name: "返回主页" })[0]
-                : screen.getByRole("button", { name: "退出登录" });
+        : entry === "project" ? panel!.getByRole("link", { name: "另一个项目" })
+          : entry === "library" ? panel!.getByRole("button", { name: "文案库" })
+            : entry === "new" ? panel!.getByRole("button", { name: "新建项目" })
+              : entry === "home" ? panel!.getByRole("link", { name: "返回主页" })
+                : panel!.getByRole("button", { name: "退出登录" });
       fireEvent.click(action);
       const dialog = screen.getByRole("dialog", { name: "放弃未保存的修改并离开？" });
       await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "取消" })); });

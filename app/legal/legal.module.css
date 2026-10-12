@@ -31,12 +31,8 @@
 }
 
 .mark {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--ai-grad);
+  display: block;
+  flex: none;
 }
 
 .back {

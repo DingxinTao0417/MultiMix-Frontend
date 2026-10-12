@@ -207,6 +207,8 @@ export default function ProductWorkspace({
   selectedImageFrameId,
   onSelectedImageFrameChange,
   onSelectSegment,
+  onAnnotateSegment,
+  annotatingSegmentId,
   onSceneSourceAction,
   onContinueDirectorProduction,
   onSubtitleRequest,
@@ -237,6 +239,8 @@ export default function ProductWorkspace({
   selectedImageFrameId?: string;
   onSelectedImageFrameChange?: (frameId: string) => void;
   onSelectSegment?: (segment: AssetProductSegment) => void;
+  onAnnotateSegment?: (segment: AssetProductSegment) => void;
+  annotatingSegmentId?: string | null;
   onSceneSourceAction?: (action: SceneSourceAction) => Promise<void> | void;
   onContinueDirectorProduction?: (product: ProductArtifact) => Promise<void> | void;
   onSubtitleRequest?: (operation: AssetSubtitleOperation) => Promise<void>;
@@ -2567,6 +2571,8 @@ export default function ProductWorkspace({
               onCloseComparison={() => setVideoComparisonOpen(false)}
               onReplaceMaterial={productMutationPending ? undefined : openBrowseMaterialPicker}
               onSelectSegment={onSelectSegment}
+              onAnnotateSegment={productMutationPending ? undefined : onAnnotateSegment}
+              annotatingSegmentId={annotatingSegmentId}
               onSceneSourceAction={onSceneSourceAction}
               sceneSourceProgress={sceneSourceProgress}
               onEditVoiceover={

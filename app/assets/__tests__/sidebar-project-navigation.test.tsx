@@ -8,7 +8,7 @@ const workspaceClient = readFileSync(new URL("../components/assets-workspace-cli
 const conversationStart = readFileSync(new URL("../components/conversation-start.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../../globals.css", import.meta.url), "utf8");
 
-describe("desktop sidebar project navigation contract", () => {
+describe("workspace navigation panel contract", () => {
   it("puts recent projects before the global library navigation", () => {
     const projectSection = workspaceClient.indexOf('className="shadcn-prototype-conversation-section"');
     const libraryNavigation = workspaceClient.indexOf('className="shadcn-prototype-nav" aria-label="资源库"');
@@ -28,19 +28,18 @@ describe("desktop sidebar project navigation contract", () => {
     expect(workspaceClient).toContain("selectedConversationId");
   });
 
-  it("uses a calm one-line project row and presents libraries as the approved two-column utility grid", () => {
-    expect(css).toMatch(/\.shadcn-prototype-sidebar\s*\{[^}]*grid-template-rows:\s*auto auto minmax\(0, 1fr\) auto auto auto;/s);
+  it("uses a calm one-line project row and presents libraries as plain text rows", () => {
     expect(css).toMatch(/\.shadcn-prototype-conversation-main\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*min-height:\s*42px;/s);
     expect(workspaceClient).toContain('className="shadcn-prototype-nav-title">资源库');
-    expect(workspaceClient).toContain("shadcn-prototype-nav-icon");
-    expect(workspaceClient).toMatch(/<Package size=\{16\} \/><\/span>\s*资产/);
-    expect(workspaceClient).toMatch(/<FileText size=\{16\} \/><\/span>\s*文案/);
-    expect(workspaceClient).toMatch(/<ImageIcon size=\{16\} \/><\/span>\s*图片/);
-    expect(workspaceClient).toMatch(/<Video size=\{16\} \/><\/span>\s*视频/);
-    expect(css).toMatch(/\.shadcn-prototype-nav\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);[^}]*gap:\s*7px;/s);
-    expect(css).toMatch(/\.shadcn-prototype-nav-title\s*\{[^}]*grid-column:\s*1\s*\/\s*-1;/s);
-    expect(css).toMatch(/\.shadcn-prototype-nav button\s*\{[^}]*min-height:\s*54px;[^}]*border:\s*1px solid #e9e5de;[^}]*border-radius:\s*11px;/s);
-    expect(css).toMatch(/\.shadcn-prototype-nav-icon\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;[^}]*border-radius:\s*9px;/s);
+    expect(workspaceClient).toMatch(/<Package size=\{15\} \/><\/span>\s*资产/);
+    expect(workspaceClient).toMatch(/<FileText size=\{15\} \/><\/span>\s*文案/);
+    expect(workspaceClient).toMatch(/<ImageIcon size=\{15\} \/><\/span>\s*图片/);
+    expect(workspaceClient).toMatch(/<Video size=\{15\} \/><\/span>\s*视频/);
+    // Utility rows: no card surface, no shadow, no per-library colour.
+    expect(css).toMatch(/\.shadcn-prototype-nav button\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/s);
+    expect(css).not.toMatch(/\.shadcn-prototype-nav button\s*\{[^}]*box-shadow/s);
+    expect(css).not.toMatch(/\.shadcn-prototype-nav-item\.(assets|copy|image|video)/);
+    expect(css).not.toMatch(/\.agent-visual-refresh \.shadcn-prototype-nav button\s*\{/);
     expect(css).toMatch(/\.shadcn-prototype-conversation-row\.active\s*\{[^}]*background:\s*#eeece8;[^}]*color:\s*var\(--sp-text\);/s);
   });
 
@@ -58,5 +57,20 @@ describe("desktop sidebar project navigation contract", () => {
   it("removes the image-only material readiness strip from the new-project page", () => {
     expect(conversationStart).not.toContain("MaterialsReadyStrip");
     expect(conversationStart).not.toContain("你的素材可以开始做视频了");
+  });
+
+  it("opens navigation on demand from the header and never keeps a persistent sidebar", () => {
+    // Full-width shell: no 264px sidebar track, no collapsed 52px rail.
+    expect(css).toMatch(/\.shadcn-prototype-shell\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(css).not.toMatch(/grid-template-columns:\s*264px minmax\(0, 1fr\)/);
+    expect(css).not.toContain("collapsed-rail");
+    expect(css).not.toMatch(/sidebar-(collapsed|expanded|visual-collapsed)/);
+    expect(workspaceClient).not.toContain("collapsed-rail");
+    expect(workspaceClient).not.toMatch(/SidebarState|setSidebarState/);
+    // The header switcher is the only entry, with an attention badge drawn from
+    // the same labels the project rows show.
+    expect(workspaceClient).toContain('className="shadcn-prototype-project-switcher"');
+    expect(workspaceClient).toMatch(/projectListStateLabel\(conversation\.projectState\) !== null/);
+    expect(workspaceClient).toMatch(/event\.metaKey \|\| event\.ctrlKey/);
   });
 });

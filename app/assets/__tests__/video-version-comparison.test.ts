@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compareVideoVersionOverview, compareVideoVersionSegments, videoSegmentChangeDetails, videoSegmentChangeSummary } from "../lib/video-version-comparison";
+import { compareVideoVersionOverview, compareVideoVersionSegments, videoSegmentChangeDetails, videoSegmentChangeSummary, videoVersionReuseScope } from "../lib/video-version-comparison";
 import type { AssetProductSegment } from "../lib/asset-workspace-types";
 import { contentAssetToProduct } from "../../../lib/asset-mappers";
 import type { ContentAsset } from "../../../lib/api";
@@ -289,4 +289,39 @@ it("describes film delivery use without inventing changed scenes or trusting sig
   const unavailable = { ...base, metadata: { ...base.metadata, clarity_media: { status: "unavailable" } } };
   expect(compareVideoVersionOverview(enhanced, unavailable)).toEqual([]);
   expect(compareVideoVersionOverview({ ...base, metadata: {} }, enhanced)).toEqual([]);
+});
+
+describe("video version reuse scope", () => {
+  it("reports which scenes were redone and how many were reused untouched", () => {
+    const previous = [segment({ id: "s1", index: 1 }), segment({ id: "s2", index: 2 }),
+      segment({ id: "s3", index: 3 }), segment({ id: "s4", index: 4 })];
+    const current = [segment({ id: "s1", index: 1 }), segment({ id: "s2", index: 2, line: "新口播" }),
+      segment({ id: "s3", index: 3 }), segment({ id: "s4", index: 4 })];
+    const changes = compareVideoVersionSegments(previous, current);
+
+    expect(videoVersionReuseScope(previous, current, changes))
+      .toEqual({ changedIndexes: [2], reusedCount: 3, totalCount: 4 });
+  });
+
+  it("renders nothing when no scene changed, so a no-op never claims reuse", () => {
+    const segments = [segment({ id: "s1", index: 1 }), segment({ id: "s2", index: 2 })];
+
+    expect(videoVersionReuseScope(segments, [...segments], [])).toBeNull();
+  });
+
+  it("renders nothing when either version lacks identifiable segments", () => {
+    const segments = [segment()];
+
+    expect(videoVersionReuseScope(undefined, segments, [])).toBeNull();
+    expect(videoVersionReuseScope(segments, [], [])).toBeNull();
+  });
+
+  it("counts an added scene as redone rather than reused", () => {
+    const previous = [segment({ id: "s1", index: 1 })];
+    const current = [segment({ id: "s1", index: 1 }), segment({ id: "s2", index: 2 })];
+    const changes = compareVideoVersionSegments(previous, current);
+
+    expect(videoVersionReuseScope(previous, current, changes))
+      .toEqual({ changedIndexes: [2], reusedCount: 1, totalCount: 2 });
+  });
 });

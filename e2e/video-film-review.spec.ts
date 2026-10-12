@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openProject } from "./workspace-navigation";
 import type { AssetConversationResponse } from "../lib/api";
 
 test("film review explains coverage, opens explicit revision choices and tracks revalidation", async ({ page }) => {
@@ -54,9 +55,7 @@ test("film review explains coverage, opens explicit revision choices and tracks 
     await route.fulfill({ response, json: payload });
   });
   await page.goto("/app/assets");
-  const link = page.locator(`a.shadcn-prototype-conversation-main[href$="conversation=${conversationId}"]`);
-  await expect(link).toBeVisible();
-  await link.click();
+  await openProject(page, conversationId);
   const panel = page.getByRole("region", { name: "编导与成片审阅" });
   await expect(panel.getByText(issue.reason)).toBeVisible();
   await expect(panel.getByText(/复转写未完成/)).toBeVisible();

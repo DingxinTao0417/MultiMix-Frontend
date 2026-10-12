@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { openLibrary } from "./workspace-navigation";
 
 const videoAsset = {
   id: 71,
@@ -186,7 +187,7 @@ function storyboardJob(state: {
 }
 
 async function openVideoDetails(page: Page) {
-  await page.locator(".shadcn-prototype-nav").getByRole("button", { name: "视频库", exact: true }).click();
+  await openLibrary(page, "视频库");
   await page.getByRole("button", { name: /门店实拍视频/ }).click();
   return page.getByRole("dialog", { name: "门店实拍视频详情" });
 }

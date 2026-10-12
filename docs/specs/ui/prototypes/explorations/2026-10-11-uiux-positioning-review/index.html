@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · UI/UX 与定位契合度审查 + 布局方案</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF;
+  --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --ai-soft:linear-gradient(120deg,rgba(124,92,255,.09),rgba(0,168,142,.09));
+  --accent:#5B45E0; --accent-soft:#EEEAFF;
+  --ok:#0E8A6B; --warn:#9A6A00; --bad:#B42318;
+  --radius:16px; --shadow-card:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.65;padding:40px 24px 90px}
+.wrap{max-width:1240px;margin:0 auto}
+.topline{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--accent);
+  background:var(--accent-soft);padding:5px 13px;border-radius:999px;margin-bottom:18px}
+h1{font-size:28px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+.lede{font-size:15px;color:var(--ink-2);max-width:820px}
+.verdict{font-size:14px;max-width:900px;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:15px 19px;margin:22px 0 10px;box-shadow:var(--shadow-card)}
+.verdict b{color:var(--accent)}
+.scope{font-size:12.5px;color:var(--ink-3);max-width:900px;margin-bottom:38px}
+h2{font-size:19px;font-weight:700;margin:48px 0 6px;letter-spacing:-.01em}
+h2 .n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;
+  font-size:13px;margin-right:10px;vertical-align:middle}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:22px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:19px 21px;box-shadow:var(--shadow-card)}
+.card h3{font-size:14px;font-weight:680;margin-bottom:13px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}
+ul{list-style:none;display:grid;gap:11px}
+li{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:13px;color:var(--ink-2)}
+li .tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;height:18px;align-self:start;margin-top:3px;white-space:nowrap}
+.tag.p0{background:#FAE9E6;color:var(--bad)}.tag.p1{background:#FFF3D9;color:var(--warn)}
+.tag.p2{background:var(--surface-2);color:var(--ink-3)}.tag.ok{background:#E3F3EE;color:var(--ok)}
+li b{color:var(--ink)}
+li code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;background:var(--surface-2);
+  padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+/* ---- 方案对比区 ---- */
+.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:4px}
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;box-shadow:var(--shadow-card);display:flex;flex-direction:column}
+.opt.rec{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.opt-h{padding:15px 18px 13px;border-bottom:1px solid var(--line)}
+.opt-badge{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-3);margin-bottom:8px}
+.opt.rec .opt-badge{background:var(--ai-grad);color:#fff}
+.opt-h h3{font-size:15px;font-weight:700;margin-bottom:4px}
+.opt-h p{font-size:12.5px;color:var(--ink-2);line-height:1.55}
+.opt-body{padding:14px 18px 18px;display:grid;gap:13px;flex:1}
+.mini{font-size:10.5px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase}
+.opt-body ul{gap:8px}
+.opt-body li{font-size:12.5px;grid-template-columns:14px 1fr;gap:8px}
+.opt-body li .m{color:var(--ink-3);text-align:center}
+.opt-body li.plus .m{color:var(--ok)}.opt-body li.minus .m{color:var(--bad)}
+
+/* ---- 线框图 ---- */
+.wf{background:var(--surface-2);border-bottom:1px solid var(--line);padding:14px;display:grid;gap:6px}
+.wf-row{display:grid;gap:5px}
+.wf-col{display:flex;flex-direction:column;gap:4px;min-width:0}
+.wf-b{border:1px solid var(--line-2);border-radius:5px;background:var(--surface);
+  font-size:9.5px;color:var(--ink-3);display:grid;place-items:center;text-align:center;line-height:1.3;
+  padding:3px 2px;min-width:0;flex:none}
+.wf-b.grow{flex:1}
+.wf-b.ai{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;color:var(--ink-2);font-weight:650}
+.wf-b.fill{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:650}
+.wf-b.soft{background:var(--accent-soft);border-color:#DCD5FF;color:var(--accent);font-weight:650}
+.wf-b.media{background:#2A2827;border-color:#2A2827;color:#C9C4BC}
+.wf-b.dim{background:var(--surface-2);color:var(--ink-3)}
+.wf-lbl{font-size:9.5px;font-weight:700;color:var(--ink-3);letter-spacing:.03em}
+
+/* ---- 表格 ---- */
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-card);font-size:12.5px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--surface-2);font-size:11px;font-weight:700;color:var(--ink-2);letter-spacing:.03em}
+tr:last-child td{border-bottom:0}
+td b{color:var(--ink)}
+.y{color:var(--ok);font-weight:700}.n{color:var(--bad);font-weight:700}.p{color:var(--warn);font-weight:700}
+
+/* ---- 结论块 ---- */
+.final{background:var(--surface);border:1px solid transparent;border-radius:var(--radius);padding:22px 24px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow-card);margin-top:6px}
+.final h3{font-size:16px;font-weight:700;margin-bottom:12px}
+.final ol{margin-left:19px;display:grid;gap:9px;font-size:13.5px;color:var(--ink-2)}
+.final ol b{color:var(--ink)}
+.ask{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+.ask b{color:var(--accent)}
+.note{font-size:12px;color:var(--ink-3);margin-top:12px;line-height:1.6}
+@media (max-width:1000px){.opts,.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="topline">● 2026-10-11 · 只读审查 + 布局方案</div>
+<h1>MultiMix UI/UX 与定位契合度审查</h1>
+<p class="lede">对照已确认定位「对话式 AI 短视频创作工作台 —— 把需求做成视频，再像给同事提意见一样把它改好」，
+检查当前界面是否把这句承诺表达出来，并给出三个布局/交互方案与推荐。</p>
+
+<div class="verdict">
+<b>结论：骨架契合，第二句承诺没有被界面表达出来。</b><br>
+「从需求到成片」这条链路的界面已经扎实：对话驱动、产物卡切换、单一展示区、真实进度、失败恢复都在。
+但定位的差异化重心是后半句「不满意的地方接着聊、局部改」——当前它在界面上<b>默认不可见</b>：
+逐镜修改入口写成 hover 才出现，版本对比与恢复藏在详情层，用户看到的成片更像「一个结果」而不是「一个可以改的作品」。
+这不是美观问题，是把最难复制的能力藏起来了。
+</div>
+<p class="scope">审查范围：定位规格、工作台设计、V3 设计规范、终稿原型七屏、前端实现（globals.css 12527 行 + assets 组件层）。
+未覆盖：未启动真实后端，无浏览器端到端复现；本页问题均为静态代码与原型证据，标注为「已确认」的指代码事实，不代表已做用户测试。</p>
+
+<h2><span class="n">1</span>定位承诺 → 界面落点逐条核对</h2>
+<p class="sub">左列是定位文档的对外承诺，右列是界面实际表达强度。</p>
+<table>
+<tr><th style="width:26%">定位承诺</th><th style="width:30%">界面当前落点</th><th style="width:12%">表达强度</th><th>判断</th></tr>
+<tr>
+  <td><b>说出想法即可开始</b></td>
+  <td>起始页大输入框优先于开始方式卡，能力提示一行被动说明，三张入口卡只填充输入框</td>
+  <td class="y">强</td>
+  <td>契合。入口不预选、不伪造已上传素材，符合「对话先于配置」</td>
+</tr>
+<tr>
+  <td><b>AI 协助编导和制作</b></td>
+  <td>确认卡渐变描边唯一化、Agent 执行时间线、紧凑进度卡、后台状态胶囊</td>
+  <td class="y">强</td>
+  <td>契合。真实步骤而非假进度，这是产品可信度的主要来源</td>
+</tr>
+<tr>
+  <td><b>不满意的地方接着聊、局部改</b></td>
+  <td>分镜卡「换素材 / 修改配音」<code>display:none</code>，仅 hover/focus 显形；其余靠用户自己想到去打字</td>
+  <td class="n">弱</td>
+  <td><b>错配。</b>最核心差异能力零默认可见度</td>
+</tr>
+<tr>
+  <td><b>减少等待和返工</b></td>
+  <td>增量执行真实存在，但界面只说「已更新」，没有表达「只重做了第 2 镜、其余复用」</td>
+  <td class="p">中</td>
+  <td>技术壁垒未转成用户可感价值</td>
+</tr>
+<tr>
+  <td><b>修改失败也能继续</b></td>
+  <td>失败卡、上一稳定版本、重试动作归属清晰（时间线优先）</td>
+  <td class="y">强</td>
+  <td>契合。动作归属规则是加分项</td>
+</tr>
+<tr>
+  <td><b>越用越理解业务</b></td>
+  <td>创作档案在账户区，完成后一次轻量确认</td>
+  <td class="p">中</td>
+  <td>克制合理。首发不宜加重，无需本轮处理</td>
+</tr>
+</table>
+
+<h2><span class="n">2</span>已确认问题</h2>
+<p class="sub">按项目审查标准分级。P0 = 阻塞核心价值传达，P1 = 明显错配，P2 = 可排期。</p>
+<div class="grid2">
+<div class="card">
+<h3><span class="dot bad"></span>P0 / P1 — 需要本轮解决</h3>
+<ul>
+<li><span class="tag p0">P0</span><div><b>逐镜修改入口默认隐藏。</b>
+<code>globals.css:10242</code> <code>display:none</code>，仅 <code>:hover</code>/<code>:focus-within</code> 显形
+（<code>segment-cards.tsx:168</code>）。定位把「局部改」列为第三层核心卖点，但新用户在成片页看不到任何可改的迹象。
+商家不会猜到要把鼠标悬到卡片上。</div></li>
+<li><span class="tag p0">P0</span><div><b>成片页没有表达「这是可以改的作品」。</b>
+展示区顶部只有 详情/编辑/导出/保存 四个通用按钮，语义是「处理这个文件」，
+不是「告诉我哪里不对」。定位主张的后半句在最该出现的屏幕上缺席。</div></li>
+<li><span class="tag p1">P1</span><div><b>增量执行价值不可见。</b>
+修改完成只说明「已更新」，没有「第 2 镜已重做，其余 3 镜原样复用」这类表达。
+这是文档列为核心技术壁垒的能力，用户完全感知不到。</div></li>
+<li><span class="tag p1">P1</span><div><b>版本对比埋得过深。</b>
+<code>product-preview.tsx:715</code> 的「单视频 / 版本对比」是验收修改成果的关键视图，
+但它只在已有上一稳定版本时作为次级切换出现，且首次进入保持中立不选中，用户很难发现它。</div></li>
+</ul>
+</div>
+<div class="card">
+<h3><span class="dot warn"></span>P2 — 可排期</h3>
+<ul>
+<li><span class="tag p2">P2</span><div><b>原型内部口径不一致。</b>
+<code>library.html</code> 仍是旧侧栏（「新建对话」+ 列表式四库 + 「对话列表」），
+<code>start.html</code> 与实现已统一为「新建项目」+ 最近项目 + 2×2 资源库宫格。
+原型是视觉验收基准，现在两份互相矛盾。</div></li>
+<li><span class="tag p2">P2</span><div><b>起始页主标题与原型不一致。</b>
+实现为「新建视频项目」（<code>conversation-start.tsx:267</code>），
+原型为「今天想做什么短视频？」。后者更贴合对话式定位，但文档未记录这次收敛，无法判断是有意决策还是漂移。</div></li>
+<li><span class="tag p2">P2</span><div><b>生成态「AI 在参与」的视觉未落地。</b>
+V3 规范第 5.3 节的产物区极光、打字光标、实时引用亮框在 CSS 中查无实现。
+规范已给降级路径，不算违规，但「过程即品牌」这条原则目前只靠时间线单独承担。</div></li>
+<li><span class="tag p2">P2</span><div><b>单文件体量影响后续改动安全性。</b>
+<code>assets-workspace-client.tsx</code> 214k、<code>product-workspace.tsx</code> 137k、
+<code>globals.css</code> 12527 行。不是体验问题，但本轮任何布局改动都会落在这几个文件里，回归成本高。</div></li>
+</ul>
+</div>
+</div>
+
+<h2><span class="n">3</span>应保留的部分</h2>
+<p class="sub">以下已确认有效，方案不得破坏。</p>
+<div class="card">
+<ul style="grid-template-columns:1fr 1fr;display:grid;gap:11px">
+<li><span class="tag ok">保留</span><div><b>渐变纪律。</b>AI 渐变只在「AI 正在参与」时出现，确认卡是唯一渐变描边卡。这是产品性格的主要载体。</div></li>
+<li><span class="tag ok">保留</span><div><b>真实进度，不做假。</b>无服务端数据就不显示百分比和预计时间，未知事件合并进当前阶段。</div></li>
+<li><span class="tag ok">保留</span><div><b>单一展示区，无一级产物 Tab。</b>产物卡负责切换，避免用户管理工作视图。</div></li>
+<li><span class="tag ok">保留</span><div><b>播放器外壳合同 v1。</b>白壳、20px 圆角、7px 内边距、比例只约束画布。已确认不可回退。</div></li>
+<li><span class="tag ok">保留</span><div><b>动作归属唯一化。</b>时间线有重试时，展示区只说明范围，不造第二个按钮。</div></li>
+<li><span class="tag ok">保留</span><div><b>建议默认只填输入框。</b>不静默执行，把决定权留给用户。</div></li>
+</ul>
+</div>
+<h2><span class="n">4</span>三个布局 / 交互方案</h2>
+<p class="sub">三个方案都保留已确认的三栏骨架和播放器合同，差别在于<b>「局部改」这件事放在哪里、用什么形态表达</b>。
+线框图中：<span style="color:var(--accent);font-weight:650">紫色</span> = 新增或改动，深色块 = 媒体画布。</p>
+
+<div class="opts">
+
+<!-- 方案 A -->
+<div class="opt">
+  <div class="wf">
+    <div class="wf-lbl">A · 常驻修改栏</div>
+    <div class="wf-row" style="grid-template-columns:40px 1fr 1.15fr;height:196px">
+      <div class="wf-b dim grow">侧栏</div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:20px">对话标题</div>
+        <div class="wf-b grow">对话流<br>产物卡</div>
+        <div class="wf-b ai" style="height:28px">输入框</div>
+      </div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:18px">视频工程 · v2</div>
+        <div class="wf-b media" style="height:78px">播放器</div>
+        <div class="wf-b soft" style="height:28px">◂ 第2镜 ▸<br>换素材 · 改配音</div>
+        <div class="wf-b grow">分镜摘要<br>（动作常驻）</div>
+      </div>
+    </div>
+  </div>
+  <div class="opt-h">
+    <span class="opt-badge">改动最小</span>
+    <h3>A · 常驻修改栏</h3>
+    <p>播放器下方加一条固定的「当前镜 + 可改项」栏，分镜卡动作从 hover 改为常驻。不动布局骨架。</p>
+  </div>
+  <div class="opt-body">
+    <div>
+      <div class="mini">核心变化</div>
+      <ul style="margin-top:7px">
+        <li><span class="m">·</span><div>删除 <code>display:none</code>，动作常驻</div></li>
+        <li><span class="m">·</span><div>播放器下增一条当前镜操作栏</div></li>
+        <li><span class="m">·</span><div>修改完成文案补「复用了哪几镜」</div></li>
+      </ul>
+    </div>
+    <div>
+      <div class="mini">代价</div>
+      <ul style="margin-top:7px">
+        <li class="plus"><span class="m">+</span><div>一周内可落地，回归面窄</div></li>
+        <li class="plus"><span class="m">+</span><div>不碰播放器合同与三栏骨架</div></li>
+        <li class="minus"><span class="m">−</span><div>仍是「工具条」观感，没有把「像给同事提意见」表达出来</div></li>
+        <li class="minus"><span class="m">−</span><div>分镜多时操作栏与摘要有重复感</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 方案 B 推荐 -->
+<div class="opt rec">
+  <div class="wf">
+    <div class="wf-lbl" style="color:var(--accent)">B · 批注式修改（推荐）</div>
+    <div class="wf-row" style="grid-template-columns:40px 1fr 1.15fr;height:196px">
+      <div class="wf-b dim grow">侧栏</div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:20px">对话标题</div>
+        <div class="wf-b grow">对话流<br>产物卡</div>
+        <div class="wf-b ai" style="height:34px">输入框<br>「正在说第2镜」</div>
+      </div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:18px">视频工程 · v2 ｜ 对比 v1</div>
+        <div class="wf-b media" style="height:70px">播放器</div>
+        <div class="wf-row" style="grid-template-columns:repeat(4,1fr);gap:4px">
+          <div class="wf-b soft" style="height:28px">#1<br>说这镜</div>
+          <div class="wf-b soft" style="height:28px;border-width:2px">#2<br>说这镜</div>
+          <div class="wf-b soft" style="height:28px">#3<br>说这镜</div>
+          <div class="wf-b soft" style="height:28px">#4<br>说这镜</div>
+        </div>
+        <div class="wf-b ai grow">第2镜已重做<br>其余3镜原样复用</div>
+      </div>
+    </div>
+  </div>
+  <div class="opt-h">
+    <span class="opt-badge">推荐</span>
+    <h3>B · 批注式修改</h3>
+    <p>每个分镜卡常驻一个「说这镜」动作，点它把焦点绑定到该镜并聚焦输入框，用户直接说人话。
+    修改后明确显示重做范围与复用范围。</p>
+  </div>
+  <div class="opt-body">
+    <div>
+      <div class="mini">核心变化</div>
+      <ul style="margin-top:7px">
+        <li><span class="m">·</span><div>分镜卡常驻「说这镜」，点击后输入框显示「正在说第 2 镜」并预填可编辑句子</div></li>
+        <li><span class="m">·</span><div>换素材 / 改配音保留为次级，不再是唯一入口</div></li>
+        <li><span class="m">·</span><div>修改完成后展示「已重做 / 已复用」范围条</div></li>
+        <li><span class="m">·</span><div>有上一版本时，标题行常驻「对比 v1」入口</div></li>
+      </ul>
+    </div>
+    <div>
+      <div class="mini">代价</div>
+      <ul style="margin-top:7px">
+        <li class="plus"><span class="m">+</span><div>直接表达定位第二句，且仍走对话这条唯一路径</div></li>
+        <li class="plus"><span class="m">+</span><div>把增量执行变成用户可见价值</div></li>
+        <li class="plus"><span class="m">+</span><div>不需要新后端能力，范围条可由现有分镜事实推导</div></li>
+        <li class="minus"><span class="m">−</span><div>需要新增「对话焦点绑定某镜」状态，对话与展示区耦合变紧</div></li>
+        <li class="minus"><span class="m">−</span><div>工作量约 A 的两倍</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- 方案 C -->
+<div class="opt">
+  <div class="wf">
+    <div class="wf-lbl">C · 成片为中心</div>
+    <div class="wf-row" style="grid-template-columns:40px 1.3fr 1fr;height:196px">
+      <div class="wf-b dim grow">侧栏</div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:18px">视频工程 · v2</div>
+        <div class="wf-b media grow">播放器（主位）</div>
+        <div class="wf-b soft" style="height:28px">分镜条（横向，点选即批注）</div>
+        <div class="wf-b ai" style="height:28px">输入框（移到成片侧）</div>
+      </div>
+      <div class="wf-col">
+        <div class="wf-b" style="height:20px">对话历史</div>
+        <div class="wf-b grow">折叠为<br>次级记录流</div>
+      </div>
+    </div>
+  </div>
+  <div class="opt-h">
+    <span class="opt-badge">改动最大</span>
+    <h3>C · 成片为中心</h3>
+    <p>左右互换：成片与分镜条占主位，对话降为右侧记录流，输入框移到成片下方。</p>
+  </div>
+  <div class="opt-body">
+    <div>
+      <div class="mini">核心变化</div>
+      <ul style="margin-top:7px">
+        <li><span class="m">·</span><div>主次栏调换，输入框跟随成片</div></li>
+        <li><span class="m">·</span><div>横向分镜条取代纵向摘要</div></li>
+        <li><span class="m">·</span><div>对话收为可折叠历史</div></li>
+      </ul>
+    </div>
+    <div>
+      <div class="mini">代价</div>
+      <ul style="margin-top:7px">
+        <li class="plus"><span class="m">+</span><div>「改片子」的感觉最强，最像在改一个作品</div></li>
+        <li class="minus"><span class="m">−</span><div>削弱对话主导，与「对话式工作台」定位相冲</div></li>
+        <li class="minus"><span class="m">−</span><div>无成片阶段（需求理解、编导确认）布局无处安放</div></li>
+        <li class="minus"><span class="m">−</span><div>推翻 V3 已确认骨架，需重做原型、契约检查与截图基线</div></li>
+      </ul>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2><span class="n">5</span>方案对比</h2>
+<table>
+<tr>
+  <th style="width:24%">维度</th>
+  <th style="width:25%">A · 常驻修改栏</th>
+  <th style="width:25%">B · 批注式修改</th>
+  <th>C · 成片为中心</th>
+</tr>
+<tr><td><b>解决 P0（修改入口不可见）</b></td><td class="p">部分</td><td class="y">完全</td><td class="y">完全</td></tr>
+<tr><td><b>表达「像给同事提意见」</b></td><td class="n">否</td><td class="y">是</td><td class="p">部分（降低了对话地位）</td></tr>
+<tr><td><b>让增量执行可感知</b></td><td class="p">仅文案</td><td class="y">是，范围条</td><td class="p">仅文案</td></tr>
+<tr><td><b>与对话式定位一致</b></td><td class="y">一致</td><td class="y">一致</td><td class="n">冲突</td></tr>
+<tr><td><b>是否动已确认骨架/合同</b></td><td class="y">不动</td><td class="y">不动</td><td class="n">推翻 V3 骨架</td></tr>
+<tr><td><b>需要新后端能力</b></td><td class="y">不需要</td><td class="y">不需要</td><td class="p">无成片阶段需重设计</td></tr>
+<tr><td><b>相对工作量</b></td><td>1×</td><td>约 2×</td><td>约 5× 以上</td></tr>
+<tr><td><b>主要风险</b></td><td>治表不治本，过几周还要再改一次</td><td>对话与展示区状态耦合，需要清晰的焦点解除规则</td><td>定位漂移；原型、契约与截图基线全部要重做</td></tr>
+</table>
+
+<h2><span class="n">6</span>推荐</h2>
+<div class="final">
+<h3>推荐方案 B · 批注式修改，分两步落地</h3>
+<ol>
+<li><b>第一步（解除 P0，约 1 周）：</b>分镜卡动作改为常驻；成片页标题行常驻「对比上一版」入口；
+修改完成文案补上重做与复用范围。这一步不新增状态机，风险低，立刻解决「核心能力看不见」。</li>
+<li><b>第二步（表达定位，约 1–2 周）：</b>加入「说这镜」与对话焦点绑定：
+点某镜后输入框显示「正在说第 2 镜」并预填一句可编辑的话，发送后焦点自动解除。
+配合「已重做 / 已复用」范围条，把增量执行变成用户看得见的省力感。</li>
+</ol>
+<div class="ask">
+<b>为什么不选 A：</b>A 只是把按钮露出来，用户仍要自己想到该说什么。定位的差异化不在「有修改按钮」，
+而在「可以像对人说话一样改」，这需要焦点绑定才成立。<br>
+<b>为什么不选 C：</b>C 的体验诱惑力最大，但它把对话降级，与「对话式 AI 短视频创作工作台」这个已确认品类相冲，
+还会让需求理解和编导确认阶段无处安放，并推翻已确认的 V3 骨架、播放器合同检查和截图基线。首发阶段不值得。
+</div>
+<p class="note">本页为只读审查产出，未修改任何产品代码。若确认按 B 推进，下一步先把设计写入
+<code>MultiMix-Frontend/docs/plans/active/2026-10-11-segment-annotation-editing.md</code>，
+登记开发占用，再改代码；涉及展示区与播放器相关文件时需跑
+<code>check:video-preview-contract</code>、<code>test:product-stage-style</code> 与隔离的 <code>test:display-coverage</code>。</p>
+</div>
+
+<h2><span class="n">7</span>覆盖范围与残余风险</h2>
+<div class="card">
+<ul>
+<li><span class="tag p2">已读</span><div>定位规格、工作台设计（665 行）、V3 设计规范（238 行）、终稿原型 start / workspace-video / library、
+前端实现 <code>globals.css</code>、<code>conversation-start.tsx</code>、<code>segment-cards.tsx</code>、
+<code>product-preview.tsx</code>、<code>assets-workspace-client.tsx</code>、<code>suggestion-actions.ts</code></div></li>
+<li><span class="tag p1">未覆盖</span><div><b>未启动真实后端与浏览器端到端复现。</b>
+本页问题均为静态代码与原型证据。hover 隐藏、标题差异、原型不一致属代码事实；
+「商家找不到修改入口」是基于规则的推断，<b>未经真实用户测试验证</b>。</div></li>
+<li><span class="tag p1">未覆盖</span><div>手机端按本次决定不纳入方案范围，仅需保证窄屏不崩、能看成片；当前 940px 以下为上下堆叠长页，未做专项验证。</div></li>
+<li><span class="tag p2">未覆盖</span><div>资源库四库按本次决定不纳入本轮方案；原型与实现口径不一致的问题仍待单独排期。</div></li>
+</ul>
+</div>
+</div></body>
+</html>

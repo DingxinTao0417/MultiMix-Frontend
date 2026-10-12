@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Response } from "@playwright/test";
+import { openLibrary, openNavigation } from "./workspace-navigation";
 import { execFileSync } from "node:child_process";
 
 type Seed = {
@@ -157,7 +158,7 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
     initialAsset.versions.length,
   );
 
-  await page.getByRole("button", { name: "图片库", exact: true }).click();
+  await openLibrary(page, "图片库");
   const replacementCard = page
     .locator("button.shadcn-prototype-library-media-card")
     .filter({ hasText: "E2E 新场景图" });
@@ -173,7 +174,7 @@ test("Conversation Agent keeps task memory and atomically edits one video scene"
   await projectPicker.getByRole("button", { name: /^Agent 原子修改测试，/ }).click();
   await expect(page.getByText("已加入项目，并立即保存。", { exact: true })).toBeVisible();
   await replacementDialog.getByRole("button", { name: "关闭详情" }).click();
-  await page.getByRole("link", { name: /Agent 原子修改测试/ }).click();
+  await (await openNavigation(page)).getByRole("link", { name: /Agent 原子修改测试/ }).click();
   await expect(page.getByRole("textbox", { name: "输入对话内容" })).toBeEnabled({
     timeout: 120_000,
   });
