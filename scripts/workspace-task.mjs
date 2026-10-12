@@ -6,8 +6,10 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -20,6 +22,7 @@ import {
   checkWorkGuard,
   endWorkGuard,
   resolveWorkspaceRoot,
+  workGuardStatus,
 } from "./workspace-work-guard.mjs";
 
 // Task flow: every task develops and commits on its own branch in its own
@@ -182,11 +185,80 @@ function unlinkSharedDependencies(worktree, linked) {
   if (stat?.isSymbolicLink()) unlinkSync(target);
 }
 
-function removeWorktree(workspaceRoot, repo, worktree, linked, branch) {
-  unlinkSharedDependencies(worktree, linked);
-  git(repoRoot(workspaceRoot, repo), ["worktree", "remove", worktree]);
+function isRegisteredWorktree(workspaceRoot, repo, worktree) {
+  const listing = git(repoRoot(workspaceRoot, repo), ["worktree", "list", "--porcelain"]);
+  const wanted = path.resolve(worktree).toLowerCase();
+  return listing
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .some((line) => path.resolve(line.slice("worktree ".length)).toLowerCase() === wanted);
+}
+
+function branchExists(workspaceRoot, repo, branch) {
+  return Boolean(
+    git(repoRoot(workspaceRoot, repo), ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], {
+      allowFailure: true,
+    }),
+  );
+}
+
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+// Windows can briefly hold a just-used directory (indexer, antivirus, editor
+// watchers), so `worktree remove` may fail once and then succeed.
+export const REMOVE_RETRY_DELAYS_MS = [200, 600, 1200];
+
+function removeWorktreeDirectory(workspaceRoot, repo, worktree, { retryDelays = REMOVE_RETRY_DELAYS_MS } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    // A failed removal can still unregister the worktree and empty it, leaving
+    // only the directory; treat that as removed rather than retrying git.
+    if (!isRegisteredWorktree(workspaceRoot, repo, worktree)) return;
+    try {
+      git(repoRoot(workspaceRoot, repo), ["worktree", "remove", worktree]);
+      return;
+    } catch (error) {
+      lastError = error;
+      const transient = /permission denied|device or resource busy|ebusy|being used by another process/i.test(
+        error instanceof Error ? error.message : String(error),
+      );
+      if (!transient || attempt === retryDelays.length) break;
+      sleep(retryDelays[attempt]);
+    }
+  }
+  if (!isRegisteredWorktree(workspaceRoot, repo, worktree)) return;
+  throw lastError;
+}
+
+// Only an empty leftover directory is removed; anything inside it is reported
+// instead of deleted, since it is no longer a git worktree we own.
+function removeLeftoverDirectory(worktree) {
+  if (!existsSync(worktree)) return;
+  if (readdirSync(worktree).length > 0) {
+    throw new Error(`${worktree} is no longer a git worktree but is not empty; inspect it before running finish again`);
+  }
+  rmdirSync(worktree);
+}
+
+// Every step is safe to repeat, so a cleanup interrupted after landing can be
+// completed by running finish again: removed worktrees and deleted branches are
+// skipped instead of failing.
+function removeWorktree(workspaceRoot, repo, worktree, linked, branch, options) {
+  if (isRegisteredWorktree(workspaceRoot, repo, worktree)) {
+    if (existsSync(worktree)) {
+      unlinkSharedDependencies(worktree, linked);
+      removeWorktreeDirectory(workspaceRoot, repo, worktree, options);
+    } else {
+      git(repoRoot(workspaceRoot, repo), ["worktree", "prune"]);
+    }
+  }
+  removeLeftoverDirectory(worktree);
   // -d only: an unmerged branch is never deleted here.
-  git(repoRoot(workspaceRoot, repo), ["branch", "-d", branch]);
+  if (branchExists(workspaceRoot, repo, branch)) {
+    git(repoRoot(workspaceRoot, repo), ["branch", "-d", branch]);
+  }
 }
 
 export function startTask({
@@ -296,7 +368,7 @@ export function landRepository({ workspaceRoot, repo, branch, owner, base = "mai
   );
 }
 
-export function finishTask({ workspaceRoot, token, keep = false }) {
+export function finishTask({ workspaceRoot, token, keep = false, retryDelays = REMOVE_RETRY_DELAYS_MS }) {
   const root = path.resolve(workspaceRoot);
   const entry = findTask(root, token);
   // The plan may only exist on the task branch until it lands.
@@ -306,15 +378,30 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   }));
   checkWorkGuard({ workspaceRoot: root, token, extraPlanRoots: taskPlanRoots });
 
-  for (const { worktree } of entry.repos) {
-    const dirty = git(path.join(root, worktree), ["status", "--porcelain"]);
+  // Only check worktrees git still knows. Running git in a leftover directory
+  // that is no longer a worktree would read the primary checkout instead and
+  // report other people's uncommitted files as this task's.
+  for (const { repo, worktree } of entry.repos) {
+    const absolute = path.join(root, worktree);
+    if (!existsSync(absolute) || !isRegisteredWorktree(root, repo, absolute)) continue;
+    const dirty = git(absolute, ["status", "--porcelain"]);
     if (dirty) {
       throw new Error(`${worktree} has uncommitted changes; commit or discard them before finishing:\n${dirty}`);
     }
   }
 
   const landed = [];
-  for (const { repo } of entry.repos) {
+  for (const { repo, worktree } of entry.repos) {
+    // `branch -d` only ever deletes a branch that is fully merged, so a missing
+    // branch whose worktree is also gone means an earlier finish already landed
+    // and cleaned this repository.
+    if (
+      !branchExists(root, repo, entry.branch) &&
+      !isRegisteredWorktree(root, repo, path.join(root, worktree))
+    ) {
+      landed.push({ repo, status: "already-cleaned" });
+      continue;
+    }
     try {
       landed.push(
         landRepository({ workspaceRoot: root, repo, branch: entry.branch, owner: entry.owner, base: entry.base }),
@@ -328,8 +415,17 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   }
 
   if (!keep) {
+    const cleaned = [];
     for (const { repo, worktree, linked } of entry.repos) {
-      removeWorktree(root, repo, path.join(root, worktree), linked, entry.branch);
+      try {
+        removeWorktree(root, repo, path.join(root, worktree), linked, entry.branch, { retryDelays });
+        cleaned.push(repo);
+      } catch (error) {
+        const pending = entry.repos.map((item) => item.repo).filter((item) => !cleaned.includes(item));
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}\nAll repositories are landed; cleanup is pending for: ${pending.join(", ")}. The claim and task record are kept; run finish again to complete the cleanup.`,
+        );
+      }
     }
     endWorkGuard({ workspaceRoot: root, token });
     updateTasks(root, (data) => {
@@ -339,12 +435,36 @@ export function finishTask({ workspaceRoot, token, keep = false }) {
   return { task: entry.task, branch: entry.branch, landed, cleanedUp: !keep };
 }
 
+// Keeps the worktree and branch for later handling but ends the task: the claim
+// (if still held) and the task record both go away. Use this instead of a bare
+// `work:guard end`, which would leave the task record behind and block both
+// `finish` and a restart under the same name.
+export function releaseTask({ workspaceRoot, token }) {
+  const root = path.resolve(workspaceRoot);
+  const entry = findTask(root, token);
+  const claimed = workGuardStatus({ workspaceRoot: root }).some((claim) => claim.task === entry.task);
+  if (claimed) endWorkGuard({ workspaceRoot: root, token });
+  updateTasks(root, (data) => {
+    data.tasks = data.tasks.filter((item) => item.token !== token);
+  });
+  return {
+    task: entry.task,
+    branch: entry.branch,
+    releasedClaim: claimed,
+    keptWorktrees: entry.repos.map(({ repo, worktree }) => ({ repo, worktree })),
+  };
+}
+
 export function taskStatus({ workspaceRoot }) {
   const root = path.resolve(workspaceRoot);
+  const claimedTasks = new Set(workGuardStatus({ workspaceRoot: root }).map((claim) => claim.task));
   return {
-    // Tokens authorize finish/end, so status never exposes them.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    tasks: readTasks(root).tasks.map(({ token, ...visible }) => visible),
+    // Tokens authorize finish/release, so status never exposes them.
+    tasks: readTasks(root).tasks.map((entry) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { token, ...visible } = entry;
+      return { ...visible, claimed: claimedTasks.has(entry.task) };
+    }),
     landingLocks: Object.keys(REPOSITORIES)
       .map((repo) => {
         const filePath = path.join(root, mergeLockName(repo));
@@ -376,6 +496,7 @@ function usage() {
     "Usage:",
     "  workspace-task.mjs start --task <slug> --owner <claude-*|codex-*> --plan <active-plan.md> --repo <frontend|backend|root>... [--area <slug>]... [--path <workspace-path>]... [--contract <slug>]... [--issue <TEAM-123>]",
     "  workspace-task.mjs finish --token <token> [--keep]",
+    "  workspace-task.mjs release --token <token>",
     "  workspace-task.mjs status",
   ].join("\n");
 }
@@ -403,6 +524,10 @@ function runCli() {
   if (command === "finish") {
     const result = finishTask({ workspaceRoot, token: option(args, "--token"), keep: args.includes("--keep") });
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === "release") {
+    console.log(JSON.stringify(releaseTask({ workspaceRoot, token: option(args, "--token") }), null, 2));
     return;
   }
   if (command === "status") {

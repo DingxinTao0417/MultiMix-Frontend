@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import os from "node:os";
@@ -19,11 +20,13 @@ import {
   finishTask,
   landRepository,
   mergeLockName,
+  REMOVE_RETRY_DELAYS_MS,
+  releaseTask,
   startTask,
   taskStatus,
   worktreePath,
 } from "../workspace-task.mjs";
-import { workGuardStatus } from "../workspace-work-guard.mjs";
+import { endWorkGuard, workGuardStatus } from "../workspace-work-guard.mjs";
 
 const IDENTITY = ["-c", "user.name=test", "-c", "user.email=test@example.com"];
 
@@ -88,6 +91,7 @@ test("start creates a branch worktree with shared dependencies and a claim", () 
     const worktree = worktreePath(root, "frontend", "task-a");
 
     assert.equal(entry.branch, "claude/task-a");
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks[0].claimed, true);
     assert.deepEqual(entry.repos, [
       { repo: "frontend", worktree: "MultiMix-Frontend/.worktrees/task-a", linked: "node_modules" },
     ]);
@@ -332,6 +336,217 @@ test("finish --keep lands but keeps the worktree, branch and claim", () => {
     const again = finishTask({ workspaceRoot: root, token: entry.token });
     assert.equal(again.landed[0].status, "already-landed");
     assert.equal(existsSync(worktree), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a bare work:guard end leaves the task visibly unclaimed and release clears it", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+
+    // The 2026-10-12 orphan: claim released on its own, task record left behind.
+    endWorkGuard({ workspaceRoot: root, token: entry.token });
+    const orphan = taskStatus({ workspaceRoot: root }).tasks;
+    assert.equal(orphan.length, 1);
+    assert.equal(orphan[0].claimed, false, "status must flag the missing claim");
+    assert.throws(() => finishTask({ workspaceRoot: root, token: entry.token }), /does not own a registered task/);
+
+    const released = releaseTask({ workspaceRoot: root, token: entry.token });
+    assert.deepEqual(released, {
+      task: "task-a",
+      branch: "claude/task-a",
+      releasedClaim: false,
+      keptWorktrees: [{ repo: "frontend", worktree: "MultiMix-Frontend/.worktrees/task-a" }],
+    });
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    // Nothing of the work is touched: worktree, branch and commit stay, main does not move.
+    assert.ok(existsSync(worktree));
+    assert.equal(git(frontend, ["rev-parse", "claude/task-a"]), head);
+    assert.notEqual(git(frontend, ["rev-parse", "main"]), head);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release ends a claimed task but keeps its worktree, branch and uncommitted files", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    writeFileSync(path.join(worktree, "draft.txt"), "keep me\n");
+
+    const released = releaseTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(released.releasedClaim, true);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    assert.equal(readFileSync(path.join(worktree, "draft.txt"), "utf8"), "keep me\n");
+    assert.equal(git(frontend, ["rev-parse", "--verify", "--quiet", "refs/heads/claude/task-a"]).length, 40);
+    assert.ok(lstatSync(path.join(worktree, "node_modules")).isSymbolicLink(), "dependency link left for the holder");
+
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: entry.token }), /does not own a started task/);
+    // The kept worktree occupies the name, so a restart fails clearly instead of silently reusing it.
+    assert.throws(() => start(root), /Worktree already exists/);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), [], "a failed restart leaves no claim");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("release refuses tokens that do not own a task", () => {
+  const { root } = createWorkspace();
+  try {
+    start(root);
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: "wrong" }), /does not own a started task/);
+    assert.throws(() => releaseTask({ workspaceRoot: root, token: "" }), /task token is required/);
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks.length, 1);
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("finish completes a cleanup interrupted after landing, even with the worktree gone", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+
+    // Simulate the 2026-10-12 F3 state: landed on main, git emptied the
+    // worktree but could not delete its directory, branch and claim remain.
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+    assert.equal(git(frontend, ["rev-parse", "main"]), head);
+    unlinkSync(path.join(worktree, "node_modules"));
+    rmSync(worktree, { recursive: true, force: true });
+    assert.equal(existsSync(worktree), false);
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.cleanedUp, true);
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(git(frontend, ["worktree", "list"]).includes("task-a"), false, "stale worktree entry pruned");
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+    assert.ok(existsSync(path.join(frontend, "node_modules", "pkg", "index.js")));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("finish resumes after the worktree and branch were already removed", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    // Cleanup got as far as removing worktree and branch, then stopped.
+    unlinkSync(path.join(worktree, "node_modules"));
+    git(frontend, ["worktree", "remove", worktree]);
+    git(frontend, ["branch", "-d", "claude/task-a"]);
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.deepEqual(result.landed, [{ repo: "frontend", status: "already-cleaned" }]);
+    assert.equal(result.cleanedUp, true);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a cleanup failure after landing keeps the claim and reports what is pending", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    // A locked worktree makes `git worktree remove` refuse with a non-transient
+    // error, so finish must stop without retrying or forcing the removal.
+    git(frontend, ["worktree", "lock", worktree, "--reason", "test"]);
+    assert.throws(
+      () => finishTask({ workspaceRoot: root, token: entry.token, retryDelays: [] }),
+      /All repositories are landed; cleanup is pending for: frontend.*run finish again/s,
+    );
+    assert.equal(git(frontend, ["rev-parse", "main"]), head, "landing is kept");
+    assert.ok(existsSync(worktree), "worktree is kept");
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1, "claim is kept");
+    assert.equal(taskStatus({ workspaceRoot: root }).tasks.length, 1, "task record is kept");
+
+    git(frontend, ["worktree", "unlock", worktree]);
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(existsSync(worktree), false);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("worktree removal retries are bounded", () => {
+  assert.ok(REMOVE_RETRY_DELAYS_MS.length <= 3);
+  assert.ok(REMOVE_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0) <= 2000);
+});
+
+// Reproduces 2026-10-12 F5: git unregistered and emptied the worktree but left
+// the directory. A rerun must neither retry git on it nor read the primary
+// checkout's uncommitted files through it.
+function leaveUnregisteredEmptyDirectory(frontend, worktree) {
+  unlinkSync(path.join(worktree, "node_modules"));
+  git(frontend, ["worktree", "remove", worktree]);
+  mkdirSync(worktree);
+}
+
+test("rerunning finish ignores a leftover empty directory and the primary's dirty files", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    leaveUnregisteredEmptyDirectory(frontend, worktree);
+    // Someone else's uncommitted work in the primary checkout.
+    writeFileSync(path.join(frontend, "docs", "README.md"), "# Docs, edited by another task" + "\n");
+    writeFileSync(path.join(frontend, "untracked-by-someone.txt"), "theirs" + "\n");
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.cleanedUp, true);
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(existsSync(worktree), false, "empty leftover directory removed");
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.equal(git(frontend, ["rev-parse", "main"]), head);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    // The other task's files are untouched.
+    assert.equal(readFileSync(path.join(frontend, "untracked-by-someone.txt"), "utf8"), "theirs" + "\n");
+    assert.match(git(frontend, ["status", "--porcelain"]), /docs\/README\.md/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a leftover directory that is not empty is reported, not deleted", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    leaveUnregisteredEmptyDirectory(frontend, worktree);
+    writeFileSync(path.join(worktree, "stray.txt"), "stray" + "\n");
+
+    assert.throws(
+      () => finishTask({ workspaceRoot: root, token: entry.token, retryDelays: [] }),
+      /no longer a git worktree but is not empty.*cleanup is pending for: frontend/s,
+    );
+    assert.equal(readFileSync(path.join(worktree, "stray.txt"), "utf8"), "stray" + "\n");
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1, "claim kept for a rerun");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

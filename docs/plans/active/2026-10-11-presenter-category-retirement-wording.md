@@ -38,3 +38,13 @@
 
 - L1：`npx vitest run app/assets/__tests__/source-video-language-contract.test.ts`
 - L2：`npm run check:agents`（docs:check 与视频预览契约）
+
+## 当前状态（2026-10-12）
+
+本地修复完成并提交 `45344f8`：spec 3 处、`docs/API.md` 2 处旧分类措辞替换为公开接口字段，两文件中 `Presenter` 与 `通用讲解型编导稿` 均为 0 处；远端在 spec 的其余更新与核验日期保留。
+
+已验证：契约测试 3 项通过、`check:agents` 通过、暂存树隔离检出验证通过（不依赖其他会话未提交改动）。`docs/API.md` 中其他会话未提交的 `../AGENTS.md` 引用改动未纳入提交。
+
+**未完成**：`git push origin main` 被权限门禁按「生产发布」拒绝，未推送，因此远端 `main` 的 CI 仍为红，红灯成因仍在远端。本计划保持 active，待推送并确认 CI 转绿后才可归档。
+
+待办归属：推送需用户授权执行；工作区另有未提交的 `scripts/sync-agents-md.mjs` 删除，属其他会话，若被提交会导致 `check:agents` 失败。

@@ -6,7 +6,7 @@
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
-> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../CLAUDE.md` 与 `MultiMix-Backend/docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
+> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../AGENTS.md` 与 `MultiMix-Backend/docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
 
 适用版本：`multimix-web@0.1.0`（Next.js 15 App Router + React 19 + TypeScript strict）。
 
