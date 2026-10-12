@@ -30,16 +30,22 @@ export function segmentNeedsMaterial(segment: AssetProductSegment): boolean {
 // Pure display list for storyboard segment summaries (序号/时长/标题/口播/
 // 必要异常状态). Callers only render it when segment data exists. When
 // onSelect is wired (成片浏览态) the cards double as jump-to-preview targets.
+// onAnnotate binds the conversation composer to one segment so the user can
+// describe the change in their own words instead of hunting for a control.
 export default function SegmentCards({
   segments,
   activeId,
+  annotatingId,
   onSelect,
+  onAnnotate,
   onReplaceMaterial,
   onEditVoiceover,
 }: {
   segments: AssetProductSegment[];
   activeId?: string | null;
+  annotatingId?: string | null;
   onSelect?: (segment: AssetProductSegment) => void;
+  onAnnotate?: (segment: AssetProductSegment) => void;
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
 }) {
@@ -58,6 +64,8 @@ export default function SegmentCards({
           const presenterEvents = presenterEventSummary(segment);
           const canEditVoiceover = Boolean(onEditVoiceover && !segment.isPresenter);
           const canReplaceMaterial = Boolean(onReplaceMaterial && !segment.isPresenter);
+          const canAnnotate = Boolean(onAnnotate);
+          const isAnnotating = Boolean(annotatingId && annotatingId === segment.id);
           const primaryCopy = segment.title || segment.line || `分镜 ${segment.index}`;
           const secondaryCopy = mgStatus && segment.subLine
             ? segment.subLine
@@ -165,8 +173,25 @@ export default function SegmentCards({
                   </span>
                 ) : null}
               </span>
-              {canReplaceMaterial || canEditVoiceover ? (
+              {canAnnotate || canReplaceMaterial || canEditVoiceover ? (
                 <span className="shadcn-prototype-segment-actions">
+                  {canAnnotate ? (
+                    <button
+                      type="button"
+                      className={isAnnotating ? "annotate active" : "annotate"}
+                      aria-pressed={isAnnotating}
+                      aria-label={`说第 ${segment.index} 镜`}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onAnnotate?.(segment);
+                      }}
+                    >
+                      {isAnnotating ? "正在说这镜" : "说这镜"}
+                    </button>
+                  ) : null}
                   {canEditVoiceover ? (
                     <button
                       type="button"

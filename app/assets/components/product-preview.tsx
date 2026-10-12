@@ -26,6 +26,7 @@ import {
   compareVideoVersionOverview,
   videoSegmentChangeSummary,
   videoSegmentChangeDetails,
+  videoVersionReuseScope,
   type VideoVersionSegmentChange,
 } from "../lib/video-version-comparison";
 
@@ -401,6 +402,13 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   ) : [], [comparisonHasStructure, comparisonProduct?.segments, product.segments]);
   const comparisonOverviewChanges = useMemo(() => comparisonProduct
     ? compareVideoVersionOverview(comparisonProduct, product) : [], [comparisonProduct, product]);
+  // Makes incremental execution visible: which scenes were redone and how many
+  // were reused untouched. Null when the two versions give no reliable basis.
+  const reuseScope = useMemo(() => comparisonHasStructure ? videoVersionReuseScope(
+    comparisonProduct?.segments,
+    product.segments,
+    comparisonChanges,
+  ) : null, [comparisonHasStructure, comparisonProduct?.segments, product.segments, comparisonChanges]);
   const displayIdentity = getProductDisplayIdentity(product);
 
   useEffect(() => {
@@ -992,6 +1000,16 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             />
           )}
         </div>
+        {reuseScope ? (
+          <p className="shadcn-prototype-video-reuse-scope">
+            <strong>
+              {reuseScope.changedIndexes.length === 1
+                ? `第 ${reuseScope.changedIndexes[0]} 镜已重做`
+                : `第 ${reuseScope.changedIndexes.join("、")} 镜已重做`}
+            </strong>
+            <span>其余 {reuseScope.reusedCount} 镜原样复用</span>
+          </p>
+        ) : null}
         {product.segments?.length ? (
           <SegmentCards
             segments={product.segments}

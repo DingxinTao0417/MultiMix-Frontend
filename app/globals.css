@@ -9706,10 +9706,17 @@ label {
   font-weight: 700;
 }
 
+/* Reserve room for the always-visible per-segment action row so segment text
+   is never covered by it. Cards without actions keep the full width. */
 .shadcn-prototype-segment-copy {
   display: grid;
   gap: 1px;
   min-width: 0;
+}
+
+.shadcn-prototype-segment-cards li:has(.shadcn-prototype-segment-actions)
+  .shadcn-prototype-segment-copy {
+  padding-right: 232px;
 }
 
 .shadcn-prototype-segment-line1 {
@@ -10239,19 +10246,16 @@ label {
   background: var(--sp-faint);
 }
 
+/* Per-segment edit entries stay visible by default: local editing is the
+   product's core differentiator, so it must not depend on hover discovery. */
 .shadcn-prototype-segment-actions {
   position: absolute;
   right: 10px;
   top: 50%;
-  display: none;
+  display: inline-flex;
   gap: 6px;
   flex-shrink: 0;
   transform: translateY(-50%);
-}
-
-.shadcn-prototype-segment-cards li:hover .shadcn-prototype-segment-actions,
-.shadcn-prototype-segment-cards li:focus-within .shadcn-prototype-segment-actions {
-  display: inline-flex;
 }
 
 .shadcn-prototype-segment-actions button {
@@ -10264,6 +10268,60 @@ label {
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
+}
+
+.shadcn-prototype-segment-cards li:hover .shadcn-prototype-segment-actions button,
+.shadcn-prototype-segment-cards li:focus-within .shadcn-prototype-segment-actions button {
+  color: var(--sp-text);
+}
+
+/* Reuse scope turns incremental execution into something the user can see.
+   Only rendered when both versions give a reliable basis (see
+   videoVersionReuseScope), so it never shows a guessed count. */
+.shadcn-prototype-video-reuse-scope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background:
+    linear-gradient(var(--sp-card), var(--sp-card)) padding-box,
+    var(--sp-ai-grad) border-box;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.shadcn-prototype-video-reuse-scope strong {
+  color: var(--sp-text);
+  font-weight: 650;
+}
+
+.shadcn-prototype-video-reuse-scope span {
+  color: var(--sp-muted-text);
+}
+
+/* "说这镜" is the primary per-segment action: it routes the change back into
+   the conversation, which is the product's confirmed editing path. */
+.shadcn-prototype-segment-actions button.annotate {
+  border-color: var(--sp-accent-line);
+  background: var(--sp-accent-soft);
+  color: var(--sp-accent);
+}
+
+.shadcn-prototype-segment-actions button.annotate:hover,
+.shadcn-prototype-segment-actions button.annotate:focus-visible {
+  border-color: var(--sp-accent);
+  color: var(--sp-accent);
+}
+
+.shadcn-prototype-segment-actions button.annotate.active {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--sp-accent-soft), var(--sp-accent-soft)) padding-box,
+    var(--sp-ai-grad) border-box;
+  color: var(--sp-accent);
 }
 
 .shadcn-prototype-segment-actions button:hover,
