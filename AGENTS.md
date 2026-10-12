@@ -175,14 +175,16 @@ scripts/
 
 ## 提交与同步流程
 
-当用户说“提交代码”时，默认只完成本地 `main`：确认范围并检查 -> 创建本地提交 -> 报告本地提交结果。不得自动 fetch、合并远端或推送。“合并代码”也只在本地 `main` 完成用户明确指定的合并。只有用户在当次请求中明确要求“推送到远端”或等效表述时，才执行 fetch、远端分叉检查、远端合并、推送和最终远端同步校验。当前工作区包含两个独立仓库：
+当用户说“提交代码”时，默认只完成本地 `main`：确认范围并检查 -> 在任务 worktree 提交 -> `task -- finish` 合入本地 `main` -> 报告本地提交结果。不得自动 fetch、合并远端或推送。“合并代码”也只在本地 `main` 完成用户明确指定的合并。只有用户在当次请求中明确要求“推送到远端”或等效表述时，才执行 fetch、远端分叉检查、远端合并、推送和最终远端同步校验。当前工作区包含两个独立仓库：
 
 - 前端：`C:\Users\24566\Desktop\multimix\MultiMix-Frontend`
 - 后端：`C:\Users\24566\Desktop\multimix\MultiMix-Backend`
 
+任务 worktree 与合并锁的规则以工作区根 `AGENTS.md`「任务分支与合并门禁」为准，本节只写前端仓库的执行步骤。
+
 ### 提交前
 
-1. 先运行 `node scripts/workspace-submit-guard.mjs begin` 获取工作区单写入锁并保存输出令牌；没有令牌时禁止 commit、merge 或 push。分别在前端和后端运行 `git status --short --branch`，确认当前分支、未提交改动和本次实际提交范围。
+1. 确认自己在 `task -- start` 建出的任务 worktree 里（`git rev-parse --abbrev-ref HEAD` 应为 `<claude|codex>/<task>`），而不是主目录的 `main`。分别在涉及的 worktree 运行 `git status --short --branch`，确认未提交改动和本次实际提交范围。
 2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `multimix.sqlite3` 及遗留的 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
 3. 如果发现不属于当前任务的陌生改动，明确列出并保留在工作区；不要擅自回滚，也不要静默带入提交。
 
@@ -204,37 +206,39 @@ scripts/
 
 检查失败时停止提交或推送，先修复问题；如果无法修复，向用户报告失败命令和原因。
 
-自动检查完成后运行 `node scripts/workspace-submit-guard.mjs verify --token <token>`；如果 HEAD、暂存区、文件集合或内容与开始检查时不同，说明有并发或晚到修改，必须停止。
-
 ### 提交
 
-1. 每个仓库独立提交，不把前端和后端混成一个 git 操作。
+1. 每个仓库独立提交，不把前端和后端混成一个 git 操作；提交只在任务 worktree 里进行，无需加锁。
 2. 使用窄路径 `git add -- <path>...` 暂存本次任务文件；同一文件混有无关改动时按 hunk 拆分暂存。禁止用 `git add -A` 静默扫入陌生改动。
 3. 提交信息要概括实际变更，例如：
    - `Update MultiMix workspace libraries and conversation flow`
    - `Update asset upload validation and conversation assets`
-4. 创建本地提交后再次运行 `git status --short --branch`，确认目标改动已经提交；允许保留已明确排除的无关脏文件，但必须报告。
-5. 用户未明确要求远端推送时，在此结束并运行 `node scripts/workspace-submit-guard.mjs end --token <token>` 释放锁；只有进入明确授权的远端流程时才运行 checkpoint。
+4. 创建提交后再次运行 `git status --short --branch`，确认目标改动已经提交、worktree 已干净（`finish` 拒绝有未提交改动的 worktree）。
+5. 运行 `npm --prefix C:\Users\24566\Desktop\multimix\MultiMix-Frontend run task -- finish --token <token>` 快进合入本地 `main`。提示分支落后时，在 worktree 里 `git merge main`、解决冲突、重跑必要检查后再 `finish`；提示会覆盖主目录他人文件时停止并报告。
+6. 用户未明确要求远端推送时，在此结束；`finish` 已删除 worktree、分支并释放占用。
 
 ### 远端拉取与合并（仅用户明确要求推送到远端时）
 
-1. 本地提交完成后，在前端和后端分别运行 `git fetch origin --prune`。
-2. 运行 `git rev-list --left-right --count HEAD...origin/main` 检查 ahead/behind；落后为 0 时，用 `git merge --ff-only origin/main` 确认远端是当前提交的祖先或已经同步。
-3. 本地落后或双方分叉时，先运行 `git log --oneline --left-right --cherry-pick --graph HEAD...origin/main` 理解双方提交，再运行 `git merge --no-edit origin/main` 合并远端最新代码。
+远端合并全部在任务 worktree 里完成，主目录 `main` 始终只被快进，避免在主目录产生合并提交或冲突。
+
+1. 在任务 worktree 运行 `git fetch origin --prune`，再 `git merge main` 带上本地 `main` 的最新提交。
+2. 运行 `git rev-list --left-right --count HEAD...origin/main` 检查 ahead/behind；落后为 0 时无需合并远端。
+3. 本地落后或双方分叉时，先运行 `git log --oneline --left-right --cherry-pick --graph HEAD...origin/main` 理解双方提交，再在 worktree 运行 `git merge --no-edit origin/main`。
 4. 遇到冲突时不要强行覆盖，也不要继续推送：
    - 停止自动流程。
    - 用 `git status --short` 和冲突文件列表说明具体冲突。
    - 只在理解双方改动后编辑冲突文件。
    - 冲突解决后重新运行必要检查，再完成 merge commit。
-5. 禁止使用 `git reset --hard`、`git checkout -- .` 等破坏性命令，除非用户明确要求。
+5. 合并完成且检查通过后，运行 `task -- finish --keep --token <token>` 把结果快进合入本地 `main`，保留 worktree 与占用直到推送核对结束。
+6. 禁止使用 `git reset --hard`、`git checkout -- .` 等破坏性命令，除非用户明确要求。
 
 ### 推送（仅用户明确要求推送到远端时）
 
 1. 只有用户在当次请求中明确要求推送到远端，且目标提交检查通过、远端合并完成且没有冲突后，才运行 `git push origin main`；已明确排除的无关脏文件可以继续留在工作区。
-2. push 前必须运行 `node scripts/workspace-submit-guard.mjs verify --token <token>`；检测到任何晚到变化时立即停止。
+2. push 前运行 `task -- status`，确认本仓库没有其他任务正在合并、主目录 `main` 仍是自己合入后的提交（`git rev-parse main` 与 worktree 分支一致）；发现被他人改动时立即停止并报告。
 3. 推送后再次运行 `git fetch origin --prune`、`git status --short --branch` 和 `git rev-list --left-right --count HEAD...origin/main`。
 4. 比较 `git rev-parse HEAD`、`git rev-parse origin/main` 与 `git ls-remote origin refs/heads/main`，确认本地、远端跟踪分支和真实远端分支一致。
-5. 最终远端核对完成后运行 `node scripts/workspace-submit-guard.mjs end --token <token>` 释放工作区锁。
+5. 最终远端核对完成后运行 `task -- finish --token <token>` 清理 worktree、分支并释放占用（此时显示 `already-landed`）。
 6. 最终回复需要说明：
    - 哪些仓库已提交和推送。
    - 最新提交哈希和提交信息。
