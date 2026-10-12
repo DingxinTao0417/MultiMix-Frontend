@@ -17,6 +17,8 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock("../../../lib/api", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../../lib/api")>(),
   getContentAssetVersionPreview: apiMocks.getContentAssetVersionPreview,
+  // Clarity requests have their own API tests and must not consume download fixtures.
+  getVideoClarityReview: vi.fn(async () => { throw new Error("Clarity review unavailable in playback fixtures"); }),
 }));
 
 // The independent advisory panel owns its own API tests; keep these playback

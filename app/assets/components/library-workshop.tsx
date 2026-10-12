@@ -15,6 +15,7 @@ import useDialogFocusManagement from "../lib/use-dialog-focus-management";
 import { readVideoThumbnail } from "../lib/video-thumbnail";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import { apiErrorStatus } from "../../../lib/api";
+import VideoClarityReview from "./video-clarity-review";
 import {
   animateVideoStoryboardScene,
   confirmVideoStoryboard,
@@ -1458,6 +1459,7 @@ function LibraryWorkshop({
             ) : null}
 
             {/* Content sections in demo order; actions moved to the bottom. */}
+            {view === "video" && selectedRow.assetId ? <VideoClarityReview assetId={selectedRow.assetId} token={token ?? undefined} /> : null}
             {view === "image" ? (
               <>
                 <section className="shadcn-prototype-library-content">

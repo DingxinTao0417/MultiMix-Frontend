@@ -15,6 +15,7 @@ import SegmentCards, { segmentNeedsMaterial } from "./segment-cards";
 import SourceRefBlock, { type GenerationAnimationSummary } from "./source-ref-block";
 import StoryboardPreview from "./storyboard-preview";
 import VideoPreviewPlayer, { formatPreviewTime } from "./video-preview-player";
+import VideoClarityReview from "./video-clarity-review";
 import LongFormCandidateSet, { longFormAnalysisFromMetadata } from "./long-form-candidate-set";
 import VideoProjectPreview, { type VideoProjectPreviewHandle } from "./video-project-preview";
 import type { LongFormSourceAction } from "../lib/long-form-client";
@@ -40,6 +41,11 @@ export function persistedVideoExportMatchesCurrentProject(product: ProductArtifa
 
 export function playableVideoUrl(product: ProductArtifact): string {
   const metadata = isRecord(product.metadata) ? product.metadata : {};
+  if (isRecord(metadata.clarity_media)) {
+    const clarity = metadata.clarity_media;
+    if (clarity.status !== "ready") return "";
+    if (isRecord(clarity.current)) return stringValue(clarity.current.preview_url);
+  }
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : null;
   if (!persistedVideoExportMatchesCurrentProject(product)) return "";
   const mp4Ref = stringValue(videoProject?.mp4_ref);
@@ -373,6 +379,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
 }, forwardedRef) {
   // Hooks stay unconditional across the mode branches below.
   const browsePlayerRef = useRef<HTMLVideoElement | null>(null);
+  const cancelPendingBrowseSeekRef = useRef<(() => void) | null>(null);
   const comparisonPreviousPlayerRef = useRef<HTMLVideoElement | null>(null);
   const comparisonCurrentPlayerRef = useRef<HTMLVideoElement | null>(null);
   const comparisonPlayersRef = useRef<HTMLDivElement | null>(null);
@@ -402,6 +409,11 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const comparisonOverviewChanges = useMemo(() => comparisonProduct
     ? compareVideoVersionOverview(comparisonProduct, product) : [], [comparisonProduct, product]);
   const displayIdentity = getProductDisplayIdentity(product);
+
+  useEffect(() => {
+    cancelPendingBrowseSeekRef.current?.();
+    return () => cancelPendingBrowseSeekRef.current?.();
+  }, [exportedVideoUrl, product.id, comparisonOpen]);
 
   useEffect(() => {
     setFullVideoFailed(false);
@@ -1000,9 +1012,24 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
               setActiveSegmentId(segment.id);
               onSelectSegment?.(segment);
               const player = browsePlayerRef.current;
-              if (showFullVideo && player && player.readyState >= 3 && segment.startSeconds != null) {
-                player.currentTime = segment.startSeconds;
-                void player.play().catch(() => {});
+              cancelPendingBrowseSeekRef.current?.();
+              if (showFullVideo && player && segment.startSeconds != null) {
+                const time = segment.startSeconds;
+                const cancel = () => {
+                  player.removeEventListener("canplay", seekAndPlay);
+                  if (cancelPendingBrowseSeekRef.current === cancel) cancelPendingBrowseSeekRef.current = null;
+                };
+                const seekAndPlay = () => {
+                  if (browsePlayerRef.current !== player || player.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
+                  cancel();
+                  player.currentTime = time;
+                  void player.play().catch(() => {});
+                };
+                if (player.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) seekAndPlay();
+                else {
+                  cancelPendingBrowseSeekRef.current = cancel;
+                  player.addEventListener("canplay", seekAndPlay);
+                }
               } else if (!showFullVideo && projectPreviewRequested && segment.startSeconds != null) {
                 projectPreviewRef.current?.seekAndPlay(segment.startSeconds);
               }
@@ -1016,6 +1043,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
           <SourceRefBlock summary={product.sourceSummary} animation={animationSummary(planSummary)} />
         ) : null}
         {footer}
+        {product.backendAssetId ? <VideoClarityReview assetId={product.backendAssetId} token={token} /> : null}
       </div>
     );
   }
@@ -1033,6 +1061,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
           ) : null}
         </div>
       ) : null}
+      {product.mode === "video" && product.backendAssetId ? <VideoClarityReview assetId={product.backendAssetId} token={token} /> : null}
       {!exportedVideoUrl ? (
         <section className="shadcn-prototype-video-placeholder-preview" aria-label={`${previewStageLabel}预览`}>
           <div className="shadcn-prototype-video-placeholder-phone" aria-hidden="true">

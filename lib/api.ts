@@ -214,6 +214,25 @@ export type ContentAssetVersion = {
   created_at: string;
 };
 
+export type ClarityMediaDelivery = {
+  master_file_id: number;
+  master_mime_type: string;
+  master_size_bytes: number;
+  preview_file_id: number | null;
+  preview_url: string | null;
+  original_file_id: number;
+  original_preview_url: string | null;
+  preview_independently_reviewed: false;
+};
+
+export type ClarityMedia = {
+  scenes?: Record<string, { source_asset_id: number; usage_asset_id: number; application_fingerprint: string }>;
+  status: "ready" | "unavailable";
+  selection?: "original" | "adopted" | null;
+  current?: ClarityMediaDelivery | null;
+  deliveries?: Partial<Record<"original" | "brand_showcase", ClarityMediaDelivery>>;
+};
+
 export type ContentAsset = {
   id: number;
   project_id: number | null;
@@ -232,6 +251,7 @@ export type ContentAsset = {
   content_hash: string | null;
   body: string;
   metadata: Record<string, unknown>;
+  clarity_media?: ClarityMedia | null;
   source_mapping?: Array<Record<string, unknown>>;
   linked_asset_ids: number[];
   linked_event_ids: number[];
@@ -410,6 +430,15 @@ export type AgentActionStatus =
   | "blocked"
   | "canceled";
 
+import type { ClarityResult, ClarityReview, ClarityCandidate } from "../app/assets/lib/video-clarity-types";
+
+export async function getVideoClarityReview(token: string | null, assetId: number, signal?: AbortSignal): Promise<ClarityReview> {
+  return api(`/assets/${assetId}/video-clarity`, token, { cache: "no-store", signal });
+}
+export async function getVideoClarityCandidates(token: string | null, assetId: number, jobId: string, signal?: AbortSignal): Promise<{ asset_id: number; job_id: string; candidates: ClarityCandidate[] }> {
+  return api(`/assets/${assetId}/video-clarity/candidates?job_id=${encodeURIComponent(jobId)}`, token, { cache: "no-store", signal });
+}
+
 export type AgentActionRunResponse = {
   id: string;
   status: AgentActionStatus;
@@ -419,6 +448,7 @@ export type AgentActionRunResponse = {
   version_id: number | null;
   message: string;
   retryable: boolean;
+  clarity_result?: ClarityResult | null;
 };
 
 export type AgentTaskSummaryResponse = {

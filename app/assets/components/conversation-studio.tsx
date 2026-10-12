@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import ClarityProcessingNotice from "./clarity-processing-notice";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { ArrowUp, FileText, FolderOpen, Image as ImageIcon, Play, Square, Video } from "lucide-react";
 import { attachmentSendBlockReason, chatAttachmentStatusLabel, getConversationProducts, getProductDisplayIdentity, isStableDisplayProduct, shouldSubmitComposerOnEnter, type ChatAttachmentFileKind, type ChatAttachmentStatus, type Conversation, type ProductArtifact } from "../lib/asset-workspace-shared";
@@ -1577,7 +1578,10 @@ export default function ConversationStudio({
                   onAdjust={(plan) => handleAdjustPlan(plan, message.assetId ?? undefined)}
                 />
               ) : null}
-              {timelineSteps.length ? (
+              {liveAgentAction?.clarityResult ? <ClarityProcessingNotice result={liveAgentAction.clarityResult}
+                token={requirementAnalyticsToken ?? undefined} onPrepareAdoption={writeCapabilities.canGenerate && onSendMessage
+                  ? (instruction) => { void onSendMessage(selectedConversation, instruction); } : undefined} /> : null}
+              {timelineSteps.length && !liveAgentAction?.clarityResult ? (
                 isVideoExecutionTimeline ? (
                   <VideoProgressCard
                     kind={videoProgressKind}

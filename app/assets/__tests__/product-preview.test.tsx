@@ -193,3 +193,63 @@ it("shows the exact running stage and leaves adoption unavailable while search i
   expect(screen.getByRole("button", { name: "继续搜索公共素材" })).toBeDisabled();
   expect(screen.queryByRole("button", { name: "确认采用这项素材" })).not.toBeInTheDocument();
 });
+
+
+it("selects verified clarity preview ahead of the old film export", () => {
+  const product = { ...displayProducts["case-06-project-ready-no-mp4"], metadata: {
+    video_project: { mp4_ref: "local://old.mp4", mp4_state: "ready" },
+    clarity_media: { status: "ready", current: { preview_url: "https://api.test/v1/video/projects/3/media/9?token=bound" } },
+  } };
+  expect(playableVideoUrl(product)).toBe("https://api.test/v1/video/projects/3/media/9?token=bound");
+  expect(playableVideoUrl({ ...product, metadata: { ...product.metadata, clarity_media: { status: "unavailable" } } })).toBe("");
+});
+
+
+it("keeps the player directly followed by storyboard summary before the additional clarity report", () => {
+  const product = { ...displayProducts["case-06-project-ready-no-mp4"], backendAssetId: 3 };
+  const { container } = render(<ProductPreview product={product} />);
+  const player = screen.getByLabelText("视频工程播放器");
+  const report = screen.getByRole("region", { name: "视频清晰度审查" });
+  const segments = container.querySelector(".shadcn-prototype-segment-cards");
+  expect(player.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(segments?.compareDocumentPosition(report) && ((segments.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING) > 0)).toBe(true);
+});
+
+function loadingFilm() {
+  const product = displayProducts["case-07-project-ready-mp4"];
+  const view = render(<ProductPreview product={product} />);
+  const video = view.container.querySelector("video")!;
+  const play = vi.spyOn(video, "play").mockResolvedValue(undefined);
+  Object.defineProperty(video, "readyState", { configurable: true, value: 1 });
+  return { ...view, video, play, product };
+}
+
+it("preserves a storyboard selection during buffering and plays it only after canplay", () => {
+  const { video, play } = loadingFilm();
+  fireEvent.click(screen.getByRole("button", { name: /分镜 2|服务过程/ }));
+  expect(video.currentTime).toBe(0);
+  expect(play).not.toHaveBeenCalled();
+  Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
+  fireEvent.canPlay(video);
+  expect(video.currentTime).toBe(1.5);
+  expect(play).toHaveBeenCalledTimes(1);
+});
+
+it("uses only the last storyboard selection when the buffered movie becomes ready", () => {
+  const { video, play } = loadingFilm();
+  fireEvent.click(screen.getByRole("button", { name: /分镜 2|服务过程/ }));
+  fireEvent.click(screen.getByRole("button", { name: /门店外观/ }));
+  Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
+  fireEvent.canPlay(video);
+  expect(video.currentTime).toBe(0);
+  expect(play).toHaveBeenCalledTimes(1);
+});
+
+it("cancels an old buffered storyboard selection when the displayed movie changes", () => {
+  const { video, play, rerender, product } = loadingFilm();
+  fireEvent.click(screen.getByRole("button", { name: /分镜 2|服务过程/ }));
+  rerender(<ProductPreview product={{ ...product, id: "another-product" }} />);
+  Object.defineProperty(video, "readyState", { configurable: true, value: 3 });
+  fireEvent.canPlay(video);
+  expect(play).not.toHaveBeenCalled();
+});

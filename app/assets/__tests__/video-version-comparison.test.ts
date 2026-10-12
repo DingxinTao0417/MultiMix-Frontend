@@ -239,3 +239,54 @@ describe("video version segment comparison", () => {
     ]);
   });
 });
+
+describe("same-source clarity version comparison", () => {
+  function product(selection: "original" | "adopted" | "unavailable", usage = 20) {
+    return contentAssetToProduct({
+      id: 7, linked_asset_ids: [], title: "视频", body: "", asset_kind: "video", content_type: "video_project", status: "ready",
+      metadata: { video_segments: [{ id: "shot-1", primary_visual: { source_type: "saved_asset", asset_id: 12, status: "persisted", artifact_ref: "local://same-source.mp4" } }] },
+      clarity_media: selection === "unavailable" ? { status: "unavailable" } : { status: "ready", scenes: selection === "adopted" ? { "shot-1": { source_asset_id: 12, usage_asset_id: usage, application_fingerprint: "a".repeat(64) } } : {} },
+    } as unknown as ContentAsset);
+  }
+  it("shows confirmed same-source use and full restoration without calling either a material replacement", () => {
+    const original = product("original"), adopted = product("adopted");
+    const [change] = compareVideoVersionSegments(original.segments, adopted.segments);
+    expect(change?.changeKinds).toEqual(["clarity"]);
+    expect(videoSegmentChangeSummary(change)).toBe("已采用增强使用版");
+    expect(videoSegmentChangeDetails(change)).toContainEqual({ label: "清晰度使用版本", before: "原版", after: "增强使用版" });
+    const [restored] = compareVideoVersionSegments(adopted.segments, original.segments);
+    expect(videoSegmentChangeSummary(restored)).toBe("已恢复原版画质");
+    expect(compareVideoVersionSegments(original.segments, product("unavailable").segments)).toEqual([]);
+    expect(compareVideoVersionSegments(adopted.segments, product("unavailable").segments)).toEqual([]);
+  });
+  it("detects another adopted usage but ignores stable bindings and signed URL changes", () => {
+    const adopted = product("adopted");
+    expect(compareVideoVersionSegments(adopted.segments, product("adopted").segments)).toEqual([]);
+    const [updated] = compareVideoVersionSegments(adopted.segments, product("adopted", 21).segments);
+    expect(videoSegmentChangeSummary(updated)).toBe("清晰度使用版已调整");
+  });
+  it("does not accept malformed usage identity as evidence of adoption", () => {
+    const base = product("original");
+    const malformed = contentAssetToProduct({ id: 7, linked_asset_ids: [], title: "视频", body: "", asset_kind: "video", content_type: "video_project", status: "ready", metadata: base.metadata,
+      clarity_media: { status: "ready", scenes: { "shot-1": { source_asset_id: 12, usage_asset_id: -1, application_fingerprint: "a".repeat(64) } } },
+    } as unknown as ContentAsset);
+    expect(compareVideoVersionSegments(base.segments, malformed.segments)).toEqual([]);
+  });
+});
+
+
+it("describes film delivery use without inventing changed scenes or trusting signed URLs", () => {
+  const base = { id: "asset-7", mode: "video" as const, title: "视频", status: "完成", summary: "", ratio: "9:16", duration: "30 秒", phase: "完成", sections: [], timeline: [], actions: [],
+    metadata: { video_project: { mp4_state: "ready", mp4_ref: "local://canonical.mp4" } } };
+  const delivery = { master_file_id: 20, original_file_id: 10, preview_url: "https://example.test/preview?signature=1" };
+  const enhanced = { ...base, metadata: { ...base.metadata, clarity_media: { status: "ready", deliveries: { original: delivery } } } };
+  expect(compareVideoVersionOverview(base, enhanced)).toEqual([{ label: "原始版画质使用版本", before: "原版", after: "增强使用版" }]);
+  expect(compareVideoVersionOverview(enhanced, base)).toEqual([{ label: "原始版画质使用版本", before: "增强使用版", after: "原版" }]);
+  const resign = { ...enhanced, metadata: { ...base.metadata, clarity_media: { status: "ready", deliveries: { original: { ...delivery, preview_url: "https://example.test/preview?signature=2" } } } } };
+  expect(compareVideoVersionOverview(enhanced, resign)).toEqual([]);
+  const brand = { ...base, metadata: { ...base.metadata, clarity_media: { status: "ready", deliveries: { brand_showcase: delivery } } } };
+  expect(compareVideoVersionOverview(base, brand)).toEqual([{ label: "品牌展示版画质使用版本", before: "原版", after: "增强使用版" }]);
+  const unavailable = { ...base, metadata: { ...base.metadata, clarity_media: { status: "unavailable" } } };
+  expect(compareVideoVersionOverview(enhanced, unavailable)).toEqual([]);
+  expect(compareVideoVersionOverview({ ...base, metadata: {} }, enhanced)).toEqual([]);
+});

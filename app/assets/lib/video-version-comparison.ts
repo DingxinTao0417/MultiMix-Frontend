@@ -1,7 +1,7 @@
 import type { AssetProduct, AssetProductSegment } from "./asset-workspace-types";
 import { isRecord, stringValue } from "./asset-workspace-shared";
 
-export type VideoSegmentChangeKind = "timing" | "visual" | "copy" | "mg" | "structure";
+export type VideoSegmentChangeKind = "timing" | "visual" | "copy" | "mg" | "structure" | "clarity";
 
 export type VideoVersionSegmentChange = {
   id: string;
@@ -70,6 +70,13 @@ function anyFieldChanged(
   });
 }
 
+function knownClarityChange(previous: AssetProductSegment, current: AssetProductSegment): boolean {
+  const before = previous.clarityUsage, after = current.clarityUsage;
+  return Boolean(previous.primaryVisualIdentity && previous.primaryVisualIdentity === current.primaryVisualIdentity
+    && before && after && before.selection !== "unknown" && after.selection !== "unknown"
+    && JSON.stringify(before) !== JSON.stringify(after));
+}
+
 function segmentChange(
   previousSegment: AssetProductSegment | null,
   currentSegment: AssetProductSegment | null,
@@ -95,6 +102,7 @@ function segmentChange(
     if (anyFieldChanged(previousSegment, currentSegment, VISUAL_FIELDS)) changeKinds.push("visual");
     if (anyFieldChanged(previousSegment, currentSegment, COPY_FIELDS)) changeKinds.push("copy");
     if (anyFieldChanged(previousSegment, currentSegment, MG_FIELDS)) changeKinds.push("mg");
+    if (knownClarityChange(previousSegment, currentSegment)) changeKinds.push("clarity");
   }
 
   if (!changeKinds.length) return null;
@@ -166,6 +174,9 @@ export function videoSegmentChangeDetails(change: VideoVersionSegmentChange): Vi
     && !sameNumber(change.previousStartSeconds, change.currentStartSeconds)) {
     details.push({ label: "起点", before: secondsLabel(change.previousStartSeconds), after: secondsLabel(change.currentStartSeconds) });
   }
+  if (change.changeKinds.includes("clarity")) details.push({ label: "清晰度使用版本",
+    before: previous.clarityUsage?.selection === "adopted" ? "增强使用版" : "原版",
+    after: current.clarityUsage?.selection === "adopted" ? "增强使用版" : "原版" });
   const textFields: Array<[keyof AssetProductSegment, string]> = [
     ["title", "标题"], ["line", "旁白"], ["subLine", "字幕"], ["voiceName", "声音"],
     ["assetTitle", "素材名称"], ["visualTreatmentLabel", "画面处理"],
@@ -220,6 +231,8 @@ export function videoSegmentChangeSummary(change: VideoVersionSegmentChange): st
         && change.previousSegment.assetTitle !== change.currentSegment.assetTitle
         ? "素材信息已调整" : "画面已调整");
   }
+  if (change.changeKinds.includes("clarity")) summary.push(change.currentSegment.clarityUsage?.selection === "original"
+    ? "已恢复原版画质" : change.previousSegment.clarityUsage?.selection === "adopted" ? "清晰度使用版已调整" : "已采用增强使用版");
   if (change.changeKinds.includes("mg")) summary.push("图形动效已调整");
   if (change.changeKinds.includes("structure")) summary.push("顺序已调整");
   return summary.join("；");
@@ -248,6 +261,19 @@ function bgmChoice(product: AssetProduct): { identity: string; label: string | n
   return { identity: `catalog:${catalogId}`, label: stringValue(selected?.name) || null };
 }
 
+function filmClarityChoice(product: AssetProduct, variant: string): { identity: string; label: string } | null {
+  const metadata = isRecord(product.metadata) ? product.metadata : null;
+  const media = metadata?.clarity_media;
+  if (media != null && (!isRecord(media) || media.status !== "ready")) return null;
+  if (isRecord(media) && media.deliveries != null && !isRecord(media.deliveries)) return null;
+  const deliveries = isRecord(media) && isRecord(media.deliveries) ? media.deliveries : null;
+  const delivery = deliveries?.[variant];
+  if (delivery == null) return { identity: "original", label: "原版" };
+  if (!isRecord(delivery) || typeof delivery.master_file_id !== "number" || !Number.isSafeInteger(delivery.master_file_id) || delivery.master_file_id <= 0
+    || typeof delivery.original_file_id !== "number" || !Number.isSafeInteger(delivery.original_file_id) || delivery.original_file_id <= 0) return null;
+  return { identity: `usage:${delivery.master_file_id}`, label: "增强使用版" };
+}
+
 export function compareVideoVersionOverview(previous: AssetProduct, current: AssetProduct): VideoVersionOverviewChange[] {
   const changes: VideoVersionOverviewChange[] = [];
   const knownRatios = new Set(["9:16", "16:9", "1:1"]);
@@ -264,6 +290,16 @@ export function compareVideoVersionOverview(previous: AssetProduct, current: Ass
   if (previousBgm && currentBgm && previousBgm.identity !== currentBgm.identity) {
     changes.push({ label: "背景音乐", before: previousBgm.label || "旧配乐（名称未记录）",
       after: currentBgm.label || "新配乐（名称未记录）" });
+  }
+  const previousProject = videoProject(previous), currentProject = videoProject(current);
+  const canonical = stringValue(previousProject?.mp4_ref);
+  if (previous.id === current.id && canonical && canonical === stringValue(currentProject?.mp4_ref)
+    && previousProject?.mp4_state === "ready" && currentProject?.mp4_state === "ready") {
+    for (const [variant, label] of [["original", "原始版画质使用版本"], ["brand_showcase", "品牌展示版画质使用版本"]]) {
+      const before = filmClarityChoice(previous, variant), after = filmClarityChoice(current, variant);
+      if (before && after && before.identity !== after.identity) changes.push({ label, before: before.label,
+        after: before.label === after.label ? "更新后的增强使用版" : after.label });
+    }
   }
   return changes;
 }

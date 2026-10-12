@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
+import VideoClarityConfirmation from "./video-clarity-confirmation";
+import { clarityConfirmationValid } from "../lib/video-clarity-presentation";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import type {
   AssetMessagePlan,
@@ -152,6 +154,14 @@ export default function ConfirmCard({
   onConfirm?: (plan: AssetMessagePlan, values?: AssetPlanConfirmationValues) => void;
   onAdjust?: (plan: AssetMessagePlan) => void;
 }) {
+  const isClarityConfirmation = plan.clarityConfirmation !== undefined
+    || plan.kind === "agent_action_confirmation" && plan.title === "确认画质增强";
+  const [clarityClock, setClarityClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isClarityConfirmation || !clarityConfirmationValid(plan.clarityConfirmation)) return;
+    const timer = setInterval(() => setClarityClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isClarityConfirmation, plan.clarityConfirmation]);
   const ratioOptions = plan.ratioOptions ?? [];
   const [selectedRatio, setSelectedRatio] = useState(
     () => plan.ratioDefault ?? (plan.ratioConfirmationRequired ? "" : ratioOptions[0]?.value ?? "")
@@ -804,6 +814,7 @@ export default function ConfirmCard({
           当前保留 {durationConstraint.retainedSeconds.toFixed(3)} 秒，请调整目标时长或保留内容。
         </p>
       ) : null}
+      {isClarityConfirmation ? <VideoClarityConfirmation confirmation={plan.clarityConfirmation} /> : null}
       <div className="shadcn-prototype-confirm-foot">
         <button
           type="button"
@@ -811,6 +822,7 @@ export default function ConfirmCard({
           disabled={
             disabled
             || !onConfirm
+            || (isClarityConfirmation && !clarityConfirmationValid(plan.clarityConfirmation, clarityClock))
             || clarificationBlocked
             || durationBlocked
             || (isVideoParameterConfirmation && plan.ratioConfirmationRequired === true && !selectedRatio)
@@ -820,6 +832,7 @@ export default function ConfirmCard({
             || productionBlocked
           }
           onClick={async () => {
+            if (isClarityConfirmation && !clarityConfirmationValid(plan.clarityConfirmation)) return;
             if (isPresenterAudioSelectionConfirmation) {
               const selectedTrack = audioTrackOptions.find(
                 (option) => option.streamIndex === selectedAudioStream,

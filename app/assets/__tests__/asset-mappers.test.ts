@@ -2557,3 +2557,19 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan).toBeUndefined();
   });
 });
+
+
+describe("verified clarity media projection", () => {
+  it("uses the signed encoding preview without replacing the native result identity", () => {
+    const media = { status: "ready" as const, selection: "adopted" as const,
+      current: { preview_url: "https://api.test/v1/video/projects/3/media/9?token=signed",
+        master_file_id: 8, master_mime_type: "video/x-matroska", master_size_bytes: 100,
+        preview_file_id: 9, original_file_id: 7, original_preview_url: "https://api.test/original",
+        preview_independently_reviewed: false as const }, deliveries: {} };
+    const product = contentAssetToProduct(asset({ asset_kind: "video", content_type: "clarity_usage_video",
+      status: "ready", original_ref: "local://enhanced.mkv", clarity_media: media }));
+    expect(product.metadata?.clarity_media).toEqual(media);
+    expect(product.metadata?.source_video_artifact).toBeUndefined();
+    expect(product.status).toBe("增强使用版 · 可预览");
+  });
+});

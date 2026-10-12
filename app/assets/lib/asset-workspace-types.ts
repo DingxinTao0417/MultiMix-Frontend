@@ -1,4 +1,5 @@
 import type { VideoQualityReport } from "./video-quality";
+import type { ClarityResult, ClarityConfirmation } from "./video-clarity-types";
 
 export type AssetWorkspaceView = "conversation" | "assets" | "copy" | "image" | "video";
 
@@ -84,6 +85,10 @@ export type AssetProductSegment = {
   primaryVisualSourceType?: "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
   // Final persisted main-track visual, not a thumbnail or display title.
   primaryVisualIdentity?: string;
+  // Public verified display identity; source material facts remain unchanged.
+  clarityUsage?: { selection: "original" | "unknown" } | {
+    selection: "adopted"; sourceAssetId: number; usageAssetId: number; fingerprint: string;
+  };
   primaryVisualPersisted?: boolean;
   primaryVisualMediaType?: "image" | "video";
   mgLabel?: string;
@@ -492,6 +497,7 @@ export type AssetPresenterAudioSelectionConfirmation = {
 };
 
 export type AssetMessagePlan = {
+  clarityConfirmation?: ClarityConfirmation | null;
   productionOptions?: { id: string; label: string; effect: string; requiredInputs: string;
     waitNote?: string; costNote: string; available?: boolean; unavailableReason?: string }[];
   productionChoiceId?: string;
@@ -816,6 +822,7 @@ export type AgentActionRunResponse = {
   versionId: number | null;
   message: string;
   retryable: boolean;
+  clarityResult?: ClarityResult | null;
 };
 
 export type AgentTaskSummary = {

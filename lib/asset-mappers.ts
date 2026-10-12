@@ -3,6 +3,7 @@
 // frontend assets-workspace-client.tsx helpers.
 
 import { confirmationMessagePresentation } from "../app/assets/lib/conversation-execution-presentation";
+import { parseClarityResult, clarityConfirmationValid } from "../app/assets/lib/video-clarity-presentation";
 import { normalizeAssetTitle } from "../app/assets/lib/asset-workspace-shared";
 import { isPresenterSourceVideoPlan } from "../app/assets/lib/video-creative-profile";
 import type {
@@ -124,6 +125,7 @@ function agentActionFromValue(value: unknown): AgentActionRunResponse | undefine
     versionId: optionalPositiveIntegerValue(value.version_id),
     message: stringValue(value.message),
     retryable: value.retryable === true,
+    clarityResult: parseClarityResult(value.clarity_result),
   };
 }
 
@@ -450,6 +452,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     pendingIntentId: stringValue(value.pending_intent_id) || undefined,
     pendingIntentVersion: positiveIntegerValue(value.pending_intent_version),
     confirmationId: stringValue(value.confirmation_id) || undefined,
+    clarityConfirmation: value.clarity_confirmation === undefined ? undefined : clarityConfirmationValid(value.clarity_confirmation) ? value.clarity_confirmation : null,
     directionOptions: directionOptions.length ? directionOptions : undefined,
     directionDefault: stringValue(value.direction_default) || undefined,
     cleanupPlanId: stringValue(value.cleanup_plan_id) || undefined,
@@ -934,7 +937,7 @@ function visualChangeReportValue(value: unknown): AssetProductSegment["visualCha
   };
 }
 
-function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProductSegment[] | undefined {
+function segmentsFromVideoMetadata(metadata: Record<string, unknown>, clarityMedia?: ContentAsset["clarity_media"]): AssetProductSegment[] | undefined {
   const videoProject = isRecord(metadata.video_project) ? metadata.video_project : undefined;
   const projectTimings = segmentTimingsFromProject(videoProject);
   const videoPlan = isRecord(metadata.video_plan) ? metadata.video_plan : undefined;
@@ -1073,6 +1076,16 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>): AssetProd
           ? `${primarySourceType}:asset:${primaryVisual.asset_id}`
           : primaryArtifactRef ? `${primarySourceType}:ref:${primaryArtifactRef}` : undefined
         : undefined,
+      clarityUsage: (() => {
+        if (!primaryPersisted) return undefined;
+        if (clarityMedia && (clarityMedia.status !== "ready" || !isRecord(clarityMedia.scenes))) return { selection: "unknown" as const };
+        const binding = clarityMedia?.scenes?.[sceneId];
+        if (binding === undefined) return { selection: "original" as const };
+        if (!isRecord(binding) || !Number.isSafeInteger(binding.source_asset_id) || binding.source_asset_id <= 0
+          || !Number.isSafeInteger(binding.usage_asset_id) || binding.usage_asset_id <= 0
+          || typeof binding.application_fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(binding.application_fingerprint)) return { selection: "unknown" as const };
+        return { selection: "adopted" as const, sourceAssetId: binding.source_asset_id, usageAssetId: binding.usage_asset_id, fingerprint: binding.application_fingerprint };
+      })(),
       primaryVisualPersisted: primaryPersisted || undefined,
       primaryVisualMediaType: primaryPersisted
         ? primaryMediaType
@@ -1469,6 +1482,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     ? stringValue(asset.original_ref) : "";
   const productMetadata = {
     ...metadata,
+    ...(asset.clarity_media ? { clarity_media: asset.clarity_media } : {}),
     ...(renderedImagePreviewUrl ? { preview_url: renderedImagePreviewUrl } : {}),
     source_video_artifact: readyVideoOriginal ? { ref: readyVideoOriginal } : undefined,
   };
@@ -1496,7 +1510,13 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
     && !orchestrationPending
     && !orchestrationFailed
   );
-  const status = readyVideoOriginal
+  const status = asset.content_type === "clarity_usage_video"
+    ? asset.clarity_media?.status === "ready"
+      ? asset.clarity_media.current?.preview_url
+        ? asset.clarity_media.selection === "original" ? "原版使用视频 · 可预览" : "增强使用版 · 可预览"
+        : "视频使用版 · 预览暂不可用"
+      : "视频来源已变化 · 待核对"
+    : readyVideoOriginal
     ? isRecord(metadata.scene_motion_preview) && metadata.scene_motion_preview.candidate_only === true
       ? "动作预览 · 待确认" : "视频片段 · 可播放"
     : asset.content_type === "video_project"
@@ -1594,7 +1614,7 @@ export function contentAssetToProduct(asset: ContentAsset): AssetProduct {
       status: stringValue(mp4Artifact.mp4_state) || "ready"
     });
   }
-  const segments = segmentsFromVideoMetadata(metadata);
+  const segments = segmentsFromVideoMetadata(metadata, asset.clarity_media);
   return {
     id: `asset-${asset.id}`,
     backendAssetId: asset.id,

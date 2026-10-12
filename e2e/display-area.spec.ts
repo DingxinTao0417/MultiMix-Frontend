@@ -1485,7 +1485,7 @@ test("CASE-06 renders the ready engineering preview without opening the editable
   const editorRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.pathname === "/editor") editorRequests.push(request.url());
+    if (url.pathname === "/editor" && request.resourceType() === "document") editorRequests.push(request.url());
   });
   const workspace = await openCase(page, "case-06-project-ready-no-mp4");
   const player = workspace.getByLabel("视频工程播放器");
@@ -1969,6 +1969,15 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   });
   // The comparison versions exist only in this UI fixture, so their neutral
   // feedback must use the same identity rather than querying unrelated seed data.
+  await page.route(`**/v1/assets/${assetId}/video-clarity`, async (route) => {
+    if (route.request().method() !== "GET") { await route.continue(); return; }
+    await route.fulfill({ status: 200, json: {
+      requested_asset_id: assetId, asset_id: assetId, version_id: versionRows[1].id,
+      source_variant: "original", status: "not_reviewed", coverage_complete: false,
+      profile_current: false, scope: null, processing_scope: null, failure: null,
+      shot_boundaries: [], eligible_intervals: [], observations: [],
+    } });
+  });
   await page.route(`**/v1/video-feedback/${assetId}`, async (route) => {
     if (route.request().method() !== "GET") { await route.continue(); return; }
     await route.fulfill({ status: 200, json: {
@@ -1989,6 +1998,7 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   });
   const workspace = await openCase(page, "case-07-project-ready-mp4");
   expect(await page.title()).toContain("MultiMix");
+  await expect(workspace.getByRole("region", { name: "视频清晰度审查" })).toContainText("尚无当前审查结果");
   await workspace.getByRole("button", { name: "版本对比" }).click();
   const comparison = workspace.getByRole("region", { name: "版本对比" });
   await expect(comparison).toBeVisible();

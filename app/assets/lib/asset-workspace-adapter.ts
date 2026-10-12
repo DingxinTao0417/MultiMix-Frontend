@@ -1,4 +1,5 @@
 import { emptyAssetWorkspaceData } from "./asset-workspace-empty-data";
+import { parseClarityResult } from "./video-clarity-presentation";
 import type {
   AgentActionRunResponse,
   AssetConversation,
@@ -834,6 +835,7 @@ function mapAgentAction(response: ApiAgentActionRunResponse): AgentActionRunResp
     versionId: response.version_id,
     message: response.message,
     retryable: response.retryable,
+    clarityResult: parseClarityResult(response.clarity_result),
   };
 }
 
@@ -1370,6 +1372,10 @@ function isPublicVideoAsset(asset: ContentAsset): boolean {
 }
 
 function previewUrlForAsset(asset: ContentAsset): string | undefined {
+  if (asset.clarity_media) {
+    if (asset.clarity_media.status !== "ready") return undefined;
+    if (asset.clarity_media.current) return asset.clarity_media.current.preview_url || undefined;
+  }
   const metadata = asset.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   if (metadata.media_availability === "missing") return undefined;
   const videoProject = metadata.video_project && typeof metadata.video_project === "object" && !Array.isArray(metadata.video_project)
