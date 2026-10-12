@@ -11,6 +11,8 @@ import { getVideoClarityCandidates, getVideoClarityReview } from "../../../lib/a
 import { CLARITY_RISK_COPY } from "../lib/video-clarity-presentation";
 
 vi.mock("../../../lib/api", () => ({ getVideoClarityCandidates: vi.fn(), getVideoClarityReview: vi.fn(), apiErrorStatus: (error: { status?: number }) => error?.status }));
+// Exercise the retained components independently of the suspended product entry.
+vi.mock("../lib/video-clarity-availability", () => ({ videoClarityEnabled: () => true }));
 vi.mock("../components/video-preview-player", async () => {
   const { forwardRef } = await import("react");
   return { default: forwardRef<HTMLVideoElement, { src: string; label: string; muted: boolean; onError: () => void }>(

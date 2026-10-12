@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiErrorStatus, getVideoClarityReview } from "../../../lib/api";
 import type { ClarityReview } from "../lib/video-clarity-types";
 import { clarityRange, parseClarityReview } from "../lib/video-clarity-presentation";
+import { videoClarityEnabled } from "../lib/video-clarity-availability";
 import styles from "./video-clarity.module.css";
 
 const blur: Record<string, string> = { overall: "整体模糊", subject: "主体模糊", background: "背景模糊", mixed: "多处模糊", none: "未见明显模糊", uncertain: "模糊范围不确定" };
@@ -14,6 +15,7 @@ export default function VideoClarityReview({ assetId, token }: { assetId: number
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (!videoClarityEnabled()) return;
     const abort = new AbortController();
     setReport(null); setError(null);
     getVideoClarityReview(token ?? null, assetId, abort.signal).then(value => {
@@ -27,6 +29,7 @@ export default function VideoClarityReview({ assetId, token }: { assetId: number
     });
     return () => abort.abort();
   }, [assetId, token, revision]);
+  if (!videoClarityEnabled()) return null;
   return <section className={styles.card} aria-label="视频清晰度审查">
     <h3>清晰度审查</h3>
     <p>{error ?? (report?.failure === "input_duration_unsupported"

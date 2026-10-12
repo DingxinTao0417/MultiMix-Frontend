@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import VideoClarityConfirmation from "./video-clarity-confirmation";
 import { clarityConfirmationValid } from "../lib/video-clarity-presentation";
+import { videoClarityEnabled } from "../lib/video-clarity-availability";
 import { useConfirmationDialog } from "../../components/confirmation-dialog";
 import type {
   AssetMessagePlan,
@@ -158,7 +159,7 @@ export default function ConfirmCard({
     || plan.kind === "agent_action_confirmation" && plan.title === "确认画质增强";
   const [clarityClock, setClarityClock] = useState(() => Date.now());
   useEffect(() => {
-    if (!isClarityConfirmation || !clarityConfirmationValid(plan.clarityConfirmation)) return;
+    if (!videoClarityEnabled() || !isClarityConfirmation || !clarityConfirmationValid(plan.clarityConfirmation)) return;
     const timer = setInterval(() => setClarityClock(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [isClarityConfirmation, plan.clarityConfirmation]);
@@ -448,6 +449,13 @@ export default function ConfirmCard({
   const hasProductionDetails = isVideoProjectConfirmation && Boolean(
     productionDetailFields.length || plan.visualPreviews?.scenes.length || backgroundMusicSection,
   );
+
+  if (isClarityConfirmation && !videoClarityEnabled()
+    && plan.status !== "confirmed" && !optimisticallyConfirmed) {
+    return <div className="shadcn-prototype-confirm-card" role="status">
+      清晰度审查与增强暂未开放，原视频保持不变。
+    </div>;
+  }
 
   if (
     isImageGenerationConfirmation

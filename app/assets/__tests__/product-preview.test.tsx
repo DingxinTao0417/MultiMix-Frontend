@@ -205,14 +205,14 @@ it("selects verified clarity preview ahead of the old film export", () => {
 });
 
 
-it("keeps the player directly followed by storyboard summary before the additional clarity report", () => {
+it("keeps the player followed by storyboard summary while clarity review is suspended", () => {
   const product = { ...displayProducts["case-06-project-ready-no-mp4"], backendAssetId: 3 };
   const { container } = render(<ProductPreview product={product} />);
   const player = screen.getByLabelText("视频工程播放器");
-  const report = screen.getByRole("region", { name: "视频清晰度审查" });
+  expect(screen.queryByRole("region", { name: "视频清晰度审查" })).toBeNull();
   const segments = container.querySelector(".shadcn-prototype-segment-cards");
-  expect(player.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(segments?.compareDocumentPosition(report) && ((segments.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING) > 0)).toBe(true);
+  expect(segments).not.toBeNull();
+  expect(player.compareDocumentPosition(segments!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 function loadingFilm() {
