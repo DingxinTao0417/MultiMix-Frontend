@@ -1,6 +1,6 @@
 # Favicon 与管理后台品牌标记
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-10-12
 
@@ -24,6 +24,13 @@
 - 不在 `layout.tsx` 手写 `icons` 元数据，避免与文件约定重复输出。
 - favicon 用 badge（自带对比底板）而不是线条图标：16px 标签页在明暗两种浏览器主题下都需要可辨，符合规范 §2.4 的 ≤48px 用 badge 规则。
 - 不改播放器 UI，不触碰视频预览受保护链路。
+
+## 完成记录（2026-10-12）
+
+- 合入本地 main：`329ebc0`。
+- 品牌契约测试 2 项通过；把 `icon.svg` 底板色改成紫色后测试按预期失败（变异检查）。
+- `typecheck`、`lint`、vitest 1778/1778、demo-e2e 8/8、脚本测试 296/0、`check:agents` 通过；`next build` 输出 `/favicon.ico`、`/icon.svg`、`/apple-icon.png`，页面头部出现对应 `icon` / `apple-touch-icon` 链接。
+- 管理后台需登录后才渲染，静态预渲染 HTML 中不含 badge，由类型检查与契约测试覆盖。
 
 ## 验证方式
 
