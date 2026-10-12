@@ -866,6 +866,14 @@ export default function AssetsWorkspaceClient({
     sceneId: string;
     versionId: number | null;
   }>>({});
+  // "说这镜" binds the composer to one scene until the message is accepted.
+  // Tracked apart from clickedSceneFocus so passive "jump to scene" clicks keep
+  // their existing behaviour.
+  const [segmentAnnotation, setSegmentAnnotation] = useState<{
+    conversationId: string;
+    assetId: number;
+    sceneId: string;
+  } | null>(null);
   const [sceneSourceProgress, setSceneSourceProgress] = useState<{
     sceneId: string; stage: string; error?: string;
   } | null>(null);
@@ -1154,6 +1162,29 @@ export default function AssetsWorkspaceClient({
   const backgroundTasks = useMemo(() => backgroundUnderstandingTasks(chatImageUploads), [chatImageUploads]);
   const isNewConversation = activeView === "conversation" && selectedConversation.id === "new";
   const hasProductStage = activeView === "conversation" && displayProduct !== null;
+  const activeSegmentAnnotation = segmentAnnotation
+    && segmentAnnotation.conversationId === selectedConversation.id
+    && displayProduct?.backendAssetId === segmentAnnotation.assetId
+    && clickedSceneFocus[segmentAnnotation.assetId]?.sceneId === segmentAnnotation.sceneId
+    ? segmentAnnotation : null;
+  const annotatedSegment = activeSegmentAnnotation
+    ? displayProduct?.segments?.find((segment) => segment.id === activeSegmentAnnotation.sceneId) ?? null
+    : null;
+  const segmentAnnotationRef = useRef(segmentAnnotation);
+  segmentAnnotationRef.current = segmentAnnotation;
+  // Releases the binding and the scene focus it set; a different focus chosen
+  // later (e.g. a passive jump click on another scene) is left untouched.
+  const clearSegmentAnnotation = useCallback(() => {
+    const current = segmentAnnotationRef.current;
+    if (!current) return;
+    setSegmentAnnotation(null);
+    setClickedSceneFocus((focus) => {
+      if (focus[current.assetId]?.sceneId !== current.sceneId) return focus;
+      const next = { ...focus };
+      delete next[current.assetId];
+      return next;
+    });
+  }, []);
   const canShowDiagnostics = Boolean(token && diagnosticsAccess?.token === token && diagnosticsAccess.allowed);
 
   const storeRequirementSnapshot = useCallback((conversationId: string, snapshot: ProjectRequirementSnapshot) => {
@@ -3290,6 +3321,11 @@ export default function AssetsWorkspaceClient({
       agentAction,
       requirementSnapshot,
     } = result;
+    // The scene binding applied to this message only; the next instruction
+    // must not silently stay pinned to the same scene.
+    if (focusedScene && segmentAnnotationRef.current?.sceneId === focusedScene.sceneId) {
+      clearSegmentAnnotation();
+    }
     if (requirementSnapshot) {
       storeRequirementSnapshot(targetConversationId, requirementSnapshot);
     }
@@ -4360,6 +4396,8 @@ export default function AssetsWorkspaceClient({
               <ConversationStudio
                 navigationSlot={navigationSlot}
                 basePath={basePath}
+                segmentFocus={annotatedSegment ? { index: annotatedSegment.index } : null}
+                onClearSegmentFocus={clearSegmentAnnotation}
                 contextAssets={currentContextAssets}
                 selectedConversation={selectedConversation}
                 selectedProduct={selectedProduct}
@@ -4524,6 +4562,20 @@ export default function AssetsWorkspaceClient({
                       },
                     }));
                   }}
+                  annotatingSegmentId={activeSegmentAnnotation?.sceneId ?? null}
+                  onAnnotateSegment={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot && displayProduct.backendAssetId
+                    ? (segment: AssetProductSegment) => {
+                      const assetId = displayProduct.backendAssetId!;
+                      setClickedSceneFocus((current) => ({
+                        ...current,
+                        [assetId]: { sceneId: segment.id, versionId: latestProductVersionId(displayProduct) },
+                      }));
+                      setSegmentAnnotation({ conversationId: selectedConversation.id, assetId, sceneId: segment.id });
+                      window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+                        detail: { utterance: `第 ${segment.index} 镜：` },
+                      }));
+                    }
+                    : undefined}
                   onSceneSourceAction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot ? handleSceneSourceAction : undefined}
                   onContinueDirectorProduction={runtimeWriteCapabilities.canGenerate && !isConversationSnapshot
                     ? async () => {

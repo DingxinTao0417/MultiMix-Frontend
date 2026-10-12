@@ -308,6 +308,8 @@ type ProductPreviewProps = {
   onReplaceMaterial?: (segment: AssetProductSegment) => void;
   onEditVoiceover?: (segment: AssetProductSegment) => void;
   onSelectSegment?: (segment: AssetProductSegment) => void;
+  onAnnotateSegment?: (segment: AssetProductSegment) => void;
+  annotatingSegmentId?: string | null;
   onPreviewReadyChange?: (ready: boolean) => void;
   onExportStart?: () => void;
   onExportProgress?: (progress: number | null) => void;
@@ -350,6 +352,8 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   onReplaceMaterial,
   onEditVoiceover,
   onSelectSegment,
+  onAnnotateSegment,
+  annotatingSegmentId = null,
   onPreviewReadyChange,
   onExportStart,
   onExportProgress,
@@ -1014,6 +1018,8 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
           <SegmentCards
             segments={product.segments}
             activeId={activeSegmentId ?? product.segments?.[0]?.id ?? null}
+            annotatingId={annotatingSegmentId}
+            onAnnotate={onAnnotateSegment}
             onSelect={(segment) => {
               setActiveSegmentId(segment.id);
               onSelectSegment?.(segment);
