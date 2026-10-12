@@ -6,8 +6,10 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -211,6 +213,9 @@ export const REMOVE_RETRY_DELAYS_MS = [200, 600, 1200];
 function removeWorktreeDirectory(workspaceRoot, repo, worktree, { retryDelays = REMOVE_RETRY_DELAYS_MS } = {}) {
   let lastError;
   for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    // A failed removal can still unregister the worktree and empty it, leaving
+    // only the directory; treat that as removed rather than retrying git.
+    if (!isRegisteredWorktree(workspaceRoot, repo, worktree)) return;
     try {
       git(repoRoot(workspaceRoot, repo), ["worktree", "remove", worktree]);
       return;
@@ -223,18 +228,33 @@ function removeWorktreeDirectory(workspaceRoot, repo, worktree, { retryDelays = 
       sleep(retryDelays[attempt]);
     }
   }
+  if (!isRegisteredWorktree(workspaceRoot, repo, worktree)) return;
   throw lastError;
+}
+
+// Only an empty leftover directory is removed; anything inside it is reported
+// instead of deleted, since it is no longer a git worktree we own.
+function removeLeftoverDirectory(worktree) {
+  if (!existsSync(worktree)) return;
+  if (readdirSync(worktree).length > 0) {
+    throw new Error(`${worktree} is no longer a git worktree but is not empty; inspect it before running finish again`);
+  }
+  rmdirSync(worktree);
 }
 
 // Every step is safe to repeat, so a cleanup interrupted after landing can be
 // completed by running finish again: removed worktrees and deleted branches are
 // skipped instead of failing.
 function removeWorktree(workspaceRoot, repo, worktree, linked, branch, options) {
-  if (existsSync(worktree)) unlinkSharedDependencies(worktree, linked);
   if (isRegisteredWorktree(workspaceRoot, repo, worktree)) {
-    if (existsSync(worktree)) removeWorktreeDirectory(workspaceRoot, repo, worktree, options);
-    else git(repoRoot(workspaceRoot, repo), ["worktree", "prune"]);
+    if (existsSync(worktree)) {
+      unlinkSharedDependencies(worktree, linked);
+      removeWorktreeDirectory(workspaceRoot, repo, worktree, options);
+    } else {
+      git(repoRoot(workspaceRoot, repo), ["worktree", "prune"]);
+    }
   }
+  removeLeftoverDirectory(worktree);
   // -d only: an unmerged branch is never deleted here.
   if (branchExists(workspaceRoot, repo, branch)) {
     git(repoRoot(workspaceRoot, repo), ["branch", "-d", branch]);
@@ -358,11 +378,12 @@ export function finishTask({ workspaceRoot, token, keep = false, retryDelays = R
   }));
   checkWorkGuard({ workspaceRoot: root, token, extraPlanRoots: taskPlanRoots });
 
-  // A worktree that is already gone was removed by an earlier, interrupted
-  // finish; its branch is still checked by the fast-forward rules below.
-  for (const { worktree } of entry.repos) {
+  // Only check worktrees git still knows. Running git in a leftover directory
+  // that is no longer a worktree would read the primary checkout instead and
+  // report other people's uncommitted files as this task's.
+  for (const { repo, worktree } of entry.repos) {
     const absolute = path.join(root, worktree);
-    if (!existsSync(absolute)) continue;
+    if (!existsSync(absolute) || !isRegisteredWorktree(root, repo, absolute)) continue;
     const dirty = git(absolute, ["status", "--porcelain"]);
     if (dirty) {
       throw new Error(`${worktree} has uncommitted changes; commit or discard them before finishing:\n${dirty}`);

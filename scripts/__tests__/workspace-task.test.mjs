@@ -492,3 +492,62 @@ test("worktree removal retries are bounded", () => {
   assert.ok(REMOVE_RETRY_DELAYS_MS.length <= 3);
   assert.ok(REMOVE_RETRY_DELAYS_MS.reduce((total, delay) => total + delay, 0) <= 2000);
 });
+
+// Reproduces 2026-10-12 F5: git unregistered and emptied the worktree but left
+// the directory. A rerun must neither retry git on it nor read the primary
+// checkout's uncommitted files through it.
+function leaveUnregisteredEmptyDirectory(frontend, worktree) {
+  unlinkSync(path.join(worktree, "node_modules"));
+  git(frontend, ["worktree", "remove", worktree]);
+  mkdirSync(worktree);
+}
+
+test("rerunning finish ignores a leftover empty directory and the primary's dirty files", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    const head = commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    leaveUnregisteredEmptyDirectory(frontend, worktree);
+    // Someone else's uncommitted work in the primary checkout.
+    writeFileSync(path.join(frontend, "docs", "README.md"), "# Docs, edited by another task" + "\n");
+    writeFileSync(path.join(frontend, "untracked-by-someone.txt"), "theirs" + "\n");
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.cleanedUp, true);
+    assert.equal(result.landed[0].status, "already-landed");
+    assert.equal(existsSync(worktree), false, "empty leftover directory removed");
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.equal(git(frontend, ["rev-parse", "main"]), head);
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    // The other task's files are untouched.
+    assert.equal(readFileSync(path.join(frontend, "untracked-by-someone.txt"), "utf8"), "theirs" + "\n");
+    assert.match(git(frontend, ["status", "--porcelain"]), /docs\/README\.md/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a leftover directory that is not empty is reported, not deleted", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    leaveUnregisteredEmptyDirectory(frontend, worktree);
+    writeFileSync(path.join(worktree, "stray.txt"), "stray" + "\n");
+
+    assert.throws(
+      () => finishTask({ workspaceRoot: root, token: entry.token, retryDelays: [] }),
+      /no longer a git worktree but is not empty.*cleanup is pending for: frontend/s,
+    );
+    assert.equal(readFileSync(path.join(worktree, "stray.txt"), "utf8"), "stray" + "\n");
+    assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1, "claim kept for a rerun");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
