@@ -1,6 +1,6 @@
 # 顶栏导航与分镜批注式修改：合入 main 收口
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-10-12
 
@@ -35,3 +35,21 @@
 
 `typecheck`、`lint`、`test`、`check:video-preview-contract`、`test:product-stage-style`、`check:agents`；
 冲突涉及成片预览时，追加隔离的 `test:display-coverage` 中与播放器和版本对比相关的用例。
+
+## 完成结果（2026-10-12）
+
+- 新任务 `topbar-nav-landing` 合入旧分支后只有一处冲突：两边都在 `video-version-comparison.test.ts` 末尾追加了测试块，两块都保留。产品代码自动合并，清晰度与本任务的功能均完整保留。
+- 合入前检查：typecheck、lint、`check:video-preview-contract`、`test:product-stage-style` 通过；单元测试 1773/1773；隔离 `test:display-coverage` 42 项通过，另 3 项（CASE-14 图片导出与品牌包、case-10、case-11 刷新恢复）在干净 `main` 上同样失败，与本任务无关。`check:agents` 唯一报错是后端一份已完成未归档的计划，归后端负责。
+- `task -- finish` 快进合入本地 `main` 为 `2d7ec8b`；首次清理因工作目录被占用（EBUSY）未完成，重跑后清理完成。未推送。
+
+## 事故记录：共享依赖被清空
+
+- **现象：** 合入后清理旧工作目录时，前端主目录 `node_modules` 被清空（19:44–19:45），主目录及两个链接到它的工作目录无法运行。代码、提交和他人未提交改动未受影响，线上不受影响。
+- **原因：** 由本会话手写的批量清理命令造成（先拆 `node_modules` 目录联接、再 `git worktree remove`）。联接未被可靠拆除时，删除工作目录会顺着联接删除共享依赖里的文件。命令中的「依赖完好」检查在删除之后才执行，只拦住了后续步骤。具体是哪一步未逐一复现确认。
+- **修复：** 用户同意后在前端主目录 `npm ci`（锁文件与 `main` 一致，825 个包），恢复为 507 个顶层包；esbuild 与 unrs-resolver 本机二进制可用。复验 `main`：typecheck、lint、两项播放器契约通过，单元测试 1776/1776；两个链接工作目录依赖可解析。
+- **改进：** 带共享依赖联接的工作目录只用 `task -- finish` 清理，它先确认联接已拆再删目录；需手工清理时逐步执行，每步核实联接已拆、共享依赖完好后才进入下一步。剩余的对比用工作目录已按此方式清理。
+
+## 收尾
+
+- 已删除：已并入 `main` 的旧分支（`git branch -d`）、对比用临时工作目录、3 个浏览器测试运行目录。
+- 本计划归档后，本任务在工作区内不再有进行中的分支、工作目录或占用。
