@@ -105,7 +105,7 @@ export function checkRepositoryContract(root = frontendRoot) {
   assertVideoPreviewContract({
     css: readFileSync(path.join(root, "app", "globals.css"), "utf8"),
     design: readFileSync(path.join(root, "docs", "MULTIMIX_WORKSPACE_DESIGN.md"), "utf8"),
-    agentGuide: readFileSync(path.join(root, "CLAUDE.md"), "utf8"),
+    agentGuide: readFileSync(path.join(root, "AGENTS.md"), "utf8"),
     e2e: readFileSync(path.join(root, "e2e", "display-area.spec.ts"), "utf8"),
     preview: [
       readFileSync(path.join(root, "app", "assets", "components", "product-preview.tsx"), "utf8"),

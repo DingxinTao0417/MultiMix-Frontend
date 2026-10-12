@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-10
+> Last verified: 2026-10-11
 
 前端文档只描述工作台产品、UI、adapter、路由、环境变量和部署。跨仓库权威入口见[后端文档地图](../../MultiMix-Backend/docs/README.md)，共享规则以该入口列出的authority为准。
 
@@ -11,9 +11,10 @@
 - `specs/ui/multimix-logo-identity.md`：LOGO 权威规范。概念与颜色、纯图标与 badge 的构图基准、使用规则与最小尺寸、交付文件清单、已否决的设计方向，以及产品内品牌展示版导出。改动 `public/brand/` 下任何资产前必读。
 - `specs/ui/agentic-workbench-design.md` 与 `specs/ui/prototypes/current/`：当前视觉语言和可点击原型；页面行为以工作台设计及专项规格为准。
 - `API.md`：adapter、类型、helper、测试 fixture 边界、URL、环境变量和后端接入契约。
-- [视频清晰度审查与确认后增强](../../MultiMix-Backend/docs/specs/video-clarity-review-and-enhancement.md)：跨端统一产品规格，覆盖建议/确认、前后对比与明确采用；设计已确认，专项能力尚未实现/验收。
+- [视频清晰度审查与确认后增强](../../MultiMix-Backend/docs/specs/video-clarity-review-and-enhancement.md)：跨端统一产品规格，覆盖建议/确认、前后对比与明确采用；软件、界面及相关验证已完成（6/7），收费增强关闭，真实画质、600秒交付与正式收费尚未验收。
+- [视频内容局部修改](../../MultiMix-Backend/docs/specs/video-element-editing-future-capability.md)：口型、烧录文字/Logo、改色、动作迁移、换人和复杂物品的分批验证路线、开源候选、工具分工及统一确认/候选应用/恢复；不自动扩大首发P0或销售承诺。
 - `DEPLOYMENT.md`：Vercel/Railway 部署与本地端到端冒烟。
 
 前端专属缺口、整改范围和验证状态记录在 `plans/active/`；后端与跨端计划统一见[后端active目录](../../MultiMix-Backend/docs/plans/active/)。已完成计划进入各自对应的 `archive/`，不维护容易与代码漂移的第二份 GAPS 清单。
 
-前端 `AGENTS.md` 由 `../CLAUDE.md` 生成；修改入口规则时先改 `CLAUDE.md`，再运行 `npm run sync:agents` 和 `npm run check:agents`。
+前端 `AGENTS.md` 是规则源，`CLAUDE.md` 只通过 `@AGENTS.md` 导入它；修改入口规则时只改 `AGENTS.md`，再运行 `npm run check:agents` 校验入口结构。
