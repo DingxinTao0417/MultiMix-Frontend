@@ -2,7 +2,7 @@
 
 本文件指导各类代码代理（含 Claude Code、Codex 等）在此仓库中工作。响应使用简体中文，代码注释保持英文且精简。
 
-> 本文件与 `AGENTS.md` 内容一致（仅标题不同）。**只手改 `CLAUDE.md`**，然后运行 `npm run sync:agents` 重新生成 `AGENTS.md`；`npm run check:agents` 校验一致性并运行工作区文档准入检查。
+> 本文件是前端仓库的规则源，Codex 与 Claude Code 共用。同目录 `CLAUDE.md` 只通过 `@AGENTS.md` 导入本文件，不复制任何规则；规则变更只改本文件。`npm run check:agents` 校验各层 `CLAUDE.md` 仍是薄入口，并运行工作区文档准入检查和视频预览契约检查。
 
 ## 项目概述
 
@@ -31,10 +31,8 @@ MultiMix 是对话式 AI 短视频创作工作台，帮助商家通过对话完�
 
 ## 生产部署目标（强制核对）
 
-- **Vercel 当前生产目标唯一为**：team `lywgood96-1172s-projects`、project `multimix-frontend`，生产地址 `https://multimix-frontend.vercel.app`。查询、部署、环境变量、域名或回滚前必须显式核对 team 与 project，不得依赖当前目录的自动解析。
-- **Railway 当前生产目标唯一为**：workspace `woshiliyuewen's Projects`、project `multimix-production`、environment `production`。任何跨仓库后端部署、接口地址或变量核对都必须以此为目标，不得依赖本地 CLI link。
-- `kind-ambition`（Railway）及 `changein`、`changein-api`（Vercel）均为旧项目。除非用户当次明确指定维护旧项目，否则禁止向它们查询生产结论、写入变量、发布、重启或绑定域名。
-- 工具返回的目标与上述任一标识不一致时，立即停止并报告，不得因名称相近或旧 link 继续操作。
+- Vercel 与 Railway 的唯一生产目标、旧项目禁令和目标不一致时的停止规则，以工作区根 `../AGENTS.md` 的「生产部署目标（强制核对）」为唯一来源，本文件不再复制，避免两处漂移。
+- 前端生产地址：`https://multimix-frontend.vercel.app`；Vercel 操作前仍须显式核对 team 与 project，不依赖当前目录自动解析。
 
 ## 技术栈
 
@@ -54,7 +52,7 @@ npm run test          # 仅 Vitest
 npm run test:scripts  # 全部 scripts/__tests__ runner/安全契约
 npm run test:fast     # 默认离线测试层：Vitest + demo 纯函数 + 全部脚本契约（CI 同入口）
 npm run build         # next build（含 /editor，glsl/worker/Tailwind v4 已配）
-npm run sync:agents   # 由 CLAUDE.md 重新生成 AGENTS.md
+npm run check:agents  # 校验 CLAUDE.md 入口结构 + docs:check + 视频预览契约
 npm run docs:check    # 检查根 docs 分类、状态头、旧路径和 UI 原型归档规则
 npm run test:docs-check # 单测 docs:check 的守门逻辑
 npm run e2e:runs      # 查看失败后保留的隔离 E2E runtime
@@ -69,7 +67,7 @@ npm run e2e:cleanup -- <suite>/<run-id> --confirm # 显式清理保留 runtime
 .venv\Scripts\python -m ruff check --line-length 100 app/
 ```
 
-改完前端至少跑 `typecheck` + `lint` + `test:fast` + `build`；改完后端直接在后端仓库运行相关 pytest + ruff，不在前端复制后端测试清单。两个仓库都配了 GitHub Actions CI（`.github/workflows/ci.yml`），push/PR 会自动跑同样的检查。
+改完前端至少跑 `typecheck` + `lint` + `test:fast` + `build`；改完后端直接在后端仓库运行相关 pytest + ruff，不在前端复制后端测试清单。前端是公开仓库，GitHub Actions CI（`.github/workflows/ci.yml`）在 push/PR 时自动运行，免费；后端是私有仓库，其 CI 自 2026-10-11 起仅手动触发，推送前的检查由后端本地 pre-push 钩子承担。
 
 > 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 
@@ -119,7 +117,7 @@ lib/
   supabase.ts                       # 可选 Supabase Auth 客户端（未配置时为 null）
 editor-engine/vendor/               # OpenCut 剪辑器引擎 + buildProject 等接入层（@editor/* 别名）
 scripts/
-  sync-agents-md.mjs                # CLAUDE.md → AGENTS.md 同步/校验
+  check-agents-entry.mjs            # 校验 CLAUDE.md 是 AGENTS.md 的薄入口
 ```
 
 约定：UI 组件进 `app/assets/components/`，数据/adapter/共享 helper 进 `app/assets/lib/`。组件内互相引用用 `./xxx`，引用 lib 用 `../lib/xxx`。等 `components/` 长大可再分子目录（如 `workspace/`、`preview/`）。
@@ -144,12 +142,8 @@ scripts/
 
 #### 视频预览壳不可回退门禁
 
-- `docs/MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v1` 与工作区原型 `docs/specs/ui/prototypes/current/screens/workspace-video.html` 是权威。播放器外壳固定为白底、`1px solid #eae7e1`、`20px` 圆角、`7px` 内边距和双层柔和阴影；媒体画布内部可以黑底无边框，但不得把“画布无边框”解释为“播放器无外壳”。
-- 横竖比例只应用到媒体画布，不能应用到包含底部控制条的整个播放器；浏览态不得增加固定高度容器或独立纵向拖拽条，播放器后应直接衔接分镜摘要。
-- 播放控件必须保持原型数值：`44px` 圆形按钮、`16px` 图标、悬停 `scale(1.07)`、控制区 `8px 6px 4px`、`3px` 渐变进度轨，禁止恢复浏览器原生 range 滑块。
-- 成片播放器和无成片分镜预览必须共用白色细边框、圆角与阴影外壳；待补素材、首帧未加载和失败提示画布默认为白色，禁止退回无提示黑块。
-- `.shadcn-prototype-preview-player*`、`video-preview-player.tsx`、播放器契约测试、展示区 E2E 和截图基线是受保护链路。除非用户在当次任务中明确批准新的视觉方向，否则禁止改成 frameless、黑底外壳、零内边距或无阴影。
-- 禁止只修改实现和测试期望来证明新样式正确。契约变化必须同步更新设计依据、当前原型、独立契约检查和浏览器截图基线，并记录当次用户批准。
+- 具体数值（白底 `1px solid #eae7e1` 外壳、`20px` 圆角、`7px` 内边距、`44px` 播放按钮等）、比例规则和禁止回退项，以 `docs/MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v1`、原型 `docs/specs/ui/prototypes/current/screens/workspace-video.html` 和工作区根 `../AGENTS.md` 的「已确认 UI 不可回退门禁」为准，本文件不再复制数值。
+- `.shadcn-prototype-preview-player*`、`video-preview-player.tsx`、播放器契约测试、展示区 E2E 和截图基线是受保护链路。除非用户在当次任务中明确批准新的视觉方向，否则禁止改成 frameless、黑底外壳、零内边距或无阴影；禁止只改实现和测试期望来证明新样式正确。
 - 改动受保护链路后必须运行 `npm run check:video-preview-contract`、`npm run test:product-stage-style` 和隔离的 `npm run test:display-coverage`。
 
 ### 资源库分类（以设计文档为准）
@@ -162,9 +156,7 @@ scripts/
 
 ## 沟通与回复格式
 
-- 默认使用简洁的项目符号（bullets）组织回复，先给结论，再列关键结果、影响和下一步。
-- 除非用户明确要求代码、命令、文件行号、实现原理或调试过程，否则不要展开过于具体的代码细节；优先说明产品行为和用户影响。
-- 需要报告技术证据时，只保留支撑结论所必需的信息，避免粘贴大段代码、日志或内部实现。
+- 回复口径以工作区根 `../AGENTS.md` 的「回复表达规则」为准：默认读者是 CEO，统一用简短 bullets，结论优先并标明是否需要决策，业务语言为主，不展开代码细节。本文件不再另写一套。
 
 ## 数据边界（严格遵守）
 
@@ -196,7 +188,7 @@ scripts/
   - `npm run typecheck`
   - `npm run lint`
   - `npm run test`
-  - `npm run check:agents`（校验 `CLAUDE.md` 与 `AGENTS.md` 一致，并运行 `docs:check`；只改了其一时会失败，跑 `npm run sync:agents` 修复）
+  - `npm run check:agents`（校验各层 `CLAUDE.md` 仍是 `AGENTS.md` 的薄入口，并运行 `docs:check` 与视频预览契约检查；规则只改 `AGENTS.md`）
   - 改动 `scripts/check-docs.mjs` 或文档准入规则时，加跑 `npm run test:docs-check`
   - 影响构建、路由、依赖、Next 配置、数据 adapter 或关键 UI 时，再运行 `npm run build`
 - 后端有代码改动时，运行对应测试。当前优先运行：
@@ -252,8 +244,8 @@ scripts/
 - `editor-engine/vendor/editor/` 内部的 `__tests__` 用 bun:test，已在 `vitest.config.mts` 里排除；`npm run test` 只跑 `app/assets/__tests__/` 和 vendor 根下的 `buildProject.test.ts`。
 - 前端不创建或读取本地 SQLite；浏览器工作台只消费真实后端数据。
 - Supabase Auth 是可选路径：未配置时一切走 local 模式，`lib/supabase.ts` 导出 `null`，不要写死非空假设。
-- 后端根目录的 `multimix.sqlite3` 是本地开发默认数据库；遗留的 `changein.sqlite3` 同样不入库、不删除。
-- 跑浏览器 E2E / UI 冒烟需要独立后端时：用一次性本地 SQLite（`MULTIMIX_DATABASE_URL=sqlite:///./<临时名>.sqlite3`），禁止连 Supabase 主库、`multimix.sqlite3` 或遗留的 `changein.sqlite3`；测试结束必须杀掉自己启动的 uvicorn 并删除临时库（脚本用 try/finally 兜底）。启动 8199 后端前先 `netstat -ano | findstr :8199` 确认端口干净——Windows 上 uvicorn 的 SO_REUSEADDR 允许多进程静默共占同一端口，不报错但请求会被残留进程截走，前端表现为"连到了另一个数据库"（对话列表只剩测试数据）。测试专用的前端实例同样必须用独立端口：禁止占用开发者正在使用的 3117/3200，禁止杀掉或替换开发者的 next dev，禁止用 OS 环境变量 `NEXT_PUBLIC_API_BASE_URL` 把开发者的前端指向测试后端。
+- 开发主库是 Supabase（见后端 `.env.local`）。后端 `app/config.py` 在未配置 `MULTIMIX_DATABASE_URL` 时回退到 `sqlite:///./multimix.sqlite3`，该文件与遗留的 `changein.sqlite3` 都不入库、不删除，也不得当测试库使用。
+- E2E / UI 冒烟的独立后端、端口占用检查（8199）、前端测试实例独立端口（不占用 3117/3200）、临时库与进程清理，统一以工作区根 `../AGENTS.md` 的「本地进程与测试库卫生」为准，本文件不再复制。
 
 ## 文件写入
 
