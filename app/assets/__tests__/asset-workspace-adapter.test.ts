@@ -1213,7 +1213,7 @@ describe("runtime data boundary", () => {
 
     expect(payload).toMatchObject({
       instruction: "确认，生成视频工程",
-      presenter_direction_confirmation: {
+      source_video_direction_confirmation: {
         director_candidate_id: "direction-b",
         subtitles_enabled: enabled,
         bgm_enabled: enabled,
@@ -1235,7 +1235,7 @@ describe("runtime data boundary", () => {
       },
     });
 
-    expect(payload.presenter_direction_request).toEqual({
+    expect(payload.source_video_direction_request).toEqual({
       current_candidate_id: "direction-a",
     });
     expect(payload.instruction).not.toContain("direction-a");
@@ -1276,7 +1276,7 @@ describe("runtime data boundary", () => {
     });
 
     expect(payload).toMatchObject({
-      presenter_audio_selection_confirmation: {
+      source_video_audio_selection_confirmation: {
         confirmation_id: "presenter-audio-selection-current",
         audio_stream_index: 2,
         audio_fingerprint: "sha256:audio-2",

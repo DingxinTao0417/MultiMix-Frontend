@@ -66,7 +66,9 @@ function identity(
 /** Freeze the safe event contract exposed by the confirmation card. */
 export function freezePresenterPublicEventSelection(value: unknown): FrozenPresenterSelection {
   const plan = object(value, "confirmation_plan");
-  if (plan.kind !== "presenter_project_confirmation") {
+  // Raw backend payload: the card kind is the legacy or the new spelling until the backend
+  // stops writing the legacy one.
+  if (plan.kind !== "presenter_project_confirmation" && plan.kind !== "source_video_project_confirmation") {
     throw new Error("confirmation_plan must be a presenter project confirmation");
   }
   const candidateId = text(plan.direction_default, "direction_default");

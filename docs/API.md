@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-10
+> Last verified: 2026-10-13
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
@@ -113,7 +113,9 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 
 服务端校验候选属于当前编导稿及 fingerprint 未过期后，将其作为同一编导稿的异步修订排队，
 继续返回现有 `generation_job`，不新增工作流状态。`recommendation_mode=single_winner` 不使用此字段，继续走
-`presenter_direction_request` / `presenter_direction_confirmation` 的单赢家合同。
+`source_video_direction_request` / `source_video_direction_confirmation` 的单赢家合同。
+
+> 命名迁移：请求字段曾叫 `presenter_direction_request`、`presenter_direction_confirmation`、`presenter_cleanup_confirmation`、`presenter_audio_selection_confirmation`。后端在兼容期内仍同时接受旧名（新旧并存且内容不同会返回 422），前端只发送新名；确认卡 `kind` 同理，前端读取旧值 `presenter_*_confirmation` 并归一为 `source_video_*_confirmation`。旧名的移除条件见后端 `docs/authority/source-video-terminology.md`。
 
 ### 2.2 方法详解
 
@@ -919,7 +921,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 {
   "content": "确认口播原声",
   "selected_product_id": 501,
-  "presenter_audio_selection_confirmation": {
+  "source_video_audio_selection_confirmation": {
     "confirmation_id": "presenter-audio-confirm-…",
     "audio_stream_index": 2,
     "audio_fingerprint": "sha256:…",
@@ -945,7 +947,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 ```jsonc
 {
   "content": "确认口播清理方案",
-  "presenter_cleanup_confirmation": {
+  "source_video_cleanup_confirmation": {
     "cleanup_plan_id": "pcp-…",
     "cleanup_plan_hash": "…",
     "selected_candidate_ids": ["candidate-…"],
@@ -965,7 +967,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 ```jsonc
 {
   "content": "确认口播导演方向",
-  "presenter_direction_confirmation": {
+  "source_video_direction_confirmation": {
     "director_candidate_id": "direction-…"
   }
 }
@@ -978,7 +980,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 {
   "content": "换个方向",
   "selected_product_id": 501,
-  "presenter_direction_request": {
+  "source_video_direction_request": {
     "current_candidate_id": "direction-current"
   }
 }

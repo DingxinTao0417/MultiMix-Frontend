@@ -507,7 +507,7 @@ export type AssetMessagePlan = {
   productionBlockedReason?: string;
   directorAssetId?: number;
   directorContentHash?: string;
-  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "presenter_audio_selection_confirmation" | "presenter_cleanup_confirmation" | "presenter_project_confirmation" | "agent_action_confirmation" | "image_generation_confirmation";
+  kind?: "video_parameter_confirmation" | "video_project_confirmation" | "source_video_audio_selection_confirmation" | "source_video_cleanup_confirmation" | "source_video_project_confirmation" | "agent_action_confirmation" | "image_generation_confirmation";
   title: string;
   // "pending" shows the full field list + confirm/adjust buttons; "confirmed"
   // shows the compact summary rows with a green check badge.

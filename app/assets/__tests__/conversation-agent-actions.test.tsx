@@ -686,7 +686,7 @@ describe("Conversation Agent actions", () => {
   it("does not expose an unbound generic confirmation while Presenter cleanup is pending", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const cleanupPlan: AssetMessagePlan = {
-      kind: "presenter_cleanup_confirmation",
+      kind: "source_video_cleanup_confirmation",
       title: "口播清理",
       status: "pending",
       fields: [{ key: "cleanup", label: "自然精简", value: "自动 1 项" }],
@@ -769,7 +769,7 @@ describe("Conversation Agent actions", () => {
 
   it("hides obsolete suggestion actions from an already confirmed card", () => {
     const confirmedCleanupPlan: AssetMessagePlan = {
-      kind: "presenter_cleanup_confirmation",
+      kind: "source_video_cleanup_confirmation",
       title: "口播清理",
       status: "confirmed",
       fields: [{ key: "cleanup", label: "自然精简", value: "已确认" }],
@@ -896,7 +896,7 @@ describe("Conversation Agent actions", () => {
   it("requests the next Presenter direction only after the explicit single-winner action", async () => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const plan: AssetMessagePlan = {
-      kind: "presenter_project_confirmation",
+      kind: "source_video_project_confirmation",
       title: "口播型方案",
       status: "pending",
       fields: [{ key: "directions", label: "导演方向", value: "系统推荐 1 个方案" }],
@@ -950,7 +950,7 @@ describe("Conversation Agent actions", () => {
   it.each([true, false])("keeps Presenter subtitle visibility %s inside direction confirmation", async (enabled) => {
     const onSendMessage = vi.fn().mockResolvedValue(undefined);
     const plan: AssetMessagePlan = {
-      kind: "presenter_project_confirmation",
+      kind: "source_video_project_confirmation",
       title: "口播型方案",
       status: "pending",
       fields: [{ key: "directions", label: "导演方向", value: "系统推荐 1 个方案" }],

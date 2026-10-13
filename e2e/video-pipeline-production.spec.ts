@@ -1776,7 +1776,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
         plan
         && typeof plan === "object"
         && !Array.isArray(plan)
-        && (plan as Record<string, unknown>).kind === "presenter_project_confirmation"
+        && ["presenter_project_confirmation", "source_video_project_confirmation"].includes(
+          String((plan as Record<string, unknown>).kind),
+        )
         && (plan as Record<string, unknown>).status === "pending",
       ))
       .at(-1);
@@ -1909,9 +1911,9 @@ test("produces persisted visuals and optionally recomposes one scene", async ({
   ).toBe(true);
   if (frozenPresenterSelection) {
     const submitted = confirmationResponse.request().postDataJSON() as {
-      presenter_direction_confirmation?: { director_candidate_id?: string };
+      source_video_direction_confirmation?: { director_candidate_id?: string };
     };
-    expect(submitted.presenter_direction_confirmation?.director_candidate_id).toBe(
+    expect(submitted.source_video_direction_confirmation?.director_candidate_id).toBe(
       frozenPresenterSelection.candidateId,
     );
   }

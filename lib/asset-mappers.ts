@@ -355,6 +355,28 @@ function planVisualPreviewsValue(value: unknown): AssetVisualPreviewPlan | undef
 // Structured confirmation plan from an assistant message's metadata (spec §5.2).
 // Returns undefined when the payload is missing or has no usable fields so the
 // UI falls back to plain message + suggestion chips (spec §12 降级规则).
+// Confirmation card kinds. Older saved conversations carry the pre-rename spelling, so both
+// are read here and normalised to the new one; nothing past this point sees a legacy kind.
+const CARD_KINDS = new Set<string>([
+  "video_parameter_confirmation",
+  "video_project_confirmation",
+  "source_video_audio_selection_confirmation",
+  "source_video_cleanup_confirmation",
+  "source_video_project_confirmation",
+  "agent_action_confirmation",
+  "image_generation_confirmation",
+]);
+const LEGACY_CARD_KINDS: Record<string, NonNullable<AssetMessagePlan["kind"]>> = {
+  presenter_audio_selection_confirmation: "source_video_audio_selection_confirmation",
+  presenter_cleanup_confirmation: "source_video_cleanup_confirmation",
+  presenter_project_confirmation: "source_video_project_confirmation",
+};
+
+function planKindFromWire(kind: string): AssetMessagePlan["kind"] {
+  if (kind in LEGACY_CARD_KINDS) return LEGACY_CARD_KINDS[kind];
+  return CARD_KINDS.has(kind) ? (kind as AssetMessagePlan["kind"]) : undefined;
+}
+
 function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
   if (!isRecord(value)) return undefined;
   const title = stringValue(value.title);
@@ -402,15 +424,7 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
       }
     : undefined;
   return {
-    kind: planKind === "video_parameter_confirmation"
-      || planKind === "video_project_confirmation"
-      || planKind === "presenter_audio_selection_confirmation"
-      || planKind === "presenter_cleanup_confirmation"
-      || planKind === "presenter_project_confirmation"
-      || planKind === "agent_action_confirmation"
-      || planKind === "image_generation_confirmation"
-      ? planKind
-      : undefined,
+    kind: planKindFromWire(planKind),
     directorAssetId: positiveIntegerValue(value.director_asset_id),
     directorContentHash: stringValue(value.director_content_hash) || undefined,
     title,

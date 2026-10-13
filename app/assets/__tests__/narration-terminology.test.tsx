@@ -7,7 +7,7 @@ import { sceneImageGenerationUtterance } from "../lib/scene-source-utterance";
 
 describe("unified video terminology", () => {
   it("names source editing by its actual operation without exposing a video type", () => {
-    render(<ConfirmCard plan={{ kind: "presenter_cleanup_confirmation", title: "精简原视频",
+    render(<ConfirmCard plan={{ kind: "source_video_cleanup_confirmation", title: "精简原视频",
       status: "pending", fields: [], cleanupItems: [{ id: "item-1", state: "suggested",
         category: "pause", spokenText: "", action: "shorten", reason: "停顿太长",
         estimatedSavingSeconds: 1, sourceRange: { startSeconds: 1, endSeconds: 3 },

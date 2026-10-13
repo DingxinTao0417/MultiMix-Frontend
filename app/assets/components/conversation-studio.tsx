@@ -667,7 +667,7 @@ export default function ConversationStudio({
   // cleanup plan ID/hash or selected cleanup items.  Keep that unbound shortcut
   // out of the UI while the structured card is the active confirmation path.
   const hasPendingPresenterCleanupConfirmation = visibleConversationMessages.some(
-    (message) => message.plan?.kind === "presenter_cleanup_confirmation" && message.plan.status === "pending",
+    (message) => message.plan?.kind === "source_video_cleanup_confirmation" && message.plan.status === "pending",
   );
 
   const productCardsByMessageIndex = useMemo(
@@ -847,8 +847,8 @@ export default function ConversationStudio({
       return;
     }
     const isAgentActionConfirmation = plan.kind === "agent_action_confirmation";
-    const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
-    const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
+    const isPresenterAudioSelectionConfirmation = plan.kind === "source_video_audio_selection_confirmation";
+    const isPresenterCleanupConfirmation = plan.kind === "source_video_cleanup_confirmation";
     const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
     const generatedImageVideoTarget = isAgentActionConfirmation
       && plan.fields?.some((field) => field.key === "image")
@@ -1029,7 +1029,7 @@ export default function ConversationStudio({
         confirmationProductId: isVideoProjectConfirmation
           ? directorAssetId
           : confirmationProductId,
-        sourceSubtitleMode: plan.kind === "presenter_project_confirmation" ? undefined : sourceSubtitleMode,
+        sourceSubtitleMode: plan.kind === "source_video_project_confirmation" ? undefined : sourceSubtitleMode,
         videoProjectConfirmation: isVideoProjectConfirmation
           ? {
               ...videoProjectConfirmation,

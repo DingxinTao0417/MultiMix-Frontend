@@ -228,9 +228,9 @@ export default function ConfirmCard({
     ))
   );
   const isImageGenerationConfirmation = plan.kind === "image_generation_confirmation";
-  const isPresenterProjectConfirmation = plan.kind === "presenter_project_confirmation";
-  const isPresenterAudioSelectionConfirmation = plan.kind === "presenter_audio_selection_confirmation";
-  const isPresenterCleanupConfirmation = plan.kind === "presenter_cleanup_confirmation";
+  const isPresenterProjectConfirmation = plan.kind === "source_video_project_confirmation";
+  const isPresenterAudioSelectionConfirmation = plan.kind === "source_video_audio_selection_confirmation";
+  const isPresenterCleanupConfirmation = plan.kind === "source_video_cleanup_confirmation";
   const isSingleWinnerRecommendation = plan.recommendationMode === "single_winner";
   const voiceBlocked = isVideoParameterConfirmation
     && selectedAiVoice === true

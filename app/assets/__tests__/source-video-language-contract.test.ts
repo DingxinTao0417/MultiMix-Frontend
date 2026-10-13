@@ -25,7 +25,7 @@ describe("unified video confirmation language", () => {
     expect(api).not.toContain("Presenter");
     expect(api).not.toContain("通用讲解型编导稿");
     expect(api).toContain("recommendation_mode=single_winner");
-    expect(api).toContain("presenter_direction_request");
-    expect(api).toContain("presenter_direction_confirmation");
+    expect(api).toContain("source_video_direction_request");
+    expect(api).toContain("source_video_direction_confirmation");
   });
 });

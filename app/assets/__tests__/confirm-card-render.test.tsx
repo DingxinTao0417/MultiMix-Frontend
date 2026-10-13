@@ -12,7 +12,7 @@ describe("ConfirmCard pending state", () => {
   it("allows the user to turn off music at presenter delivery confirmation", () => {
     const onConfirm = vi.fn();
     const plan = {
-      kind: "presenter_project_confirmation" as const, title: "视频制作方案", status: "pending" as const,
+      kind: "source_video_project_confirmation" as const, title: "视频制作方案", status: "pending" as const,
       fields: [{ key: "bgm", label: "背景音乐", value: "开启" }],
       bgmEnabledDefault: true, directionDefault: "direction-a",
       ratioOptions: [{ value: "16:9", label: "横屏 16:9" }], ratioDefault: "16:9",
@@ -44,7 +44,7 @@ describe("ConfirmCard pending state", () => {
   it("rechecks the server duration constraint after a user edits the target", () => {
     const onConfirm = vi.fn();
     const plan = {
-      kind: "presenter_project_confirmation" as const,
+      kind: "source_video_project_confirmation" as const,
       title: "视频制作方案", status: "pending" as const,
       fields: [{ key: "duration", label: "目标时长", value: "30 秒，需要调整" }],
       confirmLabel: "确认推荐方案并生成视频", directionDefault: "direction-a",
@@ -75,7 +75,7 @@ describe("ConfirmCard pending state", () => {
     { clarificationReason: "duration_mismatch", durationConstraint: undefined },
   ])("keeps unresolved or historical clarification blocked: %j", (facts) => {
     render(<ConfirmCard plan={{
-      kind: "presenter_project_confirmation", title: "视频制作方案", status: "pending",
+      kind: "source_video_project_confirmation", title: "视频制作方案", status: "pending",
       fields: [{ key: "duration", label: "目标时长", value: "30 秒" }],
       durationSeconds: 30, requiresClarification: true, ...facts,
     }} onConfirm={vi.fn()} />);
@@ -85,7 +85,7 @@ describe("ConfirmCard pending state", () => {
 
   it("uses the supplied duration tolerance and blocks a new mismatch on an initially valid card", () => {
     render(<ConfirmCard plan={{
-      kind: "presenter_project_confirmation", title: "视频制作方案", status: "pending",
+      kind: "source_video_project_confirmation", title: "视频制作方案", status: "pending",
       fields: [{ key: "duration", label: "目标时长", value: "31 秒" }],
       durationSeconds: 31, requiresClarification: false,
       durationConstraint: { retainedSeconds: 31.25, toleranceSeconds: 0.25 },
@@ -456,7 +456,7 @@ describe("ConfirmCard pending state", () => {
   it("shows only the published presenter recommendation and submits it", () => {
     const onConfirm = vi.fn();
     const plan = {
-      kind: "presenter_project_confirmation" as const,
+      kind: "source_video_project_confirmation" as const,
       title: "口播型方案",
       status: "pending" as const,
       fields: [
@@ -569,7 +569,7 @@ describe("ConfirmCard pending state", () => {
   it("reviews cleanup items and freezes an explicit audio track before directing", () => {
     const onConfirm = vi.fn();
     const plan = {
-      kind: "presenter_cleanup_confirmation" as const,
+      kind: "source_video_cleanup_confirmation" as const,
       title: "口播清理",
       status: "pending" as const,
       fields: [{ key: "cleanup", label: "自然精简", value: "预计处理 1 处 · 缩短约 0.4 秒" }],
@@ -725,7 +725,7 @@ describe("ConfirmCard pending state", () => {
   it("confirms an exact audio track before generating cleanup", () => {
     const onConfirm = vi.fn();
     const plan = {
-      kind: "presenter_audio_selection_confirmation" as const,
+      kind: "source_video_audio_selection_confirmation" as const,
       title: "选择口播原声",
       status: "pending" as const,
       confirmationId: "presenter-audio-selection-current",
@@ -774,7 +774,7 @@ describe("ConfirmCard pending state", () => {
     render(
       <ConfirmCard
         plan={{
-          kind: "presenter_audio_selection_confirmation",
+          kind: "source_video_audio_selection_confirmation",
           title: "选择口播原声",
           status: "pending",
           fields: [{ key: "audio", label: "有效人声音轨", value: "检测到 1 条" }],

@@ -56,6 +56,18 @@ describe("natural Presenter selected-event acceptance", () => {
     });
   });
 
+  it.each(["presenter_project_confirmation", "source_video_project_confirmation"])(
+    "accepts the %s card kind from the backend",
+    (kind) => {
+      const frozen = freezePresenterPublicEventSelection({
+        kind,
+        direction_default: "dir-001",
+        direction_options: [{ id: "dir-001", visual_events: [] }],
+      });
+      expect(frozen.candidateId).toBe("dir-001");
+    },
+  );
+
   it("accepts an explicit public recommendation with no packaging events", () => {
     const frozen = freezePresenterPublicEventSelection({
       kind: "presenter_project_confirmation",

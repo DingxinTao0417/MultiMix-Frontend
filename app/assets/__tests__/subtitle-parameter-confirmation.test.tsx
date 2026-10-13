@@ -41,7 +41,7 @@ describe("subtitle selection in video parameter confirmation", () => {
   });
   it.each([true, false])("Presenter confirmation submits visibility %s and hides language when off", (enabled) => {
     const onConfirm = vi.fn();
-    const presenter: AssetMessagePlan = { ...plan(!enabled), kind: "presenter_project_confirmation",
+    const presenter: AssetMessagePlan = { ...plan(!enabled), kind: "source_video_project_confirmation",
       directionDefault: "direction-a", ratioOptions: [{ value: "16:9", label: "横屏" }],
       subtitleDefault: "source", subtitleOptions: [{ value: "source", label: "原文字幕" }] };
     render(<ConfirmCard plan={presenter} onConfirm={onConfirm} />);

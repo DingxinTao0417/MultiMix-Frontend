@@ -2411,7 +2411,7 @@ describe("message plan mapping", () => {
     );
 
     expect(conversation.messages?.[0]?.plan).toMatchObject({
-      kind: "presenter_project_confirmation",
+      kind: "source_video_project_confirmation",
       directionDefault: "direction-a",
       recommendationMode: "single_winner",
       directionOptions: [{
@@ -2429,6 +2429,37 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan?.directionOptions?.[0]?.sampleUrl).toContain(
       "/v1/video/media?ref=",
     );
+  });
+
+  it.each([
+    ["presenter_project_confirmation", "source_video_project_confirmation"],
+    ["source_video_project_confirmation", "source_video_project_confirmation"],
+    ["presenter_cleanup_confirmation", "source_video_cleanup_confirmation"],
+    ["source_video_cleanup_confirmation", "source_video_cleanup_confirmation"],
+    ["presenter_audio_selection_confirmation", "source_video_audio_selection_confirmation"],
+    ["source_video_audio_selection_confirmation", "source_video_audio_selection_confirmation"],
+  ])("reads the %s card kind from history and normalises it to %s", (wireKind, expectedKind) => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-kind-compat",
+        title: "确认卡兼容",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-10-13T00:00:00Z",
+        updated_at: "2026-10-13T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请确认",
+          asset_id: 501,
+          created_at: "2026-10-13T00:00:00Z",
+          metadata: { plan: { kind: wireKind, title: "确认", status: "pending", fields: [{ key: "k", label: "项", value: "值" }] } },
+        }],
+      } as unknown as AssetConversationResponse,
+      newConversationProduct,
+    );
+    expect(conversation.messages?.[0]?.plan?.kind).toBe(expectedKind);
   });
 
   it("maps presenter audio selection bindings without dropping the preview", () => {
@@ -2474,7 +2505,7 @@ describe("message plan mapping", () => {
     );
 
     expect(conversation.messages?.[0]?.plan).toMatchObject({
-      kind: "presenter_audio_selection_confirmation",
+      kind: "source_video_audio_selection_confirmation",
       confirmationId: "presenter-audio-selection-current",
       audioTrackDefault: 2,
       audioTrackOptions: [{

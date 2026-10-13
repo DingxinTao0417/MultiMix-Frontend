@@ -670,7 +670,7 @@ export function buildConversationMessagePayload({
       },
     } : {}),
     ...(presenterDirectionConfirmation ? {
-      presenter_direction_confirmation: {
+      source_video_direction_confirmation: {
         director_candidate_id: presenterDirectionConfirmation.directorCandidateId,
         ...(presenterDirectionConfirmation.ratio ? { ratio: presenterDirectionConfirmation.ratio } : {}),
         ...(presenterDirectionConfirmation.subtitleMode ? { subtitle_mode: presenterDirectionConfirmation.subtitleMode } : {}),
@@ -680,7 +680,7 @@ export function buildConversationMessagePayload({
       },
     } : {}),
     ...(presenterDirectionRequest ? {
-      presenter_direction_request: {
+      source_video_direction_request: {
         current_candidate_id: presenterDirectionRequest.currentCandidateId,
       },
     } : {}),
@@ -691,7 +691,7 @@ export function buildConversationMessagePayload({
       },
     } : {}),
     ...(presenterCleanupConfirmation ? {
-      presenter_cleanup_confirmation: {
+      source_video_cleanup_confirmation: {
         cleanup_plan_id: presenterCleanupConfirmation.cleanupPlanId,
         cleanup_plan_hash: presenterCleanupConfirmation.cleanupPlanHash,
         selected_candidate_ids: presenterCleanupConfirmation.selectedCandidateIds,
@@ -701,7 +701,7 @@ export function buildConversationMessagePayload({
       },
     } : {}),
     ...(presenterAudioSelectionConfirmation ? {
-      presenter_audio_selection_confirmation: {
+      source_video_audio_selection_confirmation: {
         confirmation_id: presenterAudioSelectionConfirmation.confirmationId,
         audio_stream_index: presenterAudioSelectionConfirmation.audioStreamIndex,
         audio_fingerprint: presenterAudioSelectionConfirmation.audioFingerprint,
