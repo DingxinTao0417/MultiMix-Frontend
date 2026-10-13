@@ -19,4 +19,4 @@
 
 ## 提交与其它改动
 
-提交仅包括两个指定文件及本QA记录，按task finish合入本地main；实际提交与合入结果见会话终态和[本轮跨仓收口记录](../../../MultiMix-Backend/docs/qa/2026-10-13-cancelled-card-and-stash-retirement.md)。其余四份前端代码、UI探索与临时资料继续由原会话持有。用户授权终点是本地main，无远端推送或发布。
+修复提交66c29884c711ae9b46edc96e2470fb7d0fae5961只包含两个指定文件及本QA，已由task finish --keep快进合入本地main，无冲突；合入后两文件干净且Git内容指纹匹配该修复。其余四份前端代码、UI探索与临时资料共54条保护路径指纹不变。本次终态记录随后在同一任务树提交并由原生finish收尾，实际最终提交及占用清理见会话终态和[跨仓收口记录](../../../MultiMix-Backend/docs/qa/2026-10-13-cancelled-card-and-stash-retirement.md)。用户授权终点是本地main，无远端推送或发布。
