@@ -115,7 +115,7 @@ assistant 确认卡，前端不能自行生成或复用旧 ID；普通输入不�
 继续返回现有 `generation_job`，不新增工作流状态。`recommendation_mode=single_winner` 不使用此字段，继续走
 `source_video_direction_request` / `source_video_direction_confirmation` 的单赢家合同。
 
-> 命名迁移：请求字段曾叫 `presenter_direction_request`、`presenter_direction_confirmation`、`presenter_cleanup_confirmation`、`presenter_audio_selection_confirmation`。后端在兼容期内仍同时接受旧名（新旧并存且内容不同会返回 422），前端只发送新名；确认卡 `kind` 同理，前端读取旧值 `presenter_*_confirmation` 并归一为 `source_video_*_confirmation`。旧名的移除条件见后端 `docs/authority/source-video-terminology.md`。
+> 命名迁移：请求字段曾叫 `presenter_direction_request`、`presenter_direction_confirmation`、`presenter_cleanup_confirmation`、`presenter_audio_selection_confirmation`。后端在兼容期内仍同时接受旧名（新旧并存且内容不同会返回 422），前端只发送新名；确认卡 `kind` 同理，前端读取旧值 `presenter_*_confirmation` 并归一为 `source_video_*_confirmation`。旧名的移除条件见后端 `MultiMix-Backend/docs/authority/source-video-terminology.md`。
 
 ### 2.2 方法详解
 
