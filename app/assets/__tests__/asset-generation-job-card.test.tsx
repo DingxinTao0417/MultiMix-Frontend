@@ -8,6 +8,15 @@ import { AssetGenerationJobCard } from "../components/asset-generation-job-card"
 
 afterEach(cleanup);
 
+it.each([undefined, "内容已生成，可查看"])("never labels a cancelled job as generated (%s)", (completionLabel) => {
+  const job = { ...failedSourceJob(), progress_kind: "general" as const, status: "cancelled" as const,
+    progress_events: [{ key: "cancelled", label: "本次生成已停止", detail: "没有创建正式产物。",
+      status: "completed" as const, occurred_at: "2026-10-01T00:00:00Z" }] };
+  render(<AssetGenerationJobCard job={job} completionLabel={completionLabel} />);
+  expect(screen.getByRole("button", { name: /本次生成已停止/ })).toBeInTheDocument();
+  expect(screen.queryByText(/内容已生成，可查看/)).not.toBeInTheDocument();
+});
+
 it.each(["general", "video_plan"] as const)("offers stopped %s continuation only with the server capability", (progress_kind) => {
   const job = { ...failedSourceJob(), status: "cancelled" as const, progress_kind, failure_context: undefined, failure_diagnostic: undefined };
   const onRetry = vi.fn();
