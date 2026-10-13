@@ -142,7 +142,7 @@ function normalizeIssue(value) {
   return normalized;
 }
 
-function normalizePlan(planRoots, value) {
+function normalizePlan(planRoots, value, { allowArchived = false } = {}) {
   const plan = normalizeRelativePath(value, "Active plan");
   if (
     !ACTIVE_PLAN_PREFIXES.some((prefix) => plan.startsWith(prefix)) ||
@@ -152,11 +152,12 @@ function normalizePlan(planRoots, value) {
       "Active plan must be a Markdown file under docs/plans/active/, MultiMix-Frontend/docs/plans/active/, or MultiMix-Backend/docs/plans/active/",
     );
   }
+  const exists = (segments) => planRoots.some((root) => existsSync(planLocation(root, segments)));
   const segments = plan.split("/");
-  if (!planRoots.some((root) => existsSync(planLocation(root, segments)))) {
-    throw new Error(`Active plan does not exist: ${plan}`);
-  }
-  return plan;
+  if (exists(segments)) return plan;
+  // Only a same-name move to docs/archive/plans/ counts; a deleted plan never does.
+  if (allowArchived && exists(plan.replace("/plans/active/", "/archive/plans/").split("/"))) return plan;
+  throw new Error(`Active plan does not exist: ${plan}`);
 }
 
 // A root is either a workspace-shaped directory, or a single repository
@@ -366,11 +367,11 @@ export function workGuardStatus({ workspaceRoot }) {
   return readRegistry(path.resolve(workspaceRoot)).claims.map(publicClaim);
 }
 
-export function checkWorkGuard({ workspaceRoot, token, extraPlanRoots = [] }) {
+export function checkWorkGuard({ workspaceRoot, token, extraPlanRoots = [], allowArchived = false }) {
   const root = path.resolve(workspaceRoot);
   const registry = readRegistry(root);
   const claim = assertTokenOwner(registry, token);
-  normalizePlan(planSearchRoots(root, extraPlanRoots), claim.plan);
+  normalizePlan(planSearchRoots(root, extraPlanRoots), claim.plan, { allowArchived });
   return publicClaim(claim);
 }
 

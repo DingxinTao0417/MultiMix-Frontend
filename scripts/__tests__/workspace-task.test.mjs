@@ -57,11 +57,13 @@ function initRepository(repository, ignore) {
   git(repository, ["commit", "-q", "-m", "init"]);
 }
 
-function createWorkspace() {
+function createWorkspace({ frontendIgnore = "node_modules\n.worktrees/\n" } = {}) {
   const root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), "multimix-task-")));
   const frontend = path.join(root, "MultiMix-Frontend");
   const backend = path.join(root, "MultiMix-Backend");
-  initRepository(frontend, "node_modules/\n.worktrees/\n");
+  // No trailing slash: on Linux/macOS the shared node_modules is a symlink,
+  // which a directory-only pattern (`node_modules/`) does not ignore.
+  initRepository(frontend, frontendIgnore);
   initRepository(backend, ".venv/\n.worktrees/\n");
   mkdirSync(path.join(frontend, "node_modules", "pkg"), { recursive: true });
   writeFileSync(path.join(frontend, "node_modules", "pkg", "index.js"), "module.exports = 1;\n");
@@ -105,6 +107,26 @@ test("start creates a branch worktree with shared dependencies and a claim", () 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("start rejects a dependency link the repository does not ignore and leaves nothing behind", () => {
+  // Simulate a symlink-based platform: a pattern that can never match the link.
+  const { root, frontend } = createWorkspace({ frontendIgnore: "node_modules/pkg/\n.worktrees/\n" });
+  try {
+    assert.throws(() => start(root), /not ignored the shared node_modules link/);
+    assert.equal(existsSync(worktreePath(root, "frontend", "task-a")), false);
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.ok(existsSync(path.join(frontend, "node_modules", "pkg", "index.js")), "shared deps survive rollback");
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the frontend repository ignores node_modules as a link, not only as a directory", () => {
+  const ignore = readFileSync(new URL("../../.gitignore", import.meta.url), "utf8");
+  assert.match(ignore, /^\/?node_modules\r?$/m);
 });
 
 test("start rejects unknown repos and owners and leaves no claim behind", () => {
@@ -404,6 +426,49 @@ test("release refuses tokens that do not own a task", () => {
     assert.throws(() => releaseTask({ workspaceRoot: root, token: "" }), /task token is required/);
     assert.equal(taskStatus({ workspaceRoot: root }).tasks.length, 1);
     assert.equal(workGuardStatus({ workspaceRoot: root }).length, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("finish lands a task that archived its own plan", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    commitFile(worktree, "public/brand/logo.svg", "<svg/>\n");
+    mkdirSync(path.join(worktree, "docs", "archive", "plans"), { recursive: true });
+    git(worktree, ["mv", "docs/plans/active/plan.md", "docs/archive/plans/plan.md"]);
+    git(worktree, ["commit", "-q", "-m", "archive plan"]);
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.landed[0].status, "fast-forwarded");
+    assert.equal(result.cleanedUp, true);
+    assert.ok(existsSync(path.join(frontend, "docs", "archive", "plans", "plan.md")));
+    assert.deepEqual(workGuardStatus({ workspaceRoot: root }), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("finish resumes cleanup after a landed task archived its plan", () => {
+  const { root, frontend } = createWorkspace();
+  try {
+    const entry = start(root);
+    const worktree = worktreePath(root, "frontend", "task-a");
+    mkdirSync(path.join(worktree, "docs", "archive", "plans"), { recursive: true });
+    git(worktree, ["mv", "docs/plans/active/plan.md", "docs/archive/plans/plan.md"]);
+    git(worktree, ["commit", "-q", "-m", "archive plan"]);
+    finishTask({ workspaceRoot: root, token: entry.token, keep: true });
+
+    // Cleanup stopped after landing; only main now carries the archived plan.
+    unlinkSync(path.join(worktree, "node_modules"));
+    rmSync(worktree, { recursive: true, force: true });
+
+    const result = finishTask({ workspaceRoot: root, token: entry.token });
+    assert.equal(result.cleanedUp, true);
+    assert.equal(git(frontend, ["branch", "--list", "claude/task-a"]), "");
+    assert.deepEqual(taskStatus({ workspaceRoot: root }).tasks, []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

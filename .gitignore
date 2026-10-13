@@ -1,7 +1,8 @@
 .next/
 .next-*/
 .next-build/
-node_modules/
+# No trailing slash: task worktrees link node_modules as a symlink on Linux/macOS.
+node_modules
 out/
 tsconfig.tsbuildinfo
 .env.local

@@ -601,3 +601,23 @@ test("CLI run from a workspace copy writes to the primary registry", () => {
 function readGuardSource() {
   return readFileSync(workGuardScript, "utf8");
 }
+
+test("check accepts an archived plan only when finish asks for it", () => {
+  const workspaceRoot = createWorkspace();
+  try {
+    beginWorkGuard({ workspaceRoot, ...claim() });
+    const active = path.join(workspaceRoot, "MultiMix-Backend", "docs", "plans", "active", "task-a.md");
+    const archived = path.join(workspaceRoot, "MultiMix-Backend", "docs", "archive", "plans", "task-a.md");
+
+    // Deleted, not archived: never valid.
+    rmSync(active);
+    assert.throws(() => checkWorkGuard({ workspaceRoot, token: "token-a", allowArchived: true }), /does not exist/i);
+
+    mkdirSync(path.dirname(archived), { recursive: true });
+    writeFileSync(archived, "# task-a.md\n");
+    assert.throws(() => checkWorkGuard({ workspaceRoot, token: "token-a" }), /does not exist/i);
+    assert.equal(checkWorkGuard({ workspaceRoot, token: "token-a", allowArchived: true }).task, "task-a");
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});

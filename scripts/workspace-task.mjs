@@ -173,6 +173,17 @@ function linkSharedDependencies(workspaceRoot, repo, worktree) {
   const target = path.join(worktree, shared);
   if (!existsSync(source) || existsSync(target)) return undefined;
   symlinkSync(source, target, "junction");
+  // Windows creates a junction (a directory to git); Linux/macOS ignore the
+  // type and create a symlink, which `node_modules/` does not match. An
+  // unignored link would make every finish refuse as uncommitted work.
+  const ignored = git(worktree, ["check-ignore", "-q", "--", shared], { allowFailure: true }) !== undefined;
+  if (!ignored) {
+    // Drop the link first: the caller's rollback must never reach the shared tree.
+    unlinkSync(target);
+    throw new Error(
+      `${REPOSITORIES[repo]} has not ignored the shared ${shared} link; add '${shared}' (no trailing slash) to its .gitignore`,
+    );
+  }
   return shared;
 }
 
@@ -376,7 +387,8 @@ export function finishTask({ workspaceRoot, token, keep = false, retryDelays = R
     repo: REPOSITORIES[repo],
     dir: path.join(root, worktree),
   }));
-  checkWorkGuard({ workspaceRoot: root, token, extraPlanRoots: taskPlanRoots });
+  // A task may archive its own plan before landing (or before a resumed cleanup).
+  checkWorkGuard({ workspaceRoot: root, token, extraPlanRoots: taskPlanRoots, allowArchived: true });
 
   // Only check worktrees git still knows. Running git in a leftover directory
   // that is no longer a worktree would read the primary checkout instead and
