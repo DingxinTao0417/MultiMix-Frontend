@@ -1,6 +1,6 @@
 # 任务脚本：非 Windows 依赖链接被视为改动、计划归档后无法收尾
 
-> Status: active-plan
+> Status: archived
 > Owner: frontend
 > Last verified: 2026-10-13
 
@@ -54,3 +54,9 @@
 - Linux 实测：在 WSL 中跑 `node --test scripts/__tests__/workspace-task.test.mjs`，确认原先 12 项失败全部通过。
 - `check:agents`、`lint`。
 - 推送后（需用户确认）看前端 GitHub CI 是否转绿。
+
+## 完成记录（2026-10-13）
+
+- 修复合入本地 main：`c559e95`。
+- 本归档由新版脚本验证：计划在任务分支内归档后，一次 `task -- finish` 完成合入与清理，无需 `task -- release`。
+- 前端 GitHub CI 转绿需推送后确认（推送需用户确认清单）。
