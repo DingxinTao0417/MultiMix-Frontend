@@ -559,6 +559,8 @@ export type AssetMessagePlan = {
   proposalVersion?: number;
   planHash?: string;
   referenceAssetId?: number;
+  referenceAssetIds?: number[];
+  estimatedWaitSeconds?: number;
   count?: number;
   ratio?: "9:16" | "16:9" | "1:1";
   targetKind?: "project" | "cover" | "director_scene" | "video_scene";

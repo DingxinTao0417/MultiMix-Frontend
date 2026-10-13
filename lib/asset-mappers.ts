@@ -494,6 +494,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     proposalVersion: positiveIntegerValue(value.proposal_version),
     planHash: stringValue(value.plan_hash) || undefined,
     referenceAssetId: positiveIntegerValue(value.reference_asset_id),
+    referenceAssetIds: positiveIntegerArrayValue(value.reference_asset_ids),
+    estimatedWaitSeconds: positiveIntegerValue(value.estimated_wait_seconds),
     count: positiveIntegerValue(value.count),
     ratio: value.ratio === "9:16" || value.ratio === "16:9" || value.ratio === "1:1"
       ? value.ratio

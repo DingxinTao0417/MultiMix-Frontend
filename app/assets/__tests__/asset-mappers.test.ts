@@ -2142,6 +2142,24 @@ describe("message plan mapping", () => {
     });
   });
 
+  it("keeps every project material and the scene estimate on confirmation cards", () => {
+    const ids = Array.from({ length: 11 }, (_, index) => index + 1);
+    const conversation = conversationFromPersisted({
+      id: "material-scenes", title: "场景方案", status: "ready", metadata: {}, products: [],
+      created_at: "2026-10-08T00:00:00Z", updated_at: "2026-10-08T00:00:00Z",
+      messages: [{ id: 1, role: "assistant", text: "确认后生成", asset_id: null,
+        created_at: "2026-10-08T00:00:00Z", metadata: { plan: {
+          kind: "image_generation_confirmation", title: "确认场景图片", status: "awaiting_confirmation",
+          reference_asset_ids: ids, estimated_wait_seconds: 600,
+          fields: [{ key: "F01", label: "人物与物品组合", value: "参考 #1、#11" }],
+        } } }],
+    }, newConversationProduct);
+    expect(conversation.messages?.[0]?.plan).toMatchObject({
+      referenceAssetIds: ids, estimatedWaitSeconds: 600,
+      fields: [{ key: "F01", label: "人物与物品组合", value: "参考 #1、#11" }],
+    });
+  });
+
   it("maps presenter visual events and material gaps from the authoritative plan scenes", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
