@@ -229,7 +229,7 @@ function browserReadableMediaUrl(ref: string): string | undefined {
   if (/^(?:https?:\/\/|data:|blob:)/i.test(ref)) return ref;
   if (/^[a-z0-9+.-]+:\/\//i.test(ref)) {
     const artifactPath = ref.split("://", 2)[1] ?? "";
-    if (!/(?:^|\/)(?:video-orchestration|product-media|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)
+    if (!/(?:^|\/)(?:video-orchestration|product-media|source-video-samples|source-video-previews|presenter-samples|presenter-previews|mg)\//i.test(artifactPath)
       && !/(?:^|\/)content-assets\/\d+\/generation-jobs\/\d+\/images\/[0-9a-f]{64}\.(?:png|jpe?g|webp)$/i.test(artifactPath)) {
       return undefined;
     }

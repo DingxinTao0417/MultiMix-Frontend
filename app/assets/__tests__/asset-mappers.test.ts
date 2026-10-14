@@ -2480,6 +2480,45 @@ describe("message plan mapping", () => {
     expect(conversation.messages?.[0]?.plan?.kind).toBe(expectedKind);
   });
 
+  it.each([
+    ["local://source-video-previews/" + "a".repeat(64) + "/audio-track-2.m4a", true],
+    ["local://presenter-previews/" + "a".repeat(64) + "/audio-track-2.m4a", true],
+    ["local://source-video-samples/7/aaaa/bbbb/" + "c".repeat(64) + ".mp4", true],
+    ["local://presenter-samples/7/aaaa/bbbb/" + "c".repeat(64) + ".mp4", true],
+    ["local://source-video-graphics/7/" + "d".repeat(64) + "/" + "c".repeat(64) + ".webm", false],
+    ["local://private/source-video-notes/secret.mp4", false],
+  ])("serves %s through the media proxy: %s", (ref, served) => {
+    const conversation = conversationFromPersisted(
+      {
+        id: "conv-prefix-compat",
+        title: "路径兼容",
+        status: "ready",
+        metadata: {},
+        created_at: "2026-10-13T00:00:00Z",
+        updated_at: "2026-10-13T00:00:00Z",
+        products: [],
+        messages: [{
+          id: 1,
+          role: "assistant",
+          text: "请选择",
+          asset_id: 501,
+          created_at: "2026-10-13T00:00:00Z",
+          metadata: { plan: {
+            kind: "source_video_audio_selection_confirmation", title: "选择", status: "pending",
+            confirmation_id: "c", fields: [{ key: "k", label: "项", value: "值" }],
+            audio_track_default: 2,
+            audio_track_options: [{ stream_index: 2, label: "人声轨 2", preview_url: ref,
+              quality_score: 0.9, recommended: true, channels: 1, codec: "aac",
+              audio_fingerprint: "sha256:a", transcript_hash: "sha256:t" }],
+          } },
+        }],
+      } as unknown as AssetConversationResponse,
+      newConversationProduct,
+    );
+    const url = conversation.messages?.[0]?.plan?.audioTrackOptions?.[0]?.previewUrl;
+    expect(Boolean(url?.includes("/v1/video/media?ref="))).toBe(served);
+  });
+
   it("maps presenter audio selection bindings without dropping the preview", () => {
     const conversation = conversationFromPersisted(
       {
