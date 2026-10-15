@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 首页 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+/* home page: full-width, login is a slide-over panel opened from the top-right */
+.home{height:100vh;overflow-y:auto;position:relative}
+.home::before{content:"";position:absolute;width:900px;height:560px;border-radius:50%;filter:blur(130px);background:rgba(91,69,224,.08);top:-220px;left:-200px;pointer-events:none}
+.home::after{content:"";position:absolute;width:700px;height:460px;border-radius:50%;filter:blur(120px);background:rgba(0,168,142,.07);bottom:-200px;right:-160px;pointer-events:none}
+.hbar{position:relative;z-index:2;display:flex;align-items:center;gap:12px;padding:18px 32px}
+.hbar .brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:750;letter-spacing:-.01em}
+.hbar .brand .mk{width:28px;height:28px;border-radius:9px}
+.hbar .sp{flex:1}
+.hbar .login-btn{height:38px;padding:0 20px;border-radius:999px;border:0;background:var(--ink);color:#fff;font-size:13px;font-weight:700}
+.hbar .login-btn:hover{background:#000}
+
+/* hero: a real example video on the left, product promise on the right, no leftover blank columns */
+.hero{position:relative;z-index:1;max-width:1340px;margin:0 auto;padding:8px 32px 10px;
+  display:grid;grid-template-columns:minmax(0,460px) minmax(0,1fr);gap:34px;align-items:center}
+.exstage{width:fit-content}
+.exstage .stagebox{--sh:min(50vh,420px);padding:9px}
+.exstage .screen{height:var(--sh);width:calc(var(--sh) * 9 / 16)}
+.exstage .screen .fill{background-image:url("../assets/shot-basketball-hero.jpg");background-size:cover;background-position:center 55%;filter:blur(42px) saturate(1.3) brightness(.75)}
+.exstage .frame.r916{background-image:url("../assets/shot-basketball-hero.jpg");background-size:cover;background-position:center 55%}
+.exstage .cap{margin-top:11px;font-size:11.5px;color:var(--ink-3);text-align:center}
+.exstage .cap b{color:var(--ink-2);font-weight:650}
+
+.pitch h1{font-size:27px;font-weight:720;letter-spacing:-.024em;line-height:1.32;margin-bottom:8px}
+.pitch h1 em{font-style:normal;white-space:nowrap;background:var(--ai-grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.pitch .sub{font-size:13.5px;color:var(--ink-2);line-height:1.65;max-width:50ch;margin-bottom:13px}
+.pitch .cta{display:flex;gap:10px;margin-bottom:15px}
+
+/* process timeline that follows the SAME example video, not an abstract sketch.
+   Step 1 shows the TEXT INPUT (an idea has no shot yet) — not a stock frame.
+   Step 2 shows MULTIPLE small thumbnails (one request becomes several shots).
+   Step 3 shows ONE shot being redone, labelled before/after. */
+.flow{display:grid;gap:7px}
+.flow .fh{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--ink-3);display:flex;align-items:center;gap:9px}
+.flow .fh .ln{flex:1;height:1px;background:var(--line)}
+.fstep{padding:9px 13px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.fstep+.fstep{margin-top:6px}
+.fstep .tx{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.fstep .tx b{font-size:13px;font-weight:680}
+.fstep .tx span{font-size:11.5px;color:var(--ink-3)}
+.fstep.ai{border:1px solid transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+/* step 1: a quoted line of input text, no image — the idea precedes any shot */
+.fstep .quote{font-size:12.5px;color:var(--ink);line-height:1.6;padding:9px 11px;border-radius:9px;background:var(--surface-2);
+  border-left:2px solid var(--line-2)}
+/* step 2: a row of small square thumbnails — one request fans out into several shots */
+.fstep .fan{display:flex;gap:6px}
+.fstep .fan i{flex:1;aspect-ratio:4/3;border-radius:8px;background-size:cover;background-position:center;position:relative}
+.fstep .fan i .n{position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:4px;background:rgba(0,0,0,.55);color:#fff;
+  font-size:8.5px;font-weight:800;display:grid;place-items:center}
+/* step 3: before/after for a single shot, so "only this one changes" reads at a glance */
+.fstep .ba{display:flex;align-items:center;gap:8px}
+.fstep .ba .cell{flex:1;position:relative}
+.fstep .ba .cell i{display:block;aspect-ratio:4/3;border-radius:8px;background-size:cover;background-position:center}
+.fstep .ba .cell span{position:absolute;bottom:4px;left:4px;height:16px;padding:0 6px;border-radius:4px;background:rgba(0,0,0,.6);
+  color:#fff;font-size:9px;font-weight:700;display:grid;place-items:center}
+.fstep .ba .ar{color:var(--ink-3);font-size:14px;flex:none}
+
+/* login slide-over */
+.mask[hidden],.panel[hidden]{display:none}
+.mask{position:fixed;inset:0;background:rgba(26,24,22,.3);backdrop-filter:blur(3px);z-index:60}
+.panel{position:fixed;top:0;right:0;bottom:0;width:440px;z-index:70;background:var(--panel);box-shadow:-30px 0 80px -24px rgba(26,24,22,.4);
+  display:grid;grid-template-rows:auto 1fr;padding:0}
+.panel .ph{display:flex;align-items:center;gap:10px;padding:18px 28px 0}
+.panel .ph .x{margin-left:auto;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--ink-3);font-size:15px}
+.panel .pb{padding:18px 56px 0;align-content:center}
+.panel h2{font-size:23px;font-weight:720;letter-spacing:-.02em;margin-bottom:7px}
+.panel .sub2{font-size:13px;color:var(--ink-2);margin-bottom:22px;line-height:1.7}
+.tabs{display:flex;gap:2px;background:var(--surface-2);border-radius:999px;padding:3px;margin-bottom:18px;width:fit-content}
+.tab{height:30px;padding:0 17px;border-radius:999px;border:0;background:transparent;color:var(--ink-2);font-size:12.5px;font-weight:650}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(26,24,22,.1)}
+.field{display:grid;gap:7px;margin-bottom:13px}
+.field label{font-size:12px;font-weight:650;color:var(--ink-2)}
+.field input{height:44px;padding:0 15px;border-radius:12px;border:1px solid var(--line-2);background:var(--surface);font:inherit;font-size:14px;color:var(--ink);outline:none}
+.field input.f{border-color:transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.row{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;font-size:12px;color:var(--ink-2)}
+.consent{display:flex;align-items:flex-start;gap:9px;line-height:1.6}
+.consent .cb{width:16px;height:16px;border-radius:5px;background:var(--ink);display:grid;place-items:center;flex:none;margin-top:2px}
+.submit{width:100%;height:46px;border-radius:12px;border:0;background:var(--ink);color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.foot2{margin-top:18px;font-size:11.5px;color:var(--ink-3);text-align:center}
+.foot2 a{color:var(--ink-2);text-decoration:underline;text-underline-offset:3px}
+
+/* bottom legal strip, present even without opening the panel */
+.legalbar{position:relative;z-index:1;max-width:1340px;margin:14px auto 0;padding:14px 32px 20px;
+  border-top:1px solid var(--line);font-size:11.5px;color:var(--ink-3);display:flex;gap:16px}
+.legalbar a{color:var(--ink-2);text-decoration:underline;text-underline-offset:3px}
+</style>
+</head>
+<body>
+<div class="home">
+  <div class="hbar">
+    <div class="brand"><span class="mk"><svg width="18" height="18" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>MultiMix</div>
+    <span class="sp"></span>
+    <button class="login-btn" id="openLogin">登录</button>
+  </div>
+
+  <section class="hero">
+    <div class="exstage">
+      <div class="stagebox">
+        <div class="screen">
+          <div class="fill"></div>
+          <div class="frame r916">
+            <div class="play"><svg width="17" height="17" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></div>
+          </div>
+        </div>
+        <div class="deck">
+          <button class="pb"><svg width="12" height="12" viewBox="0 0 16 16" fill="#fff"><path d="M5 3.2v9.6L13 8z"/></svg></button>
+          <span class="tc mono">00:00 / 00:22</span>
+          <div class="track"><span class="tick" style="left:18%"></span><span class="tick" style="left:40%"></span><span class="tick" style="left:62%"></span><span class="tick" style="left:82%"></span><i style="width:0%"></i></div>
+          <span class="chip">竖屏 9:16</span>
+          <span class="chip">1080×1920</span>
+        </div>
+      </div>
+      <div class="cap">这是 <b>MultiMix</b> 做出来的一条真实短片示例</div>
+    </div>
+
+    <div class="pitch">
+      <h1>说出想法，<em>聊着聊着</em>就做出一条短视频</h1>
+      <div class="sub">AI 协助编导和制作；不满意的地方接着聊、局部改，减少返工。</div>
+      <div class="cta">
+        <button class="op ai lg" id="openLogin2">免费开始做视频</button>
+        <button class="op lg">看看它是怎么做出来的</button>
+      </div>
+
+      <div class="flow">
+        <div class="fh"><span>就是这条视频，一步步做出来的</span><span class="ln"></span></div>
+        <div class="fstep">
+          <div class="tx"><b>1. 说出想法</b></div>
+          <div class="quote">“我想做一条雨天巴黎街头的城市节奏短片，20 秒左右。”</div>
+        </div>
+        <div class="fstep ai">
+          <div class="tx"><b>2. AI 排出 4 个分镜</b><span>一句话拆成 4 个真实镜头</span></div>
+          <div class="fan">
+            <i style="background-image:url('../assets/shot-basketball-sq.jpg')"><span class="n">1</span></i>
+            <i style="background-image:url('../assets/shot-skate-sq.jpg')"><span class="n">2</span></i>
+            <i style="background-image:url('../assets/shot-drum-sq.jpg')"><span class="n">3</span></i>
+            <i style="background-image:url('../assets/shot-subway-sq.jpg')"><span class="n">4</span></i>
+          </div>
+        </div>
+        <div class="fstep">
+          <div class="tx"><b>3. 接着改</b><span>“军鼓那一镜拉近一点，突出细节。”</span></div>
+          <div class="ba">
+            <div class="cell"><i style="background-image:url('../assets/shot-drum-sq.jpg');filter:brightness(1.1) saturate(.7)"></i><span>改前</span></div>
+            <span class="ar">→</span>
+            <div class="cell"><i style="background-image:url('../assets/shot-drum-sq.jpg');transform:scale(1.3)"></i><span>改后</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="legalbar">MultiMix © 2026 · <a>服务条款</a> · <a>隐私政策</a></div>
+</div>
+
+<div class="mask" id="mask" hidden></div>
+<aside class="panel" id="panel" hidden>
+  <div class="ph"><button class="x" id="closeLogin">×</button></div>
+  <div class="pb">
+    <div class="tabs"><button class="tab on">登录</button><button class="tab">注册</button></div>
+    <h2>欢迎回来</h2>
+    <div class="sub2">登录后继续你的创作项目。</div>
+
+    <div class="field"><label>邮箱</label><input class="f" value="chen@yunqi-windows.cn"></div>
+    <div class="field"><label>密码</label><input type="password" value="••••••••••"></div>
+
+    <div class="row">
+      <span class="consent"><span class="cb"><svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="m3.5 8.2 3 3 6-6.4" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span>我已阅读并同意<a>《服务条款》</a>与<a>《隐私政策》</a></span></span>
+    </div>
+
+    <button class="submit">登录<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="foot2"><a>忘记密码</a></div>
+  </div>
+</aside>
+
+<script>
+const mask=document.getElementById('mask'), panel=document.getElementById('panel');
+function open(){mask.hidden=false;panel.hidden=false;}
+function close(){mask.hidden=true;panel.hidden=true;}
+document.getElementById('openLogin').addEventListener('click',open);
+document.getElementById('openLogin2').addEventListener('click',open);
+document.getElementById('closeLogin').addEventListener('click',close);
+mask.addEventListener('click',close);
+</script>
+</body>
+</html>

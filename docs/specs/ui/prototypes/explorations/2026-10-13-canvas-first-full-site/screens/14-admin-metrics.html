@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>14 管理后台 · 产品指标 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.adm{font-size:10.5px;font-weight:800;letter-spacing:.06em;height:21px;padding:0 8px;border-radius:5px;background:var(--ink);color:#fff;display:inline-flex;align-items:center}
+.main{overflow-y:auto}
+.wrap{max-width:1400px;margin:0 auto;padding:18px 28px 40px}
+.ph1{display:flex;align-items:flex-end;gap:16px;margin-bottom:20px}
+.ph1 h1{font-size:24px;font-weight:720;letter-spacing:-.02em}
+.ph1 p{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.win{margin-left:auto;display:flex;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+.win button{height:27px;padding:0 13px;border-radius:999px;border:0;background:transparent;font-size:12px;font-weight:650;color:var(--ink-2)}
+.win button.on{background:var(--ink);color:#fff}
+/* the north-star is a finished film, so the funnel ends in a player-shaped tile */
+.funnel{display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:16px}
+.fs{padding:16px 18px;border-right:1px solid var(--line);position:relative}
+.fs:last-child{border-right:0;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;border:1.5px solid transparent;border-radius:0 var(--r) var(--r) 0}
+.fs .k{font-size:11px;font-weight:700;color:var(--ink-3);margin-bottom:6px}
+.fs .v{font-size:26px;font-weight:720;letter-spacing:-.02em}
+.fs .r{font-size:11.5px;color:var(--ink-2);margin-top:3px}
+.fs .r b{color:var(--ok)}
+.fs .r b.dn{color:var(--bad)}
+.fs .bar{height:5px;border-radius:3px;background:var(--surface-2);margin-top:11px;overflow:hidden}
+.fs .bar i{display:block;height:100%;background:var(--ink)}
+.fs:last-child .bar i{background:var(--ai-grad)}
+.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.pan{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.pan .sec{margin-bottom:14px}
+.chart{height:200px;position:relative;display:flex;align-items:flex-end;gap:7px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.chart .c{flex:1;display:grid;gap:2px;align-content:end;position:relative}
+.chart .c i{display:block;border-radius:4px 4px 0 0}
+.chart .c i.a{background:var(--ink)}
+.chart .c i.b{background:var(--line-2)}
+.chart .c span{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--ink-3)}
+.lg{display:flex;gap:14px;margin-top:10px;font-size:11px;color:var(--ink-2)}
+.lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.dur{display:grid;gap:10px}
+.dr{display:grid;grid-template-columns:96px 1fr 58px;gap:11px;align-items:center;font-size:12px}
+.dr .t{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden}
+.dr .t i{display:block;height:100%;border-radius:4px;background:var(--ink)}
+.dr .t i.w{background:var(--warn)}
+.dr b{text-align:right;font-size:12px}
+.fails{margin-top:16px}
+.fl{display:grid;grid-template-columns:44px 1fr auto;gap:11px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:12px}
+.fl .p{height:62px;width:36px;border-radius:6px}
+.fl b{display:block;font-weight:640}
+.fl small{color:var(--ink-3);font-size:11px}
+.fl .tg{font-size:10.5px;font-weight:750;color:var(--bad);background:var(--bad-soft);height:20px;padding:0 8px;border-radius:999px;display:inline-flex;align-items:center}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+.kc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:13px 15px}
+.kc .k{font-size:11px;color:var(--ink-3);font-weight:700}
+.kc .v{font-size:20px;font-weight:720;margin-top:3px}
+.kc .s{font-size:11px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span><span class="crumb">管理后台 / <b>产品指标</b></span></button>
+    <span class="adm">仅管理员可见</span>
+    <span class="spacer"></span>
+  </div>
+  <div class="main">
+    <div class="wrap">
+      <div class="ph1">
+        <div><h1>产品指标</h1><p>从注册到拿到一条可用视频，每一步走掉了多少人。普通用户看不到这个页面，服务端也会拒绝普通账号。</p></div>
+        <div class="win"><button>今天</button><button class="on">近 7 天</button><button>近 30 天</button></div>
+      </div>
+
+      <div class="funnel">
+        <div class="fs"><div class="k">注册</div><div class="v">412</div><div class="r">较上周 <b>+18%</b></div><div class="bar"><i style="width:100%"></i></div></div>
+        <div class="fs"><div class="k">发出首条需求</div><div class="v">296</div><div class="r">转化 72%</div><div class="bar"><i style="width:72%"></i></div></div>
+        <div class="fs"><div class="k">确认编导稿</div><div class="v">188</div><div class="r">转化 64% · <b class="dn">−4%</b></div><div class="bar"><i style="width:46%"></i></div></div>
+        <div class="fs"><div class="k">视频生成成功</div><div class="v">161</div><div class="r">成功率 86%</div><div class="bar"><i style="width:39%"></i></div></div>
+        <div class="fs"><div class="k">导出或下载</div><div class="v">117</div><div class="r">北极星 · 占注册 28%</div><div class="bar"><i style="width:28%"></i></div></div>
+      </div>
+
+      <div class="grid">
+        <section class="pan">
+          <div class="sec"><span>每日视频产出</span><span class="ln"></span><span>成功 / 失败</span></div>
+          <div class="chart">
+            <div class="c"><i class="b" style="height:14px"></i><i class="a" style="height:96px"></i><span>周一</span></div>
+            <div class="c"><i class="b" style="height:10px"></i><i class="a" style="height:118px"></i><span>周二</span></div>
+            <div class="c"><i class="b" style="height:22px"></i><i class="a" style="height:104px"></i><span>周三</span></div>
+            <div class="c"><i class="b" style="height:8px"></i><i class="a" style="height:142px"></i><span>周四</span></div>
+            <div class="c"><i class="b" style="height:16px"></i><i class="a" style="height:126px"></i><span>周五</span></div>
+            <div class="c"><i class="b" style="height:6px"></i><i class="a" style="height:84px"></i><span>周六</span></div>
+            <div class="c"><i class="b" style="height:12px"></i><i class="a" style="height:150px"></i><span>周日</span></div>
+          </div>
+          <div class="lg"><span><i style="background:var(--ink)"></i>成功</span><span><i style="background:var(--line-2)"></i>失败</span></div>
+        </section>
+        <section class="pan">
+          <div class="sec"><span>生成耗时</span><span class="ln"></span><span>中位数</span></div>
+          <div class="dur">
+            <div class="dr"><span>编导稿</span><span class="t"><i style="width:22%"></i></span><b class="mono">38s</b></div>
+            <div class="dr"><span>挑选画面</span><span class="t"><i style="width:31%"></i></span><b class="mono">54s</b></div>
+            <div class="dr"><span>配音</span><span class="t"><i style="width:14%"></i></span><b class="mono">24s</b></div>
+            <div class="dr"><span>合成画面</span><span class="t"><i class="w" style="width:78%"></i></span><b class="mono">2m 16s</b></div>
+            <div class="dr"><span>拼接成片</span><span class="t"><i style="width:18%"></i></span><b class="mono">31s</b></div>
+          </div>
+          <div class="fails">
+            <div class="sec" style="margin:0 0 4px"><span>最近失败</span><span class="ln"></span></div>
+            <div class="fl"><i class="p ph-v"></i><span><b>全屋定制获客 · 第 2 镜</b><small>合成画面超时 · 已自动重试 1 次</small></span><span class="tg">需处理</span></div>
+            <div class="fl"><i class="p" style="background:linear-gradient(150deg,#3A3025,#1C1712)"></i><span><b>早餐店探店 · 拼接成片</b><small>配乐时长不足</small></span><span class="tg">需处理</span></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="cards">
+        <div class="kc"><div class="k">平均每条修改轮次</div><div class="v">2.4</div><div class="s">局部改占 81%</div></div>
+        <div class="kc"><div class="k">用户素材占比</div><div class="v">93%</div><div class="s">AI 生成 7%</div></div>
+        <div class="kc"><div class="k">单条视频成本</div><div class="v">¥3.82</div><div class="s">费用记录覆盖 96%</div></div>
+        <div class="kc"><div class="k">7 日回访</div><div class="v">41%</div><div class="s">做过 2 条以上的用户</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

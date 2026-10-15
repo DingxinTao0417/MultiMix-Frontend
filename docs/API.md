@@ -71,7 +71,7 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | --- | --- |
 | 工作台展示 | `listConversations`、`getNewConversation`、`getWorkshop`、`getProductText` |
 | 项目、对话与产物 | `loadConversationSummaries`、`loadConversationDetail`、项目资源分页/加入/移出、`sendMessage`、`reconcileMessage`、生成任务查询/重试、Agent 动作查询/重试、产物保存、版本预览和版本继续 |
-| 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除、公共素材搜索与导入 |
+| 资源库 | `listLibrary`、`uploadAsset`、网页采集、解析重试、导出/下载/删除；公共素材搜索与导入（**退役中**：公共素材 2026-10-15 取消，接口仍在代码中，随后端 P1 删除；新功能不得再调用） |
 | 视频工程 | 视频任务查询/重试、质量报告、分镜候选加载与单镜素材替换 |
 
 精确参数和返回类型以 `asset-workspace-adapter.ts` 中的 `AssetWorkspaceAdapter` 为准。产品路径是“编导稿确认 → 对话确认接口创建视频工程 → 查询任务状态”。
@@ -908,7 +908,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 }
 ```
 
-- `refs` 只列 `asset_reference.status == "matched"` 的已保存素材（stock 兜底不当「你的素材」）。
+- `refs` 只列 `asset_reference.status == "matched"` 的已保存素材（历史 stock 素材不当「你的素材」）。
 - 无 scenes → 后端不挂 `plan` → 前端退回建议芯片（现状行为）。
 - 第二道确认按钮把 `confirm_utterance` 作为普通消息提交并附带一次性 `client_request_id`，命中“生成视频工程”确认门。
 - 已持久化的确认结果可能是 `processing / video_project_queued`，此时展示排队状态，不能因有占位 metadata 就显示编辑器。
@@ -998,7 +998,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
 - 这是唯一素材候选接口，不受版本 flag 控制；404 表示工程或分镜不存在，前端展示真实错误，不调用旧接口。
 - `scope=local`：返回 `groups.current / recommended / library`（无外部网络依赖，首屏即可展示），`public` 为空。
 - `scope=public`：返回 `groups.public`、`next_cursor`（游标翻页「换一批」）和逐 provider `provider_statuses`；公共 provider 失败只影响公共分组，不影响本地候选。
-- 候选契约（每项）：`candidate_id`（服务端签发的不透明 ID，公共素材不返回 `download_url`）、`source_type`、`source_asset_id`、`provider`、`media_type`、`title`、`preview_url`、`width/height/duration`、`license/author/attribution_url`、`verification_status`、`relevance_status/relevance_reason`、`requires_trim`、`already_persisted`、`selectable`。
+- 候选契约（每项）：`candidate_id`（服务端签发的不透明 ID）、`source_type`、`source_asset_id`、`provider`、`media_type`、`title`、`preview_url`、`width/height/duration`、`license/author/attribution_url`、`verification_status`、`relevance_status/relevance_reason`、`requires_trim`、`already_persisted`、`selectable`。
 - `current` 项 `selectable=false`，仅作为「当前使用」展示，不可重复选择，也不签发可提交的 candidate ID。
 - 前端：工作台分镜卡、嵌入式 FilmStrip、全屏 OpenCut `ReplacePanel` 共用同一 adapter（`loadSegmentMaterialCandidates`）与同一候选组件（`AssetPicker`）；本地先出、公共异步补充。
 
@@ -1027,7 +1027,7 @@ pilot/admin 排障可读取 `GET /v1/video/projects/{asset_id}/decision-events?l
   "confirm_overwrite": false } // 见 12.5
 ```
 
-- `replace_material` 只接受服务端签发且绑定用户/工程/分镜的 `candidate_id`；已保存素材也先由 local 候选接口签发。公共候选只有经服务端资产化（下载 + 校验 + 持久化）后才进入 pending plan，**前端不得提交任意素材 ID 或公共 URL**。
+- `replace_material` 只接受服务端签发且绑定用户/工程/分镜的 `candidate_id`；已保存素材也先由 local 候选接口签发。**前端不得提交任意素材 ID 或 URL**。公共候选的资产化路径（**退役中**：公共素材 2026-10-15 取消，接口仍在代码中，随后端 P1 删除；新功能不得再调用）。
 - 只 patch 目标分镜的权威字段（`asset_reference`+`materials` / `narration` / `mg_decision`），随后复用整条编排重建工程（adapter=`segment_recompose`）。排队/运行/失败期间保留替换前 ready 工程；仅在质量检查通过后原子发布新版本，并追加版本快照（可通过 `POST /assets/{id}/versions/{version_id}/restore` 恢复）。
 - 全屏 `ReplacePanel` 不再直接下载 URL 改浏览器内存时间线；替换走本端点后调用 `reloadProject()` 重新加载权威工程。
 - 返回 `VideoJobRead`（202）；错误：404 工程/分镜不存在、410 候选过期、422 参数或素材不可用。
@@ -1227,7 +1227,7 @@ npm run test:display-coverage
 - `selectionReason`: 当前分镜选择该呈现方式的理由
 - `graphicComponentLabel`: 六类已注册图形组件的中文名称
 - `backgroundTreatmentLabel`: 使用已验证素材虚化背景时显示
-- `publicReplacementNote`: 原公开素材永久失效并透明采用已预检备选时显示
+- `publicReplacementNote`: 仅历史作品读取（**退役中**：公共素材 2026-10-15 取消，接口仍在代码中，随后端 P1 删除；新功能不得再调用）
 
 普通工作台不得展示 `pipeline_code` 或把内部 `mg_scene` 名称作为用户可见呈现方式。图形主画面和 MG overlay 必须分别显示为主画面方式与增强层，避免用户误认为同一动画叠加了两次。
 
@@ -1317,7 +1317,7 @@ POST  /v1/assets/conversations/messages
 
 ### 参数确认的制作方式
 
-现有 `video_parameter_confirmation` 增加可选 `production_choice_id: public_stock | graphics | ai_visual`。仍须发送 `pending_intent_id`、`version`、`ratio`、`target_seconds`，以及既有声音选项；其他新增字段不得用来绕过服务端校验。
+现有 `video_parameter_confirmation` 增加可选 `production_choice_id: graphics | ai_visual`；`public_stock`（**退役中**：公共素材 2026-10-15 取消，接口仍在代码中，随后端 P1 删除；新功能不得再调用）。仍须发送 `pending_intent_id`、`version`、`ratio`、`target_seconds`，以及既有声音选项；其他新增字段不得用来绕过服务端校验。
 
 助手消息 plan 的只读投影增加 `production_options`（最多三项，每项 `id / label / effect / required_inputs / cost_note`）、`production_choice_id`、`production_recommended_id`、`production_selection_required`、`production_restriction`（`prefer | only`）和 `production_blocked_reason`。adapter 转换为对应 camelCase 字段。自然语言与按钮选择写入同一服务端需求/确认快照，旧客户端不携带选择时不得跳过必须选择的门。服务端 `production_preference.choice_id` 可为 null，以保存未选择新制作方式时的 `excluded_choice_ids`，此时 `restriction` 必须为 `prefer`。已有可用视觉素材且仅声明排除项时不显示新的制作方式选择；排除项仍写入视频参数快照并逐镜校验。素材范围的“只用这张照片”不能被转换为“只用图形动画”。
 

@@ -266,14 +266,11 @@ svg{flex:none;display:block}
 .seg .no b{font-size:13px;font-weight:650}
 .seg .no span{font-size:10px;color:var(--ink-3)}
 .seg .phbox{width:46px;height:34px;border-radius:7px}
-.seg .phbox.stock{box-shadow:0 0 0 1px var(--line-2);opacity:.85}
 .seg .tx{display:grid;gap:1px;min-width:0}
 .seg .line1{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px}
 .seg .line2{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mg-badge{font-size:9.5px;font-weight:650;color:#fff;flex:none;
   background:linear-gradient(120deg,rgba(124,92,255,.9),rgba(0,168,142,.9));padding:1px 7px;border-radius:999px}
-.stock-badge{font-size:9.5px;font-weight:650;color:var(--ink-3);flex:none;
-  background:var(--surface-2);border:1px solid var(--line-2);padding:1px 7px;border-radius:999px}
 .seg .acts{position:absolute;right:10px;top:50%;transform:translateY(-50%);display:none;gap:6px}
 .seg:hover .acts{display:flex}
 .seg .acts button{height:26px;padding:0 10px;border-radius:999px;font-size:11px;font-weight:600;
@@ -287,7 +284,6 @@ svg{flex:none;display:block}
 .source .s-content{display:grid;gap:9px;padding-top:9px}
 .source .s-thumbs{display:flex;gap:6px;align-items:center}
 .source .phbox{width:38px;height:29px;border-radius:6px}
-.source .phbox.stock{opacity:.8}
 .source .s-note{font-size:12px;color:var(--ink-2)}
 .art-foot{display:flex;gap:10px;padding:12px 24px 20px}
 .btn-ink{display:flex;align-items:center;gap:7px;height:38px;padding:0 18px;border-radius:999px;
@@ -826,7 +822,7 @@ body.nav-open .app .sidebar{display:grid;position:fixed;z-index:81;top:0;left:0;
           <span class="phbox"><span class="ph ph-living"></span></span>
           <span class="phbox"><span class="ph ph-panorama"></span></span>
           <span class="phbox"><span class="ph ph-work"></span></span>
-          <span class="phbox stock"><span class="ph ph-seal"></span></span>
+          <span class="phbox"><span class="ph ph-seal"></span></span>
         </div>
         <div class="s-note">3 段使用已解析素材 · 图形动效镜使用独立背景与版式，不冒充素材缺失</div>
       </div>
@@ -875,16 +871,16 @@ function $(id){ return document.getElementById(id); }
 
 var SEGS = [
   { no:1, dur:5, t0:0, t1:5, ph:'ph-living', name:'痛点开场',
-    line:'装修最烧钱的坑，十个有九个在定制柜上', sub:'字幕同台词 · 实景近景', mg:false, mgText:'', stock:false,
+    line:'装修最烧钱的坑，十个有九个在定制柜上', sub:'字幕同台词 · 实景近景', mg:false, mgText:'',
     src:'客厅落地窗效果 · 你的素材' },
   { no:2, dur:9, t0:5, t1:14, ph:'ph-panorama', name:'案例展示',
-    line:'这是上周刚交付的全屋定制，先看客厅', sub:'MG 字卡：面积利用率 +35%', mg:true, mgText:'面积利用率 +35%', stock:false,
+    line:'这是上周刚交付的全屋定制，先看客厅', sub:'MG 字卡：面积利用率 +35%', mg:true, mgText:'面积利用率 +35%',
     src:'门窗安装完工全景 · 你的素材' },
   { no:3, dur:10, t0:14, t1:24, ph:'ph-work', name:'工艺细节',
-    line:'板材封边看这里，机器封的和手工的差别很大', sub:'特写推近 · 慢速', mg:false, mgText:'', stock:false,
+    line:'板材封边看这里，机器封的和手工的差别很大', sub:'特写推近 · 慢速', mg:false, mgText:'',
     src:'施工过程记录 · 你的素材' },
   { no:4, dur:6, t0:24, t1:30, ph:'ph-motion', name:'品牌收束',
-    line:'评论区扣 1，送你一份全屋定制避坑报价单', sub:'图形动效 · 品牌背景与版式起始态', mg:false, mgText:'', stock:false,
+    line:'评论区扣 1，送你一份全屋定制避坑报价单', sub:'图形动效 · 品牌背景与版式起始态', mg:false, mgText:'',
     src:'图形动效主画面 · 无需素材' },
 ];
 var selected = 0, playing = false, playTimer = null, TOTAL = 30;
@@ -904,10 +900,9 @@ function renderSegs(){
   SEGS.forEach(function(s,i){
     html += '<div class="seg'+(i===selected?' selected':'')+'" data-i="'+i+'" style="margin-bottom:9px">'
       + '<span class="no"><b>#'+s.no+'</b><span>'+s.t0+'–'+s.t1+'s</span></span>'
-      + '<span class="phbox'+(s.stock?' stock':'')+'"><span class="ph '+s.ph+'"></span></span>'
+      + '<span class="phbox"><span class="ph '+s.ph+'"></span></span>'
       + '<span class="tx"><span class="line1">'+s.name+' · '+s.line
       + (s.mg?'<span class="mg-badge">MG 动效</span>':'')
-      + (s.stock?'<span class="stock-badge">兜底素材</span>':'')
       + '</span><span class="line2">'+s.sub+'</span></span>'
       + '<span class="acts"><button data-act="rewrite" data-i="'+i+'">修改配音</button>'
       + '<button data-act="swap" data-i="'+i+'">换素材</button></span>'
@@ -923,7 +918,7 @@ function renderFs(){
   SEGS.forEach(function(s,i){
     html += '<div class="fsclip'+(i===selected?' selected':'')+'" data-i="'+i+'" style="flex:'+s.dur+' 1 0">'
       + '<span class="inner"><span class="ph '+s.ph+'"></span>'
-      + '<span class="lb">#'+s.no+(s.stock?' 兜底':'')+'</span>'
+      + '<span class="lb">#'+s.no+'</span>'
       + '<span class="du">'+s.dur+'s</span></span>'
       + '<span class="fs-handle l" data-h="l" data-i="'+i+'"></span>'
       + '<span class="fs-handle r" data-h="r" data-i="'+i+'"></span></div>';
@@ -1010,8 +1005,6 @@ document.getElementById('pickMask').addEventListener('click', function(e){
   var s = SEGS[pickFor];
   s.ph = it.getAttribute('data-ph');
   s.src = it.getAttribute('data-n') + ' · 你的素材';
-  s.stock = false;
-  if(s.sub.indexOf('兜底') > -1) s.sub = '已替换为你的素材';
   this.classList.remove('open');
   recalc(); renderAll(); selectSeg(pickFor, true);
   toast('分镜 #' + s.no + ' 已换为「' + it.getAttribute('data-n') + '」，正在局部重合成…');
@@ -1245,7 +1238,7 @@ function addAtt(type){
   if(type === 'img'){
     el.innerHTML = '<span class="thumb"><span class="ph ph-balcony"></span></span>门店实拍-0' + (++attId) + '.jpg'
       + '<span class="st ok">已识别</span><button class="rm" title="移除">✕</button>';
-    toast('图片已识别，可用来替换第 4 段兜底素材');
+    toast('图片已识别，可用来替换第 4 段素材');
   } else {
     el.innerHTML = '<span class="fic"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h6.2L13 5.3V13a.9.9 0 0 1-.9.9H4a.9.9 0 0 1-.9-.9V3.4a.9.9 0 0 1 .9-.9Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>报价单-0' + (++attId) + '.pptx'
       + '<span class="st run">解析中…</span><button class="rm" title="移除">✕</button>';

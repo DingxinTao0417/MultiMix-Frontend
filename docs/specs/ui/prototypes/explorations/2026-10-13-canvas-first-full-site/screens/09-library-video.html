@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 视频库 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.main{overflow-y:auto;padding:20px 28px 40px}
+.wrap{max-width:1340px;margin:0 auto}
+.ph1{display:flex;align-items:flex-end;gap:16px;margin-bottom:16px}
+.ph1 h1{font-size:23px;font-weight:720;letter-spacing:-.02em}
+.ph1 p{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.ph1 .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+.sbox{height:34px;width:256px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);display:flex;align-items:center;gap:8px;padding:0 13px;font-size:12px;color:var(--ink-3)}
+/* featured: same stage shell as the workspace, ratio-agnostic */
+.feat{display:grid;grid-template-columns:auto minmax(0,1fr) 272px;gap:22px;align-items:center;background:var(--surface);
+  border:1px solid var(--line);border-radius:20px;padding:16px;margin-bottom:22px;box-shadow:var(--shadow)}
+.feat .stagebox{--sh:252px;padding:7px;border-radius:16px}
+.feat .stagebox{width:fit-content}
+.feat .screen{height:var(--sh);width:fit-content;border-radius:11px}
+.feat .screen .fill{inset:-24%}
+.feat .k{font-size:11px;font-weight:750;letter-spacing:.09em;color:var(--ink-3);margin-bottom:5px}
+.feat h2{font-size:20px;font-weight:700;letter-spacing:-.016em;margin-bottom:5px}
+.feat .m{font-size:12px;color:var(--ink-3);margin-bottom:12px}
+.feat .strip{display:flex;gap:5px;margin-bottom:14px;max-width:520px}
+.feat .strip i{aspect-ratio:1/1;width:46px;border-radius:7px;flex:none}
+.feat .facts{display:flex;gap:20px;margin-bottom:14px}
+.feat .facts div{font-size:11px;color:var(--ink-3)}
+.feat .facts b{display:block;font-size:15px;color:var(--ink);font-weight:700}
+.feat .acts{display:flex;gap:8px}
+.fsrc{align-self:stretch;border-left:1px solid var(--line);padding-left:20px;display:grid;align-content:center;gap:8px}
+.fsrc .k2{font-size:11px;font-weight:750;letter-spacing:.09em;color:var(--ink-3)}
+.fsrc .r{display:grid;grid-template-columns:32px 1fr auto;gap:9px;align-items:center}
+.fsrc .r i{width:32px;height:32px;border-radius:7px}
+.fsrc .r b{font-size:11.5px;font-weight:620;display:block}
+.fsrc .r small{font-size:10.5px;color:var(--ink-3)}
+.bar{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+.bar .t{font-size:13px;font-weight:700}
+.bar .ct{font-size:11.5px;color:var(--ink-3)}
+.bar .filters{margin-left:auto;display:flex;gap:4px;padding:3px;background:var(--surface);border:1px solid var(--line);border-radius:999px}
+.bar .filters button{height:25px;padding:0 11px;border-radius:999px;border:0;background:transparent;font-size:11.5px;font-weight:650;color:var(--ink-2)}
+.bar .filters button.on{background:var(--ink);color:#fff}
+/* square cards: any ratio, cropped centre, ratio badge */
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:16px 14px}
+.vc{display:grid;gap:7px;cursor:pointer}
+.vc .fr{background:#fff;border:1px solid var(--line);border-radius:14px;padding:4px;
+  box-shadow:0 1px 2px rgba(26,24,22,.05),0 10px 24px -14px rgba(26,24,22,.2);transition:transform .15s,box-shadow .15s}
+.vc:hover .fr{transform:translateY(-3px);box-shadow:var(--shadow-lift)}
+.vc .im{aspect-ratio:1/1;border-radius:10px;position:relative;overflow:hidden}
+.vc .im .play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.94);display:grid;place-items:center;opacity:0;transition:opacity .15s}
+.vc:hover .im .play{opacity:1}
+.vc .im .du{position:absolute;bottom:6px;right:6px;height:18px;padding:0 6px;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;font-weight:700;display:grid;place-items:center}
+.vc .im .ar{position:absolute;bottom:6px;left:6px;height:18px;padding:0 6px;border-radius:5px;background:rgba(255,255,255,.92);color:var(--ink);font-size:9.5px;font-weight:800;display:grid;place-items:center}
+.vc b{font-size:12px;font-weight:640;padding:0 2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.vc small{font-size:10.5px;color:var(--ink-3);padding:0 2px;margin-top:-4px}
+.more{display:flex;justify-content:center;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span><span class="crumb">资源库 / <b>视频</b></span><span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+  </div>
+  <div class="main">
+    <div class="wrap">
+      <div class="ph1">
+        <div><h1>视频</h1><p>已完成的视频工程。可以回到对话继续改，也可以直接导出发布。</p></div>
+        <div class="rt">
+          <div class="sbox"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>搜索视频，比如「隔音」</div>
+          <button class="op">导入原视频</button>
+          <button class="op pri">＋ 新建视频</button>
+        </div>
+      </div>
+
+      <section class="feat">
+        <div class="stagebox">
+          <div class="screen">
+            <div class="fill" style="background:linear-gradient(150deg,#6E93A3,#2C4350 58%,#4A6B7A)"></div>
+            <div class="frame r916" style="background:linear-gradient(150deg,#24343A,#121A1D)">
+              <div class="play" style="width:38px;height:38px"><svg width="13" height="13" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="k">最近完成</div>
+          <h2>断桥铝门窗的隔音效果实测</h2>
+          <div class="m">视频工程 · v3 · 来自「门窗案例小红书内容」· 2 小时前</div>
+          <div class="strip"><i class="ph-v"></i><i style="background:linear-gradient(140deg,#3A3025,#1C1712)"></i><i style="background:linear-gradient(140deg,#24343A,#121A1D)"></i><i style="background:linear-gradient(140deg,#332A3A,#18131C)"></i><i style="background:linear-gradient(140deg,#2E3526,#151A12)"></i></div>
+          <div class="facts"><div><b class="mono">32.0s</b>时长</div><div><b>5 镜</b>分镜</div><div><b>100%</b>你的素材</div><div><b>9:16 · 1080P</b>竖屏画质</div><div><b>v3</b>改过 2 次</div></div>
+          <div class="acts"><button class="op pri lg">回到对话继续改</button><button class="op lg">导出</button><button class="op lg">查看版本</button></div>
+        </div>
+        <div class="fsrc">
+          <div class="k2">用到的素材</div>
+          <div class="r"><i class="ph-v"></i><span><b>隔音实测.mp4</b><small>第 1 镜</small></span><span class="src">你的</span></div>
+          <div class="r"><i class="ph-i"></i><span><b>施工过程记录.jpg</b><small>第 2、4 镜</small></span><span class="src">你的</span></div>
+          <div class="r"><i style="background:linear-gradient(140deg,#24343A,#121A1D)"></i><span><b>安装过程.mp4</b><small>第 3 镜</small></span><span class="src">你的</span></div>
+          <div class="r"><i class="ph-i d"></i><span><b>产品参数.pdf</b><small>第 5 镜字卡</small></span><span class="src">你的</span></div>
+        </div>
+      </section>
+
+      <div class="bar"><span class="t">视频工程</span><span class="ct">当前显示 18 项</span>
+        <span class="filters"><button class="on">全部</button><button>竖屏 9:16</button><button>横屏 16:9</button></span></div>
+      <div class="grid">
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#3A3025,#1C1712)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:28 · 1080P</span></div></div><b>早餐店开业第一周</b><small>昨天 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#24343A,#121A1D)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">16:9</span><span class="du mono">0:41 · 720P</span></div></div><b>小户型收纳改造</b><small>3 天前 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#332A3A,#18131C)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:35 · 1080P</span></div></div><b>全屋定制获客</b><small>上周 · 含 AI 生成镜头</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#2E3526,#151A12)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">16:9</span><span class="du mono">0:22 · 480P</span></div></div><b>春季促销</b><small>上周 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im ph-v"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:30 · 1080P</span></div></div><b>门窗安装流程</b><small>2 周前 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#3A2A25,#1D1412)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:19 · 720P</span></div></div><b>店庆三周年</b><small>2 周前 · AI 生成镜头</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#25303A,#11171D)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">16:9</span><span class="du mono">0:45 · 1080P</span></div></div><b>客户回访实拍</b><small>3 周前 · 原视频优化</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#383328,#1B1913)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:26 · 1080P</span></div></div><b>新品三层中空玻璃</b><small>3 周前 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#2B2A3A,#14131C)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:33 · 720P</span></div></div><b>旧窗改造前后对比</b><small>上月 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#2F3A2E,#141B13)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">16:9</span><span class="du mono">0:24 · 1080P</span></div></div><b>门店环境展示</b><small>上月 · 你的素材</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#3A3530,#1C1A16)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">16:9</span><span class="du mono">0:38 · 720P</span></div></div><b>工厂探访</b><small>上月 · 原视频优化</small></div>
+        <div class="vc"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#28303A,#12171C)"><span class="play"><svg width="10" height="10" viewBox="0 0 16 16" fill="#1A1816"><path d="M5 3.2v9.6L13 8z"/></svg></span><span class="ar">9:16</span><span class="du mono">0:29 · 1080P</span></div></div><b>冬季保温实测</b><small>上月 · 你的素材</small></div>
+      </div>
+      <div class="more"><button class="op lg">加载更多内容</button></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

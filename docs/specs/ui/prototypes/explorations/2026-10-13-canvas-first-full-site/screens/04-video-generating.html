@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 视频生成中 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.screen{--sh:min(52vh,480px)}
+.live{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:10.5px;
+  font-weight:800;color:#4B38C4;border:1px solid transparent;margin-left:8px;
+  background:linear-gradient(#fff,#fff) padding-box,var(--ai-grad) border-box;vertical-align:2px}
+.live i{width:6px;height:6px;border-radius:50%;background:var(--ai-grad);animation:bl 1.4s infinite}
+@keyframes bl{50%{opacity:.25}}
+.screen .frame.building{background:#1A1922;display:grid;place-items:center}
+.screen .frame.building::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%);
+  background-size:220% 100%;animation:shim2 1.8s linear infinite}
+@keyframes shim2{to{background-position:-120% 0}}
+.bmsg{position:relative;z-index:2;text-align:center;color:rgba(255,255,255,.86);font-size:12.5px;line-height:1.7;padding:0 24px}
+.bmsg b{display:block;font-size:15px;color:#fff;margin-bottom:4px}
+.ring{width:46px;height:46px;border-radius:50%;margin:0 auto 14px;border:2.5px solid rgba(255,255,255,.14);
+  border-top-color:#9E8BFF;border-right-color:#3FD9BE;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.deck .track i.ai{background:var(--ai-grad)}
+.pc{border:1px solid transparent;border-radius:var(--r-sm);padding:12px 13px;margin-top:3px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.pc .hd{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;margin-bottom:9px}
+.pc .hd .sp{width:13px;height:13px;border-radius:50%;border:2px solid var(--line-2);border-top-color:var(--ai-a);animation:sp .8s linear infinite}
+.pc .hd .tg{margin-left:auto;font-size:10.5px;color:var(--ink-3);font-weight:650}
+.stp{display:grid;grid-template-columns:15px 1fr;gap:9px;font-size:11.5px;padding:3px 0;color:var(--ink-3)}
+.stp .m{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);font-size:9px;font-weight:800}
+.stp.ok{color:var(--ink-2)}
+.stp.ok .m{background:var(--ok-soft);color:var(--ok)}
+.stp.run{color:var(--ink);font-weight:650}
+.stp.run .m{background:var(--ai-grad);color:#fff}
+.pc .ft{display:flex;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.done-s{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-top:3px}
+.done-s .hd{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12.5px;font-weight:680}
+.done-s .ok{margin-left:auto;height:20px;padding:0 8px;border-radius:999px;background:var(--ok-soft);color:var(--ok);font-size:10.5px;font-weight:800;display:inline-flex;align-items:center}
+.done-s .fr{font-size:11.5px;color:var(--ink-2);padding:2px 0}
+.legend{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--ink-3)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.cell .th .dot.gen{background:var(--ai-a)}
+.waitnote{font-size:11px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>门窗案例小红书内容<span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="pill"><span class="d"></span>AI 正在制作视频</span>
+    <span class="spacer"></span>
+    <button class="tiny">资料 · 3</button>
+  </div>
+  <div class="ws">
+    <section class="ws-stage">
+      <div class="sth">
+        <div class="ttl">
+          <div class="nm">断桥铝门窗的隔音效果实测<span class="live"><i></i>生成中</span></div>
+          <div class="meta">视频工程 · 竖屏 9:16 · 5 镜 · 约 32 秒</div>
+        </div>
+        <span class="waitnote">保存和导出会在完成后出现</span>
+      </div>
+
+      <div class="stagebox">
+        <div class="screen">
+          <div class="fill" style="background:linear-gradient(150deg,#5B5A72,#2A2936 58%,#3E3D52)"></div>
+          <div class="frame r916 building">
+            <div class="bmsg"><div class="ring"></div><b>正在合成第 3 镜</b>前 2 镜已经做好，完成后可以直接播放</div>
+          </div>
+        </div>
+        <div class="deck">
+          <button class="pb"><svg width="12" height="12" viewBox="0 0 16 16" fill="rgba(255,255,255,.45)"><path d="M5 3.2v9.6L13 8z"/></svg></button>
+          <span class="tc mono">-- : -- / 00:32</span>
+          <div class="track"><span class="tick" style="left:22.5%"></span><span class="tick" style="left:41.25%"></span><span class="tick" style="left:66.55%"></span><span class="tick" style="left:83.45%"></span><i class="ai" style="width:41%"></i></div>
+          <span class="chip">9:16</span>
+          <span class="chip">1080×1920</span>
+          <span class="chip"><i></i>2 / 5 镜已完成</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec" style="margin-bottom:9px"><span>分镜</span><span class="ln"></span><span class="legend"><span><i style="background:var(--ok)"></i>你的素材</span><span><i style="background:var(--ai-a)"></i>AI 生成</span><span>做完一镜亮起一镜</span></span></div>
+        <div class="shotrow">
+          <div class="film">
+            <div class="cell" title="第 1 镜 · 7.2s · 隔音实测.mp4"><div class="th ph-v"><span class="n">1</span><span class="dot"></span></div><div class="ft"><b class="mono">7.2s</b><span style="margin-left:auto;color:var(--ok);font-weight:750">完成</span></div></div>
+            <div class="cell" title="第 2 镜 · 6.0s · 施工过程记录.jpg"><div class="th" style="background:linear-gradient(140deg,#3A3025,#1C1712)"><span class="n">2</span><span class="dot"></span></div><div class="ft"><b class="mono">6.0s</b><span style="margin-left:auto;color:var(--ok);font-weight:750">完成</span></div></div>
+            <div class="cell run" title="第 3 镜 · 8.1s · 产品参数.pdf · 正在合成"><div class="th"><span class="n">3</span><span class="dot"></span><span class="badge2">合成中</span></div><div class="ft"><b class="mono">8.1s</b></div></div>
+            <div class="cell wait" title="第 4 镜 · 5.4s · AI 生成，参考：施工过程记录.jpg · 等待中"><div class="th"><span class="n">4</span></div><div class="ft"><b class="mono">5.4s</b><span style="margin-left:auto">等待</span></div></div>
+            <div class="cell wait" title="第 5 镜 · 等待中"><div class="th"><span class="n">5</span></div><div class="ft"><b class="mono">5.3s</b><span style="margin-left:auto">等待</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider" role="separator" aria-orientation="vertical" aria-label="调整对话和展示区宽度" aria-valuenow="400" aria-valuemin="340" aria-valuemax="560" tabindex="0" title="拖动调宽 · 双击恢复默认"></div>
+
+    <section class="conv">
+      <div class="conv-h"><span class="t">对话</span><span class="n">已引用 3 份素材</span></div>
+      <div class="flow">
+        <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="done-s"><div class="hd">这样做这条视频<span class="ok">✓ 已确认</span></div>
+            <div class="fr">困扰 → 实测 → 方案 → 价格 · 约 32 秒 · 竖屏</div></div>
+        </div>
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="pc">
+            <div class="hd"><span class="sp"></span>正在制作视频<span class="tg">可以继续说话</span></div>
+            <div class="stp ok"><span class="m">✓</span><span>整理分镜和台词</span></div>
+            <div class="stp ok"><span class="m">✓</span><span>为每一镜挑选画面</span></div>
+            <div class="stp ok"><span class="m">✓</span><span>生成配音</span></div>
+            <div class="stp run"><span class="m">●</span><span>合成画面 · 第 3 镜</span></div>
+            <div class="stp"><span class="m"></span><span>拼接成片</span></div>
+            <div class="ft"><button class="op">暂停</button><button class="op ghost">收起详情</button></div>
+          </div>
+        </div>
+      </div>
+      <div class="dock">
+        <div class="dk">
+          <div class="ph">随时打断或补充，AI 会接着改…</div>
+          <div class="bar">
+            <button class="ib"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+            <button class="snd"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

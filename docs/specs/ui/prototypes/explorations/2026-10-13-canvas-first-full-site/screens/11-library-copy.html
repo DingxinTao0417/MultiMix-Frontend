@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>11 文案库 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.main{overflow-y:auto;padding:20px 28px 40px}
+.wrap{max-width:1340px;margin:0 auto}
+.ph1{display:flex;align-items:flex-end;gap:16px;margin-bottom:14px}
+.ph1 h1{font-size:23px;font-weight:720;letter-spacing:-.02em}
+.ph1 p{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.ph1 .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+.sbox{height:34px;width:256px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);display:flex;align-items:center;gap:8px;padding:0 13px;font-size:12px;color:var(--ink-3)}
+.filters{display:flex;align-items:center;gap:6px;margin-bottom:14px;padding:5px;background:var(--surface);border:1px solid var(--line);border-radius:999px;width:fit-content}
+.f{height:27px;padding:0 13px;border-radius:999px;border:0;background:transparent;font-size:12px;font-weight:650;color:var(--ink-2)}
+.f.on{background:var(--ink);color:#fff}
+.f .n{font-size:10.5px;opacity:.6;margin-left:4px}
+.count{font-size:11.5px;color:var(--ink-3);margin:0 0 12px}
+/* script cards: first lines of the text are the preview, four across */
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.cc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px 16px 13px;display:grid;gap:9px;cursor:pointer;
+  transition:transform .15s,box-shadow .15s;align-content:start;min-height:218px}
+.cc:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.cc .k{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:750;color:var(--ink-3);letter-spacing:.05em}
+.cc .k .d{width:7px;height:7px;border-radius:2px}
+.cc .k .v{margin-left:auto;font-weight:700;color:var(--ink-3)}
+.cc b{font-size:14px;font-weight:680;line-height:1.4}
+.cc .ex{font-size:12px;color:var(--ink-2);line-height:1.75;padding-left:11px;border-left:2px solid var(--line);
+  display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.cc .ft{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink-3);margin-top:auto;padding-top:4px}
+.cc .ft .used{margin-left:auto;display:flex;align-items:center;gap:5px}
+.cc .ft .used i{width:20px;height:20px;border-radius:5px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span><span class="crumb">资源库 / <b>文案</b></span><span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+  </div>
+  <div class="main">
+    <div class="wrap">
+      <div class="ph1">
+        <div><h1>文案</h1><p>选题、编导稿和配音稿。做视频时自动沉淀，也可以单独拿去发布。</p></div>
+        <div class="rt">
+          <div class="sbox"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>搜索文案，比如「隔音」</div>
+          <button class="op pri">＋ 新建文案</button>
+        </div>
+      </div>
+      <div class="filters"><button class="f on">全部<span class="n">24</span></button><button class="f">选题方案<span class="n">6</span></button><button class="f">文案稿<span class="n">5</span></button><button class="f">配音稿<span class="n">7</span></button><button class="f">编导稿<span class="n">6</span></button></div>
+      <div class="count">当前显示 12 项</div>
+
+      <div class="grid">
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ai-a)"></span>编导稿 · 有来源<span class="v">v3</span></div><b>断桥铝门窗的隔音效果实测</b><div class="ex">关窗之后，外面的车声基本听不见了。这是刚装完当天在店里录的，没做任何后期降噪。临街房最怕的就是晚上睡不着。</div><div class="ft">5 场 · 2 小时前<span class="used">已做成视频<i class="ph-v"></i></span></div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ok)"></span>选题方案<span class="v">v1</span></div><b>临街住户的三个痛点角度</b><div class="ex">① 夜里货车噪音 ② 冬天窗缝漏风 ③ 装完才发现打胶不到位。建议从①切入，因为有现成的实测素材可以直接用。</div><div class="ft">3 个角度 · 昨天</div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--warn)"></span>配音稿<span class="v">v2</span></div><b>早餐店开业第一周</b><div class="ex">早上六点半，第一锅豆浆刚出锅。开业这一周，我们最常被问的是：真的是现磨的吗？今天带你看看后厨。</div><div class="ft">28 秒 · 昨天<span class="used">已做成视频<i style="background:linear-gradient(150deg,#3A3025,#1C1712)"></i></span></div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ink-3)"></span>文案稿<span class="v">v1</span></div><b>春季促销小红书笔记</b><div class="ex">换季装窗的人多，这个月下单免费上门测量，三层中空玻璃统一升级，不加钱。名额不多，先到先得。</div><div class="ft">420 字 · 上周</div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ai-a)"></span>编导稿 · 有来源<span class="v">v1</span></div><b>小户型收纳改造</b><div class="ex">十二平米的客厅，如何多出一个衣帽间？先看改造前，再看我们怎么用一面墙解决三个问题。</div><div class="ft">6 场 · 3 天前<span class="used">已做成视频<i style="background:linear-gradient(150deg,#24343A,#121A1D)"></i></span></div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ok)"></span>选题方案<span class="v">v1</span></div><b>春季装修避坑指南</b><div class="ex">① 水电改造不做隐蔽验收 ② 门窗尺寸量早了 ③ 瓷砖损耗预留不够。建议做成系列，每期一个坑。</div><div class="ft">3 个角度 · 上周</div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--warn)"></span>配音稿<span class="v">v1</span></div><b>全屋定制获客</b><div class="ex">你家是不是也有这种情况：衣柜不够放，鞋柜不够用，每一寸墙都想利用起来？今天讲讲定制的三个关键。</div><div class="ft">35 秒 · 上周<span class="used">已做成视频<i style="background:linear-gradient(150deg,#332A3A,#18131C)"></i></span></div></div>
+        <div class="cc"><div class="k"><span class="d" style="background:var(--ink-3)"></span>文案稿<span class="v">v2</span></div><b>店庆三周年感谢信</b><div class="ex">三年前的今天，我们只有一间 20 平米的小店。感谢每一位推开门的老客户，是你们让这里慢慢有了样子。</div><div class="ft">310 字 · 2 周前</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 图片产物 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.screen{--sh:min(48vh,440px)}
+/* image stage hugs the picture instead of reusing the video-wide shell */
+.stagebox{width:fit-content;justify-self:center}
+.screen{width:fit-content}
+.screen .fill{inset:-20%}
+.imgframe{position:relative;z-index:1;height:100%;max-width:100%;overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,.06),0 18px 40px -12px rgba(0,0,0,.6)}
+.imgframe.r916{aspect-ratio:9/16}
+.cover{position:absolute;inset:0;background:linear-gradient(160deg,#24343A,#121A1D)}
+.cover .n{position:absolute;top:10px;left:10px;height:22px;padding:0 9px;border-radius:999px;background:rgba(0,0,0,.55);
+  color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center}
+.cover .cap{position:absolute;left:8%;right:8%;bottom:9%;text-align:center;font-size:14px;font-weight:750;color:#fff;
+  text-shadow:0 2px 10px rgba(0,0,0,.7)}
+/* keyframe strip: every image is "already in use" for one shot — not a mutually exclusive choice */
+.vcell{flex:none;width:112px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;cursor:pointer;
+  display:grid;gap:6px;align-content:start}
+.vcell:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.vcell .th{aspect-ratio:9/16;border-radius:8px;position:relative;overflow:hidden}
+.vcell .th .n{position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;
+  font-size:10px;font-weight:800;display:grid;place-items:center}
+.vcell .ft{display:flex;align-items:center;gap:5px;padding:0 2px;font-size:10.5px;color:var(--ink-3)}
+.vcell .ft b{color:var(--ink-2);font-weight:650;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.vcell.on{border:1.5px solid transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 0 0 3px rgba(91,69,224,.1)}
+.used{display:inline-flex;align-items:center;gap:4px;height:16px;padding:0 6px;border-radius:999px;background:var(--ok-soft);
+  color:var(--ok);font-size:9px;font-weight:800;margin-left:auto;flex:none}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>门窗案例小红书内容<span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+    <button class="tiny">资料 · 4</button>
+  </div>
+  <div class="ws">
+    <section class="ws-stage">
+      <div class="sth">
+        <div class="ttl"><div class="nm">隔音实测 · 分镜画面</div><div class="meta">图片 · 5 张 · 9:16 · 1080×1920 · 来源已标注</div></div>
+        <div class="vbar"><span class="lb">版本</span><button>v1</button><button class="cur">v2 当前</button></div>
+        <div class="ops"><button class="op">详情</button><button class="op">保存到图片库</button><button class="op pri">下载全部</button></div>
+      </div>
+
+      <div class="stagebox">
+        <div class="screen">
+          <div class="fill" style="background:linear-gradient(160deg,#24343A,#121A1D)"></div>
+          <div class="imgframe r916"><div class="cover"><span class="n">第 3 镜</span><div class="cap">断桥铝的三层中空结构是关键</div></div></div>
+        </div>
+        <div class="deck">
+          <span class="chip">9:16</span>
+          <span class="chip">1080×1920</span>
+          <span class="chip"><i></i>第 3 镜 · 你的素材</span>
+          <span style="flex:1"></span>
+          <button class="ib2" title="全屏查看"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+
+      <div>
+        <div class="sec" style="margin-bottom:9px"><span>5 张分镜画面</span><span class="ln"></span><span style="font-size:11px;color:var(--ink-3)">每张用于对应的一镜，不是互斥的几个方案，都已经在用</span></div>
+        <div class="shotrow">
+          <div class="film">
+            <div class="vcell" title="第 1 镜 · 关窗之后车声基本听不见"><div class="th ph-v"><span class="n">1</span></div><div class="ft"><b>第 1 镜</b><span class="used">已用</span></div></div>
+            <div class="vcell" title="第 2 镜 · 临街房最怕夜里吵"><div class="th" style="background:linear-gradient(140deg,#3A3025,#1C1712)"><span class="n">2</span></div><div class="ft"><b>第 2 镜</b><span class="used">已用</span></div></div>
+            <div class="vcell on" title="第 3 镜 · 断桥铝的三层中空结构是关键（产品参数.pdf 里的结构图）"><div class="th" style="background:linear-gradient(140deg,#24343A,#121A1D)"><span class="n">3</span></div><div class="ft"><b>第 3 镜</b><span class="used">已用</span></div></div>
+            <div class="vcell" title="第 4 镜 · 边框打胶不能省"><div class="th" style="background:linear-gradient(140deg,#332A3A,#18131C)"><span class="n">4</span></div><div class="ft"><b>第 4 镜</b><span class="used">已用</span></div></div>
+            <div class="vcell" title="第 5 镜 · 整窗保修五年"><div class="th" style="background:linear-gradient(140deg,#2E3526,#151A12)"><span class="n">5</span></div><div class="ft"><b>第 5 镜</b><span class="used">已用</span></div></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <div class="divider" role="separator" aria-orientation="vertical" aria-label="调整对话和展示区宽度" aria-valuenow="400" aria-valuemin="340" aria-valuemax="560" tabindex="0" title="拖动调宽 · 双击恢复默认"></div>
+
+    <section class="conv">
+      <div class="conv-h"><span class="t">对话</span><span class="n">3 个产物</span></div>
+      <div class="flow">
+        <div class="me">给这条视频的 5 个分镜各做一张画面图，第 3 镜那张要更有质感。</div>
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="bd">5 张都做好了，分别对应 5 个分镜，直接用于合成视频。第 3 镜那张我用你产品参数里的结构图重新做过，画质更清楚。</div>
+          <div class="vnote"><span class="v">v2</span>重做第 3 镜画面 · 其余 4 张原样保留</div>
+          <div class="sugs"><button class="sug">第 3 镜换成我的素材</button><button class="sug">第 1 镜再加个字卡位</button><button class="sug">全部导出给剪辑师</button></div>
+        </div>
+      </div>
+      <div class="dock">
+        <div class="dk">
+          <span class="ctx">正在说<b>第 3 镜</b><button class="x">×</button></span>
+          <div class="ph">第 3 镜：想把这张改成…</div>
+          <div class="bar"><button class="ib"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button class="snd"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

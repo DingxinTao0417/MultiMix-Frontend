@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>08 导航面板 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr;filter:saturate(.92)}
+.bgapp{display:grid;grid-template-columns:minmax(0,1fr) 8px 400px;overflow:hidden}
+.bgapp .l{padding:16px 24px;display:grid;grid-template-rows:auto auto;gap:12px;align-content:start}
+.bgapp .l .stagebox{--sh:min(42vh,380px)}
+.bgapp .l .screen{height:var(--sh)}
+.bgapp .l .film i{width:112px;height:128px;border-radius:12px;background:var(--surface);border:1px solid var(--line);flex:none}
+.bgapp .seam{background:var(--line)}
+.bgapp .r{background:var(--panel);border-left:1px solid var(--line)}
+.mask{position:fixed;inset:0;background:rgba(26,24,22,.3);backdrop-filter:blur(3px);z-index:50}
+/* panel: compact header, single-line project rows, no thumbnails */
+/* panel: libraries first (top), then new+search, then a short recent list. shorter overall height */
+.nav{position:fixed;top:8px;left:8px;height:560px;width:352px;z-index:60;background:var(--panel);border-radius:16px;
+  border:1px solid var(--line);box-shadow:0 30px 80px -24px rgba(26,24,22,.45);display:grid;
+  grid-template-rows:auto auto auto 1fr auto;overflow:hidden}
+.nh{display:flex;align-items:center;gap:9px;padding:10px 11px 8px}
+.nh .mk{width:22px;height:22px;border-radius:6px}
+.nh b{font-size:13px;font-weight:750}
+.nh .kbd{margin-left:auto;font-size:10px;color:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.nh .x{width:24px;height:24px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--ink-3);font-size:13px}
+/* libraries: the first thing under the header, one compact row of four */
+.libs{padding:0 11px 9px;border-bottom:1px solid var(--line)}
+.libgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.lib{height:44px;border-radius:9px;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;gap:2px;
+  font-size:11px;font-weight:650;color:var(--ink-2);cursor:pointer;padding:5px 0}
+.lib:hover{border-color:var(--line-2);color:var(--ink)}
+.lib .ic{font-size:13px;color:var(--ink-3);line-height:1}
+.top2{padding:9px 11px;display:flex;gap:6px;border-bottom:1px solid var(--line)}
+.new{height:30px;padding:0 11px;border-radius:8px;border:0;background:var(--ink);color:#fff;font-size:12px;font-weight:700;flex:none;display:inline-flex;align-items:center;gap:5px}
+.search{flex:1;min-width:0;height:30px;border-radius:8px;border:1px solid transparent;display:flex;align-items:center;gap:6px;padding:0 10px;font-size:11.5px;color:var(--ink-3);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.search .cur{width:1.5px;height:13px;background:var(--ai-a);animation:bl 1s steps(2) infinite}
+@keyframes bl{50%{opacity:0}}
+.list{overflow-y:auto;padding:0 6px}
+.lb{font-size:9.5px;font-weight:800;letter-spacing:.09em;color:var(--ink-3);padding:7px 8px 4px;display:flex}
+.lb span{margin-left:auto;letter-spacing:0;font-weight:650}
+.pj{display:flex;align-items:center;gap:9px;padding:0 9px;height:29px;border-radius:7px;cursor:pointer;font-size:12px;color:var(--ink)}
+.pj:hover{background:var(--surface-2)}
+.pj.on{background:var(--surface-2);font-weight:700}
+.pj .t{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pj .st{font-size:10px;font-weight:700;color:var(--ink-3);flex:none}
+.pj .st.run{color:#4B38C4}
+.pj .st.att{color:var(--warn)}
+.pj .st.run::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ai-grad);margin-right:5px;vertical-align:1px}
+.pj .ar{font-size:9px;color:var(--ink-3);flex:none;font-weight:700}
+.more{display:block;padding:6px 9px;font-size:11px;color:var(--ink-3)}
+.user{display:flex;align-items:center;gap:9px;padding:8px 11px 10px;border-top:1px solid var(--line)}
+.user .av2{width:26px;height:26px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;font-size:11px;font-weight:700}
+.user b{font-size:11.5px;display:block}
+.user small{font-size:10px;color:var(--ink-3)}
+.user .op{margin-left:auto;height:24px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"></span>门窗案例小红书内容<span class="bd">2</span></button>
+    <span class="spacer"></span><button class="tiny">资料 · 4</button>
+  </div>
+  <div class="bgapp">
+    <div class="l">
+      <div class="stagebox"><div class="screen"><div class="fill" style="background:linear-gradient(150deg,#6E93A3,#2C4350 58%,#4A6B7A)"></div><div class="frame r916" style="background:linear-gradient(150deg,#24343A,#121A1D)"></div></div></div>
+      <div class="film"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div class="seam"></div><div class="r"></div>
+  </div>
+</div>
+<div class="mask"></div>
+
+<aside class="nav" role="dialog" aria-label="切换项目或资源库">
+  <div class="nh">
+    <span class="mk"><svg width="15" height="15" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>
+    <b>MultiMix</b><span class="kbd">Ctrl K</span><button class="x">×</button>
+  </div>
+
+  <div class="libs">
+    <div class="libgrid">
+      <button class="lib"><span class="ic">◇</span>素材</button>
+      <button class="lib"><span class="ic">▤</span>文案</button>
+      <button class="lib"><span class="ic">▣</span>图片</button>
+      <button class="lib"><span class="ic">▶</span>视频</button>
+    </div>
+  </div>
+
+  <div class="top2">
+    <button class="new">＋ 新建项目</button>
+    <div class="search"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><span class="cur"></span>搜索项目</div>
+  </div>
+
+  <div class="list">
+    <div class="lb">最近项目<span>2 个需要处理</span></div>
+    <div class="pj on"><span class="t">门窗案例小红书内容</span><span class="ar">9:16</span><span class="st">当前</span></div>
+    <div class="pj"><span class="t">早餐店开业第一周</span><span class="ar">9:16</span><span class="st run">生成中</span></div>
+    <div class="pj"><span class="t">全屋定制获客视频方案</span><span class="ar">9:16</span><span class="st att">需处理</span></div>
+    <div class="pj"><span class="t">春季促销帖子文案</span><span class="st">待确认</span></div>
+    <div class="pj"><span class="t">小户型收纳宣传视频</span><span class="ar">16:9</span></div>
+    <div class="pj"><span class="t">SaaS 宣传视频脚本</span></div>
+    <div class="pj"><span class="t">门窗安装流程</span><span class="ar">9:16</span></div>
+    <div class="pj"><span class="t">店庆三周年</span><span class="ar">9:16</span></div>
+    <a class="more">查看全部 23 个项目 →</a>
+  </div>
+
+  <div class="user"><span class="av2">陈</span><span><b>陈老板</b><small>chen@yunqi-windows.cn</small></span><button class="op ghost">退出</button></div>
+</aside>
+</body>
+</html>

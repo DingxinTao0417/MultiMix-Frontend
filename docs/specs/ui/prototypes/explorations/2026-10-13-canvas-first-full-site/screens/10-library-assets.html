@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>10 素材库 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.main{overflow-y:auto;padding:20px 28px 40px}
+.wrap{max-width:1340px;margin:0 auto}
+.ph1{display:flex;align-items:flex-end;gap:16px;margin-bottom:16px}
+.ph1 h1{font-size:23px;font-weight:720;letter-spacing:-.02em}
+.ph1 p{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.ph1 .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+.sbox{height:34px;width:300px;border-radius:999px;border:1px solid transparent;display:flex;align-items:center;gap:8px;padding:0 13px;font-size:12px;color:var(--ink-3);
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.sbox .tg{margin-left:auto;font-size:10px;font-weight:800;color:#4B38C4}
+/* overview: counts and most-used only; no AI summary until backend supports it */
+.ov{display:grid;grid-template-columns:repeat(3,200px) minmax(0,1fr);gap:12px;margin-bottom:18px;align-items:stretch}
+.ovc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 15px}
+.ovc .k{font-size:10.5px;font-weight:750;letter-spacing:.08em;color:var(--ink-3);margin-bottom:5px}
+.ovc .v{font-size:22px;font-weight:720;letter-spacing:-.02em}
+.ovc .v small{font-size:12px;font-weight:600;color:var(--ink-3);margin-left:4px;letter-spacing:0}
+.ovc .s{font-size:11.5px;color:var(--ink-2);margin-top:3px}
+.meter{height:5px;border-radius:3px;background:var(--surface-2);margin-top:8px;overflow:hidden}
+.meter i{display:block;height:100%}
+.used{display:grid;grid-template-rows:auto 1fr;gap:8px;align-content:center}
+.used .k{margin:0}
+.ulist{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.u{display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:center}
+.u i{width:34px;height:34px;border-radius:7px}
+.u b{font-size:11.5px;font-weight:620;display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.u small{font-size:10.5px;color:var(--ink-3)}
+.filters{display:flex;align-items:center;gap:6px;margin-bottom:14px;padding:5px;background:var(--surface);border:1px solid var(--line);border-radius:999px;width:fit-content}
+.f{height:27px;padding:0 13px;border-radius:999px;border:0;background:transparent;font-size:12px;font-weight:650;color:var(--ink-2)}
+.f.on{background:var(--ink);color:#fff}
+.f .n{font-size:10.5px;opacity:.6;margin-left:4px}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+.ac{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;transition:transform .15s,box-shadow .15s;cursor:pointer}
+.ac:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.ac .th{aspect-ratio:4/3;position:relative}
+.ac .th .ty{position:absolute;top:8px;left:8px;height:20px;padding:0 8px;border-radius:6px;background:rgba(255,255,255,.92);font-size:10.5px;font-weight:750;display:grid;place-items:center}
+.ac .th .ty.dk{background:rgba(0,0,0,.55);color:#fff}
+.ac .th .doc{position:absolute;inset:14px 20px 0;background:#fff;border-radius:6px 6px 0 0;box-shadow:0 -4px 18px rgba(0,0,0,.08);padding:13px 13px 0}
+.ac .th .doc i{display:block;height:5px;border-radius:3px;background:var(--surface-3);margin-bottom:7px}
+.ac .bd{padding:10px 12px 12px}
+.ac .bd b{display:block;font-size:12.5px;font-weight:650;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ac .bd .sum{font-size:11.5px;color:var(--ink-2);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:34px}
+.ac .ft{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:10.5px;color:var(--ink-3)}
+.und{display:inline-flex;align-items:center;gap:6px;height:21px;padding:0 8px;border-radius:999px;background:#fff;border:1px solid var(--line);font-size:10.5px;font-weight:700;color:var(--ink-2)}
+.und i{width:7px;height:7px;border-radius:50%;background:var(--ai-grad)}
+.und.run i{background:var(--warn);animation:bl 1.2s infinite}
+@keyframes bl{50%{opacity:.3}}
+.ac .ft .rcnt{margin-left:auto}
+.drop{border:1.5px dashed var(--line-2);border-radius:var(--r);display:grid;place-items:center;text-align:center;color:var(--ink-3);font-size:12px;padding:18px}
+.drop b{display:block;color:var(--ink);font-size:13px;margin:9px 0 3px}
+.drop .ic{width:38px;height:38px;border-radius:12px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;margin:0 auto;font-size:16px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span><span class="crumb">资源库 / <b>素材</b></span><span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="pill"><span class="d"></span>AI 正在理解 1 份素材</span>
+    <span class="spacer"></span>
+  </div>
+  <div class="main">
+    <div class="wrap">
+      <div class="ph1">
+        <div><h1>素材</h1><p>你上传和采集的资料。AI 理解后，做视频时会自动优先用到它们。</p></div>
+        <div class="rt">
+          <div class="sbox"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>用一句话找，比如「打胶特写」<span class="tg">按内容搜</span></div>
+          <button class="op">采集链接</button>
+          <button class="op pri">＋ 上传素材</button>
+        </div>
+      </div>
+
+      <div class="ov">
+        <div class="ovc"><div class="k">素材总数</div><div class="v">46<small>份</small></div><div class="s">本周新增 6 份</div></div>
+        <div class="ovc"><div class="k">AI 已理解</div><div class="v">44<small>/ 46</small></div><div class="meter"><i style="width:95%;background:var(--ai-grad)"></i></div><div class="s">1 份理解中 · 1 份待重试</div></div>
+        <div class="ovc"><div class="k">被视频用过</div><div class="v">31<small>次</small></div><div class="s">覆盖 12 条视频</div></div>
+        <div class="ovc used">
+          <div class="k">最常用</div>
+          <div class="ulist">
+            <div class="u"><i class="ph-v"></i><span><b>隔音实测.mp4</b><small>用过 6 次</small></span></div>
+            <div class="u"><i class="ph-i"></i><span><b>施工过程记录.jpg</b><small>用过 5 次</small></span></div>
+            <div class="u"><i class="ph-i d"></i><span><b>产品参数.pdf</b><small>用过 4 次</small></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="filters">
+        <button class="f on">全部<span class="n">46</span></button>
+        <button class="f">上传资料<span class="n">38</span></button>
+        <button class="f">采集资料<span class="n">5</span></button>
+        <button class="f">对话沉淀<span class="n">3</span></button>
+      </div>
+
+      <div class="grid">
+        <div class="ac"><div class="th ph-v"><span class="ty dk">视频 · 0:42</span></div><div class="bd"><b>隔音实测.mp4</b><div class="sum">关窗前后对比，现场同期声清晰，车流噪音明显下降</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 6 次</span></div></div></div>
+        <div class="ac"><div class="th ph-i"><span class="ty">图片</span></div><div class="bd"><b>施工过程记录.jpg</b><div class="sum">边框打胶特写，工人戴手套，光线充足</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 5 次</span></div></div></div>
+        <div class="ac"><div class="th" style="background:var(--surface-2)"><div class="doc"><i style="width:60%"></i><i></i><i style="width:85%"></i><i style="width:70%"></i><i></i></div><span class="ty">PDF · 12 页</span></div><div class="bd"><b>产品参数.pdf</b><div class="sum">降噪 32 分贝、三层中空玻璃规格、整窗保修 5 年</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 4 次</span></div></div></div>
+        <div class="ac"><div class="th" style="background:linear-gradient(140deg,#24343A,#121A1D)"><span class="ty dk">视频 · 1:18</span></div><div class="bd"><b>安装过程.mp4</b><div class="sum">正在识别画面内容和可用片段…</div>
+          <div class="ft"><span class="und run"><i></i>理解中</span><span>上传</span><span class="rcnt">刚刚</span></div></div></div>
+        <div class="ac"><div class="th ph-i b"><span class="ty">网页</span></div><div class="bd"><b>小红书 · 隔音窗选购指南</b><div class="sum">竞品笔记，用户关注价格和实测，评论区常问保修</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>采集</span><span class="rcnt">用过 1 次</span></div></div></div>
+        <div class="ac"><div class="th ph-i c"><span class="ty">笔记</span></div><div class="bd"><b>客户常见问题整理</b><div class="sum">从对话中保存：价格区间、工期、售后响应时间</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>对话沉淀</span><span class="rcnt">用过 2 次</span></div></div></div>
+        <div class="ac"><div class="th ph-i d"><span class="ty">图片 · 8 张</span></div><div class="bd"><b>门店环境照片</b><div class="sum">展厅、样品墙、接待区，适合做开场和结尾</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 5 次</span></div></div></div>
+        <div class="ac"><div class="th" style="background:linear-gradient(140deg,#3A3025,#1C1712)"><span class="ty dk">视频 · 0:55</span></div><div class="bd"><b>客户回访.mp4</b><div class="sum">老客户出镜讲隔音效果，可用于口碑类开场</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 1 次</span></div></div></div>
+        <div class="ac"><div class="th" style="background:var(--surface-2)"><div class="doc"><i style="width:50%"></i><i></i><i style="width:76%"></i><i></i></div><span class="ty">PPT · 20 页</span></div><div class="bd"><b>产品手册 2026.pptx</b><div class="sum">已提取 14 张图表和截图到图片库</div>
+          <div class="ft"><span class="und"><i></i>已理解</span><span>上传</span><span class="rcnt">用过 2 次</span></div></div></div>
+        <div class="drop"><div><span class="ic">＋</span><b>拖进来就能用</b>PDF、PPT、图片、视频<br>上传后 AI 会先理解再入库</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

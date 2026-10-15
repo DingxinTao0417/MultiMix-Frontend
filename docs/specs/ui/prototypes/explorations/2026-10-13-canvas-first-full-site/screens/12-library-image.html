@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>12 图片库 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.main{overflow-y:auto;padding:20px 28px 40px}
+.wrap{max-width:1340px;margin:0 auto}
+.ph1{display:flex;align-items:flex-end;gap:16px;margin-bottom:14px}
+.ph1 h1{font-size:23px;font-weight:720;letter-spacing:-.02em}
+.ph1 p{font-size:12.5px;color:var(--ink-3);margin-top:3px}
+.ph1 .rt{margin-left:auto;display:flex;gap:8px;align-items:center}
+.sbox{height:34px;width:256px;border-radius:999px;border:1px solid var(--line-2);background:var(--surface);display:flex;align-items:center;gap:8px;padding:0 13px;font-size:12px;color:var(--ink-3)}
+.filters{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.fg{display:flex;align-items:center;gap:4px;padding:5px;background:var(--surface);border:1px solid var(--line);border-radius:999px}
+.fg .lb{font-size:10.5px;font-weight:750;color:var(--ink-3);padding:0 6px 0 9px}
+.f{height:27px;padding:0 12px;border-radius:999px;border:0;background:transparent;font-size:12px;font-weight:650;color:var(--ink-2)}
+.f.on{background:var(--ink);color:#fff}
+.count{font-size:11.5px;color:var(--ink-3)}
+/* square cards, centre-cropped; detail keeps the full original */
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:16px 14px}
+.ic{display:grid;gap:7px;cursor:pointer}
+.ic .fr{background:#fff;border:1px solid var(--line);border-radius:14px;padding:4px;transition:transform .15s,box-shadow .15s;
+  box-shadow:0 1px 2px rgba(26,24,22,.05),0 10px 24px -14px rgba(26,24,22,.2)}
+.ic:hover .fr{transform:translateY(-3px);box-shadow:var(--shadow-lift)}
+.ic .im{aspect-ratio:1/1;border-radius:10px;position:relative;overflow:hidden}
+.ic .im .ty{position:absolute;top:6px;left:6px;height:18px;padding:0 6px;border-radius:5px;background:rgba(255,255,255,.92);font-size:9.5px;font-weight:750;display:grid;place-items:center}
+.ic .im .ai{position:absolute;bottom:6px;right:6px;height:18px;padding:0 7px;border-radius:999px;background:var(--ai-grad);color:#fff;font-size:9.5px;font-weight:800;display:grid;place-items:center}
+.ic .im .ar{position:absolute;bottom:6px;left:6px;height:18px;padding:0 6px;border-radius:5px;background:rgba(0,0,0,.55);color:#fff;font-size:9.5px;font-weight:700;display:grid;place-items:center}
+.ic .im .big{position:absolute;left:10%;top:30%;right:10%;font-size:14px;font-weight:800;line-height:1.25;color:#1A1816}
+.ic b{font-size:12px;font-weight:630;padding:0 2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.ic small{font-size:10.5px;color:var(--ink-3);padding:0 2px;margin-top:-4px}
+.more{display:flex;justify-content:center;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span><span class="crumb">资源库 / <b>图片</b></span><span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+  </div>
+  <div class="main">
+    <div class="wrap">
+      <div class="ph1">
+        <div><h1>图片</h1><p>封面图、素材图和分镜图。做视频时自动沉淀，也可以单独下载使用。</p></div>
+        <div class="rt">
+          <div class="sbox"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.6" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>搜索图片，比如「打胶」</div>
+          <button class="op">导入图片</button>
+          <button class="op pri">＋ 上传图片</button>
+        </div>
+      </div>
+      <div class="filters">
+        <div class="fg"><span class="lb">内容类型</span><button class="f on">全部</button><button class="f">封面图</button><button class="f">素材图</button><button class="f">分镜图</button></div>
+        <span style="flex:1"></span>
+        <div class="fg"><span class="lb">处理状态</span><button class="f on">全部</button><button class="f">已解析</button><button class="f">待处理</button></div>
+      </div>
+      <div class="count" style="text-align:right;margin:-6px 0 14px">当前显示 40 项</div>
+
+      <div class="grid">
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(160deg,#E8E2D6,#B9AF9A)"><span class="big">关上窗<br>世界都安静了</span><span class="ty">封面图</span><span class="ai">AI</span><span class="ar">3:4</span></div></div><b>隔音实测封面 B</b><small>2 小时前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i"><span class="ty">素材图</span><span class="ar">4:3</span></div></div><b>施工过程记录</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-v"><span class="ty" style="background:rgba(0,0,0,.55);color:#fff">分镜图</span><span class="ar">9:16</span></div></div><b>第 1 镜 · 关窗瞬间</b><small>2 小时前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i b"><span class="ty">封面图</span><span class="ai">AI</span><span class="ar">3:4</span></div></div><b>前后对比封面</b><small>2 小时前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i d"><span class="ty">素材图</span><span class="ar">3:2</span></div></div><b>门店样品墙</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i c"><span class="ty">封面图</span><span class="ai">AI</span><span class="ar">3:4</span></div></div><b>店主出镜封面</b><small>昨天</small></div>
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(135deg,#C9D6CF,#9FB6AB)"><span class="ty">素材图</span><span class="ar">16:9</span></div></div><b>展厅全景</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#3A3025,#1C1712)"><span class="ty" style="background:rgba(0,0,0,.55);color:#fff">分镜图</span><span class="ar">9:16</span></div></div><b>第 2 镜 · 夜间噪音</b><small>2 小时前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i"><span class="ty">素材图</span><span class="ar">1:1</span></div></div><b>打胶特写</b><small>待处理</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i b"><span class="ty">素材图</span><span class="ar">4:3</span></div></div><b>三层中空截面</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(135deg,#D9D0E6,#B8AAD2)"><span class="ty">封面图</span><span class="ai">AI</span><span class="ar">3:4</span></div></div><b>春季促销封面</b><small>上周</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i d"><span class="ty">素材图</span><span class="ar">3:2</span></div></div><b>接待区</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(150deg,#24343A,#121A1D)"><span class="ty" style="background:rgba(0,0,0,.55);color:#fff">分镜图</span><span class="ar">9:16</span></div></div><b>第 3 镜 · 结构示意</b><small>2 小时前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i c"><span class="ty">素材图</span><span class="ar">4:3</span></div></div><b>工厂车间</b><small>已解析</small></div>
+        <div class="ic"><div class="fr"><div class="im" style="background:linear-gradient(135deg,#E3D4C3,#C9B59D)"><span class="ty">封面图</span><span class="ai">AI</span><span class="ar">3:4</span></div></div><b>店庆封面</b><small>2 周前</small></div>
+        <div class="ic"><div class="fr"><div class="im ph-i"><span class="ty">素材图</span><span class="ar">1:1</span></div></div><b>产品参数截图</b><small>已解析</small></div>
+      </div>
+      <div class="more"><button class="op lg">加载更多内容</button></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

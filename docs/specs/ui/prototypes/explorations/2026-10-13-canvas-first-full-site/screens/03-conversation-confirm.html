@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 对话 · 待确认 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+/* no product yet: single column, generous but not empty — content uses most of the width */
+.single{overflow-y:auto;display:grid;justify-items:center;align-content:start;padding:14px 24px 0}
+.col{width:min(100%,960px);display:grid;gap:11px}
+.me,.ai .bd{font-size:14px}
+.ai .bd{max-width:72ch}
+.und{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin-top:5px}
+.und .hd{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin-bottom:9px}
+.und .hd .ok{margin-left:auto;font-size:10.5px;color:var(--ok);font-weight:750}
+.mats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.mt{display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:center;padding:5px;border-radius:10px;background:var(--surface-2)}
+.mt i{width:34px;height:34px;border-radius:7px}
+.mt b{display:block;font-size:11.5px;font-weight:620;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mt small{font-size:10.5px;color:var(--ink-3);display:block;line-height:1.4}
+/* confirm card, now the widest element on screen */
+.cc{border:1px solid transparent;border-radius:var(--r);overflow:hidden;margin-top:8px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:0 20px 50px -26px rgba(91,69,224,.45)}
+.cc-h{display:flex;align-items:flex-start;gap:12px;padding:12px 18px 9px}
+.cc-h .ti{font-size:15px;font-weight:700}
+.cc-h .sb{font-size:12px;color:var(--ink-3);margin-top:2px}
+.badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;
+  background:var(--warn-soft);color:#7A5400;font-size:10.5px;font-weight:800;flex:none}
+.badge .d{width:6px;height:6px;border-radius:50%;background:var(--ai-grad);animation:bl 1.5s infinite}
+@keyframes bl{50%{opacity:.25}}
+/* storyboard preview: square cells, same language as the filmstrip */
+.sbp{display:flex;gap:8px;padding:0 18px 14px;overflow-x:auto}
+.sbp .f{flex:none;width:122px;border-radius:11px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line)}
+.sbp .f .im{aspect-ratio:16/10;position:relative}
+.sbp .f .im .n{position:absolute;top:5px;left:5px;width:18px;height:18px;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;font-weight:800;display:grid;place-items:center}
+.sbp .f .im .dot{position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+.sbp .f .im .dot.gen{background:var(--ai-a)}
+.sbp .f .tx small{display:block;margin-top:3px;font-size:10px;color:var(--ink-3);line-height:1.35}
+.sbp .f .tx{padding:6px 8px 8px;font-size:11px;line-height:1.4;color:var(--ink-2)}
+.sbp .f .tx b{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-3);font-weight:800;margin-bottom:3px}
+.sbp .f.need{border:1.5px dashed #D9A23A;background:#FFFBF1}
+.sbp .f .im .dot.need{background:transparent;box-shadow:none;border:2px solid #D9A23A}
+.ask{margin:0 18px 12px;padding:10px 12px;border-radius:12px;background:var(--warn-soft);border:1px solid #F0DDAE}
+.ask .q{font-size:12.5px;font-weight:700;color:#5C4200;margin-bottom:3px}
+.ask .d{font-size:11.5px;color:#7A5400;line-height:1.55;margin-bottom:9px}
+.ask .ways{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-bottom:8px}
+.ask .way{text-align:left;padding:8px 10px;border-radius:10px;border:1px solid #E8D49A;background:#fff;color:var(--ink)}
+.ask .way:hover{border-color:#C9A24B}
+.ask .way b{display:block;font-size:12px;font-weight:700}
+.ask .way small{display:block;margin-top:2px;font-size:10.5px;color:var(--ink-3);line-height:1.4}
+.ask .row{display:flex;gap:7px;flex-wrap:wrap}
+.ask .row .op{height:28px;font-size:11.5px;background:#fff}
+.fields{padding:0 18px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:9px;border-top:1px solid var(--line);padding-top:11px}
+.fx{background:var(--surface-2);border-radius:10px;padding:8px 11px}
+.fx .k{font-size:10.5px;font-weight:750;letter-spacing:.06em;color:var(--ink-3);margin-bottom:3px}
+.fx .v{font-size:12.5px;color:var(--ink);line-height:1.5}
+.cc-f{display:flex;gap:8px;align-items:center;padding:11px 18px;border-top:1px solid var(--line);background:#FDFCFB}
+.cc-f .note{margin-left:auto;font-size:11px;color:var(--ink-3)}
+.dockwrap{display:grid;justify-items:center;padding:10px 24px 16px}
+.dockwrap .inner{width:min(100%,960px)}
+.legend{display:flex;align-items:center;gap:12px;font-size:11px;color:var(--ink-3);margin-left:auto}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>门窗案例小红书内容<span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+    <button class="tiny">资料 · 3</button>
+  </div>
+
+  <div style="display:grid;grid-template-rows:1fr auto;overflow:hidden">
+    <div class="single">
+      <div class="col">
+        <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="bd">三份素材都看过了。隔音测试那段现场音很清楚，适合当开场；参数 PDF 里有降噪分贝和保修年限，可以做字卡。</div>
+          <div class="und">
+            <div class="hd">我从素材里读到的<span class="ok">✓ 3 份已理解</span></div>
+            <div class="mats">
+              <div class="mt"><i class="ph-v"></i><span><b>隔音实测.mp4</b><small>关窗前后对比 · 现场同期声</small></span></div>
+              <div class="mt"><i class="ph-i"></i><span><b>施工过程记录.jpg</b><small>边框打胶特写</small></span></div>
+              <div class="mt"><i class="ph-i d"></i><span><b>产品参数.pdf</b><small>降噪 32 分贝 · 保修 5 年</small></span></div>
+            </div>
+          </div>
+          <div class="cc">
+            <div class="cc-h">
+              <div><div class="ti">这样做这条视频</div><div class="sb">这是我的建议，缺的画面由你决定，确认后才开始生成</div></div>
+              <span class="legend"><span><i style="background:var(--ok)"></i>你的素材</span><span><i style="background:var(--ai-a)"></i>AI 生成</span></span>
+              <span class="badge"><span class="d"></span>待确认</span>
+            </div>
+            <div class="sbp">
+              <div class="f"><div class="im ph-v"><span class="n">1</span><span class="dot"></span></div><div class="tx"><b><span>第 1 镜</span><span class="mono">7.2s</span></b>关窗后车声基本听不见<small>隔音实测.mp4</small></div></div>
+              <div class="f"><div class="im ph-i"><span class="n">2</span><span class="dot"></span></div><div class="tx"><b><span>第 2 镜</span><span class="mono">6.0s</span></b>临街房最怕夜里吵<small>施工过程记录.jpg</small></div></div>
+              <div class="f"><div class="im ph-i b"><span class="n">3</span><span class="dot"></span></div><div class="tx"><b><span>第 3 镜</span><span class="mono">8.1s</span></b>三层中空结构是关键<small>产品参数.pdf 里的结构图</small></div></div>
+              <div class="f need"><div class="im ph-i"><span class="n">4</span><span class="dot need"></span></div><div class="tx"><b><span>第 4 镜</span><span class="mono">5.4s</span></b>边框打胶不能省<small>还缺画面 · 等你决定</small></div></div>
+              <div class="f"><div class="im ph-i d"><span class="n">5</span><span class="dot"></span></div><div class="tx"><b><span>第 5 镜</span><span class="mono">5.3s</span></b>整窗保修五年<small>产品参数.pdf</small></div></div>
+            </div>
+            <div class="ask">
+              <div class="q">第 4 镜还缺一个“边框打胶”的画面</div>
+              <div class="d">你上传的素材里没有合适的特写。选一种做法，我再往下走：</div>
+              <div class="ways">
+                <button class="way"><b>我来上传</b><small>上传图片或视频片段，我基于它做这一镜</small></button>
+                <button class="way"><b>用图片生成视频</b><small>先给我一张图片，我让它动起来</small></button>
+                <button class="way"><b>先生成图片，再做视频</b><small>我先出图给你看，满意后再做成视频</small></button>
+                <button class="way"><b>直接生成视频</b><small>按这一镜的文字描述直接做</small></button>
+              </div>
+              <div class="row"><button class="op ghost">这一镜先不要</button></div>
+            </div>
+            <div class="fields">
+              <div class="fx"><div class="k">内容结构</div><div class="v">困扰 → 实测 → 方案 → 价格</div></div>
+              <div class="fx"><div class="k">画面来源</div><div class="v">你的素材 4 镜 · 还缺 1 镜（第 4 镜）</div></div>
+              <div class="fx"><div class="k">成片规格</div><div class="v">约 32 秒 · 竖屏 9:16 · 1080×1920 · 发小红书</div></div>
+            </div>
+            <div class="cc-f">
+              <button class="op ai lg">确认，开始生成</button>
+              <button class="op lg">调整方向</button>
+              <span class="note">生成约 2–4 分钟 · 中途可以打断</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dockwrap">
+      <div class="inner">
+        <div class="dk">
+          <div class="ph">也可以直接说，比如「第 4 镜我自己上传」「第 4 镜直接生成」</div>
+          <div class="bar">
+            <button class="ib"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+            <button class="ib"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="8" height="9" rx="1.6" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 7 13.5 5v6l-3-2" stroke="currentColor" stroke-width="1.4"/></svg></button>
+            <button class="snd"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

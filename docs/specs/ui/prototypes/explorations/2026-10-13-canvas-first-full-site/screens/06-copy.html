@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 文案产物 · Canvas First</title>
+<link rel="stylesheet" href="c-system.css?v=5">
+<style>
+body{overflow:hidden}
+.shell{height:100vh;display:grid;grid-template-rows:50px 1fr}
+.ws-stage{grid-template-rows:auto 1fr;padding-bottom:0}
+.body{display:grid;grid-template-columns:186px minmax(0,1fr);gap:20px;overflow:hidden;min-height:0}
+.toc{overflow-y:auto;padding-right:6px}
+.toc a{display:grid;grid-template-columns:22px 1fr;gap:6px;padding:7px 9px;border-radius:9px;font-size:12px;color:var(--ink-2);cursor:pointer}
+.toc a:hover{background:var(--surface-2)}
+.toc a.on{background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.05);color:var(--ink);font-weight:650}
+.toc a .n{font-size:10.5px;font-weight:800;color:var(--ink-3)}
+.toc a small{grid-column:2;font-size:10.5px;color:var(--ink-3);font-weight:500}
+.toc .stat{margin-top:14px;padding:11px;border-radius:11px;background:var(--surface);border:1px solid var(--line);font-size:11px;color:var(--ink-2);display:grid;gap:5px}
+.toc .stat b{color:var(--ink)}
+.doc{overflow-y:auto;padding:0 6px 24px 0}
+.paper{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:26px 34px 30px;max-width:720px}
+.paper .kind{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.paper .kind .k{font-size:11px;font-weight:750;letter-spacing:.09em;color:var(--ink-3)}
+.paper h2{font-size:21px;font-weight:700;letter-spacing:-.016em;line-height:1.4;margin-bottom:5px}
+.paper .lead{font-size:12.5px;color:var(--ink-2);padding-bottom:14px;border-bottom:1px solid var(--line)}
+.scn{display:grid;grid-template-columns:58px 1fr;gap:15px;padding:15px 0;border-bottom:1px solid var(--line)}
+.scn:last-child{border-bottom:0}
+.scn .lh{display:grid;gap:3px;align-content:start}
+.scn .lh b{font-size:11px;font-weight:800;color:var(--ink-3);letter-spacing:.05em}
+.scn .lh span{font-size:10.5px;color:var(--ink-3)}
+.scn .vo{font-size:15px;line-height:1.85;color:var(--ink)}
+.scn .meta2{display:flex;gap:7px;align-items:center;margin-top:7px;font-size:11px;color:var(--ink-3);flex-wrap:wrap}
+.scn .card2{margin-top:7px;padding:6px 11px;border-left:2px solid var(--ai-a);background:var(--surface-2);border-radius:0 8px 8px 0;font-size:12px;color:var(--ink-2)}
+.scn.edit{margin:0 -14px;padding:15px 14px;border-radius:12px;border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.scn.edit .vo mark{background:linear-gradient(transparent 58%,rgba(91,69,224,.16) 58%);color:inherit}
+.scn.edit .wk{display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 8px;border-radius:999px;background:#EFECFD;color:#4B38C4;font-size:10px;font-weight:800}
+.scn.edit .wk i{width:5px;height:5px;border-radius:50%;background:var(--ai-grad);animation:bl 1.4s infinite}
+@keyframes bl{50%{opacity:.25}}
+.af{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;background:var(--surface);border:1px solid var(--line);margin-top:4px;cursor:pointer}
+.af.on{border:1px solid transparent;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.af .ic{width:28px;height:28px;border-radius:8px;background:var(--surface-2);display:grid;place-items:center;font-size:12px;flex:none}
+.af b{font-size:12px;font-weight:650;display:block}
+.af small{font-size:10.5px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <button class="sw"><span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>门窗案例小红书内容<span class="bd">2</span><svg class="cv" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button>
+    <span class="spacer"></span>
+    <button class="tiny">资料 · 3</button>
+  </div>
+  <div class="ws">
+    <section class="ws-stage">
+      <div class="sth">
+        <div class="ttl"><div class="nm">断桥铝门窗的隔音效果实测</div><div class="meta">编导稿 · 5 场 · 约 32 秒 · 来源已标注</div></div>
+        <div class="vbar"><span class="lb">版本</span><button>v1</button><button class="cur">v2 当前</button></div>
+      </div>
+      <div class="body">
+        <nav class="toc">
+          <div class="sec"><span>大纲</span><span class="ln"></span></div>
+          <a><span class="n">01</span><span>困扰开场</span><small>7s · 你的素材</small></a>
+          <a><span class="n">02</span><span>临街噪音</span><small>6s · 你的素材</small></a>
+          <a class="on"><span class="n">03</span><span>结构讲解</span><small>8s · 正在改</small></a>
+          <a><span class="n">04</span><span>安装要点</span><small>5s · 你的素材</small></a>
+          <a><span class="n">05</span><span>价格保修</span><small>5s · 你的素材</small></a>
+          <div class="stat"><span>总字数 <b>186</b></span><span>预计时长 <b>32 秒</b></span><span>引用素材 <b>3 份</b></span></div>
+        </nav>
+        <div class="doc">
+          <article class="paper">
+            <div class="kind"><span class="k">编导稿</span><span class="src">来源已标注</span></div>
+            <h2>断桥铝门窗的隔音效果实测</h2>
+            <div class="lead">面向临街住户 · 竖屏 9:16 · 小红书 · 结构：困扰 → 实测 → 方案 → 价格</div>
+            <section class="scn">
+              <div class="lh"><b>第一场</b><span class="mono">0–7s</span></div>
+              <div><div class="vo">关窗之后，外面的车声基本听不见了。这是刚装完当天在店里录的，没做任何后期降噪。</div>
+                <div class="meta2"><span class="src">你的素材</span>隔音实测.mp4 · 00:04–00:11</div>
+                <div class="card2">字卡 · 隔音实测 · 降噪 32 分贝</div></div>
+            </section>
+            <section class="scn">
+              <div class="lh"><b>第二场</b><span class="mono">7–13s</span></div>
+              <div><div class="vo">临街房最怕的就是晚上睡不着，货车一过整面窗都在响。</div>
+                <div class="meta2"><span class="src">你的素材</span>施工过程记录.jpg</div></div>
+            </section>
+            <section class="scn edit">
+              <div class="lh"><b>第三场</b><span class="mono">13–21s</span></div>
+              <div><div class="vo">断桥铝的三层中空结构是关键，<mark>中间那层空腔把声音挡在外面</mark>。</div>
+                <div class="meta2"><span class="wk"><i></i>AI 正在改写这一段</span><span class="src">你的素材</span>产品参数.pdf 里的结构图</div></div>
+            </section>
+            <section class="scn">
+              <div class="lh"><b>第四场</b><span class="mono">21–27s</span></div>
+              <div><div class="vo">安装环节这一步不能省，边框打胶不到位，再好的窗也白装。</div>
+                <div class="meta2"><span class="src">你的素材</span>施工过程记录.jpg</div></div>
+            </section>
+            <section class="scn">
+              <div class="lh"><b>第五场</b><span class="mono">27–32s</span></div>
+              <div><div class="vo">整窗保修五年，上门测量免费。</div>
+                <div class="meta2"><span class="src">你的素材</span>产品参数.pdf</div>
+                <div class="card2">字卡 · 保修五年 · 免费测量</div></div>
+            </section>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider" role="separator" aria-orientation="vertical" aria-label="调整对话和展示区宽度" aria-valuenow="400" aria-valuemin="340" aria-valuemax="560" tabindex="0" title="拖动调宽 · 双击恢复默认"></div>
+
+    <section class="conv">
+      <div class="conv-h"><span class="t">对话</span><span class="n">2 个产物</span></div>
+      <div class="flow">
+        <div class="me">先给我一份编导稿看看，我想先审稿再做视频。</div>
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="bd">稿子在左边，每一场都标了用哪份素材。</div>
+          <div class="af"><span class="ic">▤</span><span><b>选题方案</b><small>3 个角度 · v1</small></span></div>
+          <div class="af on"><span class="ic">✎</span><span><b>编导稿</b><small>5 场 · v2 · 正在看</small></span></div>
+        </div>
+        <div class="me">第三场说得太专业了，口语一点。</div>
+        <div class="ai">
+          <div class="who"><span class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></span>MultiMix</div>
+          <div class="bd">正在改第三场，只动这一段，左边高亮的就是改写位置。</div>
+          <div class="vnote"><span class="v">v2</span>改写第三场 · v1 仍然保留</div>
+          <div class="ccard">
+            <div class="h">稿子满意了？<span class="w">待确认</span></div>
+            <div class="b">确认后按这份编导稿制作视频，约 2–4 分钟。中途可以随时打断。</div>
+            <div class="f"><button class="op ai">确认，开始做视频</button><button class="op">再改改</button></div>
+          </div>
+          <div class="sugs"><button class="sug">开场那句再抓人一点</button><button class="sug">第三场换成我的素材</button><button class="sug">看看 v1 是什么样</button></div>
+        </div>
+      </div>
+      <div class="dock">
+        <div class="dk">
+          <span class="ctx">正在说<b>第三场</b><button class="x">×</button></span>
+          <div class="ph">第三场：想把这句改成…</div>
+          <div class="bar"><button class="ib"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button><button class="snd"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>
