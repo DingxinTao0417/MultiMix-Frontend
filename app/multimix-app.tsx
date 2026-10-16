@@ -12,9 +12,10 @@ import {
   shouldUseSupabaseAuth,
   type LocalUser,
 } from "./lib/local-auth-session";
-import { isApiConfigured, API_AUTH_EXPIRED_EVENT } from "../lib/api";
+import { isApiConfigured, API_AUTH_EXPIRED_EVENT, getLegalConsentStatus } from "../lib/api";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
-import { createLegalConsentMetadata, passwordResetRedirect } from "./legal/legal-content";
+import { LegalConsentGate } from "./legal/legal-consent-gate";
+import { createLegalConsentMetadata, LEGAL_VERSION, passwordResetRedirect } from "./legal/legal-content";
 
 const LOCAL_USER_KEY = "multimix_local_user";
 const DEFAULT_LOCAL_USER: LocalUser = {
@@ -60,6 +61,8 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
   const [user, setUser] = useState<LocalUser | null>(null);
   const [ready, setReady] = useState(false);
   const [authInitError, setAuthInitError] = useState<string | null>(null);
+  // "checking" until /auth/me answers; "required" shows the consent gate.
+  const [consentState, setConsentState] = useState<"checking" | "required" | "ok">("checking");
 
   const handleLogout = async () => {
     if (USE_SUPABASE_AUTH && supabase) {
@@ -199,6 +202,29 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
     };
   }, []);
 
+  const consentToken = user?.token ?? null;
+  useEffect(() => {
+    // Offline mock mode has no backend to record consent against.
+    if (!consentToken || !isApiConfigured) {
+      setConsentState("ok");
+      return;
+    }
+    let cancelled = false;
+    setConsentState("checking");
+    void getLegalConsentStatus(consentToken)
+      .then((status) => {
+        if (!cancelled) setConsentState(status.legal_consent_required === true ? "required" : "ok");
+      })
+      .catch(() => {
+        // An unreachable /auth/me must not lock users out; the workspace shows
+        // its own connection state and the gate reappears on the next sign-in.
+        if (!cancelled) setConsentState("ok");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [consentToken]);
+
   if (!ready) return <MultiMixLoading />;
 
   if (!user) {
@@ -210,6 +236,17 @@ function MultiMixAppContent({ basePath }: { basePath: string }) {
           window.localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(nextUser));
           setUser(nextUser);
         }}
+      />
+    );
+  }
+
+  if (consentToken && consentState === "checking") return <MultiMixLoading />;
+  if (consentToken && consentState === "required") {
+    return (
+      <LegalConsentGate
+        token={consentToken}
+        onAccepted={() => setConsentState("ok")}
+        onLogout={() => { void handleLogout(); }}
       />
     );
   }
@@ -343,7 +380,7 @@ function MultiMixAuth({
         const { authLogin, authRegister } = await import("../lib/api");
         const response = mode === "login"
           ? await authLogin(trimmedEmail, password)
-          : await authRegister(trimmedEmail, password);
+          : await authRegister(trimmedEmail, password, LEGAL_VERSION);
         if (response.verification_required || !response.access_token) {
           setPassword("");
           setMode("login");

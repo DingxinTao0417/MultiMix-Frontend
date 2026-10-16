@@ -818,10 +818,32 @@ export async function authLogin(
 export async function authRegister(
   email: string,
   password: string,
+  legalConsentVersion?: string,
 ): Promise<AuthResponse> {
   return api<AuthResponse>("/auth/register", null, {
     method: "POST",
-    body: JSON.stringify({ email, password, locale: "zh", region: "global" }),
+    body: JSON.stringify({
+      email, password, locale: "zh", region: "global",
+      ...(legalConsentVersion ? { legal_consent_version: legalConsentVersion } : {}),
+    }),
+  });
+}
+
+// Terms/privacy re-consent (contract legal-consent-v1). An older backend omits
+// legal_consent_required; treat that as "no gate" so nobody is locked out.
+export type LegalConsentStatus = {
+  legal_consent_version: string | null;
+  legal_consent_required?: boolean;
+};
+
+export async function getLegalConsentStatus(token: string): Promise<LegalConsentStatus> {
+  return api<LegalConsentStatus>("/auth/me", token);
+}
+
+export async function acceptLegalConsent(token: string, version: string): Promise<LegalConsentStatus> {
+  return api<LegalConsentStatus>("/auth/me/legal-consent", token, {
+    method: "POST",
+    body: JSON.stringify({ version }),
   });
 }
 
