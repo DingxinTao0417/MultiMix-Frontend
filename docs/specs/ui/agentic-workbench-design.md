@@ -2,16 +2,16 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-16（旧原型清理与规范合并；方案 C 布局与深色播放台已定稿、待代码改版；非产品功能验收）
+> Last verified: 2026-10-16（核对旧版验收基线与方案 C 入口；方案 C 布局与深色播放台已定稿、待代码改版；非产品功能验收）
 
 - 日期：2026-07-08（定稿）
-- 状态：当前视觉规范；历史实施过程见 `docs/archive/plans/2026-07-08-multimix-ui-redesign-implementation.md`。页面结构、对话进度和资源库行为以 `docs/MULTIMIX_WORKSPACE_DESIGN.md` 为准。
+- 状态：当前视觉规范，同时标明方案 C 已定稿待实施的目标；改版前保留旧版 V3 验收基线与播放器契约 v1。历史实施过程见 `docs/archive/plans/2026-07-08-multimix-ui-redesign-implementation.md`。页面结构、对话进度和资源库行为以 `docs/MULTIMIX_WORKSPACE_DESIGN.md` 为准。
 - 决策过程：三轮视觉探索（第一轮 3 种视觉风格 → 第二轮 3 种空间范式 → 第三轮工作台三案），用户最终选定第三轮 **V3 · 智能体工作台**
 - 三轮早期探索已于 2026-10-16 清理；选择结论保留于本文，原稿可从 Git 历史追溯，不作为当前验收基准。
-- 终稿可点击原型（六屏，交互基准）：`docs/specs/ui/prototypes/current/index.html` —— ①起始页 ②文案工作台（多产物切换/图片产物/失败态/托盘）③视频工作台（胶片条/素材选择器/三态演示）④四库一体（素材/文案/图片/视频，模态详情/试听/空态）⑤剪辑器换肤参考 ⑥登录，单文件在 `docs/specs/ui/prototypes/current/screens/`
+- [旧版 V3 可点击原型](prototypes/current/index.html)（六屏，改版前现行验收基线）：①起始页 ②文案工作台（多产物切换/图片产物/失败态/托盘）③视频工作台（胶片条/素材选择器/三态演示）④四库一体（素材/文案/图片/视频，模态详情/试听/空态）⑤剪辑器换肤参考 ⑥登录，单文件在 `docs/specs/ui/prototypes/current/screens/`
 - 视频确认后“已确认方案卡 + 独立执行卡”的状态、消息折叠、真实步骤、失败恢复与完成后自动收起，以 `docs/specs/ui/video-confirmation-execution-card.md` 为准
 - 当前资源库导航、手机页头/搜索、详情滚动与归档反馈，以[工作台设计第4节](../../MULTIMIX_WORKSPACE_DESIGN.md#4-导航和资源库)为准；本规范的范围说明已同步已落地的资源库响应式，不再将起始页之外的所有界面限制为1280px以上桌面。
-- 保留的探索与后续方案见[探索索引](prototypes/explorations/README.md)，当前界面以 `prototypes/current/` 为准。
+- 最新已定稿设计是[方案 C 十五屏](prototypes/explorations/2026-10-13-canvas-first-full-site/index.html)，等待按[代码改版计划](../../plans/active/2026-10-14-canvas-first-workspace-redesign.md)同轮切换正式原型与契约；其他保留材料见[探索索引](prototypes/explorations/README.md)。切换前仍按旧版 V3 基线验收。
 
 ## 1. 背景与目标
 
@@ -123,7 +123,7 @@ V3 视觉重设计的目标：
 
 ### 5.6 图片库 / 新建视频项目起始页
 
-以[当前原型](prototypes/current/)为界面基准：
+方案 C 代码改版前，以[旧版 V3 六屏](prototypes/current/index.html)为界面验收基线：
 
 - 图片库：状态胶囊（已解析=渐变点胶囊 / 待处理=warn 点）压在缩略图右上角；选中卡渐变描边；居中模态详情里的「AI 理解」分区使用 `--ai-soft` 底与活徽章。
 - 起始页：低饱和 aurora 背景（透明度 .05–.09）+ 40px/750 大标题 + 渐变描边输入卡 + 渐变圆发送按钮；对话框始终先于开始方式卡出现，是第一操作入口。
