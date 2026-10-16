@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · 界面审查与 4 个视觉方案</title>
+<style>
+:root{
+  --bg:#FAF9F7; --surface:#FFFFFF; --surface-2:#F5F3EF; --ink:#201F1E; --ink-2:#6E6A64; --ink-3:#9B968E;
+  --line:#EAE7E1; --line-2:#DDD9D1;
+  --ai-grad:linear-gradient(120deg,#7C5CFF,#00A88E);
+  --accent:#5B45E0; --accent-soft:#EEEAFF; --ok:#0E8A6B; --warn:#9A6A00; --bad:#B42318;
+  --r:16px; --shadow:0 2px 6px rgba(32,31,30,.05),0 16px 40px rgba(32,31,30,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-size:14px;line-height:1.65;padding:40px 24px 90px;
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto}
+.topline{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--accent);
+  background:var(--accent-soft);padding:5px 13px;border-radius:999px;margin-bottom:18px}
+h1{font-size:28px;font-weight:700;letter-spacing:-.015em;margin-bottom:10px}
+.lede{font-size:15px;color:var(--ink-2);max-width:840px}
+.verdict{font-size:14px;max-width:900px;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:15px 19px;margin:22px 0 8px;box-shadow:var(--shadow)}
+.verdict b{color:var(--accent)}
+.scope{font-size:12.5px;color:var(--ink-3);max-width:900px;margin-bottom:40px}
+h2{font-size:19px;font-weight:700;margin:50px 0 6px;letter-spacing:-.01em}
+h2 .n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--ink);
+  color:#fff;font-size:13px;margin-right:10px;vertical-align:middle}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:22px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:19px 21px;
+  box-shadow:var(--shadow)}
+.card h3{font-size:14px;font-weight:680;margin-bottom:13px;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot.bad{background:var(--bad)}.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+ul{list-style:none;display:grid;gap:11px}
+li{display:grid;grid-template-columns:auto 1fr;gap:10px;font-size:13px;color:var(--ink-2)}
+li .tag{font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;height:18px;align-self:start;
+  margin-top:3px;white-space:nowrap}
+.tag.p0{background:#FAE9E6;color:var(--bad)}.tag.p1{background:#FFF3D9;color:var(--warn)}
+.tag.p2{background:var(--surface-2);color:var(--ink-3)}.tag.ok{background:#E3F3EE;color:var(--ok)}
+li b{color:var(--ink)}
+
+/* option blocks with live iframe preview */
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  box-shadow:var(--shadow);margin-bottom:22px}
+.opt.rec{border:1px solid transparent;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box}
+.opt-h{padding:17px 21px 15px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:16px}
+.opt-h .lf{flex:1}
+.opt-badge{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-3);margin-bottom:8px;letter-spacing:.04em}
+.opt.rec .opt-badge{background:var(--ai-grad);color:#fff}
+.opt-h h3{font-size:17px;font-weight:700;margin-bottom:5px;letter-spacing:-.01em}
+.opt-h p{font-size:13px;color:var(--ink-2);max-width:760px}
+.opt-h .go{height:34px;padding:0 15px;border-radius:999px;background:var(--ink);color:#fff;font-size:12.5px;
+  font-weight:700;border:0;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;flex:none;
+  text-decoration:none}
+.frame{position:relative;height:560px;overflow:hidden;background:var(--surface-2);
+  border-bottom:1px solid var(--line)}
+.frame iframe{position:absolute;top:0;left:50%;width:1440px;height:900px;border:0;
+  transform:translateX(-50%) scale(.622);transform-origin:top center;pointer-events:none}
+.opt-b{padding:16px 21px 19px;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.opt-b .col h4{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:9px}
+.opt-b .col ul{gap:8px}
+.opt-b .col li{grid-template-columns:auto 1fr;font-size:12.5px;line-height:1.55}
+.opt-b .col li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--line-2);
+  margin-top:7px}
+.opt-b .col.good li::before{background:var(--ok)}
+.opt-b .col.risk li::before{background:var(--warn)}
+
+/* compare table */
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);font-size:12.5px}
+th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--surface-2);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3)}
+td:first-child{font-weight:650;color:var(--ink)}
+tr:last-child td{border-bottom:0}
+.sc{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 7px;
+  border-radius:5px;font-size:11px;font-weight:800}
+.sc.a{background:#E3F3EE;color:var(--ok)}.sc.b{background:#FFF3D9;color:var(--warn)}
+.sc.c{background:var(--surface-2);color:var(--ink-3)}
+.ask{background:var(--surface);border:1px solid transparent;border-radius:var(--r);padding:19px 21px;
+  background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--ai-grad) border-box;
+  box-shadow:var(--shadow)}
+.ask h3{font-size:15px;font-weight:700;margin-bottom:12px}
+.ask ol{list-style:none;counter-reset:q;display:grid;gap:12px}
+.ask ol li{display:grid;grid-template-columns:22px 1fr;gap:11px;font-size:13px;color:var(--ink-2);counter-increment:q}
+.ask ol li::before{content:counter(q);display:grid;place-items:center;width:22px;height:22px;border-radius:7px;
+  background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:800;margin-top:1px}
+.ask ol li b{color:var(--ink);display:block}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="topline">2026-10-13 · 视觉探索 · 未定稿</div>
+<h1>界面审查与 4 个视觉方案</h1>
+<p class="lede">审查对象是当前验收基准原型（起始页、文案工作台、视频工作台、资源库）。四个方案都重画了「视频工作台」这一屏，因为高级感和 Agent 感主要在这一屏被决定。</p>
+
+<div class="verdict">
+  <b>结论：</b>当前界面在规则正确性上已经很完整，但视觉上<b>像一个文档工具，不像视频制作工具</b>。三个主因：亮纸底让视频内容失去对比、成片在页面上没有重量感、紫青渐变是 2023 年 AI 产品的通用符号。<b>四个方案里推荐 C（成片优先）</b>，它在不推翻现有产品规则的前提下，最直接地解决「结果不够像主角」。
+</div>
+<p class="scope">未覆盖：起始页、资源库、编辑器全屏态、移动端。方案只画桌面 1440×900 的视频工作台；采纳后再延伸其余屏幕。</p>
+
+<h2><span class="n">1</span>当前界面的问题</h2>
+<p class="sub">按对高级感和 Agent 感的影响排序，不含功能性缺陷。</p>
+<div class="grid2">
+  <div class="card">
+    <h3><span class="dot bad"></span>视觉层面</h3>
+    <ul>
+      <li><span class="tag p0">P0</span><span><b>成片没有重量感。</b>白播放器放在亮纸底上，边界几乎消失，用户最该骄傲的交付物看起来像一张占位图。</span></li>
+      <li><span class="tag p0">P0</span><span><b>紫青渐变已是通用符号。</b>这组颜色出现在大量 AI 产品里，用它表达「AI 在参与」不再有辨识度，也不传达视频行业感。</span></li>
+      <li><span class="tag p1">P1</span><span><b>层级过平。</b>全页同一种白底、同一种 hairline、同一种 16px 圆角，视线没有落点，密度看起来松散而不是克制。</span></li>
+      <li><span class="tag p1">P1</span><span><b>缺少专业工具语汇。</b>没有时间码、没有等宽数字、没有分镜时长比例，看不出这是处理时间轴媒介的工具。</span></li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="dot warn"></span>交互层面</h3>
+    <ul>
+      <li><span class="tag p0">P0</span><span><b>分镜被藏进编辑态。</b>短视频的修改单位就是「第几镜」，但浏览态只给摘要卡，用户要先点「编辑」才看得到可操作的分镜。</span></li>
+      <li><span class="tag p1">P1</span><span><b>素材出处要靠展开才看见。</b>「用了你哪张素材」是本产品最强的信任点，却默认收起在来源摘要里。</span></li>
+      <li><span class="tag p1">P1</span><span><b>对话与结果争夺注意力。</b>52% 宽度给对话，结果被压在右侧；但完成后用户真正要看的是结果。</span></li>
+      <li><span class="tag p2">P2</span><span><b>建议芯片形态偏弱。</b>胶囊排成一行，看起来像标签而不是可执行的下一步。</span></li>
+    </ul>
+  </div>
+</div>
+
+<h2><span class="n">2</span>四个视觉方案</h2>
+<p class="sub">下面每个方案都是可点开的真实页面，预览框里是等比缩小的实时渲染。</p>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="opt-badge">方案 A</span>
+      <h3>Studio Noir · 深色影棚</h3>
+      <p>整个工作台进暗房，画面成为屏幕上唯一的光源。白色播放器外壳在暗底上自动变成灯箱，分镜条按时长比例分宽，像真正的胶片轨。</p>
+    </div>
+    <a class="go" href="screens/a-studio-noir.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/a-studio-noir.html" title="方案 A 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>成片对比度最高，视频一眼成为主角</li>
+      <li>和文档类工具彻底区分，专业器材感最强</li>
+      <li>白播放器外壳契约原样保留，变成优势</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>目标用户是白天在店里看屏幕的商家，暗色在强光下反光、可读性下降</li>
+      <li>长文案产物在暗底上阅读负担变大</li>
+      <li>与现有亮底品牌资产、登录页需要同时重做</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>需要整套暗色 token 与全部组件适配</li>
+      <li>截图基线、视觉契约测试全部重拍</li>
+      <li>最大：约等于一次完整换肤</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="opt-badge">方案 B</span>
+      <h3>Editorial Light · 杂志级亮底</h3>
+      <p>保持亮底，但把高级感换一条路实现：靠排版、留白和细线表格，不靠渐变。圆角收到 4px，气泡换成竖线引注，分镜改成带缩略图和来源标注的清单。</p>
+    </div>
+    <a class="go" href="screens/b-editorial-light.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/b-editorial-light.html" title="方案 B 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>分镜清单信息量最大：台词、素材出处、时长一屏看全</li>
+      <li>白天店内可读性最好</li>
+      <li>素材来源默认可见，信任点被放到明面</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>直角细线的「编辑部」气质偏冷静，不如暗色有视频行业感</li>
+      <li>成片的重量感仍依赖阴影，不如暗底直接</li>
+      <li>衬线标题在中文下字体可得性要实测</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>复用现有亮色体系，改圆角、间距、字阶</li>
+      <li>分镜浏览态要新增清单组件</li>
+      <li>中等：视觉基线改动但不换色彩体系</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt rec">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="opt-badge">方案 C · 推荐</span>
+      <h3>Canvas First · 成片优先</h3>
+      <p>翻转主次：成片和分镜占据左侧主区，对话收成右侧 30% 的工作轨。分镜变成带缩略图的卡片网格，每张都常驻「说这镜」，输入框顶部显示「正在说第 1 镜」。</p>
+    </div>
+    <a class="go" href="screens/c-canvas-first.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/c-canvas-first.html" title="方案 C 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>直接解决 P0：结果成为页面主角，成片有明确重量感</li>
+      <li>分镜卡在浏览态就能点、能说，修改单位和产品心智一致</li>
+      <li>右轨保留完整对话、确认卡和真实阶段进度，Agent 在场感最清楚</li>
+      <li>沿用现有亮色与渐变体系，不动品牌资产</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>对话宽度从 52% 降到 30%，长回复和长文案产物要另找承载方式</li>
+      <li>与现行文档「对话区 clamp(480px,52%,720px)」的页面结构约定冲突，需用户确认改契约</li>
+      <li>尚无产物时的单栏居中态要单独定义</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>主要是布局反转和分镜卡组件，色彩体系不变</li>
+      <li>需改页面结构文档、拖拽边界与 ARIA 上下限</li>
+      <li>中等偏小：视觉 token 基本复用</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="opt-badge">方案 D</span>
+      <h3>Dual-Tone Studio · 双调工作室</h3>
+      <p>左亮右暗：对话留在亮纸底保证白天可读，展示区进暗色放映厅让画面发光。同时把紫青渐变换成单色铜橙信号色，分镜行以时间码起头。</p>
+    </div>
+    <a class="go" href="screens/d-dual-tone-studio.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/d-dual-tone-studio.html" title="方案 D 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>兼顾白天可读与影院感，成片重量感接近方案 A</li>
+      <li>铜橙单色信号最有辨识度，摆脱通用 AI 渐变</li>
+      <li>时间码起头的分镜行专业感强</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>明暗分界需要极强纪律，做歪就显得拼贴</li>
+      <li>换品牌信号色会波及 LOGO 以外的全部强调色、登录页和营销素材</li>
+      <li>展示区内的长文案产物仍在暗底上阅读</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>需要双套 token 并明确每个组件归哪一侧</li>
+      <li>确认卡、徽章、按钮的强调色全量替换</li>
+      <li>较大：布局不变但色彩体系重定义</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2><span class="n">3</span>横向对比</h2>
+<p class="sub">A 为最好。「改造量」一栏里 A 表示改动最小。</p>
+<table>
+  <tr><th>维度</th><th>A 深色影棚</th><th>B 杂志亮底</th><th>C 成片优先</th><th>D 双调工作室</th></tr>
+  <tr><td>成片重量感</td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>视频工具辨识度</td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>白天店内可读</td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>分镜可操作性</td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>Agent 在场感</td><td><span class="sc b">B</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>改造量（A 最小）</td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td></tr>
+  <tr><td>与现有契约冲突</td><td>视觉基线全改</td><td>圆角字阶全改</td><td>页面结构宽度约定</td><td>品牌强调色全改</td></tr>
+</table>
+
+<h2><span class="n">4</span>需要你决定</h2>
+<p class="sub">这些问题决定下一步落哪个方向，不选完不动代码。</p>
+<div class="ask">
+  <h3>四个决策点</h3>
+  <ol>
+    <li><b>明暗方向</b>整体亮底（B/C）、整体暗底（A），还是左亮右暗（D）？这决定后续全部屏幕的基调，也决定改造量级。</li>
+    <li><b>要不要换掉紫青渐变</b>换成单色信号（如 D 的铜橙）辨识度更高，但会波及登录页、品牌材料和全部强调色。</li>
+    <li><b>对话和结果谁占主区</b>方案 C 把对话压到 30%。这会改动已沉淀的页面结构约定，需要你明确批准。</li>
+    <li><b>分镜是否在浏览态就可操作</b>四个方案都这么做了。这是产品心智改动，不只是视觉。</li>
+  </ol>
+</div>
+</div>
+</body>
+</html>

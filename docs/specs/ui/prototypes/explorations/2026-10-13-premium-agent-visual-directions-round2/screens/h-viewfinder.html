@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向 H · Viewfinder · 取景框</title>
+<style>
+:root{
+  --bg:#ECEAE6; --panel:#FFFFFF; --surface:#FFFFFF; --surface-2:#F4F3F0;
+  --line:#E4E2DD; --line-2:#D3D0C9;
+  --ink:#191A1C; --ink-2:#63656A; --ink-3:#95979D;
+  --sig:#1E4FD8; --sig-2:#1740AE; --sig-soft:#E8EDFD; --sig-line:#C3D0F8;
+  --ok:#0E7C62; --warn:#8C6400;
+  --r:13px; --r-sm:8px;
+  --shadow:0 1px 2px rgba(25,26,28,.05),0 12px 30px -14px rgba(25,26,28,.18);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:13.5px;line-height:1.6;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+.mono{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+.shell{height:100vh;display:grid;grid-template-rows:46px 1fr}
+.top{display:flex;align-items:center;gap:11px;padding:0 17px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sw{display:flex;align-items:center;gap:9px;height:29px;padding:0 10px 0 4px;background:var(--surface);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink);font-size:12.5px;font-weight:650;cursor:pointer}
+.mk{width:21px;height:21px;border-radius:6px;background:#191A1C;display:grid;place-items:center;flex:none}
+.sw .bd{min-width:17px;height:17px;padding:0 5px;border-radius:5px;background:var(--sig-soft);color:var(--sig-2);
+  font-size:10.5px;font-weight:800;display:grid;place-items:center}
+.pill{display:inline-flex;align-items:center;gap:7px;height:25px;padding:0 10px;border-radius:var(--r-sm);
+  font-size:11.5px;font-weight:700;color:var(--sig-2);background:var(--sig-soft);border:1px solid var(--sig-line)}
+.pill .d{width:6px;height:6px;border-radius:50%;background:var(--sig);animation:bl 1.9s infinite}
+@keyframes bl{50%{opacity:.25}}
+.spacer{flex:1}
+.tiny{height:25px;padding:0 10px;border-radius:var(--r-sm);background:transparent;border:1px solid var(--line-2);
+  color:var(--ink-2);font-size:11.5px;font-weight:600}
+
+.app{display:grid;grid-template-columns:clamp(380px,32%,450px) 1px 1fr;overflow:hidden}
+.seam{background:var(--line)}
+
+/* conversation */
+.conv{display:grid;grid-template-rows:1fr auto;overflow:hidden;background:var(--panel)}
+.flow{overflow-y:auto;padding:20px 18px 8px;display:grid;gap:17px;align-content:start}
+.flow::-webkit-scrollbar{width:8px}
+.flow::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.me{justify-self:end;max-width:90%;background:var(--surface-2);border-radius:13px 13px 4px 13px;
+  padding:9px 13px;font-size:13px}
+.ai{display:grid;grid-template-columns:21px 1fr;gap:10px}
+.av{width:21px;height:21px;border-radius:6px;background:var(--sig);display:grid;place-items:center;margin-top:1px}
+.ai .who{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.ai .bd{font-size:13px;line-height:1.66}
+.refs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.ref{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border-radius:6px;
+  background:var(--surface-2);border:1px solid var(--line);font-size:11px;color:var(--ink-2)}
+.ref i{width:20px;height:20px;border-radius:4px;background:linear-gradient(135deg,#D7D5CE,#EDEBE5);flex:none}
+.done{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-top:8px}
+.done .hd{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.done .hd b{font-size:12.5px;font-weight:680}
+.done .ok{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 8px;
+  border-radius:999px;background:#E2F0EC;color:var(--ok);font-size:10px;font-weight:800}
+.done .fr{display:grid;grid-template-columns:36px 1fr;gap:10px;font-size:11.5px;padding:2px 0;color:var(--ink-2)}
+.done .fr .k{color:var(--ink-3)}
+.sugs{display:grid;gap:5px;margin-top:8px}
+.sug{display:flex;align-items:center;gap:8px;height:31px;padding:0 11px;border-radius:var(--r-sm);
+  background:var(--surface);border:1px solid var(--line-2);color:var(--ink-2);font-size:12px;cursor:pointer;text-align:left}
+.sug:hover{border-color:var(--sig-line);color:var(--sig-2)}
+.sug::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--sig);flex:none}
+.dock{padding:9px 18px 15px}
+.dk{border:1px solid var(--line-2);border-radius:var(--r-sm);padding:9px 10px 7px;background:var(--surface);box-shadow:var(--shadow)}
+.dk:focus-within{border-color:var(--sig)}
+.dk .ctx{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 4px 0 8px;border-radius:999px;
+  background:var(--sig-soft);font-size:10.5px;font-weight:700;color:var(--sig-2);margin-bottom:7px}
+.dk .ctx .x{width:14px;height:14px;border-radius:50%;background:var(--sig-line);color:var(--sig-2);
+  font-size:9px;display:grid;place-items:center;border:0}
+.dk .phx{font-size:12.5px;color:var(--ink-3);padding:1px 2px 9px}
+.dk .bar{display:flex;align-items:center;gap:5px}
+.ib{width:27px;height:27px;border-radius:6px;background:transparent;border:1px solid var(--line);
+  color:var(--ink-3);display:grid;place-items:center}
+.snd{width:29px;height:29px;border-radius:7px;border:0;background:var(--sig);display:grid;
+  place-items:center;margin-left:auto}
+
+/* ---------- viewfinder stage ---------- */
+.stage{display:grid;grid-template-rows:42px 1fr;overflow:hidden;position:relative;
+  background:radial-gradient(130% 90% at 50% 0%,#F7F6F3,#E6E4DF 70%)}
+.sh{display:flex;align-items:center;gap:9px;padding:0 20px;border-bottom:1px solid var(--line);
+  background:var(--panel)}
+.tabs{display:flex;gap:2px;background:var(--surface-2);border-radius:7px;padding:2px}
+.tab{height:24px;padding:0 11px;border-radius:5px;border:0;background:transparent;color:var(--ink-2);
+  font-size:11.5px;font-weight:650;cursor:pointer}
+.tab.on{background:var(--panel);color:var(--ink);font-weight:720;box-shadow:0 1px 2px rgba(0,0,0,.07)}
+.sh .meta{font-size:11px;color:var(--ink-3);margin-left:4px}
+.ops{margin-left:auto;display:flex;gap:6px}
+.op{height:26px;padding:0 12px;border-radius:var(--r-sm);font-size:11.5px;font-weight:650;
+  background:var(--surface);border:1px solid var(--line-2);color:var(--ink-2);cursor:pointer}
+.op:hover{color:var(--ink)}
+.op.pri{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:700}
+
+.sb{display:grid;grid-template-columns:1fr auto;gap:22px;padding:22px 24px;overflow:hidden;align-items:center}
+.center{display:grid;place-items:center;overflow:hidden}
+
+/* phone */
+.phone{width:fit-content;background:#0D0D0F;border-radius:34px;padding:9px;position:relative;
+  box-shadow:0 2px 4px rgba(0,0,0,.2),0 40px 80px -28px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.07) inset}
+.phone::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:4px;width:84px;height:3.5px;
+  border-radius:2px;background:rgba(255,255,255,.3)}
+.screen{aspect-ratio:9/19.5;height:min(72vh,620px);border-radius:27px;overflow:hidden;position:relative;
+  background:linear-gradient(160deg,#2B2A33,#141319 56%,#1E1D25);display:grid}
+/* phone status bar */
+.sbar{position:absolute;top:0;left:0;right:0;height:30px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 18px;font-size:10.5px;color:#fff;font-weight:650;z-index:3}
+.notch{position:absolute;top:7px;left:50%;transform:translateX(-50%);width:62px;height:17px;border-radius:9px;
+  background:#0D0D0F;z-index:4}
+/* in-app chrome mimicking the destination feed */
+.vf-top{position:absolute;top:36px;left:0;right:0;display:flex;align-items:center;gap:12px;padding:0 15px;
+  font-size:12px;color:rgba(255,255,255,.9);font-weight:600;z-index:3}
+.vf-top .t{opacity:.6}
+.vf-top .t.on{opacity:1;font-weight:750;position:relative}
+.vf-top .t.on::after{content:"";position:absolute;left:0;right:0;bottom:-6px;height:2px;background:#fff;border-radius:2px}
+.vf-side{position:absolute;right:11px;bottom:148px;display:grid;gap:18px;z-index:3;justify-items:center}
+.vf-side .ic{width:33px;height:33px;border-radius:50%;background:rgba(255,255,255,.17);display:grid;place-items:center;
+  backdrop-filter:blur(4px)}
+.vf-side small{font-size:9.5px;color:rgba(255,255,255,.9);margin-top:-13px;font-weight:650}
+.vf-bot{position:absolute;left:0;right:0;bottom:0;padding:15px 15px 20px;z-index:3;
+  background:linear-gradient(transparent,rgba(0,0,0,.72))}
+.vf-bot .au{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#fff;font-weight:700;margin-bottom:7px}
+.vf-bot .au i{width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#6F7BE8,#2EC5A8);flex:none}
+.vf-bot .cap{font-size:12px;color:rgba(255,255,255,.94);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vf-bot .tags{font-size:11.5px;color:#9DB4FF;margin-top:3px}
+/* burned-in subtitle, the thing being authored */
+.sub{position:absolute;left:14px;right:60px;bottom:106px;text-align:center;font-size:14px;font-weight:750;
+  color:#fff;text-shadow:0 2px 11px rgba(0,0,0,.8);z-index:2;line-height:1.45}
+.play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:48px;height:48px;border-radius:50%;
+  background:rgba(255,255,255,.94);display:grid;place-items:center;z-index:2;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+/* progress along bottom of screen */
+.pbar{position:absolute;left:0;right:0;bottom:0;height:2.5px;background:rgba(255,255,255,.22);z-index:4}
+.pbar i{position:absolute;inset:0 62% 0 0;background:#fff}
+.hint{margin-top:13px;text-align:center;font-size:11px;color:var(--ink-3)}
+
+/* right: shot rail */
+.rail{width:206px;display:grid;grid-template-rows:auto 1fr auto;gap:9px;overflow:hidden;align-self:stretch;
+  padding:2px 0}
+.rail .rh{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  display:flex;align-items:center;gap:8px}
+.rail .rh .ln{flex:1;height:1px;background:var(--line-2)}
+.shots{overflow-y:auto;display:grid;gap:7px;align-content:start;padding-right:3px}
+.shots::-webkit-scrollbar{width:7px}
+.shots::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.shot{display:grid;grid-template-columns:34px 1fr;gap:9px;align-items:center;background:var(--panel);
+  border:1px solid var(--line);border-radius:9px;padding:6px 8px 6px 6px;cursor:pointer;text-align:left}
+.shot:hover{border-color:var(--line-2)}
+.shot.on{border-color:var(--sig);box-shadow:0 0 0 2.5px var(--sig-soft)}
+.shot .th{width:34px;aspect-ratio:9/16;border-radius:5px;background:linear-gradient(145deg,#2C2B35,#17161E);
+  border:1px solid var(--line);position:relative;flex:none}
+.shot .th.pub{background:repeating-linear-gradient(135deg,#2C2B35,#2C2B35 4px,#3A3845 4px,#3A3845 8px)}
+.shot .tx{min-width:0}
+.shot .tx .r1{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+.shot .tx .n{font-size:9.5px;font-weight:800;color:var(--ink-3)}
+.shot.on .tx .n{color:var(--sig)}
+.shot .tx .dur{margin-left:auto;font-size:9.5px;color:var(--ink-3);font-weight:700}
+.shot .tx b{display:block;font-size:11.5px;font-weight:620;line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.shot .tx .sr{display:inline-flex;align-items:center;height:15px;padding:0 5px;border-radius:3px;
+  background:#E2F0EC;color:var(--ok);font-size:9px;font-weight:800;margin-top:4px}
+.shot .tx .sr.pub{background:#FFF3D9;color:#7A5400}
+.rail .rf{display:grid;gap:6px}
+.rbtn{height:30px;border-radius:var(--r-sm);background:var(--panel);border:1px solid var(--line-2);
+  color:var(--ink-2);font-size:11.5px;font-weight:650;cursor:pointer}
+.rbtn.main{background:var(--sig);border-color:var(--sig);color:#fff;font-weight:720}
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div class="top">
+  <button class="sw">
+    <span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>
+    门窗案例小红书内容
+    <span class="bd">2</span>
+  </button>
+  <span class="pill"><span class="d"></span>AI 正在理解素材</span>
+  <span class="spacer"></span>
+  <button class="tiny">资料 · 6</button>
+</div>
+
+<div class="app">
+  <!-- 对话 -->
+  <section class="conv">
+    <div class="flow">
+      <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+      <div class="ai">
+        <div class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+        <div>
+          <div class="who">MultiMix</div>
+          <div class="bd">隔音测试那段现场音很清楚，我拿它当开场。右边是顾客在小红书里刷到它的样子，封面和文案一起看。</div>
+          <div class="refs"><span class="ref"><i></i>隔音实测.mp4</span><span class="ref"><i></i>产品参数.pdf</span></div>
+          <div class="done">
+            <div class="hd"><b>这样做这条视频</b><span class="ok">✓ 已确认</span></div>
+            <div class="fr"><span class="k">结构</span><span class="v">困扰 → 实测 → 方案 → 价格</span></div>
+            <div class="fr"><span class="k">时长</span><span class="v">约 32 秒 · 竖屏 9:16</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ai">
+        <div class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+        <div>
+          <div class="who">MultiMix</div>
+          <div class="bd">字幕位置我往上提了一点，不会被小红书的点赞按钮挡住。第 3 镜用的是公开素材。</div>
+          <div class="sugs">
+            <button class="sug">第 3 镜换成我的素材</button>
+            <button class="sug">标题换个更抓人的说法</button>
+            <button class="sug">字幕再大一号</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="dk">
+        <span class="ctx">正在说 第 1 镜<button class="x">×</button></span>
+        <div class="phx">第 1 镜：想把这里改成…</div>
+        <div class="bar">
+          <button class="ib"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+          <button class="ib"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="5.8" cy="6.6" r="1" fill="currentColor"/></svg></button>
+          <button class="snd"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="seam"></div>
+
+  <!-- 取景框 -->
+  <section class="stage">
+    <div class="sh">
+      <div class="tabs">
+        <button class="tab on">成片预览</button>
+        <button class="tab">封面与文案</button>
+      </div>
+      <span class="meta">顾客视角 · 小红书 · 竖屏 9:16</span>
+      <div class="ops">
+        <button class="op">详情</button><button class="op">导出</button><button class="op pri">编辑</button>
+      </div>
+    </div>
+
+    <div class="sb">
+      <div class="center">
+        <div>
+          <div class="phone">
+            <div class="notch"></div>
+            <div class="screen">
+              <div class="sbar"><span class="mono">9:41</span><span>●●● ▮</span></div>
+              <div class="vf-top"><span class="t">关注</span><span class="t on">发现</span><span class="t">附近</span></div>
+
+              <div class="play"><svg width="16" height="16" viewBox="0 0 16 16" fill="#191A1C"><path d="M5 3.2v9.6L13 8z"/></svg></div>
+              <div class="sub">关窗之后，车声基本听不见了</div>
+
+              <div class="vf-side">
+                <div class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="#fff"><path d="M8 14S2 10.3 2 6.4A3.4 3.4 0 0 1 8 4.3 3.4 3.4 0 0 1 14 6.4C14 10.3 8 14 8 14z"/></svg></div>
+                <small>1.2k</small>
+                <div class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="#fff"><path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3 3V4a1 1 0 0 1 1-1z"/></svg></div>
+                <small>86</small>
+                <div class="ic"><svg width="15" height="15" viewBox="0 0 16 16" fill="#fff"><path d="M4 2h8v12l-4-3-4 3z"/></svg></div>
+                <small>收藏</small>
+              </div>
+
+              <div class="vf-bot">
+                <div class="au"><i></i>云栖门窗 · 本地商家</div>
+                <div class="cap">临街房装窗别只看价格，隔音这一项一定要现场实测。这是我们刚装完当天在店里录的。</div>
+                <div class="tags">#断桥铝门窗 #隔音窗 #旧房改造</div>
+              </div>
+              <div class="pbar"><i></i></div>
+            </div>
+          </div>
+          <div class="hint">这就是顾客刷到它时看到的样子 · 字幕已避开右侧按钮区</div>
+        </div>
+      </div>
+
+      <aside class="rail">
+        <div class="rh"><span>分镜</span><span class="ln"></span><span>5</span></div>
+        <div class="shots">
+          <button class="shot on">
+            <span class="th"></span>
+            <span class="tx">
+              <span class="r1"><span class="n mono">00:00</span><span class="dur mono">7.2s</span></span>
+              <b>关窗之后，外面的车声基本听不见了</b>
+              <span class="sr">你的素材</span>
+            </span>
+          </button>
+          <button class="shot">
+            <span class="th"></span>
+            <span class="tx">
+              <span class="r1"><span class="n mono">00:07</span><span class="dur mono">6.0s</span></span>
+              <b>临街房最怕的就是晚上睡不着</b>
+              <span class="sr">你的素材</span>
+            </span>
+          </button>
+          <button class="shot">
+            <span class="th pub"></span>
+            <span class="tx">
+              <span class="r1"><span class="n mono">00:13</span><span class="dur mono">8.1s</span></span>
+              <b>断桥铝的三层中空结构是关键</b>
+              <span class="sr pub">公开素材</span>
+            </span>
+          </button>
+          <button class="shot">
+            <span class="th"></span>
+            <span class="tx">
+              <span class="r1"><span class="n mono">00:21</span><span class="dur mono">5.4s</span></span>
+              <b>安装环节这一步不能省</b>
+              <span class="sr">你的素材</span>
+            </span>
+          </button>
+          <button class="shot">
+            <span class="th"></span>
+            <span class="tx">
+              <span class="r1"><span class="n mono">00:27</span><span class="dur mono">5.3s</span></span>
+              <b>整窗保修五年，上门测量免费</b>
+              <span class="sr">你的素材</span>
+            </span>
+          </button>
+        </div>
+        <div class="rf">
+          <button class="rbtn main">对第 1 镜说话</button>
+          <button class="rbtn">换掉这镜素材</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+</div>
+</div>
+</body>
+</html>

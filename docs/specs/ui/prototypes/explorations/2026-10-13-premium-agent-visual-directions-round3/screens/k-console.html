@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向 K · Console · 调音台</title>
+<style>
+:root{
+  --case:#14161A; --panel:#1B1E24; --panel-2:#22262D; --slot:#0E1013;
+  --line:#2B3038; --line-2:#3A4049; --etch:rgba(255,255,255,.055);
+  --ink:#E8EBEF; --ink-2:#9AA2AD; --ink-3:#656D78;
+  --led:#2FE3C2; --led-pub:#F0B964; --led-red:#FF5C5C;
+  --ai:#8A7BFF; --grad:linear-gradient(118deg,#8A7BFF,#2FE3C2);
+  --r:9px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--case);color:var(--ink);overflow:hidden;
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:12.5px;line-height:1.55;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+.mono{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+.lab{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+.rack{height:100vh;display:grid;grid-template-rows:44px 1fr;
+  background:
+    linear-gradient(var(--etch) 1px,transparent 1px) 0 0/100% 3px,
+    linear-gradient(170deg,#181B20,#101216);}
+/* transport bar */
+.tp{display:flex;align-items:center;gap:11px;padding:0 15px;background:linear-gradient(#20242B,#171A1F);
+  border-bottom:1px solid #0B0D10;box-shadow:0 1px 0 rgba(255,255,255,.05) inset}
+.proj{display:flex;align-items:center;gap:8px;height:28px;padding:0 11px 0 4px;border-radius:7px;
+  background:var(--slot);border:1px solid var(--line);font-size:12px;font-weight:650;
+  box-shadow:0 1px 0 rgba(255,255,255,.04)}
+.mk{width:20px;height:20px;border-radius:5px;background:var(--grad);display:grid;place-items:center;flex:none}
+.proj .bd{min-width:16px;height:16px;padding:0 5px;border-radius:4px;background:rgba(138,123,255,.22);
+  color:#BEB4FF;font-size:10px;font-weight:800;display:grid;place-items:center}
+/* LED readout */
+.readout{display:flex;align-items:center;gap:13px;height:28px;padding:0 13px;border-radius:6px;
+  background:#07090B;border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.5) inset}
+.readout .big{font-size:15px;font-weight:700;color:var(--led);letter-spacing:.06em;
+  text-shadow:0 0 11px rgba(47,227,194,.55)}
+.readout .nm{font-size:10px;color:var(--ink-3);font-weight:700}
+.readout .nm b{color:var(--ink-2)}
+.tbtns{display:flex;gap:4px}
+.tb{width:30px;height:28px;border-radius:6px;background:linear-gradient(#2A2F37,#1E2229);
+  border:1px solid var(--line);color:var(--ink-2);display:grid;place-items:center;cursor:pointer;
+  box-shadow:0 1px 0 rgba(255,255,255,.07) inset,0 1px 2px rgba(0,0,0,.4)}
+.tb:hover{color:var(--ink)}
+.tb.go{background:linear-gradient(#2FE3C2,#1FB89C);border-color:#1FB89C;color:#07090B}
+.sp{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:5px;
+  font-size:11px;font-weight:700;color:#9FF4E4;background:rgba(47,227,194,.1);border:1px solid rgba(47,227,194,.26)}
+.pill .d{width:5px;height:5px;border-radius:50%;background:var(--led);animation:bl 1.9s infinite}
+@keyframes bl{50%{opacity:.2}}
+.tbtn2{height:27px;padding:0 13px;border-radius:6px;font-size:11.5px;font-weight:680;cursor:pointer;
+  background:linear-gradient(#2A2F37,#1E2229);border:1px solid var(--line);color:var(--ink-2);
+  box-shadow:0 1px 0 rgba(255,255,255,.07) inset}
+.tbtn2.pri{background:linear-gradient(#9C8FFF,#7A68F0);border-color:#6E5BE0;color:#0B0D10;font-weight:760}
+
+/* main: talkback | channels | master */
+.body{display:grid;grid-template-columns:310px 1fr 254px;overflow:hidden}
+.bay{border-right:1px solid #0B0D10;box-shadow:1px 0 0 rgba(255,255,255,.04);overflow:hidden;
+  display:grid;grid-template-rows:28px 1fr auto}
+.bayh{display:flex;align-items:center;gap:7px;padding:0 13px;background:#13161A;
+  border-bottom:1px solid var(--line)}
+.bayh .lab{color:var(--ink-2)}
+
+/* talkback */
+.msgs{overflow-y:auto;padding:13px;display:grid;gap:12px;align-content:start}
+.msgs::-webkit-scrollbar{width:7px}
+.msgs::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.me{justify-self:end;max-width:90%;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:9px 9px 2px 9px;padding:7px 11px;font-size:12px}
+.ai{display:grid;grid-template-columns:19px 1fr;gap:9px}
+.av{width:19px;height:19px;border-radius:5px;background:var(--grad);display:grid;place-items:center;margin-top:1px}
+.ai .tx{font-size:12px;line-height:1.62;color:var(--ink-2)}
+.ai .tx b{color:var(--ink);font-weight:660}
+.chips{display:grid;gap:4px;margin-top:8px}
+.chip{display:flex;align-items:center;gap:7px;height:27px;padding:0 10px;border-radius:5px;cursor:pointer;
+  background:var(--slot);border:1px solid var(--line);color:var(--ink-2);font-size:11.5px;text-align:left}
+.chip:hover{border-color:var(--line-2);color:var(--ink)}
+.chip::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--led);flex:none}
+.talkf{padding:11px 13px 13px;border-top:1px solid var(--line);background:#13161A}
+.dk{border:1px solid var(--line-2);border-radius:7px;padding:8px 9px 6px;background:var(--slot)}
+.dk .ctx{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 4px 0 8px;border-radius:4px;
+  background:rgba(138,123,255,.2);font-size:10px;font-weight:700;color:#C6BDFF;margin-bottom:6px}
+.dk .ctx .x{width:13px;height:13px;border-radius:3px;background:rgba(255,255,255,.12);color:#C6BDFF;
+  font-size:8.5px;display:grid;place-items:center;border:0}
+.dk .phx{font-size:12px;color:var(--ink-3);padding:0 2px 8px}
+.dk .row{display:flex;align-items:center;gap:5px}
+.ib{width:25px;height:25px;border-radius:5px;background:linear-gradient(#2A2F37,#1E2229);
+  border:1px solid var(--line);color:var(--ink-3);display:grid;place-items:center}
+.snd{height:25px;padding:0 11px;border-radius:5px;border:0;background:var(--grad);color:#0B0D10;
+  font-size:11px;font-weight:760;margin-left:auto;cursor:pointer}
+
+/* channel strips */
+.chans{overflow-x:auto;overflow-y:hidden;display:flex;padding:13px;gap:10px}
+.chans::-webkit-scrollbar{height:8px}
+.chans::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.ch{width:150px;flex:none;border-radius:var(--r);overflow:hidden;display:grid;
+  grid-template-rows:auto auto 1fr auto auto;
+  background:linear-gradient(175deg,var(--panel),#171A1F);border:1px solid var(--line);
+  box-shadow:0 1px 0 rgba(255,255,255,.05) inset,0 12px 26px -14px rgba(0,0,0,.7)}
+.ch.on{border-color:transparent;
+  background:linear-gradient(175deg,var(--panel),#171A1F) padding-box,var(--grad) border-box;
+  border:1.5px solid transparent;box-shadow:0 0 0 3px rgba(138,123,255,.14),0 16px 32px -14px rgba(0,0,0,.8)}
+/* strip head: number + source LED */
+.chh{display:flex;align-items:center;gap:7px;padding:8px 9px;background:#0F1216;
+  border-bottom:1px solid var(--line)}
+.chh .no{width:21px;height:21px;border-radius:5px;background:var(--panel-2);border:1px solid var(--line);
+  font-size:11px;font-weight:800;display:grid;place-items:center;color:var(--ink-2);flex:none}
+.ch.on .chh .no{background:var(--grad);color:#0B0D10;border-color:transparent}
+.chh .tc{font-size:9.5px;color:var(--ink-3);font-weight:700}
+.chh .led{margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--led);
+  box-shadow:0 0 8px rgba(47,227,194,.8);flex:none}
+.chh .led.pub{background:var(--led-pub);box-shadow:0 0 8px rgba(240,185,100,.8)}
+/* preview slot */
+.slot{padding:9px;background:#0C0E11;border-bottom:1px solid var(--line)}
+.slot .im{width:100%;height:84px;border-radius:5px;background:linear-gradient(150deg,#33323E,#15141B);
+  border:1px solid #000;box-shadow:0 0 0 1px rgba(255,255,255,.05)}
+.slot .im.pub{background:repeating-linear-gradient(135deg,#33323E,#33323E 4px,#44414E 4px,#44414E 8px)}
+.slot .ln{margin-top:7px;font-size:11px;font-weight:620;line-height:1.42;color:var(--ink);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:31px}
+/* fader zone: duration as a real fader + VO meter */
+.fz{display:grid;grid-template-columns:1fr auto;grid-template-rows:1fr auto;gap:0 13px;
+  padding:14px 13px 9px;min-height:0}
+.fader{position:relative;height:100%;min-height:0;display:grid;justify-items:center}
+.fader .track{width:5px;height:100%;border-radius:3px;background:#07090B;
+  box-shadow:0 1px 3px rgba(0,0,0,.7) inset;position:relative}
+.fader .fill{position:absolute;left:0;right:0;bottom:0;border-radius:3px;background:linear-gradient(#2FE3C2,#1B9E86)}
+.fader .cap{position:absolute;left:50%;transform:translateX(-50%);width:30px;height:15px;border-radius:3px;
+  background:linear-gradient(#3C424B,#24282F);border:1px solid #11141800;
+  box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 2px 5px rgba(0,0,0,.6);cursor:grab}
+.fader .cap::after{content:"";position:absolute;left:4px;right:4px;top:50%;height:1.5px;
+  background:rgba(255,255,255,.3);transform:translateY(-50%)}
+.fader .tick{display:none}
+.meter{width:11px;height:100%;min-height:0;border-radius:3px;background:#07090B;position:relative;
+  overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.7) inset}
+.meter i{position:absolute;left:1.5px;right:1.5px;bottom:1.5px;border-radius:2px;
+  background:linear-gradient(#FF5C5C 0%,#F0B964 18%,#2FE3C2 46%)}
+.fz .mlab{grid-column:1/-1;display:flex;justify-content:space-between;padding-top:5px}
+.fz .mlab span{font-size:8.5px;font-weight:800;letter-spacing:.08em;color:var(--ink-3)}
+/* duration numeric */
+.dur{display:flex;align-items:baseline;gap:5px;padding:0 11px 9px}
+.dur b{font-size:17px;font-weight:720;color:var(--led);text-shadow:0 0 10px rgba(47,227,194,.4)}
+.dur span{font-size:9.5px;color:var(--ink-3);font-weight:700}
+/* strip footer: toggles */
+.chf{display:grid;gap:5px;padding:9px;background:#0F1216;border-top:1px solid var(--line)}
+.tg{display:flex;align-items:center;gap:7px;height:25px;padding:0 8px;border-radius:5px;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2);font-size:10.5px;font-weight:650;
+  text-align:left}
+.tg:hover{color:var(--ink);border-color:var(--line-2)}
+.tg .sq{width:9px;height:9px;border-radius:2px;background:#07090B;border:1px solid var(--line-2);flex:none}
+.tg.act{color:var(--ink);border-color:rgba(47,227,194,.4)}
+.tg.act .sq{background:var(--led);border-color:var(--led);box-shadow:0 0 6px rgba(47,227,194,.8)}
+.tg.say{background:linear-gradient(#2A2F37,#1E2229);justify-content:center;font-weight:720;color:var(--ink)}
+.ch.on .tg.say{background:var(--grad);color:#0B0D10;border-color:transparent}
+
+/* master section */
+.master{border-left:1px solid #0B0D10;box-shadow:-1px 0 0 rgba(255,255,255,.04);
+  display:grid;grid-template-rows:28px 1fr;overflow:hidden}
+.mbody{padding:13px;display:grid;gap:12px;align-content:start;overflow-y:auto}
+.mbody::-webkit-scrollbar{width:7px}
+.mbody::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.mprev{border-radius:8px;overflow:hidden;background:#0C0E11;border:1px solid var(--line);padding:8px}
+.mprev .sc{aspect-ratio:9/16;border-radius:6px;background:linear-gradient(160deg,#33323E,#15141B 58%,#242230);
+  position:relative;display:grid;place-items:center;border:1px solid #000}
+.mprev .sc .p{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.95);display:grid;
+  place-items:center;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.mprev .sc .sub{position:absolute;left:9px;right:9px;bottom:20px;text-align:center;font-size:10.5px;
+  font-weight:750;text-shadow:0 2px 9px rgba(0,0,0,.9)}
+.mprev .sc .pb{position:absolute;left:0;right:0;bottom:0;height:2.5px;background:rgba(255,255,255,.2)}
+.mprev .sc .pb i{position:absolute;inset:0 87.5% 0 0;background:#fff}
+.mprev .ti{font-size:11.5px;font-weight:680;line-height:1.4;margin-top:8px}
+.mprev .mt{font-size:9.5px;color:var(--ink-3);margin-top:3px;font-weight:650}
+.mrow{display:grid;gap:6px}
+.mrow .k{display:flex;align-items:center;justify-content:space-between;font-size:10.5px;color:var(--ink-3);
+  font-weight:700}
+.mrow .k b{color:var(--ink-2)}
+.mbar{height:6px;border-radius:3px;background:#07090B;position:relative;overflow:hidden;
+  box-shadow:0 1px 2px rgba(0,0,0,.6) inset}
+.mbar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.mbar i.m{background:linear-gradient(90deg,#1B9E86,#2FE3C2)}
+.mbar i.p{background:linear-gradient(90deg,#C08A3A,#F0B964)}
+.ok{display:flex;align-items:center;gap:7px;padding:9px 11px;border-radius:7px;
+  background:rgba(47,227,194,.08);border:1px solid rgba(47,227,194,.24);font-size:11px;font-weight:680;color:#9FF4E4}
+.mbtn{height:31px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
+  background:linear-gradient(#2A2F37,#1E2229);border:1px solid var(--line);color:var(--ink-2);
+  box-shadow:0 1px 0 rgba(255,255,255,.07) inset}
+.mbtn.pri{background:linear-gradient(#9C8FFF,#7A68F0);border-color:#6E5BE0;color:#0B0D10;font-weight:760}
+</style>
+</head>
+<body>
+<div class="rack">
+
+  <div class="tp">
+    <div class="proj">
+      <span class="mk"><svg width="13" height="13" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#0B0D10" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>
+      门窗案例小红书内容<span class="bd">2</span>
+    </div>
+    <div class="readout">
+      <span class="big mono">00:04.2</span>
+      <span class="nm">总长 <b class="mono">32.0s</b></span>
+      <span class="nm">通道 <b>5</b></span>
+      <span class="nm">竖屏 <b>9:16</b></span>
+    </div>
+    <div class="tbtns">
+      <button class="tb"><svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M4 3h2v10H4zM7.5 8l5-5v10z"/></svg></button>
+      <button class="tb go"><svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.2v9.6L13 8z"/></svg></button>
+      <button class="tb"><svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h2v10h-2zM3.5 3l5 5-5 5z"/></svg></button>
+    </div>
+    <span class="sp"></span>
+    <span class="pill"><span class="d"></span>AI 正在理解素材</span>
+    <button class="tbtn2">资料 · 6</button>
+    <button class="tbtn2">导出</button>
+    <button class="tbtn2 pri">编辑</button>
+  </div>
+
+  <div class="body">
+    <!-- talkback -->
+    <section class="bay">
+      <div class="bayh"><span class="lab">对讲 · Talkback</span></div>
+      <div class="msgs">
+        <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+        <div class="ai">
+          <div class="av"><svg width="9" height="9" viewBox="0 0 16 16" fill="#0B0D10"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+          <div>
+            <div class="tx">隔音测试那段现场音很清楚，我拿它当开场。<b>每条通道的推子就是这一镜的时长</b>，旁边那根是配音电平。</div>
+          </div>
+        </div>
+        <div class="ai">
+          <div class="av"><svg width="9" height="9" viewBox="0 0 16 16" fill="#0B0D10"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+          <div>
+            <div class="tx">第 3 通道的来源灯是黄的，说明那镜用的是公开素材。</div>
+            <div class="chips">
+              <button class="chip">第 3 镜换成我的素材</button>
+              <button class="chip">第 1 镜留长一点</button>
+              <button class="chip">配乐整条压低</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="talkf">
+        <div class="dk">
+          <span class="ctx">正在说 通道 1<button class="x">×</button></span>
+          <div class="phx">第 1 镜：想把这里改成…</div>
+          <div class="row">
+            <button class="ib"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+            <button class="ib"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="5.8" cy="6.6" r="1" fill="currentColor"/></svg></button>
+            <button class="snd">发送</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- channel strips -->
+    <section class="bay" style="border-right:0;box-shadow:none">
+      <div class="bayh"><span class="lab">分镜通道 · 5</span><span class="sp"></span><span class="lab" style="letter-spacing:.04em">推子 = 时长 · 右侧 = 配音电平</span></div>
+      <div class="chans">
+
+        <div class="ch on">
+          <div class="chh"><span class="no">1</span><span class="tc mono">00:00</span><span class="led"></span></div>
+          <div class="slot"><div class="im"></div><div class="ln">关窗之后，外面的车声基本听不见了</div></div>
+          <div class="fz">
+            <div class="fader"><div class="track"><div class="fill" style="height:72%"></div></div>
+              <div class="cap" style="bottom:calc(72% - 7px)"></div><span class="tick mono" style="bottom:70%">7.2</span></div>
+            <div class="meter"><i style="height:64%"></i></div>
+            <div class="mlab"><span>时长</span><span>配音</span></div>
+          </div>
+          <div class="dur"><b class="mono">7.2</b><span>秒 · 你的素材</span></div>
+          <div class="chf">
+            <button class="tg act"><span class="sq"></span>字卡 · 降噪 32 分贝</button>
+            <button class="tg say">正在说这镜</button>
+          </div>
+        </div>
+
+        <div class="ch">
+          <div class="chh"><span class="no">2</span><span class="tc mono">00:07</span><span class="led"></span></div>
+          <div class="slot"><div class="im"></div><div class="ln">临街房最怕的就是晚上睡不着</div></div>
+          <div class="fz">
+            <div class="fader"><div class="track"><div class="fill" style="height:60%"></div></div>
+              <div class="cap" style="bottom:calc(60% - 7px)"></div><span class="tick mono" style="bottom:58%">6.0</span></div>
+            <div class="meter"><i style="height:52%"></i></div>
+            <div class="mlab"><span>时长</span><span>配音</span></div>
+          </div>
+          <div class="dur"><b class="mono">6.0</b><span>秒 · 你的素材</span></div>
+          <div class="chf">
+            <button class="tg"><span class="sq"></span>字卡 · 无</button>
+            <button class="tg say">说这镜</button>
+          </div>
+        </div>
+
+        <div class="ch">
+          <div class="chh"><span class="no">3</span><span class="tc mono">00:13</span><span class="led pub"></span></div>
+          <div class="slot"><div class="im pub"></div><div class="ln">断桥铝的三层中空结构是关键</div></div>
+          <div class="fz">
+            <div class="fader"><div class="track"><div class="fill" style="height:81%"></div></div>
+              <div class="cap" style="bottom:calc(81% - 7px)"></div><span class="tick mono" style="bottom:79%">8.1</span></div>
+            <div class="meter"><i style="height:58%"></i></div>
+            <div class="mlab"><span>时长</span><span>配音</span></div>
+          </div>
+          <div class="dur"><b class="mono">8.1</b><span>秒 · 公开素材</span></div>
+          <div class="chf">
+            <button class="tg"><span class="sq"></span>字卡 · 无</button>
+            <button class="tg say">说这镜</button>
+          </div>
+        </div>
+
+        <div class="ch">
+          <div class="chh"><span class="no">4</span><span class="tc mono">00:21</span><span class="led"></span></div>
+          <div class="slot"><div class="im"></div><div class="ln">安装环节这一步不能省</div></div>
+          <div class="fz">
+            <div class="fader"><div class="track"><div class="fill" style="height:54%"></div></div>
+              <div class="cap" style="bottom:calc(54% - 7px)"></div><span class="tick mono" style="bottom:52%">5.4</span></div>
+            <div class="meter"><i style="height:49%"></i></div>
+            <div class="mlab"><span>时长</span><span>配音</span></div>
+          </div>
+          <div class="dur"><b class="mono">5.4</b><span>秒 · 你的素材</span></div>
+          <div class="chf">
+            <button class="tg"><span class="sq"></span>字卡 · 无</button>
+            <button class="tg say">说这镜</button>
+          </div>
+        </div>
+
+        <div class="ch">
+          <div class="chh"><span class="no">5</span><span class="tc mono">00:27</span><span class="led"></span></div>
+          <div class="slot"><div class="im"></div><div class="ln">整窗保修五年，上门测量免费</div></div>
+          <div class="fz">
+            <div class="fader"><div class="track"><div class="fill" style="height:53%"></div></div>
+              <div class="cap" style="bottom:calc(53% - 7px)"></div><span class="tick mono" style="bottom:51%">5.3</span></div>
+            <div class="meter"><i style="height:55%"></i></div>
+            <div class="mlab"><span>时长</span><span>配音</span></div>
+          </div>
+          <div class="dur"><b class="mono">5.3</b><span>秒 · 你的素材</span></div>
+          <div class="chf">
+            <button class="tg act"><span class="sq"></span>字卡 · 保修五年</button>
+            <button class="tg say">说这镜</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- master -->
+    <section class="master">
+      <div class="bayh"><span class="lab">总输出 · Master</span></div>
+      <div class="mbody">
+        <div class="mprev">
+          <div class="sc">
+            <div class="p"><svg width="13" height="13" viewBox="0 0 16 16" fill="#15161A"><path d="M5 3.2v9.6L13 8z"/></svg></div>
+            <div class="sub">关窗之后，车声基本听不见了</div>
+            <div class="pb"><i></i></div>
+          </div>
+          <div class="ti">断桥铝门窗的隔音效果实测</div>
+          <div class="mt mono">v2 · 32.0s · 9:16 · 小红书</div>
+        </div>
+        <div class="mrow">
+          <div class="k"><span>你的素材</span><b>4 镜 · 24s</b></div>
+          <div class="mbar"><i class="m" style="width:75%"></i></div>
+          <div class="k"><span>公开素材</span><b>1 镜 · 8s</b></div>
+          <div class="mbar"><i class="p" style="width:25%"></i></div>
+        </div>
+        <div class="ok">✓ 来源已全部标注</div>
+        <div class="mrow">
+          <div class="k"><span>配乐</span><b>轻快节奏 · 低音量</b></div>
+          <div class="mbar"><i class="m" style="width:28%"></i></div>
+          <div class="k"><span>字幕</span><b>自动跟随配音</b></div>
+        </div>
+        <button class="mbtn">导出文字稿</button>
+        <button class="mbtn pri">播放全片</button>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

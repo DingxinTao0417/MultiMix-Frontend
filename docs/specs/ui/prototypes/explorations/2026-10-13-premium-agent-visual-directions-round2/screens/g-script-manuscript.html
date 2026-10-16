@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向 G · Script Manuscript · 剧本稿</title>
+<style>
+:root{
+  --bg:#EFEBE3; --paper:#FBF9F4; --panel:#FFFFFF; --surface-2:#F3F0E9;
+  --line:#E3DED2; --line-2:#D2CBBB;
+  --ink:#1A1713; --ink-2:#655F55; --ink-3:#978F82;
+  --seal:#B03A2B; --seal-soft:#F7E9E6; --seal-line:#E7C6BF;
+  --ok:#1F6F4A; --warn:#8C6400;
+  --r:10px; --r-sm:6px;
+  --shadow:0 1px 2px rgba(26,23,19,.05),0 16px 40px -18px rgba(26,23,19,.2);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:13.5px;line-height:1.6;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+.serif{font-family:Georgia,"Songti SC","Noto Serif SC",serif}
+.mono{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+.shell{height:100vh;display:grid;grid-template-rows:46px 1fr}
+.top{display:flex;align-items:center;gap:11px;padding:0 17px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sw{display:flex;align-items:center;gap:9px;height:29px;padding:0 10px 0 4px;background:var(--paper);
+  border:1px solid var(--line-2);border-radius:var(--r-sm);color:var(--ink);font-size:12.5px;font-weight:650;cursor:pointer}
+.mk{width:21px;height:21px;border-radius:6px;background:#1A1713;display:grid;place-items:center;flex:none}
+.sw .bd{min-width:17px;height:17px;padding:0 5px;border-radius:5px;background:var(--seal-soft);color:var(--seal);
+  font-size:10.5px;font-weight:800;display:grid;place-items:center}
+.pill{display:inline-flex;align-items:center;gap:7px;height:25px;padding:0 10px;border-radius:var(--r-sm);
+  font-size:11.5px;font-weight:700;color:var(--seal);background:var(--seal-soft);border:1px solid var(--seal-line)}
+.pill .d{width:6px;height:6px;border-radius:50%;background:var(--seal);animation:bl 1.9s infinite}
+@keyframes bl{50%{opacity:.25}}
+.spacer{flex:1}
+.tiny{height:25px;padding:0 10px;border-radius:var(--r-sm);background:transparent;border:1px solid var(--line-2);
+  color:var(--ink-2);font-size:11.5px;font-weight:600}
+
+.app{display:grid;grid-template-columns:clamp(360px,30%,420px) 1px 1fr;overflow:hidden}
+.seam{background:var(--line)}
+
+/* conversation */
+.conv{display:grid;grid-template-rows:1fr auto;overflow:hidden;background:var(--panel)}
+.flow{overflow-y:auto;padding:20px 18px 8px;display:grid;gap:17px;align-content:start}
+.flow::-webkit-scrollbar{width:8px}
+.flow::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.me{justify-self:end;max-width:90%;background:var(--surface-2);border-radius:13px 13px 4px 13px;
+  padding:9px 13px;font-size:13px}
+.ai{display:grid;grid-template-columns:21px 1fr;gap:10px}
+.av{width:21px;height:21px;border-radius:6px;background:var(--ink);display:grid;place-items:center;margin-top:1px}
+.ai .who{font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.ai .bd{font-size:13px;line-height:1.66}
+.refs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.ref{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px 0 3px;border-radius:5px;
+  background:var(--surface-2);border:1px solid var(--line);font-size:11px;color:var(--ink-2)}
+.ref i{width:20px;height:20px;border-radius:3px;background:linear-gradient(135deg,#D8D1C2,#EDE8DC);flex:none}
+.done{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;margin-top:8px}
+.done .hd{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.done .hd b{font-size:12.5px;font-weight:680}
+.done .ok{margin-left:auto;display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 8px;
+  border-radius:3px;background:#E6F2EB;color:var(--ok);font-size:10px;font-weight:800}
+.done .fr{display:grid;grid-template-columns:36px 1fr;gap:10px;font-size:11.5px;padding:2px 0;color:var(--ink-2)}
+.done .fr .k{color:var(--ink-3)}
+.sugs{display:grid;gap:0;margin-top:9px;border-top:1px solid var(--line)}
+.sug{display:flex;align-items:center;gap:8px;padding:8px 2px;border:0;border-bottom:1px solid var(--line);
+  background:none;color:var(--ink-2);font-size:12.5px;cursor:pointer;text-align:left}
+.sug:hover{color:var(--seal)}
+.sug::before{content:"→";color:var(--seal);font-weight:700;flex:none}
+.dock{padding:9px 18px 15px}
+.dk{border:1px solid var(--line-2);border-radius:var(--r-sm);padding:9px 10px 7px;background:var(--paper)}
+.dk:focus-within{border-color:var(--seal)}
+.dk .ctx{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 4px 0 8px;border-radius:3px;
+  background:var(--seal-soft);font-size:10.5px;font-weight:700;color:var(--seal);margin-bottom:7px}
+.dk .ctx .x{width:14px;height:14px;border-radius:50%;background:var(--seal-line);color:var(--seal);
+  font-size:9px;display:grid;place-items:center;border:0}
+.dk .phx{font-size:12.5px;color:var(--ink-3);padding:1px 2px 9px}
+.dk .bar{display:flex;align-items:center;gap:5px}
+.ib{width:27px;height:27px;border-radius:5px;background:transparent;border:1px solid var(--line);
+  color:var(--ink-3);display:grid;place-items:center}
+.snd{height:27px;padding:0 12px;border-radius:5px;border:0;background:var(--ink);color:#fff;
+  font-size:11.5px;font-weight:700;margin-left:auto}
+
+/* ---------- manuscript ---------- */
+.ms{overflow-y:auto;position:relative;background:var(--bg)}
+.ms::-webkit-scrollbar{width:10px}
+.ms::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:5px}
+/* sticky margin-note player, sits in the left gutter of the sheet */
+.mini{position:sticky;top:0;z-index:5;display:flex;justify-content:flex-start;padding:30px 0 0 24px;
+  height:150px;margin-bottom:-150px;pointer-events:none}
+.mini .box{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:6px;box-shadow:var(--shadow);display:grid;gap:6px;justify-items:center;width:66px;height:fit-content}
+.mini .sc{width:54px;height:96px;border-radius:7px;background:linear-gradient(150deg,#2A2833,#15141C);
+  display:grid;place-items:center;position:relative;flex:none}
+.mini .sc .p{width:23px;height:23px;border-radius:50%;background:rgba(255,255,255,.95);display:grid;place-items:center}
+.mini .tx{text-align:center;padding-bottom:2px}
+.mini .tx .v{font-size:9.5px;font-weight:700;color:var(--ink-2)}
+.mini .tx .b{height:3px;width:50px;border-radius:2px;background:var(--line);margin-top:5px;position:relative}
+.mini .tx .b i{position:absolute;inset:0 62% 0 0;background:var(--seal);border-radius:2px}
+
+/* paper sheet */
+.sheet{max-width:720px;margin:0 auto;padding:30px 0 60px}
+.doc{background:var(--paper);border:1px solid var(--line);border-radius:3px;box-shadow:var(--shadow);
+  padding:44px 56px 48px}
+.doc .kicker{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:11px}
+.doc h1{font-size:28px;font-weight:600;letter-spacing:-.015em;line-height:1.3;margin-bottom:10px}
+.doc .credits{font-size:12px;color:var(--ink-2);padding-bottom:17px;border-bottom:1px solid var(--line-2);
+  display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.doc .credits .sep{color:var(--line-2)}
+.ok2{display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 7px;border-radius:3px;
+  background:#E6F2EB;color:var(--ok);font-size:10px;font-weight:800}
+
+/* scene block */
+.scene{padding:24px 0;border-bottom:1px solid var(--line);position:relative}
+.scene:last-of-type{border-bottom:0}
+.scene .sh{display:flex;align-items:baseline;gap:11px;margin-bottom:12px}
+.scene .sh .no{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.scene .sh .tc{font-size:10.5px;color:var(--ink-3)}
+.scene .sh .ed{margin-left:auto;height:23px;padding:0 9px;border-radius:4px;background:transparent;
+  border:1px solid var(--line-2);color:var(--ink-3);font-size:10.5px;font-weight:650;opacity:0;transition:opacity .12s}
+.scene:hover .sh .ed{opacity:1}
+.scene .slug{font-size:11.5px;color:var(--ink-2);display:flex;align-items:center;gap:8px;margin-bottom:11px;
+  flex-wrap:wrap}
+.thumb{width:26px;height:26px;border-radius:3px;background:linear-gradient(145deg,#2C2A35,#17161F);
+  border:1px solid var(--line-2);flex:none}
+.thumb.pub{background:repeating-linear-gradient(135deg,#2C2A35,#2C2A35 4px,#3B3946 4px,#3B3946 8px)}
+.src{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:3px;background:#E6F2EB;
+  color:var(--ok);font-size:10px;font-weight:800;flex:none}
+.src.pub{background:#FFF3D9;color:#7A5400}
+.vo{font-size:17px;line-height:1.78;letter-spacing:.004em;max-width:42ch}
+.vo em{font-style:normal;background:linear-gradient(transparent 62%,var(--seal-soft) 62%)}
+.card2{margin-top:13px;padding-left:15px;border-left:2px solid var(--seal);font-size:12.5px;color:var(--ink-2)}
+.card2 b{color:var(--ink);font-weight:650}
+.doc .tail{margin-top:26px;padding-top:17px;border-top:1px solid var(--line-2);font-size:11.5px;
+  color:var(--ink-3);display:flex;align-items:center;gap:9px}
+.doc .tail .r{margin-left:auto}
+.acts{position:sticky;bottom:0;background:linear-gradient(transparent,var(--bg) 42%);padding:22px 0 18px;
+  display:flex;justify-content:center;gap:8px}
+.op{height:33px;padding:0 15px;border-radius:999px;font-size:12.5px;font-weight:650;background:var(--panel);
+  border:1px solid var(--line-2);color:var(--ink-2);cursor:pointer;box-shadow:var(--shadow)}
+.op:hover{color:var(--ink)}
+.op.pri{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:700}
+
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div class="top">
+  <button class="sw">
+    <span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>
+    门窗案例小红书内容
+    <span class="bd">2</span>
+  </button>
+  <span class="pill"><span class="d"></span>AI 正在理解素材</span>
+  <span class="spacer"></span>
+  <button class="tiny">资料 · 6</button>
+</div>
+
+<div class="app">
+  <!-- 对话 -->
+  <section class="conv">
+    <div class="flow">
+      <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+      <div class="ai">
+        <div class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+        <div>
+          <div class="who">MultiMix</div>
+          <div class="bd">隔音测试那段现场音很清楚，我拿它当开场。右边是这条片子的脚本，每一场都标了用你哪份素材。</div>
+          <div class="refs"><span class="ref"><i></i>隔音实测.mp4</span><span class="ref"><i></i>产品参数.pdf</span></div>
+          <div class="done">
+            <div class="hd"><b>这样做这条视频</b><span class="ok">✓ 已确认</span></div>
+            <div class="fr"><span class="k">结构</span><span class="v">困扰 → 实测 → 方案 → 价格</span></div>
+            <div class="fr"><span class="k">时长</span><span class="v">约 32 秒 · 竖屏 9:16</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ai">
+        <div class="av"><svg width="10" height="10" viewBox="0 0 16 16" fill="#fff"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+        <div>
+          <div class="who">MultiMix</div>
+          <div class="bd">第三场用的是公开素材。脚本里改哪句，成片就跟着改哪一镜。</div>
+          <div class="sugs">
+            <button class="sug">第三场换成我的素材</button>
+            <button class="sug">开场那句再口语一点</button>
+            <button class="sug">把脚本导成文字稿</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="dk">
+        <span class="ctx">正在说 第一场<button class="x">×</button></span>
+        <div class="phx">第一场：想把这句改成…</div>
+        <div class="bar">
+          <button class="ib"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+          <button class="ib"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="5.8" cy="6.6" r="1" fill="currentColor"/></svg></button>
+          <button class="snd">发送</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="seam"></div>
+
+  <!-- 剧本稿 -->
+  <section class="ms">
+    <div class="mini">
+      <div class="box">
+        <div class="sc"><div class="p"><svg width="11" height="11" viewBox="0 0 16 16" fill="#1A1713"><path d="M5 3.2v9.6L13 8z"/></svg></div></div>
+        <div class="tx">
+          <div class="v mono">00:04</div>
+          <div class="b"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <article class="doc">
+        <div class="kicker">拍摄脚本 · 视频工程 v2</div>
+        <h1 class="serif">断桥铝门窗的隔音效果实测</h1>
+        <div class="credits">
+          <span>竖屏 9:16</span><span class="sep">·</span>
+          <span>32 秒</span><span class="sep">·</span>
+          <span>5 场</span><span class="sep">·</span>
+          <span>小红书</span><span class="sep">·</span>
+          <span class="ok2">✓ 来源已标注</span>
+        </div>
+
+        <section class="scene">
+          <div class="sh"><span class="no">第一场</span><span class="tc mono">00:00 – 00:07</span><button class="ed">改这场</button></div>
+          <div class="slug"><span class="thumb"></span><span class="src">你的素材</span>隔音实测.mp4 · 00:04–00:11 · 现场同期声</div>
+          <p class="vo serif">关窗之后，<em>外面的车声基本听不见了</em>。这是刚装完当天在店里录的，没做任何后期降噪。</p>
+          <div class="card2">字卡 · <b>隔音实测 · 降噪 32 分贝</b></div>
+        </section>
+
+        <section class="scene">
+          <div class="sh"><span class="no">第二场</span><span class="tc mono">00:07 – 00:13</span><button class="ed">改这场</button></div>
+          <div class="slug"><span class="thumb"></span><span class="src">你的素材</span>施工过程记录.jpg</div>
+          <p class="vo serif">临街房最怕的就是晚上睡不着，货车一过整面窗都在响。</p>
+        </section>
+
+        <section class="scene">
+          <div class="sh"><span class="no">第三场</span><span class="tc mono">00:13 – 00:21</span><button class="ed">改这场</button></div>
+          <div class="slug"><span class="thumb pub"></span><span class="src pub">公开素材</span>结构示意 · 建议换成你自己的安装画面</div>
+          <p class="vo serif">断桥铝的三层中空结构是关键，中间那层空腔把声音挡在外面。</p>
+        </section>
+
+        <section class="scene">
+          <div class="sh"><span class="no">第四场</span><span class="tc mono">00:21 – 00:27</span><button class="ed">改这场</button></div>
+          <div class="slug"><span class="thumb"></span><span class="src">你的素材</span>施工过程记录.jpg</div>
+          <p class="vo serif">安装环节这一步不能省，边框打胶不到位，再好的窗也白装。</p>
+        </section>
+
+        <section class="scene">
+          <div class="sh"><span class="no">第五场</span><span class="tc mono">00:27 – 00:32</span><button class="ed">改这场</button></div>
+          <div class="slug"><span class="thumb"></span><span class="src">你的素材</span>产品参数.pdf</div>
+          <p class="vo serif">整窗保修五年，上门测量免费。</p>
+          <div class="card2">字卡 · <b>保修五年 · 免费测量</b></div>
+        </section>
+
+        <div class="tail">
+          <span>配乐：轻快节奏 · 整条低音量</span>
+          <span class="r mono">总时长 32.0s</span>
+        </div>
+      </article>
+
+      <div class="acts">
+        <button class="op">导出文字稿</button>
+        <button class="op">导出视频</button>
+        <button class="op pri">在编辑器里打开</button>
+      </div>
+    </div>
+  </section>
+</div>
+</div>
+</body>
+</html>
