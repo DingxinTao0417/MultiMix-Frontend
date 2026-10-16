@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>方向 I · Node Canvas · 血缘画布</title>
+<style>
+:root{
+  --bg:#0E1014; --grid:rgba(255,255,255,.055);
+  --node:#1A1D23; --node-2:#20242B; --line:#2E333C; --line-2:#3C434E;
+  --ink:#F2F3F5; --ink-2:#A2A8B3; --ink-3:#6E7682;
+  --ai:#6E5BFF; --ai-2:#00D2AE; --grad:linear-gradient(118deg,#6E5BFF,#00D2AE);
+  --mine:#00D2AE; --pub:#E0A64B;
+  --r:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);overflow:hidden;
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:13px;line-height:1.6;-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+.mono{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-variant-numeric:tabular-nums}
+
+.stage{position:relative;height:100vh;overflow:hidden;
+  background-image:radial-gradient(var(--grid) 1px,transparent 1px);
+  background-size:22px 22px;background-position:-1px -1px}
+.stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 80% at 50% 40%,transparent 40%,rgba(0,0,0,.55))}
+
+/* floating chrome */
+.bar{position:absolute;top:14px;left:16px;right:16px;display:flex;align-items:center;gap:10px;z-index:30}
+.glass{background:rgba(26,29,35,.82);border:1px solid var(--line);border-radius:10px;
+  backdrop-filter:blur(14px);box-shadow:0 10px 30px -12px rgba(0,0,0,.6)}
+.proj{display:flex;align-items:center;gap:9px;height:32px;padding:0 12px 0 5px;font-size:12.5px;font-weight:650}
+.mk{width:22px;height:22px;border-radius:6px;background:var(--grad);display:grid;place-items:center;flex:none}
+.proj .bd{min-width:17px;height:17px;padding:0 5px;border-radius:5px;background:rgba(110,91,255,.22);
+  color:#B9AEFF;font-size:10.5px;font-weight:800;display:grid;place-items:center}
+.pill{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 11px;border-radius:999px;
+  font-size:11.5px;font-weight:650;color:#9FF0E0;background:rgba(0,210,174,.12);border:1px solid rgba(0,210,174,.3)}
+.pill .d{width:6px;height:6px;border-radius:50%;background:var(--ai-2);animation:bl 1.9s infinite}
+@keyframes bl{50%{opacity:.2}}
+.sp{flex:1}
+.zoom{display:flex;align-items:center;gap:2px;height:32px;padding:0 5px}
+.zb{width:24px;height:22px;border-radius:5px;background:transparent;border:0;color:var(--ink-2);font-size:13px;
+  font-weight:700;cursor:pointer}
+.zb:hover{background:rgba(255,255,255,.07);color:var(--ink)}
+.zoom .lv{font-size:11px;color:var(--ink-3);padding:0 6px;font-weight:650}
+.act{height:32px;padding:0 14px;border-radius:9px;font-size:12.5px;font-weight:680;cursor:pointer;
+  background:rgba(26,29,35,.82);border:1px solid var(--line);color:var(--ink-2);backdrop-filter:blur(14px)}
+.act:hover{color:var(--ink)}
+.act.pri{background:var(--grad);border:0;color:#0B0D10;font-weight:750}
+
+/* canvas: one fixed plane so wires and nodes share coordinates */
+.canvas{position:absolute;top:0;left:0;width:1440px;height:900px;z-index:10;
+  transform-origin:top left}
+.wires{position:absolute;top:0;left:0;width:1440px;height:900px;pointer-events:none;z-index:1}
+.wires path{fill:none;stroke-linecap:round}
+.n{position:absolute;z-index:2}
+
+/* column labels */
+.cl{position:absolute;z-index:2;font-size:9.5px;font-weight:800;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+
+/* material node */
+.mat{width:184px;background:var(--node);border:1px solid var(--line);border-radius:10px;padding:9px 10px;
+  display:grid;grid-template-columns:30px 1fr;gap:9px;align-items:center;cursor:pointer}
+.mat:hover{border-color:var(--line-2)}
+.mat.pub{border-color:rgba(224,166,75,.4);background:linear-gradient(var(--node),var(--node)) padding-box,
+  linear-gradient(135deg,rgba(224,166,75,.5),rgba(224,166,75,.15)) border-box;border:1px solid transparent}
+.mat .ic{width:30px;height:30px;border-radius:6px;background:#2A2F37;display:grid;place-items:center;flex:none}
+.mat .tx{min-width:0}
+.mat .tx b{display:block;font-size:11.5px;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mat .tx span{font-size:10px;color:var(--ink-3)}
+.dotl{position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;
+  background:var(--mine);box-shadow:0 0 0 3px rgba(0,210,174,.16)}
+.mat.pub .dotl{background:var(--pub);box-shadow:0 0 0 3px rgba(224,166,75,.16)}
+
+/* shot node — fixed height so wire endpoints stay aligned */
+.shot{width:212px;height:129px;background:var(--node);border:1px solid var(--line);border-radius:var(--r);
+  overflow:hidden;cursor:pointer;transition:border-color .14s,box-shadow .14s;display:grid;
+  grid-template-rows:auto 1fr auto}
+.shot:hover{border-color:var(--line-2)}
+.shot.on{border-color:transparent;
+  background:linear-gradient(var(--node),var(--node)) padding-box,var(--grad) border-box;
+  border:1.5px solid transparent;box-shadow:0 0 0 4px rgba(110,91,255,.14),0 14px 34px -14px rgba(0,0,0,.7)}
+.shot .hd{display:flex;align-items:center;gap:7px;padding:8px 10px 0}
+.shot .hd .no{width:19px;height:19px;border-radius:5px;background:#2A2F37;font-size:10px;font-weight:800;
+  display:grid;place-items:center;color:var(--ink-2);flex:none}
+.shot.on .hd .no{background:var(--grad);color:#0B0D10}
+.shot .hd .tc{font-size:9.5px;color:var(--ink-3);font-weight:650}
+.shot .hd .du{margin-left:auto;font-size:9.5px;color:var(--ink-3);font-weight:700}
+.shot .bd{display:grid;grid-template-columns:38px 1fr;gap:9px;padding:8px 10px 9px;align-items:start}
+.shot .th{width:38px;height:58px;border-radius:5px;background:linear-gradient(145deg,#2E2D39,#191820);
+  border:1px solid var(--line);flex:none}
+.shot .th.pub{background:repeating-linear-gradient(135deg,#2E2D39,#2E2D39 4px,#3C3A48 4px,#3C3A48 8px)}
+.shot .say{font-size:11.5px;font-weight:600;line-height:1.45;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.shot .ft{display:flex;align-items:center;gap:6px;padding:0 10px 9px}
+.tagm{display:inline-flex;align-items:center;height:16px;padding:0 6px;border-radius:4px;font-size:9px;
+  font-weight:800;background:rgba(0,210,174,.14);color:#6FE8D2}
+.tagm.pub{background:rgba(224,166,75,.16);color:#F0C688}
+.shot .ft .sp2{margin-left:auto;font-size:9.5px;color:var(--ink-3)}
+.dotin{position:absolute;left:-5px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;
+  background:var(--line-2)}
+.dotout{position:absolute;right:-5px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;
+  background:var(--line-2)}
+
+/* film node */
+.film{width:268px;border-radius:16px;padding:12px;position:relative;
+  background:linear-gradient(var(--node-2),var(--node-2)) padding-box,var(--grad) border-box;
+  border:1.5px solid transparent;box-shadow:0 0 0 5px rgba(110,91,255,.1),0 26px 60px -22px rgba(0,0,0,.85)}
+.film .fh{margin-bottom:10px}
+.film .fh b{display:block;font-size:12.5px;font-weight:700;line-height:1.35;margin-bottom:5px}
+.film .fh .mr{display:flex;align-items:center;gap:7px}
+.film .fh .v{font-size:9.5px;color:var(--ink-3);font-weight:650}
+.film .fh .ok{display:inline-flex;align-items:center;gap:4px;height:17px;padding:0 7px;white-space:nowrap;
+  border-radius:4px;background:rgba(0,210,174,.14);color:#6FE8D2;font-size:9px;font-weight:800}
+.film .sc{aspect-ratio:9/16;height:324px;margin:0 auto;border-radius:11px;overflow:hidden;position:relative;
+  background:linear-gradient(160deg,#2C2B37,#141319 58%,#1F1E27);display:grid;place-items:center;
+  box-shadow:0 0 44px -8px rgba(110,91,255,.3)}
+.film .sc .p{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.96);display:grid;
+  place-items:center;box-shadow:0 8px 22px rgba(0,0,0,.5)}
+.film .sc .sub{position:absolute;left:11px;right:11px;bottom:28px;text-align:center;font-size:11.5px;
+  font-weight:750;text-shadow:0 2px 10px rgba(0,0,0,.85)}
+.film .sc .tc{position:absolute;bottom:9px;left:11px;font-size:9.5px;color:rgba(255,255,255,.75)}
+.film .sc .pb{position:absolute;left:0;right:0;bottom:0;height:2.5px;background:rgba(255,255,255,.2)}
+.film .sc .pb i{position:absolute;inset:0 87.5% 0 0;background:#fff}
+.film .ff{display:flex;align-items:center;gap:7px;margin-top:11px}
+.film .ff .m{font-size:10px;color:var(--ink-3)}
+.film .ff .go{margin-left:auto;height:27px;padding:0 12px;border-radius:7px;border:0;cursor:pointer;
+  background:var(--grad);color:#0B0D10;font-size:11.5px;font-weight:750}
+.dotfin{position:absolute;left:-6px;top:50%;transform:translateY(-50%);width:9px;height:9px;border-radius:50%;
+  background:var(--ai);box-shadow:0 0 0 4px rgba(110,91,255,.18)}
+
+/* chat as floating glass */
+.chat{position:absolute;left:16px;bottom:16px;width:352px;z-index:30;border-radius:13px;overflow:hidden;
+  background:rgba(20,23,28,.9);border:1px solid var(--line);backdrop-filter:blur(18px);
+  box-shadow:0 24px 60px -20px rgba(0,0,0,.85)}
+.chat .ch{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--line)}
+.chat .ch b{font-size:11.5px;font-weight:700}
+.chat .ch .cnt{font-size:10px;color:var(--ink-3)}
+.chat .ch .min{margin-left:auto;width:20px;height:20px;border-radius:5px;background:transparent;border:0;
+  color:var(--ink-3);font-size:13px;cursor:pointer}
+.chat .cb{padding:12px;display:grid;gap:12px;max-height:238px;overflow-y:auto}
+.chat .cb::-webkit-scrollbar{width:7px}
+.chat .cb::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:4px}
+.me{justify-self:end;max-width:86%;background:rgba(255,255,255,.07);border-radius:11px 11px 3px 11px;
+  padding:7px 11px;font-size:12px}
+.ai{display:grid;grid-template-columns:19px 1fr;gap:9px}
+.av{width:19px;height:19px;border-radius:5px;background:var(--grad);display:grid;place-items:center;margin-top:1px}
+.ai .who{font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+.ai .tx{font-size:12px;line-height:1.6;color:var(--ink-2)}
+.ai .tx b{color:var(--ink);font-weight:650}
+.sugs{display:grid;gap:4px;margin-top:7px}
+.sug{display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;border-radius:7px;cursor:pointer;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--ink-2);font-size:11.5px;text-align:left}
+.sug:hover{border-color:var(--line-2);color:var(--ink)}
+.sug::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--ai-2);flex:none}
+.chat .cf{padding:9px 12px 11px;border-top:1px solid var(--line)}
+.dk{border:1px solid var(--line-2);border-radius:9px;padding:8px 9px 6px;background:rgba(255,255,255,.04)}
+.dk .ctx{display:inline-flex;align-items:center;gap:6px;height:20px;padding:0 4px 0 8px;border-radius:999px;
+  background:rgba(110,91,255,.18);font-size:10px;font-weight:700;color:#C3B8FF;margin-bottom:6px}
+.dk .ctx .x{width:13px;height:13px;border-radius:50%;background:rgba(255,255,255,.14);color:#C3B8FF;
+  font-size:8.5px;display:grid;place-items:center;border:0}
+.dk .phx{font-size:12px;color:var(--ink-3);padding:0 2px 8px}
+.dk .row{display:flex;align-items:center;gap:5px}
+.ib{width:25px;height:25px;border-radius:6px;background:transparent;border:1px solid var(--line);
+  color:var(--ink-3);display:grid;place-items:center}
+.snd{width:27px;height:27px;border-radius:50%;border:0;background:var(--grad);display:grid;place-items:center;
+  margin-left:auto}
+.hint{position:absolute;right:18px;bottom:18px;z-index:30;font-size:10.5px;color:var(--ink-3);
+  display:flex;align-items:center;gap:7px}
+.kbd{display:inline-grid;place-items:center;height:18px;padding:0 6px;border-radius:4px;background:rgba(255,255,255,.07);
+  border:1px solid var(--line);font-size:9.5px;color:var(--ink-2);font-weight:650}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <div class="bar">
+    <div class="glass proj">
+      <span class="mk"><svg width="14" height="14" viewBox="16 16 160 160" fill="none"><g transform="translate(11.35,20.86) scale(0.814)"><g fill="none" stroke="#0B0D10" stroke-linecap="round" stroke-linejoin="round"><path d="M28 146V50c0-10 12-15 19-8l39 39 39-39c7-7 19-2 19 8v96" stroke-width="22"/><path d="M164 63l20 33-20 33" stroke-width="13"/></g></g></svg></span>
+      门窗案例小红书内容<span class="bd">2</span>
+    </div>
+    <span class="pill"><span class="d"></span>AI 正在理解素材</span>
+    <span class="sp"></span>
+    <div class="glass zoom"><button class="zb">−</button><span class="lv">68%</span><button class="zb">+</button><button class="zb">⤢</button></div>
+    <button class="act">导出</button>
+    <button class="act pri">编辑</button>
+  </div>
+
+  <div class="canvas">
+    <!-- wires -->
+    <svg class="wires" viewBox="0 0 1440 900">
+      <defs>
+        <linearGradient id="gm" x1="0" x2="1"><stop offset="0" stop-color="#00D2AE" stop-opacity=".2"/><stop offset="1" stop-color="#00D2AE" stop-opacity=".75"/></linearGradient>
+        <linearGradient id="gp" x1="0" x2="1"><stop offset="0" stop-color="#E0A64B" stop-opacity=".2"/><stop offset="1" stop-color="#E0A64B" stop-opacity=".8"/></linearGradient>
+        <linearGradient id="gf" x1="0" x2="1"><stop offset="0" stop-color="#6E5BFF" stop-opacity=".35"/><stop offset="1" stop-color="#6E5BFF" stop-opacity=".9"/></linearGradient>
+      </defs>
+      <!-- material -> shot -->
+      <path d="M248 234 C 330 234, 350 231, 432 231" stroke="url(#gm)" stroke-width="1.6"/>
+      <path d="M248 314 C 330 314, 350 365, 432 365" stroke="url(#gm)" stroke-width="1.6"/>
+      <path d="M248 314 C 348 314, 332 633, 432 633" stroke="url(#gm)" stroke-width="1.6"/>
+      <path d="M248 394 C 330 394, 350 499, 432 499" stroke="url(#gp)" stroke-width="1.6" stroke-dasharray="5 4"/>
+      <path d="M248 474 C 340 474, 340 767, 432 767" stroke="url(#gm)" stroke-width="1.6"/>
+      <!-- shot -> film -->
+      <path d="M644 231 C 744 231, 792 450, 892 450" stroke="url(#gf)" stroke-width="1.8"/>
+      <path d="M644 365 C 744 365, 792 450, 892 450" stroke="url(#gf)" stroke-width="1.8"/>
+      <path d="M644 499 C 744 499, 792 450, 892 450" stroke="url(#gf)" stroke-width="1.8"/>
+      <path d="M644 633 C 744 633, 792 450, 892 450" stroke="url(#gf)" stroke-width="1.8"/>
+      <path d="M644 767 C 744 767, 792 450, 892 450" stroke="url(#gf)" stroke-width="1.8"/>
+    </svg>
+
+    <span class="cl" style="left:64px;top:186px">你的素材 · 6 份</span>
+    <span class="cl" style="left:432px;top:148px">分镜 · 5 镜</span>
+    <span class="cl" style="left:892px;top:148px">成片</span>
+
+    <!-- materials -->
+    <div class="n" style="left:64px;top:205px">
+      <div class="mat"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.2h7.2v7.6H2.5zM10.4 7l3.1-2v6l-3.1-2z" stroke="#9FF0E0" stroke-width="1.3"/></svg></span>
+        <span class="tx"><b>隔音实测.mp4</b><span>00:04–00:11 · 现场同期声</span></span><span class="dotl"></span></div>
+    </div>
+    <div class="n" style="left:64px;top:285px">
+      <div class="mat"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.6" stroke="#9FF0E0" stroke-width="1.3"/><circle cx="5.8" cy="6.6" r="1.1" fill="#9FF0E0"/></svg></span>
+        <span class="tx"><b>施工过程记录.jpg</b><span>用于 2 镜</span></span><span class="dotl"></span></div>
+    </div>
+    <div class="n" style="left:64px;top:365px">
+      <div class="mat pub"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="#F0C688" stroke-width="1.3"/><path d="M2.6 8h10.8M8 2.5c1.8 1.6 1.8 9.4 0 11" stroke="#F0C688" stroke-width="1.1"/></svg></span>
+        <span class="tx"><b>结构示意</b><span>公开素材 · 建议替换</span></span><span class="dotl"></span></div>
+    </div>
+    <div class="n" style="left:64px;top:445px">
+      <div class="mat"><span class="ic"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 2.5h5.2L12 5.4v8.1H4z" stroke="#9FF0E0" stroke-width="1.3"/><path d="M5.8 8.4h4.4M5.8 10.6h3" stroke="#9FF0E0" stroke-width="1.1"/></svg></span>
+        <span class="tx"><b>产品参数.pdf</b><span>第 5 镜字卡来源</span></span><span class="dotl"></span></div>
+    </div>
+
+    <!-- shots -->
+    <div class="n" style="left:432px;top:167px">
+      <div class="shot on">
+        <div class="hd"><span class="no">1</span><span class="tc mono">00:00</span><span class="du mono">7.2s</span></div>
+        <div class="bd"><span class="th"></span><span class="say">关窗之后，外面的车声基本听不见了</span></div>
+        <div class="ft"><span class="tagm">你的素材</span><span class="sp2">字卡 · 降噪 32 分贝</span></div>
+        <span class="dotin"></span><span class="dotout"></span>
+      </div>
+    </div>
+    <div class="n" style="left:432px;top:301px">
+      <div class="shot">
+        <div class="hd"><span class="no">2</span><span class="tc mono">00:07</span><span class="du mono">6.0s</span></div>
+        <div class="bd"><span class="th"></span><span class="say">临街房最怕的就是晚上睡不着</span></div>
+        <div class="ft"><span class="tagm">你的素材</span></div>
+        <span class="dotin"></span><span class="dotout"></span>
+      </div>
+    </div>
+    <div class="n" style="left:432px;top:435px">
+      <div class="shot">
+        <div class="hd"><span class="no">3</span><span class="tc mono">00:13</span><span class="du mono">8.1s</span></div>
+        <div class="bd"><span class="th pub"></span><span class="say">断桥铝的三层中空结构是关键</span></div>
+        <div class="ft"><span class="tagm pub">公开素材</span></div>
+        <span class="dotin"></span><span class="dotout"></span>
+      </div>
+    </div>
+    <div class="n" style="left:432px;top:569px">
+      <div class="shot">
+        <div class="hd"><span class="no">4</span><span class="tc mono">00:21</span><span class="du mono">5.4s</span></div>
+        <div class="bd"><span class="th"></span><span class="say">安装环节这一步不能省</span></div>
+        <div class="ft"><span class="tagm">你的素材</span></div>
+        <span class="dotin"></span><span class="dotout"></span>
+      </div>
+    </div>
+    <div class="n" style="left:432px;top:703px">
+      <div class="shot">
+        <div class="hd"><span class="no">5</span><span class="tc mono">00:27</span><span class="du mono">5.3s</span></div>
+        <div class="bd"><span class="th"></span><span class="say">整窗保修五年，上门测量免费</span></div>
+        <div class="ft"><span class="tagm">你的素材</span><span class="sp2">字卡 · 保修五年</span></div>
+        <span class="dotin"></span><span class="dotout"></span>
+      </div>
+    </div>
+
+    <!-- film -->
+    <div class="n" style="left:892px;top:178px">
+      <div class="film">
+        <div class="fh"><b>断桥铝门窗的隔音效果实测</b><span class="mr"><span class="v">v2</span><span class="ok">✓ 来源已标注</span></span></div>
+        <div class="sc">
+          <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="#15161A"><path d="M5 3.2v9.6L13 8z"/></svg></div>
+          <div class="sub">关窗之后，车声基本听不见了</div>
+          <span class="tc mono">00:04 / 00:32</span>
+          <div class="pb"><i></i></div>
+        </div>
+        <div class="ff"><span class="m mono">32.0s · 9:16 · 5 镜</span><button class="go">播放全片</button></div>
+        <span class="dotfin"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- chat -->
+  <div class="chat">
+    <div class="ch"><b>对话</b><span class="cnt">已引用 6 份素材</span><button class="min">−</button></div>
+    <div class="cb">
+      <div class="me">这条视频我想突出隔音效果，用我上传的施工现场素材，30 秒左右。</div>
+      <div class="ai">
+        <div class="av"><svg width="9" height="9" viewBox="0 0 16 16" fill="#0B0D10"><path d="M8 1.5l1.5 4L13.5 7 9.5 8.5 8 12.5 6.5 8.5 2.5 7l4-1.5z"/></svg></div>
+        <div>
+          <div class="who">MultiMix</div>
+          <div class="tx">画布上每条线就是一次引用。<b>第 3 镜那条是虚线</b>，说明它连的是公开素材，不是你的。</div>
+          <div class="sugs">
+            <button class="sug">把第 3 镜连到我的素材</button>
+            <button class="sug">看第 2、4 镜为什么共用一张图</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="cf">
+      <div class="dk">
+        <span class="ctx">正在说 第 1 镜<button class="x">×</button></span>
+        <div class="phx">拖线可以改引用，或者直接说…</div>
+        <div class="row">
+          <button class="ib"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M9.5 3.5 5 8a2.1 2.1 0 0 0 3 3l4.5-4.5a3.5 3.5 0 0 0-5-5L3 6.5a4.9 4.9 0 0 0 7 7l3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+          <button class="ib"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="3.5" width="11" height="9" rx="1.8" stroke="currentColor" stroke-width="1.4"/><circle cx="5.8" cy="6.6" r="1" fill="currentColor"/></svg></button>
+          <button class="snd"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5 4.3 7.2M8 3.5l3.7 3.7" stroke="#0B0D10" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint"><span class="kbd">空格</span>拖动画布<span class="kbd">滚轮</span>缩放<span class="kbd">双击</span>进入分镜</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · 第三轮视觉方向（I–L）</title>
+<style>
+:root{
+  --bg:#F6F5F3; --surface:#FFFFFF; --surface-2:#F0EEEA;
+  --line:#E6E3DD; --line-2:#D4D0C8;
+  --ink:#191918; --ink-2:#63615C; --ink-3:#95928B;
+  --ai:#5B45E0; --grad:linear-gradient(118deg,#5B45E0,#00A88E);
+  --keep:#1F6F4A; --keep-soft:#E6F2EB;
+  --warn:#8C6400;
+  --r:14px;
+  --shadow:0 1px 2px rgba(25,25,24,.05),0 12px 30px -14px rgba(25,25,24,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:14px;line-height:1.72;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:40px 24px 90px}
+.topline{display:inline-flex;align-items:center;gap:8px;height:27px;padding:0 12px;border-radius:999px;
+  background:#EFECFD;color:#4B38C4;font-size:11.5px;font-weight:700;margin-bottom:18px}
+h1{font-size:30px;font-weight:720;letter-spacing:-.022em;line-height:1.25;margin-bottom:11px}
+.lede{font-size:15px;color:var(--ink-2);max-width:76ch;margin-bottom:24px}
+h2{font-size:19px;font-weight:700;letter-spacing:-.014em;margin:44px 0 7px;display:flex;align-items:center;gap:10px}
+h2 .n{width:23px;height:23px;border-radius:7px;background:var(--ink);color:#fff;font-size:12px;
+  font-weight:800;display:grid;place-items:center;flex:none}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:18px}
+.note{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--ai);
+  border-radius:0 var(--r) var(--r) 0;padding:15px 19px;font-size:14px;margin-bottom:8px}
+.note.w{border-left-color:var(--warn)}
+.note b{font-weight:700}
+.note a{color:var(--ai);font-weight:650}
+
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  box-shadow:var(--shadow);margin-bottom:26px}
+.opt-h{display:flex;align-items:flex-start;gap:16px;padding:19px 22px 16px}
+.opt-h .lf{flex:1;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:7px;height:23px;padding:0 10px;border-radius:999px;
+  background:#EFECFD;color:#4B38C4;font-size:11px;font-weight:800;letter-spacing:.03em;margin-bottom:9px}
+.opt-h h3{font-size:18px;font-weight:700;letter-spacing:-.014em;margin-bottom:6px}
+.opt-h p{font-size:13.5px;color:var(--ink-2);max-width:82ch}
+.go{flex:none;display:inline-flex;align-items:center;gap:7px;height:33px;padding:0 15px;border-radius:999px;
+  background:var(--ink);color:#fff;font-size:12.5px;font-weight:650;text-decoration:none}
+.frame{position:relative;height:560px;overflow:hidden;background:var(--surface-2);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.frame iframe{position:absolute;top:0;left:50%;width:1440px;height:900px;border:0;
+  transform:translateX(-50%) scale(.622);transform-origin:top center;pointer-events:none}
+.opt-b{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.col{padding:15px 20px 17px;border-right:1px solid var(--line)}
+.col:last-child{border-right:0}
+.col h4{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:9px}
+.col ul{list-style:none;display:grid;gap:7px}
+.col li{font-size:12.5px;color:var(--ink-2);line-height:1.6;padding-left:14px;position:relative}
+.col li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--line-2)}
+.col.good li::before{background:var(--keep)}
+.col.risk li::before{background:var(--warn)}
+
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden;font-size:13px;box-shadow:var(--shadow)}
+th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--surface-2);font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:650;color:var(--ink);width:160px}
+.sc{display:inline-grid;place-items:center;width:21px;height:21px;border-radius:6px;font-size:11px;font-weight:800}
+.sc.a{background:#E6F2EB;color:#15603F}
+.sc.b{background:#FFF6E0;color:#7A5400}
+.sc.c{background:#FBE9E7;color:#9B2C22}
+.ask{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 22px;
+  box-shadow:var(--shadow)}
+.ask h3{font-size:14.5px;font-weight:700;margin-bottom:10px}
+.ask ol{padding-left:19px;display:grid;gap:9px}
+.ask li{font-size:13.5px;color:var(--ink-2)}
+.ask li b{color:var(--ink);font-weight:680;display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="topline">2026-10-13 · 第三轮 · 不受现有契约约束</div>
+<h1>第三轮视觉方向：I–L</h1>
+<p class="lede">这一轮按你说的，不管白播放器外壳、不管对话区宽度、不管渠道合规。四个方向各自挑战一条原来认为不能动的东西，所以它们不是「可以直接落地的候选」，而是用来问「如果那条约束不存在，界面会变成什么样」。</p>
+
+<div class="note w">
+  <b>先说清楚：</b>这四个都会和现有契约冲突，有的还需要新的交互能力（画布拖拽、长行程推子）。我没有在页面里回避这些代价，每个方向下面的「代价」一栏写的是真实成本，不是形式上的风险提示。前两轮存档在 <a href="../2026-10-13-premium-agent-visual-directions/index.html">第一轮</a> 和 <a href="../2026-10-13-premium-agent-visual-directions-round2/index.html">第二轮</a>。
+</div>
+
+<h2><span class="n">1</span>四个方向</h2>
+<p class="sub">内容依旧是同一条 32 秒隔音视频、同样 5 个分镜，只有结构和气质不同。</p>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge">方向 I</span>
+      <h3>Node Canvas · 血缘画布</h3>
+      <p>把素材、分镜、成片摊在一张可缩放的画布上，用连线显示引用关系：哪份素材喂给了哪一镜、哪一镜汇进了成片。公开素材那条线是黄色虚线，第 2、4 镜共用一张图也直接看得见。对话退成浮在画布上的玻璃面板。</p>
+    </div>
+    <a class="go" href="screens/i-node-canvas.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/i-node-canvas.html" title="方向 I 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>素材来源从标签升级成结构：虚线就是「这不是你的」，无法忽略</li>
+      <li>素材复用关系（2、4 镜共用一张图）只有连线能表达</li>
+      <li>改引用变成拖线，比翻菜单找素材直观</li>
+      <li>天然支持多条草稿并置，一张画布上比较 A/B 版本</li>
+    </ul></div>
+    <div class="col risk"><h4>弱点</h4><ul>
+      <li>成片被降格成画布上的一个节点，重量感不如 C/J</li>
+      <li>节点图是工程师的语汇，商家可能只认中间那列分镜</li>
+      <li>5 镜就已经占满 1440 宽，镜数一多必须缩放才看得全</li>
+      <li>浏览态引入了「空间位置」这个新状态，需要持久化</li>
+    </ul></div>
+    <div class="col"><h4>代价</h4><ul>
+      <li>需要画布引擎：缩放、平移、连线命中判定、拖拽改引用</li>
+      <li>连线布局要自动算，手写坐标不可维护</li>
+      <li>最大的一个：这是四个里工程量最高的</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge">方向 J</span>
+      <h3>Immersive Cinema · 沉浸放映</h3>
+      <p>没有面板，没有分栏。成片居中悬浮，自己的颜色晕染成整个窗口的背景光。所有 UI 都是浮在上面的玻璃：项目名在左上、胶片条在底部、对话是左下角一列渐隐的字，连气泡框都省了。右下角两枚色点说明素材构成。</p>
+    </div>
+    <a class="go" href="screens/j-immersive-cinema.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/j-immersive-cinema.html" title="方向 J 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>成片重量感四个里最强，整个窗口都在为它服务</li>
+      <li>氛围光让产物看起来「贵」，而这不依赖任何装饰元素</li>
+      <li>对话不占版面：渐隐的一列字，看完自然消失</li>
+      <li>胶片条把时长和来源压缩进 107px，信息密度意外地高</li>
+    </ul></div>
+    <div class="col risk"><h4>弱点</h4><ul>
+      <li>字幕、台词这些需要逐字改的东西，这里没有地方放</li>
+      <li>玻璃层叠加毛玻璃模糊，低端机上会掉帧</li>
+      <li>深色沉浸和「白天在店里用手机看」的真实场景相悖</li>
+      <li>没有面板边界，新用户不知道哪里可以点</li>
+    </ul></div>
+    <div class="col"><h4>代价</h4><ul>
+      <li>需要从成片抽主色做氛围光，这是一套取色管线</li>
+      <li>浅色模式基本无法复用，等于维护两套视觉</li>
+      <li>中等，但可访问性（对比度）要专门过一遍</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge">方向 K</span>
+      <h3>Console · 调音台</h3>
+      <p>每一镜是一条通道条。推子的高度就是这镜的时长，旁边那根是配音电平，顶上的灯绿色代表你的素材、黄色代表公开素材。左边是对讲，右边是总输出：成片小窗、素材构成比例、配乐与字幕状态。顶部是走带条和 LED 时码。</p>
+    </div>
+    <a class="go" href="screens/k-console.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/k-console.html" title="方向 K 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>时长对比一眼可读：推子高度差就是节奏差，比数字强得多</li>
+      <li>「专业设备」的质感最足，也最不像文档工具</li>
+      <li>来源灯、字卡开关、时长推子三件事在同一条里，改动闭环短</li>
+      <li>总输出栏把素材构成做成了比例条，发布前的体检表</li>
+    </ul></div>
+    <div class="col risk"><h4>弱点</h4><ul>
+      <li>推子、电平、走带都是剪辑师的语汇，门槛四个里最高</li>
+      <li>画面只有 84px 预览，换素材这类视觉判断依据不足</li>
+      <li>通道条宽 150px，8 镜以上必须横向滚动</li>
+      <li>拟物质感（内阴影、金属渐变）维护成本高且容易过时</li>
+    </ul></div>
+    <div class="col"><h4>代价</h4><ul>
+      <li>需要长行程推子组件，且要能键盘操作</li>
+      <li>电平表若要真实跳动，得接音频分析</li>
+      <li>中等偏大，拟物细节会显著拉长实现时间</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge">方向 L</span>
+      <h3>Gallery · 展陈</h3>
+      <p>成片当展品挂在墙上，下面是一块铭牌：形制、结构、用途、配音，以及最关键的来源构成和一枚「来源已标注」的印记。五个分场在同一视线高度排开，每张展板下有自己的小铭牌写着台词和出处。对话变成右侧的策展说明。</p>
+    </div>
+    <a class="go" href="screens/l-gallery.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/l-gallery.html" title="方向 L 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>把「来源标注」从合规负担变成了品质声明，这是个视角反转</li>
+      <li>高级感完全来自留白和字体，不依赖深色或渐变，最省维护</li>
+      <li>浅色、打印友好，商家截图发给客户看也不难看</li>
+      <li>铭牌格式能平移到长文案、图文笔记等非视频产物</li>
+    </ul></div>
+    <div class="col risk"><h4>弱点</h4><ul>
+      <li>节奏感最弱：五张展板一样大，看不出哪镜长哪镜短</li>
+      <li>大面积留白在 1440 宽下很舒服，笔记本 13 寸上会显得空</li>
+      <li>「美术馆」的隐喻对卖门窗的商家可能过于文雅</li>
+      <li>没有播放器外壳，成片和分场的层级靠尺寸区分，不够硬</li>
+    </ul></div>
+    <div class="col"><h4>代价</h4><ul>
+      <li>需要铭牌组件和一套排版规范（字号阶、留白阶）</li>
+      <li>衬线中文在 Windows 上的回退要实测</li>
+      <li>最小的一个：基本是排版工作，没有新交互</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2><span class="n">2</span>横向对比</h2>
+<p class="sub">A 为最好。「代价」一栏 A 表示最省。</p>
+<table>
+  <tr><th>维度</th><th>I 血缘画布</th><th>J 沉浸放映</th><th>K 调音台</th><th>L 展陈</th></tr>
+  <tr><td>成片重量感</td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>来源可信度表达</td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>节奏与时长可读</td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td></tr>
+  <tr><td>修改台词的便利</td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>对不懂剪辑的商家友好</td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>多产物（图文/长文）适配</td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>浅色/深色双模式成本</td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>代价（A 最省）</td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>打破了哪条约束</td><td>成片不再是唯一主角</td><td>面板和边框全部取消</td><td>浏览态直接给专业控件</td><td>播放器外壳改成铭牌</td></tr>
+</table>
+
+<h2><span class="n">3</span>我的读法</h2>
+<div class="note">
+  <b>J 和 L 是一对反向答案。</b>同样想让产物显贵，J 用光，L 用留白。J 适合「看成品」，L 适合「审稿」，两者可以是同一产物的两个视图，而不是二选一。<br>
+  <b>I 和 K 都在暴露内部结构</b>，区别是 I 暴露空间关系（什么来自哪里），K 暴露时间关系（哪镜多长）。I 的血缘连线解决的是信任问题，K 的推子解决的是节奏问题——这两个问题都真实存在，但没必要用同一种控件。<br>
+  <b>最省的组合：</b>L 的铭牌 + K 的推子。铭牌管来源和形制，推子管时长，都不需要画布引擎，也不破坏浅色底。
+</div>
+
+<h2><span class="n">4</span>需要你决定</h2>
+<div class="ask">
+  <h3>三个决策点</h3>
+  <ol>
+    <li><b>要不要深色</b>I/J/K 都是深色，L 是浅色。深色让成片显贵但要维护两套视觉，这个成本值不值得。</li>
+    <li><b>来源标注往哪个方向做</b>I 把它做成连线，K 做成指示灯，L 做成铭牌印记。三种都比现在的小标签强，但气质完全不同。</li>
+    <li><b>节奏信息要不要进浏览态</b>只有 K 把时长做成了可读的视觉量。如果这件事重要，K 的推子可以单独摘出来嵌进别的方向。</li>
+  </ol>
+</div>
+</div>
+</body>
+</html>

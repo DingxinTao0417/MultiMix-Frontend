@@ -1,10 +1,16 @@
-# 方案 C 全站延伸（第三版，2026-10-14）
+# 方案 C 全站延伸（已定稿，2026-10-16）
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-14
+> Last verified: 2026-10-16（已定稿，代码改版时转为正式原型）
 
-以第一轮方案 C「成片优先」为基准，为首发范围内的页面各出一版视觉方案。探索稿，不影响 `prototypes/current/` 的验收基准。这是第三版，按复核意见修正了 9 处具体问题。
+以第一轮方案 C「成片优先」为基准，为首发范围内的页面各出一版视觉方案。第三版按复核意见修正了 9 处具体问题，10-15 又按“编导只给建议、取消公共素材”改了 03/04/05 屏。
+
+## 定稿状态（2026-10-16）
+
+- **已定稿，尚未转为正式原型。** 用户 2026-10-16 确认：15 屏全部替换 `prototypes/current/`；播放台按本稿 `c-system.css` 现值定稿（写入 `MULTIMIX_WORKSPACE_DESIGN.md` 的 `video-preview-shell-contract:v2`）；首页/登录页主标题用本稿“说出想法，聊着聊着就做出一条短视频”，新建项目页保持“说出想法，让 AI 帮你更快、更省力地做出短视频。”。
+- **为什么还在 explorations/。** 工作区规则要求播放器契约变化时，设计文档、正式原型、契约检查和截图基线同一轮切换。用户选择在代码改版时一起切换，因此改版前 `prototypes/current/` 与 `video-preview-shell-contract:v1` 仍是验收基准。
+- **改版时一起做：** 本目录 15 屏与 `assets/` 移入 `current/`（`c-system.css` 移入 `screens/`）；旧 6 屏（含剪辑器）移到 `explorations/` 存档，剪辑器不在首发范围；读取 `current/screens/login.html` 的两条测试改为新文案。见 `MultiMix-Frontend/docs/plans/active/2026-10-14-canvas-first-workspace-redesign.md`。
 
 ## 怎么看
 

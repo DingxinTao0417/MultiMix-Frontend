@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiMix · 第二轮视觉方向（E–H）</title>
+<style>
+:root{
+  --bg:#F6F5F3; --surface:#FFFFFF; --surface-2:#F0EEEA;
+  --line:#E6E3DD; --line-2:#D4D0C8;
+  --ink:#191918; --ink-2:#63615C; --ink-3:#95928B;
+  --ai:#5B45E0; --ai-2:#00A88E; --grad:linear-gradient(118deg,#5B45E0,#00A88E);
+  --keep:#1F6F4A; --keep-soft:#E6F2EB;
+  --p0:#B3261E; --p1:#8C6400;
+  --r:14px;
+  --shadow:0 1px 2px rgba(25,25,24,.05),0 12px 30px -14px rgba(25,25,24,.16);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC","Noto Sans SC",sans-serif;
+  font-size:14px;line-height:1.72;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:40px 24px 90px}
+.topline{display:inline-flex;align-items:center;gap:8px;height:27px;padding:0 12px;border-radius:999px;
+  background:#EFECFD;color:#4B38C4;font-size:11.5px;font-weight:700;margin-bottom:18px}
+h1{font-size:30px;font-weight:720;letter-spacing:-.022em;line-height:1.25;margin-bottom:11px}
+.lede{font-size:15px;color:var(--ink-2);max-width:76ch;margin-bottom:24px}
+h2{font-size:19px;font-weight:700;letter-spacing:-.014em;margin:44px 0 7px;display:flex;align-items:center;gap:10px}
+h2 .n{width:23px;height:23px;border-radius:7px;background:var(--ink);color:#fff;font-size:12px;
+  font-weight:800;display:grid;place-items:center;flex:none}
+.sub{font-size:13px;color:var(--ink-3);margin-bottom:18px}
+.note{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--ai);
+  border-radius:0 var(--r) var(--r) 0;padding:15px 19px;font-size:14px;margin-bottom:8px}
+.note b{font-weight:700}
+.note a{color:var(--ai);font-weight:650}
+
+/* option block */
+.opt{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  box-shadow:var(--shadow);margin-bottom:26px}
+.opt.keep{border-color:#BFDECE;box-shadow:0 0 0 3px var(--keep-soft),var(--shadow)}
+.opt-h{display:flex;align-items:flex-start;gap:16px;padding:19px 22px 16px}
+.opt-h .lf{flex:1;min-width:0}
+.badge{display:inline-flex;align-items:center;gap:7px;height:23px;padding:0 10px;border-radius:999px;
+  background:var(--surface-2);color:var(--ink-2);font-size:11px;font-weight:800;letter-spacing:.03em;margin-bottom:9px}
+.badge.k{background:var(--keep-soft);color:var(--keep)}
+.badge.nw{background:#EFECFD;color:#4B38C4}
+.opt-h h3{font-size:18px;font-weight:700;letter-spacing:-.014em;margin-bottom:6px}
+.opt-h p{font-size:13.5px;color:var(--ink-2);max-width:82ch}
+.go{flex:none;display:inline-flex;align-items:center;gap:7px;height:33px;padding:0 15px;border-radius:999px;
+  background:var(--ink);color:#fff;font-size:12.5px;font-weight:650;text-decoration:none}
+.frame{position:relative;height:560px;overflow:hidden;background:var(--surface-2);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.frame iframe{position:absolute;top:0;left:50%;width:1440px;height:900px;border:0;
+  transform:translateX(-50%) scale(.622);transform-origin:top center;pointer-events:none}
+.opt-b{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-top:1px solid var(--line)}
+.col{padding:15px 20px 17px;border-right:1px solid var(--line)}
+.col:last-child{border-right:0}
+.col h4{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:9px}
+.col ul{list-style:none;display:grid;gap:7px}
+.col li{font-size:12.5px;color:var(--ink-2);line-height:1.6;padding-left:14px;position:relative}
+.col li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--line-2)}
+.col.good li::before{background:var(--keep)}
+.col.risk li::before{background:var(--p1)}
+
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);overflow:hidden;font-size:13px;box-shadow:var(--shadow)}
+th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line)}
+th{background:var(--surface-2);font-size:11px;font-weight:800;letter-spacing:.05em;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td:first-child{font-weight:650;color:var(--ink);width:150px}
+.sc{display:inline-grid;place-items:center;width:21px;height:21px;border-radius:6px;font-size:11px;font-weight:800}
+.sc.a{background:#E6F2EB;color:#15603F}
+.sc.b{background:#FFF6E0;color:#7A5400}
+.sc.c{background:#FBE9E7;color:#9B2C22}
+.ask{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 22px;
+  box-shadow:var(--shadow)}
+.ask h3{font-size:14.5px;font-weight:700;margin-bottom:10px}
+.ask ol{padding-left:19px;display:grid;gap:9px}
+.ask li{font-size:13.5px;color:var(--ink-2)}
+.ask li b{color:var(--ink);font-weight:680;display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="topline">2026-10-13 · 第二轮 · 未定稿</div>
+<h1>第二轮视觉方向：E–H</h1>
+<p class="lede">第一轮的 A/B/D 其实是同一个两栏骨架在换配色，所以看起来容易重复。这一轮换的是<b>结构</b>——产物以什么形态存在、修改从哪里发起。方案 C 按你的要求保留，放在最前面作为对照基准。</p>
+
+<div class="note">
+  <b>和第一轮的关系：</b>C 保留为基准，A/B/D 不再推进（<a href="../2026-10-13-premium-agent-visual-directions/index.html">第一轮存档</a>）。E–H 都沿用 C 已经验证的两个判断：成片要有重量感、分镜在浏览态就能点能说。四个新方向的差别在于「主产物长什么样」。
+</div>
+
+<h2><span class="n">1</span>保留的基准</h2>
+<p class="sub">不变，供对照。</p>
+
+<div class="opt keep">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge k">方案 C · 保留</span>
+      <h3>Canvas First · 成片优先</h3>
+      <p>成片和分镜卡占左侧主区，对话收成右侧 30% 工作轨。产物是「一条片子 + 一组分镜卡」。</p>
+    </div>
+    <a class="go" href="../2026-10-13-premium-agent-visual-directions/screens/c-canvas-first.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="../2026-10-13-premium-agent-visual-directions/screens/c-canvas-first.html" title="方案 C 预览" loading="lazy"></iframe></div>
+</div>
+
+<h2><span class="n">2</span>四个新方向</h2>
+<p class="sub">每个都是可点开的完整页面，内容完全相同（同一条 32 秒隔音视频、同样 5 个分镜），只有结构不同。</p>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge nw">方向 E · 新</span>
+      <h3>Timeline Native · 时间轴原生</h3>
+      <p>把时间轴提成贯穿底部的主脊，四条轨道按时长比例铺开：画面、配音、字卡、配乐。公开素材在轨上是斜纹块，一眼能看出哪段不是你自己的。上方是对话加监看，点任一片段，监看下方的属性条就跟着换。</p>
+    </div>
+    <a class="go" href="screens/e-timeline-native.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/e-timeline-native.html" title="方向 E 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>专业工具辨识度最高，一眼就是视频软件而不是文档工具</li>
+      <li>时长比例、配音与画面的对齐关系可见，这是分镜卡做不到的</li>
+      <li>配乐这种贯穿整条的元素，只有轨道能表达清楚</li>
+      <li>公开素材的斜纹块在轨上无法忽略</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>时间轴是「编辑器」的语汇，可能把不懂剪辑的商家挡在外面</li>
+      <li>和编辑器全屏态职责重叠，需要重新划分谁管什么</li>
+      <li>底部固定占 196px，监看区被压缩</li>
+      <li>轨道配色引入 4 种新语义色，和品牌渐变并存需要克制</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>需要新建多轨时间轴组件，含缩放与横向滚动</li>
+      <li>浏览态与编辑态的边界要重新定义</li>
+      <li>较大：新增最复杂的一个组件</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge nw">方向 F · 新</span>
+      <h3>Storyboard Deck · 分镜牌组</h3>
+      <p>取消大播放器——成片压成顶部一条摘要带（小封面、播放全片、时长比例条），分镜牌本身成为主产物。每张牌是一镜，自带台词、素材出处、时长和三个动作。牌可拖动换顺序，点「播放全片」才浮层播放。</p>
+    </div>
+    <a class="go" href="screens/f-storyboard-deck.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/f-storyboard-deck.html" title="方向 F 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>修改成本最低：每张牌上就有「说这镜 / 换素材 / 改台词」</li>
+      <li>换顺序这种高频操作变成拖牌，不需要进编辑器</li>
+      <li>牌组能自然扩展到多图笔记、多条草稿等非视频产物</li>
+      <li>最接近商家对「一条内容」的朴素理解：几个片段拼起来</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>没有常驻大播放器，成片的重量感反而弱于 C，与第一轮 P0 相悖</li>
+      <li>白播放器外壳契约在浏览态无处落地，需要确认是否改契约</li>
+      <li>5 镜以上要滚动，整条片子的节奏感不如时间轴直观</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>复用 C 的分镜卡，加顶部摘要带和播放浮层</li>
+      <li>需要拖拽排序与键盘可达的等价操作</li>
+      <li>中等偏小</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge nw">方向 G · 新</span>
+      <h3>Script Manuscript · 剧本稿</h3>
+      <p>产物按拍摄脚本呈现：稿纸居中，每一场有场号、时间码、素材出处和衬线正文的配音台词，字卡作为缩进注释。成片退成左侧页边的小播放器，跟着滚动。改脚本里的一句，成片就改对应一镜。</p>
+    </div>
+    <a class="go" href="screens/g-script-manuscript.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/g-script-manuscript.html" title="方向 G 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>唯一能让长文案和视频脚本共用一种产物格式的方向</li>
+      <li>台词是商家真正会逐字修改的东西，这里它是正文而不是卡片附属信息</li>
+      <li>排版本身就提供高级感，完全不依赖渐变或深色</li>
+      <li>可直接导出文字稿，对需要先审稿的商家友好</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>视频感最弱，和「不像视频工具」这条原始批评方向相反</li>
+      <li>画面只有 26px 缩略图，换素材这类视觉决策缺少依据</li>
+      <li>衬线中文字体可得性需实测，Windows 上回退可能很难看</li>
+      <li>朱红印章色是第三套强调色，与现有渐变并存要定规矩</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>需要一套文稿排版规范与场块组件</li>
+      <li>和文案工作台可以共用，长期能省一套组件</li>
+      <li>中等</li>
+    </ul></div>
+  </div>
+</div>
+
+<div class="opt">
+  <div class="opt-h">
+    <div class="lf">
+      <span class="badge nw">方向 H · 新</span>
+      <h3>Viewfinder · 取景框</h3>
+      <p>用真实手机框还原顾客在小红书里刷到它的样子：状态栏、顶部标签、右侧点赞收藏、底部作者与正文标签一并呈现。字幕位置按避开右侧按钮区来排。右边是时间码分镜栏，顶部可切「成片预览 / 封面与文案」。</p>
+    </div>
+    <a class="go" href="screens/h-viewfinder.html" target="_blank">打开全屏 ↗</a>
+  </div>
+  <div class="frame"><iframe src="screens/h-viewfinder.html" title="方向 H 预览" loading="lazy"></iframe></div>
+  <div class="opt-b">
+    <div class="col good"><h4>强项</h4><ul>
+      <li>所见即所得做到位：字幕会不会被按钮挡住，当场能看出来</li>
+      <li>把「发布后长什么样」变成默认视图，这是竞品普遍缺的</li>
+      <li>封面与文案和视频在同一屏，发布前的完整检查闭环</li>
+      <li>深色手机框天然给成片最高对比，不必让整个界面变暗</li>
+    </ul></div>
+    <div class="col risk"><h4>风险</h4><ul>
+      <li>手机壳取代了白播放器外壳，直接违反现有视觉契约</li>
+      <li>模仿第三方平台 UI 有合规与维护风险，对方改版就要跟</li>
+      <li>手机框占掉大量宽度，分镜栏被压到 206px</li>
+      <li>只适合单一发布渠道；多渠道时要么做多套框，要么失效</li>
+    </ul></div>
+    <div class="col"><h4>改造量</h4><ul>
+      <li>需要设备框组件与各渠道安全区规则</li>
+      <li>白播放器外壳契约需明确改写或增加例外</li>
+      <li>中等，但合规问题要先问清楚</li>
+    </ul></div>
+  </div>
+</div>
+
+<h2><span class="n">3</span>横向对比</h2>
+<p class="sub">A 为最好。「改造量」一栏里 A 表示改动最小。C 为保留的基准。</p>
+<table>
+  <tr><th>维度</th><th>C 成片优先</th><th>E 时间轴原生</th><th>F 分镜牌组</th><th>G 剧本稿</th><th>H 取景框</th></tr>
+  <tr><td>成片重量感</td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>视频工具辨识度</td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>修改成本（越低越好）</td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>节奏与时长可读</td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td><td><span class="sc c">C</span></td></tr>
+  <tr><td>素材出处可见</td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>对不懂剪辑的商家友好</td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td></tr>
+  <tr><td>能否覆盖长文案产物</td><td><span class="sc c">C</span></td><td><span class="sc c">C</span></td><td><span class="sc b">B</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>改造量（A 最小）</td><td><span class="sc a">A</span></td><td><span class="sc c">C</span></td><td><span class="sc a">A</span></td><td><span class="sc b">B</span></td><td><span class="sc b">B</span></td></tr>
+  <tr><td>契约冲突</td><td>对话区宽度约定</td><td>浏览/编辑态边界</td><td>白播放器外壳无处落地</td><td>新增第三套强调色</td><td>白播放器外壳被手机壳取代</td></tr>
+</table>
+
+<h2><span class="n">4</span>怎么看这四个</h2>
+<p class="sub">它们不完全互斥，有两组可以叠。</p>
+<div class="note">
+  <b>可以叠的组合：</b>C + H 最自然——C 的布局骨架不变，只把中间的白播放器换成取景框，就同时拿到成片重量感和所见即所得。C + F 也成立：F 的牌组本来就是 C 分镜卡的加强版，差别只在要不要保留常驻大播放器。<br>
+  <b>互斥的：</b>E 和 G 是两个相反极端（时间轴 vs 文稿），选一个就基本排除另一个。E 还会和编辑器全屏态抢职责，需要先想清楚浏览态要做到多深。
+</div>
+
+<h2><span class="n">5</span>需要你决定</h2>
+<p class="sub">不选完不动代码。</p>
+<div class="ask">
+  <h3>四个决策点</h3>
+  <ol>
+    <li><b>主产物是什么形态</b>一条片子（C/H）、一组牌（F）、一条时间轴（E），还是一份脚本（G）？这是四个方向的根本分歧。</li>
+    <li><b>浏览态要做到多深</b>E 把时间轴放进浏览态后，编辑器全屏态还剩什么职责？需要你划线。</li>
+    <li><b>白播放器外壳契约是否可改</b>F 让它无处落地，H 用手机壳取代它。两个都需要你批准改契约。</li>
+    <li><b>要不要模仿小红书界面</b>H 的核心价值来自这个，但有合规和跟版维护成本。这个要你拍。</li>
+  </ol>
+</div>
+</div>
+</body>
+</html>
