@@ -39,10 +39,7 @@ MultiMix 是两个并排的独立仓库：
    # LLM（任选）
    MULTIMIX_DEEPSEEK_API_KEY=<key>
    # 或 MULTIMIX_LLM_BASE_URL / MULTIMIX_LLM_API_KEY / MULTIMIX_LLM_MODEL
-   # 公共素材搜索：退役中（2026-10-15 取消）。代码删除前仍会读取以下变量；后端 P1 完成后从部署中移除，不要新增来源
-   MULTIMIX_PEXELS_API_KEY=<key>
-   MULTIMIX_PIXABAY_API_KEY=<key>
-   MULTIMIX_MATERIAL_SEARCH_PROVIDER_NAMES=pexels,pixabay_video
+   # 公共素材已删除（2026-10-16）：后端不再读取 Pexels/Pixabay 等变量，生产环境残留变量会被忽略；是否从 Railway 移除另行确认
    # 云 TTS（可选，不配则用估算时长）
    MULTIMIX_TTS_PROVIDER=openai
    MULTIMIX_TTS_API_KEY=<key>
@@ -147,5 +144,5 @@ python -m app.material_search_cli preflight --providers pexels,pixabay_video
 ## 已知边界
 
 - 完整编辑器的 MP4 导出走浏览器端 WebCodecs，不依赖服务端 ffmpeg；但完整编辑器当前不是默认产品入口。
-- 公共素材已取消（2026-10-15），以下规则只适用于代码删除前的存量路径：进入工程前必须下载、校验并持久化到远程 ArtifactStore；剪辑器通过后端 `/v1/video/media` 读取持久化引用，不把 provider 原片 URL 作为工程权威地址。
+- 公共素材已删除（2026-10-16）。历史作品里已持久化的公共素材仍经后端 `/v1/video/media` 读取；媒体代理保留已退役图库的固定域名清单，仅用于历史播放。
 - 知识库语义检索目前是关键词匹配（`asset_conversation.match_assets` + `knowledge_retrieval.match_knowledge_chunks`），向量检索为后续增强。

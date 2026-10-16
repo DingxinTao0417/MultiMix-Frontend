@@ -264,7 +264,6 @@ export type ContentAsset = {
     | "retry"
     | "retry_scene_generation"
     | "modify_script"
-    | "replace_scene_asset"
     | null;
   failure_scene_id?: string | null;
   operation_status?: "generating" | "completed" | "failed" | null;
@@ -273,7 +272,6 @@ export type ContentAsset = {
     | "retry"
     | "retry_scene_generation"
     | "modify_script"
-    | "replace_scene_asset"
     | null;
   operation_failure_scene_id?: string | null;
   created_at: string;
@@ -608,48 +606,12 @@ export type ContentAssetSearchResult = {
   matched_fields: string[];
 };
 
-export type PublicSourceRead = {
-  provider: string;
-  name: string;
-  enabled: boolean;
-  media_types: string[];
-  license_policy: string;
-  health_status?: string;
-  last_checked_at?: string | null;
-};
-
-export type PublicMaterialCandidate = {
-  id: string;
-  title: string;
-  media_type: "text" | "image" | "video";
-  provider: string;
-  source_url: string;
-  preview_url: string;
-  download_url: string;
-  license: string;
-  license_label: string;
-  creator: string;
-  body_text?: string;
-  understanding: {
-    status?: string;
-    updated_at?: string;
-    tags?: string[];
-    caption?: string;
-    objects?: string[];
-    storyboard_roles?: Array<Record<string, unknown>>;
-    scene_types?: Array<Record<string, unknown>>;
-    fit_reason?: string;
-    confidence?: number;
-    error?: string | null;
-  };
-};
-
 // Unified segment material candidate (backend
-// GET .../segments/{id}/material-candidates). Public rows never carry a
-// download URL; the server keeps it and resolves it on selection by candidate_id.
+// GET .../segments/{id}/material-candidates). Only the user's own library is
+// offered; public stock material was retired on 2026-10-15.
 export type SegmentMaterialCandidateResponse = {
   candidate_id: string | null;
-  source_type: "saved_asset" | "public_asset" | "title_card";
+  source_type: "saved_asset" | "title_card";
   source_asset_id: number | null;
   provider: string;
   provider_item_id: string;
@@ -671,16 +633,13 @@ export type SegmentMaterialCandidateResponse = {
 };
 
 export type SegmentMaterialCandidatesResponse = {
-  scope: "local" | "public";
+  scope: "local";
   segment_id: string;
   groups: {
     current: SegmentMaterialCandidateResponse[];
     recommended: SegmentMaterialCandidateResponse[];
     library: SegmentMaterialCandidateResponse[];
-    public: SegmentMaterialCandidateResponse[];
   };
-  provider_statuses: Array<{ provider: string; status: string }>;
-  next_cursor: string | null;
 };
 
 export type AssetIngestJobRead = {

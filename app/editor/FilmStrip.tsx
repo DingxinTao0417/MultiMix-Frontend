@@ -376,7 +376,7 @@ export default function FilmStrip({
 
   const openPicker = useCallback(() => {
     if (!assetId || !token || !selectedSegmentId) return;
-    // The shared candidate hook loads local first, then public, keyed off
+    // The shared candidate hook loads the user's library, keyed off
     // pickerOpen + the selected segment.
     setPickerOpen(true);
   }, [assetId, selectedSegmentId, token]);
@@ -536,14 +536,8 @@ export default function FilmStrip({
         current={materialCandidates.current}
         recommended={materialCandidates.recommended}
         library={materialCandidates.library}
-        publicItems={materialCandidates.publicItems}
-        providerStatuses={materialCandidates.providerStatuses}
         loading={materialCandidates.localLoading}
         error={materialCandidates.localError}
-        publicLoading={materialCandidates.publicLoading}
-        publicError={materialCandidates.publicError}
-        hasMorePublic={materialCandidates.hasMorePublic}
-        onLoadMorePublic={materialCandidates.loadMorePublic}
         onSelect={handlePickMaterial}
         onClose={() => setPickerOpen(false)}
       />

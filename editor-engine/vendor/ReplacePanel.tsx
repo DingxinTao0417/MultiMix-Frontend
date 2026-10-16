@@ -23,8 +23,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   const selected = useEditor((e) => e.selection.getSelectedElements());
   const tracks = useEditor((e) => e.timeline.getTracks());
   const [localCandidates, setLocalCandidates] = useState<SegmentMaterialCandidate[]>([]);
-  const [publicCandidates, setPublicCandidates] = useState<SegmentMaterialCandidate[]>([]);
-  const [publicError, setPublicError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [open, setOpen] = useState(false);
@@ -45,8 +44,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   // Clear options when selection changes.
   useEffect(() => {
     setLocalCandidates([]);
-    setPublicCandidates([]);
-    setPublicError(null);
+    setLoadError(null);
     pollAbortRef.current?.abort();
   }, [selEl?.id]);
   useEffect(() => () => pollAbortRef.current?.abort(), []);
@@ -80,23 +78,16 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   async function fetchOptions() {
     if (!selEl || !segmentId || !assetId) return;
     setLoading(true);
-    setPublicError(null);
+    setLoadError(null);
     try {
-      // Local first (my library + recommendations), then public asynchronously
-      // so a stock-provider outage never blanks out my own material.
-      const local = await segmentMaterialCandidates(assetId, segmentId, "local", token);
+      // Candidates come only from my library and its recommendations.
+      const local = await segmentMaterialCandidates(assetId, segmentId, token);
       setLocalCandidates([
         ...local.groups.recommended,
         ...local.groups.library,
       ]);
-      try {
-        const remote = await segmentMaterialCandidates(assetId, segmentId, "public", token);
-        setPublicCandidates(remote.groups.public);
-      } catch (e) {
-        setPublicError(e instanceof Error ? e.message : "公共素材加载失败。");
-      }
     } catch (e) {
-      setPublicError(e instanceof Error ? e.message : "素材加载失败。");
+      setLoadError(e instanceof Error ? e.message : "素材加载失败。");
     } finally {
       setLoading(false);
     }
@@ -105,7 +96,6 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
   async function reloadAndClose() {
     await reloadProject();
     setLocalCandidates([]);
-    setPublicCandidates([]);
     setOpen(false);
   }
 
@@ -212,7 +202,7 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
           <SheetHeader className="gap-2 border-b border-[#eceef0] px-5 py-5">
             <SheetTitle className="text-[16px] font-semibold text-[#17211d]">替换素材</SheetTitle>
             <SheetDescription className="text-[12px] leading-5 text-[#627069]">
-              先选中一个视频或图片片段，再从素材库或公共候选中替换。
+              先选中一个视频或图片片段，再从你的素材库中替换。
             </SheetDescription>
           </SheetHeader>
 
@@ -236,10 +226,9 @@ export function ReplacePanel({ assetId, token }: { assetId?: string | null; toke
                 </div>
 
                 {renderCandidateGroup("我的素材 / 推荐", localCandidates)}
-                {renderCandidateGroup("公共素材", publicCandidates)}
-                {publicError ? (
+                {loadError ? (
                   <div className="rounded-2xl border border-[#f0d9d9] bg-[#fbf3f3] px-4 py-3 text-[12px] leading-5 text-[#9c4a4a]">
-                    {publicError}
+                    {loadError}
                   </div>
                 ) : null}
 

@@ -30,3 +30,15 @@ describe("public legal and recovery contracts", () => {
     expect(displayLegalField("MultiMix Example Co.")).toBe("MultiMix Example Co.");
   });
 });
+
+describe("public material retirement in legal text", () => {
+  it("no longer discloses stock providers or public material search", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    for (const page of ["terms/page.tsx", "privacy/page.tsx"]) {
+      const text = readFileSync(join(__dirname, "..", page), "utf-8");
+      expect(text).not.toMatch(/Pexels|Unsplash|公共素材检索可能|和公共素材检索/);
+    }
+    expect(LEGAL_VERSION).toBe("2026-10-16");
+  });
+});

@@ -20,10 +20,10 @@
 
 | 步骤 | 负责端 | 上游 | 状态 |
 | --- | --- | --- | --- |
-| P1 后端停止产出 `public_asset`、公共候选和搜索接口，并明确存量数据的读取方式 | backend / Codex | 本计划与交接说明 | [ ] |
-| P2 前端删除公共素材入口与展示，迁移到「你的素材 / AI 生成」两类来源 | frontend / Claude Code | P1 达 `[~]` | [ ] |
-| P3 前端清理类型、映射、测试与文档残留，并证明旧行为不能再被触发 | frontend / Claude Code | P2 | [ ] |
-| P4 历史作品（已含公共素材的旧工程）的读取与展示约定 | 两端 | P1 | [ ] |
+| P1 后端停止产出 `public_asset`、公共候选和搜索接口，并明确存量数据的读取方式 | backend / Claude Code（用户授权） | 本计划与交接说明 | [~] 后端 `a6b0718f`（本地 main，未推送） |
+| P2 前端删除公共素材入口与展示，迁移到「你的素材 / AI 生成」两类来源 | frontend / Claude Code | P1 达 `[~]` | [~] 本地 main，未推送 |
+| P3 前端清理类型、映射、测试与文档残留，并证明旧行为不能再被触发 | frontend / Claude Code | P2 | [~] 本地 main，未推送 |
+| P4 历史作品（已含公共素材的旧工程）的读取与展示约定 | 两端 | P1 | [~] 后端读取测试 + 前端“历史素材”只读标注 |
 
 P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不改任何前端代码，只做设计沉淀、文档与原型。
 
@@ -59,6 +59,12 @@ P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不�
 1. **条款与隐私政策**：同步删除公共素材检索与 Pexels/Unsplash 披露。已确认，但属法律文本变更，见下方「法律文本变更须知」，P2 一并执行。
 2. **历史作品**：已含公共素材的旧视频按「历史素材」只读展示并标注来源，不删除用户历史数据。
 3. **后端排期**：已写交接文档 `MultiMix-Backend/docs/plans/active/2026-10-15-retire-public-material-and-director-suggestion-handoff.md`，由 Codex 登记占用后处理。前端在 P1 达 `[~]` 前不动代码。
+
+## 法律文本决定（2026-10-16，用户确认）
+
+- 生效日期：`LEGAL_VERSION = "2026-10-16"`、`LEGAL_EFFECTIVE_DATE = "2026 年 10 月 16 日"`。尚未推送，实际以发布当天为准，发布时可再调。
+- 老用户：**要求重新同意**新版条款。这需要新增登录后的同意门（读取 Supabase `user_metadata.legal_consent_version`，低于现行版本时拦截，用户同意后写回），属账号流程改动（`account-auth` 功能区），另立计划 `2026-10-16-legal-reconsent-gate.md` 单独实施；本轮只改文本与版本号。
+- 风险：本轮合入后、同意门上线前，老用户仍按旧版同意记录使用。两者应同一次发布，发布前须核对。
 
 ## 法律文本变更须知
 
@@ -112,6 +118,19 @@ P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不�
 
 - 修订后重新检索三类关键字，现行规则类文档中不再出现作为当前设计的表述。
 - `npm --prefix MultiMix-Frontend run check:agents`。
+
+## P2/P3 执行结果（2026-10-16）
+
+- 逐镜候选只请求 `scope=local`：`use-segment-material-candidates`、换素材窗口、剪辑器 `ReplacePanel` 均删除公共分组、加载中、源不可用提示、“换一批”分页；后端合入后这三处原本会因 `scope=public` 返回 422 报错。
+- 删除逐镜“尝试/继续搜索公共素材”“确认采用这项素材”与对应 `search_public`/`select` 动作，以及后端已删除的 `director-scene-public-search/select` 调用。
+- 删除失败卡“重新寻找该镜素材”按钮与 `videoSceneReplacement` 通道；`failure_action` 联合类型去掉 `replace_scene_asset`（后端读取时已把历史值改为 `modify_script`）。对话发送函数中该位置参数保留为 `_retiredSceneReplacement` 占位，避免位置参数错位。
+- 删除资源库“公开素材搜索”弹层，以及后端从未存在的 `/assets/public-search`、`/assets/public-import`、`/assets/public-sources`、`/admin/public-sources/*` 调用；删除对应 200 行样式与已删原型屏的 322 行素材源管理样式。
+- 起始页能力胶囊去掉“公开素材”；确认卡忽略旧卡片里的 `public_stock` 选项；编导稿摘要去掉“自动补 N 个公共素材”。
+- 历史作品：已持久化的公共画面计为“N 个历史素材”“历史素材仅供查看”；来源标签“公共素材”改为“历史素材”；逐镜状态 `candidate_confirmed` 显示“这一镜使用历史素材，仅供查看”；资源库中已导入的公共视频保持可播放。
+- 法律文本：条款第 6 节与隐私政策第 3 节删除公共素材检索及 Pexels/Unsplash 披露，跨境提示去掉“素材服务”；`LEGAL_VERSION` 升为 `2026-10-16`。**老用户重新同意门未在本轮实现**，见上方法律文本决定。
+- 文档：`API.md`、`DEPLOYMENT.md` 中“退役中，随后端 P1 删除”改为“已删除”；现行原型剪辑器屏“兜底素材”改为“待补素材”。
+- 测试：删除只验证公共行为的用例；把以公共素材为夹具的用例改为本地素材；新增反向用例（换素材窗口与逐镜操作无公共入口、候选只请求 local、适配器无公共方法、资源库无公开素材搜索、旧确认卡不展示 `public_stock`、法律文本无图库披露）。
+- 验证：`tsc --noEmit` 无错误；`npm run lint` 0 问题；`npm run build` 通过；前端全量 vitest 只剩 1 项失败，且该项在未改动的 `main` 上同样失败（`main` 共 2 项既有失败，与本任务无关）。
 
 ## 风险与取舍
 

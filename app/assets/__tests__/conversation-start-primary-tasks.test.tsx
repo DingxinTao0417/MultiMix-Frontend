@@ -9,7 +9,7 @@ import ConversationStart from "../components/conversation-start";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 
 describe("ConversationStart primary video tasks", () => {
-  it("shows three ways to start and six composable capabilities without duplicate example cards", () => {
+  it("shows three ways to start and five composable capabilities without duplicate example cards", () => {
     const onSend = vi.fn(async () => undefined);
     render(
       <ConversationStart
@@ -21,7 +21,7 @@ describe("ConversationStart primary video tasks", () => {
 
     expect(screen.getByRole("heading", { name: "新建视频项目" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "可组合的视频制作能力" })).toHaveTextContent(
-      "我的素材AI 生成镜头公开素材字幕、图文与图形动画原片优化、配音与音乐",
+      "我的素材AI 生成镜头字幕、图文与图形动画原片优化、配音与音乐",
     );
     expect(screen.getByRole("heading", { name: "你想怎么开始？" })).toBeInTheDocument();
     const startPaths = within(screen.getByRole("region", { name: "你想怎么开始？" }));

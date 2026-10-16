@@ -56,7 +56,7 @@ export default function SourceRefBlock({
                   {ref.isFallback || ref.statusLabel || ref.referenceCount != null ? (
                     <em>
                       {[
-                        ref.isFallback ? "公共素材" : ref.statusLabel,
+                        ref.isFallback ? "历史素材" : ref.statusLabel,
                         ref.referenceCount != null ? `被引用 ${ref.referenceCount} 次` : ""
                       ].filter(Boolean).join(" · ")}
                     </em>

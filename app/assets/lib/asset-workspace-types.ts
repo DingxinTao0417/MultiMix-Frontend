@@ -82,6 +82,7 @@ export type AssetProductSegment = {
   materialFillStatus?: "saved_hit" | "public_candidate" | "unfilled";
   visualStatusLabel?: "已生成画面" | "产品界面";
   businessHint?: "建议补充真实案例素材";
+  // "public_asset" only appears on historical works (read-only).
   primaryVisualSourceType?: "saved_asset" | "public_asset" | "product_asset" | "generated_scene";
   // Final persisted main-track visual, not a thumbnail or display title.
   primaryVisualIdentity?: string;
@@ -146,7 +147,7 @@ export type AssetPresenterVisualEvent = {
 
 // A single material candidate shown in the picker. Every selectable row carries
 // a server-issued `candidateId`; `assetId` is source metadata only.
-export type SegmentMaterialSourceType = "saved_asset" | "public_asset" | "title_card";
+export type SegmentMaterialSourceType = "saved_asset" | "title_card";
 
 export type SegmentMaterialOption = {
   id: string;
@@ -174,18 +175,10 @@ export type SegmentMaterialOption = {
   selectable?: boolean;
 };
 
-export type SegmentMaterialProviderStatus = {
-  provider: string;
-  status: string;
-};
-
 export type SegmentMaterialOptions = {
   recommended: SegmentMaterialOption[];
   library: SegmentMaterialOption[];
   current?: SegmentMaterialOption[];
-  public?: SegmentMaterialOption[];
-  providerStatuses?: SegmentMaterialProviderStatus[];
-  publicNextCursor?: string | null;
 };
 
 export type AssetProduct = {
@@ -197,11 +190,11 @@ export type AssetProduct = {
   // stages stay in execution details and must not be rendered as product state.
   productStatus?: "generating" | "completed" | "failed";
   failureReason?: string;
-  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script";
   failureSceneId?: string;
   operationStatus?: "generating" | "completed" | "failed";
   operationFailureReason?: string;
-  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script";
   operationFailureSceneId?: string;
   summary: string;
   ratio: string;
@@ -235,11 +228,6 @@ export type AssetProduct = {
   videoProductCompleted?: boolean;
   videoQualityReport?: VideoQualityReport;
   metadata?: Record<string, unknown>;
-};
-
-export type AssetVideoSceneReplacement = {
-  failedProjectAssetId: number;
-  sceneId: string;
 };
 
 export type AssetSubtitleControls = {
@@ -356,7 +344,7 @@ export type AssetSceneSourceDecision = {
   directorAssetId: number;
   directorVersionId: number;
   sceneId: string;
-  action: "search_public" | "keep_current" | "use_saved_asset";
+  action: "keep_current" | "use_saved_asset";
   sourceAssetId?: number;
 };
 
@@ -369,15 +357,6 @@ export type AssetSceneImageGenerationRequest = {
 export type AssetDirectorProductionPlan = {
   directorAssetId: number;
   baseContentHash: string;
-};
-
-export type AssetScenePublicCandidate = {
-  candidateId: string;
-  previewUrl: string;
-  title: string;
-  provider: string;
-  license: string;
-  attributionUrl: string;
 };
 
 export type AssetLongFormAction =

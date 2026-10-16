@@ -140,10 +140,10 @@ export const displayProducts: Record<DisplayCaseId, AssetProduct> = {
     ...baseProduct,
     id: "case-03-no-asset-hit",
     metadata: {
-      material_gap_notice: "未命中素材，已使用公共素材自动补充。",
+      material_gap_notice: "未命中素材，可上传图片或让 AI 生成。",
       video_plan: {
         ...basePlan,
-        summary: { ...basePlan.summary, public_material_fill_count: 1, material_gap_count: 1 },
+        summary: { ...basePlan.summary, material_gap_count: 1 },
         scenes: [{ id: "scene-gap", title: "服务过程", asset_reference: { status: "no_asset_hit" } }],
       },
     },

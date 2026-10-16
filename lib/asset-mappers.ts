@@ -439,7 +439,8 @@ function planFromMetadata(value: unknown): AssetMessagePlan | undefined {
     ratioDefault: stringValue(value.ratio_default) || undefined,
     ...(Array.isArray(value.production_options) ? {
       productionOptions: value.production_options.filter(isRecord).slice(0, 3)
-        .filter((option) => ["public_stock", "graphics", "ai_visual"].includes(stringValue(option.id)))
+        // Public stock was retired on 2026-10-15; a stale option is never offered.
+        .filter((option) => ["graphics", "ai_visual"].includes(stringValue(option.id)))
         .map((option) => ({ id: stringValue(option.id), label: stringValue(option.label),
           effect: stringValue(option.effect), requiredInputs: stringValue(option.required_inputs),
           waitNote: stringValue(option.wait_note) || undefined, costNote: stringValue(option.cost_note),
@@ -1126,7 +1127,7 @@ function segmentsFromVideoMetadata(metadata: Record<string, unknown>, clarityMed
         ? "已验证素材虚化背景"
         : undefined,
       publicReplacementNote: stringValue(replacement?.reason_code) === "remote_file_missing"
-        ? "原公开素材已失效，已透明替换为可用素材"
+        ? "原历史素材已失效，已替换为可用素材"
         : undefined,
       visualChange: visualChangeReportValue(changeReport),
       isPresenter: isPresenter || undefined,
@@ -1188,15 +1189,13 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
       segment.materialFillStatus === "saved_hit"
       || (segment.assetTitle && !segment.isFallback)
     )).length;
-    const publicUsed = segments.filter((segment) => (
+    // Public material was retired on 2026-10-15. A persisted public visual in an
+    // older work is read-only history; an unadopted public candidate no longer counts.
+    const historical = segments.filter((segment) => (
       segment.primaryVisualPersisted === true
       && segment.primaryVisualSourceType === "public_asset"
     )).length;
-    const publicCandidates = segments.filter((segment) => (
-      segment.materialFillStatus === "public_candidate"
-      && !(segment.primaryVisualPersisted === true && segment.primaryVisualSourceType === "public_asset")
-    )).length;
-    if (saved || publicUsed || publicCandidates) {
+    if (saved || historical) {
       if (!refs.length) {
         const seen = new Set<string>();
         for (const segment of segments) {
@@ -1212,17 +1211,14 @@ function sourceSummaryForAsset(asset: ContentAsset, segments: AssetProductSegmen
       }
       const usedParts = [
         saved ? `${saved} 个已保存素材` : "",
-        publicUsed ? `${publicUsed} 个公共素材` : ""
+        historical ? `${historical} 个历史素材` : ""
       ].filter(Boolean);
-      const headline = usedParts.length
-        ? `基于 ${usedParts.join(" + ")}生成${publicCandidates ? ` · ${publicCandidates} 个公共素材候选` : ""}`
-        : `已找到 ${publicCandidates} 个公共素材候选`;
+      const headline = `基于 ${usedParts.join(" + ")}生成`;
       return {
         headline,
         note: [
           saved ? `已保存素材命中 ${saved}/${segments.length}` : "",
-          publicUsed ? "公共素材已验证并用于工程" : "",
-          publicCandidates ? "公共素材候选待验证" : "",
+          historical ? "历史素材仅供查看" : "",
         ].filter(Boolean).join(" · "),
         refs
       };
@@ -1257,11 +1253,11 @@ function productLifecycleFromAsset(
 ): {
   status: ProductLifecycleStatus;
   failureReason?: string;
-  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script";
   failureSceneId?: string;
   operationStatus?: ProductLifecycleStatus;
   operationFailureReason?: string;
-  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset";
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script";
   operationFailureSceneId?: string;
 } | undefined {
   const isVideo = asset.content_type === "video_project";

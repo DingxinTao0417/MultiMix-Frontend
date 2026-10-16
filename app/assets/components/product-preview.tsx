@@ -113,7 +113,6 @@ function videoPlanSummary(product: ProductArtifact) {
     duration: typeof plan.duration_seconds === "number" ? `${plan.duration_seconds}秒` : product.duration,
     sceneCount: typeof summary.scene_count === "number" ? summary.scene_count : scenes.length,
     materialHitCount: typeof summary.material_hit_count === "number" ? summary.material_hit_count : 0,
-    publicMaterialFillCount: typeof summary.public_material_fill_count === "number" ? summary.public_material_fill_count : 0,
     materialGapCount: typeof summary.material_gap_count === "number" ? summary.material_gap_count : 0,
     materialUnfilledCount: typeof summary.material_unfilled_count === "number" ? summary.material_unfilled_count : 0,
     mgNeededCount: typeof summary.mg_needed_count === "number" ? summary.mg_needed_count : 0,
@@ -206,37 +205,16 @@ function failureDetail(product: ProductArtifact): string {
 // runs through the conversation: retry re-submits a real instruction, adjust
 // focuses the composer. No fabricated retry when nothing can be re-run.
 function ProductFailureCard({ product }: { product: ProductArtifact }) {
-  const canReplaceFailedScene = Boolean(product.backendAssetId && product.failureSceneId);
   return (
     <div className="shadcn-prototype-video-failed" role="alert">
       <strong>{product.contentType === "video_project" ? "视频失败" : "生成失败"}</strong>
       <p>{failureDetail(product)}</p>
       <p className="shadcn-prototype-video-failed-note">
-        {product.failureAction === "replace_scene_asset"
-          ? "系统不会自动替换已经确认的素材。"
-          : "你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。"}
+        你的素材、已确认的设定都已保留，重试会沿用当前方案重新生成。
       </p>
       {product.failureAction ? (
         <div className="shadcn-prototype-video-failed-actions">
-          {product.failureAction === "replace_scene_asset" ? (
-          <button
-            type="button"
-            className="primary"
-            disabled={!canReplaceFailedScene}
-            title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
-            onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
-              detail: {
-                utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
-                videoSceneReplacement: {
-                  failedProjectAssetId: product.backendAssetId,
-                  sceneId: product.failureSceneId,
-                },
-              },
-            }))}
-          >
-            重新寻找该镜素材
-          </button>
-          ) : product.failureAction === "modify_script" ? (
+          {product.failureAction === "modify_script" ? (
           <button type="button" className="primary" onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-focus"))}>
             修改编导稿
           </button>
@@ -340,9 +318,8 @@ type ProductPreviewProps = {
 };
 
 export type SceneSourceAction =
-  | { kind: "search" | "keep" | "generate_image" | "upload_asset" | "revise_scene" | "choose_asset"; sceneId: string }
-  | { kind: "use_asset"; sceneId: string; assetId: number }
-  | { kind: "select"; sceneId: string; candidateId: string };
+  | { kind: "generate_image" | "upload_asset" | "revise_scene" | "choose_asset"; sceneId: string }
+  | { kind: "use_asset"; sceneId: string; assetId: number };
 
 const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(function ProductPreview({
   product,
@@ -700,16 +677,8 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
   const visualPreviewFrames = product.preview?.frames ?? [];
   const planSummary = videoPlanSummary(product);
   const sourcePlan = isRecord(product.metadata?.video_plan) ? product.metadata.video_plan : {};
-  const sourceSuggestions = Array.isArray(sourcePlan.public_stock_suggestions)
-    ? sourcePlan.public_stock_suggestions.filter(isRecord) : [];
   const sourceDecisions = Array.isArray(sourcePlan.scene_source_decisions)
     ? sourcePlan.scene_source_decisions.filter(isRecord) : [];
-  const sourceCandidates = isRecord(product.metadata?.scene_source_candidates)
-    ? product.metadata.scene_source_candidates : {};
-  const sourcePreference = isRecord(sourcePlan.production_preference) ? sourcePlan.production_preference : {};
-  const publicSourceExcluded = sourcePreference.primary_visual_source_scope === "project_assets_only"
-    || (Array.isArray(sourcePreference.excluded_choice_ids) && sourcePreference.excluded_choice_ids.includes("public_stock"))
-    || (sourcePreference.restriction === "only" && sourcePreference.choice_id !== "public_stock");
   const planSummaryLabel = product.metadata?.video_project ? "视频摘要" : "编导稿摘要";
   const hasVideoProject = Boolean(product.videoProjectReady);
   const previewStageLabel = hasVideoProject ? "视频" : "编导稿";
@@ -1134,7 +1103,6 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
             <span>{planSummary.duration}</span>
             <span>{planSummary.sceneCount} 个分镜</span>
             <span>已匹配 {planSummary.materialHitCount} 个素材</span>
-            {planSummary.publicMaterialFillCount ? <span>自动补 {planSummary.publicMaterialFillCount} 个公共素材</span> : null}
             {planSummary.materialGapCount ? <span>{planSummary.materialGapCount} 个分镜自动补素材</span> : null}
             {planSummary.mgNeededCount ? <span>{planSummary.mgNeededCount} 个分镜自动加 MG</span> : null}
             {planSummary.mgRenderedCount ? <span>{planSummary.mgRenderedCount} 个 MG 已渲染</span> : null}
@@ -1159,16 +1127,10 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
                     <em>{sceneMgDecisionSummary(scene)}</em>
                     {(() => {
                       const sceneId = stringValue(scene.id);
-                      const suggestion = sourceSuggestions.find((item) => item.scene_id === sceneId);
                       const decision = sourceDecisions.find((item) => item.scene_id === sceneId);
                       const status = stringValue(decision?.status);
-                      const candidate = isRecord(sourceCandidates[sceneId]) ? sourceCandidates[sceneId] : null;
-                      const candidateId = stringValue(candidate?.candidate_id);
-                      const evidenceRequired = scene.evidence_required === true
-                        || (isRecord(scene.asset_requirement) && scene.asset_requirement.evidence_required === true);
                       const busy = sceneSourceProgress?.sceneId === sceneId && !sceneSourceProgress.error;
-                      const canSearch = Boolean(onSceneSourceAction && sceneId && !publicSourceExcluded && !evidenceRequired);
-                      if (!sceneId || (!suggestion && !decision && !canSearch && !onSceneSourceAction)) return null;
+                      if (!sceneId || (!decision && !onSceneSourceAction)) return null;
                       return (
                         <div aria-label="逐镜素材选择">
                           {onSceneSourceAction ? (
@@ -1179,35 +1141,10 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
                               <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "revise_scene", sceneId })}>修改本镜画面</button>
                             </div>
                           ) : null}
-                          {suggestion && status !== "declined" && status !== "candidate_confirmed" && status !== "no_candidate" ? (
-                            <p>可考虑公共素材：{stringValue(suggestion.visible_target) || "通用过渡画面"}。{stringValue(suggestion.reason)}</p>
-                          ) : null}
                           {status === "declined" ? <p>已保留原方案</p> : null}
-                          {status === "search_requested" ? <p>已请求搜索，尚未选用公共素材</p> : null}
-                          {status === "no_candidate" ? <p>本次搜索无合格公共素材，原画面保持不变。请选择下一步。</p> : null}
-                          {status === "awaiting_candidate_selection" ? <p>候选待确认，原画面仍保留</p> : null}
-                          {status === "candidate_confirmed" ? <p>已确认这一镜使用公共素材</p> : null}
+                          {/* Historical works may carry a public-material choice; it stays read-only. */}
+                          {status === "candidate_confirmed" ? <p>这一镜使用历史素材，仅供查看</p> : null}
                           {status === "alternative_applied" ? <p>已采用所选图片作为这一镜主画面</p> : null}
-                          {status === "awaiting_candidate_selection" && candidateId ? (
-                            <div>
-                              {/^https:\/\//i.test(stringValue(candidate?.preview_url)) ? (
-                                <a href={stringValue(candidate?.preview_url)} target="_blank" rel="noopener noreferrer">查看候选预览</a>
-                              ) : null}
-                              <p>{stringValue(candidate?.title)} · {stringValue(candidate?.provider)} · {stringValue(candidate?.license)}</p>
-                              {/^https:\/\//i.test(stringValue(candidate?.attribution_url)) ? (
-                                <a href={stringValue(candidate?.attribution_url)} target="_blank" rel="noopener noreferrer">查看素材来源</a>
-                              ) : null}
-                              {onSceneSourceAction ? <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "select", sceneId, candidateId })}>确认采用这项素材</button> : null}
-                            </div>
-                          ) : null}
-                          {canSearch && status !== "awaiting_candidate_selection" && status !== "candidate_confirmed" && status !== "no_candidate" ? (
-                            <button type="button" disabled={busy} onClick={() => void onSceneSourceAction?.({ kind: "search", sceneId })}>
-                              {status === "search_requested" ? "继续搜索公共素材" : suggestion ? "尝试搜索公共素材" : "指定公共素材并搜索"}
-                            </button>
-                          ) : null}
-                          {onSceneSourceAction && (suggestion || status === "search_requested" || status === "awaiting_candidate_selection" || status === "no_candidate") && status !== "declined" && status !== "candidate_confirmed" ? (
-                            <button type="button" disabled={busy} onClick={() => void onSceneSourceAction({ kind: "keep", sceneId })}>保留当前方案</button>
-                          ) : null}
                           {sceneSourceProgress?.sceneId === sceneId ? (
                             <p role={sceneSourceProgress.error ? "alert" : "status"}>{sceneSourceProgress.error || sceneSourceProgress.stage}</p>
                           ) : null}

@@ -45,12 +45,9 @@ export async function getSegmentMaterialCandidates(args: {
   token: string | null | undefined;
   projectAssetId: string | number;
   segmentId: string;
-  scope: "local" | "public";
-  cursor?: string | null;
   limit?: number;
 }): Promise<SegmentMaterialCandidatesResponse> {
-  const params = new URLSearchParams({ scope: args.scope });
-  if (args.cursor) params.set("cursor", args.cursor);
+  const params = new URLSearchParams({ scope: "local" });
   if (args.limit) params.set("limit", String(args.limit));
   const response = await fetch(
     `${API_BASE}/v1/video/projects/${encodeURIComponent(String(args.projectAssetId))}/segments/${encodeURIComponent(args.segmentId)}/material-candidates?${params.toString()}`,

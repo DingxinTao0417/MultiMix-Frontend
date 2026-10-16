@@ -523,9 +523,8 @@ export default function ProductWorkspace({
     || (typeof productMetadata.error_message === "string" ? productMetadata.error_message : "")
     || "";
   const failureAction = videoJobLive?.failureAction || product.failureAction;
-  const replacementSceneId = videoJobLive?.failureSceneId || product.failureSceneId;
-  const canReplaceFailedScene = Boolean(product.backendAssetId && replacementSceneId);
-  const retrySceneNumber = /^(?:seg|scene)-(\d+)$/.exec(replacementSceneId || "")?.[1];
+  const failedSceneId = videoJobLive?.failureSceneId || product.failureSceneId;
+  const retrySceneNumber = /^(?:seg|scene)-(\d+)$/.exec(failedSceneId || "")?.[1];
   const currentAssetId = product.backendAssetId ? String(product.backendAssetId) : null;
   const projectApproval = productMetadata.video_project_quality_approval as { fingerprint?: unknown } | undefined;
   const exportProjectIdentity = JSON.stringify([
@@ -1737,7 +1736,7 @@ export default function ProductWorkspace({
       setMaterialError("当前未连接素材服务，暂时无法更换素材。");
       return;
     }
-    // The shared candidate hook loads local first, then public, keyed off the
+    // The shared candidate hook loads the user's library, keyed off the
     // selected segment; opening the picker is enough to trigger it.
     setMaterialPickerSegment(segment);
   }, [product.backendAssetId, productMutationPending, token]);
@@ -2661,25 +2660,7 @@ export default function ProductWorkspace({
                 </p>
               ) : failureAction ? (
                 <div className="shadcn-prototype-video-failed-actions">
-                  {failureAction === "replace_scene_asset" ? (
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={!canReplaceFailedScene}
-                    title={canReplaceFailedScene ? undefined : "缺少失败分镜信息，请刷新后重试。"}
-                    onClick={() => window.dispatchEvent(new CustomEvent("multimix:composer-send", {
-                      detail: {
-                        utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
-                        videoSceneReplacement: {
-                          failedProjectAssetId: product.backendAssetId,
-                          sceneId: replacementSceneId,
-                        },
-                      },
-                    }))}
-                  >
-                    重新寻找该镜素材
-                  </button>
-                  ) : failureAction === "modify_script" ? (
+                  {failureAction === "modify_script" ? (
                   <button
                     type="button"
                     className="primary"
@@ -2758,15 +2739,9 @@ export default function ProductWorkspace({
           current={materialCandidates.current}
           recommended={materialCandidates.recommended}
           library={materialCandidates.library}
-          publicItems={materialCandidates.publicItems}
-          providerStatuses={materialCandidates.providerStatuses}
           loading={materialCandidates.localLoading}
           submitting={materialPickerState === "submitting"}
           error={materialError || materialCandidates.localError}
-          publicLoading={materialCandidates.publicLoading}
-          publicError={materialCandidates.publicError}
-          hasMorePublic={materialCandidates.hasMorePublic}
-          onLoadMorePublic={materialCandidates.loadMorePublic}
           onSelect={(item) => void replaceBrowseMaterial(item)}
           onClose={() => {
             if (materialPickerState === "submitting") return;

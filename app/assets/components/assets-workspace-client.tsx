@@ -72,7 +72,6 @@ import type {
   AssetProductSegment,
   AssetSourceResolutionSelection,
   AssetSubtitleOperation,
-  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
   AssetProjectResourceSummary,
@@ -287,11 +286,11 @@ export type VideoJobLiveStatus = {
   productStatus?: "generating" | "completed" | "failed";
   productCompleted?: boolean;
   failureReason?: string | null;
-  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
   failureSceneId?: string | null;
   operationStatus?: "generating" | "completed" | "failed" | null;
   operationFailureReason?: string | null;
-  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
   operationFailureSceneId?: string | null;
 };
 
@@ -1934,9 +1933,9 @@ export default function AssetsWorkspaceClient({
       progressKind: "video_create" | "video_update";
       connectionLost: boolean;
       productStatus?: "generating" | "completed" | "failed";
-      failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+      failureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
       operationStatus?: "generating" | "completed" | "failed" | null;
-      operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+      operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
     }> = {};
     for (const [assetId, live] of Object.entries(videoJobLive)) {
       map[Number(assetId)] = {
@@ -3168,7 +3167,9 @@ export default function AssetsWorkspaceClient({
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
     longFormAction?: AssetLongFormAction,
-    videoSceneReplacement?: AssetVideoSceneReplacement,
+    // Retired slot (failed-scene public re-search, removed 2026-10-15); kept so
+    // positional callers stay aligned. Always pass undefined.
+    _retiredSceneReplacement?: undefined,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
     presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
@@ -3276,7 +3277,6 @@ export default function AssetsWorkspaceClient({
         videoProjectConfirmation,
         agentConfirmationId,
         longFormAction: effectiveLongFormAction,
-        videoSceneReplacement,
         presenterDirectionConfirmation,
         presenterDirectionRequest,
         creativeDirectionSelection,
@@ -3566,13 +3566,6 @@ export default function AssetsWorkspaceClient({
       return;
     }
     const plan = director.metadata?.video_plan;
-    const decisions = plan && typeof plan === "object" && !Array.isArray(plan)
-      ? (plan as Record<string, unknown>).scene_source_decisions : undefined;
-    const existing = Array.isArray(decisions)
-      ? decisions.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).scene_id === action.sceneId)
-      : undefined;
-    const currentStatus = existing && typeof existing === "object"
-      ? (existing as Record<string, unknown>).status : undefined;
     if (action.kind === "generate_image" || action.kind === "upload_asset" || action.kind === "revise_scene") {
       const scenes = plan && typeof plan === "object" && !Array.isArray(plan)
         ? (plan as Record<string, unknown>).scenes : undefined;
@@ -3630,7 +3623,6 @@ export default function AssetsWorkspaceClient({
     }
     sceneSourceBusyRef.current = true;
     setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对当前编导稿版本" });
-    let waitingTimer: ReturnType<typeof setInterval> | undefined;
     try {
       const refresh = async () => {
         const loaded = await assetWorkspaceAdapter.loadConversationDetail(token, conversation.id);
@@ -3642,46 +3634,8 @@ export default function AssetsWorkspaceClient({
         if (!nextVersionId) throw new Error("编导稿最新版本尚未就绪，请刷新后重试。");
         return nextVersionId;
       };
-      let boundVersion = directorVersionId;
-      if (action.kind === "search" && currentStatus !== "search_requested" || action.kind === "keep") {
-        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在记录逐镜来源决定" });
-        const decision = {
-          directorAssetId, directorVersionId: boundVersion,
-          sceneId: action.sceneId,
-          action: action.kind === "keep" ? "keep_current" as const : "search_public" as const,
-        };
-        const response = await assetWorkspaceAdapter.sendMessage({
-          token, conversationId: conversation.id,
-          instruction: action.kind === "keep" ? `第 ${action.sceneId} 镜保留当前方案` : `第 ${action.sceneId} 镜尝试搜索公共素材`,
-          selectedProductId: directorAssetId,
-          sceneSourceDecision: decision,
-        });
-        setConversations((current) => current.map((item) => item.id === conversation.id ? response.conversation : item));
-        boundVersion = await refresh();
-      }
-      if (action.kind === "search") {
-        const startedAt = Date.now();
-        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在规划搜索词并核验素材候选" });
-        waitingTimer = setInterval(() => {
-          const seconds = Math.floor((Date.now() - startedAt) / 1000);
-          if (seconds >= 15) setSceneSourceProgress({
-            sceneId: action.sceneId,
-            stage: `正在规划搜索词并核验素材候选，已等待 ${seconds} 秒；响应较慢，可稍后刷新查看结果`,
-          });
-        }, 5000);
-        await assetWorkspaceAdapter.searchScenePublicCandidate(token, {
-          directorAssetId, directorVersionId: boundVersion,
-          sceneId: action.sceneId, action: "search_public",
-        });
-        await refresh();
-      } else if (action.kind === "select") {
-        setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对原片并应用到这一镜" });
-        await assetWorkspaceAdapter.selectScenePublicCandidate(token, {
-          directorAssetId, directorVersionId: boundVersion,
-          sceneId: action.sceneId, action: "search_public",
-        }, action.candidateId);
-        await refresh();
-      } else if (action.kind === "use_asset") {
+      const boundVersion = directorVersionId;
+      if (action.kind === "use_asset") {
         setSceneSourceProgress({ sceneId: action.sceneId, stage: "正在核对图片并应用到这一镜" });
         await assetWorkspaceAdapter.sendMessage({
           token, conversationId: conversation.id,
@@ -3700,34 +3654,12 @@ export default function AssetsWorkspaceClient({
     } catch (error) {
       reportRuntimeWriteFailure(error);
       setConversationLoadRevision((value) => value + 1);
-      if (action.kind === "search") {
-        try {
-          const loaded = await assetWorkspaceAdapter.loadConversationDetail(token, conversation.id);
-          setConversations((current) => current.map((item) => item.id === conversation.id ? loaded : item));
-          const versions = loaded.products?.length ? loaded.products : [loaded.product];
-          const current = versions.find((item) => item.backendAssetId === directorAssetId);
-          const currentPlan = current?.metadata?.video_plan;
-          const decisions = currentPlan && typeof currentPlan === "object" && !Array.isArray(currentPlan)
-            ? (currentPlan as Record<string, unknown>).scene_source_decisions : undefined;
-          if (Array.isArray(decisions) && decisions.some((item) =>
-            item && typeof item === "object"
-            && (item as Record<string, unknown>).scene_id === action.sceneId
-            && (item as Record<string, unknown>).status === "no_candidate"
-          )) {
-            setSceneSourceProgress(null);
-            return;
-          }
-        } catch {
-          // The original search error remains visible if readback is unavailable.
-        }
-      }
       setSceneSourceProgress({
         sceneId: action.sceneId,
         stage: "逐镜操作未完成",
         error: `${formatComposerError(error)} 原方案仍可查看，请刷新后核对状态。`,
       });
     } finally {
-      if (waitingTimer) clearInterval(waitingTimer);
       sceneSourceBusyRef.current = false;
     }
   };

@@ -10,17 +10,15 @@ describe("video project client", () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       scope: "local",
       segment_id: "scene-1",
-      groups: { current: [], recommended: [], library: [], public: [] },
-      provider_statuses: [],
-      next_cursor: null,
+      groups: { current: [], recommended: [], library: [] },
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await getSegmentMaterialCandidates({ token: "token", projectAssetId: 7, segmentId: "scene-1", scope: "local" });
+    await getSegmentMaterialCandidates({ token: "token", projectAssetId: 7, segmentId: "scene-1" });
 
-    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe(
-      "/v1/video/projects/7/segments/scene-1/material-candidates",
-    );
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/v1/video/projects/7/segments/scene-1/material-candidates");
+    expect(url.searchParams.get("scope")).toBe("local");
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer token" });
     vi.unstubAllGlobals();
   });

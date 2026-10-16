@@ -56,11 +56,10 @@ export interface GenerateRequest {
 // pre-built project (from /v1/video/generate) rather than generating here.
 export { API_BASE };
 
-// URL to load a media file. Remote stock URLs (http...) pass through directly;
-// All media goes through the backend proxy: store refs (local://supabase://) are
-// read server-side, and external stock CDN URLs (Pixabay/Pexels) are relayed by
-// the backend because those CDNs send no CORS headers — fetching them directly
-// from the browser yields an opaque blob the decoder rejects (black video).
+// URL to load a media file. All media goes through the backend proxy: store refs
+// (local://supabase://) are read server-side, and the CDN URLs of historical
+// public stock clips are relayed by the backend because those CDNs send no CORS
+// headers — fetching them directly yields an opaque blob the decoder rejects.
 export function mediaUrl(filePath: string): string {
   if (!filePath) return "";
   return `${API_BASE}/v1/video/media?ref=${encodeURIComponent(filePath)}`;
@@ -71,7 +70,7 @@ export function mediaUrl(filePath: string): string {
 // here so the vendor editor stays free of app imports.
 export interface SegmentMaterialCandidate {
   candidate_id: string | null;
-  source_type: "saved_asset" | "public_asset" | "title_card";
+  source_type: "saved_asset" | "title_card";
   source_asset_id: number | null;
   provider: string;
   media_type: string;
@@ -85,16 +84,14 @@ export interface SegmentMaterialCandidate {
   selectable: boolean;
 }
 
+// Only the user's own library is offered; public stock material was retired on 2026-10-15.
 export interface SegmentMaterialCandidatesResult {
-  scope: "local" | "public";
+  scope: "local";
   groups: {
     current: SegmentMaterialCandidate[];
     recommended: SegmentMaterialCandidate[];
     library: SegmentMaterialCandidate[];
-    public: SegmentMaterialCandidate[];
   };
-  provider_statuses: Array<{ provider: string; status: string; error?: string }>;
-  next_cursor: string | null;
 }
 
 export type BGMAction = "enable" | "disable" | "select" | "restore_auto";
@@ -195,16 +192,12 @@ export async function updateProjectBGM(
 export async function segmentMaterialCandidates(
   assetId: string,
   segmentId: string,
-  scope: "local" | "public",
   token: string | null | undefined,
-  cursor?: string | null,
 ): Promise<SegmentMaterialCandidatesResult> {
   return getSharedSegmentMaterialCandidates({
     token,
     projectAssetId: assetId,
     segmentId,
-    scope,
-    cursor,
   });
 }
 export interface RecomposeResult {
@@ -216,7 +209,7 @@ export interface RecomposeResult {
 }
 
 // Server-side segment recompose. The editor submits only a scoped candidate_id
-// and never sends a raw public URL. Returns a confirmation on timeline_dirty so the
+// and never sends a raw media URL. Returns a confirmation on timeline_dirty so the
 // caller can re-send with confirm_overwrite=true.
 export async function recomposeSegmentMaterial(
   assetId: string,

@@ -11,7 +11,6 @@ function plan(): AssetMessagePlan {
     confirmLabel: "确认参数并生成编导稿", ratioDefault: "16:9", durationSeconds: 30,
     productionSelectionRequired: true, productionRecommendedId: "graphics",
     productionOptions: [
-      { id: "public_stock", label: "公开素材", effect: "通用场景画面", requiredInputs: "主题和受众", costNote: "制作费用以方案为准" },
       { id: "graphics", label: "图形动画", effect: "文字与图形动画", requiredInputs: "表达重点", costNote: "涉及图形渲染费用" },
     ] };
 }
@@ -40,7 +39,7 @@ describe("production method in the existing video confirmation", () => {
 
     expect(screen.getByRole("radio", { name: "AI 生成画面" })).toBeDisabled();
     expect(screen.getByText("请先补充已授权参考图")).toBeVisible();
-    expect(screen.getAllByText("预计等待暂无法估计")).toHaveLength(3);
+    expect(screen.getAllByText("预计等待暂无法估计")).toHaveLength(2);
     expect(screen.getByText("预计费用暂无法估计")).toBeVisible();
     fireEvent.click(screen.getByRole("radio", { name: "AI 生成画面" }));
     expect(screen.getByRole("button", { name: "确认参数并生成编导稿" })).toBeDisabled();

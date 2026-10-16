@@ -1,5 +1,5 @@
-export const LEGAL_VERSION = "2026-09-16";
-export const LEGAL_EFFECTIVE_DATE = "2026 年 9 月 16 日";
+export const LEGAL_VERSION = "2026-10-16";
+export const LEGAL_EFFECTIVE_DATE = "2026 年 10 月 16 日";
 export const LEGAL_OPERATOR = {
   name: "",
   registeredAddress: "",

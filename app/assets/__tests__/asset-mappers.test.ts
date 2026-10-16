@@ -328,12 +328,12 @@ describe("asset product mapper", () => {
       status: "ready",
       generation_state: "video_project_ready",
       product_status: "failed",
-      failure_action: "replace_scene_asset",
+      failure_action: "modify_script",
       failure_scene_id: "seg-4",
       error_message: "素材失效",
       metadata: {
         video_workflow_stage: "video_project_ready",
-        failure_action: "replace_scene_asset",
+        failure_action: "modify_script",
         pipeline_attempt: {
           failure: {
             code: "original_material_unavailable",
@@ -343,7 +343,7 @@ describe("asset product mapper", () => {
       },
     }));
 
-    expect(failed.failureAction).toBe("replace_scene_asset");
+    expect(failed.failureAction).toBe("modify_script");
     expect(failed.failureSceneId).toBe("seg-4");
   });
 
@@ -1183,13 +1183,14 @@ describe("asset product mapper", () => {
     expect(product.segments?.[0]?.voiceName).toBe("male_steady");
     expect(product.segments?.[0]?.visualStatusLabel).toBeUndefined();
     expect(product.segments?.[0]?.primaryVisualSourceType).toBeUndefined();
-    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材生成 · 1 个公共素材候选");
+    // An unadopted public candidate from before the retirement no longer counts.
+    expect(product.sourceSummary?.headline).toBe("基于 2 个已保存素材生成");
     expect(product.sourceSummary?.note).toContain("已保存素材命中 2/3");
     expect(product.sourceSummary?.note).not.toContain("兜底素材");
     expect(product.sourceSummary?.refs.map((ref) => ref.title)).toEqual(["客厅落地窗效果", "门窗安装完工全景"]);
   });
 
-  it("reports a persisted public primary visual as material used by the video", () => {
+  it("reports a persisted historical public visual as read-only history", () => {
     const product = contentAssetToProduct(asset({
       asset_kind: "video",
       content_type: "video_project",
@@ -1218,7 +1219,7 @@ describe("asset product mapper", () => {
       primaryVisualSourceType: "public_asset",
       primaryVisualPersisted: true,
     });
-    expect(product.sourceSummary?.headline).toBe("基于 1 个公共素材生成");
+    expect(product.sourceSummary?.headline).toBe("基于 1 个历史素材生成");
   });
 
   it("does not report unfilled generated scenes as public material", () => {
@@ -1408,7 +1409,7 @@ describe("asset product mapper", () => {
       selectionReason: "流程关系比单张素材更容易理解。",
       graphicComponentLabel: "流程图",
       backgroundTreatmentLabel: "已验证素材虚化背景",
-      publicReplacementNote: "原公开素材已失效，已透明替换为可用素材",
+      publicReplacementNote: "原历史素材已失效，已替换为可用素材",
     });
   });
 
@@ -1857,6 +1858,23 @@ describe("message plan mapping", () => {
         } } }],
     }, newConversationProduct);
     expect(conversation.messages?.[0]?.plan?.subtitlesEnabledDefault).toBe(enabled);
+  });
+
+  it("never offers a stale public_stock production option from an older confirmation card", () => {
+    const conversation = conversationFromPersisted({
+      id: "production-option-conversation", title: "制作方式", status: "active", metadata: {},
+      created_at: "2026-10-08T00:00:00Z", updated_at: "2026-10-08T00:00:00Z", products: [],
+      messages: [{ id: 1, role: "assistant", text: "请确认视频参数。", asset_id: null,
+        created_at: "2026-10-08T00:00:00Z", metadata: { plan: {
+          kind: "video_parameter_confirmation", title: "确认视频参数", status: "pending",
+          fields: [{ key: "duration", label: "时长", value: "30 秒" }],
+          production_options: [
+            { id: "public_stock", label: "公开素材", effect: "通用场景", required_inputs: "主题", cost_note: "" },
+            { id: "graphics", label: "图形动画", effect: "文字与图形", required_inputs: "重点", cost_note: "" },
+          ],
+        } } }],
+    }, newConversationProduct);
+    expect(conversation.messages?.[0]?.plan?.productionOptions?.map((option) => option.id)).toEqual(["graphics"]);
   });
 
   it("classifies persisted confirmation control events for presentation", () => {

@@ -9,7 +9,6 @@ import type {
   AssetSceneSourceDecision,
   AssetSceneImageGenerationRequest,
   AssetDirectorProductionPlan,
-  AssetScenePublicCandidate,
   AssetImageGenerationConfirmation,
   AssetImageGenerationRequest,
   AssetLongFormAction,
@@ -26,7 +25,6 @@ import type {
   RequirementConflictResolution,
   AssetSourceResolutionSelection,
   AssetSubtitleOperation,
-  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
   AssetWorkspaceData,
@@ -62,8 +60,6 @@ import {
   type ContentAsset,
   type ContentAssetSearchResult,
   type ContentAssetRevisionResponse,
-  type PublicMaterialCandidate,
-  type PublicSourceRead,
   type RequirementConversationMediaResponse,
   type SegmentMaterialCandidateResponse
 } from "../../../lib/api";
@@ -557,7 +553,6 @@ export function buildConversationMessagePayload({
   videoProjectConfirmation,
   agentConfirmationId,
   longFormAction,
-  videoSceneReplacement,
   presenterDirectionConfirmation,
   presenterDirectionRequest,
   creativeDirectionSelection,
@@ -585,7 +580,6 @@ export function buildConversationMessagePayload({
   videoProjectConfirmation?: AssetVideoProjectConfirmation;
   agentConfirmationId?: string;
   longFormAction?: AssetLongFormAction;
-  videoSceneReplacement?: AssetVideoSceneReplacement;
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
   presenterDirectionRequest?: AssetPresenterDirectionRequest;
   creativeDirectionSelection?: AssetCreativeDirectionSelection;
@@ -663,12 +657,6 @@ export function buildConversationMessagePayload({
       },
     } : {}),
     ...(serializedLongFormAction ? { long_form_action: serializedLongFormAction } : {}),
-    ...(videoSceneReplacement ? {
-      video_scene_replacement: {
-        failed_project_asset_id: videoSceneReplacement.failedProjectAssetId,
-        scene_id: videoSceneReplacement.sceneId,
-      },
-    } : {}),
     ...(presenterDirectionConfirmation ? {
       source_video_direction_confirmation: {
         director_candidate_id: presenterDirectionConfirmation.directorCandidateId,
@@ -963,7 +951,6 @@ export type AssetWorkspaceAdapter = {
     videoProjectConfirmation?: AssetVideoProjectConfirmation;
     agentConfirmationId?: string;
     longFormAction?: AssetLongFormAction;
-    videoSceneReplacement?: AssetVideoSceneReplacement;
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
     presenterDirectionRequest?: AssetPresenterDirectionRequest;
     creativeDirectionSelection?: AssetCreativeDirectionSelection;
@@ -1000,11 +987,6 @@ export type AssetWorkspaceAdapter = {
     agentAction: AgentActionRunResponse | null;
     requirementSnapshot?: ProjectRequirementSnapshot | null;
   } | null>;
-  searchScenePublicCandidate(token: string, decision: AssetSceneSourceDecision): Promise<{
-    directorVersionId: number;
-    candidate: AssetScenePublicCandidate;
-  }>;
-  selectScenePublicCandidate(token: string, decision: AssetSceneSourceDecision, candidateId: string): Promise<{ directorVersionId: number }>;
   getGenerationJob(token: string, jobId: string, signal?: AbortSignal): Promise<AssetGenerationJobResponse>;
   retryGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
   regenerateGenerationJob(token: string, jobId: string): Promise<AssetGenerationJobResponse>;
@@ -1052,8 +1034,6 @@ export type AssetWorkspaceAdapter = {
     token: string,
     projectAssetId: number,
     segmentId: string,
-    scope: "local" | "public",
-    cursor?: string | null,
     limit?: number,
   ): Promise<SegmentMaterialOptions>;
   replaceSegmentMaterial(
@@ -1097,12 +1077,6 @@ export type AssetWorkspaceAdapter = {
   downloadAsset(token: string, assetId: number): Promise<Blob>;
   deleteAsset(token: string, assetId: number, mode?: "archive" | "permanent"): Promise<void>;
   reparseAsset(token: string, assetId: number): Promise<ContentAsset>;
-  listPublicSources(token: string, mediaType?: "text" | "image" | "video"): Promise<PublicSourceRead[]>;
-  searchPublicMaterials(token: string, payload: { query: string; mediaTypes: Array<"text" | "image" | "video">; providers?: string[]; limit?: number }): Promise<PublicMaterialCandidate[]>;
-  importPublicMaterial(token: string, candidate: PublicMaterialCandidate): Promise<ContentAsset>;
-  listAdminPublicSources(token: string): Promise<PublicSourceRead[]>;
-  updateAdminPublicSource(token: string, provider: string, payload: Partial<Pick<PublicSourceRead, "enabled" | "media_types">>): Promise<PublicSourceRead>;
-  checkAdminPublicSourceHealth(token: string, provider: string): Promise<PublicSourceRead>;
 };
 
 export function conversationFromSummary(
@@ -1196,11 +1170,11 @@ export type VideoJobResult = {
   productStatus?: "generating" | "completed" | "failed";
   productCompleted: boolean;
   failureReason?: string | null;
-  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  failureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
   failureSceneId?: string | null;
   operationStatus?: "generating" | "completed" | "failed" | null;
   operationFailureReason?: string | null;
-  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
   operationFailureSceneId?: string | null;
 };
 
@@ -1235,11 +1209,11 @@ type RawVideoJob = {
   product_status?: "generating" | "completed" | "failed";
   product_completed?: boolean;
   failure_reason?: string | null;
-  failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  failure_action?: "retry" | "retry_scene_generation" | "modify_script" | null;
   failure_scene_id?: string | null;
   operation_status?: "generating" | "completed" | "failed" | null;
   operation_failure_reason?: string | null;
-  operation_failure_action?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+  operation_failure_action?: "retry" | "retry_scene_generation" | "modify_script" | null;
   operation_failure_scene_id?: string | null;
 };
 
@@ -1366,6 +1340,8 @@ function browserReadableAssetRef(value: unknown): string | undefined {
   return mediaProxyUrl(ref);
 }
 
+// Historical public stock videos imported before 2026-10-15 stay playable in the
+// library; nothing creates new ones.
 function isPublicVideoAsset(asset: ContentAsset): boolean {
   return asset.asset_kind === "video" && (asset.content_type === "public_video"
     || asset.metadata?.workflow === "public_material_import");
@@ -1578,7 +1554,7 @@ function mergeSearchResults(keywordRows: ContentAssetSearchResult[], semanticRow
     .map((item) => contentAssetToLibraryRow(item.asset, item.reasons));
 }
 
-// Every selectable local/public row is scoped and signed by the server.
+// Every selectable row is scoped and signed by the server.
 export type SegmentMaterialSelection = { candidateId: string };
 
 function mapSegmentCandidate(row: SegmentMaterialCandidateResponse): SegmentMaterialOption {
@@ -1883,7 +1859,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       videoProjectConfirmation,
       agentConfirmationId,
       longFormAction,
-      videoSceneReplacement,
       presenterDirectionConfirmation,
       presenterDirectionRequest,
       creativeDirectionSelection,
@@ -1901,7 +1876,7 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
       subtitleOperation,
       signal,
     }) {
-      if (videoParameterConfirmation || videoProjectConfirmation || videoSceneReplacement || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan || subtitleOperation) {
+      if (videoParameterConfirmation || videoProjectConfirmation || presenterDirectionConfirmation || presenterDirectionRequest || creativeDirectionSelection || presenterCleanupConfirmation || presenterAudioSelectionConfirmation || directorProductionPlan || subtitleOperation) {
         assertVideoWritesAvailable();
       }
       const response = await api<AssetConversationMessageResponse & {
@@ -1925,7 +1900,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           videoProjectConfirmation,
           agentConfirmationId,
           longFormAction,
-          videoSceneReplacement,
           presenterDirectionConfirmation,
           presenterDirectionRequest,
           creativeDirectionSelection,
@@ -1964,43 +1938,6 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
           ? mapProjectRequirementSnapshot(response.requirement_snapshot)
           : null,
       };
-    },
-    async searchScenePublicCandidate(token, decision) {
-      const response = await api<{ director_version_id: number; candidate: {
-        candidate_id: string; preview_url: string; title: string; provider: string;
-        license: string; attribution_url: string;
-      } }>("/assets/director-scene-public-search", token, {
-        method: "POST",
-        body: JSON.stringify({
-          director_asset_id: decision.directorAssetId,
-          director_version_id: decision.directorVersionId,
-          scene_id: decision.sceneId,
-          action: "search_public",
-        }),
-      });
-      return {
-        directorVersionId: response.director_version_id,
-        candidate: {
-          candidateId: response.candidate.candidate_id,
-          previewUrl: response.candidate.preview_url,
-          title: response.candidate.title,
-          provider: response.candidate.provider,
-          license: response.candidate.license,
-          attributionUrl: response.candidate.attribution_url,
-        },
-      };
-    },
-    async selectScenePublicCandidate(token, decision, candidateId) {
-      const response = await api<{ director_version_id: number }>("/assets/director-scene-public-select", token, {
-        method: "POST",
-        body: JSON.stringify({
-          director_asset_id: decision.directorAssetId,
-          director_version_id: decision.directorVersionId,
-          scene_id: decision.sceneId,
-          candidate_id: candidateId,
-        }),
-      });
-      return { directorVersionId: response.director_version_id };
     },
     async reconcileMessage({ token, conversationId, clientRequestId }) {
       let row: AssetConversationResponse;
@@ -2151,26 +2088,18 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
         onJobUpdate,
       });
     },
-    async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, scope, cursor, limit) {
+    async loadSegmentMaterialCandidates(token, projectAssetId, segmentId, limit) {
       const data = await getSegmentMaterialCandidates({
         token,
         projectAssetId,
         segmentId,
-        scope,
-        cursor,
         limit,
       });
-      const groups = data.groups ?? { current: [], recommended: [], library: [], public: [] };
+      const groups = data.groups ?? { current: [], recommended: [], library: [] };
       return {
         current: (groups.current ?? []).map(mapSegmentCandidate),
         recommended: (groups.recommended ?? []).map(mapSegmentCandidate),
         library: (groups.library ?? []).map(mapSegmentCandidate),
-        public: (groups.public ?? []).map(mapSegmentCandidate),
-        providerStatuses: (data.provider_statuses ?? []).map((item) => ({
-          provider: stringValue(item.provider),
-          status: stringValue(item.status),
-        })),
-        publicNextCursor: data.next_cursor ?? null,
       };
     },
     async replaceSegmentMaterial(token, projectAssetId, segmentId, selection, confirmOverwrite = false) {
@@ -2311,41 +2240,8 @@ function createAssetWorkspaceAdapter(data: AssetWorkspaceData): AssetWorkspaceAd
     },
     async reparseAsset(token, assetId) {
       return api<ContentAsset>(`/assets/${assetId}/reparse`, token, { method: "POST" });
-    },
-    async listPublicSources(token, mediaType) {
-      const query = mediaType ? `?media_type=${encodeURIComponent(mediaType)}` : "";
-      return api<PublicSourceRead[]>(`/assets/public-sources${query}`, token);
-    },
-    async searchPublicMaterials(token, payload) {
-      const response = await api<{ query: string; candidates: PublicMaterialCandidate[] }>("/assets/public-search", token, {
-        method: "POST",
-        body: JSON.stringify({
-          query: payload.query,
-          media_types: payload.mediaTypes,
-          providers: payload.providers,
-          limit: payload.limit ?? 12
-        })
-      });
-      return response.candidates;
-    },
-    async importPublicMaterial(token, candidate) {
-      return api<ContentAsset>("/assets/public-import", token, {
-        method: "POST",
-        body: JSON.stringify({ candidate })
-      });
-    },
-    async listAdminPublicSources(token) {
-      return api<PublicSourceRead[]>("/admin/public-sources", token);
-    },
-    async updateAdminPublicSource(token, provider, payload) {
-      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}`, token, {
-        method: "PATCH",
-        body: JSON.stringify(payload)
-      });
-    },
-    async checkAdminPublicSourceHealth(token, provider) {
-      return api<PublicSourceRead>(`/admin/public-sources/${encodeURIComponent(provider)}/health`, token, { method: "POST" });
     }
+
   };
 }
 

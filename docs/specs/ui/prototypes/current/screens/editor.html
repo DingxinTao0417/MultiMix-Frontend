@@ -373,7 +373,7 @@ var SEGS = [
     line:'板材封边看这里，机器封的和手工的差别很大', src:'施工过程记录', own:true, mg:false,
     sugg:['这段偏长，可以裁到 7 秒保持节奏','结尾加 0.5 秒特写定格'] },
   { no:4, t0:24, t1:30, ph:'ph-seal',     name:'报价引导',
-    line:'评论区扣 1，送你一份全屋定制避坑报价单', src:'兜底素材 · 通用工艺画面', own:false, mg:false,
+    line:'评论区扣 1，送你一份全屋定制避坑报价单', src:'待补素材 · 可上传或让 AI 生成', own:false, mg:false,
     sugg:['建议换成你的门店实拍，转化率更高','结尾字幕放大 1.2 倍，强化行动指令'] },
 ];
 var SUBS_W = [ [0,16.6],[16.6,30],[46.6,33.4],[80,20] ];
@@ -415,7 +415,7 @@ function select(i, silent){
   $('iSrc').querySelector('.th').innerHTML = '<span class="ph '+s.ph+'"></span>';
   $('iSrcName').textContent = s.src;
   $('iSrcSt').innerHTML = s.own ? '<span class="gdot"></span>已理解 · 你的素材'
-    : '<span style="width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none"></span>兜底素材 · 建议替换';
+    : '<span style="width:6px;height:6px;border-radius:50%;background:var(--warn);flex:none"></span>待补素材 · 上传或让 AI 生成';
   $('iSub').textContent = s.line;
   $('iSugg').innerHTML = s.sugg.map(function(x){
     return '<button onclick="toast(\'已让 AI 执行：'+x.slice(0,14)+'…\')">'

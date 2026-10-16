@@ -32,7 +32,6 @@ const ATTACHMENT_HELP_TEXT = "图片和视频会作为创作素材，PDF/文档�
 const START_CAPABILITIES = [
   "我的素材",
   "AI 生成镜头",
-  "公开素材",
   "字幕、图文与图形动画",
   "原片优化、配音与音乐",
 ] as const;

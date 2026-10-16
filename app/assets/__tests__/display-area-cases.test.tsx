@@ -502,13 +502,13 @@ describe("display-area eight-case matrix", () => {
     const base = displayProducts["case-05-project-failed"];
     render(<ProductPreview product={{
       ...base,
-      failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
-      failureAction: "replace_scene_asset",
+      failureReason: "第 4 镜的原素材不可用，请修改该镜方案后再生成。",
+      failureAction: "modify_script",
     }} />);
 
-    expect(screen.getByRole("button", { name: "重新寻找该镜素材" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改编导稿" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /重试生成/ })).not.toBeInTheDocument();
-    expect(screen.getByText("系统不会自动替换已经确认的素材。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "重新寻找该镜素材" })).not.toBeInTheDocument();
   });
 
   it.each(["case-06-project-ready-no-mp4"] as const)(

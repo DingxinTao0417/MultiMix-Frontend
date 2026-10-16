@@ -42,7 +42,6 @@ import type {
   AssetPresenterCleanupConfirmation,
   AssetSourceResolutionSelection,
   AssetSubtitleOperation,
-  AssetVideoSceneReplacement,
   AssetVideoParameterConfirmation,
   AssetVideoProjectConfirmation,
   ProjectRequirementSnapshot,
@@ -89,7 +88,6 @@ type SendInstructionOptions = {
   clientRequestId?: string;
   videoParameterConfirmation?: AssetVideoParameterConfirmation;
   agentConfirmationId?: string;
-  videoSceneReplacement?: AssetVideoSceneReplacement;
   presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation;
   presenterDirectionRequest?: AssetPresenterDirectionRequest;
   presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation;
@@ -508,7 +506,7 @@ export default function ConversationStudio({
     videoParameterConfirmation?: AssetVideoParameterConfirmation,
     agentConfirmationId?: string,
     longFormAction?: AssetLongFormAction,
-    videoSceneReplacement?: AssetVideoSceneReplacement,
+    _retiredSceneReplacement?: undefined,
     presenterDirectionConfirmation?: AssetPresenterDirectionConfirmation,
     presenterDirectionRequest?: AssetPresenterDirectionRequest,
     presenterCleanupConfirmation?: AssetPresenterCleanupConfirmation,
@@ -543,9 +541,9 @@ export default function ConversationStudio({
     progressKind?: "video_create" | "video_update";
     connectionLost?: boolean;
     productStatus?: "generating" | "completed" | "failed";
-    failureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+    failureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
     operationStatus?: "generating" | "completed" | "failed" | null;
-    operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | "replace_scene_asset" | null;
+    operationFailureAction?: "retry" | "retry_scene_generation" | "modify_script" | null;
   }>;
   onRetryExecution?: (retryJobId: string, executionJobId: string) => void;
   liveAgentActionsById?: Record<string, AgentActionRunResponse>;
@@ -717,7 +715,6 @@ export default function ConversationStudio({
       clientRequestId,
       videoParameterConfirmation,
       agentConfirmationId,
-      videoSceneReplacement,
       presenterDirectionConfirmation,
       presenterDirectionRequest,
       presenterCleanupConfirmation,
@@ -775,7 +772,7 @@ export default function ConversationStudio({
         videoParameterConfirmation,
         agentConfirmationId,
         undefined,
-        videoSceneReplacement,
+        undefined,
         presenterDirectionConfirmation,
         presenterDirectionRequest,
         presenterCleanupConfirmation,
@@ -1109,7 +1106,6 @@ export default function ConversationStudio({
     const onComposerSend = (event: Event) => {
       const detail = (event as CustomEvent<{
         utterance?: string;
-        videoSceneReplacement?: AssetVideoSceneReplacement;
         confirmationProductId?: number;
         sourceSubtitleMode?: "translated_zh" | "source" | "bilingual";
       }>).detail;
@@ -1118,10 +1114,6 @@ export default function ConversationStudio({
         void sendInstruction(
           utterance.trim(),
           {
-            clientRequestId: detail?.videoSceneReplacement
-              ? globalThis.crypto.randomUUID()
-              : undefined,
-            videoSceneReplacement: detail?.videoSceneReplacement,
             confirmationProductId: detail?.confirmationProductId,
             sourceSubtitleMode: detail?.sourceSubtitleMode,
           },

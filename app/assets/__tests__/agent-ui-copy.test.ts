@@ -1792,14 +1792,17 @@ describe("agent conversation UI copy", () => {
     expect(globals).toContain(".shadcn-prototype-video-placeholder-preview");
   });
 
-  it("keeps source administration out of the library while preserving public material search", () => {
+  it("keeps public material search and source administration out of the library", () => {
     const libraryWorkshop = readAssetFile("app/assets/components/library-workshop.tsx");
     const adapter = readAssetFile("app/assets/lib/asset-workspace-adapter.ts");
 
-    expect(libraryWorkshop).toContain("公开素材搜索");
-    expect(libraryWorkshop).toContain("handleImportPublicMaterial");
-    expect(adapter).toContain("/assets/public-search");
-    expect(adapter).toContain("/assets/public-import");
+    // Public stock material was retired on 2026-10-15.
+    expect(libraryWorkshop).not.toContain("公开素材搜索");
+    expect(libraryWorkshop).not.toContain("handleImportPublicMaterial");
+    expect(adapter).not.toContain("/assets/public-search");
+    expect(adapter).not.toContain("/assets/public-import");
+    expect(adapter).not.toContain("/admin/public-sources");
+    expect(adapter).not.toContain("director-scene-public");
     expect(libraryWorkshop).not.toContain("listAdminPublicSources");
     expect(libraryWorkshop).not.toContain("updateAdminPublicSource");
     expect(libraryWorkshop).not.toContain("checkAdminPublicSourceHealth");

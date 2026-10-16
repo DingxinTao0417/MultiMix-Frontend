@@ -224,42 +224,6 @@ it("sends a project-bound versioned director import with explicit image mapping"
   }
 });
 
-it("searches and selects a public scene candidate through separate version-bound APIs", async () => {
-  const fetchMock = vi.fn<typeof fetch>()
-    .mockResolvedValueOnce(new Response(JSON.stringify({
-      director_version_id: 8,
-      candidate: {
-        candidate_id: "safe-candidate", preview_url: "https://example.com/preview.jpg",
-        title: "早餐街景", provider: "Pexels", license: "Pexels License",
-        attribution_url: "https://example.com/source",
-      },
-    }), { status: 200, headers: { "Content-Type": "application/json" } }))
-    .mockResolvedValueOnce(new Response(JSON.stringify({ director_version_id: 9 }), {
-      status: 200, headers: { "Content-Type": "application/json" },
-    }));
-  vi.stubGlobal("fetch", fetchMock);
-  try {
-    const decision = { directorAssetId: 5, directorVersionId: 7, sceneId: "scene-2", action: "search_public" as const };
-    const found = await assetWorkspaceAdapter.searchScenePublicCandidate("token", decision);
-    expect(found.candidate.candidateId).toBe("safe-candidate");
-    expect(found.directorVersionId).toBe(8);
-    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/v1/assets/director-scene-public-search");
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      director_asset_id: 5, director_version_id: 7, scene_id: "scene-2", action: "search_public",
-    });
-    const selected = await assetWorkspaceAdapter.selectScenePublicCandidate("token", {
-      ...decision, directorVersionId: found.directorVersionId,
-    }, found.candidate.candidateId);
-    expect(selected.directorVersionId).toBe(9);
-    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe("/v1/assets/director-scene-public-select");
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
-      director_asset_id: 5, director_version_id: 8, scene_id: "scene-2", candidate_id: "safe-candidate",
-    });
-  } finally {
-    vi.unstubAllGlobals();
-  }
-});
-
 it("maps the public video job's recorded cost without treating it as a bill", async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
     id: "job-1", asset_id: 42, status: "running", workflow_stage: "video",
@@ -1319,13 +1283,13 @@ describe("runtime data boundary", () => {
   it("binds a scene source decision to the current director version", () => {
     const payload = buildConversationMessagePayload({
       conversationId: "asset-conversation-1",
-      instruction: "第 2 镜尝试公共素材",
+      instruction: "第 2 镜保留当前方案",
       selectedProductId: 1397,
       sceneSourceDecision: {
         directorAssetId: 1397,
         directorVersionId: 42,
         sceneId: "scene-2",
-        action: "search_public",
+        action: "keep_current",
       },
     });
     expect(payload).toMatchObject({
@@ -1334,7 +1298,7 @@ describe("runtime data boundary", () => {
         director_asset_id: 1397,
         director_version_id: 42,
         scene_id: "scene-2",
-        action: "search_public",
+        action: "keep_current",
       },
     });
   });
@@ -1675,26 +1639,6 @@ describe("runtime data boundary", () => {
     expect(row).toMatchObject({
       productStatus: "failed",
       failureReason: "第 1 镜素材不可用，请调整素材后再继续。",
-    });
-  });
-
-  it("serializes failed-scene material replacement as a bound action", () => {
-    expect(
-      buildConversationMessagePayload({
-        conversationId: "asset-conversation-1",
-        instruction: "重新寻找第 4 镜素材",
-        selectedProductId: 440,
-        videoSceneReplacement: {
-          failedProjectAssetId: 440,
-          sceneId: "seg-4",
-        },
-      }),
-    ).toMatchObject({
-      selected_product_id: 440,
-      video_scene_replacement: {
-        failed_project_asset_id: 440,
-        scene_id: "seg-4",
-      },
     });
   });
 
@@ -2407,7 +2351,6 @@ describe("runtime data boundary", () => {
       "token",
       9100,
       "segment-1",
-      "local",
     );
 
     expect(result.current?.[0]).toMatchObject({
@@ -2420,6 +2363,28 @@ describe("runtime data boundary", () => {
       reason: "匹配施工过程",
     });
     expect(result.library[0]).toMatchObject({ candidateId: "cand-2" });
+    vi.unstubAllGlobals();
+  });
+
+  it("requests only local candidates and exposes no public-material methods", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ scope: "local", segment_id: "segment-1", groups: { current: [], recommended: [], library: [] } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates("token", 9100, "segment-1");
+
+    expect(result).toEqual({ current: [], recommended: [], library: [] });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("scope=local");
+    for (const retired of [
+      "searchScenePublicCandidate", "selectScenePublicCandidate", "listPublicSources",
+      "searchPublicMaterials", "importPublicMaterial", "listAdminPublicSources",
+    ]) {
+      expect(retired in assetWorkspaceAdapter).toBe(false);
+    }
     vi.unstubAllGlobals();
   });
 
@@ -2439,73 +2404,9 @@ describe("runtime data boundary", () => {
         "token",
         9100,
         "segment-1",
-        "local",
       ),
     ).rejects.toThrow("Segment material candidates v2 is disabled.");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
-  });
-
-  it("returns public candidates with provider statuses and next cursor", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          scope: "public",
-          segment_id: "segment-1",
-          groups: {
-            current: [],
-            recommended: [],
-            library: [],
-            public: [
-              {
-                candidate_id: "pub-1",
-                source_type: "public_asset",
-                source_asset_id: null,
-                provider: "pexels",
-                provider_item_id: "9988",
-                media_type: "video",
-                title: "门店安装",
-                preview_url: "https://cdn/pub.jpg",
-                width: 1080,
-                height: 1920,
-                duration: 8,
-                license: "Pexels License",
-                author: "Jane",
-                attribution_url: "https://pexels/9988",
-                verification_status: "unverified",
-                relevance_status: "unverified",
-                relevance_reason: "由结构化搜索召回",
-                requires_trim: true,
-                already_persisted: false,
-                selectable: true,
-              },
-            ],
-          },
-          provider_statuses: [{ provider: "pexels", status: "ok", error: "" }],
-          next_cursor: "cursor-2",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const result = await assetWorkspaceAdapter.loadSegmentMaterialCandidates(
-      "token",
-      9100,
-      "segment-1",
-      "public",
-    );
-
-    expect(result.public?.[0]).toMatchObject({
-      candidateId: "pub-1",
-      provider: "pexels",
-      requiresTrim: true,
-      mediaType: "video",
-    });
-    expect(result.providerStatuses).toEqual([
-      { provider: "pexels", status: "ok", error: undefined },
-    ]);
-    expect(result.publicNextCursor).toBe("cursor-2");
     vi.unstubAllGlobals();
   });
 

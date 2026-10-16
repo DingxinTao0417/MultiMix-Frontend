@@ -2087,65 +2087,6 @@ describe("video browse actions", () => {
     expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
   });
 
-  it("asks before finding a replacement for a confirmed missing scene asset", () => {
-    const product = {
-      ...displayProducts["case-05-project-failed"],
-      failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
-      failureAction: "replace_scene_asset" as const,
-      failureSceneId: "seg-4",
-      backendAssetId: 440,
-    };
-    const retry = vi.fn(async () => undefined);
-    const composerSend = vi.fn();
-    window.addEventListener("multimix:composer-send", composerSend);
-
-    render(
-      <ProductWorkspace
-        copied={false}
-        onCopyProduct={vi.fn(async () => undefined)}
-        onSaveProduct={vi.fn(async () => undefined)}
-        onRetryVideoJob={retry}
-        product={product}
-        selectedConversation={conversationForDisplayProduct(product)}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "重新寻找该镜素材" }));
-
-    expect(retry).not.toHaveBeenCalled();
-    expect(composerSend).toHaveBeenCalledTimes(1);
-    expect((composerSend.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-      utterance: "确认重新寻找该分镜的素材，并在生成视频前让我确认新版编导稿。",
-      videoSceneReplacement: {
-        failedProjectAssetId: 440,
-        sceneId: "seg-4",
-      },
-    });
-    window.removeEventListener("multimix:composer-send", composerSend);
-  });
-
-  it("does not guess a failed scene id from the error sentence", () => {
-    const product = {
-      ...displayProducts["case-05-project-failed"],
-      backendAssetId: 440,
-      failureReason: "第 4 镜的原素材不可用，请确认是否重新寻找该镜素材。",
-      failureAction: "replace_scene_asset" as const,
-      failureSceneId: undefined,
-    };
-
-    render(
-      <ProductWorkspace
-        copied={false}
-        onCopyProduct={vi.fn(async () => undefined)}
-        onSaveProduct={vi.fn(async () => undefined)}
-        product={product}
-        selectedConversation={conversationForDisplayProduct(product)}
-      />,
-    );
-
-    expect(screen.getByRole("button", { name: "重新寻找该镜素材" })).toBeDisabled();
-  });
-
   it("opens the selected segment voiceover editor in a dialog", () => {
     const product = {
       ...displayProducts["case-06-project-ready-no-mp4"],
