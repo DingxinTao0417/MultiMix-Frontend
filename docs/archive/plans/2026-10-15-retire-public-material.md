@@ -1,8 +1,8 @@
 # 退役公共素材：前端影响清单与清理顺序
 
-> Status: active-plan
+> Status: completed
 > Owner: frontend
-> Last verified: 2026-10-15
+> Last verified: 2026-10-16
 
 ## 背景与根因
 
@@ -20,10 +20,10 @@
 
 | 步骤 | 负责端 | 上游 | 状态 |
 | --- | --- | --- | --- |
-| P1 后端停止产出 `public_asset`、公共候选和搜索接口，并明确存量数据的读取方式 | backend / Claude Code（用户授权） | 本计划与交接说明 | [~] 后端 `a6b0718f`（本地 main，未推送） |
-| P2 前端删除公共素材入口与展示，迁移到「你的素材 / AI 生成」两类来源 | frontend / Claude Code | P1 达 `[~]` | [~] 本地 main，未推送 |
-| P3 前端清理类型、映射、测试与文档残留，并证明旧行为不能再被触发 | frontend / Claude Code | P2 | [~] 本地 main，未推送 |
-| P4 历史作品（已含公共素材的旧工程）的读取与展示约定 | 两端 | P1 | [~] 后端读取测试 + 前端“历史素材”只读标注 |
+| P1 后端停止产出 `public_asset`、公共候选和搜索接口，并明确存量数据的读取方式 | backend / Claude Code（用户授权） | 本计划与交接说明 | [x] 已发布，用户已确认 |
+| P2 前端删除公共素材入口与展示，迁移到「你的素材 / AI 生成」两类来源 | frontend / Claude Code | P1 达 `[~]` | [x] 已发布，用户已确认 |
+| P3 前端清理类型、映射、测试与文档残留，并证明旧行为不能再被触发 | frontend / Claude Code | P2 | [x] 已发布，用户已确认 |
+| P4 历史作品（已含公共素材的旧工程）的读取与展示约定 | 两端 | P1 | [x] 已发布，用户已确认 |
 
 P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不改任何前端代码，只做设计沉淀、文档与原型。
 
@@ -81,7 +81,7 @@ P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不�
 
 - **改**：现行规则、规格、原型、API 与部署说明、仍在执行的 active plan 中描述「应当如何」的条文。
 - **不改**：`docs/archive/`、`docs/qa/` 下带日期的测试记录与 `issue-test-records/`、探索稿，以及 active plan 中的历史结果描述；它们是证据，改写会破坏可追溯性。
-- **整份过时的 active plan**：主题本身是公共素材（如 `2026-09-27-public-original-first-selection.md`），标记为已被替代，后续由所属端归档，本轮不移动后端计划。
+- **整份过时的 active plan**：主题本身是公共素材（如 `2026-09-27-public-original-first-selection.md`（已归档）），标记为已被替代，后续由所属端归档，本轮不移动后端计划。
 
 ### 三类旧设计
 
@@ -112,7 +112,7 @@ P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不�
 - [x] 现行原型：删除「素材源管理」屏（`admin-sources.html`），六屏入口与 README 同步；起始页能力胶囊、资源库「公开素材搜索」按钮、视频工作台「兜底素材」标记全部移除。
 - [x] 工作区根 `AGENTS.md`：「stock provider 兜底」一条改为现行规则。
 - [x] 未改（历史证据）：`docs/archive/`、带日期的 QA 记录与 `issue-test-records/`、探索稿、两份已替代计划正文、样本来源记录（如黄金基线中的 Pexels 授权核验）。
-- [ ] 第三类旧类型（讲解型/口播型/presenter）：抽查确认现行文档只剩术语对照表、迁移计划与真实接口字段名，按 `source_video` 迁移计划推进，本轮不改。
+- [x] 第三类旧类型（讲解型/口播型/presenter）：不属于本计划，已移交 `MultiMix-Backend/docs/plans/active/2026-10-11-source-video-terminology-migration.md` 继续推进；本计划只记录抽查结论。
 
 ### 验证
 
@@ -143,3 +143,9 @@ P2 起才登记 `workspace-shell` 与 `asset-library` 开发占用；本轮不�
 - P3 收口：检索 `app/`、`lib/` 不再出现公共素材相关生产代码；新增界面测试证明入口不存在。
 - 相关测试通过后，再按需要跑 `test:display-coverage`。
 - 本轮文档变更后运行 `npm --prefix MultiMix-Frontend run check:agents`。
+
+## 收口（2026-10-16）
+
+- 用户 2026-10-16 在生产浏览器中确认：老账号登录看到同意页、同意后进入工作台且不再重复出现；新注册账号不重复出现同意页；换素材窗口只剩自己的素材与上传入口。
+- 生产：后端五个服务 `812630b3`、前端 `8482531`；生产库 `users` 已补两列；Railway 四个服务的 `MULTIMIX_PEXELS_API_KEY`、`MULTIMIX_PIXABAY_API_KEY` 已删除并读回确认。
+- 发布教训见 `MultiMix-Backend/docs/authority/production-release-verification.md`「发布记录与教训（2026-10-16）」。
