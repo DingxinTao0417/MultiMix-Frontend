@@ -2,11 +2,11 @@
 
 > Status: current
 > Owner: frontend
-> Last verified: 2026-10-13
+> Last verified: 2026-10-16（合并运行时状态与数据边界；非接口功能复验）
 
 本文档描述 MultiMix 对话式 AI 短视频创作工作台当前前端契约：数据访问层（adapter）、数据类型、共享 helper、组件 props、路由 / URL、认证、环境变量和主要后端接口。生产运行时已经接入真实后端；测试 fixture 只用于自动化测试。
 
-> 产品定位、交互规则与数据边界见 `docs/MULTIMIX_WORKSPACE_DESIGN.md`、`../AGENTS.md` 与 `MultiMix-Backend/docs/README.md`。本文聚焦「代码契约」，是开发与后端接入的参考手册。
+> 产品定位见[产品总纲](specs/ui/product-positioning.md)，交互规则见[工作台设计](MULTIMIX_WORKSPACE_DESIGN.md)，工作区规则见 `../AGENTS.md` 与 `MultiMix-Backend/docs/README.md`。本文维护技术与运行时数据契约，是开发与后端接入的参考手册。
 
 适用版本：`multimix-web@0.1.0`（Next.js 15 App Router + React 19 + TypeScript strict）。
 
@@ -58,6 +58,42 @@ lib/api.ts       →   asset-workspace-adapter.ts   →   components/*.tsx
 | `app/assets/lib/asset-workspace-adapter.ts` | 数据 | 数据访问接口（后端接入点） |
 | `app/assets/lib/agent-action-poller.ts` | 数据 | 按 conversation/action 隔离的动作轮询与终态对账 |
 | `app/assets/lib/asset-workspace-shared.ts` | 数据 | 跨组件类型别名 + 纯 helper |
+
+---
+
+### 1.4 运行时真实数据与状态
+
+本节合并原运行时数据源专项规范。工作台只展示真实后端数据，保留 `AssetWorkspaceAdapter` 类型边界；静态 HTML 原型是设计参考，不属于应用运行时数据。
+
+配置 `NEXT_PUBLIC_API_BASE_URL` 后，首屏先显示骨架，取得有效登录 token 后请求真实后端。成功时展示真实对话和资产；只有成功返回空数组才显示真实空态与数量 0。页面显式区分 `idle | loading | ready | empty | error | unconfigured`；对话列表数量只在 `ready/empty` 后展示，加载时不显示数量。新建项目、资源库和产物共用同一状态口径。
+
+| 状态 | 用户可见内容与操作 |
+| --- | --- |
+| 加载中 | 骨架与“正在加载你的对话…”，不闪现样例或未经核实的数量 |
+| 真实空列表 | 后端成功返回空数组后显示数量 0 和空态，不补样例行 |
+| 加载失败 | 明确错误与“重新加载”，重试真实接口；连接失败或 5xx 留在工作台错误态 |
+| 认证失效 | 401/403 继续走现有登录失效处理，不回退演示内容 |
+| 后端未配置 | “未连接后端”，说明配置 `NEXT_PUBLIC_API_BASE_URL` 后需重启前端；创作、上传和保存不可用 |
+
+后端未配置时，local 登录壳可以进入工作台，但必须明确为不可创作的离线空状态；不提供会产生假持久化预期的创建、保存、上传和生成操作。`.env.example` 中 API 为空表示未配置，不表示可用 demo。
+
+生产与测试边界：
+
+- `AssetsWorkspaceClient` 初始数据为空，不调用同步 mock snapshot，不用 `mockAssetWorkspaceData` 初始化生产页面。
+- 生产 adapter 单例只访问真实后端，不使用 `createMockAssetWorkspaceAdapter(mockAssetWorkspaceData)`；同步 helper 仅提供空结构与纯展示能力。
+- 接口超时、401、403、5xx、真实空列表均不得回退演示数据；不保留 mock 保存、修订、恢复或生成成功分支，不伪装本地操作成功。
+- mock 只位于测试目录或明确的 fixture 模块，通过依赖注入/测试 helper 提供；生产入口、组件与 adapter 不得 import fixture，生产依赖图不得包含 `asset-workspace-mock-data`。
+- 离线组件测试使用测试 adapter 实现同一接口，不在生产 adapter 保留双模式分支；前端不创建或保留本地 SQLite 运行库。
+
+验收案例（规则迁移不代表重新完成产品验收）：
+
+- 对话初载只出现骨架；后端返回 4 条时显示 4 条真实对话，返回空数组时才显示数量 0 与空态。
+- 请求失败显示错误和“重新加载”，无演示标题；API 未配置显示“未连接后端”，无样例列表（包括旧 22 条样例）。
+- 素材、文案、图片、视频四库首次加载不闪现 mock 卡片；真实空数组保持空态，任一库失败均不回退 mock 行。
+- `unconfigured` 不能创建假对话、假修订或假保存；`error` 重试真实接口；token 失效触发现有重新登录处理。
+- 生产入口/adapter 不包含 mock-data import，fixture 只被测试/helper 引用；代码变更按影响范围运行构建、类型和产品契约检查。
+
+本节不改变后端对话、资产、视频工程或 MG 数据结构，不重新设计登录方式。
 
 ---
 
@@ -678,6 +714,9 @@ function LibraryWorkshop({ view }: { view: Exclude<ActiveView, "conversation"> }
 2. 后端异步任务通过明确的任务状态和重试接口呈现，不能在前端伪造完成。
 3. 服务端密钥走服务端代码路径，遵守 §10 数据边界。
 4. 后端实现变化不应无理由改变工作台交互；类型契约、错误态和组件 props 要同步验证。
+5. 对话和产物持久化、上传、解析、素材理解、生成与视频工程由后端接口提供；前端组件不直接依赖数据库。
+6. 生产媒体必须进入已配置的远程 ArtifactStore，不能依赖容器本地文件；长任务由 worker 执行，前端只展示真实状态、错误与重试结果。
+7. 前端不得包含 service-role key、Railway token、Vercel token 或其他生产密钥。
 
 ---
 
