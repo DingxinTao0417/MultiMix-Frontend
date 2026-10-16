@@ -71,7 +71,7 @@ npm run e2e:cleanup -- <suite>/<run-id> --confirm # 显式清理保留 runtime
 
 > 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 
-入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`；`&embed=1` 为工作台内嵌模式）。公开素材只通过视频分镜候选链路使用，当前没有独立管理页。
+入口 URL：`/`、`/app/assets?conversation=<id>&product=<id>`、`/editor?asset=<id>`（或 `?job=<id>`；`&embed=1` 为工作台内嵌模式）。公共素材搜索、候选与兜底已取消；历史作品中的公共素材仅只读展示，现行来源规则见后端素材理解与分镜引用权威文档。
 
 认证两种模式：`NEXT_PUBLIC_MULTIMIX_AUTH_MODE=local` 或未配 Supabase 时，自动以 `demo@multimix.local` 登录（仅存浏览器 `localStorage`）；配置 `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` 后走 Supabase Auth（PKCE、自动刷新 token），后端对应 `MULTIMIX_AUTH_PROVIDER`。`lib/supabase.ts` 在未配置时导出 `null`，代码不得假设其非空。
 
@@ -85,7 +85,6 @@ npm run e2e:cleanup -- <suite>/<run-id> --confirm # 显式清理保留 runtime
 - 知识检索：`services/knowledge_retrieval.py`、`saved_context_retriever.py`（把已保存资产和网页知识块喂给生成，不自动全网搜索）
 - 视频编排：`app/api/video_orchestration.py` + `services/video_studio/`（topic→脚本→素材→TTS→timeline JSON；RQ worker 异步，或 `MULTIMIX_VIDEO_ORCHESTRATION_INLINE=true` 同步）
 - MG 动效：后端 `remotion/`（Remotion 工程，渲染带 alpha 的 WebM overlay）+ `services/remotion_modal/`（Modal 远程渲染），spec 由 `services/mg_scene_spec.py` 校验，详见后端 `remotion/README.md`
-- 监控/采集模块：`MULTIMIX_MODULES_MONITORING_ENABLED=false` 可整体关闭
 
 ### 文件结构与职责（前端）
 
@@ -126,7 +125,7 @@ scripts/
 
 - `AssetsWorkspaceClient`（默认导出）是唯一持有状态的容器：选中对话/产物、侧边栏开合、分栏宽度、重命名/删除/复制/保存。所有子组件都是受控的纯展示组件，通过 props 接收数据和回调。
 - 对话模式渲染 `ConversationStudio`（左）+ 拖拽手柄 + `ProductWorkspace`（右）；新对话未发首条消息时渲染 `ConversationStart`；库模式渲染 `LibraryWorkshop`。
-- `ProductWorkspace` 内嵌 `ProductPreview`；预览逻辑按 mode 提前 return，新增产物类型只需加一个 `if` 分支。视频工程的「内嵌剪辑器」由 `product-workspace.tsx` 里的 iframe（`/editor?…&embed=1`）实现；`VideoProjectWorkspace` 组件目前无调用方。
+- `ProductWorkspace` 内嵌 `ProductPreview`；预览逻辑按 mode 提前 return，新增产物类型只需加一个 `if` 分支。视频工程的「内嵌剪辑器」由 `product-workspace.tsx` 里的 iframe（`/editor?…&embed=1`）实现。
 - `ProductWorkspace`/`EmptyProductWorkspace`/`LibraryWorkshop` 在主壳中经 `next/dynamic` 懒加载（按 activeView 分包），`ConversationStudio` 保持静态引入。
 - `asset-workspace-shared.ts` 存放被多个组件复用的东西：类型别名（`ActiveView`/`ProductMode`/`ProductArtifact`/`Conversation`）和纯函数（`getConversationProducts`/`resolveConversationProduct`/`getProductModeLabel`/`getProductRatioClass`）。新增跨组件 helper 放这里，不要在组件文件里重复定义。
 
