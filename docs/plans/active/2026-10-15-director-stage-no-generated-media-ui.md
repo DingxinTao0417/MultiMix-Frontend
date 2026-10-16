@@ -2,7 +2,7 @@
 
 > Status: active-plan
 > Owner: frontend
-> Last verified: 2026-10-15
+> Last verified: 2026-10-16
 
 ## 背景与根因
 
@@ -36,9 +36,14 @@
 | `…/screens/16-director-shots.html` | 已删除 |
 | 生产代码 | 本轮不改，不登记开发占用 |
 
+## 当前状态（2026-10-16）
+
+- 后端代码清单、须新增的公开合同与前端删除清单已沉淀到 `MultiMix-Backend/docs/plans/active/2026-10-13-material-to-video-scoped-editing-first-release.md` 第17.1节，由 Codex 实施后端部分。前端在该节合同达 `[~]` 后再登记 `workspace-shell` 占用，同轮删除旧界面并接入新字段。
+- 公共素材相关待办已由 2026-10-16 的退役任务完成（见下方第一条）。
+
 ## 仍待办
 
-- [ ] **公共素材已取消**：用户 2026-10-15 要求先不考虑公共素材，后续也去掉。前端本轮只改了 03/04/05 原型与第 14 节措辞；其余 `docs/` 与代码里的公共素材引用（见下方范围）需按「旧逻辑退役门禁」另立任务清理，后端 stock provider 兜底归 Codex，前端只出交接说明。
+- [x] **公共素材已取消（2026-10-16 已完成，前后端代码删除并发布，见 `MultiMix-Frontend/docs/archive/plans/2026-10-15-retire-public-material.md`）**：用户 2026-10-15 要求先不考虑公共素材，后续也去掉。前端本轮只改了 03/04/05 原型与第 14 节措辞；其余 `docs/` 与代码里的公共素材引用（见下方范围）需按「旧逻辑退役门禁」另立任务清理，后端 stock provider 兜底归 Codex，前端只出交接说明。
 - [ ] 后端需公开「该镜缺画面、可选哪些补法」的状态与可选项；现有文档只有 `no_asset_hit` / 待补素材 / 公共候选，尚无「可由用户选择的补法列表」，须由 Codex 确认或补充（交接说明）。
 - [x] **产品定位文档与方案 A 冲突**：`docs/specs/ui/product-positioning.md` 的「编导工作台同时承载规划与经确认的逐镜制作：生成、比较并采纳关键帧和分镜视频」需要改写，否则会被后续会话当成要做「编导内展示并采纳」。负责端：frontend / Claude Code；该文件属工作区级定位文档，改动前需用户确认措辞。
 - [x] **后端第 17 节及两份后端权威文档**：用户 2026-10-15 确认「编导阶段生成并让用户挑选」是错误设计后，已按协作规则「纯文档可直接改」修订（第 17 节、B4/B5/F1 行、`conversation-orchestration-rules.md:324`、`video-project-confirmation-consistency.md:35`）。对应后端代码由 Codex 退役。
