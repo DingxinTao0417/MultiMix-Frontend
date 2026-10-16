@@ -31,7 +31,7 @@
 - Modify: MultiMix-Frontend/app/assets/components/conversation-studio.tsx — 接入真实状态。
 - Modify: MultiMix-Frontend/app/assets/__tests__/conversation-detail-loading.test.tsx — 更新加载与失败预期。
 - Modify: MultiMix-Frontend/app/globals.css — 新动效、骨架和 reduced-motion。
-- Reference: docs/specs/ui/conversation-loading-and-reply-motion.md。
+- 当前规范已于 2026-10-16 合并至[视觉规范 §6.1](../../specs/ui/agentic-workbench-design.md#61-对话加载与回复动效)；本文件保留当时实施记录，不作为新待办。
 
 ---
 

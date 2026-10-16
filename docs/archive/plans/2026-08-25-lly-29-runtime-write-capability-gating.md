@@ -16,7 +16,7 @@
 ## 权威依据
 
 - Linear `LLY-29`：负责人 Dingxin Tao、优先级 High、Work type 为用户可见系统功能。开工门禁时状态为 Todo；总调度取得 claim 后已切换为 In Progress。
-- `MultiMix-Frontend/docs/specs/ui/runtime-data-source-and-offline-empty-state.md`：未配置后端时不得提供创建、保存、上传和生成操作；失败状态只能重试真实接口。
+- 当前规范已于 2026-10-16 合并至[API §1.4](../../API.md#14-运行时真实数据与状态)：未配置后端时不得提供创建、保存、上传和生成操作；失败状态只能重试真实接口。本文件保留当时实施记录。
 - `MultiMix-Frontend/docs/MULTIMIX_WORKSPACE_DESIGN.md`：生产运行时只消费真实后端，失败与未配置不得回退演示数据。
 - `MultiMix-Frontend/docs/API.md`：`AssetsWorkspaceClient` 是唯一状态容器，子组件通过 props 消费状态和回调，adapter 仍是唯一后端边界。
 - `MultiMix-Backend/docs/authority/development-change-coordination.md`：前端专属计划放在前端 `docs/plans/active/`，代码写入前登记 area、path、contract 与 issue claim。
