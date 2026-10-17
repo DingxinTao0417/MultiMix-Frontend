@@ -175,6 +175,8 @@ scripts/
 
 ### 提交前
 
+以下npm task命令从前端主仓或前端任务worktree执行；后端任务树使用`task -- status`确认的前端脚本路径调用，不依赖旧电脑的绝对路径。测试前记录任务HEAD、状态和文件哈希，提交/推送前按根级门禁核对晚到变化。
+
 1. 确认自己在 `task -- start` 建出的任务 worktree 里（`git rev-parse --abbrev-ref HEAD` 应为 `<claude|codex>/<task>`），而不是主目录的 `main`。分别在涉及的 worktree 运行 `git status --short --branch`，确认未提交改动和本次实际提交范围。
 2. 不要提交 `.env*`、密钥、本地数据库（含后端根目录 `multimix.sqlite3` 及遗留的 `changein.sqlite3`）、构建产物、日志或用户未要求纳入的临时文件。
 3. 如果发现不属于当前任务的陌生改动，明确列出并保留在工作区；不要擅自回滚，也不要静默带入提交。
@@ -199,13 +201,13 @@ scripts/
 
 ### 提交
 
-1. 每个仓库独立提交，不把前端和后端混成一个 git 操作；提交只在任务 worktree 里进行，无需加锁。
+1. 各仓在有效task登记对应的任务worktree内独立提交，使用独立暂存区；提交本身无需全工作区锁。主目录main的写入只能由`task -- finish`取得每仓合并短锁后快进完成，不能把“提交无需加锁”用于主目录直接commit/merge。
 2. 使用窄路径 `git add -- <path>...` 暂存本次任务文件；同一文件混有无关改动时按 hunk 拆分暂存。禁止用 `git add -A` 静默扫入陌生改动。
 3. 提交信息要概括实际变更，例如：
    - `Update MultiMix workspace libraries and conversation flow`
    - `Update asset upload validation and conversation assets`
 4. 创建提交后再次运行 `git status --short --branch`，确认目标改动已经提交、worktree 已干净（`finish` 拒绝有未提交改动的 worktree）。
-5. 运行 `npm --prefix C:\Users\24566\Desktop\multimix\MultiMix-Frontend run task -- finish --token <token>` 快进合入本地 `main`。提示分支落后时，在 worktree 里 `git merge main`、解决冲突、重跑必要检查后再 `finish`；提示会覆盖主目录他人文件时停止并报告。
+5. 运行 `npm run task -- finish --token <token>` 快进合入本地 `main`。提示分支落后时，在 worktree 里 `git merge main`、解决冲突、重跑必要检查后再 `finish`；提示会覆盖主目录他人文件时停止并报告。
 6. 用户未明确要求远端推送时，在此结束；`finish` 已删除 worktree、分支并释放占用。
 
 ### 远端拉取与合并（仅用户明确要求推送到远端时）

@@ -2,7 +2,7 @@
 
 > Status: current
 > Owner: workspace
-> Last verified: 2026-08-05
+> Last verified: 2026-10-17（部署退役说明或命名引用维护；未新增产品/迁移验收）
 
 MultiMix 是两个并排的独立仓库：
 
@@ -39,17 +39,16 @@ MultiMix 是两个并排的独立仓库：
    # LLM（任选）
    MULTIMIX_DEEPSEEK_API_KEY=<key>
    # 或 MULTIMIX_LLM_BASE_URL / MULTIMIX_LLM_API_KEY / MULTIMIX_LLM_MODEL
-   # 公共素材已删除（2026-10-16）：后端不再读取 Pexels/Pixabay 等变量，生产环境残留变量会被忽略；是否从 Railway 移除另行确认
    # 云 TTS（可选，不配则用估算时长）
    MULTIMIX_TTS_PROVIDER=openai
    MULTIMIX_TTS_API_KEY=<key>
    MULTIMIX_TTS_BASE_URL=https://api.openai.com/v1
-   # Redis（API/worker 共用队列、搜索缓存、分页 seen-set 与限流）
+   # Redis（API/worker/scheduler 共用任务队列）
    MULTIMIX_REDIS_URL=<Railway Redis 连接串>
    # 对象存储（生产必填；S3 或 Supabase Storage 二选一，禁止容器本地 artifacts）
    MULTIMIX_S3_ENDPOINT_URL / MULTIMIX_S3_BUCKET / MULTIMIX_S3_ACCESS_KEY / MULTIMIX_S3_SECRET_KEY
    ```
-5. Railway API 服务的 healthcheck 显式配置为 `/healthz`；video worker 不配置 HTTP healthcheck，改用部署终态与 RQ worker 启动日志验证。发布门还必须检查 API 的 `/healthz/db` 和 `/healthz/material-search`。素材搜索 readiness 不调用外部 provider，不消耗配额；生产缺少 Redis、远程 ArtifactStore、自动采用 provider key、LLM 语义验证器或 provider registry 时返回 `503`。
+5. Railway API 服务的 healthcheck 显式配置为 `/healthz`，发布时核对 commit 与 `/healthz/db`；各 worker 不配置 HTTP healthcheck，按部署终态与相应队列启动/恢复调度日志验证。另核对 Redis 和远程 ArtifactStore 配置。公共素材的健康接口、CLI 和 provider 密钥已退役，不再作为发布条件。
 6. 五项服务必须回读到同一镜像 digest。发布前记录原 deployment ID、source 和 digest；回滚时五项服务同时恢复到已验证的旧 deployment/source，禁止只回滚一个服务或现场重建旧 commit。
 
 ### 视频编排 worker（异步生成）
