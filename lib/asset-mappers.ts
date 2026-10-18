@@ -1289,39 +1289,6 @@ function productStatusLabel(status: ProductLifecycleStatus | undefined): string 
   return undefined;
 }
 
-// Human-readable label for the public video workflow stage.
-export function videoJobStageLabel(stage: string): string {
-  const labels: Record<string, string> = {
-    queued: "排队等待中",
-    script: "正在生成脚本",
-    segment: "正在匹配素材与合成配音",
-    render: "正在渲染动效",
-    done: "已完成",
-    failed: "生成失败",
-    stale: "任务超时",
-    missing_asset: "生成失败",
-    invalid_spec: "动效参数无效",
-    asset_driven_planning: "正在准备分镜画面",
-    planning_assets: "正在准备素材",
-    asset_manifest_ready: "正在准备素材",
-    composing: "正在生成视频",
-    voice: "正在生成视频",
-    project: "正在生成视频",
-    rendering: "正在生成视频",
-    reviewing: "正在完成质量检查",
-    quality: "正在完成质量检查",
-    needs_script_revision: "需要调整编导稿"
-  };
-  return labels[stage] ?? "正在生成";
-}
-
-export function videoJobStepIndex(stage: string): number {
-  if (stage === "queued" || stage === "script") return 0;
-  if (stage === "segment" || stage === "render") return 1;
-  if (stage === "done") return 3;
-  return 2;
-}
-
 export type AgentTimelineStep = AgentRunStep;
 
 // Backend semantic step (spec §5.2 ★): product copy plus an optional public
@@ -1822,17 +1789,4 @@ export function conversationFromPersisted(
     projectResources,
     projectResourceSummary,
   };
-}
-
-export function mergePersistedConversations(
-  rows: AssetConversationResponse[],
-  current: AssetConversation[],
-  newConversationProduct: AssetProduct
-): AssetConversation[] {
-  const persisted = rows.map((row) => conversationFromPersisted(row, newConversationProduct));
-  const persistedIds = new Set(persisted.map((conversation) => conversation.id));
-  return [
-    ...persisted,
-    ...current.filter((conversation) => !persistedIds.has(conversation.id) && conversation.id !== "new")
-  ];
 }

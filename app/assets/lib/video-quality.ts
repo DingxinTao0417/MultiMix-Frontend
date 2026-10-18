@@ -13,9 +13,6 @@ export type VideoQualityReport = {
   warnings: VideoQualityIssue[];
 };
 
-export const hasBlockingVideoIssues = (report: VideoQualityReport | null): boolean =>
-  Boolean(report?.blockers.length);
-
 export function videoExportFailureMessage(
   report: VideoQualityReport | null | undefined,
   errorMessage: string | null | undefined,

@@ -11,11 +11,6 @@ function elapsedLabelFrom(startedAt: string | undefined, now: number): string | 
   return `已耗时 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
-export function generationElapsedLabel(job: Pick<AssetGenerationJobResponse, "created_at" | "started_at" | "status">, now = Date.now()): string | null {
-  if (job.status !== "running") return null;
-  return elapsedLabelFrom(job.started_at || job.created_at, now);
-}
-
 function secondsLabel(seconds: number): string {
   if (seconds < 60) return `${seconds} 秒`;
   return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
@@ -98,12 +93,6 @@ export function generationProgressEvents(job: AssetGenerationJobResponse): Gener
     ];
   }
   return [terminalEvent];
-}
-
-export function generationTerminalSummary(job: AssetGenerationJobResponse): string {
-  if (job.status === "completed") return "内容生成已完成 · 查看过程";
-  if (job.status === "cancelled") return "内容生成已停止 · 查看过程";
-  return "内容生成失败";
 }
 
 function timestamp(value: string | undefined): number | null {

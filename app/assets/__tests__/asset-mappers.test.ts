@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct, videoJobStageLabel, videoJobStepIndex } from "../../../lib/asset-mappers";
+import { agentTimelineStepsFromBackend, conversationFromPersisted, contentAssetToProduct } from "../../../lib/asset-mappers";
 import type { AssetConversationResponse, ContentAsset } from "../../../lib/api";
 import type { AssetProduct } from "../lib/asset-workspace-types";
 
@@ -1747,35 +1747,6 @@ describe("asset product mapper", () => {
 
     expect(product.status).toBe("失败");
     expect(product.preview?.subtitle).toContain("TTS provider timeout");
-  });
-});
-
-describe("video job stage helpers", () => {
-  it("maps backend render stages to Chinese labels", () => {
-    expect(videoJobStageLabel("queued")).toBe("排队等待中");
-    expect(videoJobStageLabel("script")).toBe("正在生成脚本");
-    expect(videoJobStageLabel("segment")).toBe("正在匹配素材与合成配音");
-    expect(videoJobStageLabel("unknown_stage")).toBe("正在生成");
-  });
-
-  it("projects every two-stage runtime value to a restrained user-facing state", () => {
-    expect(videoJobStageLabel("asset_driven_planning")).toBe("正在准备分镜画面");
-    expect(videoJobStageLabel("planning_assets")).toBe("正在准备素材");
-    expect(videoJobStageLabel("asset_manifest_ready")).toBe("正在准备素材");
-    expect(videoJobStageLabel("composing")).toBe("正在生成视频");
-    expect(videoJobStageLabel("voice")).toBe("正在生成视频");
-    expect(videoJobStageLabel("project")).toBe("正在生成视频");
-    expect(videoJobStageLabel("rendering")).toBe("正在生成视频");
-    expect(videoJobStageLabel("reviewing")).toBe("正在完成质量检查");
-    expect(videoJobStageLabel("quality")).toBe("正在完成质量检查");
-    expect(videoJobStageLabel("needs_script_revision")).toBe("需要调整编导稿");
-  });
-
-  it("maps stages onto ordered progress steps", () => {
-    expect(videoJobStepIndex("queued")).toBe(0);
-    expect(videoJobStepIndex("script")).toBe(0);
-    expect(videoJobStepIndex("segment")).toBe(1);
-    expect(videoJobStepIndex("done")).toBe(3);
   });
 });
 
