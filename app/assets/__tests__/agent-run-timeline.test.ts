@@ -65,13 +65,6 @@ function renderTimeline({
 }
 
 describe("AgentRunTimeline summary", () => {
-  it("keeps stale timeout details available without a duplicate failure summary", () => {
-    expect(timelineModel.executionErrorPresentation(
-      "Job exceeded its timeout without completing and was marked failed.",
-    )).toEqual({
-      technicalDetail: "Job exceeded its timeout without completing and was marked failed.",
-    });
-  });
 
   it("summarizes completed steps using real elapsed seconds", () => {
     expect(timelineModel.summarizeAgentRunSteps([

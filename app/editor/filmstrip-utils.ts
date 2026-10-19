@@ -93,12 +93,3 @@ export function segmentNumberByElementId(
   }
   return numbers;
 }
-
-// Resolve a backend preview value: absolute URLs pass through, storage refs
-// go through the media proxy the editor already uses for project media.
-export function previewSrc(value: string | null | undefined, proxy: (ref: string) => string): string | undefined {
-  const trimmed = (value ?? "").trim();
-  if (!trimmed) return undefined;
-  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return trimmed;
-  return proxy(trimmed);
-}

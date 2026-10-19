@@ -1,14 +1,6 @@
 import type { AssetGenerationJobResponse } from "../../../lib/api";
 import { generationProgressEvents } from "./asset-generation-progress";
 
-export type AssetGenerationPollState = {
-  jobId: string;
-  status: AssetGenerationJobResponse["status"];
-  run: number;
-  refreshConversation: boolean;
-  errorMessage: string | null;
-};
-
 export type PersistedAssetGenerationJob = {
   conversationId: string;
   job: AssetGenerationJobResponse;
@@ -113,41 +105,4 @@ export function assetGenerationJobsFromConversations(conversations: Array<{
     }
   }
   return [...jobs.values()];
-}
-
-export function nextAssetGenerationPollState(
-  current: AssetGenerationPollState,
-  remote: AssetGenerationJobResponse,
-): AssetGenerationPollState {
-  if (current.jobId !== remote.id) return current;
-  if (remote.status === "completed") {
-    return {
-      ...current,
-      status: "completed",
-      refreshConversation: true,
-      errorMessage: null,
-    };
-  }
-  if (remote.status === "failed") {
-    return {
-      ...current,
-      status: "failed",
-      refreshConversation: false,
-      errorMessage: remote.error_message ?? "内容生成失败，本轮没有创建产物，可以直接重试。",
-    };
-  }
-  if (remote.status === "cancelled") {
-    return {
-      ...current,
-      status: "cancelled",
-      refreshConversation: false,
-      errorMessage: null,
-    };
-  }
-  return {
-    ...current,
-    status: remote.status,
-    refreshConversation: false,
-    errorMessage: null,
-  };
 }

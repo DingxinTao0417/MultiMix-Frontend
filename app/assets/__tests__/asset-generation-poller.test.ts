@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   assetGenerationPollLifecycleKey,
   assetGenerationJobsFromConversations,
-  nextAssetGenerationPollState,
 } from "../lib/asset-generation-poller";
 
 const remote = (status: "queued" | "running" | "completed" | "failed") => ({
@@ -42,31 +41,6 @@ describe("asset generation poller", () => {
       progress_kind: "video_plan", progress_events: [event], scene_progress: [scene],
     });
   });
-  it("moves queued to running without refreshing the conversation", () => {
-    const result = nextAssetGenerationPollState({
-      jobId: "asset-generation-job-1",
-      status: "queued",
-      run: 1,
-      refreshConversation: false,
-      errorMessage: null,
-    }, remote("running"));
-
-    expect(result.status).toBe("running");
-    expect(result.refreshConversation).toBe(false);
-  });
-
-  it("marks completion for a conversation refresh", () => {
-    const result = nextAssetGenerationPollState({
-      jobId: "asset-generation-job-1",
-      status: "running",
-      run: 1,
-      refreshConversation: false,
-      errorMessage: null,
-    }, remote("completed"));
-
-    expect(result.status).toBe("completed");
-    expect(result.refreshConversation).toBe(true);
-  });
 
   it("keeps the poll lifecycle alive while a completed job refreshes its conversation", () => {
     expect(assetGenerationPollLifecycleKey([{
@@ -74,31 +48,6 @@ describe("asset generation poller", () => {
       job: remote("completed"),
       run: 1,
     }])).toBe("asset-conversation-1:asset-generation-job-1:1");
-  });
-
-  it("keeps a stale callback from overwriting a newer job", () => {
-    const current = {
-      jobId: "asset-generation-job-2",
-      status: "queued" as const,
-      run: 2,
-      refreshConversation: false,
-      errorMessage: null,
-    };
-
-    expect(nextAssetGenerationPollState(current, remote("failed"))).toEqual(current);
-  });
-
-  it("keeps the controlled Chinese failure for retry", () => {
-    const result = nextAssetGenerationPollState({
-      jobId: "asset-generation-job-1",
-      status: "running",
-      run: 1,
-      refreshConversation: false,
-      errorMessage: null,
-    }, remote("failed"));
-
-    expect(result.status).toBe("failed");
-    expect(result.errorMessage).toBe("内容生成超时，本轮没有创建产物，可以直接重试。");
   });
 
   it("restores a failed job from persisted conversation message metadata", () => {

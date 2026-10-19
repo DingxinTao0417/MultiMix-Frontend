@@ -5,7 +5,6 @@ import {
   MIN_CLIP_SECONDS,
   applyEdgeTrim,
   formatClock,
-  previewSrc,
   segmentNumberByElementId,
   visibleDuration,
 } from "../../editor/filmstrip-utils";
@@ -79,19 +78,5 @@ describe("segmentNumberByElementId", () => {
     expect(numbers.a).toBe(1);
     expect(numbers.x).toBe(2);
     expect(numbers.y).toBe(3);
-  });
-});
-
-describe("previewSrc", () => {
-  const proxy = (ref: string) => `/media?ref=${ref}`;
-
-  it("passes absolute urls through and proxies storage refs", () => {
-    expect(previewSrc("https://cdn.example/a.jpg", proxy)).toBe("https://cdn.example/a.jpg");
-    expect(previewSrc("uploads/a.jpg", proxy)).toBe("/media?ref=uploads/a.jpg");
-  });
-
-  it("returns undefined for empty values", () => {
-    expect(previewSrc("", proxy)).toBeUndefined();
-    expect(previewSrc(null, proxy)).toBeUndefined();
   });
 });

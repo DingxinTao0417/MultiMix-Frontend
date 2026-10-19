@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationFromPersisted, statusLabelFromProduct } from "../../../lib/asset-mappers";
 import type { AssetConversationResponse, ContentAsset } from "../../../lib/api";
 import { persistedVideoExportMatchesCurrentProject } from "../components/product-preview";
-import { assetGenerationJobsFromConversations, nextAssetGenerationPollState } from "../lib/asset-generation-poller";
+import { assetGenerationJobsFromConversations } from "../lib/asset-generation-poller";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import type { ProductArtifact } from "../lib/asset-workspace-shared";
 import type { AssetProduct } from "../lib/asset-workspace-types";
@@ -168,22 +168,19 @@ describe("LLY-24 public user API contract", () => {
     expect(jobs[0].job).not.toHaveProperty("attempts");
     expect(jobs[0].job).not.toHaveProperty("error_code");
 
-    const completed = nextAssetGenerationPollState({
-      jobId: "asset-generation-public-1",
-      status: "running",
-      run: 1,
-      refreshConversation: false,
-      errorMessage: null,
-    }, {
-      id: "asset-generation-public-1",
-      status: "completed",
-      result_asset_id: 91,
-      error_message: null,
-      created_at: "2026-08-14T00:00:00Z",
-      updated_at: "2026-08-14T00:01:00Z",
-    });
-    expect(completed.refreshConversation).toBe(true);
-    expect(completed).not.toHaveProperty("stage");
+    const completed = assetGenerationJobsFromConversations([{
+      id: "asset-conversation-generation",
+      messages: [{
+        role: "assistant",
+        text: "内容生成完成。",
+        metadata: {
+          asset_generation_job_id: "asset-generation-public-1",
+          asset_generation_status: "completed",
+          product_id: 91,
+        },
+      }],
+    }]);
+    expect(completed).toEqual([]);
   });
 
   it("uses public video workflow state and semantic steps instead of render_stage", async () => {

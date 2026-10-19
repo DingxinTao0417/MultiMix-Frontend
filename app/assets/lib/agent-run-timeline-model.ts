@@ -1,7 +1,5 @@
 import type { AgentRunStep } from "./asset-workspace-types";
 
-const MAX_TECHNICAL_DETAIL_LENGTH = 160;
-
 function formatDurationLabel(seconds: number): string {
   const total = Math.round(seconds);
   if (total < 60) return `${total}秒`;
@@ -13,17 +11,6 @@ function formatDurationLabel(seconds: number): string {
     minutes ? `${minutes}分` : "",
     rest ? `${rest}秒` : "",
   ].filter(Boolean).join("");
-}
-
-export function executionErrorPresentation(message: string): {
-  technicalDetail: string;
-} | null {
-  const normalized = message.trim();
-  if (!normalized) return null;
-  const technicalDetail = normalized.length > MAX_TECHNICAL_DETAIL_LENGTH
-    ? `${normalized.slice(0, MAX_TECHNICAL_DETAIL_LENGTH - 1)}…`
-    : normalized;
-  return { technicalDetail };
 }
 
 export type AgentRunExpansionState = {
