@@ -279,19 +279,6 @@ export type ContentAsset = {
   versions: ContentAssetVersion[];
 };
 
-export type VideoPrimaryVisualRead = {
-  status: "planned" | "persisted" | "failed" | string;
-  source_type:
-    | "saved_asset"
-    | "public_asset"
-    | "product_asset"
-    | "generated_scene"
-    | string;
-  asset_id?: number | null;
-  artifact_ref?: string | null;
-  preview_ref?: string | null;
-};
-
 export type AssetConversationMessageItemResponse = {
   id: number;
   role: "user" | "assistant";
@@ -676,28 +663,6 @@ export type ContentAssetRevisionResponse = {
   assistant_message: string;
   suggestions: string[];
   suggestion_actions?: Array<Record<string, unknown>>;
-};
-
-export type ContentAssetVersionCompareResponse = {
-  asset_id: number;
-  from_version_id: number;
-  to_version_id: number;
-  summary: string;
-  from_version: number;
-  to_version: number;
-  length_delta: number;
-};
-
-export type VideoRenderJobCreateResponse = {
-  job: {
-    id: string;
-    status: string;
-    workflow_stage?: string | null;
-    error_message: string | null;
-    mp4_ref: string | null;
-  };
-  product: ContentAsset;
-  render_product?: ContentAsset | null;
 };
 
 export type AssetLlmDiagnosticsRead = {
