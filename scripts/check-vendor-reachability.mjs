@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { fileURLToPath } from "node:url";
 
 const workspaceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -7,6 +8,8 @@ const vendorRoot = path.join(workspaceRoot, "editor-engine", "vendor");
 const sourceExtensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".glsl"];
 const ignoredDirectories = new Set([
   ".git",
+  ".worktrees",
+  ".tmp",
   ".next",
   ".next-build",
   "coverage",
@@ -29,17 +32,40 @@ function walk(directory, { skipVendor = false } = {}) {
   return files;
 }
 
-function importSpecifiers(source) {
+function importSpecifiers(source, filename) {
   const specifiers = new Set();
-  const patterns = [
-    /(?:import|export)\s+(?:type\s+)?(?:[^"'`;]*?\sfrom\s*)?["']([^"']+)["']/g,
-    /(?:import|require)\(\s*["']([^"']+)["']\s*\)/g,
-    /new\s+URL\(\s*["']([^"']+)["']\s*,\s*import\.meta\.url\s*,?\s*\)/g,
-    /@import\s+["']([^"']+)["']/g,
-  ];
-  for (const pattern of patterns) {
-    for (const match of source.matchAll(pattern)) specifiers.add(match[1]);
+  if (path.extname(filename) === ".css") {
+    // Preserve strings/URLs while removing CSS block comments before @import.
+    const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.Standard, source);
+    const tokens = [];
+    for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+      if (token !== ts.SyntaxKind.MultiLineCommentTrivia) tokens.push(scanner.getTokenText());
+    }
+    const imports = /@import\s+(?:["']([^"']+)["']|url\(\s*(?:["']([^"']+)["']|([^)\s]+))\s*\))/g;
+    for (const match of tokens.join("").matchAll(imports)) specifiers.add(match[1] ?? match[2] ?? match[3]);
+    return specifiers;
   }
+
+  const syntax = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  const addLiteral = (node) => {
+    if (node && ts.isStringLiteralLike(node)) specifiers.add(node.text);
+  };
+  function visit(node) {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      addLiteral(node.moduleSpecifier);
+    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+      addLiteral(node.moduleReference.expression);
+    } else if (ts.isCallExpression(node) && (
+      node.expression.kind === ts.SyntaxKind.ImportKeyword
+      || (ts.isIdentifier(node.expression) && node.expression.text === "require")
+    )) {
+      addLiteral(node.arguments[0]);
+    } else if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "URL") {
+      addLiteral(node.arguments?.[0]);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(syntax);
   return specifiers;
 }
 
@@ -89,7 +115,7 @@ const externalRoots = new Set();
 for (const file of walk(workspaceRoot, { skipVendor: true })) {
   if (!sourceExtensions.includes(path.extname(file))) continue;
   const source = fs.readFileSync(file, "utf8");
-  for (const specifier of importSpecifiers(source)) {
+  for (const specifier of importSpecifiers(source, file)) {
     const resolved = resolveImport(file, specifier, vendorFileSet);
     if (resolved) externalRoots.add(resolved);
   }
@@ -104,7 +130,7 @@ const queue = [...reachable];
 while (queue.length) {
   const current = queue.shift();
   const source = fs.readFileSync(vendorFiles.get(current), "utf8");
-  for (const specifier of importSpecifiers(source)) {
+  for (const specifier of importSpecifiers(source, vendorFiles.get(current))) {
     const resolved = resolveImport(vendorFiles.get(current), specifier, vendorFileSet);
     if (resolved && !reachable.has(resolved)) {
       reachable.add(resolved);

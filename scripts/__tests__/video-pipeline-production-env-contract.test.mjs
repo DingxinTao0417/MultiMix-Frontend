@@ -355,9 +355,7 @@ test("production video E2E can disable BGM without dereferencing an absent catal
     /const productMediaManifestRef = \(\s*isResume \|\| sourceFreeInputProfile \|\| expectedVideoType === "presenter"\s*\)\s*\? ""\s*: stageApprovedProductMediaCatalog\(\)/,
   );
   assert.doesNotMatch(source, /stagedBgm\.manifestRef/);
-  assert.doesNotMatch(source, /stagedBgm\.defaultCatalogId/);
   assert.match(source, /MULTIMIX_VIDEO_BGM_MANIFEST_REF:\s*effectiveBgm\.manifestRef/);
-  assert.match(source, /MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID:\s*effectiveBgm\.defaultCatalogId/);
 });
 
 test("production video E2E records explicit no-BGM state alongside the public project track", () => {

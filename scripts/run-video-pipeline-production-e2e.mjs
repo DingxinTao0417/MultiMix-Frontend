@@ -1099,7 +1099,6 @@ function stageBgmCatalogIfAvailable() {
   fs.writeFileSync(manifestPath, JSON.stringify(stagedManifest, null, 2));
   return {
     manifestRef: "local://bgm/catalog/v1/manifest.json",
-    defaultCatalogId: tracks[0].id,
   };
 }
 
@@ -2347,7 +2346,7 @@ try {
     expectBgm = false;
     console.log("BGM unavailable: no active local catalog with media and license evidence; continuing without BGM.");
   }
-  const effectiveBgm = stagedBgm ?? { manifestRef: "", defaultCatalogId: "" };
+  const effectiveBgm = stagedBgm ?? { manifestRef: "" };
   const productMediaManifestRef = (
     isResume || sourceFreeInputProfile || expectedVideoType === "presenter"
   )
@@ -2504,11 +2503,9 @@ try {
     MULTIMIX_MULTIMIX_VIDEO_PIPELINE_PROVIDER_PROXY_HOSTS: providerProxyHosts.join(","),
     MULTIMIX_MULTIMIX_VIDEO_PIPELINE_PROVIDER_HTTPS_PROXY: `http://127.0.0.1:${providerProxy.port}`,
     MULTIMIX_VIDEO_BGM_MANIFEST_REF: effectiveBgm.manifestRef,
-    MULTIMIX_VIDEO_BGM_DEFAULT_CATALOG_ID: effectiveBgm.defaultCatalogId,
     MULTIMIX_VISION_SERVICE_URL: visionServiceUrl,
     MULTIMIX_VISION_TIMEOUT_SECONDS: "120",
     MULTIMIX_VIDEO_VOICE_TO_MUSIC_RATIO: "4.0",
-    MULTIMIX_VIDEO_AUDIO_MIX_RATIO_TOLERANCE: "0.15",
     MULTIMIX_VIDEO_PRODUCT_MEDIA_MANIFEST_REF: productMediaManifestRef,
     MULTIMIX_CORS_ORIGINS: `http://127.0.0.1:${frontendPort}`,
     ...mgTestTarget,
