@@ -151,6 +151,8 @@ function ToolbarButton({
 		<Tooltip delayDuration={200}>
 			<TooltipTrigger asChild>
 				<Button
+					aria-label={tooltip}
+					disabled={disabled}
 					variant={isActive ? "secondary" : "text"}
 					size="icon"
 					onClick={(event) => onClick({ event })}

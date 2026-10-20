@@ -1,0 +1,16 @@
+[
+  {
+    "source": "scripts/run-flux-images-e2e.mjs",
+    "archive": "docs/archive/evidence/2026-10-20-deep-retirement/retired-runners/run-flux-images-e2e.mjs.txt",
+    "sha256": "7d1bf54782ca5150cbe7f602d7f0c781006159c9f8d68b53504b59fcc75db957",
+    "bytes": 8782,
+    "status": "retired, historical source only; not an executable supported entrypoint"
+  },
+  {
+    "source": "scripts/run-video-activity-observation-e2e.mjs",
+    "archive": "docs/archive/evidence/2026-10-20-deep-retirement/retired-runners/run-video-activity-observation-e2e.mjs.txt",
+    "sha256": "c4e22ba1760dea898e772c6ac930c347ef44caf47e65a7c14e41ee51f1b49308",
+    "bytes": 4256,
+    "status": "retired, historical source only; not an executable supported entrypoint"
+  }
+]

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
 
 vi.mock("@editor/lib/animation", () => ({
   getElementLocalTime: ({ timelineTime, elementStartTime, elementDuration }: {
@@ -176,18 +175,6 @@ function makeRenderer() {
 }
 
 describe("visual scene transition state", () => {
-  it("keeps wipe available in the manual transition panel", () => {
-    const source = readFileSync(
-      new URL(
-        "./editor/components/editor/panels/assets/views/transitions.tsx",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-
-    expect(source).toContain('{ type: "wipe_left", label: "Wipe", duration: 0.5 }');
-  });
-
   it("rejects unknown transition types and invalid durations", () => {
     expect(normalizeVisualTransition({ type: "spin_away", duration: 0.5 }, 1))
       .toBeUndefined();

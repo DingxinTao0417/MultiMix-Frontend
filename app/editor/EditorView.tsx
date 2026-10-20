@@ -1,5 +1,7 @@
 "use client";
 
+import { useEditorKeyboardActions } from "./use-editor-keyboard-actions";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   disposeEditor,
@@ -232,6 +234,7 @@ export default function EditorView({
   const timelineFlushRef = useRef<(() => Promise<TimelineFlushResult>) | null>(null);
   const bgmSessionRef = useRef(0);
   const previewOnly = mode === "preview";
+  useEditorKeyboardActions(state === "ready" && !previewOnly && !exportOperationActive);
   const observeInteractions = state === "ready" && saveState !== "saving"
     && !exportOperationActive && ["idle", "completed", "error"].includes(standaloneExportState.phase);
   useEffect(() => observeVideoActivity(token, assetId ? Number(assetId) : null, observeInteractions),

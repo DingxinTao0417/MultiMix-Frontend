@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TActionWithOptionalArgs } from "@editor/lib/actions";
-import { getDefaultShortcuts } from "@editor/lib/actions";
+import { getDefaultShortcuts } from "@editor/lib/actions/definitions";
 import { isTypableDOMElement } from "@editor/utils/browser";
 import { isAppleDevice } from "@editor/utils/platform";
 import type { KeybindingConfig, ShortcutKey } from "@editor/lib/actions/keybinding";

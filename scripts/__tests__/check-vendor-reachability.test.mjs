@@ -89,3 +89,23 @@ test("vendored editor contains no source outside the declared runtime and test g
   assert.ok(report.reachableCount > 0);
   assert.ok(report.externalRoots.length > 0);
 });
+
+
+test("product graph traverses real Next entries and distinguishes test-only consumers", () => {
+  const report = inspectFixture({
+    "app/layout.tsx": 'import "../editor-engine/vendor/live.css";',
+    "app/editor/page.tsx": 'import "@/lib/bridge";',
+    "lib/bridge.ts": 'import("../editor-engine/vendor/live");',
+    "lib/orphan.ts": 'import "../editor-engine/vendor/unmounted";',
+    "lib/bridge.test.ts": 'import "../editor-engine/vendor/test-only";',
+    "editor-engine/vendor/live.ts": 'export type { Shape } from "./types";',
+    "editor-engine/vendor/types.ts": 'export type Shape = string;',
+    "editor-engine/vendor/live.css": 'body { color: white; }',
+    "editor-engine/vendor/test-only.ts": 'export {};',
+    "editor-engine/vendor/unmounted.ts": 'export {};',
+  });
+  assert.deepEqual(report.product.reachablePaths, ["editor-engine/vendor/live.css", "editor-engine/vendor/live.ts", "editor-engine/vendor/types.ts"]);
+  assert.deepEqual(report.product.testOnlyPaths, ["editor-engine/vendor/test-only.ts"]);
+  assert.deepEqual(report.product.retainedOnlyPaths, ["editor-engine/vendor/unmounted.ts"]);
+  assert.equal(report.unreachableCount, 0);
+});

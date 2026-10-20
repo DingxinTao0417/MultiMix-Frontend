@@ -352,10 +352,8 @@ function defaultSubtitleRegion(width: number, height: number): SafeRegion {
     : LANDSCAPE_SUBTITLE_REGION;
 }
 
-// Module-level current style (mutated by the style panel before re-building).
-let subtitleStyle: SubtitleStyle = { ...defaultSubtitleStyle };
-export function setSubtitleStyle(s: SubtitleStyle) { subtitleStyle = s; }
-export function getSubtitleStyle(): SubtitleStyle { return subtitleStyle; }
+// Immutable fallback; an element's saved subtitleStyle remains authoritative.
+const subtitleStyle: SubtitleStyle = { ...defaultSubtitleStyle };
 
 type CaptionMeasure = (text: string, fontPx: number) => number;
 

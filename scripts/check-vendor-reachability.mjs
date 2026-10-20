@@ -23,7 +23,7 @@ function normalize(filePath) {
 function walk(directory, { skipVendor = false } = {}) {
   const files = [];
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue;
+    if (entry.isDirectory() && (ignoredDirectories.has(entry.name) || entry.name.startsWith(".next-"))) continue;
     const absolute = path.join(directory, entry.name);
     if (skipVendor && normalize(absolute) === normalize(vendorRoot)) continue;
     if (entry.isDirectory()) files.push(...walk(absolute, { skipVendor }));
@@ -139,10 +139,44 @@ while (queue.length) {
   }
 }
 
+// Product graph starts only at actual Next entry modules and follows local edges.
+// Test roots remain visible separately; test reachability alone is not deletion proof.
+const allSourceFiles = new Set(walk(workspaceRoot).filter(file => sourceExtensions.includes(path.extname(file))).map(normalize));
+const isTest = file => /(?:^|\/)(?:__tests__|test-support|e2e)(?:\/|$)|\.(?:test|spec)\.[^.]+$/.test(file);
+const productRoots = [...allSourceFiles].filter(file => {
+  const relativePath = path.relative(workspaceRoot, file).replaceAll("\\", "/");
+  return !isTest(file) && (/^(?:app|src\/app)\/(?:.*\/)?(?:page|layout|route|loading|error|global-error|not-found|template|default)\.[jt]sx?$/.test(relativePath)
+    || /^(?:middleware|instrumentation)\.[jt]s$/.test(relativePath));
+});
+function traverse(roots, files, rejectTests = false) {
+  const seen = new Set(roots), pending = [...roots];
+  while (pending.length) {
+    const current = pending.shift();
+    for (const specifier of importSpecifiers(fs.readFileSync(current, "utf8"), current)) {
+      const target = resolveImport(current, specifier, files);
+      if (target && !(rejectTests && isTest(target)) && !seen.has(target)) { seen.add(target); pending.push(target); }
+    }
+  }
+  return seen;
+}
+const productReachable = traverse(productRoots, allSourceFiles, true);
+const testReachable = traverse([...allSourceFiles].filter(isTest), allSourceFiles);
+const vendorProduct = [...vendorFileSet].filter(file => productReachable.has(file));
+const testOnly = [...vendorFileSet].filter(file => !productReachable.has(file) && testReachable.has(file));
+const retainedOnly = [...vendorFileSet].filter(file => reachable.has(file) && !productReachable.has(file) && !testReachable.has(file));
+
 const relative = (file) => path.relative(workspaceRoot, vendorFiles.get(file)).replaceAll("\\", "/");
 const unreachable = [...vendorFileSet].filter((file) => !reachable.has(file)).sort();
 const report = {
   schemaVersion: "multimix_vendor_reachability:v1",
+  product: {
+    rootPaths: productRoots.map(file => path.relative(workspaceRoot, file).replaceAll("\\", "/")).sort(),
+    reachableCount: vendorProduct.length,
+    reachablePaths: vendorProduct.map(file => path.relative(workspaceRoot, file).replaceAll("\\", "/")).sort(),
+    testOnlyPaths: testOnly.map(file => path.relative(workspaceRoot, file).replaceAll("\\", "/")).sort(),
+    retainedOnlyPaths: retainedOnly.map(file => path.relative(workspaceRoot, file).replaceAll("\\", "/")).sort(),
+    classificationNotes: { testOnly: "reachable from tests but not Next product entrypoints; inspect contracts before retirement", retainedOnly: "retained by the combined declaration/tool graph; not product reachability" },
+  },
   vendorFileCount: vendorFileSet.size,
   reachableCount: reachable.size,
   unreachableCount: unreachable.length,

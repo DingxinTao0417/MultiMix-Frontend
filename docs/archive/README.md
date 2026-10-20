@@ -11,3 +11,5 @@
 - 其余历史设计、计划与证据继续保留在本目录原有分类，不以文件名或年代作为删除依据。
 
 - [2026-09-22-retained-video-e2e-input-contract完整历史](plans/2026-09-22-retained-video-e2e-input-contract-history.md)：原文和SHA256完整保留；当前合同、未验收范围及授权边界见[active入口](../plans/active/2026-09-22-retained-video-e2e-input-contract.md)。
+
+- [2026-10-20 退役脚本保全清单](evidence/2026-10-20-deep-retirement/retired-runners.json)：原字节与 SHA-256 保留，旧固定环境入口已删除，不恢复旧实验或付费授权。
