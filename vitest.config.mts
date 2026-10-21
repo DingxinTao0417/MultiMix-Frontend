@@ -20,7 +20,6 @@ export default defineConfig({
   test: {
     globals: true,
     setupFiles: [resolve(workspaceRoot, 'test-support/vitest-jsdom-web-storage.ts')],
-    // Exclude pre-existing editor-engine tests (they use bun:test, not vitest).
     exclude: [
       '**/node_modules/**',
       '**/.worktrees/**',
@@ -28,7 +27,6 @@ export default defineConfig({
       '**/test-results/**',
       '**/scripts/__tests__/**',
       '**/e2e/**',
-      '**/editor-engine/vendor/editor/**/__tests__/**',
     ],
   },
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { getSplitMaskStrokeSegment } from "@editor/lib/masks/definitions/split";
 import { getMaskSnapGeometry } from "@editor/lib/masks/geometry";
 import { snapMaskInteraction } from "@editor/lib/masks/snap";

@@ -20,7 +20,13 @@ test("Vitest discovers current tests but never historical source copies", async 
   const options = loaded.config.test;
   const included = picomatch(options.include ?? configDefaults.include);
   const excluded = picomatch(options.exclude ?? configDefaults.exclude, { dot: true });
-  for (const candidate of [livePaths[1], "editor-engine/vendor/buildProject.test.ts"]) {
+  for (const candidate of [
+    livePaths[1],
+    "editor-engine/vendor/buildProject.test.ts",
+    "editor-engine/vendor/editor/lib/stickers/__tests__/sticker-id.test.ts",
+    "editor-engine/vendor/editor/lib/retime/__tests__/resolve.test.ts",
+    "editor-engine/vendor/editor/services/storage/migrations/__tests__/v18-to-v19.test.ts",
+  ]) {
     assert.ok(included(candidate) && !excluded(candidate), `${candidate} must remain a live test`);
   }
   for (const candidate of artifactPaths) assert.ok(excluded(candidate), `${candidate} is evidence, not a live test`);

@@ -1437,10 +1437,6 @@ function inferLibraryCategory(asset: ContentAsset): string {
   return "未分类";
 }
 
-export function libraryCategoryForAsset(asset: ContentAsset): string {
-  return inferLibraryCategory(asset);
-}
-
 function searchReasonLabels(fields: string[]): string[] {
   const labels: Record<string, string> = {
     title: "标题命中",

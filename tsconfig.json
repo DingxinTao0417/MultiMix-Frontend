@@ -34,9 +34,6 @@
       ],
       "@opencut/ui/icons": [
         "./editor-engine/vendor/editor/icons/index.tsx"
-      ],
-      "@opencut/env/web": [
-        "./editor-engine/vendor/editor/stubs/env.ts"
       ]
     }
   },

@@ -8,7 +8,6 @@ import {
   buildConversationMessagePayload,
   createLibraryCreationDraftConversation,
   conversationFromSummary,
-  libraryCategoryForAsset,
   libraryKeywordsForAsset,
   libraryVariantForAsset,
   isCurrentRequirementAnalysis,
@@ -300,13 +299,26 @@ it("preserves the archived state when opening an exact project-source detail", a
 });
 
 describe("asset workspace category inference", () => {
-  it("keeps uploaded PPT assets in 上传资料 even when the body mentions 对话", () => {
-    expect(libraryCategoryForAsset(asset({}))).toBe("上传资料");
+  async function categoryFromLibraryAsset(value: ContentAsset) {
+    saveApiState.configured = true;
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ asset: value })),
+    ));
+    try {
+      return (await assetWorkspaceAdapter.getLibraryAsset("token", value.id)).category;
+    } finally {
+      saveApiState.configured = undefined;
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it("keeps uploaded PPT assets in 上传资料 even when the body mentions 对话", async () => {
+    expect(await categoryFromLibraryAsset(asset({}))).toBe("上传资料");
   });
 
-  it("treats chat uploads as 对话沉淀", () => {
+  it("treats chat uploads as 对话沉淀", async () => {
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           source_type: "chat_upload",
         }),
@@ -314,9 +326,9 @@ describe("asset workspace category inference", () => {
     ).toBe("对话沉淀");
   });
 
-  it("treats web captures as 采集资料", () => {
+  it("treats web captures as 采集资料", async () => {
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           source_type: "web_capture",
         }),
@@ -324,9 +336,9 @@ describe("asset workspace category inference", () => {
     ).toBe("采集资料");
   });
 
-  it("does not infer a source category from title or body when source_type is missing", () => {
+  it("does not infer a source category from title or body when source_type is missing", async () => {
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           source_type: undefined,
           title: "对话沉淀的品牌画像",
@@ -336,9 +348,9 @@ describe("asset workspace category inference", () => {
     ).toBe("未分类");
   });
 
-  it("does not infer an artifact category from copy text", () => {
+  it("does not infer an artifact category from copy text", async () => {
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           asset_kind: "copy",
           content_type: "custom_copy",
@@ -350,9 +362,9 @@ describe("asset workspace category inference", () => {
     ).toBe("未分类");
   });
 
-  it("maps only explicit artifact fields and deterministic content types", () => {
+  it("maps only explicit artifact fields and deterministic content types", async () => {
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           asset_kind: "copy",
           content_type: "video_script",
@@ -360,7 +372,7 @@ describe("asset workspace category inference", () => {
       ),
     ).toBe("编导稿");
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           asset_kind: "image",
           content_type: "storyboard_image",
@@ -368,7 +380,7 @@ describe("asset workspace category inference", () => {
       ),
     ).toBe("分镜图");
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           asset_kind: "video",
           content_type: "video_project",
@@ -376,7 +388,7 @@ describe("asset workspace category inference", () => {
       ),
     ).toBe("视频工程");
     expect(
-      libraryCategoryForAsset(
+      await categoryFromLibraryAsset(
         asset({
           asset_kind: "image",
           content_type: "custom_image",

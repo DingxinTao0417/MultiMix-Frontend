@@ -77,9 +77,6 @@ function resolveBase(importer, specifier) {
   if (specifier === "@opencut/ui/icons") {
     return path.join(vendorRoot, "editor", "icons", "index");
   }
-  if (specifier === "@opencut/env/web") {
-    return path.join(vendorRoot, "editor", "stubs", "env");
-  }
   if (specifier === "@/editor-engine/vendor") return vendorRoot;
   if (specifier.startsWith("@/editor-engine/vendor/")) {
     return path.join(vendorRoot, specifier.slice("@/editor-engine/vendor/".length));

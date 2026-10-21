@@ -18,8 +18,7 @@ const createNextConfig = (phase) => ({
     config.resolve.alias = {
       ...config.resolve.alias,
       "@editor": editorRoot,
-      "@opencut/ui/icons": path.resolve(editorRoot, "icons/index.tsx"),
-      "@opencut/env/web": path.resolve(editorRoot, "stubs/env.ts")
+      "@opencut/ui/icons": path.resolve(editorRoot, "icons/index.tsx")
     };
 
     // Import .glsl shader files as raw strings (Vite glslPlugin equivalent).
