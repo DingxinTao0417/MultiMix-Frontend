@@ -48,9 +48,10 @@ MultiMix 是对话式 AI 短视频创作工作台，帮助商家通过对话完�
 npm run dev -- --hostname 127.0.0.1 --port 3200   # 前端开发
 npm run typecheck     # tsc --noEmit（排除 editor-engine/vendor）
 npm run lint          # eslint .
+npm run verify -- --plan # 先查看本次适用检查；去掉 --plan 执行
 npm run test          # 仅 Vitest
 npm run test:scripts  # 全部 scripts/__tests__ runner/安全契约
-npm run test:fast     # 默认离线测试层：Vitest + demo 纯函数 + 全部脚本契约（CI 同入口）
+npm run test:fast     # 完整离线测试层：Vitest + demo 纯函数 + 全部脚本契约（CI 同入口）
 npm run build         # next build（含 /editor，glsl/worker/Tailwind v4 已配）
 npm run check:agents  # 校验 CLAUDE.md 入口结构 + docs:check + 视频预览契约
 npm run docs:check    # 检查根 docs 分类、状态头、旧路径和 UI 原型归档规则
@@ -67,7 +68,7 @@ npm run e2e:cleanup -- <suite>/<run-id> --confirm # 显式清理保留 runtime
 .venv\Scripts\python -m ruff check --line-length 100 app/
 ```
 
-改完前端至少跑 `typecheck` + `lint` + `test:fast` + `build`；改完后端直接在后端仓库运行相关 pytest + ruff，不在前端复制后端测试清单。前端是公开仓库，GitHub Actions CI（`.github/workflows/ci.yml`）在 push/PR 时自动运行，免费；后端是私有仓库，其 CI 自 2026-10-11 起仅手动触发，推送前的检查由后端本地 pre-push 钩子承担。
+日常改动按后端测试范围权威从L1开始：先用 `npm run verify -- --plan` 核对范围，再执行适用检查；共享或未知影响升级L2，正式发布保留 `typecheck` + `lint` + `test:fast` + `build`。后端在自己的仓库运行相关pytest与Ruff，不在前端复制固定后端测试清单。前端是公开仓库，GitHub Actions CI（`.github/workflows/ci.yml`）在 push/PR 时自动运行，免费；后端是私有仓库，其 CI 自 2026-10-11 起仅手动触发，推送前的检查由后端本地 pre-push 钩子承担。
 
 > 本地反复重启 `next start` 易留僵尸进程占旧端口、供过期构建。换端口或 `pkill -f next` + 清 `.next` 再起。
 
@@ -183,19 +184,13 @@ scripts/
 
 ### 自动检查
 
-提交前必须按仓库实际改动运行检查：
+提交前按实际变化选择本文件与测试范围权威要求的最低充分检查：
 
-- 前端有代码或文档改动时，至少运行：
-  - `npm run typecheck`
-  - `npm run lint`
-  - `npm run test`
-  - `npm run check:agents`（校验各层 `CLAUDE.md` 仍是 `AGENTS.md` 的薄入口，并运行 `docs:check` 与视频预览契约检查；规则只改 `AGENTS.md`）
-  - 改动 `scripts/check-docs.mjs` 或文档准入规则时，加跑 `npm run test:docs-check`
-  - 影响构建、路由、依赖、Next 配置、数据 adapter 或关键 UI 时，再运行 `npm run build`
-- 后端有代码改动时，运行对应测试。当前优先运行：
-  - `.venv\Scripts\python -m pytest app/tests/test_asset_conversation.py app/tests/test_video_orchestration.py app/tests/test_config.py -q`
-  - `.venv\Scripts\python -m ruff check --line-length 100 app/`
-  - 改动涉及其他模块（MG、编排器、采集等）时，加跑 `app/tests/` 下对应的 `test_*.py`。
+- 前端先 `npm run verify -- --plan`，核对实际变化和影响边界，再 `npm run verify`；文档、局部组件、脚本和共享合同分别验证，不固定要求每次运行全部测试或构建。
+- 改动文档结构、入口、原型或指南时运行 `npm run check:agents`；修改文档检查器或准入规则时加跑 `npm run test:docs-check`。受保护播放器链路继续执行其三项强制门禁。
+- 共享接口、adapter、状态或持久化改变需L2；构建、路由、依赖、Next配置等变化和正式发布需构建，发布保留 `typecheck`、`lint`、`test:fast`、`build` 完整基线。`npm run verify -- --full` 可调用完整离线模式。
+- 后端在自己的任务树运行相关pytest与Ruff；可用 `python tools/run_local_release_checks.py --mode focused --test app/tests/test_example.py` 显式选择相关用例，不在前端维护固定后端清单。后端无参数发布入口和pre-push保持完整原门禁。
+- 提交/合并核验本次适用检查的有效证据；同一输入及相关实现、用例、依赖、配置、运行时和环境都未变时，不为收尾重复运行。记录不完整或相关内容变化必须重跑；工具当前不自动跨运行缓存。
 
 检查失败时停止提交或推送，先修复问题；如果无法修复，向用户报告失败命令和原因。
 

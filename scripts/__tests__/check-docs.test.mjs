@@ -408,3 +408,27 @@ test("does not treat a plan with items awaiting cross-side verification as compl
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("non-Markdown evidence is never read while current Markdown violations still block", () => {
+  const root = makeSplitWorkspace();
+  const binary = path.join(root, "MultiMix-Backend/docs/qa/evidence/media.mp4");
+  const temporary = path.join(root, "MultiMix-Backend/docs/qa/evidence/temporary.txt");
+  writeFile(root, "MultiMix-Backend/docs/qa/evidence/media.mp4", Buffer.alloc(1024));
+  writeFile(root, "MultiMix-Backend/docs/qa/evidence/temporary.txt", "old ../docs/reference.md");
+  const original = fs.readFileSync;
+  try {
+    fs.readFileSync = function (file, ...args) {
+      if (String(file) === binary || String(file) === temporary) {
+        throw new Error("Non-Markdown evidence must not be read");
+      }
+      return original.call(this, file, ...args);
+    };
+    assert.deepEqual(checkDocs(root), []);
+    writeFile(root, "MultiMix-Backend/docs/qa/conversation.md", HEADER + "\nSee ../docs/retired-rule.md\n");
+    assert.equal(checkDocs(root).some((item) => item.code === "stale-reference"), true);
+  } finally {
+    fs.readFileSync = original;
+    assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

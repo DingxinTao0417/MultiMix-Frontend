@@ -43,6 +43,51 @@ async function openCase(page: Page, caseId: string, expectProductWorkspace = tru
   return workspace;
 }
 
+test.beforeEach(async ({ page }) => {
+  // Follow the real consent gate for the disposable test account.
+  const accountResponse = page.waitForResponse(response =>
+    new URL(response.url()).pathname.endsWith("/auth/me")
+    && response.request().method() === "GET" && response.ok());
+  await page.goto("/app/assets");
+  const account = await (await accountResponse).json() as { legal_consent_required?: boolean };
+  if (account.legal_consent_required === true) {
+    const consent = page.getByRole("region", { name: "服务条款与隐私政策已更新" });
+    await expect(consent).toBeVisible();
+    await consent.getByRole("checkbox", { name: /我已阅读并同意/ }).check();
+    const accepted = page.waitForResponse(response =>
+      new URL(response.url()).pathname.endsWith("/auth/me/legal-consent")
+      && response.request().method() === "POST");
+    await consent.getByRole("button", { name: "同意并继续", exact: true }).click();
+    expect((await accepted).status()).toBe(200);
+  }
+  await expect(page.getByRole("button", { name: /^切换项目或资源库/ }).first()).toBeVisible();
+});
+
+test("CASE-04 stays in progress after reload", async ({ page }) => {
+  const workspace = await openCase(page, "case-04-project-running", false);
+  const composer = page.getByRole("region", { name: "Content generation conversation" })
+    .getByRole("textbox", { name: "输入对话内容" });
+  await expect(composer).toHaveAttribute("placeholder", /视频正在制作/);
+  const progress = page.getByRole("region", { name: "Content generation conversation" })
+    .getByText("视频生成中", { exact: false }).first();
+  await expect(progress).toBeVisible();
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
+  await expect(page.locator(".shadcn-prototype-product-card")).toHaveCount(0);
+  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
+  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
+  await page.reload();
+  await expect(progress).toBeVisible();
+  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
+  await expect(workspace).toHaveCount(0);
+  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
+  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
+  await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
+  await expect(composer).toHaveAttribute("placeholder", /视频正在制作/);
+  await captureDesktopEvidence(page, "generating");
+});
+
 test("narrow existing-project chat keeps header actions and send control inside the viewport", async ({ page }) => {
   const conversationId = seed.conversation_ids?.["case-01-director-draft"];
   const assetId = seed.asset_ids?.["case-01-director-draft"];
@@ -1356,31 +1401,6 @@ test("CASE-03 tells public fallback apart from saved assets", async ({ page }) =
   const workspace = await openCase(page, "case-03-no-asset-hit");
   await expect(workspace.getByText("已找到 3 个公共素材候选", { exact: false })).toBeVisible();
   await expect(workspace.getByText("测试门店素材", { exact: false })).toHaveCount(0);
-});
-
-test("CASE-04 stays in progress after reload", async ({ page }) => {
-  const workspace = await openCase(page, "case-04-project-running", false);
-  const composer = page.getByRole("region", { name: "Content generation conversation" })
-    .getByRole("textbox", { name: "输入对话内容" });
-  await expect(composer).toHaveAttribute("placeholder", /视频正在制作/);
-  const progress = page.getByRole("region", { name: "Content generation conversation" })
-    .getByText("视频生成中", { exact: false }).first();
-  await expect(progress).toBeVisible();
-  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
-  await expect(workspace).toHaveCount(0);
-  await expect(page.getByRole("separator", { name: "调整对话和展示区宽度" })).toHaveCount(0);
-  await expect(page.locator(".shadcn-prototype-product-card")).toHaveCount(0);
-  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
-  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
-  await page.reload();
-  await expect(progress).toBeVisible();
-  await expect(page.locator(".shadcn-prototype-workspace.conversation-only-mode")).toBeVisible();
-  await expect(workspace).toHaveCount(0);
-  await expect(workspace.locator(".shadcn-prototype-product-pending")).toHaveCount(0);
-  await expect(workspace.getByLabel("时间轴预览")).toHaveCount(0);
-  await expect(workspace.getByRole("button", { name: "编辑", exact: true })).toHaveCount(0);
-  await expect(composer).toHaveAttribute("placeholder", /视频正在制作/);
-  await captureDesktopEvidence(page, "generating");
 });
 
 test("CASE-05 keeps one recovery action in the timeline", async ({ page }) => {

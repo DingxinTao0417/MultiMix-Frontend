@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify": "node scripts/verify-changes.mjs",
     "test:scripts": "node scripts/__tests__/run-all-script-tests.mjs",
     "test:fast": "npm run test && vitest run --config vitest.demo-e2e.config.ts && npm run test:scripts",
     "security:dependencies": "npm audit --omit=dev --audit-level=high",

@@ -173,7 +173,7 @@ function checkMarkdownHeaders(workspaceRoot, files, issues) {
 function checkStaleReferences(workspaceRoot, files, issues) {
   for (const file of files) {
     const relativeFile = relativePath(workspaceRoot, file);
-    if (ARCHIVE_DIRS.some((dir) => isInside(relativeFile, dir))) {
+    if (!isMarkdown(relativeFile) || ARCHIVE_DIRS.some((dir) => isInside(relativeFile, dir))) {
       continue;
     }
 
