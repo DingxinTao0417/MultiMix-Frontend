@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type CSSProperties } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import { API_BASE } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
@@ -435,7 +435,7 @@ const ProductPreview = forwardRef<ProductPreviewHandle, ProductPreviewProps>(fun
     };
   }, [confirmedImageKey, product.contentType, product.id, token]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setActiveComparisonSegmentId(null);
     setExpandedComparisonSegmentId(null);
   }, [comparisonChanges]);

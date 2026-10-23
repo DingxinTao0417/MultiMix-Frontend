@@ -2,8 +2,11 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
 import AssetsWorkspaceClient from "../components/assets-workspace-client";
+import ConversationStudio from "../components/conversation-studio";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
+import { DEFAULT_RUNTIME_WRITE_CAPABILITIES } from "../lib/runtime-write-capabilities";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
 vi.mock("../../../lib/video-project-client", async (original) => ({
@@ -44,6 +47,30 @@ function renderWorkspace({ withSecondProduct = false } = {}) {
 }
 
 const composer = () => screen.getByRole("textbox", { name: "输入对话内容" }) as HTMLTextAreaElement;
+
+it("uses committed write availability for an immediate scene input event", () => {
+  const product = displayProducts["case-07-project-ready-mp4"];
+  const conversation = conversationForDisplayProduct(product);
+  function Boundary({ allowed, readonly = false, instruction = "" }: {
+    allowed: boolean; readonly?: boolean; instruction?: string;
+  }) {
+    useLayoutEffect(() => {
+      if (instruction) window.dispatchEvent(new CustomEvent("multimix:composer-prepare", {
+        detail: { utterance: instruction },
+      }));
+    }, [allowed, readonly, instruction]);
+    return <ConversationStudio basePath="/app/assets" selectedConversation={conversation}
+      selectedProduct={product} onSelectProduct={vi.fn()} readonly={readonly}
+      writeCapabilities={{ ...DEFAULT_RUNTIME_WRITE_CAPABILITIES, canGenerate: allowed }} />;
+  }
+  const { rerender } = render(<Boundary allowed={false} />);
+  rerender(<Boundary allowed instruction="第 2 镜：" />);
+  expect(composer().value).toBe("第 2 镜：");
+  rerender(<Boundary allowed={false} instruction="不得填入：不可用" />);
+  expect(composer().value).toBe("第 2 镜：");
+  rerender(<Boundary allowed readonly instruction="不得填入：只读" />);
+  expect(composer().value).toBe("第 2 镜：");
+});
 
 async function submit(text: string) {
   fireEvent.change(composer(), { target: { value: text } });

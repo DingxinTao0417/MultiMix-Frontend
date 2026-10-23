@@ -1085,7 +1085,7 @@ export default function ConversationStudio({
 
   // Failure cards (and other surfaces) in the product pane recover through the
   // conversation: they dispatch these events instead of prop-drilling send/focus.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onFocusComposer = () => {
       composerRef.current?.focus();
     };

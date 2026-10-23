@@ -4,10 +4,12 @@ import "@testing-library/jest-dom/vitest";
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect } from "react";
 
 import type { ContentAsset } from "../../../lib/api";
 import { assetWorkspaceAdapter } from "../lib/asset-workspace-adapter";
 import ProductWorkspace from "../components/product-workspace";
+import ProductPreview from "../components/product-preview";
 import { conversationForDisplayProduct, displayProducts } from "./fixtures/display-products";
 
 const apiMocks = vi.hoisted(() => ({
@@ -564,6 +566,32 @@ describe("video browse actions", () => {
     expect(afterVideo.muted).toBe(false);
     expect(afterVideo.currentTime).toBe(3);
     expect(screen.queryByRole("button", { name: "试听修改前" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a removed scene selected when activated as comparison becomes available", () => {
+    const current = displayProducts["case-07-project-ready-mp4"];
+    const previous = { ...current, segments: [...current.segments!, {
+      ...current.segments![0], id: "segment-removed", title: "旧收束", startSeconds: 3, endSeconds: 4,
+    }] };
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+    function Boundary({ ready }: { ready: boolean }) {
+      useLayoutEffect(() => {
+        if (!ready) return;
+        for (const video of document.querySelectorAll("video")) {
+          Object.defineProperty(video, "readyState", { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
+        }
+        screen.getByRole("button", { name: /旧收束/ }).click();
+      }, [ready]);
+      return <ProductPreview product={current} comparisonProduct={ready ? previous : null}
+        comparisonAvailable comparisonOpen={ready} />;
+    }
+    const { rerender } = render(<Boundary ready={false} />);
+    rerender(<Boundary ready />);
+    const comparison = screen.getByRole("region", { name: "版本对比" });
+    expect(comparison).toHaveTextContent("修改后无对应分镜");
+    expect(screen.getByLabelText("修改前 · 上一版").querySelector("video")!.currentTime).toBe(3);
+    expect(screen.getByLabelText("修改后 · 当前版").querySelector("video")!.muted).toBe(true);
   });
 
   it("routes a removed scene to the previous player only", async () => {

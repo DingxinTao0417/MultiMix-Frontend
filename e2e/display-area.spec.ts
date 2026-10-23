@@ -1877,6 +1877,19 @@ test("library cross-type details and interaction states stay consistent", async 
   await captureDesktopEvidence(page, "asset-detail");
 });
 
+test("CASE-07 scene annotation uses committed availability", async ({ page }) => {
+  const nativeWorkspace = await openCase(page, "case-07-project-ready-mp4");
+  const composer = page.getByRole("textbox", { name: "输入对话内容" });
+  await nativeWorkspace.getByRole("button", { name: "说第 2 镜", exact: true }).click();
+  await expect(composer).toHaveValue("第 2 镜：");
+  await expect(page.getByRole("status", { name: "正在说第 2 镜" })).toBeVisible();
+  await mkdir(desktopEvidenceDirectory, { recursive: true });
+  await page.screenshot({ path: resolve(desktopEvidenceDirectory, "scene-annotation-native.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "取消针对第 2 镜" }).click();
+  await expect(page.getByRole("status", { name: "正在说第 2 镜" })).toHaveCount(0);
+  await composer.fill("");
+});
+
 test("CASE-07 version comparison keeps unmatched scenes honest across viewports", async ({ page }) => {
   const conversationId = seed.conversation_ids?.["case-07-project-ready-mp4"];
   const assetId = seed.asset_ids?.["case-07-project-ready-mp4"];
@@ -1993,7 +2006,7 @@ test("CASE-07 version comparison keeps unmatched scenes honest across viewports"
   });
   const workspace = await openCase(page, "case-07-project-ready-mp4");
   expect(await page.title()).toContain("MultiMix");
-  await expect(workspace.getByRole("region", { name: "视频清晰度审查" })).toContainText("尚无当前审查结果");
+  await expect(workspace.getByRole("region", { name: "视频清晰度审查" })).toHaveCount(0);
   await workspace.getByRole("button", { name: "版本对比" }).click();
   const comparison = workspace.getByRole("region", { name: "版本对比" });
   await expect(comparison).toBeVisible();
